@@ -1,7 +1,7 @@
 include_guard(GLOBAL)
 
 set(LLAMA_RUNNER_COMMON_DIR "${CMAKE_CURRENT_LIST_DIR}")
-set(LLAMA_SRC "${LLAMA_RUNNER_COMMON_DIR}/../../../llama.cpp")
+set(LLAMA_SRC "${LLAMA_RUNNER_COMMON_DIR}/../../../libraries/llama.cpp")
 
 if(NOT EXISTS "${LLAMA_SRC}/CMakeLists.txt")
     message(FATAL_ERROR "llama.cpp not found at ${LLAMA_SRC}. Please run 'git submodule update --init --recursive'")
