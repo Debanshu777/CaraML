@@ -48,6 +48,34 @@ char *llama_runner_generate_text(const char *prompt, int max_tokens, float tempe
     return strdup(result.c_str());
 }
 
+int llama_runner_start_generate(const char *prompt, int max_tokens, float temperature) {
+    return llama_runner_core_start_generate(prompt, max_tokens, temperature) ? 1 : 0;
+}
+
+char *llama_runner_next_token(void) {
+    const char *tok = llama_runner_core_next_token();
+    if (tok == nullptr) {
+        return nullptr;
+    }
+    return strdup(tok);
+}
+
+void llama_runner_cancel_generate(void) {
+    llama_runner_core_cancel_generate();
+}
+
+void llama_runner_finalize_generation(void) {
+    llama_runner_core_finalize_generation();
+}
+
+int llama_runner_process_system_prompt(const char *prompt) {
+    return llama_runner_core_process_system_prompt(prompt);
+}
+
+int llama_runner_process_user_prompt(const char *prompt, int predict_length) {
+    return llama_runner_core_process_user_prompt(prompt, predict_length);
+}
+
 void llama_runner_unload_model(void) { llama_runner_core_unload(); }
 
 void llama_runner_shutdown(void) { llama_runner_core_shutdown(); }

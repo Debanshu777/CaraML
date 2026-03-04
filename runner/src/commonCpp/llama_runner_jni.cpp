@@ -83,6 +83,52 @@ Java_com_debanshu777_runner_LlamaRunner_nativeGenerateText(
     return env->NewStringUTF(result.c_str());
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_debanshu777_runner_LlamaRunner_nativeStartGenerate(
+    JNIEnv *env, jobject, jstring prompt, jint maxTokens, jfloat temperature) {
+    const char *p = env->GetStringUTFChars(prompt, nullptr);
+    const bool ok = llama_runner_core_start_generate(p, static_cast<int>(maxTokens),
+        static_cast<float>(temperature));
+    env->ReleaseStringUTFChars(prompt, p);
+    return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_debanshu777_runner_LlamaRunner_nativeNextToken(JNIEnv *env, jobject) {
+    const char *tok = llama_runner_core_next_token();
+    if (tok == nullptr) {
+        return nullptr;
+    }
+    return env->NewStringUTF(tok);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_debanshu777_runner_LlamaRunner_nativeCancelGenerate(JNIEnv *, jobject) {
+    llama_runner_core_cancel_generate();
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_debanshu777_runner_LlamaRunner_nativeFinalizeGeneration(JNIEnv *, jobject) {
+    llama_runner_core_finalize_generation();
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_debanshu777_runner_LlamaRunner_nativeProcessSystemPrompt(JNIEnv *env, jobject, jstring prompt) {
+    const char *p = env->GetStringUTFChars(prompt, nullptr);
+    const int ret = llama_runner_core_process_system_prompt(p);
+    env->ReleaseStringUTFChars(prompt, p);
+    return static_cast<jint>(ret);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_debanshu777_runner_LlamaRunner_nativeProcessUserPrompt(
+    JNIEnv *env, jobject, jstring prompt, jint predictLength) {
+    const char *p = env->GetStringUTFChars(prompt, nullptr);
+    const int ret = llama_runner_core_process_user_prompt(p, static_cast<int>(predictLength));
+    env->ReleaseStringUTFChars(prompt, p);
+    return static_cast<jint>(ret);
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeUnloadModel(JNIEnv *, jobject) {
     llama_runner_core_unload();

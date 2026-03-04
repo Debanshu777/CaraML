@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -38,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import com.debanshu777.flash.platform.PlatformPaths
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import com.debanshu777.runner.LlamaRunner
+import com.debanshu777.runner.generateFlowTokens
 import kotlin.io.println
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -81,10 +83,10 @@ fun ChatScreen(
     var loadError by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    
+
     // Initialize runner
     val runner = remember { LlamaRunner() }
-    
+
     LaunchedEffect(modelPath) {
         log("load", "modelPath=${truncate(modelPath)}")
         withContext(llamaDispatcher) {
@@ -96,7 +98,8 @@ fun ChatScreen(
                 }
                 if (!storagePathProvider.isModelFileReadable(modelPath)) {
                     log("load", "ERROR", "file not found or not readable")
-                    loadError = "Model file not found or not readable. It may have been moved or deleted."
+                    loadError =
+                        "Model file not found or not readable. It may have been moved or deleted."
                     return@withContext
                 }
                 val nativeLibDir = PlatformPaths.getNativeLibDir()
@@ -106,11 +109,21 @@ fun ChatScreen(
                     return@withContext
                 }
                 runner.initialize(nativeLibDir)
-                val loaded = runner.loadModel(modelPath)
+                val loaded = runner.loadModel(
+                    modelPath = modelPath,
+                    nGpuLayers = PlatformPaths.getDefaultGpuLayers()
+                )
                 log("load", if (loaded) "success" else "failed", "path=$modelPath")
                 isModelLoaded = loaded
-                if (!loaded) {
-                    loadError = "Failed to load model. The file may be corrupted or in an unsupported format. Try a different model."
+                if (loaded) {
+                    val spRet = runner.processSystemPrompt("You are a helpful assistant.")
+                    if (spRet != 0) {
+                        loadError = "Failed to initialize conversation context."
+                        isModelLoaded = false
+                    }
+                } else {
+                    loadError =
+                        "Failed to load model. The file may be corrupted or in an unsupported format. Try a different model."
                 }
             } catch (e: Exception) {
                 log("load", "ERROR", "exception=${e.message}")
@@ -118,7 +131,7 @@ fun ChatScreen(
             }
         }
     }
-    
+
     DisposableEffect(Unit) {
         onDispose {
             try {
@@ -152,7 +165,7 @@ fun ChatScreen(
             style = MaterialTheme.typography.headlineSmall,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
         )
-        
+
         // Show loading or error status
         if (!isModelLoaded && loadError == null) {
             Box(
@@ -170,7 +183,7 @@ fun ChatScreen(
                 }
             }
         }
-        
+
         if (loadError != null) {
             Box(
                 modifier = Modifier
@@ -230,40 +243,73 @@ fun ChatScreen(
                 maxLines = 4,
                 enabled = isModelLoaded && !isGenerating
             )
-            IconButton(
-                onClick = {
-                    if (inputText.isNotBlank() && !isGenerating && isModelLoaded) {
-                        val userMessage = inputText.trim()
-                        log("input", "user_msg_len=${userMessage.length}", "preview=${truncate(userMessage)}")
-                        messages.add(ChatMessage(MessageRole.User, userMessage))
-                        inputText = ""
-                        isGenerating = true
+            if (isGenerating) {
+                IconButton(
+                    onClick = { runner.cancelGenerate() },
+                    enabled = true
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Stop,
+                        contentDescription = "Stop generating"
+                    )
+                }
+            } else {
+                IconButton(
+                    onClick = {
+                        if (inputText.isNotBlank() && isModelLoaded) {
+                            val userMessage = inputText.trim()
+                            log(
+                                "input",
+                                "user_msg_len=${userMessage.length}",
+                                "preview=${truncate(userMessage)}"
+                            )
+                            messages.add(ChatMessage(MessageRole.User, userMessage))
+                            inputText = ""
+                            isGenerating = true
 
-                        scope.launch(llamaDispatcher) {
-                            try {
-                                log("generate", "start", "maxTokens=100")
-                                val wrappedPrompt = "<|im_start|>user\n$userMessage<|im_end|>\n<|im_start|>assistant\n"
-                                val response = runner.generateText(wrappedPrompt, maxTokens = 100)
-                                log("output", "response_len=${response.length}", "preview=${truncate(response)}")
-                                withContext(Dispatchers.Main) {
-                                    messages.add(ChatMessage(MessageRole.Assistant, response))
-                                    isGenerating = false
-                                }
-                            } catch (e: Exception) {
-                                log("generate", "ERROR", "exception=${e.message}")
-                                withContext(Dispatchers.Main) {
-                                    messages.add(ChatMessage(MessageRole.Assistant, "Error: ${e.message}"))
-                                    isGenerating = false
+                            val assistantIndex = messages.size
+                            messages.add(ChatMessage(MessageRole.Assistant, ""))
+
+                            scope.launch(llamaDispatcher) {
+                                try {
+                                    log("generate", "start", "maxTokens=1024")
+                                    val ret =
+                                        runner.processUserPrompt(userMessage, predictLength = 1024)
+                                    if (ret != 0) {
+                                        withContext(Dispatchers.Main) {
+                                            messages[assistantIndex] =
+                                                ChatMessage(
+                                                    MessageRole.Assistant,
+                                                    "Failed to process message."
+                                                )
+                                        }
+                                        return@launch
+                                    }
+                                    runner.generateFlowTokens().collect { token ->
+                                        withContext(Dispatchers.Main) {
+                                            val current = messages[assistantIndex]
+                                            messages[assistantIndex] =
+                                                current.copy(text = current.text + token)
+                                        }
+                                    }
+                                    log("output", "done")
+                                } catch (e: Exception) {
+                                    log("generate", "ERROR", "exception=${e.message}")
+                                    withContext(Dispatchers.Main) {
+                                        messages[assistantIndex] =
+                                            ChatMessage(MessageRole.Assistant, "An error occurred.")
+                                    }
+                                } finally {
+                                    runner.finalizeGeneration()
+                                    withContext(Dispatchers.Main) {
+                                        isGenerating = false
+                                    }
                                 }
                             }
                         }
-                    }
-                },
-                enabled = inputText.isNotBlank() && !isGenerating && isModelLoaded
-            ) {
-                if (isGenerating) {
-                    CircularProgressIndicator(modifier = Modifier.padding(8.dp))
-                } else {
+                    },
+                    enabled = inputText.isNotBlank() && isModelLoaded
+                ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.Send,
                         contentDescription = "Send message"

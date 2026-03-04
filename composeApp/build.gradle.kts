@@ -11,7 +11,7 @@ plugins {
     alias(libs.plugins.kotlinSerialization)
 }
 
-val minIos = "16.6"
+val minIos = "17.2"
 
 kotlin {
     androidTarget {

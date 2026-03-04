@@ -4,7 +4,6 @@ import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import com.debanshu777.huggingfacemanager.createPlatformHttpClient
 import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.bodyAsChannel
-import io.ktor.client.statement.execute
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.utils.io.readAvailable
 import kotlinx.cinterop.BetaInteropApi
@@ -13,7 +12,14 @@ import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
-import platform.Foundation.*
+import platform.Foundation.NSData
+import platform.Foundation.NSFileHandle
+import platform.Foundation.NSFileManager
+import platform.Foundation.closeFile
+import platform.Foundation.create
+import platform.Foundation.fileHandleForWritingAtPath
+import platform.Foundation.writeData
+
 
 actual class DownloadManager actual constructor(
     private val pathProvider: StoragePathProvider,

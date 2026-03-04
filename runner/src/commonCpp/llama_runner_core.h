@@ -25,3 +25,11 @@ bool llama_runner_core_load_model(const char *model_path, const LlamaRunnerConfi
 std::string llama_runner_core_generate(const char *prompt, int max_tokens, float temperature);
 void llama_runner_core_unload();
 void llama_runner_core_shutdown();
+
+bool llama_runner_core_start_generate(const char *prompt, int max_tokens, float temperature);
+const char *llama_runner_core_next_token();
+void llama_runner_core_cancel_generate();
+void llama_runner_core_finalize_generation();
+
+int llama_runner_core_process_system_prompt(const char *system_prompt);
+int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_length);

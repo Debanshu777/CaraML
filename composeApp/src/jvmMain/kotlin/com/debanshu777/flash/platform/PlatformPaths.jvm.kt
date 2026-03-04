@@ -10,4 +10,6 @@ actual object PlatformPaths {
         val libPath = System.getProperty("java.library.path", "")
         return libPath.split(File.pathSeparator).map { it.trim() }.firstOrNull { it.isNotEmpty() } ?: ""
     }
+
+    actual fun getDefaultGpuLayers(): Int = 0
 }

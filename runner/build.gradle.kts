@@ -3,7 +3,7 @@ plugins {
     alias(libs.plugins.androidLibrary)
 }
 
-val minIos = "16.6"
+val minIos = "17.2"
 
 fun Project.findTool(name: String): String {
     findProperty("${name.uppercase()}_PATH")?.toString()?.let { path ->

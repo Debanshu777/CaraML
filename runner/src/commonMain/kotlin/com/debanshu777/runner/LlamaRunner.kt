@@ -12,11 +12,18 @@ expect class LlamaRunner() {
         temperature: Float = 0.3f,
     ): Boolean
 
-    fun generateText(
-        prompt: String,
-        maxTokens: Int = 256,
-        temperature: Float = -1.0f,
-    ): String
+    fun nextToken(): String?
+
+    fun cancelGenerate()
+
+    fun finalizeGeneration()
+
+    fun processSystemPrompt(systemPrompt: String): Int
+
+    fun processUserPrompt(
+        userPrompt: String,
+        predictLength: Int,
+    ): Int
 
     fun unloadModel()
 
