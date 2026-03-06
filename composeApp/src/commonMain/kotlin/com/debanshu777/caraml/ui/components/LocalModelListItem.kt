@@ -12,7 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.dp
-import com.debanshu777.caraml.storage.LocalModelEntity
+import com.debanshu777.caraml.storage.localModel.LocalModelEntity
 import com.debanshu777.huggingfacemanager.model.PipelineTag
 import kotlin.math.roundToInt
 

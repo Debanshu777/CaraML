@@ -1,4 +1,4 @@
-package com.debanshu777.caraml.storage
+package com.debanshu777.caraml.storage.localModel
 
 import kotlinx.coroutines.flow.Flow
 

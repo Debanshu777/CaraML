@@ -1,4 +1,4 @@
-package com.debanshu777.caraml.storage
+package com.debanshu777.caraml.storage.localModel
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity

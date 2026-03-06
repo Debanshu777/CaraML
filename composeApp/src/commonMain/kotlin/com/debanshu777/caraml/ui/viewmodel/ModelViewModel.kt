@@ -2,7 +2,7 @@ package com.debanshu777.caraml.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.debanshu777.caraml.storage.LocalModelRepository
+import com.debanshu777.caraml.storage.localModel.LocalModelRepository
 import com.debanshu777.huggingfacemanager.HuggingFaceApi
 import com.debanshu777.huggingfacemanager.api.ListModelsParams
 import com.debanshu777.huggingfacemanager.api.SearchModelsParams

@@ -1,4 +1,4 @@
-package com.debanshu777.caraml.storage
+package com.debanshu777.caraml.storage.localModel
 
 import androidx.room.Dao
 import androidx.room.Insert

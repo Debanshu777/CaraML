@@ -2,8 +2,8 @@ package com.debanshu777.caraml.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.debanshu777.caraml.storage.LocalModelEntity
-import com.debanshu777.caraml.storage.LocalModelRepository
+import com.debanshu777.caraml.storage.localModel.LocalModelEntity
+import com.debanshu777.caraml.storage.localModel.LocalModelRepository
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
