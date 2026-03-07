@@ -1,5 +1,7 @@
 package com.debanshu777.caraml.di
 
+import com.debanshu777.caraml.domain.InferenceRepository
+import com.debanshu777.caraml.domain.LlamaInferenceRepository
 import com.debanshu777.caraml.storage.AppDatabase
 import com.debanshu777.caraml.storage.localModel.LocalModelRepository
 import com.debanshu777.caraml.ui.viewmodel.ChatViewModel
@@ -23,6 +25,12 @@ val appModule = module {
 
     single { createHuggingFaceApi() }
 
+    single<InferenceRepository> {
+        LlamaInferenceRepository(
+            storagePathProvider = get()
+        )
+    }
+
     viewModel { 
         ModelViewModel(
             api = get(),
@@ -32,14 +40,13 @@ val appModule = module {
     }
     viewModel { 
         DownloadedModelsViewModel(
-            localModelRepository = get(),
-            storagePathProvider = get()
+            localModelRepository = get()
         ) 
     }
-    single {
+    viewModel {
         ChatViewModel(
             localModelRepository = get(),
-            storagePathProvider = get()
+            inferenceRepository = get()
         )
     }
 }

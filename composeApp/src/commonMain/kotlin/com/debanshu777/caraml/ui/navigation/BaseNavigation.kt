@@ -11,20 +11,17 @@ import androidx.navigation3.ui.NavDisplay
 import com.debanshu777.caraml.ui.screens.ChatScreen
 import com.debanshu777.caraml.ui.screens.DetailsScreen
 import com.debanshu777.caraml.ui.screens.SearchScreen
-import com.debanshu777.caraml.ui.screens.StandaloneChatScreen
 import com.debanshu777.caraml.ui.viewmodel.ChatViewModel
 import com.debanshu777.caraml.ui.viewmodel.DownloadedModelsViewModel
 import com.debanshu777.caraml.ui.viewmodel.ModelViewModel
-import com.debanshu777.huggingfacemanager.download.StoragePathProvider
-import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 
 @Composable
 fun NavigationHost(
     modifier: Modifier,
     backStack: NavBackStack<NavKey>,
-    storagePathProvider: StoragePathProvider = koinInject(),
 ) {
+    val chatViewModel: ChatViewModel = koinViewModel()
     NavDisplay(
         modifier = modifier,
         backStack = backStack,
@@ -37,17 +34,14 @@ fun NavigationHost(
         entryProvider =
             entryProvider {
                 entry(NavigableScreen.Home) {
-                    val chatViewModel: ChatViewModel = koinInject()
                     ChatScreen(
                         viewModel = chatViewModel,
                         onNavigateToSearch = { backStack.add(NavigableScreen.Search) },
-                        storagePathProvider = storagePathProvider,
                     )
                 }
                 entry(NavigableScreen.Search) {
                     val modelViewModel: ModelViewModel = koinViewModel()
                     val downloadedModelsViewModel: DownloadedModelsViewModel = koinViewModel()
-                    val chatViewModel: ChatViewModel = koinInject()
                     SearchScreen(
                         modelViewModel = modelViewModel,
                         downloadedModelsViewModel = downloadedModelsViewModel,
@@ -65,14 +59,6 @@ fun NavigationHost(
                         viewModel = modelViewModel,
                         modelId = key.modelId,
                         onBack = { backStack.removeLastOrNull() },
-                    )
-                }
-                entry<NavigableScreen.Chat> { key ->
-                    StandaloneChatScreen(
-                        modelPath = key.modelPath,
-                        modelId = key.modelId,
-                        onBack = { backStack.removeLastOrNull() },
-                        storagePathProvider = storagePathProvider,
                     )
                 }
             },

@@ -30,16 +30,13 @@ private val config =
     }
 
 @Composable
-fun App(
-    storagePathProvider: StoragePathProvider = koinInject(),
-) {
+fun App() {
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
             val backStack = rememberNavBackStack(config, NavigableScreen.Home)
             NavigationHost(
                 modifier = Modifier.fillMaxSize(),
                 backStack = backStack,
-                storagePathProvider = storagePathProvider,
             )
         }
     }

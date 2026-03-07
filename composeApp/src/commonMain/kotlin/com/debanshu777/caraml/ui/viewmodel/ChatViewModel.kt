@@ -2,19 +2,28 @@ package com.debanshu777.caraml.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.debanshu777.caraml.domain.InferenceRepository
+import com.debanshu777.caraml.domain.ModelLoadResult
 import com.debanshu777.caraml.storage.localModel.LocalModelEntity
 import com.debanshu777.caraml.storage.localModel.LocalModelRepository
-import com.debanshu777.huggingfacemanager.download.StoragePathProvider
+import com.debanshu777.caraml.ui.model.ChatMessage
+import com.debanshu777.caraml.ui.model.MessageRole
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class ChatViewModel(
     private val localModelRepository: LocalModelRepository,
-    private val storagePathProvider: StoragePathProvider
+    private val inferenceRepository: InferenceRepository,
 ) : ViewModel() {
 
     private val allDownloadedModels: StateFlow<List<LocalModelEntity>> =
@@ -35,14 +44,30 @@ class ChatViewModel(
             )
 
     private val _selectedModel = MutableStateFlow<LocalModelEntity?>(null)
-    val selectedModel: StateFlow<LocalModelEntity?> = _selectedModel
+    val selectedModel: StateFlow<LocalModelEntity?> = _selectedModel.asStateFlow()
+
+    private val _uiState = MutableStateFlow<ChatUiState>(ChatUiState.NoModels)
+    val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
+
+    private var modelLoadJob: Job? = null
+    private var generationJob: Job? = null
 
     init {
+        // Auto-select first model when models become available
         viewModelScope.launch {
             allDownloadedModels.collect { models ->
                 if (_selectedModel.value == null && models.isNotEmpty()) {
                     _selectedModel.value = models.first()
+                } else if (models.isEmpty()) {
+                    _uiState.value = ChatUiState.NoModels
                 }
+            }
+        }
+
+        // React to model selection changes
+        viewModelScope.launch {
+            _selectedModel.filterNotNull().collect { model ->
+                loadModel(model)
             }
         }
     }
@@ -54,11 +79,87 @@ class ChatViewModel(
         }
     }
 
-    fun getResolvedModelPath(model: LocalModelEntity): String {
-        if (model.localPath.isNotBlank() && storagePathProvider.fileExists(model.localPath)) {
-            return model.localPath
+    private fun loadModel(model: LocalModelEntity) {
+        modelLoadJob?.cancel()
+        generationJob?.cancel()
+        
+        _uiState.value = ChatUiState.ModelLoading
+
+        modelLoadJob = viewModelScope.launch {
+            when (val result = inferenceRepository.loadModel(model)) {
+                is ModelLoadResult.Success -> {
+                    _uiState.value = ChatUiState.Ready()
+                }
+                is ModelLoadResult.Error -> {
+                    _uiState.value = ChatUiState.ModelError(result.message)
+                }
+            }
         }
-        val dir = storagePathProvider.getModelsStorageDirectory(model.modelId)
-        return "$dir/${model.filename}"
+    }
+
+    fun sendMessage(text: String) {
+        val currentState = _uiState.value
+        if (currentState !is ChatUiState.Ready || currentState.isGenerating) return
+
+        val userMessage = ChatMessage(role = MessageRole.User, text = text.trim())
+        val assistantMessage = ChatMessage(role = MessageRole.Assistant, text = "")
+
+        _uiState.update { state ->
+            if (state is ChatUiState.Ready) {
+                state.copy(
+                    messages = state.messages + userMessage + assistantMessage,
+                    isGenerating = true
+                )
+            } else state
+        }
+
+        generationJob = viewModelScope.launch {
+            var wasCancelled = false
+            try {
+                inferenceRepository.generateResponse(userMessage.text)
+                    .conflate()
+                    .collect { token ->
+                        _uiState.update { state ->
+                            if (state is ChatUiState.Ready) {
+                                val messages = state.messages.toMutableList()
+                                val idx = messages.indexOfFirst { it.id == assistantMessage.id }
+                                if (idx >= 0) {
+                                    messages[idx] = messages[idx].copy(text = messages[idx].text + token)
+                                }
+                                state.copy(messages = messages, isGenerating = true)
+                            } else state
+                        }
+                    }
+            } catch (e: CancellationException) {
+                wasCancelled = true
+                throw e
+            } catch (e: Exception) {
+                _uiState.update { state ->
+                    if (state is ChatUiState.Ready) {
+                        val messages = state.messages.toMutableList()
+                        val idx = messages.indexOfFirst { it.id == assistantMessage.id }
+                        if (idx >= 0) {
+                            messages[idx] = messages[idx].copy(
+                                text = "Something went wrong. Please try again."
+                            )
+                        }
+                        state.copy(messages = messages, isGenerating = false)
+                    } else state
+                }
+            } finally {
+                if (!wasCancelled) {
+                    _uiState.update { state ->
+                        if (state is ChatUiState.Ready) {
+                            state.copy(isGenerating = false)
+                        } else state
+                    }
+                }
+            }
+        }
+    }
+
+    fun cancelGeneration() {
+        inferenceRepository.cancelGeneration()
+        generationJob?.cancel()
     }
 }

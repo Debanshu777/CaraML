@@ -10,8 +10,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 
 class DownloadedModelsViewModel(
-    private val localModelRepository: LocalModelRepository,
-    private val storagePathProvider: StoragePathProvider
+    private val localModelRepository: LocalModelRepository
 ) : ViewModel() {
 
     val downloadedModels: StateFlow<List<LocalModelEntity>> =
@@ -24,18 +23,5 @@ class DownloadedModelsViewModel(
 
     suspend fun trackModelUsage(model: LocalModelEntity) {
         localModelRepository.incrementUsageCount(model.modelId, model.filename)
-    }
-
-    /**
-     * Resolves the model file path. Prefers stored localPath when the file exists there
-     * (e.g. right after download). Falls back to recomputed path when localPath is
-     * invalid (e.g. after reinstall or simulator reset).
-     */
-    fun getResolvedModelPath(model: LocalModelEntity): String {
-        if (model.localPath.isNotBlank() && storagePathProvider.fileExists(model.localPath)) {
-            return model.localPath
-        }
-        val dir = storagePathProvider.getModelsStorageDirectory(model.modelId)
-        return "$dir/${model.filename}"
     }
 }
