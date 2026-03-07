@@ -8,8 +8,8 @@ import androidx.compose.ui.Modifier
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.savedstate.serialization.SavedStateConfiguration
-import com.debanshu777.caraml.ui.navigation.NavigableScreen
-import com.debanshu777.caraml.ui.navigation.NavigationHost
+import com.debanshu777.caraml.core.navigation.AppScreen
+import com.debanshu777.caraml.core.navigation.NavigationHost
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import kotlinx.serialization.serializer
 import kotlinx.serialization.modules.SerializersModule
@@ -21,10 +21,10 @@ private val config =
         serializersModule =
             SerializersModule {
                 polymorphic(NavKey::class) {
-                    subclass(NavigableScreen.Home::class, serializer<NavigableScreen.Home>())
-                    subclass(NavigableScreen.Search::class, serializer<NavigableScreen.Search>())
-                    subclass(NavigableScreen.Details::class, serializer<NavigableScreen.Details>())
-                    subclass(NavigableScreen.Chat::class, serializer<NavigableScreen.Chat>())
+                    subclass(AppScreen.Home::class, serializer<AppScreen.Home>())
+                    subclass(AppScreen.Search::class, serializer<AppScreen.Search>())
+                    subclass(AppScreen.Details::class, serializer<AppScreen.Details>())
+                    subclass(AppScreen.Chat::class, serializer<AppScreen.Chat>())
                 }
             }
     }
@@ -33,7 +33,7 @@ private val config =
 fun App() {
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
-            val backStack = rememberNavBackStack(config, NavigableScreen.Home)
+            val backStack = rememberNavBackStack(config, AppScreen.Home)
             NavigationHost(
                 modifier = Modifier.fillMaxSize(),
                 backStack = backStack,
