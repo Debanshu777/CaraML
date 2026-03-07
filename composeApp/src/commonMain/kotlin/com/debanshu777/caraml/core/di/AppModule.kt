@@ -9,6 +9,7 @@ import com.debanshu777.caraml.features.modelhub.presentation.downloaded.Download
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelViewModel
 import com.debanshu777.huggingfacemanager.createHuggingFaceApi
 import com.debanshu777.huggingfacemanager.download.DownloadManager
+import com.debanshu777.runner.LlamaRunner
 import org.koin.core.module.Module
 import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module
@@ -25,9 +26,12 @@ val appModule = module {
 
     single { createHuggingFaceApi() }
 
+    single { LlamaRunner() }
+
     single<InferenceRepository> {
         LlamaInferenceRepository(
-            storagePathProvider = get()
+            storagePathProvider = get(),
+            runner = get()
         )
     }
 

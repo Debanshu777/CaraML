@@ -14,29 +14,26 @@ import kotlinx.coroutines.withContext
 
 class LlamaInferenceRepository(
     private val storagePathProvider: StoragePathProvider,
+    private val runner: LlamaRunner,
 ) : InferenceRepository {
 
-    private val inferenceDispatcher = Dispatchers.IO.limitedParallelism(1)
-    private val runner = LlamaRunner()
-
     override suspend fun loadModel(model: LocalModelEntity): ModelLoadResult =
-        withContext(inferenceDispatcher) {
             try {
                 runner.unloadModel()
 
                 val modelPath = resolveModelPath(model)
                 if (modelPath.isBlank()) {
-                    return@withContext ModelLoadResult.Error("Model path is invalid")
+                    return ModelLoadResult.Error("Model path is invalid")
                 }
                 if (!storagePathProvider.isModelFileReadable(modelPath)) {
-                    return@withContext ModelLoadResult.Error(
+                    return ModelLoadResult.Error(
                         "Model file not found or not readable. It may have been moved or deleted."
                     )
                 }
 
                 val nativeLibDir = PlatformPaths.getNativeLibDir()
                 if (nativeLibDir.isBlank()) {
-                    return@withContext ModelLoadResult.Error(
+                    return ModelLoadResult.Error(
                         "Failed to initialize. Please restart the app."
                     )
                 }
@@ -48,14 +45,14 @@ class LlamaInferenceRepository(
                 )
 
                 if (!loaded) {
-                    return@withContext ModelLoadResult.Error(
+                    return ModelLoadResult.Error(
                         "Failed to load model. The file may be corrupted or unsupported."
                     )
                 }
 
                 val spRet = runner.processSystemPrompt("You are a helpful assistant.")
                 if (spRet != 0) {
-                    return@withContext ModelLoadResult.Error(
+                    return ModelLoadResult.Error(
                         "Failed to initialize conversation context."
                     )
                 }
@@ -64,15 +61,12 @@ class LlamaInferenceRepository(
             } catch (e: Exception) {
                 ModelLoadResult.Error("An error occurred while loading the model: ${e.message}")
             }
-        }
 
     override suspend fun unloadCurrentModel() {
-        withContext(inferenceDispatcher) {
             try {
                 runner.unloadModel()
             } catch (_: Exception) {
             }
-        }
     }
 
     override fun generateResponse(userPrompt: String, predictLength: Int): Flow<String> = flow {
@@ -87,7 +81,7 @@ class LlamaInferenceRepository(
         } finally {
             runner.finalizeGeneration()
         }
-    }.flowOn(inferenceDispatcher)
+    }
 
     override fun cancelGeneration() {
         runner.cancelGenerate()

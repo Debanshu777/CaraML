@@ -9,6 +9,8 @@ import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
 import com.debanshu777.caraml.features.chat.data.ChatMessage
 import com.debanshu777.caraml.features.chat.data.MessageRole
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -16,6 +18,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -116,6 +119,7 @@ class ChatViewModel(
             try {
                 inferenceRepository.generateResponse(userMessage.text)
                     .conflate()
+                    .flowOn(Dispatchers.IO)
                     .collect { token ->
                         _uiState.update { state ->
                             if (state is ChatUiState.Ready) {
@@ -131,7 +135,7 @@ class ChatViewModel(
             } catch (e: CancellationException) {
                 wasCancelled = true
                 throw e
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 _uiState.update { state ->
                     if (state is ChatUiState.Ready) {
                         val messages = state.messages.toMutableList()
