@@ -92,13 +92,6 @@ class LlamaInferenceRepository(
         )
     }
 
-    override suspend fun unloadCurrentModel() {
-            try {
-                runner.unloadModel()
-            } catch (_: Exception) {
-            }
-    }
-
     override fun generateResponse(userPrompt: String, predictLength: Int): Flow<String> = flow {
         val ret = runner.processUserPrompt(userPrompt, predictLength)
         if (ret != 0) {
@@ -113,16 +106,12 @@ class LlamaInferenceRepository(
         }
     }
 
-    override fun cancelGeneration() {
-        runner.cancelGenerate()
+    override fun unloadModel() {
+        runner.unloadModel()
     }
 
-    override fun shutdown() {
-        try {
-            runner.unloadModel()
-            runner.shutdown()
-        } catch (_: Exception) {
-        }
+    override fun cancelGeneration() {
+        runner.cancelGenerate()
     }
 
     override fun getContextUsed(): Int {

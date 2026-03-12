@@ -4,6 +4,11 @@ import com.debanshu777.caraml.core.domain.InferenceRepository
 import com.debanshu777.caraml.core.domain.LlamaInferenceRepository
 import com.debanshu777.caraml.core.storage.AppDatabase
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
+import com.debanshu777.caraml.features.chat.domain.ChatConfig
+import com.debanshu777.caraml.features.chat.domain.usecase.GenerateResponseUseCase
+import com.debanshu777.caraml.features.chat.domain.usecase.GetAvailableModelsUseCase
+import com.debanshu777.caraml.features.chat.domain.usecase.ManageContextUseCase
+import com.debanshu777.caraml.features.chat.domain.usecase.TrackModelUsageUseCase
 import com.debanshu777.caraml.features.chat.presentation.ChatViewModel
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.DownloadedModelsViewModel
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelViewModel
@@ -35,6 +40,13 @@ val appModule = module {
         )
     }
 
+    single { ChatConfig() }
+
+    factory { GetAvailableModelsUseCase(get(), get()) }
+    factory { GenerateResponseUseCase(get()) }
+    factory { ManageContextUseCase(get(), get()) }
+    factory { TrackModelUsageUseCase(get()) }
+
     viewModel { 
         ModelViewModel(
             api = get(),
@@ -50,7 +62,10 @@ val appModule = module {
     }
     viewModel {
         ChatViewModel(
-            localModelRepository = get(),
+            getAvailableModels = get(),
+            generateResponse = get(),
+            manageContext = get(),
+            trackModelUsage = get(),
             inferenceRepository = get()
         )
     }

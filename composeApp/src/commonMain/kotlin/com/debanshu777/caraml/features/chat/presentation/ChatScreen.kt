@@ -83,6 +83,8 @@ fun ChatScreenContent(
                     ChatMessageList(
                         messages = state.messages,
                         listState = listState,
+                        streamingMessageId = state.streamingMessageId,
+                        streamingText = state.streamingText,
                         modifier = Modifier.weight(1f)
                     )
 

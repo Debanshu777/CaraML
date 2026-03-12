@@ -19,6 +19,8 @@ import com.debanshu777.caraml.features.chat.data.ChatMessage
 fun ChatMessageList(
     messages: List<ChatMessage>,
     listState: LazyListState,
+    streamingMessageId: String? = null,
+    streamingText: String = "",
     modifier: Modifier = Modifier
 ) {
     if (messages.isEmpty()) {
@@ -46,7 +48,12 @@ fun ChatMessageList(
                 items = messages,
                 key = { it.id }
             ) { message ->
-                MessageBubble(message)
+                val displayMessage = if (message.id == streamingMessageId && streamingText.isNotEmpty()) {
+                    message.copy(text = streamingText)
+                } else {
+                    message
+                }
+                MessageBubble(displayMessage)
             }
         }
     }
