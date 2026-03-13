@@ -18,6 +18,7 @@ data class ListModelsParams(
     val minParams: ParameterRange = ParameterRange.ZERO,
     val maxParams: ParameterRange = ParameterRange.SIX_B,
     val library: List<String> = DEFAULT_LIBRARY,
+    val apps: List<String> = DEFAULT_APP,
     val sort: ModelSort = ModelSort.TRENDING,
     val page: Int = 0,
     val withCount: Boolean = true
@@ -32,6 +33,7 @@ data class ListModelsParams(
     }
 
     companion object {
-        private val DEFAULT_LIBRARY = listOf("gguf", "onnx")
+        private val DEFAULT_LIBRARY = listOf("gguf")
+        private val DEFAULT_APP = listOf("llama.cpp")
     }
 }

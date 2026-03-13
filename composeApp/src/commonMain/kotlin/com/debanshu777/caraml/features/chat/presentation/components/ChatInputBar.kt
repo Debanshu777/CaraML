@@ -1,5 +1,7 @@
 package com.debanshu777.caraml.features.chat.presentation.components
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -32,6 +34,7 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,8 +42,122 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
+import com.debanshu777.caraml.features.chat.data.LiveGenerationStats
+import com.debanshu777.caraml.features.chat.presentation.components.preview.providers.LiveGenerationStatsPreviewProvider
+import com.debanshu777.caraml.features.chat.presentation.components.preview.providers.LocalModelPreviewProvider
+import kotlinx.coroutines.delay
+
+@Preview
+@Composable
+private fun ChatInputBarPreview(
+    @PreviewParameter(LocalModelPreviewProvider::class) selectedModel: LocalModelEntity
+) {
+    MaterialTheme {
+        Surface {
+            ChatInputBar(
+                isGenerating = false,
+                selectedModel = selectedModel,
+                topModels = listOf(selectedModel),
+                onSelectModel = {},
+                onDownloadModelClick = {},
+                onSendMessage = {},
+                onCancelGeneration = {},
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}
+
+@Preview(name = "No Model")
+@Composable
+private fun ChatInputBarNoModelPreview() {
+    MaterialTheme {
+        Surface {
+            ChatInputBar(
+                isGenerating = false,
+                selectedModel = null,
+                topModels = emptyList(),
+                onSelectModel = {},
+                onDownloadModelClick = {},
+                onSendMessage = {},
+                onCancelGeneration = {},
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}
+
+@Preview(name = "Generating")
+@Composable
+private fun ChatInputBarGeneratingPreview() {
+    val model = LocalModelPreviewProvider().values.first()
+    val stats = LiveGenerationStatsPreviewProvider().values.first()
+    MaterialTheme {
+        Surface {
+            ChatInputBar(
+                isGenerating = true,
+                selectedModel = model,
+                topModels = listOf(model),
+                onSelectModel = {},
+                onDownloadModelClick = {},
+                onSendMessage = {},
+                onCancelGeneration = {},
+                liveStats = stats,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}
+
+@Composable
+private fun ContextProgressIndicator(
+    contextUsed: Int,
+    contextLimit: Int,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    LaunchedEffect(expanded) {
+        if (expanded) {
+            delay(3000)
+            expanded = false
+        }
+    }
+
+    val progress = if (contextLimit > 0) {
+        (contextUsed.toFloat() / contextLimit).coerceIn(0f, 1f)
+    } else {
+        0f
+    }
+    val percent = if (contextLimit > 0) contextUsed * 100 / contextLimit else 0
+
+    Row(
+        modifier = modifier
+            .clickable { expanded = !expanded }
+            .animateContentSize(animationSpec = tween(300)),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        androidx.compose.material3.CircularProgressIndicator(
+            progress = { progress },
+            modifier = Modifier.size(24.dp),
+            strokeWidth = 2.dp
+        )
+        if (expanded) {
+            Text(
+                text = "$contextUsed/$contextLimit ($percent%)",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,6 +169,7 @@ fun ChatInputBar(
     onDownloadModelClick: () -> Unit,
     onSendMessage: (String) -> Unit,
     onCancelGeneration: () -> Unit,
+    liveStats: LiveGenerationStats? = null,
     modifier: Modifier = Modifier
 ) {
     var inputText by remember { mutableStateOf("") }
@@ -92,58 +210,69 @@ fun ChatInputBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                IconButton(onClick = { }) {
+                if (liveStats != null) {
+                    ContextProgressIndicator(
+                        contextUsed = liveStats.contextUsed,
+                        contextLimit = liveStats.contextLimit,
+                        modifier = Modifier.align(Alignment.CenterVertically)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                }
+                IconButton(
+                    modifier = Modifier.weight(1f),
+                    onClick = { }
+                ) {
                     Icon(
                         imageVector = Icons.Default.Add,
                         contentDescription = "Add attachment"
                     )
                 }
-
+                Spacer(modifier = Modifier.width(4.dp))
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    modifier = Modifier.weight(8f).clickable { showModelSheet = true },
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier.clickable { showModelSheet = true },
-                        verticalAlignment = Alignment.CenterVertically
+                    Text(
+                        modifier = Modifier.weight(7f),
+                        text = selectedModel?.modelId?.substringAfterLast("/") ?: "Select Model",
+                        style = MaterialTheme.typography.bodyMedium,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.End,
+                        maxLines = 1
+                    )
+                    Icon(
+                        modifier = Modifier.weight(1f),
+                        imageVector = Icons.Default.ArrowDropDown,
+                        contentDescription = "Select model"
+                    )
+                }
+                Spacer(modifier = Modifier.width(4.dp))
+                if (isGenerating) {
+                    IconButton(
+                        modifier = Modifier.weight(1f),
+                        onClick = onCancelGeneration,
+                        enabled = true
                     ) {
-                        Text(
-                            text = selectedModel?.modelId?.substringAfterLast("/") ?: "Select Model",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
                         Icon(
-                            imageVector = Icons.Default.ArrowDropDown,
-                            contentDescription = "Select model"
+                            imageVector = Icons.Default.Stop,
+                            contentDescription = "Stop generating"
                         )
                     }
-
-                    Spacer(modifier = Modifier.width(4.dp))
-
-                    if (isGenerating) {
-                        IconButton(
-                            onClick = onCancelGeneration,
-                            enabled = true
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Stop,
-                                contentDescription = "Stop generating"
-                            )
-                        }
-                    } else {
-                        IconButton(
-                            onClick = {
-                                if (inputText.isNotBlank()) {
-                                    onSendMessage(inputText)
-                                    inputText = ""
-                                }
-                            },
-                            enabled = inputText.isNotBlank()
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.Send,
-                                contentDescription = "Send message"
-                            )
-                        }
+                } else {
+                    IconButton(
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            if (inputText.isNotBlank()) {
+                                onSendMessage(inputText)
+                                inputText = ""
+                            }
+                        },
+                        enabled = inputText.isNotBlank()
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Send,
+                            contentDescription = "Send message"
+                        )
                     }
                 }
             }

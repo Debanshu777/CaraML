@@ -62,7 +62,7 @@ fun ChatScreenContent(
     Column(modifier = modifier.fillMaxSize()) {
         ModelSelectorTopBar()
 
-        when (val state = uiState) {
+        when (uiState) {
             is ChatUiState.NoModels -> {
                 NoModelsScreen(onDownloadModelClick = onNavigateToSearch)
             }
@@ -73,7 +73,7 @@ fun ChatScreenContent(
 
             is ChatUiState.ModelError -> {
                 ModelErrorScreen(
-                    errorMessage = state.message,
+                    errorMessage = uiState.message,
                     onTryAnotherModelClick = onNavigateToSearch
                 )
             }
@@ -81,25 +81,26 @@ fun ChatScreenContent(
             is ChatUiState.Ready -> {
                 Column(modifier = Modifier.fillMaxSize()) {
                     ChatMessageList(
-                        messages = state.messages,
+                        messages = uiState.messages,
                         listState = listState,
-                        streamingMessageId = state.streamingMessageId,
-                        streamingText = state.streamingText,
+                        streamingMessageId = uiState.streamingMessageId,
+                        streamingText = uiState.streamingText,
                         modifier = Modifier.weight(1f)
                     )
 
-                    if (state.isGenerating && state.liveStats != null) {
-                        GenerationStatsBar(stats = state.liveStats)
+                    if (uiState.isGenerating && uiState.liveStats != null) {
+                        GenerationStatsBar(stats = uiState.liveStats)
                     }
 
                     ChatInputBar(
-                        isGenerating = state.isGenerating,
+                        isGenerating = uiState.isGenerating,
                         selectedModel = selectedModel,
                         topModels = topModels,
                         onSelectModel = onSelectModel,
                         onDownloadModelClick = onNavigateToSearch,
                         onSendMessage = onSendMessage,
-                        onCancelGeneration = onCancelGeneration
+                        onCancelGeneration = onCancelGeneration,
+                        liveStats = uiState.liveStats
                     )
                 }
             }

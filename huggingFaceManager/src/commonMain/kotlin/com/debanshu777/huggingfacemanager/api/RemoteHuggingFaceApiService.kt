@@ -27,6 +27,7 @@ class RemoteHuggingFaceApiService(
                     "min:${params.minParams.apiValue},max:${params.maxParams.apiValue}"
                 )
                 append("library", params.library.joinToString(","))
+                append("apps", params.apps.joinToString(","))
                 append("sort", params.sort.apiValue)
                 append("withCount", params.withCount.toString())
                 append("p", params.page.toString())

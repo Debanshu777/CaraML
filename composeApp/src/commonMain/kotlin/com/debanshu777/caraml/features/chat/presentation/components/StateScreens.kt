@@ -9,12 +9,51 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.features.chat.presentation.components.preview.providers.ErrorMessagePreviewProvider
+
+@Preview
+@Composable
+private fun NoModelsScreenPreview() {
+    MaterialTheme {
+        Surface(modifier = Modifier.fillMaxSize()) {
+            NoModelsScreen(onDownloadModelClick = {})
+        }
+    }
+}
+
+@Preview
+@Composable
+private fun ModelLoadingScreenPreview() {
+    MaterialTheme {
+        Surface(modifier = Modifier.fillMaxSize()) {
+            ModelLoadingScreen()
+        }
+    }
+}
+
+@Preview
+@Composable
+private fun ModelErrorScreenPreview(
+    @PreviewParameter(ErrorMessagePreviewProvider::class) errorMessage: String
+) {
+    MaterialTheme {
+        Surface(modifier = Modifier.fillMaxSize()) {
+            ModelErrorScreen(
+                errorMessage = errorMessage,
+                onTryAnotherModelClick = {}
+            )
+        }
+    }
+}
 
 @Composable
 fun NoModelsScreen(
