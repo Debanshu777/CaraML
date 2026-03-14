@@ -88,6 +88,7 @@ kotlin {
             implementation(libs.androidx.sqlite.bundled)
             implementation(libs.navigation3.compose.ui)
             implementation(libs.navigation3.viewmodel)
+            implementation(libs.kotlinx.collections.immutable)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

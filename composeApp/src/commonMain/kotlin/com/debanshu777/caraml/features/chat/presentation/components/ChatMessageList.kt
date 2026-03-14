@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -18,13 +19,27 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.debanshu777.caraml.features.chat.data.ChatMessage
+import com.debanshu777.caraml.features.chat.presentation.StreamingState
 import com.debanshu777.caraml.features.chat.presentation.components.providers.ChatMessageListPreviewProvider
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.coroutines.flow.StateFlow
+
+@Composable
+private fun StreamingMessageBubble(
+    message: ChatMessage,
+    streamingStateFlow: StateFlow<StreamingState>,
+) {
+    val streamingState by streamingStateFlow.collectAsStateWithLifecycle()
+    val displayText = streamingState.streamingText.takeIf { it.isNotEmpty() } ?: message.text
+    MessageBubble(message.copy(text = displayText))
+}
 
 @Preview
 @Composable
 private fun ChatMessageListPreview(
-    @PreviewParameter(ChatMessageListPreviewProvider::class) messages: List<ChatMessage>
+    @PreviewParameter(ChatMessageListPreviewProvider::class) messages: ImmutableList<ChatMessage>
 ) {
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
@@ -39,10 +54,10 @@ private fun ChatMessageListPreview(
 
 @Composable
 fun ChatMessageList(
-    messages: List<ChatMessage>,
+    messages: ImmutableList<ChatMessage>,
     listState: LazyListState,
     streamingMessageId: String? = null,
-    streamingText: String = "",
+    streamingStateFlow: StateFlow<StreamingState>? = null,
     modifier: Modifier = Modifier
 ) {
     if (messages.isEmpty()) {
@@ -70,12 +85,14 @@ fun ChatMessageList(
                 items = messages,
                 key = { it.id }
             ) { message ->
-                val displayMessage = if (message.id == streamingMessageId && streamingText.isNotEmpty()) {
-                    message.copy(text = streamingText)
+                if (message.id == streamingMessageId && streamingStateFlow != null) {
+                    StreamingMessageBubble(
+                        message = message,
+                        streamingStateFlow = streamingStateFlow
+                    )
                 } else {
-                    message
+                    MessageBubble(message)
                 }
-                MessageBubble(displayMessage)
             }
         }
     }

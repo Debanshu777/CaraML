@@ -6,6 +6,7 @@ android-minSdk = "24"
 android-targetSdk = "36"
 androidx-activity = "1.12.4"
 androidx-lifecycle = "2.10.0-alpha08"
+kotlinxCollectionsImmutable = "0.4.0"
 navigation = "1.0.0-alpha06"
 composeHotReload = "1.0.0"
 composeMultiplatform = "1.10.1"
@@ -35,6 +36,7 @@ compose-material3 = { module = "org.jetbrains.compose.material3:material3", vers
 compose-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "composeMultiplatform" }
 compose-components-resources = { module = "org.jetbrains.compose.components:components-resources", version.ref = "composeMultiplatform" }
 compose-uiToolingPreview = { module = "org.jetbrains.compose.ui:ui-tooling-preview", version.ref = "composeMultiplatform" }
+kotlinx-collections-immutable = { module = "org.jetbrains.kotlinx:kotlinx-collections-immutable", version.ref = "kotlinxCollectionsImmutable" }
 kotlinx-coroutinesSwing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }
 icons-extended = { group = "org.jetbrains.compose.material", name = "material-icons-extended", version.ref = "compose-icon" }
 

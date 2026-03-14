@@ -14,6 +14,9 @@ import com.debanshu777.caraml.features.chat.domain.usecase.GetAvailableModelsUse
 import com.debanshu777.caraml.features.chat.domain.usecase.ManageContextUseCase
 import com.debanshu777.caraml.features.chat.domain.usecase.TrackModelUsageUseCase
 import com.debanshu777.runner.StopReason
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -22,9 +25,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -39,26 +44,38 @@ class ChatViewModel(
     private val inferenceRepository: InferenceRepository,
 ) : ViewModel() {
 
-    val topModels: StateFlow<List<LocalModelEntity>> =
+    private val _topModels: StateFlow<ImmutableList<LocalModelEntity>> =
         getAvailableModels()
             .stateIn(
-                scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5000),
-                initialValue = emptyList()
-            )
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = persistentListOf()
+        )
 
     private val _selectedModel = MutableStateFlow<LocalModelEntity?>(null)
-    val selectedModel: StateFlow<LocalModelEntity?> = _selectedModel.asStateFlow()
 
     private val _uiState = MutableStateFlow<ChatUiState>(ChatUiState.NoModels)
-    val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
+
+    val uiState: StateFlow<ChatUiState> = combine(
+        _uiState, _selectedModel, _topModels
+    ) { state, selected, models ->
+        if (state is ChatUiState.Ready) state.copy(selectedModel = selected, topModels = models)
+        else state
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = ChatUiState.NoModels
+    )
+
+    private val _streamingState = MutableStateFlow(StreamingState())
+    val streamingState: StateFlow<StreamingState> = _streamingState.asStateFlow()
 
     private var modelLoadJob: Job? = null
     private var generationJob: Job? = null
 
     init {
-        topModels
-            .onEach { models ->
+        _topModels
+            .map { models ->
                 if (models.isEmpty()) {
                     _uiState.value = ChatUiState.NoModels
                 } else if (_selectedModel.value == null) {
@@ -87,6 +104,7 @@ class ChatViewModel(
     private fun loadModel(model: LocalModelEntity) {
         modelLoadJob?.cancel()
         generationJob?.cancel()
+        _streamingState.value = StreamingState()
 
         _uiState.value = ChatUiState.ModelLoading
 
@@ -138,12 +156,11 @@ class ChatViewModel(
     }
 
     private fun appendMessages(userMessage: ChatMessage, assistantMessage: ChatMessage) {
+        _streamingState.value = StreamingState(streamingMessageId = assistantMessage.id)
         _uiState.update { state ->
             if (state is ChatUiState.Ready) {
                 state.copy(
-                    messages = state.messages + userMessage + assistantMessage,
-                    streamingText = "",
-                    streamingMessageId = assistantMessage.id,
+                    messages = (state.messages + userMessage + assistantMessage).toImmutableList(),
                     isGenerating = true
                 )
             } else state
@@ -151,21 +168,17 @@ class ChatViewModel(
     }
 
     private fun updateStreamingState(accumulatedText: String, liveStats: LiveGenerationStats) {
-        _uiState.update { state ->
-            if (state is ChatUiState.Ready) {
-                state.copy(
-                    streamingText = accumulatedText,
-                    isGenerating = true,
-                    liveStats = liveStats
-                )
-            } else state
-        }
+        _streamingState.value = StreamingState(
+            streamingText = accumulatedText,
+            streamingMessageId = _streamingState.value.streamingMessageId,
+            liveStats = liveStats
+        )
     }
 
     private fun finalizeMessage(assistantMessageId: String, result: GenerationResult) {
+        val finalText = _streamingState.value.streamingText
         _uiState.update { state ->
             if (state is ChatUiState.Ready) {
-                val finalText = state.streamingText
                 val messages = state.messages.toMutableList()
                 val idx = messages.indexOfLast { it.id == assistantMessageId }
                 if (idx >= 0) {
@@ -175,14 +188,12 @@ class ChatViewModel(
                     )
                 }
                 state.copy(
-                    messages = messages,
-                    streamingText = "",
-                    streamingMessageId = null,
-                    isGenerating = false,
-                    liveStats = null
+                    messages = messages.toImmutableList(),
+                    isGenerating = false
                 )
             } else state
         }
+        _streamingState.value = StreamingState()
     }
 
     private fun finalizeWithError(assistantMessageId: String) {
@@ -196,14 +207,12 @@ class ChatViewModel(
                     )
                 }
                 state.copy(
-                    messages = messages,
-                    streamingText = "",
-                    streamingMessageId = null,
-                    isGenerating = false,
-                    liveStats = null
+                    messages = messages.toImmutableList(),
+                    isGenerating = false
                 )
             } else state
         }
+        _streamingState.value = StreamingState()
     }
 
     private suspend fun handleContextReset(messages: List<ChatMessage>) {
@@ -222,7 +231,7 @@ class ChatViewModel(
 
         _uiState.update { state ->
             if (state is ChatUiState.Ready) {
-                state.copy(messages = state.messages + progressMessage)
+                state.copy(messages = (state.messages + progressMessage).toImmutableList())
             } else state
         }
 
@@ -237,12 +246,18 @@ class ChatViewModel(
                 if (idx >= 0) {
                     messages[idx] = messages[idx].copy(text = newText)
                 }
-                state.copy(messages = messages)
+                state.copy(messages = messages.toImmutableList())
             } else state
         }
     }
 
     fun cancelGeneration() {
+        _uiState.update { state ->
+            if (state is ChatUiState.Ready) {
+                state.copy(isGenerating = false)
+            } else state
+        }
+        _streamingState.value = StreamingState()
         inferenceRepository.cancelGeneration()
         generationJob?.cancel()
     }

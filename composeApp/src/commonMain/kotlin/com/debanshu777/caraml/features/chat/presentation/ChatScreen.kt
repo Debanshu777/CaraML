@@ -1,15 +1,18 @@
 package com.debanshu777.caraml.features.chat.presentation
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.flow.StateFlow
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.features.chat.presentation.components.ChatInputBar
+import com.debanshu777.caraml.features.chat.presentation.components.ContextStatsIndicator
 import com.debanshu777.caraml.features.chat.presentation.components.ChatMessageList
 import com.debanshu777.caraml.features.chat.presentation.components.GenerationStatsBar
 import com.debanshu777.caraml.features.chat.presentation.components.ModelErrorScreen
@@ -23,18 +26,20 @@ fun ChatScreen(
     onNavigateToSearch: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val topModels by viewModel.topModels.collectAsState()
-    val selectedModel by viewModel.selectedModel.collectAsState()
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val streamingState by viewModel.streamingState.collectAsStateWithLifecycle()
 
     ChatScreenContent(
         uiState = uiState,
-        topModels = topModels,
-        selectedModel = selectedModel,
+        streamingState = streamingState,
+        streamingStateFlow = viewModel.streamingState,
         onSelectModel = viewModel::selectModel,
         onSendMessage = viewModel::sendMessage,
         onCancelGeneration = viewModel::cancelGeneration,
         onNavigateToSearch = onNavigateToSearch,
+        contextIndicator = {
+            ContextStatsIndicator(streamingStateFlow = viewModel.streamingState)
+        },
         modifier = modifier
     )
 }
@@ -42,12 +47,13 @@ fun ChatScreen(
 @Composable
 fun ChatScreenContent(
     uiState: ChatUiState,
-    topModels: List<LocalModelEntity>,
-    selectedModel: LocalModelEntity?,
+    streamingState: StreamingState,
+    streamingStateFlow: StateFlow<StreamingState>? = null,
     onSelectModel: (LocalModelEntity) -> Unit,
     onSendMessage: (String) -> Unit,
     onCancelGeneration: () -> Unit,
     onNavigateToSearch: () -> Unit,
+    contextIndicator: @Composable RowScope.() -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
@@ -83,24 +89,24 @@ fun ChatScreenContent(
                     ChatMessageList(
                         messages = uiState.messages,
                         listState = listState,
-                        streamingMessageId = uiState.streamingMessageId,
-                        streamingText = uiState.streamingText,
+                        streamingMessageId = streamingState.streamingMessageId,
+                        streamingStateFlow = streamingStateFlow,
                         modifier = Modifier.weight(1f)
                     )
 
-                    if (uiState.isGenerating && uiState.liveStats != null) {
-                        GenerationStatsBar(stats = uiState.liveStats)
+                    if (uiState.isGenerating && streamingState.liveStats != null) {
+                        GenerationStatsBar(stats = streamingState.liveStats)
                     }
 
                     ChatInputBar(
                         isGenerating = uiState.isGenerating,
-                        selectedModel = selectedModel,
-                        topModels = topModels,
+                        selectedModel = uiState.selectedModel,
+                        topModels = uiState.topModels,
                         onSelectModel = onSelectModel,
                         onDownloadModelClick = onNavigateToSearch,
                         onSendMessage = onSendMessage,
                         onCancelGeneration = onCancelGeneration,
-                        liveStats = uiState.liveStats
+                        contextIndicator = contextIndicator
                     )
                 }
             }

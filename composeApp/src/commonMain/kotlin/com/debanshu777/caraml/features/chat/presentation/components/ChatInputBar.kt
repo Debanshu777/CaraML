@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -47,11 +48,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.features.chat.data.LiveGenerationStats
+import com.debanshu777.caraml.features.chat.presentation.StreamingState
 import com.debanshu777.caraml.features.chat.presentation.components.providers.LiveGenerationStatsPreviewProvider
 import com.debanshu777.caraml.features.chat.presentation.components.providers.LocalModelPreviewProvider
+import kotlinx.collections.immutable.ImmutableList
+import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.StateFlow
 
 @Preview
 @Composable
@@ -63,7 +69,7 @@ private fun ChatInputBarPreview(
             ChatInputBar(
                 isGenerating = false,
                 selectedModel = selectedModel,
-                topModels = listOf(selectedModel),
+                topModels = persistentListOf(selectedModel),
                 onSelectModel = {},
                 onDownloadModelClick = {},
                 onSendMessage = {},
@@ -82,7 +88,7 @@ private fun ChatInputBarNoModelPreview() {
             ChatInputBar(
                 isGenerating = false,
                 selectedModel = null,
-                topModels = emptyList(),
+                topModels = persistentListOf(),
                 onSelectModel = {},
                 onDownloadModelClick = {},
                 onSendMessage = {},
@@ -103,12 +109,19 @@ private fun ChatInputBarGeneratingPreview() {
             ChatInputBar(
                 isGenerating = true,
                 selectedModel = model,
-                topModels = listOf(model),
+                topModels = persistentListOf(model),
                 onSelectModel = {},
                 onDownloadModelClick = {},
                 onSendMessage = {},
                 onCancelGeneration = {},
-                liveStats = stats,
+                contextIndicator = {
+                    ContextProgressIndicator(
+                        contextUsed = stats.contextUsed,
+                        contextLimit = stats.contextLimit,
+                        modifier = Modifier.align(Alignment.CenterVertically)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                },
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -159,17 +172,33 @@ private fun ContextProgressIndicator(
     }
 }
 
+@Composable
+fun RowScope.ContextStatsIndicator(
+    streamingStateFlow: StateFlow<StreamingState>,
+) {
+    val state by streamingStateFlow.collectAsStateWithLifecycle()
+    val liveStats = state.liveStats
+    if (liveStats != null) {
+        ContextProgressIndicator(
+            contextUsed = liveStats.contextUsed,
+            contextLimit = liveStats.contextLimit,
+            modifier = Modifier.align(Alignment.CenterVertically)
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatInputBar(
     isGenerating: Boolean,
     selectedModel: LocalModelEntity?,
-    topModels: List<LocalModelEntity>,
+    topModels: ImmutableList<LocalModelEntity>,
     onSelectModel: (LocalModelEntity) -> Unit,
     onDownloadModelClick: () -> Unit,
     onSendMessage: (String) -> Unit,
     onCancelGeneration: () -> Unit,
-    liveStats: LiveGenerationStats? = null,
+    contextIndicator: @Composable RowScope.() -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var inputText by remember { mutableStateOf("") }
@@ -210,14 +239,7 @@ fun ChatInputBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                if (liveStats != null) {
-                    ContextProgressIndicator(
-                        contextUsed = liveStats.contextUsed,
-                        contextLimit = liveStats.contextLimit,
-                        modifier = Modifier.align(Alignment.CenterVertically)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                }
+                contextIndicator()
                 IconButton(
                     modifier = Modifier.weight(1f),
                     onClick = { }
