@@ -63,8 +63,7 @@ private fun StatChip(
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(12.dp),
-        tonalElevation = 1.dp,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        tonalElevation = 2.dp
     ) {
         Text(
             text = label,

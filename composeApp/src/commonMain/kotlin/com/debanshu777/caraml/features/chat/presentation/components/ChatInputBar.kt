@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -157,7 +158,7 @@ private fun ContextProgressIndicator(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        androidx.compose.material3.CircularProgressIndicator(
+        CircularProgressIndicator(
             progress = { progress },
             modifier = Modifier.size(24.dp),
             strokeWidth = 2.dp
@@ -208,7 +209,7 @@ fun ChatInputBar(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .padding(16.dp),
+            .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
         shape = RoundedCornerShape(16.dp),
         tonalElevation = 2.dp
     ) {
