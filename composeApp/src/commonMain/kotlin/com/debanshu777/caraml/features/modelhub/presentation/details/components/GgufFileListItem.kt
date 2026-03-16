@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Download
@@ -12,6 +13,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -28,46 +30,52 @@ fun GgufFileListItem(
     onDownloadClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Row(
-        modifier = modifier.fillMaxWidth().padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        tonalElevation = 1.dp,
+        modifier = modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = if (filename.length > 40) filename.take(37) + "..." else filename,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                    modifier = Modifier.weight(1f)
-                )
-                if (sizeBytes != null) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        formatFileSize(sizeBytes),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = if (filename.length > 40) filename.take(37) + "..." else filename,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        modifier = Modifier.weight(1f)
                     )
+                    if (sizeBytes != null) {
+                        Text(
+                            formatFileSize(sizeBytes),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                if (progress != null && progress >= 0) {
+                    LinearProgressIndicator(
+                        progress = { progress / 100f },
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                    )
+                    Text("${progress.toInt()}%", style = MaterialTheme.typography.labelSmall)
                 }
             }
-            if (progress != null && progress >= 0) {
-                LinearProgressIndicator(
-                    progress = { progress / 100f },
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+            if (isDownloaded) {
+                Icon(
+                    Icons.Default.Check,
+                    contentDescription = "Downloaded",
+                    tint = MaterialTheme.colorScheme.primary
                 )
-                Text("${progress.toInt()}%", style = MaterialTheme.typography.labelSmall)
+            } else {
+                IconButton(onClick = onDownloadClick, enabled = !isDownloading) {
+                    Icon(Icons.Default.Download, contentDescription = "Download")
+                }
             }
-        }
-        if (isDownloaded) {
-            Icon(
-                Icons.Default.Check,
-                contentDescription = "Downloaded",
-                tint = MaterialTheme.colorScheme.primary
-            )
-        } else {
-            IconButton(onClick = onDownloadClick, enabled = !isDownloading) {
-                Icon(Icons.Default.Download, contentDescription = "Download")
-            }
-        }
+    }
     }
 }
 
