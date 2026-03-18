@@ -22,6 +22,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -37,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.drawer.LocalDrawerController
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.DownloadedModelsViewModel
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.components.LocalModelListItem
@@ -54,6 +60,7 @@ fun SearchScreen(
     onNavigateToDetails: (String) -> Unit,
     onSelectModelAndGoBack: (LocalModelEntity) -> Unit,
     onBack: () -> Unit,
+    isRootDestination: Boolean,
     modifier: Modifier = Modifier
 ) {
     var selectedTabIndex by remember { mutableStateOf(0) }
@@ -61,39 +68,50 @@ fun SearchScreen(
 
     val storageInfo by modelViewModel.storageInfo.collectAsState()
 
-    Column(modifier = modifier.fillMaxSize()) {
-        TopAppBar(
-            title = { Text("Models") },
-            navigationIcon = {
-                TextButton(onClick = onBack) {
-                    Text("← Back")
+    val drawerController = LocalDrawerController.current
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Models") },
+                navigationIcon = {
+                    if (isRootDestination) {
+                        IconButton(onClick = { drawerController.toggle() }) {
+                            Icon(Icons.Default.Menu, contentDescription = "Open menu")
+                        }
+                    } else {
+                        TextButton(onClick = onBack) {
+                            Text("← Back")
+                        }
+                    }
+                }
+            )
+        }
+    ) { paddingValues ->
+        Column(modifier = Modifier.padding(paddingValues)) {
+            StorageInfoBar(storageInfo = storageInfo)
+            PrimaryTabRow(selectedTabIndex = selectedTabIndex) {
+                tabs.forEachIndexed { index, title ->
+                    Tab(
+                        selected = selectedTabIndex == index,
+                        onClick = { selectedTabIndex = index },
+                        text = { Text(title) }
+                    )
                 }
             }
-        )
 
-        StorageInfoBar(storageInfo = storageInfo)
-
-        PrimaryTabRow(selectedTabIndex = selectedTabIndex) {
-            tabs.forEachIndexed { index, title ->
-                Tab(
-                    selected = selectedTabIndex == index,
-                    onClick = { selectedTabIndex = index },
-                    text = { Text(title) }
+            when (selectedTabIndex) {
+                0 -> SearchTabContent(
+                    viewModel = modelViewModel,
+                    onNavigateToDetails = onNavigateToDetails,
+                    modifier = Modifier.fillMaxSize()
+                )
+                1 -> DownloadedTabContent(
+                    viewModel = downloadedModelsViewModel,
+                    onSelectModelAndGoBack = onSelectModelAndGoBack,
+                    modifier = Modifier.fillMaxSize()
                 )
             }
-        }
-
-        when (selectedTabIndex) {
-            0 -> SearchTabContent(
-                viewModel = modelViewModel,
-                onNavigateToDetails = onNavigateToDetails,
-                modifier = Modifier.fillMaxSize()
-            )
-            1 -> DownloadedTabContent(
-                viewModel = downloadedModelsViewModel,
-                onSelectModelAndGoBack = onSelectModelAndGoBack,
-                modifier = Modifier.fillMaxSize()
-            )
         }
     }
 }

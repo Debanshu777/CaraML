@@ -8,6 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.savedstate.serialization.SavedStateConfiguration
+import com.debanshu777.caraml.core.drawer.AppDrawerShell
 import com.debanshu777.caraml.core.navigation.AppScreen
 import com.debanshu777.caraml.core.navigation.NavigationHost
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
@@ -25,6 +26,7 @@ private val config =
                     subclass(AppScreen.Search::class, serializer<AppScreen.Search>())
                     subclass(AppScreen.Details::class, serializer<AppScreen.Details>())
                     subclass(AppScreen.Chat::class, serializer<AppScreen.Chat>())
+                    subclass(AppScreen.Settings::class, serializer<AppScreen.Settings>())
                 }
             }
     }
@@ -34,10 +36,12 @@ fun App() {
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
             val backStack = rememberNavBackStack(config, AppScreen.Home)
-            NavigationHost(
-                modifier = Modifier.fillMaxSize(),
-                backStack = backStack,
-            )
+            AppDrawerShell(backStack = backStack) {
+                NavigationHost(
+                    modifier = Modifier.fillMaxSize(),
+                    backStack = backStack,
+                )
+            }
         }
     }
 }

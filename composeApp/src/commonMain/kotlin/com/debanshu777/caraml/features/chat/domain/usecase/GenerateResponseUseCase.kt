@@ -1,6 +1,6 @@
 package com.debanshu777.caraml.features.chat.domain.usecase
 
-import com.debanshu777.caraml.core.domain.InferenceRepository
+import com.debanshu777.caraml.core.data.Inference.InferenceRepository
 import com.debanshu777.caraml.core.platform.AppLogger
 import com.debanshu777.caraml.features.chat.data.InferenceMetrics
 import com.debanshu777.caraml.features.chat.data.LiveGenerationStats

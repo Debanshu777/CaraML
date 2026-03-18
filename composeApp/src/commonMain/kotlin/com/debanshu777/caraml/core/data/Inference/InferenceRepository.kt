@@ -1,4 +1,4 @@
-package com.debanshu777.caraml.core.domain
+package com.debanshu777.caraml.core.data.Inference
 
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import kotlinx.coroutines.flow.Flow

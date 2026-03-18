@@ -14,6 +14,8 @@ import com.debanshu777.caraml.features.modelhub.presentation.details.DetailsScre
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.DownloadedModelsViewModel
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelViewModel
 import com.debanshu777.caraml.features.modelhub.presentation.search.SearchScreen
+import com.debanshu777.caraml.features.settings.presentation.SettingsScreen
+import com.debanshu777.caraml.features.settings.presentation.SettingsViewModel
 import org.koin.compose.viewmodel.koinViewModel
 
 @Composable
@@ -42,6 +44,7 @@ fun NavigationHost(
                 entry(AppScreen.Search) {
                     val modelViewModel: ModelViewModel = koinViewModel()
                     val downloadedModelsViewModel: DownloadedModelsViewModel = koinViewModel()
+                    val isRootDestination = backStack.size == 1
                     SearchScreen(
                         modelViewModel = modelViewModel,
                         downloadedModelsViewModel = downloadedModelsViewModel,
@@ -51,6 +54,7 @@ fun NavigationHost(
                             backStack.removeLastOrNull()
                         },
                         onBack = { backStack.removeLastOrNull() },
+                        isRootDestination = isRootDestination,
                     )
                 }
                 entry<AppScreen.Details> { key ->
@@ -59,6 +63,15 @@ fun NavigationHost(
                         viewModel = modelViewModel,
                         modelId = key.modelId,
                         onBack = { backStack.removeLastOrNull() },
+                    )
+                }
+                entry(AppScreen.Settings) {
+                    val settingsViewModel: SettingsViewModel = koinViewModel()
+                    val isRootDestination = backStack.size == 1
+                    SettingsScreen(
+                        viewModel = settingsViewModel,
+                        onBack = { backStack.removeLastOrNull() },
+                        isRootDestination = isRootDestination,
                     )
                 }
             },

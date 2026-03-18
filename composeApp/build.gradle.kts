@@ -73,6 +73,8 @@ kotlin {
             implementation(libs.koin.core)
             implementation(libs.koin.compose)
             implementation(libs.koin.compose.viewmodel)
+            implementation(libs.androidx.datastore)
+            implementation(libs.androidx.datastore.preferences)
             implementation(project(":huggingFaceManager"))
             implementation(project(":runner"))
             implementation(libs.compose.runtime)

@@ -1,6 +1,5 @@
 package com.debanshu777.caraml.features.chat.presentation
 
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
@@ -9,15 +8,16 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.debanshu777.caraml.core.drawer.DrawerController
+import com.debanshu777.caraml.core.drawer.LocalDrawerController
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.features.chat.presentation.components.providers.ChatMessageListPreviewProvider
 import com.debanshu777.caraml.features.chat.presentation.components.providers.LiveGenerationStatsPreviewProvider
@@ -71,6 +71,7 @@ fun ChatScreenContent(
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
+    val drawerController = LocalDrawerController.current
 
     val messageCount = (uiState as? ChatUiState.Ready)?.messages?.size ?: 0
     LaunchedEffect(messageCount) {
@@ -79,7 +80,11 @@ fun ChatScreenContent(
         }
     }
     Scaffold(
-        topBar = { ModelSelectorTopBar() },
+        topBar = {
+            ModelSelectorTopBar(
+                onMenuClick = { drawerController.toggle() }
+            )
+        },
         bottomBar = {
             if (uiState is ChatUiState.Ready) {
                 Column {
@@ -142,15 +147,17 @@ fun ChatScreenContent(
 private fun ChatScreenContentNoModelsPreview() {
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
-            ChatScreenContent(
-                uiState = ChatUiState.NoModels,
-                streamingState = StreamingState(),
-                onSelectModel = {},
-                onSendMessage = {},
-                onCancelGeneration = {},
-                onNavigateToSearch = {},
-                modifier = Modifier.fillMaxSize()
-            )
+            CompositionLocalProvider(LocalDrawerController provides remember { DrawerController() }) {
+                ChatScreenContent(
+                    uiState = ChatUiState.NoModels,
+                    streamingState = StreamingState(),
+                    onSelectModel = {},
+                    onSendMessage = {},
+                    onCancelGeneration = {},
+                    onNavigateToSearch = {},
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
     }
 }
@@ -160,15 +167,17 @@ private fun ChatScreenContentNoModelsPreview() {
 private fun ChatScreenContentModelLoadingPreview() {
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
-            ChatScreenContent(
-                uiState = ChatUiState.ModelLoading,
-                streamingState = StreamingState(),
-                onSelectModel = {},
-                onSendMessage = {},
-                onCancelGeneration = {},
-                onNavigateToSearch = {},
-                modifier = Modifier.fillMaxSize()
-            )
+            CompositionLocalProvider(LocalDrawerController provides remember { DrawerController() }) {
+                ChatScreenContent(
+                    uiState = ChatUiState.ModelLoading,
+                    streamingState = StreamingState(),
+                    onSelectModel = {},
+                    onSendMessage = {},
+                    onCancelGeneration = {},
+                    onNavigateToSearch = {},
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
     }
 }
@@ -178,15 +187,17 @@ private fun ChatScreenContentModelLoadingPreview() {
 private fun ChatScreenContentModelErrorPreview() {
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
-            ChatScreenContent(
-                uiState = ChatUiState.ModelError(message = "Failed to load model"),
-                streamingState = StreamingState(),
-                onSelectModel = {},
-                onSendMessage = {},
-                onCancelGeneration = {},
-                onNavigateToSearch = {},
-                modifier = Modifier.fillMaxSize()
-            )
+            CompositionLocalProvider(LocalDrawerController provides remember { DrawerController() }) {
+                ChatScreenContent(
+                    uiState = ChatUiState.ModelError(message = "Failed to load model"),
+                    streamingState = StreamingState(),
+                    onSelectModel = {},
+                    onSendMessage = {},
+                    onCancelGeneration = {},
+                    onNavigateToSearch = {},
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
     }
 }
@@ -198,20 +209,22 @@ private fun ChatScreenContentReadyPreview() {
     val messages = ChatMessageListPreviewProvider().values.elementAt(1)
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
-            ChatScreenContent(
-                uiState = ChatUiState.Ready(
-                    messages = messages.toImmutableList(),
-                    selectedModel = model,
-                    topModels = persistentListOf(model),
-                    isGenerating = false
-                ),
-                streamingState = StreamingState(),
-                onSelectModel = {},
-                onSendMessage = {},
-                onCancelGeneration = {},
-                onNavigateToSearch = {},
-                modifier = Modifier.fillMaxSize()
-            )
+            CompositionLocalProvider(LocalDrawerController provides remember { DrawerController() }) {
+                ChatScreenContent(
+                    uiState = ChatUiState.Ready(
+                        messages = messages.toImmutableList(),
+                        selectedModel = model,
+                        topModels = persistentListOf(model),
+                        isGenerating = false
+                    ),
+                    streamingState = StreamingState(),
+                    onSelectModel = {},
+                    onSendMessage = {},
+                    onCancelGeneration = {},
+                    onNavigateToSearch = {},
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
     }
 }
@@ -224,22 +237,24 @@ private fun ChatScreenContentReadyGeneratingPreview() {
     val liveStats = LiveGenerationStatsPreviewProvider().values.elementAt(0)
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
-            ChatScreenContent(
-                uiState = ChatUiState.Ready(
-                    messages = messages.toImmutableList(),
-                    selectedModel = model,
-                    topModels = persistentListOf(model),
-                    isGenerating = true
-                ),
-                streamingState = StreamingState(
-                    liveStats = liveStats,
-                ),
-                onSelectModel = {},
-                onSendMessage = {},
-                onCancelGeneration = {},
-                onNavigateToSearch = {},
-                modifier = Modifier.fillMaxSize()
-            )
+            CompositionLocalProvider(LocalDrawerController provides remember { DrawerController() }) {
+                ChatScreenContent(
+                    uiState = ChatUiState.Ready(
+                        messages = messages.toImmutableList(),
+                        selectedModel = model,
+                        topModels = persistentListOf(model),
+                        isGenerating = true
+                    ),
+                    streamingState = StreamingState(
+                        liveStats = liveStats,
+                    ),
+                    onSelectModel = {},
+                    onSendMessage = {},
+                    onCancelGeneration = {},
+                    onNavigateToSearch = {},
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
     }
 }

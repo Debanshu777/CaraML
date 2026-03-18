@@ -1,8 +1,10 @@
-package com.debanshu777.caraml.core.domain
+package com.debanshu777.caraml.core.data.Inference
 
 import com.debanshu777.caraml.core.platform.AppLogger
 import com.debanshu777.caraml.core.platform.DeviceCapabilities
 import com.debanshu777.caraml.core.platform.PlatformPaths
+import com.debanshu777.caraml.core.settings.AppSettings
+import com.debanshu777.caraml.core.data.settings.SettingsRepository
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import com.debanshu777.runner.LlamaRunner
@@ -13,17 +15,20 @@ import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
 class LlamaInferenceRepository(
     private val storagePathProvider: StoragePathProvider,
     private val runner: LlamaRunner,
     private val deviceCapabilities: DeviceCapabilities,
+    private val settingsRepository: SettingsRepository,
 ) : InferenceRepository {
 
     companion object {
         private const val TAG = "Inference"
         const val CONTEXT_THRESHOLD = 0.85f
+        private const val FALLBACK_SYSTEM_PROMPT = "You are a helpful assistant."
     }
 
     override suspend fun loadModel(model: LocalModelEntity): ModelLoadResult =
@@ -51,7 +56,12 @@ class LlamaInferenceRepository(
 
                 runner.initialize(nativeLibDir)
                 
-                val config = buildRunnerConfig(model)
+                val settings = currentSettings()
+
+                val config = buildRunnerConfig(
+                    model = model,
+                    temperature = settings.temperature
+                )
                 AppLogger.i(TAG) {
                     "config: threads=${config.nThreads}/${config.nThreadsBatch}, " +
                     "batch=${config.nBatch}, ctx=${config.nCtx}, " +
@@ -69,7 +79,9 @@ class LlamaInferenceRepository(
                     )
                 }
 
-                val spRet = runner.processSystemPrompt("You are a helpful assistant.")
+                val systemPrompt = settings.systemPrompt.ifBlank { FALLBACK_SYSTEM_PROMPT }
+
+                val spRet = runner.processSystemPrompt(systemPrompt)
                 if (spRet != 0) {
                     return ModelLoadResult.Error(
                         "Failed to initialize conversation context."
@@ -86,7 +98,7 @@ class LlamaInferenceRepository(
 
     private fun buildRunnerConfig(
         model: LocalModelEntity,
-        defaultTemperature: Float = 0.3f,
+        temperature: Float,
     ): NativeRunnerConfig {
         val hints = deviceCapabilities.getDeviceHints()
         AppLogger.i(TAG) {
@@ -128,7 +140,7 @@ class LlamaInferenceRepository(
             typeV          = if (hints.memoryBudgetMB < 4096) 8 else 1,
             nGpuLayers     = if (gpuActive) -1 else 0,
             useMmap        = true,
-            temperature    = defaultTemperature,
+            temperature    = temperature,
             autoFit        = true,
         )
     }
@@ -185,11 +197,12 @@ class LlamaInferenceRepository(
     }
 
     override fun summarizeConversation(transcript: String): Flow<String> = flow {
+        val systemPrompt = currentSystemPrompt()
         try {
             runner.clearContext()
             
             val spRet = runner.processSystemPrompt(
-                "You are a helpful assistant. Your task is to summarize the conversation below."
+                "$systemPrompt Your task is to summarize the conversation below."
             )
             if (spRet != 0) {
                 throw IllegalStateException("Failed to process summarization system prompt")
@@ -225,11 +238,12 @@ class LlamaInferenceRepository(
 
     override suspend fun resetContextWithSummary(summary: String, lastExchange: String): Boolean =
         withContext(Dispatchers.IO) {
+            val basePrompt = currentSystemPrompt()
             try {
                 runner.clearContext()
                 
                 val systemPrompt = buildString {
-                    append("You are a helpful assistant.")
+                    append(basePrompt)
                     
                     if (summary.isNotBlank()) {
                         append(" Here is a summary of our previous conversation:\n")
@@ -259,4 +273,10 @@ class LlamaInferenceRepository(
         val dir = storagePathProvider.getModelsStorageDirectory(model.modelId)
         return "$dir/${model.filename}"
     }
+
+    private suspend fun currentSettings(): AppSettings =
+        settingsRepository.getSettings().first()
+
+    private suspend fun currentSystemPrompt(): String =
+        currentSettings().systemPrompt.ifBlank { FALLBACK_SYSTEM_PROMPT }
 }

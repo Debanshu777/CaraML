@@ -15,4 +15,7 @@ sealed interface AppScreen : NavKey {
 
     @Serializable
     data class Chat(val modelPath: String, val modelId: String) : AppScreen
+
+    @Serializable
+    data object Settings : AppScreen
 }

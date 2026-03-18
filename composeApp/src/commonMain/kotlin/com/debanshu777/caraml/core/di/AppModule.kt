@@ -1,9 +1,12 @@
 package com.debanshu777.caraml.core.di
 
-import com.debanshu777.caraml.core.domain.InferenceRepository
-import com.debanshu777.caraml.core.domain.LlamaInferenceRepository
+import com.debanshu777.caraml.core.data.Inference.InferenceRepository
+import com.debanshu777.caraml.core.data.Inference.LlamaInferenceRepository
 import com.debanshu777.caraml.core.storage.AppDatabase
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
+import com.debanshu777.caraml.core.data.settings.DefaultSettingsRepository
+import com.debanshu777.caraml.core.data.settings.SettingsRepository
+import com.debanshu777.caraml.core.settings.createPreferencesDataStore
 import com.debanshu777.caraml.features.chat.domain.ChatConfig
 import com.debanshu777.caraml.features.chat.domain.usecase.GenerateResponseUseCase
 import com.debanshu777.caraml.features.chat.domain.usecase.GetAvailableModelsUseCase
@@ -12,6 +15,7 @@ import com.debanshu777.caraml.features.chat.domain.usecase.TrackModelUsageUseCas
 import com.debanshu777.caraml.features.chat.presentation.ChatViewModel
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.DownloadedModelsViewModel
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelViewModel
+import com.debanshu777.caraml.features.settings.presentation.SettingsViewModel
 import com.debanshu777.huggingfacemanager.createHuggingFaceApi
 import com.debanshu777.huggingfacemanager.download.DownloadManager
 import com.debanshu777.runner.LlamaRunner
@@ -31,6 +35,9 @@ val appModule = module {
 
     single { createHuggingFaceApi() }
 
+    single { createPreferencesDataStore() }
+    single<SettingsRepository> { DefaultSettingsRepository(get()) }
+
     single { LlamaRunner() }
 
     single<InferenceRepository> {
@@ -38,6 +45,7 @@ val appModule = module {
             storagePathProvider = get(),
             runner = get(),
             deviceCapabilities = get(),
+            settingsRepository = get(),
         )
     }
 
@@ -60,6 +68,11 @@ val appModule = module {
         DownloadedModelsViewModel(
             localModelRepository = get()
         ) 
+    }
+    viewModel {
+        SettingsViewModel(
+            repository = get()
+        )
     }
     viewModel {
         ChatViewModel(
