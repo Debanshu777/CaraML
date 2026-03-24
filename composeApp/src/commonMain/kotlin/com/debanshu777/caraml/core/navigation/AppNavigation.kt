@@ -1,5 +1,8 @@
 package com.debanshu777.caraml.core.navigation
 
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
@@ -44,7 +47,6 @@ fun NavigationHost(
                 entry(AppScreen.Search) {
                     val modelViewModel: ModelViewModel = koinViewModel()
                     val downloadedModelsViewModel: DownloadedModelsViewModel = koinViewModel()
-                    val isRootDestination = backStack.size == 1
                     SearchScreen(
                         modelViewModel = modelViewModel,
                         downloadedModelsViewModel = downloadedModelsViewModel,
@@ -52,9 +54,7 @@ fun NavigationHost(
                         onSelectModelAndGoBack = { model ->
                             chatViewModel.selectModel(model)
                             backStack.removeLastOrNull()
-                        },
-                        onBack = { backStack.removeLastOrNull() },
-                        isRootDestination = isRootDestination,
+                        }
                     )
                 }
                 entry<AppScreen.Details> { key ->
@@ -75,5 +75,20 @@ fun NavigationHost(
                     )
                 }
             },
+        transitionSpec = {
+            // Slide in from right when navigating forward
+            slideInHorizontally(initialOffsetX = { it }) togetherWith
+                    slideOutHorizontally(targetOffsetX = { -it })
+        },
+        popTransitionSpec = {
+            // Slide in from left when navigating back
+            slideInHorizontally(initialOffsetX = { -it }) togetherWith
+                    slideOutHorizontally(targetOffsetX = { it })
+        },
+        predictivePopTransitionSpec = {
+            // Slide in from left when navigating back
+            slideInHorizontally(initialOffsetX = { -it }) togetherWith
+                    slideOutHorizontally(targetOffsetX = { it })
+        },
     )
 }

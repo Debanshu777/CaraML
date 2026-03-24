@@ -25,7 +25,7 @@ import androidx.compose.ui.unit.dp
 
 data class DrawerAnimationConfig(
     val contentScaleWhenOpen: Float = 0.9f,
-    val contentOffsetFraction: Float = 0.65f,
+    val contentOffsetFraction: Float = 0.80f,
     val animationDurationMs: Int = 300,
 )
 

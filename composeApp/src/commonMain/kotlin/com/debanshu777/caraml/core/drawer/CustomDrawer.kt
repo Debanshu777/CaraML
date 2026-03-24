@@ -22,7 +22,6 @@ fun CustomDrawer(
     items: List<DrawerItem>,
     selectedItemId: String?,
     onItemClick: (DrawerItem) -> Unit,
-    onCloseClick: () -> Unit,
     modifier: Modifier = Modifier,
     header: @Composable (() -> Unit)? = null,
     footer: @Composable (() -> Unit)? = null,
@@ -34,21 +33,6 @@ fun CustomDrawer(
             .padding(horizontal = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 24.dp),
-            contentAlignment = Alignment.CenterStart,
-        ) {
-            IconButton(onClick = onCloseClick) {
-                Icon(
-                    imageVector = Icons.Default.ArrowBack,
-                    contentDescription = "Close drawer",
-                    tint = MaterialTheme.colorScheme.onSurface,
-                )
-            }
-        }
-
         header?.let { headerContent ->
             Spacer(modifier = Modifier.height(24.dp))
             headerContent()

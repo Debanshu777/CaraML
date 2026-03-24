@@ -73,14 +73,13 @@ fun AppDrawerShell(
                     items = primaryDrawerItems,
                     selectedItemId = selectedItemId,
                     onItemClick = { item ->
-                        controller.close()
                         val screen = itemIdToScreen[item.id]
                         if (screen != null && currentScreen != screen) {
                             backStack.clear()
                             backStack.add(screen)
                         }
-                    },
-                    onCloseClick = { controller.close() },
+                        controller.close()
+                    }
                 )
             },
             content = content,

@@ -59,8 +59,6 @@ fun SearchScreen(
     downloadedModelsViewModel: DownloadedModelsViewModel,
     onNavigateToDetails: (String) -> Unit,
     onSelectModelAndGoBack: (LocalModelEntity) -> Unit,
-    onBack: () -> Unit,
-    isRootDestination: Boolean,
     modifier: Modifier = Modifier
 ) {
     var selectedTabIndex by remember { mutableStateOf(0) }
@@ -75,14 +73,8 @@ fun SearchScreen(
             TopAppBar(
                 title = { Text("Models") },
                 navigationIcon = {
-                    if (isRootDestination) {
-                        IconButton(onClick = { drawerController.toggle() }) {
-                            Icon(Icons.Default.Menu, contentDescription = "Open menu")
-                        }
-                    } else {
-                        TextButton(onClick = onBack) {
-                            Text("← Back")
-                        }
+                    IconButton(onClick = { drawerController.toggle() }) {
+                        Icon(Icons.Default.Menu, contentDescription = "Open menu")
                     }
                 }
             )
@@ -106,6 +98,7 @@ fun SearchScreen(
                     onNavigateToDetails = onNavigateToDetails,
                     modifier = Modifier.fillMaxSize()
                 )
+
                 1 -> DownloadedTabContent(
                     viewModel = downloadedModelsViewModel,
                     onSelectModelAndGoBack = onSelectModelAndGoBack,
@@ -293,7 +286,11 @@ private fun StorageInfoBar(
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "${formatStorageBytes(storageInfo.availableDeviceBytes)} free of ${formatStorageBytes(storageInfo.totalDeviceBytes)}",
+                    text = "${formatStorageBytes(storageInfo.availableDeviceBytes)} free of ${
+                        formatStorageBytes(
+                            storageInfo.totalDeviceBytes
+                        )
+                    }",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
