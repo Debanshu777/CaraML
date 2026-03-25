@@ -32,8 +32,6 @@ import kotlin.math.round
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel,
-    onBack: () -> Unit,
-    isRootDestination: Boolean,
     modifier: Modifier = Modifier
 ) {
     val settings by viewModel.settings.collectAsState()
@@ -45,14 +43,8 @@ fun SettingsScreen(
             TopAppBar(
                 title = { Text("Settings") },
                 navigationIcon = {
-                    if (isRootDestination) {
-                        IconButton(onClick = { drawerController.toggle() }) {
-                            Icon(Icons.Default.Menu, contentDescription = "Open menu")
-                        }
-                    } else {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Back")
-                        }
+                    IconButton(onClick = { drawerController.toggle() }) {
+                        Icon(Icons.Default.Menu, contentDescription = "Open menu")
                     }
                 }
             )

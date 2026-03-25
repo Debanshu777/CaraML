@@ -67,26 +67,20 @@ fun NavigationHost(
                 }
                 entry(AppScreen.Settings) {
                     val settingsViewModel: SettingsViewModel = koinViewModel()
-                    val isRootDestination = backStack.size == 1
                     SettingsScreen(
-                        viewModel = settingsViewModel,
-                        onBack = { backStack.removeLastOrNull() },
-                        isRootDestination = isRootDestination,
+                        viewModel = settingsViewModel
                     )
                 }
             },
         transitionSpec = {
-            // Slide in from right when navigating forward
             slideInHorizontally(initialOffsetX = { it }) togetherWith
                     slideOutHorizontally(targetOffsetX = { -it })
         },
         popTransitionSpec = {
-            // Slide in from left when navigating back
             slideInHorizontally(initialOffsetX = { -it }) togetherWith
                     slideOutHorizontally(targetOffsetX = { it })
         },
         predictivePopTransitionSpec = {
-            // Slide in from left when navigating back
             slideInHorizontally(initialOffsetX = { -it }) togetherWith
                     slideOutHorizontally(targetOffsetX = { it })
         },

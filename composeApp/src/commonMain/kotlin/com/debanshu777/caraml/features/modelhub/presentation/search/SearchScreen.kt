@@ -69,6 +69,7 @@ fun SearchScreen(
     val drawerController = LocalDrawerController.current
 
     Scaffold(
+        modifier = modifier,
         topBar = {
             TopAppBar(
                 title = { Text("Models") },

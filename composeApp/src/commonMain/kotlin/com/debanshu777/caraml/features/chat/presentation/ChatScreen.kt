@@ -80,6 +80,7 @@ fun ChatScreenContent(
         }
     }
     Scaffold(
+        modifier = modifier,
         topBar = {
             ModelSelectorTopBar(
                 onMenuClick = { drawerController.toggle() }
