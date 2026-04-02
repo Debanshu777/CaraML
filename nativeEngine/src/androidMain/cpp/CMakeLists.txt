@@ -17,7 +17,8 @@ if(DEFINED ANDROID_ABI)
     endif()
 endif()
 
-include("${CMAKE_CURRENT_LIST_DIR}/../../commonCpp/LlamaRunnerCommon.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/../../commonCpp/GgmlLlama.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/../../../../runner/src/commonCpp/LlamaRunnerCommon.cmake")
 
 find_library(log-lib log)
 

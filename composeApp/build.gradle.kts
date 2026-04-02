@@ -20,9 +20,9 @@ kotlin {
         }
     }
 
-    val runnerProject = project(":runner")
-    val runnerBuildDir =
-        runnerProject.layout.buildDirectory
+    val nativeEngineProject = project(":nativeEngine")
+    val nativeEngineBuildDir =
+        nativeEngineProject.layout.buildDirectory
             .get()
             .asFile
 
@@ -31,12 +31,12 @@ kotlin {
         Triple(iosSimulatorArm64(), "iPhoneSimulator", "iosSimulatorArm64"),
     ).forEach { (target, sdkName, archName) ->
         val mergeTaskName = "mergeLlamaRunnerStatic${archName.replaceFirstChar { it.uppercase() }}"
-        runnerProject.tasks.findByName(mergeTaskName)?.let { mergeTask ->
+        nativeEngineProject.tasks.findByName(mergeTaskName)?.let { mergeTask ->
             tasks.matching { it.name.startsWith("link") && it.name.contains(archName) }.configureEach {
                 dependsOn(mergeTask)
             }
         }
-        val libPath = runnerBuildDir.resolve("llama-runner-ios/$sdkName/$archName").absolutePath
+        val libPath = nativeEngineBuildDir.resolve("llama-runner-ios/$sdkName/$archName").absolutePath
         val mergedLib = "$libPath/libllama_runner_merged.a"
         target.binaries.framework {
             baseName = "ComposeApp"
@@ -148,15 +148,17 @@ val desktopPlatform = when {
     System.getProperty("os.name").lowercase().contains("win") -> "windows"
     else -> "macos"
 }
-val nativeDir = project(":runner").layout.buildDirectory.dir("llama-runner-desktop/$desktopPlatform").get().asFile.absolutePath
+// Desktop JNI output: keep in sync with CaramlNativeLayout.DESKTOP_SUBDIR in nativeEngine/build.gradle.kts
+val nativeDir =
+    project(":nativeEngine").layout.buildDirectory.dir("llama-runner-desktop/$desktopPlatform").get().asFile.absolutePath
 
 tasks.matching { it.name == "run" || it.name.endsWith("Run") }.configureEach {
-    dependsOn(":runner:compileLlamaRunnerDesktop")
+    dependsOn(":nativeEngine:compileLlamaRunnerDesktop")
 }
 
 tasks.withType(org.gradle.api.tasks.JavaExec::class.java).configureEach {
     if (name == "run" || name.endsWith("Run")) {
-        dependsOn(":runner:compileLlamaRunnerDesktop")
+        dependsOn(":nativeEngine:compileLlamaRunnerDesktop")
         jvmArgs(
             "-Djava.library.path=$nativeDir",
             "-Dcaraml.native.lib.dir=$nativeDir"

@@ -9,20 +9,20 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libraries for iOS" FORCE)
 set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 
-include("${CMAKE_CURRENT_LIST_DIR}/../../commonCpp/LlamaRunnerCommon.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/../../commonCpp/GgmlLlama.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/../../../../runner/src/commonCpp/LlamaRunnerCommon.cmake")
 
 add_library(
     llama_runner
     STATIC
     ${LLAMA_RUNNER_CORE_SOURCES}
-    "${CMAKE_CURRENT_LIST_DIR}/llama_runner.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/../../../../runner/src/iosMain/cpp/llama_runner.cpp"
 )
 
 target_include_directories(llama_runner PRIVATE ${LLAMA_RUNNER_INCLUDE_DIRS})
 
 target_link_libraries(llama_runner PRIVATE llama common)
 
-# Enable optimizations for release builds
 if(CMAKE_BUILD_TYPE MATCHES Release)
     target_compile_options(llama_runner PRIVATE -O3)
 endif()

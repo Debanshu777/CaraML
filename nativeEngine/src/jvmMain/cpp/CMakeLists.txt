@@ -4,16 +4,13 @@ project(llama_runner_desktop VERSION 1.0.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
 set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
-include("${CMAKE_CURRENT_LIST_DIR}/../../commonCpp/LlamaRunnerCommon.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/../../commonCpp/GgmlLlama.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/../../../../runner/src/commonCpp/LlamaRunnerCommon.cmake")
 
-# Find JNI headers manually (we only need includes, not AWT/JVM libs - JVM provides JNI at runtime)
-# FindJNI often fails with "missing: AWT JVM" when JAVA_HOME points to JRE or non-standard JDK layout
 set(JNI_INCLUDE_DIRS "")
 if(DEFINED ENV{JAVA_HOME})
     set(JAVA_HOME "$ENV{JAVA_HOME}")
@@ -32,7 +29,7 @@ if(DEFINED ENV{JAVA_HOME})
 endif()
 if(JNI_INCLUDE_DIRS STREQUAL "")
     message(FATAL_ERROR
-        "JNI headers not found. Set JAVA_HOME to your JDK root (e.g. /Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home).\n"
+        "JNI headers not found. Set JAVA_HOME to your JDK root.\n"
         "Ensure it points to a JDK (not JRE) with include/jni.h"
     )
 endif()
