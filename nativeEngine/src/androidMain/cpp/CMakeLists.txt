@@ -17,7 +17,11 @@ if(DEFINED ANDROID_ABI)
     endif()
 endif()
 
-include("${CMAKE_CURRENT_LIST_DIR}/../../commonCpp/GgmlLlama.cmake")
+# Stable Diffusion backend configuration
+set(SD_METAL OFF CACHE BOOL "" FORCE)
+set(SD_VULKAN OFF CACHE BOOL "" FORCE)
+
+include("${CMAKE_CURRENT_LIST_DIR}/../../commonCpp/GgmlUnified.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/../../../../runner/src/commonCpp/LlamaRunnerCommon.cmake")
 
 find_library(log-lib log)
@@ -35,4 +39,21 @@ target_link_libraries(llama_runner PRIVATE llama common ${log-lib})
 
 if(CMAKE_BUILD_TYPE MATCHES Release)
     target_compile_options(llama_runner PRIVATE -O3)
+endif()
+
+# --- diffusion_runner (stable-diffusion.cpp wrapper) ---
+include("${CMAKE_CURRENT_LIST_DIR}/../../../../diffusionRunner/src/commonCpp/DiffusionRunnerCommon.cmake")
+
+add_library(
+    diffusion_runner
+    SHARED
+    ${DIFFUSION_RUNNER_CORE_SOURCES}
+    ${DIFFUSION_RUNNER_JNI_SOURCE}
+)
+
+target_include_directories(diffusion_runner PRIVATE ${DIFFUSION_RUNNER_INCLUDE_DIRS})
+target_link_libraries(diffusion_runner PRIVATE stable-diffusion ${log-lib})
+
+if(CMAKE_BUILD_TYPE MATCHES Release)
+    target_compile_options(diffusion_runner PRIVATE -O3)
 endif()

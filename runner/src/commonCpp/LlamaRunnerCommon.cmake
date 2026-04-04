@@ -1,5 +1,5 @@
 # Source lists and includes for llama_runner glue. Native build (add_subdirectory llama.cpp)
-# lives in :nativeEngine (see nativeEngine/src/commonCpp/GgmlLlama.cmake).
+# lives in :nativeEngine (see nativeEngine/src/commonCpp/GgmlUnified.cmake).
 
 include_guard(GLOBAL)
 

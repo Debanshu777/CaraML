@@ -111,6 +111,7 @@ if (isMacHost) {
                 cmakePath,
                 "--build", cmakeBuildDir.absolutePath,
                 "--target", "llama_runner",
+                "--target", "diffusion_runner",
                 "--verbose"
             )
         }
@@ -134,8 +135,17 @@ if (isMacHost) {
                     exclude("**/CMakeFiles/**")
                 }.files.map { file(it.absolutePath) }
 
+                val sdLibs = listOf(
+                    file("$libPath/sd-build/libstable-diffusion.a")
+                )
+                val sdZipLibs = fileTree(file("$libPath/sd-build")) {
+                    include("**/libzip.a")
+                    exclude("**/CMakeFiles/**")
+                }.files.map { file(it.absolutePath) }
+
                 val requiredLibs = listOf(
                     file("$libPath/libllama_runner.a"),
+                    file("$libPath/libdiffusion_runner.a"),
                     file("$llamaBuild/src/libllama.a"),
                     file("$llamaBuild/common/libcommon.a"),
                     file("$llamaBuild/ggml/src/libggml.a"),
@@ -143,9 +153,9 @@ if (isMacHost) {
                     file("$llamaBuild/ggml/src/ggml-blas/libggml-blas.a"),
                     file("$llamaBuild/ggml/src/ggml-metal/libggml-metal.a")
                 )
-                val libs = requiredLibs + cppHttplibLibs + ggmlCpuLibs
+                val libs = requiredLibs + cppHttplibLibs + ggmlCpuLibs + sdLibs + sdZipLibs
                 val missing = requiredLibs.filter { !it.exists() }
-                if (missing.isNotEmpty() || ggmlCpuLibs.isEmpty() || cppHttplibLibs.isEmpty()) {
+                if (missing.isNotEmpty() || ggmlCpuLibs.isEmpty() || cppHttplibLibs.isEmpty() || sdLibs.any { !it.exists() }) {
                     val msg = buildString {
                         append("Missing static libraries for merge:\n")
                         missing.forEach { append("  - ${it.absolutePath}\n") }
@@ -154,6 +164,11 @@ if (isMacHost) {
                         }
                         if (cppHttplibLibs.isEmpty()) {
                             append("  - cpp-httplib (no libcpp-httplib*.a found under $llamaBuild)\n")
+                        }
+                        val missingSdLibs = sdLibs.filter { !it.exists() }
+                        if (missingSdLibs.isNotEmpty()) {
+                            append("  - stable-diffusion libraries:\n")
+                            missingSdLibs.forEach { append("    - ${it.absolutePath}\n") }
                         }
                         append("\nEnsure CMake build completed successfully.")
                     }

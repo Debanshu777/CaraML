@@ -8,7 +8,16 @@ set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
 set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
-include("${CMAKE_CURRENT_LIST_DIR}/../../commonCpp/GgmlLlama.cmake")
+# Stable Diffusion backend configuration
+if(APPLE)
+    set(SD_METAL ON CACHE BOOL "" FORCE)
+    set(SD_VULKAN OFF CACHE BOOL "" FORCE)
+else()
+    set(SD_METAL OFF CACHE BOOL "" FORCE)
+    set(SD_VULKAN OFF CACHE BOOL "" FORCE)
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/../../commonCpp/GgmlUnified.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/../../../../runner/src/commonCpp/LlamaRunnerCommon.cmake")
 
 set(JNI_INCLUDE_DIRS "")
@@ -56,4 +65,26 @@ set_target_properties(llama_runner PROPERTIES OUTPUT_NAME "llama_runner")
 
 if(CMAKE_BUILD_TYPE MATCHES Release)
     target_compile_options(llama_runner PRIVATE -O3)
+endif()
+
+# --- diffusion_runner (stable-diffusion.cpp wrapper) ---
+include("${CMAKE_CURRENT_LIST_DIR}/../../../../diffusionRunner/src/commonCpp/DiffusionRunnerCommon.cmake")
+
+add_library(
+    diffusion_runner
+    SHARED
+    ${DIFFUSION_RUNNER_CORE_SOURCES}
+    ${DIFFUSION_RUNNER_JNI_SOURCE}
+)
+
+target_include_directories(diffusion_runner PRIVATE
+    ${DIFFUSION_RUNNER_INCLUDE_DIRS}
+    ${JNI_INCLUDE_DIRS}
+)
+
+target_link_libraries(diffusion_runner PRIVATE stable-diffusion)
+set_target_properties(diffusion_runner PROPERTIES OUTPUT_NAME "diffusion_runner")
+
+if(CMAKE_BUILD_TYPE MATCHES Release)
+    target_compile_options(diffusion_runner PRIVATE -O3)
 endif()

@@ -77,6 +77,7 @@ kotlin {
             implementation(libs.androidx.datastore.preferences)
             implementation(project(":huggingFaceManager"))
             implementation(project(":runner"))
+            implementation(project(":diffusionRunner"))
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.material3)
