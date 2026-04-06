@@ -5,10 +5,6 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
-/**
- * Curated Hugging Face repos referenced by stable-diffusion.cpp docs
- * (see sibling [sd_cpp_curated_models.json] — keep in sync with bundled JSON below).
- */
 @Serializable
 data class SdCppCuratedCatalogRoot(
     @SerialName("version")
@@ -41,11 +37,6 @@ private val sdCppCatalogJson = Json {
     isLenient = false
 }
 
-/**
- * Default JSON is bundled for multiplatform (Android / iOS / JVM)
- * without per-target resource pipelines.
- * Must match [sd_cpp_curated_models.json].
- */
 internal fun sdCppCuratedCatalogBundledJson(): String = SD_CPP_CATALOG_JSON_BUNDLED
 
 fun loadSdCppCuratedCatalog(json: String = sdCppCuratedCatalogBundledJson()): SdCppCuratedCatalogRoot =

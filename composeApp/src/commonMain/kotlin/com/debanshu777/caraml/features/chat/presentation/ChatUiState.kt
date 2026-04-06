@@ -23,7 +23,6 @@ sealed interface ChatUiState {
         val contextLimit: Int = 0,
         val selectedModel: LocalModelEntity? = null,
         val topModels: ImmutableList<LocalModelEntity> = persistentListOf(),
-        val pickerModels: ImmutableList<LocalModelEntity> = persistentListOf(),
         val generationMode: GenerationMode = GenerationMode.Text,
         val isGenerating: Boolean = false,
     ) : ChatUiState

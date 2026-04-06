@@ -120,7 +120,7 @@ fun ChatScreenContent(
                         onGenerationModeChange = onGenerationModeChange,
                         isGenerating = uiState.isGenerating,
                         selectedModel = uiState.selectedModel,
-                        pickerModels = uiState.pickerModels,
+                        topModels = uiState.topModels,
                         onSelectModel = onSelectModel,
                         onDownloadModelClick = onNavigateToSearch,
                         onSendMessage = onSendMessage,
@@ -251,7 +251,6 @@ private fun ChatScreenContentReadyPreview() {
                         messages = messages.toImmutableList(),
                         selectedModel = model,
                         topModels = persistentListOf(model),
-                        pickerModels = persistentListOf(model),
                         generationMode = GenerationMode.Text,
                         isGenerating = false
                     ),
@@ -282,7 +281,6 @@ private fun ChatScreenContentReadyGeneratingPreview() {
                         messages = messages.toImmutableList(),
                         selectedModel = model,
                         topModels = persistentListOf(model),
-                        pickerModels = persistentListOf(model),
                         generationMode = GenerationMode.Text,
                         isGenerating = true
                     ),

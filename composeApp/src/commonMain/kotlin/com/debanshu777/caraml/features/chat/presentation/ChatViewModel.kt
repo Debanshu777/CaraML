@@ -95,7 +95,6 @@ class ChatViewModel(
         _topModels,
         _generationMode,
     ) { internal, messages, selected, models, mode ->
-        val picker = models.filterForMode(mode).toImmutableList()
         val topImm = models.toImmutableList()
         when (internal) {
             is InternalChatState.NoModels -> ChatUiState.NoModels
@@ -108,7 +107,6 @@ class ChatViewModel(
                 contextLimit = internal.contextLimit,
                 selectedModel = selected,
                 topModels = topImm,
-                pickerModels = picker,
                 generationMode = mode,
                 isGenerating = internal.isGenerating,
             )
