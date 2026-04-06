@@ -30,6 +30,10 @@ fun GgufFileListItem(
     onDownloadClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val hasDirectory = filename.contains('/')
+    val displayName = filename.substringAfterLast('/')
+    val directory = if (hasDirectory) filename.substringBeforeLast('/') + "/" else null
+
     Surface(
         shape = RoundedCornerShape(12.dp),
         tonalElevation = 1.dp,
@@ -41,9 +45,17 @@ fun GgufFileListItem(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
+                if (directory != null) {
+                    Text(
+                        text = directory,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = if (filename.length > 40) filename.take(37) + "..." else filename,
+                        text = displayName,
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 1,
                         modifier = Modifier.weight(1f)
@@ -75,7 +87,7 @@ fun GgufFileListItem(
                     Icon(Icons.Default.Download, contentDescription = "Download")
                 }
             }
-    }
+        }
     }
 }
 

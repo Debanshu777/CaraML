@@ -6,6 +6,14 @@ class LocalModelRepository(private val dao: LocalModelDao) {
     suspend fun getDownloadedFilenames(modelId: String): Set<String> =
         dao.getFilenamesByModelId(modelId).toSet()
 
+    suspend fun deleteByModelIdAndFilename(modelId: String, filename: String) {
+        dao.deleteByModelIdAndFilename(modelId, filename)
+    }
+
+    suspend fun deleteAllForModelId(modelId: String) {
+        dao.deleteAllForModelId(modelId)
+    }
+
     fun getAllDownloadedFiles(): Flow<List<LocalModelEntity>> =
         dao.getAllDownloadedFiles()
 

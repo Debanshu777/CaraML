@@ -25,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.debanshu777.caraml.features.modelhub.presentation.details.components.ModelDetailContent
+import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -32,6 +33,7 @@ import com.debanshu777.caraml.features.modelhub.presentation.search.ModelViewMod
 fun DetailsScreen(
     viewModel: ModelViewModel,
     modelId: String,
+    hubBrowseMode: ModelHubBrowseMode,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -43,8 +45,8 @@ fun DetailsScreen(
     val downloadError by viewModel.downloadError.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    LaunchedEffect(modelId) {
-        viewModel.loadDetail(modelId)
+    LaunchedEffect(modelId, hubBrowseMode) {
+        viewModel.loadDetail(modelId, hubBrowseMode)
     }
 
     LaunchedEffect(downloadError) {
@@ -81,6 +83,7 @@ fun DetailsScreen(
                     .weight(1f),
                 contentAlignment = Alignment.Center
             ) {
+                val detail = modelDetail
                 when {
                     isDetailLoading -> CircularProgressIndicator()
                     detailError != null -> Text(
@@ -88,15 +91,28 @@ fun DetailsScreen(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.error
                     )
-                    modelDetail != null -> ModelDetailContent(
-                        model = modelDetail,
-                        ggufFiles = ggufFiles,
-                        isDownloading = isDownloading,
-                        onDownloadClick = { modelId, path, metadata ->
-                            viewModel.startDownload(modelId, path, metadata)
-                        },
-                        modifier = Modifier.fillMaxSize()
-                    )
+                    detail != null -> {
+                        val (weightHeading, weightEmpty) = when (hubBrowseMode) {
+                            ModelHubBrowseMode.LanguageModels ->
+                                "GGUF files" to "No GGUF files found"
+                            ModelHubBrowseMode.DiffusionImage,
+                            ModelHubBrowseMode.DiffusionVideo ->
+                                "Weight files" to
+                                    "No weight files found (.gguf, .safetensors, .ckpt, .pth)"
+                        }
+                        ModelDetailContent(
+                            model = detail,
+                            ggufFiles = ggufFiles,
+                            isDownloading = isDownloading,
+                            onDownloadClick = { id, path, metadata ->
+                                viewModel.startDownload(id, path, metadata)
+                            },
+                            weightFilesHeading = weightHeading,
+                            weightFilesEmptyLabel = weightEmpty,
+                            showDiffusionHint = hubBrowseMode != ModelHubBrowseMode.LanguageModels,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
             }
         }

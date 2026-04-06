@@ -27,6 +27,7 @@ private fun ModelSelectorTopBarPreview() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ModelSelectorTopBar(
+    title: String = "Assistant",
     modifier: Modifier = Modifier,
     onMenuClick: () -> Unit = {},
 ) {
@@ -39,7 +40,7 @@ fun ModelSelectorTopBar(
         },
         title = {
             Text(
-                text = "Chat",
+                text = title,
                 style = MaterialTheme.typography.titleLarge
             )
         }

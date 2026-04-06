@@ -55,6 +55,55 @@ kotlin {
 val hostOsName = System.getProperty("os.name").lowercase()
 val isMacHost = hostOsName.contains("mac")
 
+/**
+ * CMake needs a full JDK with [JAVA_HOME]/include/jni.h.
+ * Gradle's java.home may already be correct, or may point at a nested JRE.
+ */
+fun resolveJavaHomeForJni(logger: org.gradle.api.logging.Logger): String {
+    fun hasJniH(dir: File): Boolean = dir.resolve("include/jni.h").isFile
+
+    System.getenv("JAVA_HOME")?.trim()?.takeIf { it.isNotEmpty() }?.let { env ->
+        val root = File(env)
+        if (hasJniH(root)) return root.absolutePath
+        logger.lifecycle(
+            "JAVA_HOME=$env does not contain include/jni.h; trying other JDK locations."
+        )
+    }
+
+    System.getProperty("java.home")?.let { path ->
+        val jh = File(path)
+        if (hasJniH(jh)) return jh.absolutePath
+        val parent = jh.parentFile
+        if (parent != null && hasJniH(parent)) return parent.absolutePath
+    }
+
+    if (isMacHost) {
+        try {
+            val proc = ProcessBuilder("/usr/libexec/java_home")
+                .redirectErrorStream(true)
+                .start()
+            val out = proc.inputStream.bufferedReader().use { it.readText() }.trim()
+            if (proc.waitFor() == 0 && out.isNotEmpty()) {
+                val macHome = File(out)
+                if (hasJniH(macHome)) return macHome.absolutePath
+            }
+        } catch (_: Exception) {
+            /* fall through */
+        }
+    }
+
+    throw GradleException(
+        buildString {
+            appendLine("Could not find a JDK with JNI headers (include/jni.h) for :nativeEngine desktop CMake.")
+            appendLine("Set JAVA_HOME to a full JDK root, e.g. on macOS:")
+            appendLine("  export JAVA_HOME=\"\$(/usr/libexec/java_home -v 17)\"")
+            appendLine("Then re-run the build.")
+            appendLine("java.home=${System.getProperty("java.home")}")
+            System.getenv("JAVA_HOME")?.let { appendLine("JAVA_HOME=$it (invalid or incomplete)") }
+        }
+    )
+}
+
 if (isMacHost) {
     val cmakePath = findTool("cmake")
     val libtoolPath = findTool("libtool")
@@ -206,11 +255,7 @@ val buildLlamaRunnerDesktop by tasks.registering(Exec::class) {
     group = "llama-native"
     description = "Configure CMake for desktop ($desktopPlatform) llama_runner"
 
-    val javaHome = System.getenv("JAVA_HOME")
-        ?: run {
-            val jh = File(System.getProperty("java.home"))
-            if (jh.name == "Home") jh.parentFile?.parentFile?.absolutePath else jh.absolutePath
-        } ?: System.getProperty("java.home")
+    val javaHome = resolveJavaHomeForJni(logger)
     environment("JAVA_HOME", javaHome)
 
     doFirst {

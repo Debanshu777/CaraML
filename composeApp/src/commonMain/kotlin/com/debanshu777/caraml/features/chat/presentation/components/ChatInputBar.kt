@@ -3,6 +3,7 @@ package com.debanshu777.caraml.features.chat.presentation.components
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -25,6 +27,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -51,7 +54,9 @@ import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
+import com.debanshu777.caraml.core.storage.localmodel.displayFilename
 import com.debanshu777.caraml.features.chat.data.LiveGenerationStats
+import com.debanshu777.caraml.features.chat.domain.GenerationMode
 import com.debanshu777.caraml.features.chat.presentation.StreamingState
 import com.debanshu777.caraml.features.chat.presentation.components.providers.LiveGenerationStatsPreviewProvider
 import com.debanshu777.caraml.features.chat.presentation.components.providers.LocalModelPreviewProvider
@@ -68,9 +73,11 @@ private fun ChatInputBarPreview(
     MaterialTheme {
         Surface {
             ChatInputBar(
+                generationMode = GenerationMode.Text,
+                onGenerationModeChange = {},
                 isGenerating = false,
                 selectedModel = selectedModel,
-                topModels = persistentListOf(selectedModel),
+                pickerModels = persistentListOf(selectedModel),
                 onSelectModel = {},
                 onDownloadModelClick = {},
                 onSendMessage = {},
@@ -87,9 +94,11 @@ private fun ChatInputBarNoModelPreview() {
     MaterialTheme {
         Surface {
             ChatInputBar(
+                generationMode = GenerationMode.Text,
+                onGenerationModeChange = {},
                 isGenerating = false,
                 selectedModel = null,
-                topModels = persistentListOf(),
+                pickerModels = persistentListOf(),
                 onSelectModel = {},
                 onDownloadModelClick = {},
                 onSendMessage = {},
@@ -108,9 +117,11 @@ private fun ChatInputBarGeneratingPreview() {
     MaterialTheme {
         Surface {
             ChatInputBar(
+                generationMode = GenerationMode.Text,
+                onGenerationModeChange = {},
                 isGenerating = true,
                 selectedModel = model,
-                topModels = persistentListOf(model),
+                pickerModels = persistentListOf(model),
                 onSelectModel = {},
                 onDownloadModelClick = {},
                 onSendMessage = {},
@@ -192,9 +203,11 @@ fun RowScope.ContextStatsIndicator(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatInputBar(
+    generationMode: GenerationMode,
+    onGenerationModeChange: (GenerationMode) -> Unit,
     isGenerating: Boolean,
     selectedModel: LocalModelEntity?,
-    topModels: ImmutableList<LocalModelEntity>,
+    pickerModels: ImmutableList<LocalModelEntity>,
     onSelectModel: (LocalModelEntity) -> Unit,
     onDownloadModelClick: () -> Unit,
     onSendMessage: (String) -> Unit,
@@ -205,6 +218,12 @@ fun ChatInputBar(
     var inputText by remember { mutableStateOf("") }
     var showModelSheet by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState()
+
+    val placeholderText = when (generationMode) {
+        GenerationMode.Text -> "How can I help you today?"
+        GenerationMode.Image -> "Describe an image (optional negative after |)"
+        GenerationMode.Video -> "Describe a video (optional negative after |)"
+    }
 
     Surface(
         modifier = modifier
@@ -218,11 +237,34 @@ fun ChatInputBar(
                 .fillMaxWidth()
                 .padding(8.dp)
         ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChip(
+                    selected = generationMode == GenerationMode.Text,
+                    onClick = { onGenerationModeChange(GenerationMode.Text) },
+                    label = { Text("Chat") }
+                )
+                FilterChip(
+                    selected = generationMode == GenerationMode.Image,
+                    onClick = { onGenerationModeChange(GenerationMode.Image) },
+                    label = { Text("Image") }
+                )
+                FilterChip(
+                    selected = generationMode == GenerationMode.Video,
+                    onClick = { onGenerationModeChange(GenerationMode.Video) },
+                    label = { Text("Video") }
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
             TextField(
                 value = inputText,
                 onValueChange = { inputText = it },
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("How can I help you today?") },
+                placeholder = { Text(placeholderText) },
                 maxLines = 4,
                 enabled = !isGenerating,
                 colors = TextFieldDefaults.colors(
@@ -240,7 +282,11 @@ fun ChatInputBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                contextIndicator()
+                if (generationMode == GenerationMode.Text) {
+                    contextIndicator()
+                } else {
+                    Spacer(modifier = Modifier.width(4.dp))
+                }
                 IconButton(
                     modifier = Modifier.weight(1f),
                     onClick = { }
@@ -321,7 +367,7 @@ fun ChatInputBar(
                     )
                 }
 
-                items(topModels) { model ->
+                items(pickerModels) { model ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -339,7 +385,7 @@ fun ChatInputBar(
                                 style = MaterialTheme.typography.bodyMedium
                             )
                             Text(
-                                text = model.filename,
+                                text = model.displayFilename(),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -356,7 +402,7 @@ fun ChatInputBar(
                     }
                 }
 
-                if (topModels.isNotEmpty()) {
+                if (pickerModels.isNotEmpty()) {
                     item {
                         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                     }

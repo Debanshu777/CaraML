@@ -8,7 +8,18 @@ import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_load_model
 import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_release
 import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_txt2img
 import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_free_result
-import kotlinx.cinterop.*
+import kotlinx.cinterop.ByteVar
+import kotlinx.cinterop.CPointer
+import kotlinx.cinterop.CPointerVar
+import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.FloatVar
+import kotlinx.cinterop.allocArray
+import kotlinx.cinterop.cValue
+import kotlinx.cinterop.cstr
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.pointed
+import kotlinx.cinterop.readBytes
+import kotlinx.cinterop.value
 
 @OptIn(ExperimentalForeignApi::class)
 actual class DiffusionRunner {

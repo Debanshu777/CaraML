@@ -56,4 +56,15 @@ class IosStoragePathProvider : StoragePathProvider {
         val mgr = NSFileManager.defaultManager
         return mgr.fileExistsAtPath(path) && mgr.isReadableFileAtPath(path)
     }
+
+    @OptIn(ExperimentalForeignApi::class)
+    override fun isDirectoryReadable(path: String): Boolean {
+        val mgr = NSFileManager.defaultManager
+        if (!mgr.isReadableFileAtPath(path)) return false
+        return mgr.contentsOfDirectoryAtPath(path, null) != null
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    override fun renameFile(from: String, to: String): Boolean =
+        try { NSFileManager.defaultManager.moveItemAtPath(from, to, null) } catch (_: Exception) { false }
 }

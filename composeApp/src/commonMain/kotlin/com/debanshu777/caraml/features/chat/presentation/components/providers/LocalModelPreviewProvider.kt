@@ -2,6 +2,7 @@ package com.debanshu777.caraml.features.chat.presentation.components.providers
 
 import androidx.compose.ui.tooling.preview.PreviewParameterProvider
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
+import com.debanshu777.huggingfacemanager.model.PipelineTag
 import kotlin.time.Clock
 
 class LocalModelPreviewProvider : PreviewParameterProvider<LocalModelEntity> {
@@ -44,6 +45,19 @@ class LocalModelPreviewProvider : PreviewParameterProvider<LocalModelEntity> {
             pipelineTag = "text-generation-instruct",
             usageCount = 999,
             contextLength = 32768
+        ),
+        LocalModelEntity(
+            id = 4,
+            modelId = "stabilityai/stable-diffusion-xl-base-1.0",
+            filename = "sd_xl_base_1.0.safetensors",
+            localPath = "/data/models/sdxl.safetensors",
+            sizeBytes = 6_868_216_832L,
+            downloadedAt = Clock.System.now().epochSeconds,
+            author = "stabilityai",
+            libraryName = "diffusers",
+            pipelineTag = PipelineTag.TEXT_TO_IMAGE.apiValue,
+            usageCount = 0,
+            contextLength = null
         ),
     )
 }

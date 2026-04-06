@@ -31,4 +31,12 @@ class JvmStoragePathProvider : StoragePathProvider {
         val file = File(path)
         return file.exists() && file.isFile && file.canRead()
     }
+
+    override fun isDirectoryReadable(path: String): Boolean {
+        val file = File(path)
+        return file.exists() && file.isDirectory && file.canRead()
+    }
+
+    override fun renameFile(from: String, to: String): Boolean =
+        try { File(from).renameTo(File(to)) } catch (_: Exception) { false }
 }

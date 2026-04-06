@@ -35,7 +35,12 @@ private fun StreamingMessageBubble(
 ) {
     val streamingState by streamingStateFlow.collectAsStateWithLifecycle()
     val displayText = streamingState.streamingText.takeIf { it.isNotEmpty() } ?: message.text
-    MessageBubble(message.copy(text = displayText))
+    val pendingMedia = streamingState.pendingMediaGeneration &&
+        streamingState.streamingMessageId == message.id
+    MessageBubble(
+        message = message.copy(text = displayText),
+        showMediaPending = pendingMedia,
+    )
 }
 
 @Preview

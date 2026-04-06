@@ -2,6 +2,7 @@ package com.debanshu777.caraml.features.modelhub.presentation.search
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,11 +12,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -57,7 +59,7 @@ import kotlinx.coroutines.launch
 fun SearchScreen(
     modelViewModel: ModelViewModel,
     downloadedModelsViewModel: DownloadedModelsViewModel,
-    onNavigateToDetails: (String) -> Unit,
+    onNavigateToDetails: (modelId: String, hubBrowseMode: ModelHubBrowseMode) -> Unit,
     onSelectModelAndGoBack: (LocalModelEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -113,9 +115,10 @@ fun SearchScreen(
 @Composable
 private fun SearchTabContent(
     viewModel: ModelViewModel,
-    onNavigateToDetails: (String) -> Unit,
+    onNavigateToDetails: (modelId: String, hubBrowseMode: ModelHubBrowseMode) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val browseMode by viewModel.browseMode.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val searchResponse by viewModel.searchResponse.collectAsState()
     val isSearchLoading by viewModel.isSearchLoading.collectAsState()
@@ -126,27 +129,64 @@ private fun SearchTabContent(
     val isListLoading by viewModel.isListLoading.collectAsState()
     val listError by viewModel.listError.collectAsState()
 
-    val isSearchMode = searchQuery.isNotEmpty() || searchResponse != null
+    val isLlmHub = browseMode == ModelHubBrowseMode.LanguageModels
+    val isSearchMode = isLlmHub && (searchQuery.isNotEmpty() || searchResponse != null)
 
     Column(modifier = modifier) {
+        val chipScroll = rememberScrollState()
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .horizontalScroll(chipScroll)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            SearchBar(
-                query = searchQuery,
-                onQueryChange = { viewModel.updateSearchQuery(it) },
-                onSearch = {
-                    if (searchQuery.isNotEmpty()) {
-                        viewModel.performSearch()
-                    } else {
-                        viewModel.loadModels()
-                    }
-                },
-                modifier = Modifier.fillMaxWidth()
+            FilterChip(
+                selected = browseMode == ModelHubBrowseMode.LanguageModels,
+                onClick = { viewModel.setBrowseMode(ModelHubBrowseMode.LanguageModels) },
+                label = { Text("LLM") }
             )
+            FilterChip(
+                selected = browseMode == ModelHubBrowseMode.DiffusionImage,
+                onClick = { viewModel.setBrowseMode(ModelHubBrowseMode.DiffusionImage) },
+                label = { Text("Image") }
+            )
+            FilterChip(
+                selected = browseMode == ModelHubBrowseMode.DiffusionVideo,
+                onClick = { viewModel.setBrowseMode(ModelHubBrowseMode.DiffusionVideo) },
+                label = { Text("Video") }
+            )
+        }
+
+        if (!isLlmHub) {
+            Text(
+                text = "Curated Hugging Face repos from stable-diffusion.cpp docs (no search).",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+            )
+        }
+
+        if (isLlmHub) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                SearchBar(
+                    query = searchQuery,
+                    onQueryChange = { viewModel.updateSearchQuery(it) },
+                    onSearch = {
+                        if (searchQuery.isNotEmpty()) {
+                            viewModel.performSearch()
+                        } else {
+                            viewModel.loadModels()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
 
         if (isSearchMode) {
@@ -166,7 +206,7 @@ private fun SearchTabContent(
                     }
                 }
             }
-        } else {
+        } else if (isLlmHub) {
             SortFilterChips(
                 sort = listParams.sort,
                 minParams = listParams.minParams,
@@ -208,7 +248,11 @@ private fun SearchTabContent(
                             ) { model ->
                                 SearchModelListItem(
                                     model = model,
-                                    onClick = { model.id?.let { id -> onNavigateToDetails(id) } }
+                                    onClick = {
+                                        model.id?.let { id ->
+                                            onNavigateToDetails(id, browseMode)
+                                        }
+                                    }
                                 )
                             }
                         }
@@ -225,7 +269,11 @@ private fun SearchTabContent(
                         )
 
                         listResponse?.models.isNullOrEmpty() -> Text(
-                            text = "No models found. Tap Search to try.",
+                            text = if (isLlmHub) {
+                                "No models found. Tap Search to try."
+                            } else {
+                                "No curated models in this list."
+                            },
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -239,7 +287,11 @@ private fun SearchTabContent(
                             ) { model ->
                                 ModelListItem(
                                     model = model,
-                                    onClick = { model.id?.let { id -> onNavigateToDetails(id) } }
+                                    onClick = {
+                                        model.id?.let { id ->
+                                            onNavigateToDetails(id, browseMode)
+                                        }
+                                    }
                                 )
                             }
                         }

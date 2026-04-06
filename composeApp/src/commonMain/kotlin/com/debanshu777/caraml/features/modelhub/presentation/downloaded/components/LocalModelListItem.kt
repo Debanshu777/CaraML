@@ -13,6 +13,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
+import com.debanshu777.caraml.core.storage.localmodel.displayFilename
+import com.debanshu777.huggingfacemanager.model.DIFFUSERS_BUNDLE_DB_FILENAME
 import com.debanshu777.huggingfacemanager.model.PipelineTag
 import kotlin.math.roundToInt
 
@@ -22,7 +24,12 @@ fun LocalModelListItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isSupported = PipelineTag.isSupported(model.pipelineTag)
+    val isSupported = PipelineTag.isSupported(model.pipelineTag) ||
+        model.filename == DIFFUSERS_BUNDLE_DB_FILENAME ||
+        model.filename.endsWith(".gguf", ignoreCase = true) ||
+        model.filename.endsWith(".safetensors", ignoreCase = true) ||
+        model.filename.endsWith(".ckpt", ignoreCase = true) ||
+        model.filename.endsWith(".pth", ignoreCase = true)
     
     Surface(
         modifier = modifier
@@ -42,7 +49,7 @@ fun LocalModelListItem(
             )
             Text(
                 text = buildString {
-                    append(model.filename)
+                    append(model.displayFilename())
                     model.author?.let { append(" • by $it") }
                     model.pipelineTag?.let { 
                         append(" • ")

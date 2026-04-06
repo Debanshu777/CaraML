@@ -50,7 +50,9 @@ fun NavigationHost(
                     SearchScreen(
                         modelViewModel = modelViewModel,
                         downloadedModelsViewModel = downloadedModelsViewModel,
-                        onNavigateToDetails = { backStack.add(AppScreen.Details(it)) },
+                        onNavigateToDetails = { modelId, hubMode ->
+                            backStack.add(AppScreen.Details(modelId, hubMode))
+                        },
                         onSelectModelAndGoBack = { model ->
                             chatViewModel.selectModel(model)
                             backStack.removeLastOrNull()
@@ -62,6 +64,7 @@ fun NavigationHost(
                     DetailsScreen(
                         viewModel = modelViewModel,
                         modelId = key.modelId,
+                        hubBrowseMode = key.hubBrowseMode,
                         onBack = { backStack.removeLastOrNull() },
                     )
                 }

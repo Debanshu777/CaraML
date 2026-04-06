@@ -29,9 +29,9 @@ actual class DownloadManager actual constructor(
         path: String,
         metadata: DownloadMetadataDTO
     ): Flow<DownloadProgressDTO> = channelFlow {
-        val filename = path.substringAfterLast('/').ifEmpty { path }
+        val relativePath = path.trim().replace('\\', '/').trimStart('/')
         val dirPath = pathProvider.getModelsStorageDirectory(modelId)
-        val file = File(dirPath, filename)
+        val file = File(dirPath, relativePath)
         file.parentFile?.mkdirs()
 
         val requiredBytes = metadata.sizeBytes

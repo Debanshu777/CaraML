@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.filled.Info
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
 import com.debanshu777.huggingfacemanager.model.ModelDetailResponse
 import com.debanshu777.caraml.features.modelhub.presentation.search.GgufFileUiState
@@ -32,6 +33,9 @@ fun ModelDetailContent(
     ggufFiles: List<GgufFileUiState>,
     isDownloading: Boolean,
     onDownloadClick: (String, String, DownloadMetadataDTO) -> Unit,
+    weightFilesHeading: String = "GGUF files",
+    weightFilesEmptyLabel: String = "No GGUF files found",
+    showDiffusionHint: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     if (model == null) return
@@ -157,14 +161,40 @@ fun ModelDetailContent(
         if (ggufFiles.isNotEmpty()) {
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
             Text(
-                text = "GGUF Files",
+                text = weightFilesHeading,
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(bottom = 8.dp)
             )
+            if (showDiffusionHint) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                        Text(
+                            text = "Tap any file to download all required components automatically. " +
+                                "fp16 variants are smaller with minimal quality loss.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                }
+            }
             ggufFiles.forEach { item ->
                 GgufFileListItem(
-                    filename = item.filename,
+                    filename = item.path.ifEmpty { item.filename },
                     sizeBytes = item.sizeBytes,
                     isDownloaded = item.isDownloaded,
                     progress = item.progress,
@@ -188,7 +218,7 @@ fun ModelDetailContent(
         } else {
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
             Text(
-                text = "No GGUF files found",
+                text = weightFilesEmptyLabel,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

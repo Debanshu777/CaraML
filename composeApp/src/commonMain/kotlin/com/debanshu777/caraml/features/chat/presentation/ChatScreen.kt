@@ -19,10 +19,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.debanshu777.caraml.core.drawer.DrawerController
 import com.debanshu777.caraml.core.drawer.LocalDrawerController
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
+import com.debanshu777.caraml.features.chat.domain.GenerationMode
 import com.debanshu777.caraml.features.chat.presentation.components.providers.ChatMessageListPreviewProvider
 import com.debanshu777.caraml.features.chat.presentation.components.providers.LiveGenerationStatsPreviewProvider
 import com.debanshu777.caraml.features.chat.presentation.components.providers.LocalModelPreviewProvider
 import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.flow.StateFlow
 import com.debanshu777.caraml.features.chat.presentation.components.ChatInputBar
 import com.debanshu777.caraml.features.chat.presentation.components.ContextStatsIndicator
@@ -31,8 +33,8 @@ import com.debanshu777.caraml.features.chat.presentation.components.GenerationSt
 import com.debanshu777.caraml.features.chat.presentation.components.ModelErrorScreen
 import com.debanshu777.caraml.features.chat.presentation.components.ModelLoadingScreen
 import com.debanshu777.caraml.features.chat.presentation.components.ModelSelectorTopBar
+import com.debanshu777.caraml.features.chat.presentation.components.NoCompatibleModelsScreen
 import com.debanshu777.caraml.features.chat.presentation.components.NoModelsScreen
-import kotlinx.collections.immutable.toImmutableList
 
 @Composable
 fun ChatScreen(
@@ -51,6 +53,7 @@ fun ChatScreen(
         onSendMessage = viewModel::sendMessage,
         onCancelGeneration = viewModel::cancelGeneration,
         onNavigateToSearch = onNavigateToSearch,
+        onGenerationModeChange = viewModel::setGenerationMode,
         contextIndicator = {
             ContextStatsIndicator(streamingStateFlow = viewModel.streamingState)
         },
@@ -67,11 +70,26 @@ fun ChatScreenContent(
     onSendMessage: (String) -> Unit,
     onCancelGeneration: () -> Unit,
     onNavigateToSearch: () -> Unit,
+    onGenerationModeChange: (GenerationMode) -> Unit,
     contextIndicator: @Composable RowScope.() -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
     val drawerController = LocalDrawerController.current
+
+    val topBarTitle = when (val s = uiState) {
+        is ChatUiState.Ready -> when (s.generationMode) {
+            GenerationMode.Text -> "Chat"
+            GenerationMode.Image -> "Image"
+            GenerationMode.Video -> "Video"
+        }
+        is ChatUiState.NoModelsForMode -> when (s.mode) {
+            GenerationMode.Text -> "Chat"
+            GenerationMode.Image -> "Image"
+            GenerationMode.Video -> "Video"
+        }
+        else -> "Assistant"
+    }
 
     val messageCount = (uiState as? ChatUiState.Ready)?.messages?.size ?: 0
     LaunchedEffect(messageCount) {
@@ -83,20 +101,26 @@ fun ChatScreenContent(
         modifier = modifier,
         topBar = {
             ModelSelectorTopBar(
+                title = topBarTitle,
                 onMenuClick = { drawerController.toggle() }
             )
         },
         bottomBar = {
             if (uiState is ChatUiState.Ready) {
                 Column {
-                    if (uiState.isGenerating && streamingState.liveStats != null) {
+                    if (uiState.generationMode == GenerationMode.Text &&
+                        uiState.isGenerating &&
+                        streamingState.liveStats != null
+                    ) {
                         GenerationStatsBar(stats = streamingState.liveStats)
                     }
 
                     ChatInputBar(
+                        generationMode = uiState.generationMode,
+                        onGenerationModeChange = onGenerationModeChange,
                         isGenerating = uiState.isGenerating,
                         selectedModel = uiState.selectedModel,
-                        topModels = uiState.topModels,
+                        pickerModels = uiState.pickerModels,
                         onSelectModel = onSelectModel,
                         onDownloadModelClick = onNavigateToSearch,
                         onSendMessage = onSendMessage,
@@ -112,6 +136,14 @@ fun ChatScreenContent(
                 NoModelsScreen(
                     onDownloadModelClick = onNavigateToSearch,
                     Modifier.padding(paddingValues)
+                )
+            }
+
+            is ChatUiState.NoModelsForMode -> {
+                NoCompatibleModelsScreen(
+                    mode = uiState.mode,
+                    onDownloadModelClick = onNavigateToSearch,
+                    modifier = Modifier.padding(paddingValues)
                 )
             }
 
@@ -156,6 +188,7 @@ private fun ChatScreenContentNoModelsPreview() {
                     onSendMessage = {},
                     onCancelGeneration = {},
                     onNavigateToSearch = {},
+                    onGenerationModeChange = {},
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -176,6 +209,7 @@ private fun ChatScreenContentModelLoadingPreview() {
                     onSendMessage = {},
                     onCancelGeneration = {},
                     onNavigateToSearch = {},
+                    onGenerationModeChange = {},
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -196,6 +230,7 @@ private fun ChatScreenContentModelErrorPreview() {
                     onSendMessage = {},
                     onCancelGeneration = {},
                     onNavigateToSearch = {},
+                    onGenerationModeChange = {},
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -216,6 +251,8 @@ private fun ChatScreenContentReadyPreview() {
                         messages = messages.toImmutableList(),
                         selectedModel = model,
                         topModels = persistentListOf(model),
+                        pickerModels = persistentListOf(model),
+                        generationMode = GenerationMode.Text,
                         isGenerating = false
                     ),
                     streamingState = StreamingState(),
@@ -223,6 +260,7 @@ private fun ChatScreenContentReadyPreview() {
                     onSendMessage = {},
                     onCancelGeneration = {},
                     onNavigateToSearch = {},
+                    onGenerationModeChange = {},
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -244,6 +282,8 @@ private fun ChatScreenContentReadyGeneratingPreview() {
                         messages = messages.toImmutableList(),
                         selectedModel = model,
                         topModels = persistentListOf(model),
+                        pickerModels = persistentListOf(model),
+                        generationMode = GenerationMode.Text,
                         isGenerating = true
                     ),
                     streamingState = StreamingState(
@@ -253,6 +293,7 @@ private fun ChatScreenContentReadyGeneratingPreview() {
                     onSendMessage = {},
                     onCancelGeneration = {},
                     onNavigateToSearch = {},
+                    onGenerationModeChange = {},
                     modifier = Modifier.fillMaxSize()
                 )
             }

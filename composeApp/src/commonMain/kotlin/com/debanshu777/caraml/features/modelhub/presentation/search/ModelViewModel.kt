@@ -12,11 +12,18 @@ import com.debanshu777.huggingfacemanager.download.DownloadManager
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
 import com.debanshu777.huggingfacemanager.download.InsufficientStorageException
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
+import com.debanshu777.huggingfacemanager.model.DIFFUSERS_BUNDLE_DB_FILENAME
 import com.debanshu777.huggingfacemanager.model.ModelDetailResponse
+import com.debanshu777.huggingfacemanager.model.ModelFileWeightFilter
+import com.debanshu777.huggingfacemanager.model.isDiffusersModelDirectory
+import com.debanshu777.huggingfacemanager.model.normalizeDiffusersFileNames
 import com.debanshu777.huggingfacemanager.model.ModelSort
 import com.debanshu777.huggingfacemanager.model.ParameterRange
 import com.debanshu777.huggingfacemanager.model.ListModelsResponse
 import com.debanshu777.huggingfacemanager.model.SearchModelsResponse
+import com.debanshu777.huggingfacemanager.sdcpp.loadSdCppCuratedCatalog
+import com.debanshu777.huggingfacemanager.sdcpp.toListModelsResponse
+import com.debanshu777.huggingfacemanager.sdcpp.toVideoListModelsResponse
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -62,6 +69,11 @@ class ModelViewModel(
                 started = SharingStarted.WhileSubscribed(5000),
                 initialValue = StorageInfoUiState()
             )
+
+    private val _browseMode = MutableStateFlow(ModelHubBrowseMode.LanguageModels)
+    val browseMode: StateFlow<ModelHubBrowseMode> = _browseMode.asStateFlow()
+
+    private val sdCppCatalog = loadSdCppCuratedCatalog()
 
     private val _listParams = MutableStateFlow(
         ListModelsParams(
@@ -111,7 +123,35 @@ class ModelViewModel(
     private val _downloadError = MutableStateFlow<String?>(null)
     val downloadError: StateFlow<String?> = _downloadError.asStateFlow()
 
+    fun setBrowseMode(mode: ModelHubBrowseMode) {
+        val previous = _browseMode.value
+        _browseMode.value = mode
+        when (mode) {
+            ModelHubBrowseMode.LanguageModels -> {
+                if (previous != ModelHubBrowseMode.LanguageModels) {
+                    _listResponse.update { null }
+                    loadModels()
+                }
+            }
+
+            ModelHubBrowseMode.DiffusionImage -> {
+                resetSearchStateForCuratedHub()
+                _listError.update { null }
+                _isListLoading.update { false }
+                _listResponse.update { sdCppCatalog.image.toListModelsResponse() }
+            }
+
+            ModelHubBrowseMode.DiffusionVideo -> {
+                resetSearchStateForCuratedHub()
+                _listError.update { null }
+                _isListLoading.update { false }
+                _listResponse.update { sdCppCatalog.video.toVideoListModelsResponse() }
+            }
+        }
+    }
+
     fun loadModels() {
+        if (_browseMode.value != ModelHubBrowseMode.LanguageModels) return
         viewModelScope.launch {
             _isListLoading.update { true }
             _listError.update { null }
@@ -152,6 +192,7 @@ class ModelViewModel(
         minParams: ParameterRange? = null,
         maxParams: ParameterRange? = null
     ) {
+        if (_browseMode.value != ModelHubBrowseMode.LanguageModels) return
         val current = _listParams.value
         val newMin = minParams ?: current.minParams
         val newMax = maxParams ?: current.maxParams
@@ -165,7 +206,10 @@ class ModelViewModel(
         }
     }
 
-    fun loadDetail(modelId: String) {
+    fun loadDetail(
+        modelId: String,
+        hubBrowseMode: ModelHubBrowseMode = ModelHubBrowseMode.LanguageModels,
+    ) {
         if (modelId.isBlank()) return
         viewModelScope.launch {
             _isDetailLoading.update { true }
@@ -177,18 +221,35 @@ class ModelViewModel(
                 is Result.Success -> {
                     _modelDetail.update { detailResult.data }
                     _detailError.update { null }
-                    
-                    when (val treeResult = api.getModelFileTree(modelId)) {
+
+                    val weightFilter = when (hubBrowseMode) {
+                        ModelHubBrowseMode.LanguageModels -> ModelFileWeightFilter.GgufOnly
+                        ModelHubBrowseMode.DiffusionImage,
+                        ModelHubBrowseMode.DiffusionVideo ->
+                            ModelFileWeightFilter.StableDiffusionCppWeights
+                    }
+                    when (val treeResult = api.getModelFileTree(modelId, weightFilter)) {
                         is Result.Success -> {
                             val downloaded = localModelRepository.getDownloadedFilenames(modelId)
+                            val bundleDownloaded =
+                                DIFFUSERS_BUNDLE_DB_FILENAME in downloaded &&
+                                    hubBrowseMode != ModelHubBrowseMode.LanguageModels
                             _ggufFiles.update {
                                 treeResult.data.map { item ->
-                                    val fn = item.path?.substringAfterLast('/') ?: item.path ?: ""
+                                    val rel = item.path ?: ""
+                                    val fn = rel.substringAfterLast('/').ifEmpty { rel }
+                                    val isDownloaded = when (hubBrowseMode) {
+                                        ModelHubBrowseMode.DiffusionImage,
+                                        ModelHubBrowseMode.DiffusionVideo,
+                                        -> bundleDownloaded || rel in downloaded || fn in downloaded
+                                        ModelHubBrowseMode.LanguageModels ->
+                                            fn in downloaded || rel in downloaded
+                                    }
                                     GgufFileUiState(
-                                        path = item.path ?: "",
+                                        path = rel,
                                         filename = fn,
                                         sizeBytes = item.size,
-                                        isDownloaded = fn in downloaded,
+                                        isDownloaded = isDownloaded,
                                         progress = null
                                     )
                                 }
@@ -230,34 +291,29 @@ class ModelViewModel(
         viewModelScope.launch {
             _isDownloading.update { true }
             _downloadError.update { null }
+            val diffusionHub = when (_browseMode.value) {
+                ModelHubBrowseMode.DiffusionImage,
+                ModelHubBrowseMode.DiffusionVideo,
+                -> true
+                ModelHubBrowseMode.LanguageModels -> false
+            }
             try {
-                downloadManager.download(modelId, path, metadata).collect { progress ->
-                    _ggufFiles.update { list ->
-                        list.map {
-                            if (it.path == path) it.copy(progress = progress.percentage) else it
-                        }
-                    }
-                    if (progress.localPath != null) {
-                        localModelRepository.insert(
-                            modelId = modelId,
-                            filename = path.substringAfterLast('/').ifEmpty { path },
-                            localPath = progress.localPath!!,
-                            sizeBytes = metadata.sizeBytes,
-                            author = metadata.author,
-                            libraryName = metadata.libraryName,
-                            pipelineTag = metadata.pipelineTag,
-                            contextLength = metadata.contextLength
-                        )
-                    }
+                if (diffusionHub) {
+                    downloadDiffusionBundle(modelId, triggeredPath = path, sharedMetadata = metadata)
+                } else {
+                    downloadSingleWeight(modelId, path, metadata)
                 }
                 val downloaded = localModelRepository.getDownloadedFilenames(modelId)
+                val bundleDownloaded =
+                    DIFFUSERS_BUNDLE_DB_FILENAME in downloaded && diffusionHub
                 _ggufFiles.update { list ->
                     list.map { file ->
-                        if (file.path == path) {
-                            file.copy(isDownloaded = true, progress = null)
-                        } else {
-                            file.copy(isDownloaded = file.filename in downloaded)
+                        val rel = file.path
+                        val marked = when {
+                            bundleDownloaded && diffusionHub -> true
+                            else -> file.filename in downloaded || rel in downloaded
                         }
+                        file.copy(isDownloaded = marked, progress = null)
                     }
                 }
             } catch (e: InsufficientStorageException) {
@@ -266,21 +322,147 @@ class ModelViewModel(
                 _downloadError.update {
                     "Not enough storage space. Need $required but only $available is available."
                 }
-                _ggufFiles.update { list ->
-                    list.map { file ->
-                        if (file.path == path) file.copy(progress = null) else file
-                    }
-                }
+                _ggufFiles.update { list -> list.map { it.copy(progress = null) } }
             } catch (_: Exception) {
                 _downloadError.update { "Download failed. Please check your connection and try again." }
-                _ggufFiles.update { list ->
-                    list.map { file ->
-                        if (file.path == path) file.copy(progress = null) else file
-                    }
-                }
+                _ggufFiles.update { list -> list.map { it.copy(progress = null) } }
             } finally {
                 _isDownloading.update { false }
             }
+        }
+    }
+
+    private suspend fun downloadSingleWeight(
+        modelId: String,
+        path: String,
+        metadata: DownloadMetadataDTO,
+    ) {
+        downloadManager.download(modelId, path, metadata).collect { progress ->
+            _ggufFiles.update { list ->
+                list.map {
+                    if (it.path == path) it.copy(progress = progress.percentage) else it
+                }
+            }
+            if (progress.localPath != null) {
+                val relativePath = path.trim().replace('\\', '/').trimStart('/')
+                localModelRepository.insert(
+                    modelId = modelId,
+                    filename = relativePath.substringAfterLast('/').ifEmpty { relativePath },
+                    localPath = progress.localPath!!,
+                    sizeBytes = metadata.sizeBytes,
+                    author = metadata.author,
+                    libraryName = metadata.libraryName,
+                    pipelineTag = metadata.pipelineTag,
+                    contextLength = metadata.contextLength
+                )
+            }
+        }
+    }
+
+    private fun selectDiffusionFilesToDownload(
+        pending: List<GgufFileUiState>,
+        triggeredPath: String,
+    ): List<GgufFileUiState> {
+        val isRootFile = !triggeredPath.contains('/')
+        if (isRootFile) {
+            return pending.filter { it.path == triggeredPath }
+        }
+        val wantFp16 = triggeredPath.contains(".fp16.", ignoreCase = true)
+        val subdirFiles = pending.filter { it.path.contains('/') }
+        val byDir = subdirFiles.groupBy { it.path.substringBeforeLast('/') }
+        return byDir.flatMap { (_, filesInDir) ->
+            val matching = filesInDir.filter {
+                it.path.contains(".fp16.", ignoreCase = true) == wantFp16
+            }
+            matching.ifEmpty { filesInDir }
+        }
+    }
+
+    private suspend fun downloadDiffusionBundle(
+        modelId: String,
+        triggeredPath: String,
+        sharedMetadata: DownloadMetadataDTO,
+    ) {
+        val allPending = _ggufFiles.value.filter { !it.isDownloaded && it.path.isNotBlank() }
+        if (allPending.isEmpty()) return
+
+        val selected = selectDiffusionFilesToDownload(allPending, triggeredPath)
+        if (selected.isEmpty()) return
+
+        val totalRequired = selected.sumOf { it.sizeBytes ?: 0L }
+        if (totalRequired > 0L) {
+            val available = storagePathProvider.getAvailableStorageBytes()
+            if (available < totalRequired) {
+                throw InsufficientStorageException(totalRequired, available)
+            }
+        }
+
+        val detail = _modelDetail.value
+        fun metaFor(file: GgufFileUiState): DownloadMetadataDTO = DownloadMetadataDTO(
+            sizeBytes = file.sizeBytes,
+            author = detail?.author ?: sharedMetadata.author,
+            libraryName = detail?.libraryName ?: sharedMetadata.libraryName,
+            pipelineTag = detail?.pipelineTag ?: sharedMetadata.pipelineTag,
+            contextLength = sharedMetadata.contextLength,
+        )
+
+        val ordered = if (selected.any { it.path == triggeredPath }) {
+            listOf(selected.first { it.path == triggeredPath }) +
+                selected.filter { it.path != triggeredPath }
+        } else {
+            selected
+        }
+
+        for (file in ordered) {
+            val meta = metaFor(file)
+            downloadManager.download(modelId, file.path, meta).collect { progress ->
+                _ggufFiles.update { list ->
+                    list.map {
+                        if (it.path == file.path) it.copy(progress = progress.percentage) else it
+                    }
+                }
+            }
+        }
+
+        val modelRoot = storagePathProvider.getModelsStorageDirectory(modelId)
+        normalizeDiffusersFileNames(
+            rootDir = modelRoot,
+            fileExists = storagePathProvider::fileExists,
+            renameFile = storagePathProvider::renameFile,
+        )
+        val diffusersOk = isDiffusersModelDirectory(modelRoot, storagePathProvider::fileExists)
+
+        if (diffusersOk) {
+            localModelRepository.deleteAllForModelId(modelId)
+            val totalSize = selected.sumOf { it.sizeBytes ?: 0L }.takeIf { it > 0L }
+            localModelRepository.insert(
+                modelId = modelId,
+                filename = DIFFUSERS_BUNDLE_DB_FILENAME,
+                localPath = modelRoot,
+                sizeBytes = totalSize,
+                author = detail?.author,
+                libraryName = detail?.libraryName,
+                pipelineTag = detail?.pipelineTag,
+                contextLength = null,
+            )
+        } else {
+            val fallback = ordered.lastOrNull() ?: return
+            val relativePath = fallback.path.trim().replace('\\', '/').trimStart('/')
+            val localPath = "$modelRoot/$relativePath"
+            if (!storagePathProvider.fileExists(localPath)) {
+                throw IllegalStateException()
+            }
+            localModelRepository.deleteAllForModelId(modelId)
+            localModelRepository.insert(
+                modelId = modelId,
+                filename = relativePath.substringAfterLast('/').ifEmpty { relativePath },
+                localPath = localPath,
+                sizeBytes = fallback.sizeBytes,
+                author = detail?.author,
+                libraryName = detail?.libraryName,
+                pipelineTag = detail?.pipelineTag,
+                contextLength = null,
+            )
         }
     }
 
@@ -297,10 +479,12 @@ class ModelViewModel(
     }
 
     fun updateSearchQuery(query: String) {
+        if (_browseMode.value != ModelHubBrowseMode.LanguageModels) return
         _searchQuery.update { query }
     }
 
     fun performSearch() {
+        if (_browseMode.value != ModelHubBrowseMode.LanguageModels) return
         val query = _searchQuery.value
         if (query.isBlank()) {
             _searchError.update { "Please enter a search query" }
@@ -345,6 +529,13 @@ class ModelViewModel(
         _searchQuery.update { "" }
         _searchResponse.update { null }
         _searchError.update { null }
+    }
+
+    private fun resetSearchStateForCuratedHub() {
+        _searchQuery.update { "" }
+        _searchResponse.update { null }
+        _searchError.update { null }
+        _isSearchLoading.update { false }
     }
 
     fun clearSearchError() {

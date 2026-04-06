@@ -11,6 +11,12 @@ interface LocalModelDao {
     @Query("SELECT filename FROM local_model WHERE model_id = :modelId")
     suspend fun getFilenamesByModelId(modelId: String): List<String>
 
+    @Query("DELETE FROM local_model WHERE model_id = :modelId AND filename = :filename")
+    suspend fun deleteByModelIdAndFilename(modelId: String, filename: String)
+
+    @Query("DELETE FROM local_model WHERE model_id = :modelId")
+    suspend fun deleteAllForModelId(modelId: String)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entity: LocalModelEntity)
 
