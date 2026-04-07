@@ -23,4 +23,11 @@ interface StoragePathProvider {
      * fail on iOS).
      */
     fun renameFile(from: String, to: String): Boolean
+
+    /**
+     * Deletes a downloaded artifact at [localPath] after verifying it lies under
+     * [getModelsStorageDirectory](modelId). Removes a single file or a directory tree.
+     * Returns true if the path no longer exists afterwards (including if it was already absent).
+     */
+    fun deleteDownloadedModelContent(modelId: String, localPath: String): Boolean
 }

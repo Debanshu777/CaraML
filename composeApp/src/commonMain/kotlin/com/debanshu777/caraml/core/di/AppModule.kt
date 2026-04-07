@@ -74,10 +74,11 @@ val appModule = module {
             storagePathProvider = get()
         ) 
     }
-    viewModel { 
+    viewModel {
         DownloadedModelsViewModel(
-            localModelRepository = get()
-        ) 
+            localModelRepository = get(),
+            storagePathProvider = get()
+        )
     }
     viewModel {
         SettingsViewModel(

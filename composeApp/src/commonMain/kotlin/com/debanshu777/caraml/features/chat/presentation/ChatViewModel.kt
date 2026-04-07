@@ -212,9 +212,13 @@ class ChatViewModel(
             _selectedModel.value = null
             return
         }
+        val previous = _selectedModel.value
         val next = pickRememberedModel(picker, mode) ?: picker.first()
         _internal.value = InternalChatState.ModelLoading
         _selectedModel.value = next
+        if (previous?.id == next.id) {
+            loadModel(next)
+        }
     }
 
     fun selectModel(model: LocalModelEntity) {

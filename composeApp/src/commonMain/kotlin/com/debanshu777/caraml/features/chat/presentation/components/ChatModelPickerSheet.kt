@@ -24,7 +24,10 @@ import androidx.compose.material3.SheetState
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
@@ -54,11 +57,17 @@ fun ChatModelPickerSheet(
             GenerationMode.Video to "Video"
         )
     }
-    val selectedModeIndex = modes.indexOfFirst { it.first == generationMode }.coerceAtLeast(0)
-    val pickerModels = topModels.filterForMode(generationMode)
+    var sheetMode by remember { mutableStateOf(generationMode) }
+    val selectedModeIndex = modes.indexOfFirst { it.first == sheetMode }.coerceAtLeast(0)
+    val pickerModels = topModels.filterForMode(sheetMode)
+
+    fun finishSheet() {
+        onGenerationModeChange(sheetMode)
+        onDismiss()
+    }
 
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { finishSheet() },
         sheetState = sheetState
     ) {
         LazyColumn(
@@ -76,7 +85,7 @@ fun ChatModelPickerSheet(
                     modes.forEachIndexed { index, (mode, label) ->
                         SegmentedButton(
                             selected = index == selectedModeIndex,
-                            onClick = { onGenerationModeChange(mode) },
+                            onClick = { sheetMode = mode },
                             shape = SegmentedButtonDefaults.itemShape(
                                 index = index,
                                 count = ModeSegmentCount
@@ -126,6 +135,7 @@ fun ChatModelPickerSheet(
                         }
                     },
                     modifier = Modifier.clickable {
+                        onGenerationModeChange(sheetMode)
                         onSelectModel(model)
                         onDismiss()
                     },
@@ -157,7 +167,7 @@ fun ChatModelPickerSheet(
                         )
                     },
                     modifier = Modifier.clickable {
-                        onDismiss()
+                        finishSheet()
                         onDownloadModelClick()
                     },
                     colors = ListItemDefaults.colors(

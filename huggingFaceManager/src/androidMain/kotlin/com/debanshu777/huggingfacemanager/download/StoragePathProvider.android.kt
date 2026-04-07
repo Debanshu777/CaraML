@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Environment
 import android.os.StatFs
 import java.io.File
+import kotlin.io.deleteRecursively
 
 class AndroidStoragePathProvider(private val context: Context) : StoragePathProvider {
     override fun getModelsStorageDirectory(modelId: String): String {
@@ -50,4 +51,24 @@ class AndroidStoragePathProvider(private val context: Context) : StoragePathProv
 
     override fun renameFile(from: String, to: String): Boolean =
         try { File(from).renameTo(File(to)) } catch (_: Exception) { false }
+
+    override fun deleteDownloadedModelContent(modelId: String, localPath: String): Boolean =
+        try {
+            val root = File(getModelsStorageDirectory(modelId)).canonicalFile
+            val target = File(localPath).canonicalFile
+            if (!isPathWithinModelRoot(root, target)) return false
+            if (!target.exists()) return true
+            target.deleteRecursively()
+            !target.exists()
+        } catch (_: Exception) {
+            false
+        }
+}
+
+private fun isPathWithinModelRoot(root: File, target: File): Boolean {
+    val rootPath = root.path
+    val targetPath = target.path
+    if (targetPath == rootPath) return true
+    val prefix = rootPath + File.separator
+    return targetPath.startsWith(prefix)
 }

@@ -16,9 +16,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
@@ -29,10 +31,13 @@ import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -69,9 +74,11 @@ fun SearchScreen(
     val storageInfo by modelViewModel.storageInfo.collectAsState()
 
     val drawerController = LocalDrawerController.current
+    val snackbarHostState = remember { SnackbarHostState() }
 
     Scaffold(
         modifier = modifier,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Models") },
@@ -105,6 +112,7 @@ fun SearchScreen(
                 1 -> DownloadedTabContent(
                     viewModel = downloadedModelsViewModel,
                     onSelectModelAndGoBack = onSelectModelAndGoBack,
+                    snackbarHostState = snackbarHostState,
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -404,41 +412,118 @@ private fun formatStorageBytes(bytes: Long): String {
 private fun DownloadedTabContent(
     viewModel: DownloadedModelsViewModel,
     onSelectModelAndGoBack: (LocalModelEntity) -> Unit,
+    snackbarHostState: SnackbarHostState,
     modifier: Modifier = Modifier
 ) {
     val downloadedModels by viewModel.downloadedModels.collectAsState()
-    val scope = rememberCoroutineScope()
+    val selectionMode by viewModel.selectionMode.collectAsState()
+    val selectedIds by viewModel.selectedIds.collectAsState()
+    val isDeleting by viewModel.isDeleting.collectAsState()
+    val deleteResultMessage by viewModel.deleteResultMessage.collectAsState()
 
-    Box(
-        modifier = modifier,
-        contentAlignment = if (downloadedModels.isEmpty()) Alignment.Center else Alignment.TopStart
-    ) {
-        if (downloadedModels.isEmpty()) {
-            Text(
-                text = "No downloaded models yet.\nBrowse and download models to see them here.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(16.dp)
-            )
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize()
+    val scope = rememberCoroutineScope()
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    LaunchedEffect(deleteResultMessage) {
+        val message = deleteResultMessage ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(message)
+        viewModel.acknowledgeDeleteResult()
+    }
+
+    Column(modifier = modifier.fillMaxSize()) {
+        if (selectionMode && downloadedModels.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                items(
-                    items = downloadedModels,
-                    key = { it.id }
-                ) { model ->
-                    LocalModelListItem(
-                        model = model,
-                        onClick = {
-                            scope.launch {
-                                viewModel.trackModelUsage(model)
-                            }
-                            onSelectModelAndGoBack(model)
-                        }
-                    )
+                TextButton(
+                    onClick = { viewModel.clearSelection() },
+                    enabled = !isDeleting
+                ) {
+                    Text("Cancel")
+                }
+                FilledTonalButton(
+                    onClick = { showDeleteConfirm = true },
+                    enabled = selectedIds.isNotEmpty() && !isDeleting
+                ) {
+                    Text("Delete (${selectedIds.size})")
                 }
             }
         }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            contentAlignment = if (downloadedModels.isEmpty()) Alignment.Center else Alignment.TopStart
+        ) {
+            if (downloadedModels.isEmpty()) {
+                Text(
+                    text = "No downloaded models yet.\nBrowse and download models to see them here.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(16.dp)
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    items(
+                        items = downloadedModels,
+                        key = { it.id }
+                    ) { model ->
+                        LocalModelListItem(
+                            model = model,
+                            selectionMode = selectionMode,
+                            isSelected = model.id in selectedIds,
+                            onOpenModel = {
+                                scope.launch {
+                                    viewModel.trackModelUsage(model)
+                                }
+                                onSelectModelAndGoBack(model)
+                            },
+                            onToggleSelect = { viewModel.toggleSelection(model) },
+                            onLongPress = {
+                                if (selectionMode) {
+                                    viewModel.toggleSelection(model)
+                                } else {
+                                    viewModel.beginSelection(model)
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { if (!isDeleting) showDeleteConfirm = false },
+            title = { Text("Remove downloads?") },
+            text = { Text("Remove selected downloads from this device?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirm = false
+                        viewModel.deleteSelected()
+                    },
+                    enabled = !isDeleting
+                ) {
+                    Text("Remove")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showDeleteConfirm = false },
+                    enabled = !isDeleting
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }

@@ -16,7 +16,7 @@ private fun LocalModelEntity.isDiffusionFileExtension(): Boolean {
 }
 
 /**
- * Text / chat: HF text-generation tag, or GGUF (defaults to LLM in this app).
+ * Text / chat: HF text-generation tag (and variants), or GGUF (defaults to LLM when tag is unknown).
  */
 fun LocalModelEntity.isTextChatModel(): Boolean {
     if (filename == DIFFUSERS_BUNDLE_DB_FILENAME) return false
@@ -27,28 +27,32 @@ fun LocalModelEntity.isTextChatModel(): Boolean {
 }
 
 /**
- * Image or video generation: diffusion-style weights (by tag or typical checkpoint extensions).
- * Non–text-generation GGUF with a diffusion-related tag is included.
+ * Image generation: diffusion checkpoints / bundles that are not video-only and not LLM weights.
  */
 fun LocalModelEntity.isDiffusionMediaModel(): Boolean {
-    if (filename == DIFFUSERS_BUNDLE_DB_FILENAME) return true
-    if (PipelineTag.isDiffusionPipelineTag(pipelineTag)) return true
-    if (isDiffusionFileExtension()) return true
-    if (isGguf() && !PipelineTag.isTextGenerationTag(pipelineTag) &&
-        pipelineTag != null &&
-        pipelineTag.isNotBlank()
-    ) {
+    if (filename == DIFFUSERS_BUNDLE_DB_FILENAME) {
+        if (PipelineTag.isTextGenerationTag(pipelineTag)) return false
+        if (PipelineTag.isVideoPipelineTag(pipelineTag)) return false
         return true
     }
+    if (PipelineTag.isTextGenerationTag(pipelineTag)) return false
+    if (PipelineTag.isVideoPipelineTag(pipelineTag)) return false
+    if (PipelineTag.isDiffusionPipelineTag(pipelineTag)) return true
+    if (isDiffusionFileExtension()) return true
     return false
+}
+
+/** Video generation: models tagged for T2V / I2V (including diffusers bundle with video tag). */
+fun LocalModelEntity.isVideoCapableModel(): Boolean {
+    if (PipelineTag.isTextGenerationTag(pipelineTag)) return false
+    return PipelineTag.isVideoPipelineTag(pipelineTag)
 }
 
 fun LocalModelEntity.matchesGenerationMode(mode: GenerationMode): Boolean =
     when (mode) {
         GenerationMode.Text -> isTextChatModel()
-        GenerationMode.Image,
-        GenerationMode.Video,
-        -> isDiffusionMediaModel()
+        GenerationMode.Image -> isDiffusionMediaModel()
+        GenerationMode.Video -> isVideoCapableModel()
     }
 
 fun List<LocalModelEntity>.filterForMode(mode: GenerationMode): List<LocalModelEntity> =

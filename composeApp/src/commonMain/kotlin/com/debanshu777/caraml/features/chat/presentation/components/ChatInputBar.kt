@@ -146,15 +146,15 @@ private fun ChatInputBarImagePreview() {
 @Preview(name = "Video mode")
 @Composable
 private fun ChatInputBarVideoPreview() {
-    val diffusionModel = LocalModelPreviewProvider().values.first { it.id == 4L }
+    val videoModel = LocalModelPreviewProvider().values.first { it.id == 5L }
     MaterialTheme {
         Surface {
             ChatInputBar(
                 generationMode = GenerationMode.Video,
                 onGenerationModeChange = {},
                 isGenerating = false,
-                selectedModel = diffusionModel,
-                topModels = persistentListOf(diffusionModel),
+                selectedModel = videoModel,
+                topModels = persistentListOf(videoModel),
                 onSelectModel = {},
                 onDownloadModelClick = {},
                 onSendMessage = {},
@@ -164,8 +164,6 @@ private fun ChatInputBarVideoPreview() {
         }
     }
 }
-
-private val ComposerCorner = 16.dp
 
 /**
  * Compact mode badge for the composer: uses [LocalTextStyle] so line height matches the field text
@@ -228,7 +226,7 @@ fun ChatInputBar(
         modifier = modifier
             .fillMaxWidth()
             .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
-        shape = RoundedCornerShape(ComposerCorner),
+        shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surfaceContainer,
         tonalElevation = 0.dp
     ) {

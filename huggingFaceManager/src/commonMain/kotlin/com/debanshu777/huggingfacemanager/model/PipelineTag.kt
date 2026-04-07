@@ -14,12 +14,15 @@ enum class PipelineTag(val apiValue: String) {
                 entries.firstOrNull { it.apiValue == normalized }
             }
 
-        /** Language-model hubs suitable for chat. */
-        fun isTextGenerationTag(tag: String?): Boolean =
-            when (tag?.lowercase()) {
-                TEXT_GENERATION.apiValue -> true
-                else -> false
-            }
+        /**
+         * Language-model hubs suitable for chat.
+         * Matches `text-generation` and HF variants (e.g. `text-generation-instruct`),
+         * but never `text-to-image` / `text-to-video` (those start with `text-to-`).
+         */
+        fun isTextGenerationTag(tag: String?): Boolean {
+            val t = tag?.lowercase() ?: return false
+            return t.startsWith(TEXT_GENERATION.apiValue) && !t.startsWith("text-to-")
+        }
 
         /** Diffusion / video checkpoint hubs (HF pipeline tags). */
         fun isDiffusionPipelineTag(tag: String?): Boolean =
