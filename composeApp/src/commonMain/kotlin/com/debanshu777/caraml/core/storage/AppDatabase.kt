@@ -8,7 +8,7 @@ import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelDao
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 
-@Database(entities = [LocalModelEntity::class], version = 3, exportSchema = false)
+@Database(entities = [LocalModelEntity::class], version = 1, exportSchema = false)
 @ConstructedBy(AppDatabaseConstructor::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun localModelDao(): LocalModelDao

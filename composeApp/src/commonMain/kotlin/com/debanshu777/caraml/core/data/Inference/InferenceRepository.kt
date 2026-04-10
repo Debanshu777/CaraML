@@ -10,7 +10,7 @@ sealed interface ModelLoadResult {
 
 interface InferenceRepository {
     suspend fun loadModel(model: LocalModelEntity): ModelLoadResult
-    fun unloadModel()
+    suspend fun unloadModel()
     fun generateResponse(userPrompt: String): Flow<String>
     fun cancelGeneration()
     fun getContextUsed(): Int

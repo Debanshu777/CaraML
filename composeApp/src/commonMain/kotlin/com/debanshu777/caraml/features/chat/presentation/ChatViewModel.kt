@@ -38,6 +38,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlin.time.Clock
 
 private sealed class InternalChatState {
@@ -123,6 +124,14 @@ class ChatViewModel(
     private var modelLoadJob: Job? = null
     private var generationJob: Job? = null
 
+    /** Serializes native teardown on a worker thread (both repositories use Mutex + suspend APIs). */
+    private fun releaseAllRunnersBlocking() {
+        runBlocking(Dispatchers.Default) {
+            inferenceRepository.unloadModel()
+            diffusionRepository.release()
+        }
+    }
+
     init {
         combine(_topModels, _generationMode) { models, mode -> models to mode }
             .onEach { (models, mode) -> ensureSelectionForInventory(models, mode) }
@@ -140,16 +149,14 @@ class ChatViewModel(
         mode: GenerationMode,
     ) {
         if (models.isEmpty()) {
-            diffusionRepository.release()
-            inferenceRepository.unloadModel()
+            releaseAllRunnersBlocking()
             _internal.value = InternalChatState.NoModels
             _selectedModel.value = null
             return
         }
         val picker = models.filterForMode(mode)
         if (picker.isEmpty()) {
-            diffusionRepository.release()
-            inferenceRepository.unloadModel()
+            releaseAllRunnersBlocking()
             _internal.value = InternalChatState.NoModelsForMode(mode)
             _selectedModel.value = null
             return
@@ -184,30 +191,29 @@ class ChatViewModel(
 
     override fun onCleared() {
         super.onCleared()
-        inferenceRepository.unloadModel()
-        diffusionRepository.release()
+        releaseAllRunnersBlocking()
     }
 
     fun setGenerationMode(mode: GenerationMode) {
         if (_generationMode.value == mode) return
         modelLoadJob?.cancel()
         generationJob?.cancel()
-        inferenceRepository.cancelGeneration()
+        if (_generationMode.value == GenerationMode.Text) {
+            inferenceRepository.cancelGeneration()
+        }
         _streamingState.value = StreamingState()
         _generationMode.value = mode
 
         val models = _topModels.value
         val picker = models.filterForMode(mode)
         if (models.isEmpty()) {
-            diffusionRepository.release()
-            inferenceRepository.unloadModel()
+            releaseAllRunnersBlocking()
             _internal.value = InternalChatState.NoModels
             _selectedModel.value = null
             return
         }
         if (picker.isEmpty()) {
-            diffusionRepository.release()
-            inferenceRepository.unloadModel()
+            releaseAllRunnersBlocking()
             _internal.value = InternalChatState.NoModelsForMode(mode)
             _selectedModel.value = null
             return
@@ -515,7 +521,9 @@ class ChatViewModel(
     fun cancelGeneration() {
         updateReadyCore { it.copy(isGenerating = false) }
         _streamingState.value = StreamingState()
-        inferenceRepository.cancelGeneration()
+        if (_generationMode.value == GenerationMode.Text) {
+            inferenceRepository.cancelGeneration()
+        }
         generationJob?.cancel()
     }
 }

@@ -1,6 +1,7 @@
 package com.debanshu777.caraml.features.chat.domain
 
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
+import com.debanshu777.caraml.core.storage.localmodel.ModelType
 import com.debanshu777.huggingfacemanager.model.DIFFUSERS_BUNDLE_DB_FILENAME
 import com.debanshu777.huggingfacemanager.model.PipelineTag
 import kotlin.test.Test
@@ -110,5 +111,24 @@ class LocalModelGenerationClassifierTest {
         val list = listOf(image, vid)
         assertTrue(list.filterForMode(GenerationMode.Image).single() == image)
         assertTrue(list.filterForMode(GenerationMode.Video).single() == vid)
+    }
+
+    @Test
+    fun gguf_with_image_model_type_from_hub_imageOnly_even_if_pipeline_tag_null() {
+        val m = LocalModelEntity(
+            id = 0L,
+            modelId = "test/anima",
+            filename = "anima-preview3-base-Q6_K.gguf",
+            localPath = "/tmp/anima.gguf",
+            sizeBytes = null,
+            downloadedAt = 0L,
+            author = null,
+            libraryName = null,
+            pipelineTag = null,
+            usageCount = 0,
+            contextLength = null,
+            modelType = ModelType.IMAGE,
+        )
+        assertModes(m, text = false, image = true, video = false)
     }
 }

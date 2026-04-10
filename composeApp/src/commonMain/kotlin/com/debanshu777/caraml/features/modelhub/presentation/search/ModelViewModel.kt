@@ -3,6 +3,7 @@ package com.debanshu777.caraml.features.modelhub.presentation.search
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
+import com.debanshu777.caraml.core.storage.localmodel.ModelType
 import com.debanshu777.huggingfacemanager.HuggingFaceApi
 import com.debanshu777.huggingfacemanager.api.ListModelsParams
 import com.debanshu777.huggingfacemanager.api.SearchModelsParams
@@ -123,6 +124,13 @@ class ModelViewModel(
     private val _downloadError = MutableStateFlow<String?>(null)
     val downloadError: StateFlow<String?> = _downloadError.asStateFlow()
 
+    private fun modelTypeForCurrentBrowseMode(): String =
+        when (_browseMode.value) {
+            ModelHubBrowseMode.LanguageModels -> ModelType.TEXT
+            ModelHubBrowseMode.DiffusionImage -> ModelType.IMAGE
+            ModelHubBrowseMode.DiffusionVideo -> ModelType.VIDEO
+        }
+
     fun setBrowseMode(mode: ModelHubBrowseMode) {
         val previous = _browseMode.value
         _browseMode.value = mode
@@ -211,6 +219,7 @@ class ModelViewModel(
         hubBrowseMode: ModelHubBrowseMode = ModelHubBrowseMode.LanguageModels,
     ) {
         if (modelId.isBlank()) return
+        _browseMode.value = hubBrowseMode
         viewModelScope.launch {
             _isDetailLoading.update { true }
             _detailError.update { null }
@@ -291,6 +300,7 @@ class ModelViewModel(
         viewModelScope.launch {
             _isDownloading.update { true }
             _downloadError.update { null }
+            val modelType = modelTypeForCurrentBrowseMode()
             val diffusionHub = when (_browseMode.value) {
                 ModelHubBrowseMode.DiffusionImage,
                 ModelHubBrowseMode.DiffusionVideo,
@@ -299,9 +309,14 @@ class ModelViewModel(
             }
             try {
                 if (diffusionHub) {
-                    downloadDiffusionBundle(modelId, triggeredPath = path, sharedMetadata = metadata)
+                    downloadDiffusionBundle(
+                        modelId,
+                        triggeredPath = path,
+                        sharedMetadata = metadata,
+                        modelType = modelType,
+                    )
                 } else {
-                    downloadSingleWeight(modelId, path, metadata)
+                    downloadSingleWeight(modelId, path, metadata, modelType = modelType)
                 }
                 val downloaded = localModelRepository.getDownloadedFilenames(modelId)
                 val bundleDownloaded =
@@ -336,6 +351,7 @@ class ModelViewModel(
         modelId: String,
         path: String,
         metadata: DownloadMetadataDTO,
+        modelType: String,
     ) {
         downloadManager.download(modelId, path, metadata).collect { progress ->
             _ggufFiles.update { list ->
@@ -353,7 +369,8 @@ class ModelViewModel(
                     author = metadata.author,
                     libraryName = metadata.libraryName,
                     pipelineTag = metadata.pipelineTag,
-                    contextLength = metadata.contextLength
+                    contextLength = metadata.contextLength,
+                    modelType = modelType,
                 )
             }
         }
@@ -382,6 +399,7 @@ class ModelViewModel(
         modelId: String,
         triggeredPath: String,
         sharedMetadata: DownloadMetadataDTO,
+        modelType: String,
     ) {
         val allPending = _ggufFiles.value.filter { !it.isDownloaded && it.path.isNotBlank() }
         if (allPending.isEmpty()) return
@@ -444,6 +462,7 @@ class ModelViewModel(
                 libraryName = detail?.libraryName,
                 pipelineTag = detail?.pipelineTag,
                 contextLength = null,
+                modelType = modelType,
             )
         } else {
             val fallback = ordered.lastOrNull() ?: return
@@ -462,6 +481,7 @@ class ModelViewModel(
                 libraryName = detail?.libraryName,
                 pipelineTag = detail?.pipelineTag,
                 contextLength = null,
+                modelType = modelType,
             )
         }
     }

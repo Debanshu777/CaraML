@@ -17,6 +17,9 @@ class LocalModelRepository(private val dao: LocalModelDao) {
     fun getAllDownloadedFiles(): Flow<List<LocalModelEntity>> =
         dao.getAllDownloadedFiles()
 
+    fun getDownloadedFilesByType(modelType: String): Flow<List<LocalModelEntity>> =
+        dao.getDownloadedFilesByType(modelType)
+
     fun getTotalDownloadedSizeBytes(): Flow<Long> =
         dao.getTotalDownloadedSizeBytes()
 
@@ -32,7 +35,8 @@ class LocalModelRepository(private val dao: LocalModelDao) {
         author: String?,
         libraryName: String?,
         pipelineTag: String?,
-        contextLength: Int? = null
+        contextLength: Int? = null,
+        modelType: String,
     ) {
         dao.insert(
             LocalModelEntity(
@@ -44,7 +48,8 @@ class LocalModelRepository(private val dao: LocalModelDao) {
                 author = author,
                 libraryName = libraryName,
                 pipelineTag = pipelineTag,
-                contextLength = contextLength
+                contextLength = contextLength,
+                modelType = modelType,
             )
         )
     }
