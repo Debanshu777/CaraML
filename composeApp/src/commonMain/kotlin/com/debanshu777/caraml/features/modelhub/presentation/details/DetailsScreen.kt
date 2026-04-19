@@ -43,6 +43,9 @@ fun DetailsScreen(
     val ggufFiles by viewModel.ggufFiles.collectAsState()
     val isDownloading by viewModel.isDownloading.collectAsState()
     val downloadError by viewModel.downloadError.collectAsState()
+    val setupComponents by viewModel.setupComponents.collectAsState()
+    val isDownloadingSetupComponents by viewModel.isDownloadingSetupComponents.collectAsState()
+    val setupDownloadError by viewModel.setupDownloadError.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(modelId, hubBrowseMode) {
@@ -53,6 +56,12 @@ fun DetailsScreen(
         val error = downloadError ?: return@LaunchedEffect
         snackbarHostState.showSnackbar(error)
         viewModel.clearDownloadError()
+    }
+
+    LaunchedEffect(setupDownloadError) {
+        val error = setupDownloadError ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(error)
+        viewModel.clearSetupDownloadError()
     }
 
     Scaffold(
@@ -110,6 +119,11 @@ fun DetailsScreen(
                             weightFilesHeading = weightHeading,
                             weightFilesEmptyLabel = weightEmpty,
                             showDiffusionHint = hubBrowseMode != ModelHubBrowseMode.LanguageModels,
+                            setupComponents = setupComponents,
+                            isDownloadingSetupComponents = isDownloadingSetupComponents,
+                            onDownloadAllComponents = {
+                                viewModel.downloadSetupComponents(modelId)
+                            },
                             modifier = Modifier.fillMaxSize()
                         )
                     }

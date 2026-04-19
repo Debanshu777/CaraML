@@ -13,8 +13,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Circle
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -22,10 +28,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.compose.material.icons.filled.Info
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
 import com.debanshu777.huggingfacemanager.model.ModelDetailResponse
 import com.debanshu777.caraml.features.modelhub.presentation.search.GgufFileUiState
+import com.debanshu777.caraml.features.modelhub.presentation.search.SetupComponentUiState
+import com.debanshu777.huggingfacemanager.sdcpp.getModelSetup
 
 @Composable
 fun ModelDetailContent(
@@ -36,6 +43,9 @@ fun ModelDetailContent(
     weightFilesHeading: String = "GGUF files",
     weightFilesEmptyLabel: String = "No GGUF files found",
     showDiffusionHint: Boolean = false,
+    setupComponents: List<SetupComponentUiState> = emptyList(),
+    isDownloadingSetupComponents: Boolean = false,
+    onDownloadAllComponents: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     if (model == null) return
@@ -158,6 +168,121 @@ fun ModelDetailContent(
                 }
             }
         }
+        
+        // Required Components section for diffusion models
+        val modelId = model.modelId ?: model.id ?: ""
+        val modelSetup = getModelSetup(modelId)
+        
+        if (modelSetup != null) {
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            
+            if (modelSetup.selfContained) {
+                // Self-contained model banner
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Column {
+                            Text(
+                                text = "Self-Contained Model",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Text(
+                                text = "No additional downloads required. This model includes all necessary components.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+                }
+            } else if (setupComponents.isNotEmpty()) {
+                // Multi-component model with required downloads
+                Text(
+                    text = "Required Components",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                
+                if (modelSetup.description.isNotBlank()) {
+                    Text(
+                        text = modelSetup.description,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                }
+                
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    tonalElevation = 1.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        setupComponents.forEach { component ->
+                            RequiredComponentItem(
+                                component = component,
+                                isDownloading = isDownloadingSetupComponents
+                            )
+                        }
+                        
+                        val allDownloaded = setupComponents.filter { it.required }.all { it.isDownloaded }
+                        val hasRequiredComponents = setupComponents.any { it.required }
+                        
+                        if (hasRequiredComponents) {
+                            Button(
+                                onClick = onDownloadAllComponents,
+                                enabled = !allDownloaded && !isDownloadingSetupComponents,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                when {
+                                    allDownloaded -> {
+                                        Icon(
+                                            Icons.Default.CheckCircle,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Text(" All Components Ready")
+                                    }
+                                    isDownloadingSetupComponents -> {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(18.dp),
+                                            strokeWidth = 2.dp
+                                        )
+                                        Text(" Downloading Components...")
+                                    }
+                                    else -> {
+                                        Icon(
+                                            Icons.Default.Download,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Text(" Download All Components")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
         if (ggufFiles.isNotEmpty()) {
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
             Text(
@@ -247,5 +372,107 @@ private fun DetailRow(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface
         )
+    }
+}
+
+@Composable
+private fun RequiredComponentItem(
+    component: SetupComponentUiState,
+    isDownloading: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Status icon
+        when {
+            component.isDownloaded -> {
+                Icon(
+                    Icons.Default.CheckCircle,
+                    contentDescription = "Downloaded",
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+            component.progress != null -> {
+                CircularProgressIndicator(
+                    progress = { component.progress },
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp
+                )
+            }
+            else -> {
+                Icon(
+                    Icons.Default.Circle,
+                    contentDescription = "Not downloaded",
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                )
+            }
+        }
+        
+        // Component info
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = component.role.displayLabel,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Repo source
+                Text(
+                    text = component.repoId.substringAfterLast('/'),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                
+                // Size hint
+                component.sizeHint?.let { size ->
+                    Text(
+                        text = "•",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = size,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
+                // Required badge
+                if (component.required) {
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        modifier = Modifier
+                    ) {
+                        Text(
+                            text = "Required",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+            
+            // Progress bar for downloading
+            if (component.progress != null) {
+                LinearProgressIndicator(
+                    progress = { component.progress },
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                )
+            }
+        }
     }
 }

@@ -25,6 +25,10 @@ import com.debanshu777.huggingfacemanager.model.SearchModelsResponse
 import com.debanshu777.huggingfacemanager.sdcpp.loadSdCppCuratedCatalog
 import com.debanshu777.huggingfacemanager.sdcpp.toListModelsResponse
 import com.debanshu777.huggingfacemanager.sdcpp.toVideoListModelsResponse
+import com.debanshu777.huggingfacemanager.sdcpp.SdCppComponentChecker
+import com.debanshu777.huggingfacemanager.sdcpp.getModelSetup
+import com.debanshu777.huggingfacemanager.sdcpp.ComponentRole
+import com.debanshu777.huggingfacemanager.sdcpp.SdCppComponent
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -49,12 +53,24 @@ data class StorageInfoUiState(
     val usedByModelsBytes: Long = 0L
 )
 
+data class SetupComponentUiState(
+    val role: ComponentRole,
+    val repoId: String,
+    val filePath: String,
+    val sizeHint: String?,
+    val isDownloaded: Boolean,
+    val progress: Float?,
+    val required: Boolean,
+)
+
 class ModelViewModel(
     private val api: HuggingFaceApi,
     private val localModelRepository: LocalModelRepository,
     private val downloadManager: DownloadManager,
     private val storagePathProvider: StoragePathProvider
 ) : ViewModel() {
+
+    private val componentChecker = SdCppComponentChecker(storagePathProvider)
 
     val storageInfo: StateFlow<StorageInfoUiState> =
         localModelRepository.getTotalDownloadedSizeBytes()
@@ -123,6 +139,15 @@ class ModelViewModel(
 
     private val _downloadError = MutableStateFlow<String?>(null)
     val downloadError: StateFlow<String?> = _downloadError.asStateFlow()
+
+    private val _setupComponents = MutableStateFlow<List<SetupComponentUiState>>(emptyList())
+    val setupComponents: StateFlow<List<SetupComponentUiState>> = _setupComponents.asStateFlow()
+
+    private val _isDownloadingSetupComponents = MutableStateFlow(false)
+    val isDownloadingSetupComponents: StateFlow<Boolean> = _isDownloadingSetupComponents.asStateFlow()
+
+    private val _setupDownloadError = MutableStateFlow<String?>(null)
+    val setupDownloadError: StateFlow<String?> = _setupDownloadError.asStateFlow()
 
     private fun modelTypeForCurrentBrowseMode(): String =
         when (_browseMode.value) {
@@ -230,6 +255,12 @@ class ModelViewModel(
                 is Result.Success -> {
                     _modelDetail.update { detailResult.data }
                     _detailError.update { null }
+                    
+                    // Load setup components for diffusion models
+                    if (hubBrowseMode == ModelHubBrowseMode.DiffusionImage || 
+                        hubBrowseMode == ModelHubBrowseMode.DiffusionVideo) {
+                        loadSetupComponentsForModel(modelId)
+                    }
 
                     val weightFilter = when (hubBrowseMode) {
                         ModelHubBrowseMode.LanguageModels -> ModelFileWeightFilter.GgufOnly
@@ -560,6 +591,121 @@ class ModelViewModel(
 
     fun clearSearchError() {
         _searchError.update { null }
+    }
+
+    fun loadSetupComponentsForModel(modelId: String) {
+        val setup = getModelSetup(modelId) ?: return
+        val componentsStatus = componentChecker.getComponentsStatus(setup)
+        
+        _setupComponents.update { 
+            componentsStatus.map { (component, isDownloaded) ->
+                SetupComponentUiState(
+                    role = component.role,
+                    repoId = component.repoId,
+                    filePath = component.filePath,
+                    sizeHint = component.sizeHint,
+                    isDownloaded = isDownloaded,
+                    progress = null,
+                    required = component.required
+                )
+            }
+        }
+    }
+    
+    fun downloadSetupComponents(modelId: String) {
+        val setup = getModelSetup(modelId) ?: return
+        if (_isDownloadingSetupComponents.value) return
+        
+        viewModelScope.launch {
+            _isDownloadingSetupComponents.update { true }
+            _setupDownloadError.update { null }
+            
+            val missingComponents = componentChecker.getMissingComponents(setup)
+            if (missingComponents.isEmpty()) {
+                _isDownloadingSetupComponents.update { false }
+                return@launch
+            }
+            
+            try {
+                for (component in missingComponents) {
+                    val metadata = createMetadataForComponent(component)
+                    
+                    downloadManager.download(component.repoId, component.filePath, metadata).collect { progress ->
+                        _setupComponents.update { list ->
+                            list.map {
+                                if (it.repoId == component.repoId && it.filePath == component.filePath) {
+                                    it.copy(progress = progress.percentage)
+                                } else {
+                                    it
+                                }
+                            }
+                        }
+                        
+                        if (progress.localPath != null) {
+                            // Download completed for this component
+                            _setupComponents.update { list ->
+                                list.map {
+                                    if (it.repoId == component.repoId && it.filePath == component.filePath) {
+                                        it.copy(isDownloaded = true, progress = null)
+                                    } else {
+                                        it
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                _setupDownloadError.update { null }
+                
+            } catch (e: InsufficientStorageException) {
+                val required = formatBytes(e.requiredBytes)
+                val available = formatBytes(e.availableBytes)
+                _setupDownloadError.update {
+                    "Not enough storage space. Need $required but only $available is available."
+                }
+                _setupComponents.update { list -> list.map { it.copy(progress = null) } }
+            } catch (_: Exception) {
+                _setupDownloadError.update { "Download failed. Please check your connection and try again." }
+                _setupComponents.update { list -> list.map { it.copy(progress = null) } }
+            } finally {
+                _isDownloadingSetupComponents.update { false }
+            }
+        }
+    }
+    
+    private fun createMetadataForComponent(component: SdCppComponent): DownloadMetadataDTO {
+        val detail = _modelDetail.value
+        return DownloadMetadataDTO(
+            sizeBytes = component.sizeHint?.let { parseSizeHint(it) },
+            author = detail?.author,
+            libraryName = "stable-diffusion.cpp",
+            pipelineTag = detail?.pipelineTag,
+            contextLength = null
+        )
+    }
+    
+    private fun parseSizeHint(sizeHint: String): Long? {
+        return try {
+            val regex = Regex("""(\d+(?:\.\d+)?)\s*(GB|MB|KB|B)""", RegexOption.IGNORE_CASE)
+            val match = regex.find(sizeHint) ?: return null
+            val (valueStr, unit) = match.destructured
+            val value = valueStr.toDouble()
+            
+            when (unit.uppercase()) {
+                "GB" -> (value * 1024 * 1024 * 1024).toLong()
+                "MB" -> (value * 1024 * 1024).toLong() 
+                "KB" -> (value * 1024).toLong()
+                "B" -> value.toLong()
+                else -> null
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+    
+    fun clearSetupDownloadError() {
+        _setupDownloadError.update { null }
     }
 
     private fun formatBytes(bytes: Long): String {

@@ -20,6 +20,9 @@ import com.debanshu777.caraml.features.chat.domain.usecase.TrackModelUsageUseCas
 import com.debanshu777.diffusionrunner.ImageGenParams
 import com.debanshu777.diffusionrunner.VideoGenParams
 import com.debanshu777.runner.StopReason
+import com.debanshu777.huggingfacemanager.sdcpp.getModelSetup
+import com.debanshu777.huggingfacemanager.sdcpp.SdCppComponentChecker
+import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
@@ -54,6 +57,11 @@ private sealed class InternalChatState {
         val message: String,
     ) : InternalChatState()
 
+    data class MissingComponents(
+        val missingComponentLabels: List<String>,
+        val modelName: String,
+    ) : InternalChatState()
+
     data class ReadyCore(
         val contextLimit: Int,
         val isGenerating: Boolean,
@@ -67,7 +75,10 @@ class ChatViewModel(
     private val trackModelUsage: TrackModelUsageUseCase,
     private val inferenceRepository: InferenceRepository,
     private val diffusionRepository: DiffusionInferenceRepository,
+    private val storagePathProvider: StoragePathProvider,
 ) : ViewModel() {
+
+    private val componentChecker = SdCppComponentChecker(storagePathProvider)
 
     private val _topModels: StateFlow<ImmutableList<LocalModelEntity>> =
         getAvailableModels()
@@ -103,6 +114,10 @@ class ChatViewModel(
                 ChatUiState.NoModelsForMode(mode = mode)
             is InternalChatState.ModelLoading -> ChatUiState.ModelLoading
             is InternalChatState.ModelError -> ChatUiState.ModelError(internal.message)
+            is InternalChatState.MissingComponents -> ChatUiState.MissingComponents(
+                missingComponentLabels = internal.missingComponentLabels,
+                modelName = internal.modelName
+            )
             is InternalChatState.ReadyCore -> ChatUiState.Ready(
                 messages = messages,
                 contextLimit = internal.contextLimit,
@@ -260,6 +275,22 @@ class ChatViewModel(
                 GenerationMode.Video,
                 -> {
                     inferenceRepository.unloadModel()
+                    
+                    // Pre-inference validation for diffusion models
+                    val modelSetup = getModelSetup(model.modelId)
+                    if (modelSetup != null && !modelSetup.selfContained) {
+                        val missingComponents = componentChecker.getMissingComponents(modelSetup)
+                        if (missingComponents.isNotEmpty()) {
+                            val missingLabels = missingComponents.map { it.role.displayLabel }
+                            val modelName = modelSetup.familyLabel
+                            _internal.value = InternalChatState.MissingComponents(
+                                missingComponentLabels = missingLabels,
+                                modelName = modelName
+                            )
+                            return@launch
+                        }
+                    }
+                    
                     diffusionRepository.loadModel(model)
                 }
             }

@@ -22,6 +22,7 @@ set(LLAMA_RUNNER_INCLUDE_DIRS
     "${LLAMA_RUNNER_COMMON_DIR}"
     "${LLAMA_SRC}/include"
     "${LLAMA_SRC}/common"
+    "${LLAMA_SRC}/vendor"
     "${LLAMA_SRC}/ggml/include"
     "${LLAMA_SRC}/ggml/src"
 )

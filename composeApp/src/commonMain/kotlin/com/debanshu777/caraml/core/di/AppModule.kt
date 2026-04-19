@@ -93,6 +93,7 @@ val appModule = module {
             trackModelUsage = get(),
             inferenceRepository = get(),
             diffusionRepository = get(),
+            storagePathProvider = get(),
         )
     }
 }

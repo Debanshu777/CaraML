@@ -35,7 +35,7 @@ add_library(
 
 target_include_directories(llama_runner PRIVATE ${LLAMA_RUNNER_INCLUDE_DIRS})
 
-target_link_libraries(llama_runner PRIVATE llama common ${log-lib})
+target_link_libraries(llama_runner PRIVATE llama llama-common ${log-lib})
 
 if(CMAKE_BUILD_TYPE MATCHES Release)
     target_compile_options(llama_runner PRIVATE -O3)

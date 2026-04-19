@@ -18,6 +18,11 @@ sealed interface ChatUiState {
 
     data class ModelError(val message: String) : ChatUiState
 
+    data class MissingComponents(
+        val missingComponentLabels: List<String>,
+        val modelName: String,
+    ) : ChatUiState
+
     data class Ready(
         val messages: ImmutableList<ChatMessage> = persistentListOf(),
         val contextLimit: Int = 0,

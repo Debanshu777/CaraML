@@ -58,7 +58,7 @@ target_include_directories(llama_runner PRIVATE
 target_link_libraries(llama_runner
     PRIVATE
     llama
-    common
+    llama-common
 )
 
 set_target_properties(llama_runner PROPERTIES OUTPUT_NAME "llama_runner")

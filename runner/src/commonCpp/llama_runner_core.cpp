@@ -51,7 +51,7 @@ static std::string chat_add_and_format(const std::string &role, const std::strin
     std::string formatted;
     if (g_chat_templates && g_chat_templates.get()) {
         formatted = common_chat_format_single(
-            g_chat_templates.get(), g_chat_msgs, new_msg, role == ROLE_USER, false);
+            g_chat_templates.get(), g_chat_msgs, new_msg, role == ROLE_USER, true);
     } else {
         formatted = content;
     }

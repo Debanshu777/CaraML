@@ -168,7 +168,7 @@ class LlamaInferenceRepository(
         }
     }
 
-    override fun unloadModel() {
+    override suspend fun unloadModel() {
         runner.unloadModel()
     }
 

@@ -12,16 +12,21 @@ import com.debanshu777.caraml.core.platform.PlatformPaths
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import com.debanshu777.huggingfacemanager.model.DIFFUSERS_BUNDLE_DB_FILENAME
 import com.debanshu777.huggingfacemanager.model.isDiffusersModelDirectory
+import com.debanshu777.huggingfacemanager.sdcpp.getModelSetup
+import com.debanshu777.huggingfacemanager.sdcpp.SdCppComponentChecker
+import com.debanshu777.huggingfacemanager.sdcpp.ComponentRole
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Loads stable-diffusion.cpp checkpoints via [DiffusionRunner] using a single primary weight path.
+ * Loads stable-diffusion.cpp models via [DiffusionRunner], resolving all auxiliary components 
+ * (VAE, CLIP, T5, LLM) based on model setup requirements.
  */
 class DiffusionInferenceRepository(
     private val storagePathProvider: StoragePathProvider,
     private val runner: DiffusionRunner,
 ) {
+    private val componentChecker = SdCppComponentChecker(storagePathProvider)
     companion object {
         private const val TAG = "DiffusionInference"
     }
@@ -45,7 +50,9 @@ class DiffusionInferenceRepository(
             }
             runner.release()
             runner.initialize(nativeLibDir)
-            val config = DiffusionModelConfig(modelPath = modelPath)
+            
+            // Build full config with resolved component paths
+            val config = buildDiffusionModelConfig(model, modelPath)
             val loaded = runner.loadModel(config)
             if (!loaded) {
                 return@withContext ModelLoadResult.Error(
@@ -120,6 +127,45 @@ class DiffusionInferenceRepository(
             return storagePathProvider.isDirectoryReadable(path)
         }
         return storagePathProvider.isModelFileReadable(path)
+    }
+
+    private fun buildDiffusionModelConfig(model: LocalModelEntity, modelPath: String): DiffusionModelConfig {
+        val modelSetup = getModelSetup(model.modelId)
+        
+        if (modelSetup == null || modelSetup.selfContained) {
+            // Fallback to legacy single-path behavior for unknown or self-contained models
+            return DiffusionModelConfig(modelPath = modelPath)
+        }
+        
+        // Resolve all component paths by role
+        val componentPaths = componentChecker.resolveComponentsByRole(modelSetup)
+        val params = modelSetup.recommendedParams
+        
+        return DiffusionModelConfig(
+            modelPath = modelPath,
+            vaePath = componentPaths[ComponentRole.VAE] ?: "",
+            llmPath = componentPaths[ComponentRole.LLM] ?: "",
+            clipLPath = componentPaths[ComponentRole.CLIP_L] ?: "",
+            clipGPath = componentPaths[ComponentRole.CLIP_G] ?: "",
+            t5xxlPath = componentPaths[ComponentRole.T5XXL] ?: componentPaths[ComponentRole.UMT5XXL] ?: "",
+            offloadToCpu = params?.offloadToCpu ?: false,
+            keepClipOnCpu = params?.clipOnCpu ?: false,
+            keepVaeOnCpu = params?.keepVaeOnCpu ?: false,
+            diffusionFlashAttn = params?.diffusionFlashAttn ?: false,
+        ).also { config ->
+            AppLogger.d(TAG) { 
+                "Built DiffusionModelConfig for ${model.modelId}:\n" +
+                "  modelPath: $modelPath\n" +
+                "  vaePath: ${config.vaePath}\n" +
+                "  llmPath: ${config.llmPath}\n" +
+                "  clipLPath: ${config.clipLPath}\n" +
+                "  clipGPath: ${config.clipGPath}\n" +
+                "  t5xxlPath: ${config.t5xxlPath}\n" +
+                "  offloadToCpu: ${config.offloadToCpu}\n" +
+                "  keepClipOnCpu: ${config.keepClipOnCpu}\n" +
+                "  diffusionFlashAttn: ${config.diffusionFlashAttn}"
+            }
+        }
     }
 
 }
