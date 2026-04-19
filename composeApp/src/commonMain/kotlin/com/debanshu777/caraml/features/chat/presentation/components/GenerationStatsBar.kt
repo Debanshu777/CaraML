@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -15,6 +14,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.features.chat.data.LiveGenerationStats
 import com.debanshu777.caraml.features.chat.presentation.components.providers.LiveGenerationStatsPreviewProvider
 
@@ -38,8 +38,8 @@ fun GenerationStatsBar(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            .padding(horizontal = LocalSpacing.current.l, vertical = LocalSpacing.current.s),
+        horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.s, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically
     ) {
         StatChip(
@@ -62,7 +62,7 @@ private fun StatChip(
 ) {
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.medium,
         tonalElevation = 2.dp
     ) {
         Text(
@@ -70,7 +70,7 @@ private fun StatChip(
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+            modifier = Modifier.padding(horizontal = LocalSpacing.current.m, vertical = 6.dp)
         )
     }
 }

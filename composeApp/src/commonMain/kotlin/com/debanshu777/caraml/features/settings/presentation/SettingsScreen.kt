@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -26,13 +25,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.drawer.LocalDrawerController
+import com.debanshu777.caraml.core.theme.LocalSpacing
+import com.debanshu777.caraml.core.theme.ThemeViewModel
+import org.koin.compose.viewmodel.koinViewModel
 import kotlin.math.round
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    themeViewModel: ThemeViewModel = koinViewModel(),
 ) {
     val settings by viewModel.settings.collectAsState()
     val drawerController = LocalDrawerController.current
@@ -54,9 +57,11 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(horizontal = LocalSpacing.current.l, vertical = LocalSpacing.current.m),
+            verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.l)
         ) {
+            AppearanceSection(viewModel = themeViewModel)
+
             OutlinedTextField(
                 value = settings.systemPrompt,
                 onValueChange = viewModel::updateSystemPrompt,

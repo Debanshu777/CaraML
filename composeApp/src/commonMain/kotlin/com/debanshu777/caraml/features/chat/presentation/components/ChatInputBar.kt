@@ -39,6 +39,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
 import com.debanshu777.caraml.features.chat.presentation.components.providers.LiveGenerationStatsPreviewProvider
@@ -176,8 +177,8 @@ private fun ComposerGenerationModeChip(
 ) {
     val style = LocalTextStyle.current
     Surface(
-        modifier = modifier.padding(end = 8.dp),
-        shape = RoundedCornerShape(8.dp),
+        modifier = modifier.padding(end = LocalSpacing.current.s),
+        shape = MaterialTheme.shapes.small,
         color = MaterialTheme.colorScheme.secondaryContainer,
         border = BorderStroke(
             width = 1.dp,
@@ -225,8 +226,8 @@ fun ChatInputBar(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
-        shape = RoundedCornerShape(16.dp),
+            .padding(start = LocalSpacing.current.l, end = LocalSpacing.current.l, bottom = LocalSpacing.current.l),
+        shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainer,
         tonalElevation = 0.dp
     ) {
@@ -257,9 +258,9 @@ fun ChatInputBar(
             )
             Row(
                 modifier = Modifier.fillMaxWidth().padding(
-                    start = 16.dp,
-                    end = 4.dp,
-                    bottom = 4.dp
+                    start = LocalSpacing.current.l,
+                    end = LocalSpacing.current.xs,
+                    bottom = LocalSpacing.current.xs
                 ),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -271,7 +272,7 @@ fun ChatInputBar(
                     modifier = Modifier
                         .weight(1f)
                         .clickable { showModelSheet = true }
-                        .padding(vertical = 8.dp),
+                        .padding(vertical = LocalSpacing.current.s),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.End
                 ) {

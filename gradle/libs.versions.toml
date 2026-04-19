@@ -24,6 +24,7 @@ runner = "1.7.0"
 core = "1.7.0"
 junit = "1.3.0"
 coreKtx = "1.17.0"
+materialKolor = "4.1.1"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -70,6 +71,9 @@ androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = 
 #navigation3
 navigation3-compose-ui = { module = "org.jetbrains.androidx.navigation3:navigation3-ui", version.ref = "navigation" }
 navigation3-viewmodel = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-navigation3", version.ref = "androidx-lifecycle" }
+
+#materialkolor
+materialkolor = { module = "com.materialkolor:material-kolor", version.ref = "materialKolor" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }

@@ -33,6 +33,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.debanshu777.caraml.core.drawer.DrawerController
 import com.debanshu777.caraml.core.drawer.LocalDrawerController
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
+import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
 import com.debanshu777.caraml.features.chat.presentation.components.providers.ChatMessageListPreviewProvider
 import com.debanshu777.caraml.features.chat.presentation.components.providers.LiveGenerationStatsPreviewProvider
@@ -208,7 +209,7 @@ private fun MissingComponentsScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(24.dp),
+            .padding(LocalSpacing.current.xl),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
     ) {
@@ -219,34 +220,34 @@ private fun MissingComponentsScreen(
             tint = MaterialTheme.colorScheme.error
         )
         
-        Spacer(modifier = Modifier.height(16.dp))
-        
+        Spacer(modifier = Modifier.height(LocalSpacing.current.l))
+
         Text(
             text = "Missing Required Components",
             style = MaterialTheme.typography.headlineSmall,
             color = MaterialTheme.colorScheme.onSurface
         )
-        
-        Spacer(modifier = Modifier.height(8.dp))
-        
+
+        Spacer(modifier = Modifier.height(LocalSpacing.current.s))
+
         Text(
             text = "$modelName requires additional components to run:",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
+
+        Spacer(modifier = Modifier.height(LocalSpacing.current.l))
+
         Card(
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier.padding(LocalSpacing.current.l),
+                verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.s)
             ) {
                 missingComponentLabels.forEach { label ->
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.s),
                         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
                     ) {
                         Text(
@@ -264,8 +265,8 @@ private fun MissingComponentsScreen(
             }
         }
         
-        Spacer(modifier = Modifier.height(24.dp))
-        
+        Spacer(modifier = Modifier.height(LocalSpacing.current.xl))
+
         Button(
             onClick = onGoToModelHubClick,
             modifier = Modifier.fillMaxWidth()
@@ -275,7 +276,7 @@ private fun MissingComponentsScreen(
                 contentDescription = null,
                 modifier = Modifier.size(18.dp)
             )
-            Spacer(modifier = Modifier.size(8.dp))
+            Spacer(modifier = Modifier.size(LocalSpacing.current.s))
             Text("Go to Model Hub")
         }
     }

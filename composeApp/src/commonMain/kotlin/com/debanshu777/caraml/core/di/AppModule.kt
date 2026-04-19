@@ -8,7 +8,10 @@ import com.debanshu777.caraml.core.storage.AppDatabase
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
 import com.debanshu777.caraml.core.data.settings.DefaultSettingsRepository
 import com.debanshu777.caraml.core.data.settings.SettingsRepository
+import com.debanshu777.caraml.core.data.theme.DefaultThemeRepository
+import com.debanshu777.caraml.core.data.theme.ThemeRepository
 import com.debanshu777.caraml.core.settings.createPreferencesDataStore
+import com.debanshu777.caraml.core.theme.ThemeViewModel
 import com.debanshu777.caraml.features.chat.domain.ChatConfig
 import com.debanshu777.caraml.features.chat.domain.usecase.GenerateResponseUseCase
 import com.debanshu777.caraml.features.chat.domain.usecase.GetAvailableModelsUseCase
@@ -39,6 +42,7 @@ val appModule = module {
 
     single { createPreferencesDataStore() }
     single<SettingsRepository> { DefaultSettingsRepository(get()) }
+    single<ThemeRepository> { DefaultThemeRepository(get()) }
 
     single { LlamaRunner() }
     single { DiffusionRunner() }
@@ -82,6 +86,11 @@ val appModule = module {
     }
     viewModel {
         SettingsViewModel(
+            repository = get()
+        )
+    }
+    viewModel {
+        ThemeViewModel(
             repository = get()
         )
     }

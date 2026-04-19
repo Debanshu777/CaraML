@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
@@ -28,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
 import com.debanshu777.huggingfacemanager.model.ModelDetailResponse
 import com.debanshu777.caraml.features.modelhub.presentation.search.GgufFileUiState
@@ -117,7 +117,7 @@ fun ModelDetailContent(
             model.createdAt != null || model.lastModified != null
         if (hasInfo) {
             Surface(
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.medium,
                 tonalElevation = 1.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -156,7 +156,7 @@ fun ModelDetailContent(
             ) {
                 tags.forEach { tag ->
                     Surface(
-                        shape = RoundedCornerShape(16.dp),
+                        shape = MaterialTheme.shapes.large,
                         tonalElevation = 1.dp
                     ) {
                         Text(
@@ -179,7 +179,7 @@ fun ModelDetailContent(
             if (modelSetup.selfContained) {
                 // Self-contained model banner
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.medium,
                     color = MaterialTheme.colorScheme.primaryContainer,
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -227,7 +227,7 @@ fun ModelDetailContent(
                 }
                 
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.medium,
                     tonalElevation = 1.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -293,7 +293,7 @@ fun ModelDetailContent(
             )
             if (showDiffusionHint) {
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.medium,
                     color = MaterialTheme.colorScheme.secondaryContainer,
                     modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
                 ) {
@@ -452,7 +452,7 @@ private fun RequiredComponentItem(
                 // Required badge
                 if (component.required) {
                     Surface(
-                        shape = RoundedCornerShape(4.dp),
+                        shape = MaterialTheme.shapes.extraSmall,
                         color = MaterialTheme.colorScheme.errorContainer,
                         modifier = Modifier
                     ) {

@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.LocalSpacing
 
 @Composable
 fun SearchBar(
@@ -61,7 +62,7 @@ fun SearchBar(
         )
         Button(
             onClick = onSearch,
-            modifier = Modifier.padding(start = 8.dp)
+            modifier = Modifier.padding(start = LocalSpacing.current.s)
         ) {
             Text("Search")
         }

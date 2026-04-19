@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.DataUsage
@@ -32,6 +31,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.ui.graphics.decodePngToImageBitmap
 import com.debanshu777.caraml.features.chat.data.ChatMessage
 import com.debanshu777.caraml.features.chat.data.MessageRole
@@ -71,15 +71,15 @@ fun MessageBubble(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 12.dp),
+            .padding(vertical = LocalSpacing.current.m),
         horizontalAlignment = alignment
     ) {
         if (message.text.isNotEmpty() || isUser) {
             Text(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(MaterialTheme.shapes.medium)
                     .background(backgroundColor)
-                    .padding(if (isUser) 12.dp else 0.dp),
+                    .padding(if (isUser) LocalSpacing.current.m else 0.dp),
                 text = message.text,
                 style = MaterialTheme.typography.bodyMedium,
                 color = textColor,
@@ -89,12 +89,12 @@ fun MessageBubble(
         if (!isUser && showMediaPending) {
             Row(
                 modifier = Modifier
-                    .padding(top = 8.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .padding(top = LocalSpacing.current.s)
+                    .clip(MaterialTheme.shapes.medium)
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                    .padding(horizontal = LocalSpacing.current.l, vertical = LocalSpacing.current.m),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.m)
             ) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(28.dp),
@@ -116,11 +116,11 @@ fun MessageBubble(
             if (bitmap != null) {
                 Image(
                     bitmap = bitmap,
-                    contentDescription = null,
+                    contentDescription = "Generated image",
                     modifier = Modifier
-                        .padding(top = 8.dp)
+                        .padding(top = LocalSpacing.current.s)
                         .heightIn(max = 320.dp)
-                        .clip(RoundedCornerShape(12.dp)),
+                        .clip(MaterialTheme.shapes.medium),
                     contentScale = ContentScale.Fit
                 )
             }
@@ -131,8 +131,8 @@ fun MessageBubble(
             LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    .padding(top = LocalSpacing.current.s),
+                horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.s)
             ) {
                 itemsIndexed(frames, key = { index, _ -> "${message.id}_$index" }) { index, frameBytes ->
                     val frameBitmap = remember(message.id, index, frameBytes.size) {
@@ -141,10 +141,10 @@ fun MessageBubble(
                     if (frameBitmap != null) {
                         Image(
                             bitmap = frameBitmap,
-                            contentDescription = null,
+                            contentDescription = "Generated video frame ${index + 1}",
                             modifier = Modifier
                                 .size(120.dp)
-                                .clip(RoundedCornerShape(8.dp)),
+                                .clip(MaterialTheme.shapes.small),
                             contentScale = ContentScale.Crop
                         )
                     }
@@ -154,8 +154,8 @@ fun MessageBubble(
 
         if (!isUser && message.inferenceMetrics != null) {
             Row(
-                modifier = Modifier.padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier.padding(top = LocalSpacing.current.s),
+                horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.s)
             ) {
                 Text(
                     text = "Statistics:",
@@ -197,7 +197,7 @@ private fun StatItem(
 ) {
     Row(
         modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.xxs),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
