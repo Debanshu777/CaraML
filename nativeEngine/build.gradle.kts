@@ -55,6 +55,114 @@ kotlin {
 val hostOsName = System.getProperty("os.name").lowercase()
 val isMacHost = hostOsName.contains("mac")
 
+// ----------------------------------------------------------------------------
+// Vendored library patches
+//
+// Patches under libraries/patches/<relative-submodule-path>/*.patch are
+// applied to the matching git working tree under libraries/<relative-submodule-path>
+// before any native compile runs. Submodules themselves stay pinned to upstream
+// commits — no working-tree drift, `git submodule status` stays clean.
+//
+// Layout: directory name = submodule path relative to libraries/.
+//   libraries/patches/llama.cpp/...                  → libraries/llama.cpp
+//   libraries/patches/stable-diffusion.cpp/ggml/...  → libraries/stable-diffusion.cpp/ggml
+//
+// `applyNativePatches` is idempotent: it skips patches already applied (via
+// `git apply --check -R`). `revertNativePatches` rolls them back, used when
+// bumping a submodule.
+// ----------------------------------------------------------------------------
+
+data class PatchEntry(val workingDir: File, val patchFile: File)
+
+fun discoverPatches(): List<PatchEntry> {
+    val librariesRoot = rootProject.layout.projectDirectory.dir("libraries").asFile
+    val patchesRoot = librariesRoot.resolve("patches")
+    if (!patchesRoot.isDirectory) return emptyList()
+    return patchesRoot.walkTopDown()
+        .filter { it.isFile && it.name.endsWith(".patch") }
+        .map { patch ->
+            val rel = patch.parentFile.relativeTo(patchesRoot).path
+            PatchEntry(workingDir = librariesRoot.resolve(rel), patchFile = patch)
+        }
+        .sortedWith(compareBy({ it.workingDir.path }, { it.patchFile.name }))
+        .toList()
+}
+
+tasks.register("applyNativePatches") {
+    group = "llama-native"
+    description = "Apply libraries/patches/* to the corresponding submodule working trees (idempotent)."
+    doLast {
+        val patches = discoverPatches()
+        if (patches.isEmpty()) {
+            logger.lifecycle("applyNativePatches: no patches found under libraries/patches/")
+            return@doLast
+        }
+        patches.forEach { (workingDir, patchFile) ->
+            if (!workingDir.isDirectory) {
+                throw GradleException(
+                    "applyNativePatches: working directory does not exist: ${workingDir.absolutePath}\n" +
+                    "Did you run `git submodule update --init --recursive`?"
+                )
+            }
+            val rel = patchFile.relativeTo(rootProject.projectDir).path
+            // Already applied?
+            val checkReverse = providers.exec {
+                workingDir(workingDir)
+                commandLine("git", "apply", "--check", "-R", patchFile.absolutePath)
+                isIgnoreExitValue = true
+            }.result.get()
+            if (checkReverse.exitValue == 0) {
+                logger.lifecycle("applyNativePatches: $rel already applied — skipping")
+                return@forEach
+            }
+            // Will it apply cleanly?
+            val checkForward = providers.exec {
+                workingDir(workingDir)
+                commandLine("git", "apply", "--check", patchFile.absolutePath)
+                isIgnoreExitValue = true
+            }.result.get()
+            if (checkForward.exitValue != 0) {
+                throw GradleException(
+                    "applyNativePatches: cannot apply $rel cleanly to ${workingDir.relativeTo(rootProject.projectDir)}.\n" +
+                    "Either upstream changed the patched region (regenerate the patch) or the working tree is dirty."
+                )
+            }
+            // Apply.
+            exec {
+                workingDir(workingDir)
+                commandLine("git", "apply", patchFile.absolutePath)
+            }
+            logger.lifecycle("applyNativePatches: applied $rel")
+        }
+    }
+}
+
+tasks.register("revertNativePatches") {
+    group = "llama-native"
+    description = "Reverse-apply libraries/patches/* on the submodule working trees. Use before bumping a submodule."
+    doLast {
+        val patches = discoverPatches().reversed()
+        patches.forEach { (workingDir, patchFile) ->
+            if (!workingDir.isDirectory) return@forEach
+            val rel = patchFile.relativeTo(rootProject.projectDir).path
+            val checkReverse = providers.exec {
+                workingDir(workingDir)
+                commandLine("git", "apply", "--check", "-R", patchFile.absolutePath)
+                isIgnoreExitValue = true
+            }.result.get()
+            if (checkReverse.exitValue != 0) {
+                logger.lifecycle("revertNativePatches: $rel not applied — skipping")
+                return@forEach
+            }
+            exec {
+                workingDir(workingDir)
+                commandLine("git", "apply", "-R", patchFile.absolutePath)
+            }
+            logger.lifecycle("revertNativePatches: reverted $rel")
+        }
+    }
+}
+
 /**
  * CMake needs a full JDK with [JAVA_HOME]/include/jni.h.
  * Gradle's java.home may already be correct, or may point at a nested JRE.
@@ -119,6 +227,7 @@ if (isMacHost) {
         val buildTaskName = "buildLlamaRunnerCMake${kotlinArchName.replaceFirstChar { it.uppercase() }}"
 
         tasks.register(buildTaskName, Exec::class) {
+            dependsOn("applyNativePatches")
             doFirst {
                 val sourceDir = projectDir.resolve("src/iosMain/cpp")
                 val sdk = when (sdkName) {
@@ -196,7 +305,12 @@ if (isMacHost) {
                     file("$libPath/libllama_runner.a"),
                     file("$libPath/libdiffusion_runner.a"),
                     file("$llamaBuild/src/libllama.a"),
-                    file("$llamaBuild/common/libcommon.a"),
+                    // Recent llama.cpp split common into two static libs
+                    // (`libllama-common.a` and `libllama-common-base.a`) and
+                    // renamed the old `libcommon.a`. Both are required to
+                    // resolve symbols pulled in by llama_runner_core.cpp.
+                    file("$llamaBuild/common/libllama-common.a"),
+                    file("$llamaBuild/common/libllama-common-base.a"),
                     file("$llamaBuild/ggml/src/libggml.a"),
                     file("$llamaBuild/ggml/src/libggml-base.a"),
                     file("$llamaBuild/ggml/src/ggml-blas/libggml-blas.a"),
@@ -254,6 +368,7 @@ val desktopCmakePath = findTool("cmake")
 val buildLlamaRunnerDesktop by tasks.registering(Exec::class) {
     group = "llama-native"
     description = "Configure CMake for desktop ($desktopPlatform) llama_runner"
+    dependsOn("applyNativePatches")
 
     val javaHome = resolveJavaHomeForJni(logger)
     environment("JAVA_HOME", javaHome)
@@ -311,11 +426,14 @@ android {
                 arguments += "-DLLAMA_BUILD_COMMON=ON"
                 arguments += "-DLLAMA_CURL=OFF"
                 arguments += "-DGGML_LLAMAFILE=OFF"
+                // Required so every .so packaged into the APK supports Android
+                // 16 KB page-size devices (Google Play requirement, 2025-11-01).
+                arguments += "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384"
             }
         }
     }
 
-    ndkVersion = "26.1.10909125"
+    ndkVersion = "28.1.13356709"
 
     externalNativeBuild {
         cmake {
@@ -328,4 +446,16 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+}
+
+// Wire applyNativePatches into AGP's externalNativeBuild task graph. AGP
+// generates per-variant tasks (e.g. configureCMakeRelWithDebInfo[arm64-v8a],
+// buildCMakeRelWithDebInfo[arm64-v8a]) lazily, so we use a name-prefix match
+// in configureEach to cover all of them as they appear.
+tasks.matching {
+    val n = it.name
+    n.startsWith("configureCMake") || n.startsWith("buildCMake") ||
+        n.startsWith("externalNativeBuild")
+}.configureEach {
+    dependsOn("applyNativePatches")
 }

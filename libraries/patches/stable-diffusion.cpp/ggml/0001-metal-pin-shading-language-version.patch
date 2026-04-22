@@ -1,0 +1,26 @@
+diff --git a/src/ggml-metal/ggml-metal-device.m b/src/ggml-metal/ggml-metal-device.m
+index 17d51b11..178b1012 100644
+--- a/src/ggml-metal/ggml-metal-device.m
++++ b/src/ggml-metal/ggml-metal-device.m
+@@ -227,6 +227,21 @@ ggml_metal_library_t ggml_metal_library_init(ggml_metal_device_t dev) {
+                 MTLCompileOptions * options = [MTLCompileOptions new];
+                 options.preprocessorMacros = prep;
+ 
++                // Pin Metal shading language version >= 3.1 so the bf16
++                // kernels in ggml-metal.metal (gated on
++                // `__METAL_VERSION__ >= 310`) compile into the library. Some
++                // hosts (notably JetBrains Runtime / older bundled SDKs)
++                // otherwise default to a language version that strips them,
++                // while ggml's C-side `has_bfloat` flag remains true based on
++                // the GPU family check — bf16 ops then dispatch to a
++                // non-existent Metal pipeline and segfault inside
++                // `ggml_metal_encoder_set_pipeline`.
++                if (@available(macOS 15.0, iOS 18.0, tvOS 18.0, visionOS 2.0, *)) {
++                    options.languageVersion = MTLLanguageVersion3_2;
++                } else if (@available(macOS 14.0, iOS 17.0, tvOS 17.0, *)) {
++                    options.languageVersion = MTLLanguageVersion3_1;
++                }
++
+                 //[options setFastMathEnabled:false];
+ 
+                 library = [device newLibraryWithSource:src options:options error:&error];

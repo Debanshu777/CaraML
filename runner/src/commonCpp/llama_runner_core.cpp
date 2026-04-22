@@ -5,6 +5,8 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
+#include <exception>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -41,21 +43,64 @@ int g_stop_reason = STOP_NONE;
 common_chat_templates_ptr g_chat_templates;
 std::vector<common_chat_msg> g_chat_msgs;
 static std::string g_assistant_buffer;
+// True when a system prompt was added to g_chat_msgs but its KV decode was
+// deferred because the chat template refused to render `[system]` alone (e.g.
+// Qwen3-style templates that demand a user query). The deferred system content
+// is decoded together with the first user prompt.
+static bool g_pending_chat_decode = false;
 
 static void log_line(LlamaLogLevel level, const char *fmt, ...);
 
-static std::string chat_add_and_format(const std::string &role, const std::string &content) {
+// Render the full conversation in `messages` (and optionally append a generation
+// prompt). Returns std::nullopt if the template raises an exception (some
+// templates require certain message roles to be present). BOS handling is left
+// to the tokenizer — the templates struct is opaque so we can't read its
+// add_bos/add_eos flags here.
+static std::optional<std::string> try_apply_full_template(
+    const std::vector<common_chat_msg> &messages, bool add_generation_prompt) {
+    if (!g_chat_templates || !g_chat_templates.get()) {
+        return std::nullopt;
+    }
+    try {
+        common_chat_templates_inputs inputs;
+        inputs.use_jinja = true;
+        inputs.messages = messages;
+        inputs.add_generation_prompt = add_generation_prompt;
+        return common_chat_templates_apply(g_chat_templates.get(), inputs).prompt;
+    } catch (const std::exception &e) {
+        log_line(LLAMA_LOG_WARN, "chat template apply failed: %s", e.what());
+        return std::nullopt;
+    } catch (...) {
+        log_line(LLAMA_LOG_WARN, "chat template apply failed: unknown exception");
+        return std::nullopt;
+    }
+}
+
+// Format `new_msg` as the incremental diff against the existing chat history,
+// catching template exceptions instead of letting them propagate. Returns
+// std::nullopt on failure.
+static std::optional<std::string> try_chat_format_single(
+    const std::string &role, const std::string &content) {
+    if (!g_chat_templates || !g_chat_templates.get()) {
+        return content;
+    }
     common_chat_msg new_msg;
     new_msg.role = role;
     new_msg.content = content;
-    std::string formatted;
-    if (g_chat_templates && g_chat_templates.get()) {
-        formatted = common_chat_format_single(
+    try {
+        return common_chat_format_single(
             g_chat_templates.get(), g_chat_msgs, new_msg, role == ROLE_USER, true);
-    } else {
-        formatted = content;
+    } catch (const std::exception &e) {
+        log_line(LLAMA_LOG_WARN,
+            "chat template format_single failed (role=%s): %s",
+            role.c_str(), e.what());
+        return std::nullopt;
+    } catch (...) {
+        log_line(LLAMA_LOG_WARN,
+            "chat template format_single failed (role=%s): unknown exception",
+            role.c_str());
+        return std::nullopt;
     }
-    return formatted;
 }
 
 static bool is_valid_utf8(const char *string) {
@@ -131,7 +176,13 @@ void reset_sampler(float temperature) {
 
 void finalize_assistant_turn() {
     if (g_chat_templates && !g_assistant_buffer.empty()) {
-        chat_add_and_format(ROLE_ASSISTANT, g_assistant_buffer);
+        // Format for side-effect logging only; we always record into history,
+        // even if the template can't render an isolated diff.
+        try_chat_format_single(ROLE_ASSISTANT, g_assistant_buffer);
+        common_chat_msg asst_msg;
+        asst_msg.role = ROLE_ASSISTANT;
+        asst_msg.content = g_assistant_buffer;
+        g_chat_msgs.push_back(asst_msg);
         g_assistant_buffer.clear();
     }
 }
@@ -313,6 +364,7 @@ bool llama_runner_core_load_model(const char *model_path, const LlamaRunnerConfi
 
     g_chat_templates = common_chat_templates_init(g_model, "");
     g_chat_msgs.clear();
+    g_pending_chat_decode = false;
     g_system_prompt_position = 0;
     g_current_position = 0;
 
@@ -366,7 +418,7 @@ bool llama_runner_core_start_generate(const char *prompt, int max_tokens, float 
         }
     }
 
-    llama_memory_clear(llama_get_memory(g_context), false);
+    llama_memory_seq_rm(llama_get_memory(g_context), 0, -1, -1);
 
     std::string prompt_copy(prompt);
     log_line(LLAMA_LOG_INFO, "start_generate: input prompt_len=%zu preview=\"%s\"",
@@ -497,22 +549,50 @@ int llama_runner_core_process_system_prompt(const char *system_prompt) {
     }
 
     g_chat_msgs.clear();
+    g_pending_chat_decode = false;
     g_system_prompt_position = 0;
     g_current_position = 0;
     g_assistant_buffer.clear();
-    llama_memory_clear(llama_get_memory(g_context), false);
+    llama_memory_seq_rm(llama_get_memory(g_context), 0, -1, -1);
 
-    std::string formatted(system_prompt);
     bool has_template = g_chat_templates && common_chat_templates_was_explicit(g_chat_templates.get());
-    if (has_template) {
-        formatted = chat_add_and_format(ROLE_SYSTEM, system_prompt);
-        log_line(LLAMA_LOG_INFO, "process_system_prompt: using chat template");
-    } else {
-        formatted = std::string("System: ") + system_prompt + "\n";
+
+    if (!has_template) {
+        std::string formatted = std::string("System: ") + system_prompt + "\n";
         log_line(LLAMA_LOG_WARN, "process_system_prompt: no explicit chat template, using raw text");
+        std::vector<llama_token> tokens = common_tokenize(g_context, formatted, false, false);
+        const uint32_t n_ctx = llama_n_ctx(g_context);
+        if (static_cast<int>(tokens.size()) > static_cast<int>(n_ctx) - 4) {
+            log_line(LLAMA_LOG_ERROR, "process_system_prompt: System prompt too long");
+            return 1;
+        }
+        if (decode_tokens_in_batches(g_context, g_batch, tokens, 0, false) != 0) {
+            return 2;
+        }
+        g_system_prompt_position = g_current_position = static_cast<llama_pos>(tokens.size());
+        return 0;
     }
 
-    std::vector<llama_token> tokens = common_tokenize(g_context, formatted, has_template, has_template);
+    // Try to format the system message in isolation. Some chat templates (e.g.
+    // Qwen3.5) refuse to render without a user message and raise an exception.
+    // In that case we keep the system message in history and defer KV decode
+    // until the first user prompt arrives.
+    auto formatted = try_chat_format_single(ROLE_SYSTEM, system_prompt);
+
+    common_chat_msg system_msg;
+    system_msg.role = ROLE_SYSTEM;
+    system_msg.content = system_prompt;
+    g_chat_msgs.push_back(system_msg);
+
+    if (!formatted.has_value()) {
+        log_line(LLAMA_LOG_INFO,
+            "process_system_prompt: template requires user message; deferring decode");
+        g_pending_chat_decode = true;
+        return 0;
+    }
+
+    std::vector<llama_token> tokens =
+        common_tokenize(g_context, *formatted, /*add_special*/ true, /*parse_special*/ true);
     const uint32_t n_ctx = llama_n_ctx(g_context);
     const int max_tokens = static_cast<int>(n_ctx) - 4;
     if (static_cast<int>(tokens.size()) > max_tokens) {
@@ -540,30 +620,94 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
     g_assistant_buffer.clear();
     g_stop_reason = STOP_NONE;
 
-    std::string formatted(user_prompt);
     bool has_template = g_chat_templates && common_chat_templates_was_explicit(g_chat_templates.get());
-    if (has_template) {
-        formatted = chat_add_and_format(ROLE_USER, user_prompt);
-    } else {
-        // Ensure turn boundary in plain-text fallback mode.
+
+    common_chat_msg user_msg;
+    user_msg.role = ROLE_USER;
+    user_msg.content = user_prompt;
+
+    std::string formatted;
+    llama_pos decode_start_pos = g_current_position;
+    bool reset_kv = false;
+
+    if (!has_template) {
+        // Plain-text fallback ensures a turn boundary.
         formatted = std::string("\nUser: ") + user_prompt + "\nAssistant:";
+        g_chat_msgs.push_back(user_msg);
+    } else if (g_pending_chat_decode) {
+        // System prompt was deferred. Render the full conversation now so the
+        // template sees a user message and can resolve.
+        std::vector<common_chat_msg> full = g_chat_msgs;
+        full.push_back(user_msg);
+        auto rendered = try_apply_full_template(full, /*add_generation_prompt*/ true);
+        if (!rendered.has_value()) {
+            log_line(LLAMA_LOG_ERROR,
+                "process_user_prompt: chat template still failed after adding user message");
+            return 3;
+        }
+        formatted = *rendered;
+        g_chat_msgs.push_back(user_msg);
+        g_pending_chat_decode = false;
+        // Decode from position 0; clear any prior KV state defensively.
+        llama_memory_seq_rm(llama_get_memory(g_context), 0, -1, -1);
+        decode_start_pos = 0;
+        g_current_position = 0;
+        g_system_prompt_position = 0;
+        reset_kv = true;
+    } else {
+        // Normal incremental path: format the diff for just the new user msg.
+        auto diff = try_chat_format_single(ROLE_USER, user_prompt);
+        if (diff.has_value()) {
+            formatted = *diff;
+            g_chat_msgs.push_back(user_msg);
+        } else {
+            // Some templates (reasoning/tool-call variants) render the previous
+            // assistant turn differently when followed by a new user turn, so
+            // common_chat_format_single's diff-via-substr throws. Fall back to a
+            // full re-render and reset KV state so we re-decode from position 0.
+            log_line(LLAMA_LOG_WARN,
+                "process_user_prompt: incremental diff failed, falling back to full re-render");
+            std::vector<common_chat_msg> full = g_chat_msgs;
+            full.push_back(user_msg);
+            auto rendered = try_apply_full_template(full, /*add_generation_prompt*/ true);
+            if (rendered.has_value()) {
+                formatted = *rendered;
+            } else {
+                // Last-resort: drop the template entirely and use the same
+                // plain-text turn boundary the no-template branch uses. This
+                // sacrifices any system prompt / template-encoded tokens but
+                // keeps the conversation usable.
+                log_line(LLAMA_LOG_WARN,
+                    "process_user_prompt: full re-render failed, falling back to plain-text format");
+                formatted = std::string("\nUser: ") + user_prompt + "\nAssistant:";
+            }
+            g_chat_msgs.push_back(user_msg);
+            llama_memory_seq_rm(llama_get_memory(g_context), 0, -1, -1);
+            decode_start_pos = 0;
+            g_current_position = 0;
+            g_system_prompt_position = 0;
+            reset_kv = true;
+        }
     }
 
-    std::vector<llama_token> tokens = common_tokenize(g_context, formatted, has_template, has_template);
+    std::vector<llama_token> tokens = common_tokenize(
+        g_context, formatted,
+        /*add_special*/ has_template && reset_kv,
+        /*parse_special*/ has_template);
     const uint32_t n_ctx = llama_n_ctx(g_context);
     const int max_ctx = static_cast<int>(n_ctx) - 4;
-    if (g_current_position + static_cast<int>(tokens.size()) > max_ctx) {
-        const int to_skip = g_current_position + static_cast<int>(tokens.size()) - max_ctx;
+    if (decode_start_pos + static_cast<int>(tokens.size()) > max_ctx) {
+        const int to_skip = decode_start_pos + static_cast<int>(tokens.size()) - max_ctx;
         if (tokens.size() > static_cast<size_t>(to_skip)) {
             tokens.resize(tokens.size() - to_skip);
         }
     }
 
-    if (decode_tokens_in_batches(g_context, g_batch, tokens, g_current_position, true) != 0) {
+    if (decode_tokens_in_batches(g_context, g_batch, tokens, decode_start_pos, true) != 0) {
         return 2;
     }
 
-    g_current_position += static_cast<llama_pos>(tokens.size());
+    g_current_position = decode_start_pos + static_cast<llama_pos>(tokens.size());
     g_max_tokens_remaining = predict_length;
     g_streaming_tokens.clear();
     return 0;
@@ -574,6 +718,7 @@ void llama_runner_core_unload() {
 
     g_chat_templates.reset();
     g_chat_msgs.clear();
+    g_pending_chat_decode = false;
 
     if (g_sampler) {
         common_sampler_free(g_sampler);
@@ -630,11 +775,12 @@ void llama_runner_core_clear_context() {
 
     log_line(LLAMA_LOG_INFO, "clear_context: Clearing KV cache and resetting state");
 
-    llama_memory_clear(llama_get_memory(g_context), false);
-    
+    llama_memory_seq_rm(llama_get_memory(g_context), 0, -1, -1);
+
     g_current_position = 0;
     g_system_prompt_position = 0;
     g_chat_msgs.clear();
+    g_pending_chat_decode = false;
     g_assistant_buffer.clear();
     g_cached_utf8_chars.clear();
     g_streaming_tokens.clear();
