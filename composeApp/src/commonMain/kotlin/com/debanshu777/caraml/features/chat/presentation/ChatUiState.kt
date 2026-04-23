@@ -35,6 +35,7 @@ sealed interface ChatUiState {
 
 data class StreamingState(
     val streamingText: String = "",
+    val streamingThinkingText: String = "",
     val streamingMessageId: String? = null,
     val liveStats: LiveGenerationStats? = null,
     val pendingMediaGeneration: Boolean = false,

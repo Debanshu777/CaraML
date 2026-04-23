@@ -40,6 +40,8 @@ private fun StreamingMessageBubble(
     MessageBubble(
         message = message.copy(text = displayText),
         showMediaPending = pendingMedia,
+        isStreaming = true,
+        streamingThinking = streamingState.streamingThinkingText,
     )
 }
 

@@ -29,6 +29,7 @@ common_sampler *g_sampler = nullptr;
 LlamaRunnerConfig g_config;
 LlamaLogFn g_logger = nullptr;
 float g_active_temperature = -1.0f;
+std::string g_active_grammar;
 
 std::atomic<bool> g_cancel_flag{false};
 int g_max_tokens_remaining = 0;
@@ -158,7 +159,7 @@ float resolve_temperature(float temperature) {
     return g_config.temperature;
 }
 
-void reset_sampler(float temperature) {
+void recreate_sampler(float temperature, const std::string &grammar) {
     if (g_sampler) {
         common_sampler_free(g_sampler);
         g_sampler = nullptr;
@@ -170,8 +171,47 @@ void reset_sampler(float temperature) {
     sparams.penalty_repeat = 1.1f;
     sparams.penalty_freq = 0.0f;
     sparams.penalty_present = 0.0f;
+    if (!grammar.empty()) {
+        sparams.grammar = common_grammar(COMMON_GRAMMAR_TYPE_USER, grammar);
+    }
+    // empty grammar string = leave default-constructed (COMMON_GRAMMAR_TYPE_NONE)
     g_sampler = common_sampler_init(g_model, sparams);
     g_active_temperature = sparams.temp;
+    g_active_grammar = grammar;
+
+    log_line(LLAMA_LOG_INFO,
+        "recreate_sampler: temp=%.3f grammar_len=%zu grammar_preview=\"%s\"",
+        sparams.temp, grammar.size(), truncate_for_log(grammar).c_str());
+}
+
+void reset_sampler_state() {
+    if (!g_sampler) {
+        return;
+    }
+    common_sampler_reset(g_sampler);
+    log_line(LLAMA_LOG_INFO,
+        "reset_sampler_state: cleared sampler state (temp=%.3f, grammar_len=%zu)",
+        g_active_temperature, g_active_grammar.size());
+}
+
+// Apply the per-turn sampler decision: recreate when temperature or grammar
+// changed, or whenever a grammar is active (common_sampler_reset only clears
+// the main sampler chain — it does NOT reset the grammar parser, which is a
+// separate `grmr` sampler. Without recreate, a grammar that reached its
+// terminal state on turn N would only allow EOG on turn N+1, producing zero
+// tokens). Otherwise just reset stateful samplers in the chain.
+bool apply_sampler_for_turn(float temperature, const char *grammar) {
+    const float target_temp = resolve_temperature(temperature);
+    const std::string g_in = grammar ? std::string(grammar) : std::string();
+    const bool grammar_changed = (g_in != g_active_grammar);
+    const bool temp_changed    = (target_temp != g_active_temperature);
+    const bool grammar_active  = !g_in.empty();
+    if (grammar_changed || temp_changed || grammar_active) {
+        recreate_sampler(target_temp, g_in);
+    } else {
+        reset_sampler_state();
+    }
+    return g_sampler != nullptr;
 }
 
 void finalize_assistant_turn() {
@@ -355,7 +395,7 @@ bool llama_runner_core_load_model(const char *model_path, const LlamaRunnerConfi
     log_line(LLAMA_LOG_INFO, "load: Context ready, n_ctx=%u", llama_n_ctx(g_context));
 
     g_batch = llama_batch_init(g_config.n_batch, 0, 1);
-    reset_sampler(g_config.temperature);
+    recreate_sampler(g_config.temperature, std::string());
     if (!g_sampler) {
         log_line(LLAMA_LOG_ERROR, "load: Failed to initialize sampler");
         llama_runner_core_unload();
@@ -374,7 +414,7 @@ bool llama_runner_core_load_model(const char *model_path, const LlamaRunnerConfi
 }
 
 std::string llama_runner_core_generate(const char *prompt, int max_tokens, float temperature) {
-    if (!llama_runner_core_start_generate(prompt, max_tokens, temperature)) {
+    if (!llama_runner_core_start_generate(prompt, max_tokens, temperature, nullptr)) {
         return "";
     }
     std::string result;
@@ -386,8 +426,9 @@ std::string llama_runner_core_generate(const char *prompt, int max_tokens, float
     return result;
 }
 
-bool llama_runner_core_start_generate(const char *prompt, int max_tokens, float temperature) {
-    log_line(LLAMA_LOG_INFO, "start_generate: entry max_tokens=%d", max_tokens);
+bool llama_runner_core_start_generate(const char *prompt, int max_tokens, float temperature, const char *grammar) {
+    log_line(LLAMA_LOG_INFO, "start_generate: entry max_tokens=%d grammar=%s",
+        max_tokens, grammar ? "yes" : "no");
 
     g_stop_reason = STOP_NONE;
 
@@ -409,13 +450,9 @@ bool llama_runner_core_start_generate(const char *prompt, int max_tokens, float 
     g_streaming_n_generated = 0;
     g_assistant_buffer.clear();
 
-    const float target_temp = resolve_temperature(temperature);
-    if (target_temp != g_active_temperature) {
-        reset_sampler(target_temp);
-        if (!g_sampler) {
-            log_line(LLAMA_LOG_ERROR, "start_generate: Failed to reconfigure sampler");
-            return false;
-        }
+    if (!apply_sampler_for_turn(temperature, grammar)) {
+        log_line(LLAMA_LOG_ERROR, "start_generate: Failed to reconfigure sampler");
+        return false;
     }
 
     llama_memory_seq_rm(llama_get_memory(g_context), 0, -1, -1);
@@ -494,7 +531,68 @@ const char *llama_runner_core_next_token() {
 
     const llama_token token = common_sampler_sample(g_sampler, g_context, -1);
     if (llama_vocab_is_eog(vocab, token)) {
-        log_line(LLAMA_LOG_INFO, "next_token: EOG");
+        log_line(LLAMA_LOG_INFO, "next_token: EOG token=%d", token);
+
+        // (a) Decode the EOG token itself so g_current_position reflects it.
+        // Without this, the next user-turn diff would tokenize from the same
+        // position as the EOG, leaking the EOG bytes back into KV at the wrong
+        // offset and causing template misalignment on multi-turn chats.
+        common_batch_clear(g_batch);
+        common_batch_add(g_batch, token, g_current_position, {0}, false);
+        if (llama_decode(g_context, g_batch) == 0) {
+            g_current_position++;
+            log_line(LLAMA_LOG_INFO,
+                "next_token: decoded EOG into KV, new_pos=%d", (int)g_current_position);
+        } else {
+            log_line(LLAMA_LOG_WARN,
+                "next_token: EOG decode failed; KV may be misaligned");
+        }
+
+        // (b) Detect post-EOG template residual (e.g. Gemma-2's trailing '\n'
+        // after `<end_of_turn>`). Render what the template would emit for the
+        // just-completed assistant turn, tokenize it, find the EOG inside, and
+        // decode any tokens after the EOG. Template-agnostic: works for any
+        // chat template that places template chars after the EOG.
+        if (g_chat_templates && !g_assistant_buffer.empty()) {
+            auto diff = try_chat_format_single(ROLE_ASSISTANT, g_assistant_buffer);
+            if (diff.has_value()) {
+                std::vector<llama_token> diff_tokens = common_tokenize(
+                    g_context, *diff, /*add_special*/ false, /*parse_special*/ true);
+                int eog_idx = -1;
+                for (int i = static_cast<int>(diff_tokens.size()) - 1; i >= 0; --i) {
+                    if (llama_vocab_is_eog(vocab, diff_tokens[i])) {
+                        eog_idx = i;
+                        break;
+                    }
+                }
+                if (eog_idx >= 0
+                    && eog_idx + 1 < static_cast<int>(diff_tokens.size())) {
+                    std::vector<llama_token> residual(
+                        diff_tokens.begin() + eog_idx + 1, diff_tokens.end());
+                    if (decode_tokens_in_batches(
+                            g_context, g_batch, residual,
+                            g_current_position, /*compute_last_logit*/ false) == 0) {
+                        const int first_residual = residual.front();
+                        g_current_position += static_cast<llama_pos>(residual.size());
+                        log_line(LLAMA_LOG_INFO,
+                            "next_token: decoded %zu post-EOG residual tokens "
+                            "(first=%d, new_pos=%d)",
+                            residual.size(), first_residual, (int)g_current_position);
+                    } else {
+                        log_line(LLAMA_LOG_WARN,
+                            "next_token: residual decode failed; KV may be misaligned");
+                    }
+                } else {
+                    log_line(LLAMA_LOG_INFO,
+                        "next_token: no post-EOG residual tokens (eog_idx=%d, total=%zu)",
+                        eog_idx, diff_tokens.size());
+                }
+            } else {
+                log_line(LLAMA_LOG_WARN,
+                    "next_token: residual skipped — assistant-turn template render failed");
+            }
+        }
+
         g_stop_reason = STOP_EOG;
         finalize_assistant_turn();
         return nullptr;
@@ -608,7 +706,7 @@ int llama_runner_core_process_system_prompt(const char *system_prompt) {
     return 0;
 }
 
-int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_length) {
+int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_length, const char *grammar) {
     if (!g_model || !g_context || !g_sampler) {
         log_line(LLAMA_LOG_ERROR, "process_user_prompt: Model not loaded");
         return 1;
@@ -619,6 +717,11 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
     g_streaming_n_generated = 0;
     g_assistant_buffer.clear();
     g_stop_reason = STOP_NONE;
+
+    if (!apply_sampler_for_turn(/*temperature*/ -1.0f, grammar)) {
+        log_line(LLAMA_LOG_ERROR, "process_user_prompt: Failed to reconfigure sampler");
+        return 1;
+    }
 
     bool has_template = g_chat_templates && common_chat_templates_was_explicit(g_chat_templates.get());
 
@@ -741,6 +844,7 @@ void llama_runner_core_unload() {
     }
 
     g_active_temperature = -1.0f;
+    g_active_grammar.clear();
     log_line(LLAMA_LOG_INFO, "unload: Model unloaded");
 }
 

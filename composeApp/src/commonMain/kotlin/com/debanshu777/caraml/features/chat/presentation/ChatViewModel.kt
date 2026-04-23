@@ -332,8 +332,8 @@ class ChatViewModel(
                     handleContextReset(currentMessages)
                 }
                 appendMessages(userMessage, assistantMessage)
-                val result = generateResponse(userMessage.text) { accText, stats ->
-                    updateStreamingState(accText, stats)
+                val result = generateResponse(userMessage.text) { thinking, output, stats ->
+                    updateStreamingState(thinking, output, stats)
                 }
                 finalizeMessage(assistantMessage.id, result)
                 if (result.stopReason == StopReason.CONTEXT_FULL) {
@@ -456,22 +456,30 @@ class ChatViewModel(
         }
     }
 
-    private fun updateStreamingState(accumulatedText: String, liveStats: LiveGenerationStats) {
+    private fun updateStreamingState(
+        thinkingText: String,
+        outputText: String,
+        liveStats: LiveGenerationStats,
+    ) {
         _streamingState.value = StreamingState(
-            streamingText = accumulatedText,
+            streamingText = outputText,
+            streamingThinkingText = thinkingText,
             streamingMessageId = _streamingState.value.streamingMessageId,
             liveStats = liveStats,
         )
     }
 
     private fun finalizeMessage(assistantMessageId: String, result: GenerationResult) {
-        val finalText = _streamingState.value.streamingText
+        val state = _streamingState.value
+        val finalText = state.streamingText
+        val finalThinking = state.streamingThinkingText.takeIf { it.isNotBlank() }
         _messages.update { list ->
             val messages = list.toMutableList()
             val idx = messages.indexOfLast { it.id == assistantMessageId }
             if (idx >= 0) {
                 messages[idx] = messages[idx].copy(
                     text = finalText,
+                    thinking = finalThinking,
                     inferenceMetrics = result.metrics,
                 )
             }

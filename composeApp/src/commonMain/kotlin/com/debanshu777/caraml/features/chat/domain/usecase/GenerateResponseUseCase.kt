@@ -6,11 +6,11 @@ import com.debanshu777.caraml.features.chat.data.InferenceMetrics
 import com.debanshu777.caraml.features.chat.data.LiveGenerationStats
 import com.debanshu777.caraml.features.chat.data.TokenTimer
 import com.debanshu777.runner.StopReason
+import com.debanshu777.runner.StructuredOutputParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.onEach
-import kotlinx.coroutines.flow.runningFold
 
 data class GenerationResult(
     val metrics: InferenceMetrics?,
@@ -32,32 +32,46 @@ class GenerateResponseUseCase(
         StopReason.ERROR -> "ERROR"
         else -> "NONE"
     }
+
     suspend operator fun invoke(
         userPrompt: String,
-        onToken: (accumulatedText: String, liveStats: LiveGenerationStats) -> Unit,
+        onToken: (thinking: String, output: String, liveStats: LiveGenerationStats) -> Unit,
     ): GenerationResult {
         val contextLimit = inferenceRepository.getContextLimit()
         val timer = TokenTimer()
+        val parser = StructuredOutputParser()
 
-        inferenceRepository.generateResponse(userPrompt)
-            .onEach { timer.onToken() }
-            .runningFold(StringBuilder()) { acc, token ->
-                acc.append(token)
-                acc
-            }
-            .flowOn(Dispatchers.IO)
-            .collect { accumulated ->
-                val (tokenCount, tokensPerSecond) = timer.buildLiveMetrics()
-                onToken(
-                    accumulated.toString(),
-                    LiveGenerationStats(
-                        contextUsed = inferenceRepository.getContextUsed(),
-                        contextLimit = contextLimit,
-                        outputTokenCount = tokenCount,
-                        tokensPerSecond = tokensPerSecond,
-                    )
-                )
-            }
+        fun emitSnapshot(snapshot: StructuredOutputParser.Snapshot) {
+            val (tokenCount, tokensPerSecond) = timer.buildLiveMetrics()
+            onToken(
+                snapshot.thinking,
+                snapshot.output,
+                LiveGenerationStats(
+                    contextUsed = inferenceRepository.getContextUsed(),
+                    contextLimit = contextLimit,
+                    outputTokenCount = tokenCount,
+                    tokensPerSecond = tokensPerSecond,
+                ),
+            )
+        }
+
+        try {
+            inferenceRepository.generateResponse(userPrompt)
+                .onEach { timer.onToken() }
+                .flowOn(Dispatchers.IO)
+                .collect { token ->
+                    val snapshot = parser.accept(token)
+                    emitSnapshot(snapshot)
+                }
+        } finally {
+            // Flush any buffered tail (e.g. mid-tag fragment) and emit a final
+            // snapshot so the UI sees the closed-out state even on cancellation.
+            emitSnapshot(parser.finish())
+        }
+
+        if (parser.isInFallback) {
+            AppLogger.w(TAG, "structured output: fell back to raw stream")
+        }
 
         val metrics = timer.buildMetrics()
         val stopReason = inferenceRepository.getStopReason()

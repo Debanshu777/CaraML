@@ -92,11 +92,15 @@ Java_com_debanshu777_runner_LlamaRunner_nativeGenerateText(
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeStartGenerate(
-    JNIEnv *env, jobject, jstring prompt, jint maxTokens, jfloat temperature) {
+    JNIEnv *env, jobject, jstring prompt, jint maxTokens, jfloat temperature, jstring grammar) {
     const char *p = env->GetStringUTFChars(prompt, nullptr);
+    const char *g = grammar ? env->GetStringUTFChars(grammar, nullptr) : nullptr;
     const bool ok = llama_runner_core_start_generate(p, static_cast<int>(maxTokens),
-        static_cast<float>(temperature));
+        static_cast<float>(temperature), g);
     env->ReleaseStringUTFChars(prompt, p);
+    if (g) {
+        env->ReleaseStringUTFChars(grammar, g);
+    }
     return ok ? JNI_TRUE : JNI_FALSE;
 }
 
@@ -129,10 +133,14 @@ Java_com_debanshu777_runner_LlamaRunner_nativeProcessSystemPrompt(JNIEnv *env, j
 
 extern "C" JNIEXPORT jint JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeProcessUserPrompt(
-    JNIEnv *env, jobject, jstring prompt, jint predictLength) {
+    JNIEnv *env, jobject, jstring prompt, jint predictLength, jstring grammar) {
     const char *p = env->GetStringUTFChars(prompt, nullptr);
-    const int ret = llama_runner_core_process_user_prompt(p, static_cast<int>(predictLength));
+    const char *g = grammar ? env->GetStringUTFChars(grammar, nullptr) : nullptr;
+    const int ret = llama_runner_core_process_user_prompt(p, static_cast<int>(predictLength), g);
     env->ReleaseStringUTFChars(prompt, p);
+    if (g) {
+        env->ReleaseStringUTFChars(grammar, g);
+    }
     return static_cast<jint>(ret);
 }
 

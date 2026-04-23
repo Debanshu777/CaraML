@@ -19,6 +19,7 @@ expect class LlamaRunner() {
     fun processUserPrompt(
         userPrompt: String,
         predictLength: Int,
+        grammar: String = "",
     ): Int
 
     fun unloadModel()

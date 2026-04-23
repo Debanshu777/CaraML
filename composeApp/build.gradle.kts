@@ -93,6 +93,7 @@ kotlin {
             implementation(libs.navigation3.viewmodel)
             implementation(libs.kotlinx.collections.immutable)
             implementation(libs.materialkolor)
+            implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.27.0")
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

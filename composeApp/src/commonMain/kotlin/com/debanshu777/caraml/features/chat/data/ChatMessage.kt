@@ -12,6 +12,7 @@ data class ChatMessage(
     val id: String = generateId(),
     val role: MessageRole,
     val text: String,
+    val thinking: String? = null,
     val inferenceMetrics: InferenceMetrics? = null,
     val imageBytes: ByteArray? = null,
     val videoFrames: List<ByteArray>? = null,
@@ -24,6 +25,7 @@ data class ChatMessage(
         if (id != other.id) return false
         if (role != other.role) return false
         if (text != other.text) return false
+        if (thinking != other.thinking) return false
         if (inferenceMetrics != other.inferenceMetrics) return false
         if (!bytesEqual(imageBytes, other.imageBytes)) return false
         if (videoFrames?.size != other.videoFrames?.size) return false
@@ -35,6 +37,7 @@ data class ChatMessage(
         var result = id.hashCode()
         result = 31 * result + role.hashCode()
         result = 31 * result + text.hashCode()
+        result = 31 * result + (thinking?.hashCode() ?: 0)
         result = 31 * result + (inferenceMetrics?.hashCode() ?: 0)
         result = 31 * result + (imageBytes?.size ?: 0)
         result = 31 * result + (videoFrames?.size ?: 0)

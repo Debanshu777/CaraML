@@ -73,10 +73,10 @@ actual class LlamaRunner {
     }
 
     @OptIn(ExperimentalForeignApi::class)
-    actual fun processUserPrompt(userPrompt: String, predictLength: Int): Int {
+    actual fun processUserPrompt(userPrompt: String, predictLength: Int, grammar: String): Int {
         require(userPrompt.isNotBlank()) { "userPrompt must not be blank" }
         require(predictLength > 0) { "predictLength must be > 0" }
-        return llama_runner_process_user_prompt(userPrompt, predictLength)
+        return llama_runner_process_user_prompt(userPrompt, predictLength, grammar.ifEmpty { null })
     }
 
     @OptIn(ExperimentalForeignApi::class)

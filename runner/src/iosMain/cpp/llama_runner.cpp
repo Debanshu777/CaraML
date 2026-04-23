@@ -85,8 +85,8 @@ char *llama_runner_generate_text(const char *prompt, int max_tokens, float tempe
     return strdup(result.c_str());
 }
 
-int llama_runner_start_generate(const char *prompt, int max_tokens, float temperature) {
-    return llama_runner_core_start_generate(prompt, max_tokens, temperature) ? 1 : 0;
+int llama_runner_start_generate(const char *prompt, int max_tokens, float temperature, const char *grammar) {
+    return llama_runner_core_start_generate(prompt, max_tokens, temperature, grammar) ? 1 : 0;
 }
 
 char *llama_runner_next_token(void) {
@@ -109,8 +109,8 @@ int llama_runner_process_system_prompt(const char *prompt) {
     return llama_runner_core_process_system_prompt(prompt);
 }
 
-int llama_runner_process_user_prompt(const char *prompt, int predict_length) {
-    return llama_runner_core_process_user_prompt(prompt, predict_length);
+int llama_runner_process_user_prompt(const char *prompt, int predict_length, const char *grammar) {
+    return llama_runner_core_process_user_prompt(prompt, predict_length, grammar);
 }
 
 void llama_runner_unload_model(void) { llama_runner_core_unload(); }

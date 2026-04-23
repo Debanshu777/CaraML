@@ -9,7 +9,9 @@ import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import com.debanshu777.runner.LlamaRunner
 import com.debanshu777.runner.NativeRunnerConfig
+import com.debanshu777.runner.STRICT_THINKING_OUTPUT_GRAMMAR
 import com.debanshu777.runner.generateFlowTokens
+import com.debanshu777.runner.structuredOutputSystemPromptSuffix
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
@@ -79,7 +81,8 @@ class LlamaInferenceRepository(
                     )
                 }
 
-                val systemPrompt = settings.systemPrompt.ifBlank { FALLBACK_SYSTEM_PROMPT }
+                val systemPrompt = settings.systemPrompt.ifBlank { FALLBACK_SYSTEM_PROMPT } +
+                    structuredOutputSystemPromptSuffix()
 
                 val spRet = runner.processSystemPrompt(systemPrompt)
                 if (spRet != 0) {
@@ -155,7 +158,7 @@ class LlamaInferenceRepository(
             "generate: promptLen=${userPrompt.length}, remainingCtx=$remainingCtx, " +
             "context=${runner.getContextUsed()}/${runner.getContextLimit()}"
         }
-        val ret = runner.processUserPrompt(userPrompt, remainingCtx)
+        val ret = runner.processUserPrompt(userPrompt, remainingCtx, STRICT_THINKING_OUTPUT_GRAMMAR)
         if (ret != 0) {
             throw IllegalStateException("Failed to process message")
         }
@@ -244,12 +247,12 @@ class LlamaInferenceRepository(
                 
                 val systemPrompt = buildString {
                     append(basePrompt)
-                    
+
                     if (summary.isNotBlank()) {
                         append(" Here is a summary of our previous conversation:\n")
                         append(summary)
                     }
-                    
+
                     if (lastExchange.isNotBlank()) {
                         if (summary.isNotBlank()) {
                             append("\n\n")
@@ -257,6 +260,7 @@ class LlamaInferenceRepository(
                         append("The most recent exchange was:\n")
                         append(lastExchange)
                     }
+                    append(structuredOutputSystemPromptSuffix())
                 }
                 
                 val ret = runner.processSystemPrompt(systemPrompt)

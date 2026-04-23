@@ -20,12 +20,12 @@ struct LlamaRunnerConfigFFI {
 void llama_runner_init(void);
 int llama_runner_load_model_v2(const char* model_path, struct LlamaRunnerConfigFFI config);
 char* llama_runner_generate_text(const char* prompt, int max_tokens, float temperature);
-int llama_runner_start_generate(const char* prompt, int max_tokens, float temperature);
+int llama_runner_start_generate(const char* prompt, int max_tokens, float temperature, const char* grammar);
 char* llama_runner_next_token(void);
 void llama_runner_cancel_generate(void);
 void llama_runner_finalize_generation(void);
 int llama_runner_process_system_prompt(const char* prompt);
-int llama_runner_process_user_prompt(const char* prompt, int predict_length);
+int llama_runner_process_user_prompt(const char* prompt, int predict_length, const char* grammar);
 void llama_runner_unload_model(void);
 void llama_runner_shutdown(void);
 int llama_runner_get_context_used(void);
