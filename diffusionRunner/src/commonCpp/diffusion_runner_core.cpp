@@ -3,6 +3,7 @@
 #include <memory>
 #include <unordered_map>
 #include <mutex>
+#include <atomic>
 #include <cstdlib>
 #include <cstring>
 
@@ -20,6 +21,21 @@ static std::unordered_map<int64_t, std::unique_ptr<SdHandle>> g_handles;
 static std::mutex g_handles_mutex;
 static int64_t g_next_handle = 1;
 static DiffusionLogFn g_log_fn = nullptr;
+
+// Step-progress tracking (updated by the C callback on the generation thread;
+// read from the Kotlin polling coroutine on a different thread — atomics are sufficient).
+static std::atomic<int> g_progress_step(0);
+static std::atomic<int> g_progress_total(0);
+
+static void step_progress_callback(int step, int steps, float /*time*/, void* /*data*/) {
+    g_progress_step.store(step,  std::memory_order_relaxed);
+    g_progress_total.store(steps, std::memory_order_relaxed);
+}
+
+void diffusion_runner_get_step_progress(int* step, int* total) {
+    *step  = g_progress_step.load(std::memory_order_relaxed);
+    *total = g_progress_total.load(std::memory_order_relaxed);
+}
 
 // PNG encoding callback
 struct PngWriteContext {
@@ -173,6 +189,14 @@ PngResult diffusion_runner_core_txt2img(int64_t handle_id, const ImageGenConfig 
         gen_params.lora_count = config.lora_count;
     }
 
+    // Register step-progress callback. Reset to (0,0) — the callback will fill in the real
+    // total when the sampling loop actually starts. Pre-sampling work (text encoding, latent
+    // prep) doesn't fire the callback, so leaving total=0 lets the UI show "Preparing…" rather
+    // than misleadingly claiming "Step 0 / 20".
+    g_progress_step.store(0, std::memory_order_relaxed);
+    g_progress_total.store(0, std::memory_order_relaxed);
+    sd_set_progress_callback(step_progress_callback, nullptr);
+
     // Generate image
     sd_image_t *images = generate_image(ctx, &gen_params);
     if (!images || !images[0].data) {
@@ -249,6 +273,12 @@ std::vector<PngResult> diffusion_runner_core_video_gen(int64_t handle_id, const 
         gen_params.loras = lora_configs.data();
         gen_params.lora_count = config.lora_count;
     }
+
+    // Register step-progress callback. Reset to (0,0); the sampler fills in the real total
+    // once it starts. See txt2img comment above.
+    g_progress_step.store(0, std::memory_order_relaxed);
+    g_progress_total.store(0, std::memory_order_relaxed);
+    sd_set_progress_callback(step_progress_callback, nullptr);
 
     // Generate video frames
     int num_frames_out = 0;

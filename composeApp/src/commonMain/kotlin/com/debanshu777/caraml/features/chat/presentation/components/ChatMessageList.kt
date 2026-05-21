@@ -42,6 +42,10 @@ private fun StreamingMessageBubble(
         showMediaPending = pendingMedia,
         isStreaming = true,
         streamingThinking = streamingState.streamingThinkingText,
+        imageGenStep = streamingState.imageGenStep,
+        imageGenTotalSteps = streamingState.imageGenTotalSteps,
+        imageGenRequestedSteps = streamingState.imageGenRequestedSteps,
+        imageGenElapsedSeconds = streamingState.imageGenElapsedSeconds,
     )
 }
 

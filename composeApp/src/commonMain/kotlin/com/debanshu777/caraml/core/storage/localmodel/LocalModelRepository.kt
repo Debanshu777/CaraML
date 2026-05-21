@@ -27,6 +27,20 @@ class LocalModelRepository(private val dao: LocalModelDao) {
         dao.incrementUsageCount(modelId, filename)
     }
 
+    suspend fun updateComponentStatus(modelId: String, status: String) {
+        dao.updateComponentStatus(modelId, status)
+    }
+
+    fun getReadyMainModels() = dao.getReadyMainModels()
+
+    fun getPartialMainModels() = dao.getPartialMainModels()
+
+    fun getAllMainModels() = dao.getAllMainModels()
+
+    suspend fun getMainModelByModelId(modelId: String) = dao.getMainModelByModelId(modelId)
+
+    suspend fun getMainModels(): List<LocalModelEntity> = dao.getMainModels()
+
     suspend fun insert(
         modelId: String,
         filename: String,
@@ -37,6 +51,8 @@ class LocalModelRepository(private val dao: LocalModelDao) {
         pipelineTag: String?,
         contextLength: Int? = null,
         modelType: String,
+        componentStatus: String? = null,
+        isMainModel: Boolean = true,
     ) {
         dao.insert(
             LocalModelEntity(
@@ -44,12 +60,14 @@ class LocalModelRepository(private val dao: LocalModelDao) {
                 filename = filename,
                 localPath = localPath,
                 sizeBytes = sizeBytes,
-                downloadedAt = 0L,
+                downloadedAt = System.currentTimeMillis(),
                 author = author,
                 libraryName = libraryName,
                 pipelineTag = pipelineTag,
                 contextLength = contextLength,
                 modelType = modelType,
+                componentStatus = componentStatus,
+                isMainModel = isMainModel,
             )
         )
     }

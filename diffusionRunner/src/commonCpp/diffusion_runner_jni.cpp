@@ -283,4 +283,14 @@ Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeRelease(JNIEnv *env, 
     diffusion_runner_core_release(handle);
 }
 
+JNIEXPORT jintArray JNICALL
+Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeGetStepProgress(JNIEnv *env, jobject thiz) {
+    int step = 0, total = 0;
+    diffusion_runner_get_step_progress(&step, &total);
+    jintArray arr = env->NewIntArray(2);
+    jint values[2] = {step, total};
+    env->SetIntArrayRegion(arr, 0, 2, values);
+    return arr;
+}
+
 }

@@ -51,6 +51,7 @@ import com.debanshu777.caraml.core.drawer.LocalDrawerController
 import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.DownloadedModelsViewModel
+import com.debanshu777.caraml.features.modelhub.presentation.downloaded.ReadinessFilter
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.components.LocalModelListItem
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelListItem
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchBar
@@ -111,6 +112,7 @@ fun SearchScreen(
                 1 -> DownloadedTabContent(
                     viewModel = downloadedModelsViewModel,
                     onSelectModelAndGoBack = onSelectModelAndGoBack,
+                    onNavigateToDetails = onNavigateToDetails,
                     snackbarHostState = snackbarHostState,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -409,6 +411,7 @@ private fun formatStorageBytes(bytes: Long): String {
 private fun DownloadedTabContent(
     viewModel: DownloadedModelsViewModel,
     onSelectModelAndGoBack: (LocalModelEntity) -> Unit,
+    onNavigateToDetails: (modelId: String, hubBrowseMode: ModelHubBrowseMode) -> Unit,
     snackbarHostState: SnackbarHostState,
     modifier: Modifier = Modifier
 ) {
@@ -417,6 +420,7 @@ private fun DownloadedTabContent(
     val selectedIds by viewModel.selectedIds.collectAsState()
     val isDeleting by viewModel.isDeleting.collectAsState()
     val deleteResultMessage by viewModel.deleteResultMessage.collectAsState()
+    val readinessFilter by viewModel.readinessFilter.collectAsState()
 
     val scope = rememberCoroutineScope()
     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -447,6 +451,33 @@ private fun DownloadedTabContent(
                     enabled = selectedIds.isNotEmpty() && !isDeleting
                 ) {
                     Text("Delete (${selectedIds.size})")
+                }
+            }
+        }
+
+        // Readiness filter chips (hidden during selection mode)
+        if (!selectionMode) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                ReadinessFilter.entries.forEach { filter ->
+                    FilterChip(
+                        selected = readinessFilter == filter,
+                        onClick = { viewModel.setReadinessFilter(filter) },
+                        label = {
+                            Text(
+                                when (filter) {
+                                    ReadinessFilter.ALL -> "All"
+                                    ReadinessFilter.READY -> "Ready"
+                                    ReadinessFilter.PARTIAL -> "Needs setup"
+                                }
+                            )
+                        },
+                    )
                 }
             }
         }
@@ -489,7 +520,17 @@ private fun DownloadedTabContent(
                                 } else {
                                     viewModel.beginSelection(model)
                                 }
-                            }
+                            },
+                            onFixComponents = if (model.componentStatus == com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity.STATUS_PARTIAL) {
+                                {
+                                    val mode = when (model.modelType) {
+                                        com.debanshu777.caraml.core.storage.localmodel.ModelType.VIDEO -> ModelHubBrowseMode.DiffusionVideo
+                                        com.debanshu777.caraml.core.storage.localmodel.ModelType.IMAGE -> ModelHubBrowseMode.DiffusionImage
+                                        else -> ModelHubBrowseMode.DiffusionImage
+                                    }
+                                    onNavigateToDetails(model.modelId, mode)
+                                }
+                            } else null,
                         )
                     }
                 }

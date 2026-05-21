@@ -1,6 +1,7 @@
 package com.debanshu777.caraml.core.data.Inference
 
 import com.debanshu777.caraml.core.platform.AppLogger
+import com.debanshu777.caraml.core.platform.DeviceCapabilities
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.diffusionrunner.DiffusionModelConfig
 import com.debanshu777.diffusionrunner.DiffusionRunner
@@ -12,10 +13,17 @@ import com.debanshu777.caraml.core.platform.PlatformPaths
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import com.debanshu777.huggingfacemanager.model.DIFFUSERS_BUNDLE_DB_FILENAME
 import com.debanshu777.huggingfacemanager.model.isDiffusersModelDirectory
+import com.debanshu777.huggingfacemanager.sdcpp.SdCppRecommendedParams
 import com.debanshu777.huggingfacemanager.sdcpp.getModelSetup
 import com.debanshu777.huggingfacemanager.sdcpp.SdCppComponentChecker
 import com.debanshu777.huggingfacemanager.sdcpp.ComponentRole
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
@@ -25,8 +33,26 @@ import kotlinx.coroutines.withContext
 class DiffusionInferenceRepository(
     private val storagePathProvider: StoragePathProvider,
     private val runner: DiffusionRunner,
+    private val deviceCapabilities: DeviceCapabilities,
 ) {
     private val componentChecker = SdCppComponentChecker(storagePathProvider)
+
+    /**
+     * Live diffusion progress.
+     * - [step] / [totalSteps] are 0 during pre-sampling (text encode, latent prep), then jump
+     *   to (1, requestedSteps) once denoising starts.
+     * - [requestedSteps] is the user-configured step budget — known upfront from the params.
+     * - [elapsedSeconds] is monotonically increasing; lets the UI show "Preparing… 12s".
+     */
+    data class DiffusionProgress(
+        val step: Int,
+        val totalSteps: Int,
+        val requestedSteps: Int,
+        val elapsedSeconds: Int,
+    )
+
+    private val _imageGenProgress = MutableStateFlow<DiffusionProgress?>(null)
+    val imageGenProgress: StateFlow<DiffusionProgress?> = _imageGenProgress.asStateFlow()
     companion object {
         private const val TAG = "DiffusionInference"
     }
@@ -48,9 +74,17 @@ class DiffusionInferenceRepository(
                     "Failed to initialize. Please restart the app.",
                 )
             }
+
+            // Pre-flight memory check: sum of main model + all components vs device RAM.
+            // Native loader will OOM-kill the process silently if weights don't fit, so we
+            // refuse upfront with a clear error rather than crashing.
+            preflightMemoryCheck(model, modelPath)?.let { error ->
+                return@withContext error
+            }
+
             runner.release()
             runner.initialize(nativeLibDir)
-            
+
             // Build full config with resolved component paths
             val config = buildDiffusionModelConfig(model, modelPath)
             val loaded = runner.loadModel(config)
@@ -67,33 +101,120 @@ class DiffusionInferenceRepository(
         }
     }
 
+    /**
+     * Returns a [ModelLoadResult.Error] if the model + components clearly exceed the device
+     * memory budget. Returns null when the model has a reasonable chance of loading.
+     *
+     * This guards against silent OOM kills (the Android low-memory killer terminates the
+     * process without throwing a Kotlin exception).
+     */
+    private fun preflightMemoryCheck(
+        model: LocalModelEntity,
+        modelPath: String,
+    ): ModelLoadResult.Error? {
+        val mainSize = storagePathProvider.getFileSize(modelPath)
+        val componentSize = getModelSetup(model.modelId)?.let { setup ->
+            if (setup.selfContained) 0L
+            else componentChecker.resolveComponentsByRole(setup).values
+                .sumOf { storagePathProvider.getFileSize(it) }
+        } ?: 0L
+        val totalBytes = mainSize + componentSize
+        if (totalBytes <= 0L) return null
+
+        val budgetBytes = deviceCapabilities.getDeviceHints().memoryBudgetMB * 1024L * 1024L
+        if (budgetBytes <= 0L) return null
+
+        // Weights typically need ~1.1x their on-disk size in RAM (decompression + activations
+        // + KV cache headroom). Anything above the device's safe budget is rejected.
+        val requiredBytes = (totalBytes * 1.1).toLong()
+        AppLogger.i(TAG) {
+            "preflight: weights=${formatGB(totalBytes)}, required~${formatGB(requiredBytes)}, " +
+                "device budget=${formatGB(budgetBytes)}"
+        }
+        if (requiredBytes <= budgetBytes) return null
+
+        return ModelLoadResult.Error(
+            "This model needs about ${formatGB(requiredBytes)} of RAM but your device has " +
+                "only ${formatGB(budgetBytes)} available for inference. Try a smaller " +
+                "quantization (e.g. Q4_K_S or smaller) or a smaller model variant."
+        )
+    }
+
+    private fun formatGB(bytes: Long): String {
+        if (bytes <= 0L) return "0 GB"
+        val gb = bytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
+        return if (gb >= 10) "${gb.toInt()} GB" else "${(kotlin.math.round(gb * 10) / 10)} GB"
+    }
+
     suspend fun generateImage(params: ImageGenParams): Result<ByteArray> =
         withContext(Dispatchers.Default) {
-            val r = runner.generateImage(params)
-            r.exceptionOrNull()?.let { AppLogger.e(TAG, "generateImage failed", it) }
-            r.fold(
-                onSuccess = { Result.success(it) },
-                onFailure = {
-                    Result.failure(Exception("Generation failed. Please try again."))
-                },
+            val startMs = kotlin.time.TimeSource.Monotonic.markNow()
+            _imageGenProgress.value = DiffusionProgress(
+                step = 0, totalSteps = 0, requestedSteps = params.steps, elapsedSeconds = 0,
             )
+            val pollJob = launch {
+                while (isActive) {
+                    delay(250)
+                    val raw = runner.getStepProgress()
+                    _imageGenProgress.value = DiffusionProgress(
+                        step = raw[0],
+                        totalSteps = raw[1],
+                        requestedSteps = params.steps,
+                        elapsedSeconds = startMs.elapsedNow().inWholeSeconds.toInt(),
+                    )
+                }
+            }
+            try {
+                val r = runner.generateImage(params)
+                r.exceptionOrNull()?.let { AppLogger.e(TAG, "generateImage failed", it) }
+                r.fold(
+                    onSuccess = { Result.success(it) },
+                    onFailure = { Result.failure(Exception("Generation failed. Please try again.")) },
+                )
+            } finally {
+                pollJob.cancel()
+                _imageGenProgress.value = null
+            }
         }
 
     suspend fun generateVideo(params: VideoGenParams): Result<List<ByteArray>> =
         withContext(Dispatchers.Default) {
-            val r = runner.generateVideo(params)
-            r.exceptionOrNull()?.let { AppLogger.e(TAG, "generateVideo failed", it) }
-            r.fold(
-                onSuccess = { Result.success(it) },
-                onFailure = {
-                    Result.failure(Exception("Generation failed. Please try again."))
-                },
+            val startMs = kotlin.time.TimeSource.Monotonic.markNow()
+            _imageGenProgress.value = DiffusionProgress(
+                step = 0, totalSteps = 0, requestedSteps = params.steps, elapsedSeconds = 0,
             )
+            val pollJob = launch {
+                while (isActive) {
+                    delay(250)
+                    val raw = runner.getStepProgress()
+                    _imageGenProgress.value = DiffusionProgress(
+                        step = raw[0],
+                        totalSteps = raw[1],
+                        requestedSteps = params.steps,
+                        elapsedSeconds = startMs.elapsedNow().inWholeSeconds.toInt(),
+                    )
+                }
+            }
+            try {
+                val r = runner.generateVideo(params)
+                r.exceptionOrNull()?.let { AppLogger.e(TAG, "generateVideo failed", it) }
+                r.fold(
+                    onSuccess = { Result.success(it) },
+                    onFailure = { Result.failure(Exception("Generation failed. Please try again.")) },
+                )
+            } finally {
+                pollJob.cancel()
+                _imageGenProgress.value = null
+            }
         }
 
     fun release() {
         runner.release()
     }
+
+    /** Returns recommended inference parameters for the given model, or null for unknown/simple models. */
+    fun getRecommendedParams(model: LocalModelEntity): SdCppRecommendedParams? =
+        getModelSetup(model.modelId)?.recommendedParams
 
     private fun resolveModelPath(model: LocalModelEntity): String {
         val dir = storagePathProvider.getModelsStorageDirectory(model.modelId)

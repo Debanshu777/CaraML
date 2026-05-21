@@ -43,10 +43,11 @@ fun DetailsScreen(
     val ggufFiles by viewModel.ggufFiles.collectAsState()
     val isDownloading by viewModel.isDownloading.collectAsState()
     val downloadError by viewModel.downloadError.collectAsState()
-    val setupComponents by viewModel.setupComponents.collectAsState()
-    val isDownloadingSetupComponents by viewModel.isDownloadingSetupComponents.collectAsState()
-    val setupDownloadError by viewModel.setupDownloadError.collectAsState()
+    val installBundleState by viewModel.installBundleState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    val isDiffusion = hubBrowseMode == ModelHubBrowseMode.DiffusionImage ||
+        hubBrowseMode == ModelHubBrowseMode.DiffusionVideo
 
     LaunchedEffect(modelId, hubBrowseMode) {
         viewModel.loadDetail(modelId, hubBrowseMode)
@@ -58,10 +59,10 @@ fun DetailsScreen(
         viewModel.clearDownloadError()
     }
 
-    LaunchedEffect(setupDownloadError) {
-        val error = setupDownloadError ?: return@LaunchedEffect
+    LaunchedEffect(installBundleState.installError) {
+        val error = installBundleState.installError ?: return@LaunchedEffect
         snackbarHostState.showSnackbar(error)
-        viewModel.clearSetupDownloadError()
+        viewModel.clearDownloadError()
     }
 
     Scaffold(
@@ -118,12 +119,10 @@ fun DetailsScreen(
                             },
                             weightFilesHeading = weightHeading,
                             weightFilesEmptyLabel = weightEmpty,
-                            showDiffusionHint = hubBrowseMode != ModelHubBrowseMode.LanguageModels,
-                            setupComponents = setupComponents,
-                            isDownloadingSetupComponents = isDownloadingSetupComponents,
-                            onDownloadAllComponents = {
-                                viewModel.downloadSetupComponents(modelId)
-                            },
+                            installBundleState = installBundleState,
+                            onVariantSelected = { path -> viewModel.selectVariant(path) },
+                            onSmartInstall = { viewModel.smartInstall(modelId) },
+                            showInstallBundle = isDiffusion,
                             modifier = Modifier.fillMaxSize()
                         )
                     }

@@ -53,6 +53,8 @@ actual class DiffusionRunner {
         }
     }
 
+    actual fun getStepProgress(): IntArray = nativeGetStepProgress()
+
     private external fun nativeInit(libDir: String)
     private external fun nativeLoadModel(config: DiffusionModelConfig): Long
     private external fun nativeTxt2Img(
@@ -71,4 +73,5 @@ actual class DiffusionRunner {
     ): Array<ByteArray>?
 
     private external fun nativeRelease(handle: Long)
+    private external fun nativeGetStepProgress(): IntArray
 }

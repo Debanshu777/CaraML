@@ -2,6 +2,7 @@ package com.debanshu777.caraml.features.modelhub.presentation.downloaded
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.debanshu777.caraml.core.domain.ModelReadinessReconciler
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
@@ -11,23 +12,46 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+enum class ReadinessFilter { ALL, READY, PARTIAL }
+
 class DownloadedModelsViewModel(
     private val localModelRepository: LocalModelRepository,
-    private val storagePathProvider: StoragePathProvider
+    private val storagePathProvider: StoragePathProvider,
 ) : ViewModel() {
 
-    val downloadedModels: StateFlow<List<LocalModelEntity>> =
-        localModelRepository.getAllDownloadedFiles()
-            .stateIn(
-                scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5000),
-                initialValue = emptyList()
-            )
+    private val reconciler = ModelReadinessReconciler(localModelRepository, storagePathProvider)
+
+    private val _allDownloadedModels = localModelRepository.getAllDownloadedFiles()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    private val _readinessFilter = MutableStateFlow(ReadinessFilter.ALL)
+    val readinessFilter: StateFlow<ReadinessFilter> = _readinessFilter.asStateFlow()
+
+    /** Filtered list of downloaded models based on the active readiness filter. */
+    val downloadedModels: StateFlow<List<LocalModelEntity>> = combine(
+        _allDownloadedModels,
+        _readinessFilter,
+    ) { all, filter ->
+        when (filter) {
+            ReadinessFilter.ALL -> all
+            ReadinessFilter.READY -> all.filter { it.componentStatus == LocalModelEntity.STATUS_READY || it.componentStatus == null }
+            ReadinessFilter.PARTIAL -> all.filter { it.componentStatus == LocalModelEntity.STATUS_PARTIAL }
+        }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
 
     private val _selectionMode = MutableStateFlow(false)
     val selectionMode: StateFlow<Boolean> = _selectionMode.asStateFlow()
@@ -40,6 +64,17 @@ class DownloadedModelsViewModel(
 
     private val _deleteResultMessage = MutableStateFlow<String?>(null)
     val deleteResultMessage: StateFlow<String?> = _deleteResultMessage.asStateFlow()
+
+    init {
+        // Reconcile readiness state in the background when the ViewModel starts
+        viewModelScope.launch(Dispatchers.IO) {
+            reconciler.reconcile()
+        }
+    }
+
+    fun setReadinessFilter(filter: ReadinessFilter) {
+        _readinessFilter.update { filter }
+    }
 
     fun beginSelection(model: LocalModelEntity) {
         _selectionMode.value = true
@@ -66,7 +101,7 @@ class DownloadedModelsViewModel(
         if (_isDeleting.value) return
         val ids = _selectedIds.value
         if (ids.isEmpty()) return
-        val snapshot = downloadedModels.value.filter { it.id in ids }
+        val snapshot = _allDownloadedModels.value.filter { it.id in ids }
         viewModelScope.launch {
             _isDeleting.value = true
             _deleteResultMessage.value = null

@@ -49,12 +49,14 @@ import com.debanshu777.caraml.features.chat.presentation.components.ModelErrorSc
 import com.debanshu777.caraml.features.chat.presentation.components.ModelLoadingScreen
 import com.debanshu777.caraml.features.chat.presentation.components.ModelSelectorTopBar
 import com.debanshu777.caraml.features.chat.presentation.components.NoCompatibleModelsScreen
+import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 import com.debanshu777.caraml.features.chat.presentation.components.NoModelsScreen
 
 @Composable
 fun ChatScreen(
     viewModel: ChatViewModel,
     onNavigateToSearch: () -> Unit,
+    onNavigateToModelDetail: (modelId: String, mode: ModelHubBrowseMode) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -68,6 +70,7 @@ fun ChatScreen(
         onSendMessage = viewModel::sendMessage,
         onCancelGeneration = viewModel::cancelGeneration,
         onNavigateToSearch = onNavigateToSearch,
+        onNavigateToModelDetail = onNavigateToModelDetail,
         onGenerationModeChange = viewModel::setGenerationMode,
         contextIndicator = {
             ContextStatsIndicator(streamingStateFlow = viewModel.streamingState)
@@ -85,6 +88,7 @@ fun ChatScreenContent(
     onSendMessage: (String) -> Unit,
     onCancelGeneration: () -> Unit,
     onNavigateToSearch: () -> Unit,
+    onNavigateToModelDetail: (modelId: String, mode: ModelHubBrowseMode) -> Unit = { _, _ -> },
     onGenerationModeChange: (GenerationMode) -> Unit,
     contextIndicator: @Composable RowScope.() -> Unit = {},
     modifier: Modifier = Modifier
@@ -179,6 +183,12 @@ fun ChatScreenContent(
                     missingComponentLabels = uiState.missingComponentLabels,
                     modelName = uiState.modelName,
                     onGoToModelHubClick = onNavigateToSearch,
+                    onFixComponentsClick = {
+                        onNavigateToModelDetail(
+                            uiState.modelId,
+                            ModelHubBrowseMode.DiffusionImage,
+                        )
+                    },
                     modifier = Modifier.padding(paddingValues)
                 )
             }
@@ -204,6 +214,7 @@ private fun MissingComponentsScreen(
     missingComponentLabels: List<String>,
     modelName: String,
     onGoToModelHubClick: () -> Unit,
+    onFixComponentsClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -268,7 +279,7 @@ private fun MissingComponentsScreen(
         Spacer(modifier = Modifier.height(LocalSpacing.current.xl))
 
         Button(
-            onClick = onGoToModelHubClick,
+            onClick = onFixComponentsClick,
             modifier = Modifier.fillMaxWidth()
         ) {
             Icon(
@@ -277,7 +288,7 @@ private fun MissingComponentsScreen(
                 modifier = Modifier.size(18.dp)
             )
             Spacer(modifier = Modifier.size(LocalSpacing.current.s))
-            Text("Go to Model Hub")
+            Text("Download missing components")
         }
     }
 }

@@ -18,6 +18,12 @@ interface StoragePathProvider {
     fun isDirectoryReadable(path: String): Boolean
 
     /**
+     * Returns the size in bytes of the file (or recursive size of a directory) at [path].
+     * Returns 0 if the path does not exist or cannot be read.
+     */
+    fun getFileSize(path: String): Long
+
+    /**
      * Atomically renames [from] to [to]. Returns true on success.
      * If [to] already exists the behaviour is platform-defined (overwrite on JVM/Android,
      * fail on iOS).

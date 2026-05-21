@@ -146,4 +146,7 @@ actual class DiffusionRunner {
             handle = 0L
         }
     }
+
+    // iOS doesn't poll native progress (generation returns all at once via the same thread)
+    actual fun getStepProgress(): IntArray = intArrayOf(0, 0)
 }

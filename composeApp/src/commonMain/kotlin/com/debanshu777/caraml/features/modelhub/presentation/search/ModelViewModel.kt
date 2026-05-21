@@ -2,6 +2,8 @@ package com.debanshu777.caraml.features.modelhub.presentation.search
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.debanshu777.caraml.core.storage.component.ComponentRepository
+import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
 import com.debanshu777.caraml.core.storage.localmodel.ModelType
 import com.debanshu777.huggingfacemanager.HuggingFaceApi
@@ -33,6 +35,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -61,11 +64,48 @@ data class SetupComponentUiState(
     val isDownloaded: Boolean,
     val progress: Float?,
     val required: Boolean,
+    /** Non-null when this component is already on disk from another model download. */
+    val sharedFrom: String? = null,
+)
+
+/**
+ * Unified state for the Smart Install card on the model detail page.
+ * Combines main model variants, required components, and install progress.
+ */
+data class InstallBundleUiState(
+    val variants: List<GgufFileUiState> = emptyList(),
+    val selectedVariantPath: String? = null,
+    val components: List<SetupComponentUiState> = emptyList(),
+    /** Total bytes that will be newly downloaded (skips already-downloaded items). */
+    val totalNewDownloadBytes: Long = 0L,
+    val isInstalling: Boolean = false,
+    val installError: String? = null,
+    /** True when main model weight + all required components are present on disk. */
+    val isReady: Boolean = false,
+    /** True for self-contained models that need no extra component downloads. */
+    val isSelfContained: Boolean = true,
+    /** 0..1 fraction for overall install progress; null when size is unknown. */
+    val overallProgress: Float? = null,
+    /** Cumulative bytes received across all files in the current install. */
+    val overallBytesReceived: Long = 0L,
+    /** Total bytes to download for the current install. */
+    val overallBytesTotal: Long = 0L,
+    /** Short filename of the file currently being downloaded, e.g. "flux1-dev-q4_k.gguf". */
+    val currentDownloadLabel: String? = null,
+)
+
+/** Internal snapshot of ongoing install progress, updated on every progress tick. */
+private data class InstallProgress(
+    val fraction: Float? = null,
+    val bytesReceived: Long = 0L,
+    val bytesTotal: Long = 0L,
+    val label: String? = null,
 )
 
 class ModelViewModel(
     private val api: HuggingFaceApi,
     private val localModelRepository: LocalModelRepository,
+    private val componentRepository: ComponentRepository,
     private val downloadManager: DownloadManager,
     private val storagePathProvider: StoragePathProvider
 ) : ViewModel() {
@@ -149,6 +189,68 @@ class ModelViewModel(
     private val _setupDownloadError = MutableStateFlow<String?>(null)
     val setupDownloadError: StateFlow<String?> = _setupDownloadError.asStateFlow()
 
+    /** The variant path currently selected by the user in the install bundle card. */
+    private val _selectedVariantPath = MutableStateFlow<String?>(null)
+
+    /** Live progress snapshot, updated on every download tick. */
+    private val _installProgress = MutableStateFlow(InstallProgress())
+
+    /** Cumulative bytes from files already completed in the current install pass. */
+    @Volatile private var _installBytesCompleted: Long = 0L
+    /** Total expected bytes for the current install pass (variant + components). */
+    @Volatile private var _installBytesTotal: Long = 0L
+
+    /**
+     * Unified install state combining main model variants, required components, and overall
+     * install readiness. Derived reactively from underlying state flows.
+     */
+    val installBundleState: StateFlow<InstallBundleUiState> = combine(
+        _ggufFiles,
+        _setupComponents,
+        _isDownloading,
+        _downloadError,
+        _selectedVariantPath,
+    ) { ggufFiles, setupComponents, isInstalling, installError, selectedPath ->
+        val modelId = _modelDetail.value?.let { it.modelId ?: it.id } ?: ""
+        val setup = if (modelId.isNotBlank()) getModelSetup(modelId) else null
+        val isSelfContained = setup?.selfContained ?: (setupComponents.isEmpty())
+
+        val mainModelDownloaded = ggufFiles.any { it.isDownloaded }
+        val allRequiredComponentsReady = setupComponents.filter { it.required }.all { it.isDownloaded }
+        val isReady = mainModelDownloaded && (isSelfContained || allRequiredComponentsReady)
+
+        val variantBytes = if (mainModelDownloaded) 0L else {
+            val sel = selectedPath?.let { p -> ggufFiles.find { it.path == p && !it.isDownloaded } }
+            sel?.sizeBytes ?: ggufFiles.filter { !it.isDownloaded }
+                .minByOrNull { it.sizeBytes ?: Long.MAX_VALUE }?.sizeBytes ?: 0L
+        }
+        val componentBytes = setupComponents
+            .filter { !it.isDownloaded && it.required }
+            .sumOf { it.sizeHint?.let { h -> parseSizeHint(h) } ?: 0L }
+
+        InstallBundleUiState(
+            variants = ggufFiles,
+            selectedVariantPath = selectedPath,
+            components = setupComponents,
+            totalNewDownloadBytes = variantBytes + componentBytes,
+            isInstalling = isInstalling,
+            installError = installError,
+            isReady = isReady,
+            isSelfContained = isSelfContained,
+        )
+    }.combine(_installProgress) { bundle, progress ->
+        bundle.copy(
+            overallProgress = progress.fraction,
+            overallBytesReceived = progress.bytesReceived,
+            overallBytesTotal = progress.bytesTotal,
+            currentDownloadLabel = progress.label,
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = InstallBundleUiState()
+    )
+
     private fun modelTypeForCurrentBrowseMode(): String =
         when (_browseMode.value) {
             ModelHubBrowseMode.LanguageModels -> ModelType.TEXT
@@ -194,23 +296,23 @@ class ModelViewModel(
                     _listError.update { null }
                 }
                 is Result.Error -> {
-                    _listError.update { 
+                    _listError.update {
                         when (result.error) {
-                            DataError.Network.NoInternet -> 
+                            DataError.Network.NoInternet ->
                                 "No internet connection. Please check your network and try again."
-                            DataError.Network.Serialization -> 
+                            DataError.Network.Serialization ->
                                 "Failed to process server response. The data format may be invalid."
-                            DataError.Network.Unauthorized -> 
+                            DataError.Network.Unauthorized ->
                                 "Authentication failed. Please check your credentials."
-                            DataError.Network.RequestTimeout -> 
+                            DataError.Network.RequestTimeout ->
                                 "Request timed out. The server took too long to respond."
-                            DataError.Network.Conflict -> 
+                            DataError.Network.Conflict ->
                                 "Request conflict. Please refresh and try again."
-                            DataError.Network.PayloadTooLarge -> 
+                            DataError.Network.PayloadTooLarge ->
                                 "Request too large. Try adjusting your filters."
-                            DataError.Network.ServerError -> 
+                            DataError.Network.ServerError ->
                                 "Server error occurred. Please try again later."
-                            DataError.Network.Unknown -> 
+                            DataError.Network.Unknown ->
                                 "An unexpected error occurred. Please try again."
                         }
                     }
@@ -250,14 +352,15 @@ class ModelViewModel(
             _detailError.update { null }
             _modelDetail.update { null }
             _ggufFiles.update { emptyList() }
+            _selectedVariantPath.update { null }
 
             when (val detailResult = api.getModelDetail(modelId)) {
                 is Result.Success -> {
                     _modelDetail.update { detailResult.data }
                     _detailError.update { null }
-                    
+
                     // Load setup components for diffusion models
-                    if (hubBrowseMode == ModelHubBrowseMode.DiffusionImage || 
+                    if (hubBrowseMode == ModelHubBrowseMode.DiffusionImage ||
                         hubBrowseMode == ModelHubBrowseMode.DiffusionVideo) {
                         loadSetupComponentsForModel(modelId)
                     }
@@ -294,29 +397,34 @@ class ModelViewModel(
                                     )
                                 }
                             }
+                            // Auto-select the first undownloaded variant for diffusion models
+                            if (hubBrowseMode != ModelHubBrowseMode.LanguageModels) {
+                                val firstPending = _ggufFiles.value.firstOrNull { !it.isDownloaded }
+                                _selectedVariantPath.update { firstPending?.path }
+                            }
                         }
                         is Result.Error -> {
                         }
                     }
                 }
                 is Result.Error -> {
-                    _detailError.update { 
+                    _detailError.update {
                         when (detailResult.error) {
-                            DataError.Network.NoInternet -> 
+                            DataError.Network.NoInternet ->
                                 "No internet connection. Please check your network and try again."
-                            DataError.Network.Serialization -> 
+                            DataError.Network.Serialization ->
                                 "Failed to process server response. The data format may be invalid."
-                            DataError.Network.Unauthorized -> 
+                            DataError.Network.Unauthorized ->
                                 "Authentication failed. Please check your credentials."
-                            DataError.Network.RequestTimeout -> 
+                            DataError.Network.RequestTimeout ->
                                 "Request timed out. The server took too long to respond."
-                            DataError.Network.Conflict -> 
+                            DataError.Network.Conflict ->
                                 "Request conflict. Please refresh and try again."
-                            DataError.Network.PayloadTooLarge -> 
+                            DataError.Network.PayloadTooLarge ->
                                 "Request too large. The model ID may be invalid."
-                            DataError.Network.ServerError -> 
+                            DataError.Network.ServerError ->
                                 "Server error occurred. Please try again later."
-                            DataError.Network.Unknown -> 
+                            DataError.Network.Unknown ->
                                 "Could not load model details. Please try again."
                         }
                     }
@@ -326,42 +434,92 @@ class ModelViewModel(
         }
     }
 
-    fun startDownload(modelId: String, path: String, metadata: DownloadMetadataDTO) {
+    /** Called when the user taps a different quantization variant in the detail page. */
+    fun selectVariant(path: String) {
+        _selectedVariantPath.update { path }
+    }
+
+    /**
+     * Smart install: downloads the selected variant + all missing required components in sequence.
+     * Shared components (already on disk) are skipped. Records everything in the DB.
+     */
+    fun smartInstall(modelId: String) {
         if (_isDownloading.value) return
         viewModelScope.launch {
             _isDownloading.update { true }
             _downloadError.update { null }
             val modelType = modelTypeForCurrentBrowseMode()
-            val diffusionHub = when (_browseMode.value) {
-                ModelHubBrowseMode.DiffusionImage,
-                ModelHubBrowseMode.DiffusionVideo,
-                -> true
-                ModelHubBrowseMode.LanguageModels -> false
-            }
             try {
-                if (diffusionHub) {
-                    downloadDiffusionBundle(
-                        modelId,
-                        triggeredPath = path,
-                        sharedMetadata = metadata,
-                        modelType = modelType,
-                    )
-                } else {
-                    downloadSingleWeight(modelId, path, metadata, modelType = modelType)
+                val variantPath = _selectedVariantPath.value
+                    ?: _ggufFiles.value.firstOrNull { !it.isDownloaded }?.path
+                    ?: return@launch
+
+                // Compute total bytes so the progress bar has a denominator
+                val allPending = _ggufFiles.value.filter { !it.isDownloaded && it.path.isNotBlank() }
+                val selectedFiles = selectDiffusionFilesToDownload(allPending, variantPath)
+                val setup = getModelSetup(modelId)
+                val missingComps = if (setup != null && !setup.selfContained)
+                    componentChecker.getMissingComponents(setup) else emptyList()
+                _installBytesTotal = selectedFiles.sumOf { it.sizeBytes ?: 0L } +
+                    missingComps.sumOf { it.sizeHint?.let { h -> parseSizeHint(h) } ?: 0L }
+                _installBytesCompleted = 0L
+                _installProgress.update { InstallProgress(bytesTotal = _installBytesTotal) }
+
+                val sharedMeta = DownloadMetadataDTO(
+                    sizeBytes = _ggufFiles.value.find { it.path == variantPath }?.sizeBytes,
+                    author = _modelDetail.value?.author,
+                    libraryName = _modelDetail.value?.libraryName,
+                    pipelineTag = _modelDetail.value?.pipelineTag,
+                    contextLength = null,
+                )
+
+                downloadDiffusionBundle(
+                    modelId = modelId,
+                    triggeredPath = variantPath,
+                    sharedMetadata = sharedMeta,
+                    modelType = modelType,
+                    initialComponentStatus = LocalModelEntity.STATUS_PARTIAL,
+                )
+                downloadMissingComponents(modelId)
+                refreshGgufFilesDownloadState(modelId, isDiffusion = true)
+            } catch (e: InsufficientStorageException) {
+                val required = formatBytes(e.requiredBytes)
+                val available = formatBytes(e.availableBytes)
+                _downloadError.update {
+                    "Not enough storage space. Need $required but only $available is available."
                 }
-                val downloaded = localModelRepository.getDownloadedFilenames(modelId)
-                val bundleDownloaded =
-                    DIFFUSERS_BUNDLE_DB_FILENAME in downloaded && diffusionHub
-                _ggufFiles.update { list ->
-                    list.map { file ->
-                        val rel = file.path
-                        val marked = when {
-                            bundleDownloaded && diffusionHub -> true
-                            else -> file.filename in downloaded || rel in downloaded
-                        }
-                        file.copy(isDownloaded = marked, progress = null)
-                    }
-                }
+                _ggufFiles.update { list -> list.map { it.copy(progress = null) } }
+                _setupComponents.update { list -> list.map { it.copy(progress = null) } }
+            } catch (_: Exception) {
+                _downloadError.update { "Install failed. Please check your connection and try again." }
+                _ggufFiles.update { list -> list.map { it.copy(progress = null) } }
+                _setupComponents.update { list -> list.map { it.copy(progress = null) } }
+            } finally {
+                _isDownloading.update { false }
+                _installProgress.update { InstallProgress() }
+            }
+        }
+    }
+
+    /** Legacy entry point — kept for language models; for diffusion models delegates to smartInstall. */
+    fun startDownload(modelId: String, path: String, metadata: DownloadMetadataDTO) {
+        val diffusionHub = when (_browseMode.value) {
+            ModelHubBrowseMode.DiffusionImage, ModelHubBrowseMode.DiffusionVideo -> true
+            ModelHubBrowseMode.LanguageModels -> false
+        }
+        if (diffusionHub) {
+            // For diffusion: select the tapped variant and kick off smart install
+            _selectedVariantPath.update { path }
+            smartInstall(modelId)
+            return
+        }
+        if (_isDownloading.value) return
+        viewModelScope.launch {
+            _isDownloading.update { true }
+            _downloadError.update { null }
+            try {
+                downloadSingleWeight(modelId, path, metadata, modelType = ModelType.TEXT)
+                refreshGgufFilesDownloadState(modelId, isDiffusion = false)
             } catch (e: InsufficientStorageException) {
                 val required = formatBytes(e.requiredBytes)
                 val available = formatBytes(e.availableBytes)
@@ -374,6 +532,20 @@ class ModelViewModel(
                 _ggufFiles.update { list -> list.map { it.copy(progress = null) } }
             } finally {
                 _isDownloading.update { false }
+            }
+        }
+    }
+
+    private suspend fun refreshGgufFilesDownloadState(modelId: String, isDiffusion: Boolean) {
+        val downloaded = localModelRepository.getDownloadedFilenames(modelId)
+        val bundleDownloaded = DIFFUSERS_BUNDLE_DB_FILENAME in downloaded && isDiffusion
+        _ggufFiles.update { list ->
+            list.map { file ->
+                val marked = when {
+                    bundleDownloaded -> true
+                    else -> file.filename in downloaded || file.path in downloaded
+                }
+                file.copy(isDownloaded = marked, progress = null)
             }
         }
     }
@@ -402,6 +574,7 @@ class ModelViewModel(
                     pipelineTag = metadata.pipelineTag,
                     contextLength = metadata.contextLength,
                     modelType = modelType,
+                    isMainModel = true,
                 )
             }
         }
@@ -431,6 +604,7 @@ class ModelViewModel(
         triggeredPath: String,
         sharedMetadata: DownloadMetadataDTO,
         modelType: String,
+        initialComponentStatus: String? = null,
     ) {
         val allPending = _ggufFiles.value.filter { !it.isDownloaded && it.path.isNotBlank() }
         if (allPending.isEmpty()) return
@@ -464,13 +638,24 @@ class ModelViewModel(
 
         for (file in ordered) {
             val meta = metaFor(file)
+            val bytesBeforeThisFile = _installBytesCompleted
             downloadManager.download(modelId, file.path, meta).collect { progress ->
                 _ggufFiles.update { list ->
                     list.map {
                         if (it.path == file.path) it.copy(progress = progress.percentage) else it
                     }
                 }
+                val overallReceived = bytesBeforeThisFile + progress.bytesReceived
+                _installProgress.update {
+                    InstallProgress(
+                        fraction = if (_installBytesTotal > 0) overallReceived.toFloat() / _installBytesTotal else null,
+                        bytesReceived = overallReceived,
+                        bytesTotal = _installBytesTotal,
+                        label = file.filename,
+                    )
+                }
             }
+            _installBytesCompleted += file.sizeBytes ?: 0L
         }
 
         val modelRoot = storagePathProvider.getModelsStorageDirectory(modelId)
@@ -494,6 +679,8 @@ class ModelViewModel(
                 pipelineTag = detail?.pipelineTag,
                 contextLength = null,
                 modelType = modelType,
+                componentStatus = initialComponentStatus,
+                isMainModel = true,
             )
         } else {
             val fallback = ordered.lastOrNull() ?: return
@@ -513,8 +700,73 @@ class ModelViewModel(
                 pipelineTag = detail?.pipelineTag,
                 contextLength = null,
                 modelType = modelType,
+                componentStatus = initialComponentStatus,
+                isMainModel = true,
             )
         }
+    }
+
+    /**
+     * Downloads all missing required components for the given model.
+     * Already-on-disk components are skipped. Records each download in ComponentRepository
+     * and marks the model as "ready" when done.
+     */
+    private suspend fun downloadMissingComponents(modelId: String) {
+        val setup = getModelSetup(modelId)
+        if (setup == null || setup.selfContained) {
+            localModelRepository.updateComponentStatus(modelId, LocalModelEntity.STATUS_READY)
+            return
+        }
+
+        val missingComponents = componentChecker.getMissingComponents(setup)
+        if (missingComponents.isEmpty()) {
+            localModelRepository.updateComponentStatus(modelId, LocalModelEntity.STATUS_READY)
+            return
+        }
+
+        for (component in missingComponents) {
+            val meta = createMetadataForComponent(component)
+            val bytesBeforeThisComponent = _installBytesCompleted
+            val componentLabel = component.filePath.substringAfterLast('/')
+            downloadManager.download(component.repoId, component.filePath, meta).collect { progress ->
+                _setupComponents.update { list ->
+                    list.map {
+                        if (it.repoId == component.repoId && it.filePath == component.filePath) {
+                            it.copy(progress = progress.percentage)
+                        } else it
+                    }
+                }
+                val overallReceived = bytesBeforeThisComponent + progress.bytesReceived
+                _installProgress.update {
+                    InstallProgress(
+                        fraction = if (_installBytesTotal > 0) overallReceived.toFloat() / _installBytesTotal else null,
+                        bytesReceived = overallReceived,
+                        bytesTotal = _installBytesTotal,
+                        label = componentLabel,
+                    )
+                }
+                if (progress.localPath != null) {
+                    val compId = componentRepository.insertComponent(
+                        repoId = component.repoId,
+                        filePath = component.filePath,
+                        role = component.role.name,
+                        localPath = progress.localPath!!,
+                        sizeBytes = component.sizeHint?.let { parseSizeHint(it) },
+                    )
+                    componentRepository.linkComponentToModel(modelId, compId, component.role.name)
+                    _setupComponents.update { list ->
+                        list.map {
+                            if (it.repoId == component.repoId && it.filePath == component.filePath) {
+                                it.copy(isDownloaded = true, progress = null)
+                            } else it
+                        }
+                    }
+                }
+            }
+            _installBytesCompleted += component.sizeHint?.let { parseSizeHint(it) } ?: 0L
+        }
+
+        localModelRepository.updateComponentStatus(modelId, LocalModelEntity.STATUS_READY)
     }
 
     fun clearDownloadError() {
@@ -550,23 +802,23 @@ class ModelViewModel(
                     _searchError.update { null }
                 }
                 is Result.Error -> {
-                    _searchError.update { 
+                    _searchError.update {
                         when (result.error) {
-                            DataError.Network.NoInternet -> 
+                            DataError.Network.NoInternet ->
                                 "No internet connection. Please check your network and try again."
-                            DataError.Network.Serialization -> 
+                            DataError.Network.Serialization ->
                                 "Failed to process server response. The data format may be invalid."
-                            DataError.Network.Unauthorized -> 
+                            DataError.Network.Unauthorized ->
                                 "Authentication failed. Please check your credentials."
-                            DataError.Network.RequestTimeout -> 
+                            DataError.Network.RequestTimeout ->
                                 "Request timed out. The server took too long to respond."
-                            DataError.Network.Conflict -> 
+                            DataError.Network.Conflict ->
                                 "Request conflict. Please refresh and try again."
-                            DataError.Network.PayloadTooLarge -> 
+                            DataError.Network.PayloadTooLarge ->
                                 "Request too large. Try a shorter query."
-                            DataError.Network.ServerError -> 
+                            DataError.Network.ServerError ->
                                 "Server error occurred. Please try again later."
-                            DataError.Network.Unknown -> 
+                            DataError.Network.Unknown ->
                                 "An unexpected error occurred. Please try again."
                         }
                     }
@@ -593,12 +845,20 @@ class ModelViewModel(
         _searchError.update { null }
     }
 
-    fun loadSetupComponentsForModel(modelId: String) {
+    private suspend fun loadSetupComponentsForModel(modelId: String) {
         val setup = getModelSetup(modelId) ?: return
         val componentsStatus = componentChecker.getComponentsStatus(setup)
-        
-        _setupComponents.update { 
+        val linkedComponents = componentRepository.getComponentsForModel(modelId)
+
+        _setupComponents.update {
             componentsStatus.map { (component, isDownloaded) ->
+                // sharedFrom: component is on disk but was NOT downloaded specifically for this model
+                val sharedFrom = if (isDownloaded) {
+                    val linkedToThis = linkedComponents.any {
+                        it.repoId == component.repoId && it.filePath == component.filePath
+                    }
+                    if (!linkedToThis) "another model" else null
+                } else null
                 SetupComponentUiState(
                     role = component.role,
                     repoId = component.repoId,
@@ -606,74 +866,37 @@ class ModelViewModel(
                     sizeHint = component.sizeHint,
                     isDownloaded = isDownloaded,
                     progress = null,
-                    required = component.required
+                    required = component.required,
+                    sharedFrom = sharedFrom,
                 )
             }
         }
     }
-    
+
+    /** Legacy: download only components (called explicitly from settings/fix flow). */
     fun downloadSetupComponents(modelId: String) {
-        val setup = getModelSetup(modelId) ?: return
-        if (_isDownloadingSetupComponents.value) return
-        
+        if (_isDownloading.value) return
         viewModelScope.launch {
-            _isDownloadingSetupComponents.update { true }
-            _setupDownloadError.update { null }
-            
-            val missingComponents = componentChecker.getMissingComponents(setup)
-            if (missingComponents.isEmpty()) {
-                _isDownloadingSetupComponents.update { false }
-                return@launch
-            }
-            
+            _isDownloading.update { true }
+            _downloadError.update { null }
             try {
-                for (component in missingComponents) {
-                    val metadata = createMetadataForComponent(component)
-                    
-                    downloadManager.download(component.repoId, component.filePath, metadata).collect { progress ->
-                        _setupComponents.update { list ->
-                            list.map {
-                                if (it.repoId == component.repoId && it.filePath == component.filePath) {
-                                    it.copy(progress = progress.percentage)
-                                } else {
-                                    it
-                                }
-                            }
-                        }
-                        
-                        if (progress.localPath != null) {
-                            // Download completed for this component
-                            _setupComponents.update { list ->
-                                list.map {
-                                    if (it.repoId == component.repoId && it.filePath == component.filePath) {
-                                        it.copy(isDownloaded = true, progress = null)
-                                    } else {
-                                        it
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                _setupDownloadError.update { null }
-                
+                downloadMissingComponents(modelId)
             } catch (e: InsufficientStorageException) {
                 val required = formatBytes(e.requiredBytes)
                 val available = formatBytes(e.availableBytes)
-                _setupDownloadError.update {
+                _downloadError.update {
                     "Not enough storage space. Need $required but only $available is available."
                 }
                 _setupComponents.update { list -> list.map { it.copy(progress = null) } }
             } catch (_: Exception) {
-                _setupDownloadError.update { "Download failed. Please check your connection and try again." }
+                _downloadError.update { "Download failed. Please check your connection and try again." }
                 _setupComponents.update { list -> list.map { it.copy(progress = null) } }
             } finally {
-                _isDownloadingSetupComponents.update { false }
+                _isDownloading.update { false }
             }
         }
     }
-    
+
     private fun createMetadataForComponent(component: SdCppComponent): DownloadMetadataDTO {
         val detail = _modelDetail.value
         return DownloadMetadataDTO(
@@ -684,17 +907,16 @@ class ModelViewModel(
             contextLength = null
         )
     }
-    
+
     private fun parseSizeHint(sizeHint: String): Long? {
         return try {
             val regex = Regex("""(\d+(?:\.\d+)?)\s*(GB|MB|KB|B)""", RegexOption.IGNORE_CASE)
             val match = regex.find(sizeHint) ?: return null
             val (valueStr, unit) = match.destructured
             val value = valueStr.toDouble()
-            
             when (unit.uppercase()) {
                 "GB" -> (value * 1024 * 1024 * 1024).toLong()
-                "MB" -> (value * 1024 * 1024).toLong() 
+                "MB" -> (value * 1024 * 1024).toLong()
                 "KB" -> (value * 1024).toLong()
                 "B" -> value.toLong()
                 else -> null
@@ -703,7 +925,7 @@ class ModelViewModel(
             null
         }
     }
-    
+
     fun clearSetupDownloadError() {
         _setupDownloadError.update { null }
     }

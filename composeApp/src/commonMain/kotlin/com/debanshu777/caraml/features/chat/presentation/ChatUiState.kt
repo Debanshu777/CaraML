@@ -21,6 +21,8 @@ sealed interface ChatUiState {
     data class MissingComponents(
         val missingComponentLabels: List<String>,
         val modelName: String,
+        /** The HuggingFace model ID — used to deep-link directly to this model's detail page. */
+        val modelId: String,
     ) : ChatUiState
 
     data class Ready(
@@ -39,4 +41,12 @@ data class StreamingState(
     val streamingMessageId: String? = null,
     val liveStats: LiveGenerationStats? = null,
     val pendingMediaGeneration: Boolean = false,
+    /** Current denoising step (1-based); 0 while pre-sampling work is happening. */
+    val imageGenStep: Int = 0,
+    /** Total denoising steps reported by the sampler. 0 until the sampling loop starts. */
+    val imageGenTotalSteps: Int = 0,
+    /** User-configured step budget; known upfront, used for the "Preparing… (will run N steps)" hint. */
+    val imageGenRequestedSteps: Int = 0,
+    /** Seconds since generateImage() was called — useful while waiting for sampling to begin. */
+    val imageGenElapsedSeconds: Int = 0,
 )

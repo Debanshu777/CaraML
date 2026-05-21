@@ -38,6 +38,13 @@ class JvmStoragePathProvider : StoragePathProvider {
         return file.exists() && file.isDirectory && file.canRead()
     }
 
+    override fun getFileSize(path: String): Long {
+        val file = File(path)
+        if (!file.exists() || !file.canRead()) return 0L
+        return if (file.isFile) file.length() else file.walkTopDown()
+            .filter { it.isFile }.sumOf { it.length() }
+    }
+
     override fun renameFile(from: String, to: String): Boolean =
         try { File(from).renameTo(File(to)) } catch (_: Exception) { false }
 

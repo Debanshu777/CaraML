@@ -5,6 +5,7 @@ import com.debanshu777.caraml.core.data.Inference.InferenceRepository
 import com.debanshu777.caraml.core.data.Inference.LlamaInferenceRepository
 import com.debanshu777.diffusionrunner.DiffusionRunner
 import com.debanshu777.caraml.core.storage.AppDatabase
+import com.debanshu777.caraml.core.storage.component.ComponentRepository
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
 import com.debanshu777.caraml.core.data.settings.DefaultSettingsRepository
 import com.debanshu777.caraml.core.data.settings.SettingsRepository
@@ -34,8 +35,10 @@ val appModule = module {
     includes(platformHuggingFaceModule)
 
     single { get<AppDatabase>().localModelDao() }
+    single { get<AppDatabase>().downloadedComponentDao() }
 
     single { LocalModelRepository(get()) }
+    single { ComponentRepository(get()) }
     single { DownloadManager(get()) }
 
     single { createHuggingFaceApi() }
@@ -51,6 +54,7 @@ val appModule = module {
         DiffusionInferenceRepository(
             storagePathProvider = get(),
             runner = get(),
+            deviceCapabilities = get(),
         )
     }
 
@@ -70,13 +74,14 @@ val appModule = module {
     factory { ManageContextUseCase(get(), get()) }
     factory { TrackModelUsageUseCase(get()) }
 
-    viewModel { 
+    viewModel {
         ModelViewModel(
             api = get(),
             localModelRepository = get(),
+            componentRepository = get(),
             downloadManager = get(),
             storagePathProvider = get()
-        ) 
+        )
     }
     viewModel {
         DownloadedModelsViewModel(

@@ -20,6 +20,7 @@ import com.debanshu777.caraml.features.chat.domain.usecase.TrackModelUsageUseCas
 import com.debanshu777.diffusionrunner.ImageGenParams
 import com.debanshu777.diffusionrunner.VideoGenParams
 import com.debanshu777.runner.StopReason
+import com.debanshu777.huggingfacemanager.sdcpp.SdCppRecommendedParams
 import com.debanshu777.huggingfacemanager.sdcpp.getModelSetup
 import com.debanshu777.huggingfacemanager.sdcpp.SdCppComponentChecker
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
@@ -60,6 +61,7 @@ private sealed class InternalChatState {
     data class MissingComponents(
         val missingComponentLabels: List<String>,
         val modelName: String,
+        val modelId: String,
     ) : InternalChatState()
 
     data class ReadyCore(
@@ -116,7 +118,8 @@ class ChatViewModel(
             is InternalChatState.ModelError -> ChatUiState.ModelError(internal.message)
             is InternalChatState.MissingComponents -> ChatUiState.MissingComponents(
                 missingComponentLabels = internal.missingComponentLabels,
-                modelName = internal.modelName
+                modelName = internal.modelName,
+                modelId = internal.modelId,
             )
             is InternalChatState.ReadyCore -> ChatUiState.Ready(
                 messages = messages,
@@ -135,6 +138,10 @@ class ChatViewModel(
 
     private val _streamingState = MutableStateFlow(StreamingState())
     val streamingState: StateFlow<StreamingState> = _streamingState.asStateFlow()
+
+    /** Recommended params from the registry for the currently-loaded diffusion model. */
+    private val _currentDiffusionParams = MutableStateFlow<SdCppRecommendedParams?>(null)
+    val currentDiffusionParams: StateFlow<SdCppRecommendedParams?> = _currentDiffusionParams.asStateFlow()
 
     private var modelLoadJob: Job? = null
     private var generationJob: Job? = null
@@ -156,6 +163,23 @@ class ChatViewModel(
             .filterNotNull()
             .distinctUntilChanged { old, new -> old.id == new.id }
             .onEach { model -> loadModel(model) }
+            .launchIn(viewModelScope)
+
+        // Forward native denoising-step progress into StreamingState so the UI can show "3/20"
+        // (or "Preparing…" while pre-sampling work runs).
+        diffusionRepository.imageGenProgress
+            .onEach { progress ->
+                if (progress != null) {
+                    _streamingState.update {
+                        it.copy(
+                            imageGenStep = progress.step,
+                            imageGenTotalSteps = progress.totalSteps,
+                            imageGenRequestedSteps = progress.requestedSteps,
+                            imageGenElapsedSeconds = progress.elapsedSeconds,
+                        )
+                    }
+                }
+            }
             .launchIn(viewModelScope)
     }
 
@@ -254,6 +278,7 @@ class ChatViewModel(
     }
 
     private fun loadModel(model: LocalModelEntity) {
+        val previousJob = modelLoadJob
         modelLoadJob?.cancel()
         generationJob?.cancel()
         _streamingState.value = StreamingState()
@@ -266,6 +291,11 @@ class ChatViewModel(
         _internal.value = InternalChatState.ModelLoading
 
         modelLoadJob = viewModelScope.launch(Dispatchers.Default) {
+            // Wait for the previous job to fully complete (including any in-progress JNI call)
+            // before we start new native operations. Without this, a cancelled job that is still
+            // inside a blocking JNI call races with our unloadModel() → double-free crash.
+            previousJob?.join()
+
             val result: ModelLoadResult = when (mode) {
                 GenerationMode.Text -> {
                     diffusionRepository.release()
@@ -285,7 +315,8 @@ class ChatViewModel(
                             val modelName = modelSetup.familyLabel
                             _internal.value = InternalChatState.MissingComponents(
                                 missingComponentLabels = missingLabels,
-                                modelName = modelName
+                                modelName = modelName,
+                                modelId = model.modelId,
                             )
                             return@launch
                         }
@@ -296,6 +327,9 @@ class ChatViewModel(
             }
             when (result) {
                 is ModelLoadResult.Success -> {
+                    if (mode == GenerationMode.Image || mode == GenerationMode.Video) {
+                        _currentDiffusionParams.value = diffusionRepository.getRecommendedParams(model)
+                    }
                     _internal.value = InternalChatState.ReadyCore(
                         contextLimit = result.contextSize,
                         isGenerating = false,
@@ -355,13 +389,14 @@ class ChatViewModel(
 
         generationJob = viewModelScope.launch(Dispatchers.Default) {
             try {
+                val rp = _currentDiffusionParams.value
                 val params = ImageGenParams(
                     prompt = prompt,
                     negativePrompt = negative,
-                    width = 512,
-                    height = 512,
-                    steps = 20,
-                    cfgScale = 7f,
+                    width = rp?.width ?: 512,
+                    height = rp?.height ?: 512,
+                    steps = rp?.steps ?: 20,
+                    cfgScale = rp?.cfgScale ?: 7f,
                     seed = Clock.System.now().toEpochMilliseconds(),
                 )
                 val result = diffusionRepository.generateImage(params)
@@ -392,14 +427,15 @@ class ChatViewModel(
 
         generationJob = viewModelScope.launch(Dispatchers.Default) {
             try {
+                val rp = _currentDiffusionParams.value
                 val params = VideoGenParams(
                     prompt = prompt,
                     negativePrompt = negative,
-                    width = 512,
-                    height = 512,
+                    width = rp?.width ?: 512,
+                    height = rp?.height ?: 512,
                     videoFrames = 16,
-                    steps = 20,
-                    cfgScale = 7f,
+                    steps = rp?.steps ?: 20,
+                    cfgScale = rp?.cfgScale ?: 7f,
                     seed = Clock.System.now().toEpochMilliseconds(),
                 )
                 val result = diffusionRepository.generateVideo(params)

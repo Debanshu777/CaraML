@@ -78,3 +78,6 @@ PngResult diffusion_runner_core_txt2img(int64_t handle, const ImageGenConfig &co
 std::vector<PngResult> diffusion_runner_core_video_gen(int64_t handle, const VideoGenConfig &config);
 
 void diffusion_runner_core_release(int64_t handle);
+
+/** Returns the current step (0-based) and total steps for the ongoing generation. */
+void diffusion_runner_get_step_progress(int* step, int* total);

@@ -18,4 +18,13 @@ data class LocalModelEntity(
     @ColumnInfo(name = "usage_count", defaultValue = "0") val usageCount: Long = 0,
     @ColumnInfo(name = "context_length") val contextLength: Int? = null,
     @ColumnInfo(name = "model_type") val modelType: String? = null,
-)
+    /** Cached readiness state: "ready", "partial", or null (unknown/not tracked yet). */
+    @ColumnInfo(name = "component_status") val componentStatus: String? = null,
+    /** True for main model weights; false for standalone component files. */
+    @ColumnInfo(name = "is_main_model", defaultValue = "1") val isMainModel: Boolean = true,
+) {
+    companion object {
+        const val STATUS_READY = "ready"
+        const val STATUS_PARTIAL = "partial"
+    }
+}

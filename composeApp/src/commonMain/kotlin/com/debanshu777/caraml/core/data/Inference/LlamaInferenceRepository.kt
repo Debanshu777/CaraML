@@ -18,6 +18,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 class LlamaInferenceRepository(
@@ -33,31 +35,50 @@ class LlamaInferenceRepository(
         private const val FALLBACK_SYSTEM_PROMPT = "You are a helpful assistant."
     }
 
+    /**
+     * Serializes all native load/unload operations so they never run concurrently.
+     * Without this, a cancelled load job that is still inside JNI can race with
+     * the next load job's unload call → double-free in llama_sampler_free.
+     */
+    private val nativeLock = Mutex()
+
+    /**
+     * True once the native model is successfully loaded; false after unload.
+     * Only written under [nativeLock].
+     */
+    @Volatile private var nativeLoaded = false
+
     override suspend fun loadModel(model: LocalModelEntity): ModelLoadResult =
+        nativeLock.withLock {
             try {
                 val sizeMB = getModelFileSizeMB(model)
                 AppLogger.i(TAG) { "loadModel: modelId=${model.modelId}, sizeMB=$sizeMB" }
 
                 val modelPath = resolveModelPath(model)
                 if (modelPath.isBlank()) {
-                    return ModelLoadResult.Error("Model path is invalid")
+                    return@withLock ModelLoadResult.Error("Model path is invalid")
                 }
                 if (!storagePathProvider.isModelFileReadable(modelPath)) {
-                    return ModelLoadResult.Error(
+                    return@withLock ModelLoadResult.Error(
                         "Model file not found or not readable. It may have been moved or deleted."
                     )
                 }
 
                 val nativeLibDir = PlatformPaths.getNativeLibDir()
                 if (nativeLibDir.isBlank()) {
-                    return ModelLoadResult.Error(
+                    return@withLock ModelLoadResult.Error(
                         "Failed to initialize. Please restart the app."
                     )
                 }
-                runner.unloadModel()
+
+                // Unload inline — we already hold the lock, so no double-free risk.
+                if (nativeLoaded) {
+                    runner.unloadModel()
+                    nativeLoaded = false
+                }
 
                 runner.initialize(nativeLibDir)
-                
+
                 val settings = currentSettings()
 
                 val config = buildRunnerConfig(
@@ -76,17 +97,18 @@ class LlamaInferenceRepository(
                 )
 
                 if (!loaded) {
-                    return ModelLoadResult.Error(
+                    return@withLock ModelLoadResult.Error(
                         "Failed to load model. The file may be corrupted or unsupported."
                     )
                 }
+                nativeLoaded = true
 
                 val systemPrompt = settings.systemPrompt.ifBlank { FALLBACK_SYSTEM_PROMPT } +
                     structuredOutputSystemPromptSuffix()
 
                 val spRet = runner.processSystemPrompt(systemPrompt)
                 if (spRet != 0) {
-                    return ModelLoadResult.Error(
+                    return@withLock ModelLoadResult.Error(
                         "Failed to initialize conversation context."
                     )
                 }
@@ -94,10 +116,16 @@ class LlamaInferenceRepository(
                 val ctxSize = runner.getContextLimit()
                 AppLogger.i(TAG) { "loadModel: success, contextSize=$ctxSize" }
                 ModelLoadResult.Success(contextSize = ctxSize)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // Must rethrow — swallowing CancellationException breaks coroutine cancellation
+                // and can leave the native sampler in an invalid state for the next caller.
+                AppLogger.i(TAG) { "loadModel: cancelled" }
+                throw e
             } catch (e: Exception) {
                 AppLogger.e(TAG, "loadModel: failed", e)
                 ModelLoadResult.Error("An error occurred while loading the model: ${e.message}")
             }
+        }
 
     private fun buildRunnerConfig(
         model: LocalModelEntity,
@@ -171,8 +199,10 @@ class LlamaInferenceRepository(
         }
     }
 
-    override suspend fun unloadModel() {
+    override suspend fun unloadModel() = nativeLock.withLock {
+        if (!nativeLoaded) return@withLock
         runner.unloadModel()
+        nativeLoaded = false
     }
 
     override fun cancelGeneration() {

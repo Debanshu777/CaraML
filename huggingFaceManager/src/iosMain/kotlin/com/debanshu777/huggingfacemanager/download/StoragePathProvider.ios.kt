@@ -2,6 +2,8 @@ package com.debanshu777.huggingfacemanager.download
 
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.NSDocumentDirectory
+import platform.Foundation.NSDirectoryEnumerator
+import platform.Foundation.NSFileSize
 import platform.Foundation.NSFileSystemFreeSize
 import platform.Foundation.NSFileSystemSize
 import platform.Foundation.NSFileManager
@@ -62,6 +64,21 @@ class IosStoragePathProvider : StoragePathProvider {
         val mgr = NSFileManager.defaultManager
         if (!mgr.isReadableFileAtPath(path)) return false
         return mgr.contentsOfDirectoryAtPath(path, null) != null
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    override fun getFileSize(path: String): Long {
+        val mgr = NSFileManager.defaultManager
+        if (!mgr.fileExistsAtPath(path)) return 0L
+        val attrs = mgr.attributesOfItemAtPath(path, null) ?: return 0L
+        val size = (attrs[NSFileSize] as? NSNumber)?.longLongValue ?: 0L
+        // If it's a file, return its size; if directory, walk recursively
+        val children = mgr.contentsOfDirectoryAtPath(path, null) ?: return size
+        var total = 0L
+        for (child in children) {
+            total += getFileSize("$path/$child")
+        }
+        return total
     }
 
     @OptIn(ExperimentalForeignApi::class)
