@@ -66,8 +66,22 @@ Java_com_debanshu777_runner_LlamaRunner_nativeLoadModel(
     config.type_v          = env->GetIntField(configObj, env->GetFieldID(cls, "typeV", "I"));
     config.n_gpu_layers    = env->GetIntField(configObj, env->GetFieldID(cls, "nGpuLayers", "I"));
     config.use_mmap        = env->GetBooleanField(configObj, env->GetFieldID(cls, "useMmap", "Z"));
+    config.use_mlock       = env->GetBooleanField(configObj, env->GetFieldID(cls, "useMlock", "Z"));
     config.temperature     = env->GetFloatField(configObj, env->GetFieldID(cls, "temperature", "F"));
     config.auto_fit        = env->GetBooleanField(configObj, env->GetFieldID(cls, "autoFit", "Z"));
+
+    jstring jCpuMask = (jstring) env->GetObjectField(configObj, env->GetFieldID(cls, "cpuMask", "Ljava/lang/String;"));
+    jstring jCpuMaskBatch = (jstring) env->GetObjectField(configObj, env->GetFieldID(cls, "cpuMaskBatch", "Ljava/lang/String;"));
+    if (jCpuMask) {
+        const char* mask = env->GetStringUTFChars(jCpuMask, nullptr);
+        config.cpu_mask = mask;
+        env->ReleaseStringUTFChars(jCpuMask, mask);
+    }
+    if (jCpuMaskBatch) {
+        const char* batchMask = env->GetStringUTFChars(jCpuMaskBatch, nullptr);
+        config.cpu_mask_batch = batchMask;
+        env->ReleaseStringUTFChars(jCpuMaskBatch, batchMask);
+    }
 
     const bool ok = llama_runner_core_load_model(path, config);
     env->ReleaseStringUTFChars(modelPath, path);
@@ -169,7 +183,18 @@ Java_com_debanshu777_runner_LlamaRunner_nativeGetStopReason(JNIEnv *, jobject) {
     return static_cast<jint>(llama_runner_core_get_stop_reason());
 }
 
+extern "C" JNIEXPORT jint JNICALL
+Java_com_debanshu777_runner_LlamaRunner_nativeGetGpuLayers(JNIEnv *, jobject) {
+    return static_cast<jint>(llama_runner_core_get_gpu_layers());
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeClearContext(JNIEnv *, jobject) {
     llama_runner_core_clear_context();
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_debanshu777_runner_LlamaRunner_nativeGetModelArchitecture(JNIEnv *env, jobject) {
+    const char* arch = llama_runner_core_get_model_architecture();
+    return env->NewStringUTF(arch ? arch : "");
 }

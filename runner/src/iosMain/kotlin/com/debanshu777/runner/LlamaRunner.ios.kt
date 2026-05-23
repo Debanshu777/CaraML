@@ -6,6 +6,8 @@ import com.debanshu777.runner.cpp.llama_runner_clear_context
 import com.debanshu777.runner.cpp.llama_runner_finalize_generation
 import com.debanshu777.runner.cpp.llama_runner_get_context_limit
 import com.debanshu777.runner.cpp.llama_runner_get_context_used
+import com.debanshu777.runner.cpp.llama_runner_get_gpu_layers
+import com.debanshu777.runner.cpp.llama_runner_get_model_architecture
 import com.debanshu777.runner.cpp.llama_runner_get_stop_reason
 import com.debanshu777.runner.cpp.llama_runner_init
 import com.debanshu777.runner.cpp.llama_runner_load_model_v2
@@ -105,7 +107,17 @@ actual class LlamaRunner {
     }
 
     @OptIn(ExperimentalForeignApi::class)
+    actual fun getGpuLayers(): Int {
+        return llama_runner_get_gpu_layers()
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
     actual fun clearContext() {
         llama_runner_clear_context()
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    actual fun getModelArchitecture(): String? {
+        return llama_runner_get_model_architecture()?.toKString()?.takeIf { it.isNotEmpty() }
     }
 }

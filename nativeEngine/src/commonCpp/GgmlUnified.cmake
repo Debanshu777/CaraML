@@ -41,3 +41,17 @@ set(SD_MUSA OFF CACHE BOOL "" FORCE)
 # SD_METAL and SD_VULKAN are set per-platform below in nativeEngine CMakeLists.txt files
 
 add_subdirectory("${SD_SRC}" "${CMAKE_BINARY_DIR}/sd-build")
+
+# Phase 07: When GGML_BACKEND_DL=ON, ggml-cpu is built as a MODULE (dlopen-only)
+# and cannot be linked directly. Remove it from stable-diffusion's link deps.
+if(GGML_BACKEND_DL AND TARGET ggml-cpu)
+    foreach(_sd_target stable-diffusion sd)
+        if(TARGET ${_sd_target})
+            get_target_property(_sd_links ${_sd_target} LINK_LIBRARIES)
+            if(_sd_links)
+                list(REMOVE_ITEM _sd_links ggml-cpu)
+                set_target_properties(${_sd_target} PROPERTIES LINK_LIBRARIES "${_sd_links}")
+            endif()
+        endif()
+    endforeach()
+endif()

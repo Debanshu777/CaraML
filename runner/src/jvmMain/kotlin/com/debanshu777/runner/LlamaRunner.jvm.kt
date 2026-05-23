@@ -53,7 +53,11 @@ actual class LlamaRunner {
 
     actual fun getStopReason(): Int = nativeGetStopReason()
 
+    actual fun getGpuLayers(): Int = nativeGetGpuLayers()
+
     actual fun clearContext() = nativeClearContext()
+
+    actual fun getModelArchitecture(): String? = nativeGetModelArchitecture()
 
     private external fun nativeInit(libDir: String)
     private external fun nativeLoadModel(
@@ -76,5 +80,7 @@ actual class LlamaRunner {
     private external fun nativeGetContextUsed(): Int
     private external fun nativeGetContextLimit(): Int
     private external fun nativeGetStopReason(): Int
+    private external fun nativeGetGpuLayers(): Int
     private external fun nativeClearContext()
+    private external fun nativeGetModelArchitecture(): String?
 }

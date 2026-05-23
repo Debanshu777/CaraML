@@ -129,8 +129,16 @@ int llama_runner_get_stop_reason(void) {
     return llama_runner_core_get_stop_reason();
 }
 
+int llama_runner_get_gpu_layers(void) {
+    return llama_runner_core_get_gpu_layers();
+}
+
 void llama_runner_clear_context(void) {
     llama_runner_core_clear_context();
+}
+
+const char* llama_runner_get_model_architecture(void) {
+    return llama_runner_core_get_model_architecture();
 }
 
 }

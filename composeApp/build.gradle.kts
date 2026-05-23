@@ -121,6 +121,15 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+        jniLibs {
+            // GGML_BACKEND_DL=ON builds CPU backends as MODULE .so files that are
+            // loaded at runtime via ggml_backend_load_all_from_path(nativeLibraryDir).
+            // That function uses opendir()+dlopen() — it requires actual files on disk.
+            // With the modern default (useLegacyPackaging=false, minSdk=24), .so files
+            // are NOT extracted to nativeLibraryDir, so the dlopen scan finds nothing.
+            // Force extraction so the MODULE libs appear at nativeLibraryDir.
+            useLegacyPackaging = true
+        }
     }
     buildTypes {
         getByName("release") {

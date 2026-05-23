@@ -31,4 +31,6 @@ void llama_runner_shutdown(void);
 int llama_runner_get_context_used(void);
 int llama_runner_get_context_limit(void);
 int llama_runner_get_stop_reason(void);
+int llama_runner_get_gpu_layers(void);
 void llama_runner_clear_context(void);
+const char* llama_runner_get_model_architecture(void);

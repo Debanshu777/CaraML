@@ -3,6 +3,7 @@ package com.debanshu777.caraml.features.settings.presentation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.debanshu777.caraml.core.settings.AppSettings
+import com.debanshu777.caraml.core.settings.KvQuantPreset
 import com.debanshu777.caraml.core.data.settings.SettingsRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
@@ -31,4 +32,17 @@ class SettingsViewModel(
             repository.updateSettings(settings.value.copy(temperature = clamped))
         }
     }
+
+    fun updateKvQuantPreset(preset: KvQuantPreset) {
+        viewModelScope.launch {
+            repository.updateSettings(settings.value.copy(kvQuantPreset = preset))
+        }
+    }
+
+    fun updateUseGpu(enabled: Boolean) {
+        viewModelScope.launch {
+            repository.updateSettings(settings.value.copy(useGpu = enabled))
+        }
+    }
 }
+

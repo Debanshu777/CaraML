@@ -36,12 +36,17 @@ struct LlamaRunnerConfig {
     // Model params
     int n_gpu_layers   = -1;      // -1 = auto-fit (all layers), 0 = CPU only
     bool use_mmap      = true;
+    bool use_mlock     = false;
 
     // Sampler
     float temperature  = 0.3f;
 
     // Fitting control
     bool auto_fit      = true;    // use llama_params_fit() before loading
+
+    // CPU pinning
+    std::string cpu_mask       = "";  // e.g. "4-7" or "4,5,6,7" or "" (no pinning)
+    std::string cpu_mask_batch = "";  // "" = use cpu_mask for batch too
 };
 
 void llama_runner_core_set_logger(LlamaLogFn fn);
@@ -63,4 +68,6 @@ int llama_runner_core_get_context_used();
 int llama_runner_core_get_context_limit();
 
 int llama_runner_core_get_stop_reason();
+int llama_runner_core_get_gpu_layers();
 void llama_runner_core_clear_context();
+const char* llama_runner_core_get_model_architecture();

@@ -54,4 +54,7 @@ interface LocalModelDao {
 
     @Query("SELECT * FROM local_model WHERE model_id = :modelId AND is_main_model = 1 LIMIT 1")
     suspend fun getMainModelByModelId(modelId: String): LocalModelEntity?
+
+    @Query("UPDATE local_model SET arch = :arch WHERE model_id = :modelId")
+    suspend fun updateArch(modelId: String, arch: String)
 }

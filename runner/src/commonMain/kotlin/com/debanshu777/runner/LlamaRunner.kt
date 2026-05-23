@@ -32,5 +32,9 @@ expect class LlamaRunner() {
 
     fun getStopReason(): Int
 
+    fun getGpuLayers(): Int
+
     fun clearContext()
+
+    fun getModelArchitecture(): String?
 }

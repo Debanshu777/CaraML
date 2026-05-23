@@ -1,0 +1,4 @@
+# Precompiled Vulkan SPIR-V shaders for ggml-vulkan (Phase 09)
+# Run scripts/regen-vulkan-shaders.sh to regenerate (requires Vulkan SDK with glslc).
+# llama.cpp submodule: (not yet compiled — run regen script)
+# .spv files: 0 (pending compilation)

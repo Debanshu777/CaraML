@@ -19,4 +19,6 @@ interface InferenceRepository {
     fun isContextAboveThreshold(): Boolean
     fun summarizeConversation(transcript: String): Flow<String>
     suspend fun resetContextWithSummary(summary: String, lastExchange: String = ""): Boolean
+    suspend fun resetContext()
+    fun getRuntimeConfigString(): String
 }

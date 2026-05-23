@@ -1,6 +1,7 @@
 package com.debanshu777.caraml.features.chat.domain.usecase
 
 import com.debanshu777.caraml.core.data.Inference.InferenceRepository
+import com.debanshu777.caraml.core.benchmark.BenchmarkUtils
 import com.debanshu777.caraml.core.platform.AppLogger
 import com.debanshu777.caraml.features.chat.data.InferenceMetrics
 import com.debanshu777.caraml.features.chat.data.LiveGenerationStats
@@ -40,6 +41,11 @@ class GenerateResponseUseCase(
         val contextLimit = inferenceRepository.getContextLimit()
         val timer = TokenTimer()
         val parser = StructuredOutputParser()
+        val benchMode = BenchmarkUtils.benchmarkMode
+        val detailedTimer = if (benchMode) BenchmarkUtils.DetailedTokenTimer() else null
+        var firstToken = true
+
+        detailedTimer?.startPrefill()
 
         fun emitSnapshot(snapshot: StructuredOutputParser.Snapshot) {
             val (tokenCount, tokensPerSecond) = timer.buildLiveMetrics()
@@ -57,15 +63,23 @@ class GenerateResponseUseCase(
 
         try {
             inferenceRepository.generateResponse(userPrompt)
-                .onEach { timer.onToken() }
+                .onEach {
+                    timer.onToken()
+                    if (detailedTimer != null) {
+                        if (firstToken) {
+                            detailedTimer.onFirstToken()
+                            firstToken = false
+                        } else {
+                            detailedTimer.onToken()
+                        }
+                    }
+                }
                 .flowOn(Dispatchers.IO)
                 .collect { token ->
                     val snapshot = parser.accept(token)
                     emitSnapshot(snapshot)
                 }
         } finally {
-            // Flush any buffered tail (e.g. mid-tag fragment) and emit a final
-            // snapshot so the UI sees the closed-out state even on cancellation.
             emitSnapshot(parser.finish())
         }
 
@@ -77,9 +91,21 @@ class GenerateResponseUseCase(
         val stopReason = inferenceRepository.getStopReason()
         val tps = metrics?.tokensPerSecond ?: 0.0
         val tpsRounded = kotlin.math.round(tps * 10.0) / 10.0
+        val contextUsage = "${inferenceRepository.getContextUsed()}/${inferenceRepository.getContextLimit()}"
         AppLogger.i(TAG) {
             "complete: tokens=${metrics?.tokenCount ?: 0}, " +
-            "tps=$tpsRounded, stop=${stopReasonLabel(stopReason)}"
+            "tps=$tpsRounded, context=$contextUsage, " +
+            "elapsed=${metrics?.generationTimeMs ?: 0}ms, stop=${stopReasonLabel(stopReason)}"
+        }
+
+        if (benchMode) {
+            val detail = detailedTimer?.buildDetailedMetrics()
+            BenchmarkUtils.logBenchmarkResult(
+                metrics = metrics,
+                contextUsage = contextUsage,
+                runtimeConfig = inferenceRepository.getRuntimeConfigString(),
+                notes = detail?.summary() ?: "",
+            )
         }
 
         return GenerationResult(

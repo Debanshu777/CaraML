@@ -43,6 +43,27 @@ in your IDE’s toolbar or run it directly from the terminal:
 To build and run the development version of the iOS app, use the run configuration from the run widget
 in your IDE’s toolbar or open the [/iosApp](./iosApp) directory in Xcode and run it from there.
 
+### GPU Acceleration (Experimental)
+
+The Android build supports optional Vulkan GPU acceleration for significantly improved inference performance:
+
+**Requirements:**
+- Vulkan SDK installed on build machine
+- `glslc` (GLSL-to-SPIR-V compiler) available in PATH
+
+**Build with GPU support:**
+```shell
+# Using the helper script
+./scripts/build-android-vulkan.sh
+
+# Or manually
+./gradlew :composeApp:assembleDebug -PENABLE_VULKAN_ANDROID=true
+```
+
+**Expected performance:** 5-8x TPS improvement on compatible Mali GPUs (Pixel 9, etc.)
+
+See [`docs/vulkan-android-build-strategy.md`](./docs/vulkan-android-build-strategy.md) for detailed setup and troubleshooting.
+
 ---
 
 Learn more about [Kotlin Multiplatform](https://www.jetbrains.com/help/kotlin-multiplatform-dev/get-started.html)…

@@ -22,6 +22,8 @@ data class LocalModelEntity(
     @ColumnInfo(name = "component_status") val componentStatus: String? = null,
     /** True for main model weights; false for standalone component files. */
     @ColumnInfo(name = "is_main_model", defaultValue = "1") val isMainModel: Boolean = true,
+    /** GGUF general.architecture string (e.g. "llama", "qwen2", "qwen3moe"). Null if not yet detected. */
+    @ColumnInfo(name = "arch") val arch: String? = null,
 ) {
     companion object {
         const val STATUS_READY = "ready"

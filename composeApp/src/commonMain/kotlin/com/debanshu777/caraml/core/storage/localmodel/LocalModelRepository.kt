@@ -41,6 +41,10 @@ class LocalModelRepository(private val dao: LocalModelDao) {
 
     suspend fun getMainModels(): List<LocalModelEntity> = dao.getMainModels()
 
+    suspend fun updateArch(modelId: String, arch: String) {
+        dao.updateArch(modelId, arch)
+    }
+
     suspend fun insert(
         modelId: String,
         filename: String,

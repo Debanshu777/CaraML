@@ -64,6 +64,7 @@ val appModule = module {
             runner = get(),
             deviceCapabilities = get(),
             settingsRepository = get(),
+            localModelRepository = get(),
         )
     }
 
