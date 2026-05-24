@@ -4,11 +4,11 @@ import java.io.File
 
 private const val TAG = "DeviceCapabilities"
 
-class JvmDeviceCapabilities : DeviceCapabilities {
+actual class DeviceCapabilities actual constructor() {
 
     private val cachedHints: DeviceHints by lazy { computeHints() }
 
-    override fun getDeviceHints(): DeviceHints = cachedHints
+    actual fun getDeviceHints(): DeviceHints = cachedHints
 
     private fun computeHints(): DeviceHints {
         val totalCores = Runtime.getRuntime().availableProcessors()
@@ -24,9 +24,6 @@ class JvmDeviceCapabilities : DeviceCapabilities {
             performanceCoreCount = perfCores.coerceAtLeast(2),
             totalCoreCount = totalCores,
             memoryBudgetMB = getPhysicalMemoryMB(),
-            // Metal is compiled into the macOS native library via CMakeLists.txt.
-            // This will be incorrect if someone builds the native lib without Metal support.
-            // TODO: probe for Metal at runtime via system_profiler if startup cost is acceptable.
             gpuBackendAvailable = isMac,
         )
     }

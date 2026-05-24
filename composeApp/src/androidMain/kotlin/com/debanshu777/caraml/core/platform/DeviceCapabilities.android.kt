@@ -3,19 +3,30 @@ package com.debanshu777.caraml.core.platform
 import android.app.ActivityManager
 import android.content.Context
 import android.content.pm.PackageManager
+import org.koin.mp.KoinPlatform
 import java.io.File
 
 private const val TAG = "DeviceCapabilities"
 
-class AndroidDeviceCapabilities(
-    private val context: Context,
-) : DeviceCapabilities {
+actual class DeviceCapabilities actual constructor() {
 
     private val cachedHints: DeviceHints by lazy { computeHints() }
 
-    override fun getDeviceHints(): DeviceHints = cachedHints
+    actual fun getDeviceHints(): DeviceHints = cachedHints
 
     private fun computeHints(): DeviceHints {
+        val context = try {
+            KoinPlatform.getKoin().get<Context>()
+        } catch (_: Exception) {
+            AppLogger.w(TAG, "Koin context unavailable, using fallback DeviceHints")
+            return DeviceHints(
+                performanceCoreCount = 2,
+                totalCoreCount = Runtime.getRuntime().availableProcessors(),
+                memoryBudgetMB = 2048L,
+                gpuBackendAvailable = false,
+            )
+        }
+
         val totalCores = Runtime.getRuntime().availableProcessors()
         val capacityResult = detectViaCapacity(totalCores)
         val perfCores = capacityResult?.first
@@ -28,13 +39,13 @@ class AndroidDeviceCapabilities(
         return DeviceHints(
             performanceCoreCount = perfCores,
             totalCoreCount = totalCores,
-            memoryBudgetMB = getDeviceMemoryMB(),
-            gpuBackendAvailable = hasVulkanSupport(),
+            memoryBudgetMB = getDeviceMemoryMB(context),
+            gpuBackendAvailable = hasVulkanSupport(context),
             perfCoreMask = perfMask,
         )
     }
 
-    private fun getDeviceMemoryMB(): Long {
+    private fun getDeviceMemoryMB(context: Context): Long {
         return try {
             val activityManager =
                 context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
@@ -46,18 +57,6 @@ class AndroidDeviceCapabilities(
             AppLogger.w(TAG, "Memory detection failed, using fallback 2048MB", e)
             2048L
         }
-    }
-
-    private fun detectPerformanceCores(totalCores: Int): Int {
-        val capacityResult = detectViaCapacity(totalCores)
-        if (capacityResult != null) return capacityResult.first
-
-        val freqResult = detectViaFrequency(totalCores)
-        if (freqResult != null) return freqResult
-
-        val fallback = (totalCores / 2).coerceIn(2, totalCores - 1)
-        AppLogger.w(TAG, "Perf core detection: all strategies failed, using fallback=$fallback")
-        return fallback
     }
 
     private fun detectViaCapacity(totalCores: Int): Pair<Int, String>? {
@@ -114,7 +113,7 @@ class AndroidDeviceCapabilities(
         }
     }
 
-    private fun hasVulkanSupport(): Boolean {
+    private fun hasVulkanSupport(context: Context): Boolean {
         return try {
             val packageManager = context.packageManager
 
@@ -138,9 +137,6 @@ class AndroidDeviceCapabilities(
                 return false
             }
 
-            // Probe whether ggml-vulkan backend .so is actually loadable.
-            // Without this, gpuActive=true is sent to native even when GGML_VULKAN was
-            // not compiled, causing misleading "GPU offload requested but unavailable" logs.
             val libLoadable = probeVulkanLib()
             AppLogger.i(TAG, { "Vulkan: level=$vulkanLevel, libLoadable=$libLoadable" })
             libLoadable

@@ -4,6 +4,7 @@ import com.debanshu777.caraml.core.data.inference.DiffusionInferenceRepository
 import com.debanshu777.caraml.core.data.inference.InferenceRepository
 import com.debanshu777.caraml.core.data.inference.LlamaInferenceRepository
 import com.debanshu777.diffusionrunner.DiffusionRunner
+import com.debanshu777.caraml.core.platform.DeviceCapabilities
 import com.debanshu777.caraml.core.storage.AppDatabase
 import com.debanshu777.caraml.core.storage.component.ComponentRepository
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
@@ -47,6 +48,8 @@ val appModule = module {
     single<SettingsRepository> { DefaultSettingsRepository(get()) }
     single<ThemeRepository> { DefaultThemeRepository(get()) }
 
+    single { DeviceCapabilities() }
+
     single { LlamaRunner() }
     single { DiffusionRunner() }
 
@@ -81,7 +84,8 @@ val appModule = module {
             localModelRepository = get(),
             componentRepository = get(),
             downloadManager = get(),
-            storagePathProvider = get()
+            storagePathProvider = get(),
+            deviceCapabilities = get(),
         )
     }
     viewModel {

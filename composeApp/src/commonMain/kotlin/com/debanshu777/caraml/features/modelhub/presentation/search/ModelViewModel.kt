@@ -6,6 +6,8 @@ import com.debanshu777.caraml.core.storage.component.ComponentRepository
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
 import com.debanshu777.caraml.core.storage.localmodel.ModelType
+import com.debanshu777.caraml.core.platform.DeviceCapabilities
+import com.debanshu777.caraml.core.platform.DeviceHints
 import com.debanshu777.huggingfacemanager.HuggingFaceApi
 import com.debanshu777.huggingfacemanager.api.ListModelsParams
 import com.debanshu777.huggingfacemanager.api.SearchModelsParams
@@ -53,7 +55,8 @@ data class GgufFileUiState(
 data class StorageInfoUiState(
     val totalDeviceBytes: Long = 0L,
     val availableDeviceBytes: Long = 0L,
-    val usedByModelsBytes: Long = 0L
+    val usedByModelsBytes: Long = 0L,
+    val deviceHints: DeviceHints? = null,
 )
 
 data class SetupComponentUiState(
@@ -107,7 +110,8 @@ class ModelViewModel(
     private val localModelRepository: LocalModelRepository,
     private val componentRepository: ComponentRepository,
     private val downloadManager: DownloadManager,
-    private val storagePathProvider: StoragePathProvider
+    private val storagePathProvider: StoragePathProvider,
+    private val deviceCapabilities: DeviceCapabilities,
 ) : ViewModel() {
 
     private val componentChecker = SdCppComponentChecker(storagePathProvider)
@@ -118,7 +122,8 @@ class ModelViewModel(
                 StorageInfoUiState(
                     totalDeviceBytes = storagePathProvider.getTotalStorageBytes(),
                     availableDeviceBytes = storagePathProvider.getAvailableStorageBytes(),
-                    usedByModelsBytes = usedBytes
+                    usedByModelsBytes = usedBytes,
+                    deviceHints = deviceCapabilities.getDeviceHints(),
                 )
             }
             .stateIn(

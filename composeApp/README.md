@@ -178,6 +178,8 @@ Run: `./gradlew :composeApp:jvmTest`
 
 <!-- Updated at end of each Claude Code session -->
 
+- `DeviceCapabilities` migrated from Koin-bound interface+impls to `expect class` / `actual class` per platform; Koin binding moved to common `appModule`
+- `DeviceHints` now surfaced in Models screen storage card: collapsible "Device" section shows perf cores, total cores, RAM budget, GPU backend, and perf core mask (Android)
 - Diffusion inference wired to chat UI (in progress, feature/diffusion-chat-window branch)
 - GPU performance tracking in `InferenceMetrics`
 - Smart diffusion model install (component bundle tracking)

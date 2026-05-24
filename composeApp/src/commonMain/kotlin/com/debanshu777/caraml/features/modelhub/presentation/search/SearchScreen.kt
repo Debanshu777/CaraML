@@ -1,7 +1,9 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,6 +28,8 @@ import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -46,8 +50,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.drawer.LocalDrawerController
+import com.debanshu777.caraml.core.platform.DeviceHints
 import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.DownloadedModelsViewModel
@@ -92,6 +98,7 @@ fun SearchScreen(
     ) { paddingValues ->
         Column(modifier = Modifier.padding(paddingValues)) {
             StorageInfoBar(storageInfo = storageInfo)
+            DeviceInfoSection(deviceHints = storageInfo.deviceHints)
             PrimaryTabRow(selectedTabIndex = selectedTabIndex) {
                 tabs.forEachIndexed { index, title ->
                     Tab(
@@ -308,6 +315,123 @@ private fun SearchTabContent(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun DeviceInfoSection(
+    deviceHints: DeviceHints?,
+    modifier: Modifier = Modifier
+) {
+    if (deviceHints == null) return
+
+    var expanded by remember { mutableStateOf(false) }
+    val spacing = LocalSpacing.current
+
+    val ramBudgetBytes = deviceHints.memoryBudgetMB * 1024 * 1024
+    val gpuText = if (deviceHints.gpuBackendAvailable) "Available" else "Unavailable"
+    val summary = "${deviceHints.performanceCoreCount}P/${deviceHints.totalCoreCount} cores · " +
+        "${formatStorageBytes(ramBudgetBytes)} RAM · GPU $gpuText"
+
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = spacing.l, vertical = spacing.s),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 1.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(spacing.m)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Device",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = if (expanded) "Collapse" else "Expand",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            if (!expanded) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = summary,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            AnimatedVisibility(visible = expanded) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    DeviceInfoRow(
+                        label = "Performance cores",
+                        value = "${deviceHints.performanceCoreCount} of ${deviceHints.totalCoreCount}"
+                    )
+                    if (deviceHints.perfCoreMask.isNotBlank()) {
+                        DeviceInfoRow(
+                            label = "Perf core mask",
+                            value = deviceHints.perfCoreMask
+                        )
+                    }
+                    DeviceInfoRow(
+                        label = "Total cores",
+                        value = "${deviceHints.totalCoreCount}"
+                    )
+                    DeviceInfoRow(
+                        label = "RAM budget",
+                        value = formatStorageBytes(ramBudgetBytes)
+                    )
+                    DeviceInfoRow(
+                        label = "GPU backend",
+                        value = gpuText,
+                        valueColor = if (deviceHints.gpuBackendAvailable) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DeviceInfoRow(
+    label: String,
+    value: String,
+    valueColor: Color = MaterialTheme.colorScheme.onSurface,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.labelSmall,
+            color = valueColor
+        )
     }
 }
 
