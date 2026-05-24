@@ -4,6 +4,7 @@ import com.debanshu777.caraml.core.platform.AppLogger
 import com.debanshu777.caraml.features.chat.data.InferenceMetrics
 import com.debanshu777.caraml.features.chat.data.currentTimeMillis
 import kotlinx.coroutines.delay
+import kotlin.concurrent.Volatile
 
 /**
  * Utilities for standardized inference performance benchmarking.
@@ -188,8 +189,8 @@ object BenchmarkUtils {
         }
         
         fun summary(): String = 
-            "TTFT=${ttftMs}ms, decode=${String.format("%.1f", decodeTps)}tps, " +
-            "total=${String.format("%.1f", totalTps)}tps, tokens=$totalTokens"
+            "TTFT=${ttftMs}ms, decode=$decodeTps tps, " +
+            "total=$totalTps tps, tokens=$totalTokens"
     }
     
     /**

@@ -1,6 +1,7 @@
 package com.debanshu777.caraml.core.storage.localmodel
 
 import kotlinx.coroutines.flow.Flow
+import kotlin.time.Clock
 
 class LocalModelRepository(private val dao: LocalModelDao) {
     suspend fun getDownloadedFilenames(modelId: String): Set<String> =
@@ -64,7 +65,7 @@ class LocalModelRepository(private val dao: LocalModelDao) {
                 filename = filename,
                 localPath = localPath,
                 sizeBytes = sizeBytes,
-                downloadedAt = System.currentTimeMillis(),
+                downloadedAt = Clock.System.now().toEpochMilliseconds(),
                 author = author,
                 libraryName = libraryName,
                 pipelineTag = pipelineTag,
