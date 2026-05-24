@@ -18,9 +18,6 @@ class LocalModelRepository(private val dao: LocalModelDao) {
     fun getAllDownloadedFiles(): Flow<List<LocalModelEntity>> =
         dao.getAllDownloadedFiles()
 
-    fun getDownloadedFilesByType(modelType: String): Flow<List<LocalModelEntity>> =
-        dao.getDownloadedFilesByType(modelType)
-
     fun getTotalDownloadedSizeBytes(): Flow<Long> =
         dao.getTotalDownloadedSizeBytes()
 
@@ -31,15 +28,6 @@ class LocalModelRepository(private val dao: LocalModelDao) {
     suspend fun updateComponentStatus(modelId: String, status: String) {
         dao.updateComponentStatus(modelId, status)
     }
-
-    fun getReadyMainModels() = dao.getReadyMainModels()
-
-    fun getPartialMainModels() = dao.getPartialMainModels()
-
-    fun getAllMainModels() = dao.getAllMainModels()
-
-    suspend fun getMainModelByModelId(modelId: String) = dao.getMainModelByModelId(modelId)
-
     suspend fun getMainModels(): List<LocalModelEntity> = dao.getMainModels()
 
     suspend fun updateArch(modelId: String, arch: String) {

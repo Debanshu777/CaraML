@@ -1,6 +1,6 @@
 package com.debanshu777.caraml.core.storage.component
 
-import kotlinx.coroutines.flow.Flow
+import kotlin.time.Clock
 
 class ComponentRepository(private val dao: DownloadedComponentDao) {
 
@@ -24,7 +24,7 @@ class ComponentRepository(private val dao: DownloadedComponentDao) {
                 role = role,
                 localPath = localPath,
                 sizeBytes = sizeBytes,
-                downloadedAt = System.currentTimeMillis(),
+                downloadedAt = Clock.System.now().toEpochMilliseconds(),
             )
         ).let { inserted ->
             // IGNORE returned -1 — fetch the real id
@@ -38,18 +38,7 @@ class ComponentRepository(private val dao: DownloadedComponentDao) {
         dao.insertLink(ModelComponentLinkEntity(modelId = modelId, componentId = componentId, role = role))
     }
 
-    /** Returns true if a component with this (repoId, filePath) key already exists on disk. */
-    suspend fun isComponentDownloaded(repoId: String, filePath: String): Boolean =
-        dao.isComponentDownloaded(repoId, filePath)
-
     /** Returns all components linked to a given model. */
     suspend fun getComponentsForModel(modelId: String): List<DownloadedComponentEntity> =
         dao.getComponentsForModel(modelId)
-
-    fun getAllComponents(): Flow<List<DownloadedComponentEntity>> =
-        dao.getAllComponents()
-
-    suspend fun deleteComponent(repoId: String, filePath: String) {
-        dao.deleteByRepoAndPath(repoId, filePath)
-    }
 }

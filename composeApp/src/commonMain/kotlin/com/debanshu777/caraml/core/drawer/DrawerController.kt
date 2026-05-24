@@ -1,6 +1,5 @@
 package com.debanshu777.caraml.core.drawer
 
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf

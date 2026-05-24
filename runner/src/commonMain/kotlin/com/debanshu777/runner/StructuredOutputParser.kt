@@ -245,7 +245,6 @@ class StructuredOutputParser {
         return buf.length
     }
 
-    /** True if buf[start..end] is a non-empty prefix of [tag] (and end == buf.length). */
     private fun sliceMatchesPrefix(buf: StringBuilder, start: Int, tag: String): Boolean {
         val len = buf.length - start
         if (len <= 0 || len >= tag.length) return false

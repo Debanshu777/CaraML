@@ -1,8 +1,8 @@
 package com.debanshu777.caraml.core.di
 
-import com.debanshu777.caraml.core.data.Inference.DiffusionInferenceRepository
-import com.debanshu777.caraml.core.data.Inference.InferenceRepository
-import com.debanshu777.caraml.core.data.Inference.LlamaInferenceRepository
+import com.debanshu777.caraml.core.data.inference.DiffusionInferenceRepository
+import com.debanshu777.caraml.core.data.inference.InferenceRepository
+import com.debanshu777.caraml.core.data.inference.LlamaInferenceRepository
 import com.debanshu777.diffusionrunner.DiffusionRunner
 import com.debanshu777.caraml.core.storage.AppDatabase
 import com.debanshu777.caraml.core.storage.component.ComponentRepository

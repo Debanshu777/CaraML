@@ -2,9 +2,9 @@ package com.debanshu777.caraml.features.chat.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.debanshu777.caraml.core.data.Inference.DiffusionInferenceRepository
-import com.debanshu777.caraml.core.data.Inference.InferenceRepository
-import com.debanshu777.caraml.core.data.Inference.ModelLoadResult
+import com.debanshu777.caraml.core.data.inference.DiffusionInferenceRepository
+import com.debanshu777.caraml.core.data.inference.InferenceRepository
+import com.debanshu777.caraml.core.data.inference.ModelLoadResult
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.features.chat.data.ChatMessage
 import com.debanshu777.caraml.features.chat.data.LiveGenerationStats

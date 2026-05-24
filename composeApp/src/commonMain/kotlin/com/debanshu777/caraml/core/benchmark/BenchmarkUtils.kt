@@ -15,18 +15,6 @@ import kotlin.concurrent.Volatile
 object BenchmarkUtils {
     private const val TAG = "BENCHMARK"
     
-    /**
-     * Standard 50-token benchmark prompt for consistent testing.
-     * Designed to be long enough to measure decode performance but short enough
-     * to avoid context window effects in multiple runs.
-     */
-    const val STANDARD_PROMPT = "Write a detailed technical explanation of how neural " +
-            "networks process information, including the mathematical foundations, layer types, and"
-    
-    const val STANDARD_MAX_TOKENS = 500
-    const val STANDARD_COOLDOWN_MS = 60_000L // 60 seconds
-    const val THERMAL_COOLDOWN_MS = 300_000L // 5 minutes
-    
     @Volatile var benchmarkMode = false
         private set
     @Volatile private var currentRunId = 0
@@ -75,26 +63,6 @@ object BenchmarkUtils {
             "config=[$runtimeConfig]" +
             if (notes.isNotEmpty()) ", notes=[$notes]" else ""
         }
-    }
-    
-    /**
-     * Wait for the standard cooldown period between benchmark runs.
-     * Shows progress if this is a long wait.
-     */
-    suspend fun standardCooldown() {
-        if (STANDARD_COOLDOWN_MS > 10_000) {
-            AppLogger.i(TAG) { "Cooldown: ${STANDARD_COOLDOWN_MS / 1000}s..." }
-        }
-        delay(STANDARD_COOLDOWN_MS)
-    }
-    
-    /**
-     * Wait for the extended thermal cooldown period.
-     * Used when device temperature is elevated or after sustained testing.
-     */
-    suspend fun thermalCooldown() {
-        AppLogger.i(TAG) { "Thermal cooldown: ${THERMAL_COOLDOWN_MS / 1000}s..." }
-        delay(THERMAL_COOLDOWN_MS)
     }
     
     /**
@@ -148,25 +116,6 @@ object BenchmarkUtils {
                 totalTimeMs = last - prefill,
                 prefillTimeMs = ttftMs,
                 decodeTimeMs = if (tokenCount > 1) last - first else 0L
-            )
-        }
-        
-        /**
-         * Build legacy metrics compatible with existing InferenceMetrics.
-         * Uses total time for TPS calculation (includes TTFT).
-         */
-        fun buildLegacyMetrics(): InferenceMetrics? {
-            val prefill = prefillStartMs ?: return null
-            val last = lastTokenMs ?: return null
-            val totalMs = last - prefill
-            
-            val tpot = if (tokenCount > 1) totalMs.toDouble() / (tokenCount - 1) else 0.0
-            val totalTps = if (totalMs > 0) tokenCount * 1000.0 / totalMs else 0.0
-            
-            return InferenceMetrics(
-                tpotMs = tpot,
-                tokenCount = tokenCount,
-                generationTimeMs = totalMs,
             )
         }
     }

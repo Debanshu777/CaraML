@@ -20,9 +20,6 @@ interface LocalModelDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entity: LocalModelEntity)
 
-    @Query("SELECT * FROM local_model")
-    fun getAll(): Flow<List<LocalModelEntity>>
-
     @Query("SELECT * FROM local_model ORDER BY usage_count DESC, id DESC")
     fun getAllDownloadedFiles(): Flow<List<LocalModelEntity>>
 
@@ -40,20 +37,8 @@ interface LocalModelDao {
     @Query("UPDATE local_model SET component_status = :status WHERE model_id = :modelId")
     suspend fun updateComponentStatus(modelId: String, status: String)
 
-    @Query("SELECT * FROM local_model WHERE is_main_model = 1 AND component_status = 'ready' ORDER BY usage_count DESC, id DESC")
-    fun getReadyMainModels(): Flow<List<LocalModelEntity>>
-
-    @Query("SELECT * FROM local_model WHERE is_main_model = 1 AND component_status = 'partial' ORDER BY usage_count DESC, id DESC")
-    fun getPartialMainModels(): Flow<List<LocalModelEntity>>
-
-    @Query("SELECT * FROM local_model WHERE is_main_model = 1 ORDER BY usage_count DESC, id DESC")
-    fun getAllMainModels(): Flow<List<LocalModelEntity>>
-
     @Query("SELECT * FROM local_model WHERE is_main_model = 1")
     suspend fun getMainModels(): List<LocalModelEntity>
-
-    @Query("SELECT * FROM local_model WHERE model_id = :modelId AND is_main_model = 1 LIMIT 1")
-    suspend fun getMainModelByModelId(modelId: String): LocalModelEntity?
 
     @Query("UPDATE local_model SET arch = :arch WHERE model_id = :modelId")
     suspend fun updateArch(modelId: String, arch: String)
