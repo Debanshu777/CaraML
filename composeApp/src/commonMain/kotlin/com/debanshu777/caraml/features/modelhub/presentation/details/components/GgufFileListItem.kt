@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Download
@@ -18,6 +19,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.rating.SuitabilityRating
+import com.debanshu777.caraml.core.rating.ui.SuitabilityDot
 import com.debanshu777.caraml.core.theme.LocalSpacing
 
 @Composable
@@ -28,7 +31,8 @@ fun GgufFileListItem(
     progress: Float?,
     isDownloading: Boolean,
     onDownloadClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    rating: SuitabilityRating? = null,
 ) {
     val hasDirectory = filename.contains('/')
     val displayName = filename.substringAfterLast('/')
@@ -65,6 +69,12 @@ fun GgufFileListItem(
                             formatFileSize(sizeBytes),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (rating != null) {
+                        SuitabilityDot(
+                            rating = rating,
+                            modifier = Modifier.padding(start = 6.dp),
                         )
                     }
                 }

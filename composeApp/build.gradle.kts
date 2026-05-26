@@ -142,18 +142,6 @@ android {
     }
 }
 
-compose.desktop {
-    application {
-        mainClass = "com.debanshu777.caraml.MainKt"
-
-        nativeDistributions {
-            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "com.debanshu777.caraml"
-            packageVersion = "1.0.0"
-        }
-    }
-}
-
 val desktopPlatform = when {
     System.getProperty("os.name").lowercase().contains("mac") -> "macos"
     System.getProperty("os.name").lowercase().contains("linux") -> "linux"
@@ -164,18 +152,28 @@ val desktopPlatform = when {
 val nativeDir =
     project(":nativeEngine").layout.buildDirectory.dir("llama-runner-desktop/$desktopPlatform").get().asFile.absolutePath
 
-tasks.matching { it.name == "run" || it.name.endsWith("Run") }.configureEach {
-    dependsOn(":nativeEngine:compileLlamaRunnerDesktop")
+compose.desktop {
+    application {
+        mainClass = "com.debanshu777.caraml.MainKt"
+
+        // Compose Desktop's `run` task is AbstractRunDistributableTask, NOT JavaExec.
+        // Standard `tasks.withType<JavaExec>` filter never matches it, so jvmArgs
+        // must be injected via the Compose DSL here to actually take effect.
+        jvmArgs += listOf(
+            "-Djava.library.path=$nativeDir",
+            "-Dcaraml.native.lib.dir=$nativeDir",
+        )
+
+        nativeDistributions {
+            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
+            packageName = "com.debanshu777.caraml"
+            packageVersion = "1.0.0"
+        }
+    }
 }
 
-tasks.withType(org.gradle.api.tasks.JavaExec::class.java).configureEach {
-    if (name == "run" || name.endsWith("Run")) {
-        dependsOn(":nativeEngine:compileLlamaRunnerDesktop")
-        jvmArgs(
-            "-Djava.library.path=$nativeDir",
-            "-Dcaraml.native.lib.dir=$nativeDir"
-        )
-    }
+tasks.matching { it.name == "run" || it.name.endsWith("Run") }.configureEach {
+    dependsOn(":nativeEngine:compileLlamaRunnerDesktop")
 }
 
 dependencies {

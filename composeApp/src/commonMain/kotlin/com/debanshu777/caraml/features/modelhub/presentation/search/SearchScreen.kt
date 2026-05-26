@@ -54,6 +54,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.drawer.LocalDrawerController
 import com.debanshu777.caraml.core.platform.DeviceHints
+import com.debanshu777.caraml.core.rating.SuitabilityRating
+import com.debanshu777.caraml.core.rating.SuitabilityResult
+import com.debanshu777.caraml.core.rating.ui.SuitabilityChip
+import com.debanshu777.caraml.core.rating.ui.SuitabilityInfoSheet
 import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.DownloadedModelsViewModel
@@ -78,6 +82,10 @@ fun SearchScreen(
     val tabs = listOf("Search", "Downloaded")
 
     val storageInfo by modelViewModel.storageInfo.collectAsState()
+
+    // Shared bottom sheet — opened from any rating chip in the list.
+    var ratingSheetModelId by remember { mutableStateOf<String?>(null) }
+    var ratingSheetResult by remember { mutableStateOf<SuitabilityResult?>(null) }
 
     val drawerController = LocalDrawerController.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -113,6 +121,11 @@ fun SearchScreen(
                 0 -> SearchTabContent(
                     viewModel = modelViewModel,
                     onNavigateToDetails = onNavigateToDetails,
+                    deviceHints = storageInfo.deviceHints,
+                    onRatingInfoClick = { id, result ->
+                        ratingSheetModelId = id
+                        ratingSheetResult = result
+                    },
                     modifier = Modifier.fillMaxSize()
                 )
 
@@ -126,12 +139,28 @@ fun SearchScreen(
             }
         }
     }
+
+    val sheetResult = ratingSheetResult
+    val sheetModelId = ratingSheetModelId
+    if (sheetResult != null && sheetModelId != null) {
+        SuitabilityInfoSheet(
+            modelId = sheetModelId,
+            result = sheetResult,
+            deviceHints = storageInfo.deviceHints,
+            onDismiss = {
+                ratingSheetResult = null
+                ratingSheetModelId = null
+            },
+        )
+    }
 }
 
 @Composable
 private fun SearchTabContent(
     viewModel: ModelViewModel,
     onNavigateToDetails: (modelId: String, hubBrowseMode: ModelHubBrowseMode) -> Unit,
+    deviceHints: DeviceHints?,
+    onRatingInfoClick: (modelId: String, result: SuitabilityResult) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val browseMode by viewModel.browseMode.collectAsState()
@@ -307,7 +336,9 @@ private fun SearchTabContent(
                                         model.id?.let { id ->
                                             onNavigateToDetails(id, browseMode)
                                         }
-                                    }
+                                    },
+                                    deviceHints = if (isLlmHub) deviceHints else null,
+                                    onRatingInfoClick = if (isLlmHub) onRatingInfoClick else null,
                                 )
                             }
                         }
@@ -402,6 +433,31 @@ private fun DeviceInfoSection(
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
                         }
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Model fit rating",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        SuitabilityChip(rating = SuitabilityRating.BEST)
+                        SuitabilityChip(rating = SuitabilityRating.GOOD)
+                        SuitabilityChip(rating = SuitabilityRating.AVERAGE)
+                        SuitabilityChip(rating = SuitabilityRating.POOR)
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Estimated as weights + KV cache + ~20% overhead vs RAM budget. " +
+                            "Tap any chip in the list for details.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }

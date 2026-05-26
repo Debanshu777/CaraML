@@ -178,6 +178,13 @@ Run: `./gradlew :composeApp:jvmTest`
 
 <!-- Updated at end of each Claude Code session -->
 
+- New `core/rating/` package: `ModelSuitabilityCalculator` (canonical llama.cpp BPW table, KV cache math with per-architecture shape lookup, HF Accelerate +20% overhead, GPU/CPU modifiers) + `SuitabilityChip`, `SuitabilityDot`, `SuitabilityInfoSheet` UI primitives
+- Search list rows now show a color-coded fit chip (Poor/Average/Good/Best); variant picker shows per-variant dots using accurate on-disk size; tap chip opens shared bottom-sheet explainer with footprint breakdown, ratio vs RAM budget, device snapshot, legend, and caveats
+- Details screen now shows overall model chip and per-GGUF-file rating dots; chip taps open the shared info sheet (hoisted at screen scope, matches search pattern)
+- Fixed stacked footprint bar in `SuitabilityInfoSheet` — children now use `weight(frac) + fillMaxHeight()` instead of `fillMaxWidth(fraction)` so weights/KV/overhead segments render side-by-side at full bar height
+- Device card on Models screen extended with rating legend swatches
+- Quantization tag regex consolidated into `ModelSuitabilityCalculator.parseQuantTag()` (was duplicated in `VariantPickerRow`); `formatBytesHuman` extracted to `core/rating/ui/Format.kt`
+- 15-test unit suite in `commonTest/core/rating/` validates BPW math, bucket boundaries, modifier behavior, and reference scenarios (Llama-3.1-8B, 70B Q4, diffusion bundles)
 - `DeviceCapabilities` migrated from Koin-bound interface+impls to `expect class` / `actual class` per platform; Koin binding moved to common `appModule`
 - `DeviceHints` now surfaced in Models screen storage card: collapsible "Device" section shows perf cores, total cores, RAM budget, GPU backend, and perf core mask (Android)
 - Diffusion inference wired to chat UI (in progress, feature/diffusion-chat-window branch)

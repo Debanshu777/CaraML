@@ -9,6 +9,7 @@ import com.debanshu777.caraml.core.settings.KvQuantPreset
 import com.debanshu777.caraml.core.data.settings.SettingsRepository
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
+import com.debanshu777.caraml.features.chat.domain.ReasoningModelClassifier
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import com.debanshu777.runner.LlamaRunner
 import com.debanshu777.runner.NativeRunnerConfig
@@ -59,7 +60,7 @@ class LlamaInferenceRepository(
         arch == null -> ArchFamily.UNKNOWN
         arch in listOf(
             "qwen2", "llama", "gemma", "mistral", "phi3",
-            "qwen3", "phi2", "stablelm", "falcon"
+            "qwen3", "phi2", "stablelm", "falcon", "smollm3"
         ) -> ArchFamily.DENSE
         arch in listOf(
             "qwen3moe", "deepseek2", "mixtral", "qwen2_moe"
@@ -100,6 +101,9 @@ class LlamaInferenceRepository(
     /** Cached runtime config string built after each successful model load. */
     @Volatile private var lastRuntimeConfig: String = ""
 
+    /** True when the currently-loaded model is a reasoning model; false otherwise. */
+    @Volatile private var isReasoningModel: Boolean = false
+
     override suspend fun loadModel(model: LocalModelEntity): ModelLoadResult =
         nativeLock.withLock {
             try {
@@ -130,6 +134,9 @@ class LlamaInferenceRepository(
                 }
 
                 runner.initialize(nativeLibDir)
+
+                isReasoningModel = ReasoningModelClassifier.isReasoningModel(model.modelId)
+                AppLogger.i(TAG) { "loadModel: isReasoningModel=$isReasoningModel (modelId=${model.modelId})" }
 
                 val settings = currentSettings()
 
@@ -203,7 +210,7 @@ class LlamaInferenceRepository(
                 }
 
                 val systemPrompt = settings.systemPrompt.ifBlank { FALLBACK_SYSTEM_PROMPT } +
-                    structuredOutputSystemPromptSuffix()
+                    if (isReasoningModel) structuredOutputSystemPromptSuffix() else ""
 
                 val spRet = runner.processSystemPrompt(systemPrompt)
                 if (spRet != 0) {
@@ -370,7 +377,7 @@ class LlamaInferenceRepository(
             "generate: promptLen=${userPrompt.length}, remainingCtx=$remainingCtx, " +
             "context=${runner.getContextUsed()}/${runner.getContextLimit()}"
         }
-        val ret = runner.processUserPrompt(userPrompt, remainingCtx, STRICT_THINKING_OUTPUT_GRAMMAR)
+        val ret = runner.processUserPrompt(userPrompt, remainingCtx, if (isReasoningModel) STRICT_THINKING_OUTPUT_GRAMMAR else "")
         if (ret != 0) {
             throw IllegalStateException("Failed to process message")
         }
@@ -480,7 +487,7 @@ class LlamaInferenceRepository(
                         append("The most recent exchange was:\n")
                         append(lastExchange)
                     }
-                    append(structuredOutputSystemPromptSuffix())
+                    if (isReasoningModel) append(structuredOutputSystemPromptSuffix())
                 }
 
                 val ret = runner.processSystemPrompt(systemPrompt)

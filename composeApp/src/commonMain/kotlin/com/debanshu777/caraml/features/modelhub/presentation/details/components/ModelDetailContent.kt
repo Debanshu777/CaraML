@@ -21,6 +21,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.platform.DeviceHints
+import com.debanshu777.caraml.core.rating.ModelSuitabilityCalculator
+import com.debanshu777.caraml.core.rating.SuitabilityResult
+import com.debanshu777.caraml.core.rating.ui.SuitabilityChip
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
 import com.debanshu777.huggingfacemanager.model.ModelDetailResponse
 import com.debanshu777.caraml.features.modelhub.presentation.search.GgufFileUiState
@@ -40,6 +44,8 @@ fun ModelDetailContent(
     onVariantSelected: (String) -> Unit = {},
     onSmartInstall: () -> Unit = {},
     showInstallBundle: Boolean = false,
+    deviceHints: DeviceHints? = null,
+    onRatingInfoClick: ((modelId: String, result: SuitabilityResult) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     if (model == null) return
@@ -113,6 +119,23 @@ fun ModelDetailContent(
             }
         }
 
+        // Overall device-fit chip (model-level, assumes default Q4_K_M when no variant chosen)
+        if (deviceHints != null) {
+            val overallResult = ModelSuitabilityCalculator.rateLlm(
+                hints = deviceHints,
+                numParameters = model.safetensors?.total ?: model.gguf?.total,
+                contextLength = model.gguf?.contextLength,
+                architecture = model.gguf?.architecture,
+                pipelineTag = model.pipelineTag,
+            )
+            SuitabilityChip(
+                rating = overallResult.rating,
+                onInfoClick = onRatingInfoClick?.let { cb ->
+                    { cb(model.modelId ?: model.id ?: "Unknown", overallResult) }
+                },
+            )
+        }
+
         // Info card
         val hasInfo = model.libraryName != null || model.pipelineTag != null ||
             model.config?.modelType != null || model.config?.architectures?.filterNotNull()?.isNotEmpty() == true ||
@@ -183,6 +206,10 @@ fun ModelDetailContent(
                 onVariantSelected = onVariantSelected,
                 onInstall = onSmartInstall,
                 modifier = Modifier.fillMaxWidth(),
+                deviceHints = null,
+                numParameters = null,
+                contextLength = null,
+                architecture = null,
             )
         } else {
             // ── Language model: per-file GGUF list ──
@@ -194,6 +221,17 @@ fun ModelDetailContent(
             )
             if (ggufFiles.isNotEmpty()) {
                 ggufFiles.forEach { item ->
+                    val fileRating = deviceHints?.let { hints ->
+                        ModelSuitabilityCalculator.rateLlm(
+                            hints = hints,
+                            numParameters = model.safetensors?.total ?: model.gguf?.total,
+                            sizeBytes = item.sizeBytes,
+                            quantTag = ModelSuitabilityCalculator.parseQuantTag(item.filename),
+                            contextLength = model.gguf?.contextLength,
+                            architecture = model.gguf?.architecture,
+                            pipelineTag = model.pipelineTag,
+                        ).rating
+                    }
                     GgufFileListItem(
                         filename = item.path.ifEmpty { item.filename },
                         sizeBytes = item.sizeBytes,
@@ -213,7 +251,8 @@ fun ModelDetailContent(
                                 )
                             )
                         },
-                        modifier = Modifier.padding(vertical = 4.dp)
+                        modifier = Modifier.padding(vertical = 4.dp),
+                        rating = fileRating,
                     )
                 }
             } else {

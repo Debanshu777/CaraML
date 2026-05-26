@@ -216,6 +216,7 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 
 <!-- This section is updated at the end of each Claude Code session -->
 
+- Model suitability rating (Poor/Average/Good/Best) with color-coded chips, per-variant dots, and bottom-sheet algorithm explainer
 - GPU acceleration and inference performance optimizations (Vulkan Android, Metal iOS)
 - Smart install system and live progress tracking for diffusion models
 - Structured reasoning support with thinking blocks and markdown rendering

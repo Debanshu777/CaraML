@@ -1,8 +1,12 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search.components
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -11,13 +15,19 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.platform.DeviceHints
+import com.debanshu777.caraml.core.rating.ModelSuitabilityCalculator
+import com.debanshu777.caraml.core.rating.SuitabilityResult
+import com.debanshu777.caraml.core.rating.ui.SuitabilityChip
 import com.debanshu777.huggingfacemanager.model.ListModelsResponse
 
 @Composable
 fun ModelListItem(
     model: ListModelsResponse.Model?,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    deviceHints: DeviceHints? = null,
+    onRatingInfoClick: ((modelId: String, result: SuitabilityResult) -> Unit)? = null,
 ) {
     if (model == null) return
     Surface(
@@ -49,6 +59,26 @@ fun ModelListItem(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp)
             )
+
+            // Suitability rating chip — assumes Q4_K_M when no variant is known
+            // (search list doesn't expose per-variant file sizes). Tap opens the
+            // explainer sheet hoisted in SearchScreen.
+            if (deviceHints != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                val result = ModelSuitabilityCalculator.rateLlm(
+                    hints = deviceHints,
+                    numParameters = model.numParameters,
+                    pipelineTag = model.pipelineTag,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SuitabilityChip(
+                        rating = result.rating,
+                        onInfoClick = onRatingInfoClick?.let { cb ->
+                            { cb(model.id ?: "Unknown", result) }
+                        },
+                    )
+                }
+            }
         }
     }
     HorizontalDivider()
