@@ -3,6 +3,7 @@ package com.debanshu777.caraml.core.rating
 import com.debanshu777.caraml.core.platform.DeviceHints
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -209,6 +210,121 @@ class ModelSuitabilityCalculatorTest {
             totalComponentBytes = null,
         )
         assertEquals(SuitabilityRating.UNKNOWN, r.rating)
+    }
+
+    // ─── rateDiffusion() architecture-aware overload ───
+
+    @Test
+    fun rateDiffusion_returnsUnknownWhenArchUnknownAndNoBytesProvided() {
+        val h = hints(ramMb = 16 * 1024L)
+        val result = ModelSuitabilityCalculator.rateDiffusion(
+            hints = h,
+            architecture = SdArchitecture.UNKNOWN,
+        )
+        assertEquals(SuitabilityRating.UNKNOWN, result.rating)
+    }
+
+    @Test
+    fun rateDiffusion_usesTotalComponentBytesWhenProvided() {
+        val h = hints(ramMb = 32 * 1024L)
+        val result = ModelSuitabilityCalculator.rateDiffusion(
+            hints = h,
+            architecture = SdArchitecture.FLUX,
+            totalComponentBytes = 3_000L * 1024 * 1024,
+        )
+        assertEquals(SuitabilityRating.BEST, result.rating)
+        assertEquals(false, result.isEstimate)
+    }
+
+    @Test
+    fun rateDiffusion_fallsBackToArchBaseline_isEstimateTrue() {
+        val h = hints(ramMb = 24 * 1024L)
+        val result = ModelSuitabilityCalculator.rateDiffusion(
+            hints = h,
+            architecture = SdArchitecture.SD1,
+        )
+        assertEquals(SuitabilityRating.BEST, result.rating)
+        assertEquals(true, result.isEstimate)
+    }
+
+    @Test
+    fun rateDiffusion_vaeOffloadReducesEffectiveWeight() {
+        val h = hints(ramMb = 9 * 1024L)
+        val withoutOffload = ModelSuitabilityCalculator.rateDiffusion(
+            hints = h, architecture = SdArchitecture.FLUX, canOffloadVae = false,
+        )
+        val withOffload = ModelSuitabilityCalculator.rateDiffusion(
+            hints = h, architecture = SdArchitecture.FLUX, canOffloadVae = true,
+        )
+        // better (or same) rating → ordinal must be >= (POOR=0, BEST=3)
+        assertTrue(
+            withOffload.rating.ordinal >= withoutOffload.rating.ordinal,
+            "VAE offload should not worsen rating. without=${withoutOffload.rating} with=${withOffload.rating}",
+        )
+    }
+
+    @Test
+    fun rateDiffusion_flashAttnReducesEffectiveWeight() {
+        val h = hints(ramMb = 9 * 1024L)
+        val withoutFlash = ModelSuitabilityCalculator.rateDiffusion(
+            hints = h, architecture = SdArchitecture.FLUX, flashAttnAvailable = false,
+        )
+        val withFlash = ModelSuitabilityCalculator.rateDiffusion(
+            hints = h, architecture = SdArchitecture.FLUX, flashAttnAvailable = true,
+        )
+        // better (or same) rating → ordinal must be >=
+        assertTrue(
+            withFlash.rating.ordinal >= withoutFlash.rating.ordinal,
+            "Flash attention should not worsen rating",
+        )
+    }
+
+    @Test
+    fun rateDiffusion_gpuBumpsUpForDiTArch() {
+        val noGpu = hints(ramMb = 10 * 1024L, gpu = false)
+        val withGpu = hints(ramMb = 10 * 1024L, gpu = true)
+        val noGpuResult = ModelSuitabilityCalculator.rateDiffusion(noGpu, SdArchitecture.FLUX)
+        val gpuResult = ModelSuitabilityCalculator.rateDiffusion(withGpu, SdArchitecture.FLUX)
+        // GPU bumps up → better (or same) rating → ordinal must be >=
+        assertTrue(
+            gpuResult.rating.ordinal >= noGpuResult.rating.ordinal,
+            "GPU should bump DiT rating up. noGpu=${noGpuResult.rating} gpu=${gpuResult.rating}",
+        )
+    }
+
+    @Test
+    fun rateDiffusion_lowCoresPenaltyForVideoArch() {
+        val manyCore = hints(ramMb = 24 * 1024L, perfCores = 8)
+        val fewCore  = hints(ramMb = 24 * 1024L, perfCores = 2)
+        val manyCoreResult = ModelSuitabilityCalculator.rateDiffusion(manyCore, SdArchitecture.WAN_SMALL)
+        val fewCoreResult  = ModelSuitabilityCalculator.rateDiffusion(fewCore, SdArchitecture.WAN_SMALL)
+        // few cores worsens → lower (or same) ordinal
+        assertTrue(
+            fewCoreResult.rating.ordinal <= manyCoreResult.rating.ordinal,
+            "Few cores should worsen video rating. manyCore=${manyCoreResult.rating} fewCore=${fewCoreResult.rating}",
+        )
+    }
+
+    @Test
+    fun rateDiffusion_unknownArchWithBytesUsesBytes() {
+        val h = hints(ramMb = 32 * 1024L)
+        val result = ModelSuitabilityCalculator.rateDiffusion(
+            hints = h,
+            architecture = SdArchitecture.UNKNOWN,
+            totalComponentBytes = 2_000L * 1024 * 1024,
+        )
+        assertNotEquals(SuitabilityRating.UNKNOWN, result.rating)
+    }
+
+    @Test
+    fun rateDiffusion_q8QuantScalesBaselineUp() {
+        val h = hints(ramMb = 32 * 1024L)
+        val q4Result = ModelSuitabilityCalculator.rateDiffusion(h, SdArchitecture.SD1, dominantQuantTag = null)
+        val q8Result = ModelSuitabilityCalculator.rateDiffusion(h, SdArchitecture.SD1, dominantQuantTag = "Q8_0")
+        assertTrue(
+            q8Result.weightsBytes >= q4Result.weightsBytes,
+            "Q8 should have larger weight estimate than Q4 baseline",
+        )
     }
 
     // --- result envelope ---

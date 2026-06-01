@@ -66,6 +66,36 @@ object ModelSuitabilityCalculator {
 
     private const val DEFAULT_BPW: Double = 5.00
 
+    private val SD_QUANT_BPW: Map<String, Double> = mapOf(
+        "q2_k"  to 3.16,
+        "q3_k"  to 3.75,
+        "q4_0"  to 4.55,
+        "q4_1"  to 5.06,
+        "q4_k"  to 4.89,
+        "q5_0"  to 5.57,
+        "q5_1"  to 6.06,
+        "q5_k"  to 5.70,
+        "q6_k"  to 6.56,
+        "q8_0"  to 8.50,
+        "f16"   to 16.0,
+        "bf16"  to 16.0,
+        "f32"   to 32.0,
+    )
+    private const val SD_DEFAULT_BPW = 4.89
+    private const val SD_Q4_BPW      = 4.89
+    private const val VAE_OFFLOAD_BYTES  = 400L * 1024 * 1024
+    private const val FLASH_ATTN_BYTES   = 600L * 1024 * 1024
+    private val DIT_ARCHITECTURES = setOf(
+        SdArchitecture.FLUX,
+        SdArchitecture.SD3,
+        SdArchitecture.WAN_SMALL,
+        SdArchitecture.WAN_LARGE,
+    )
+    private val VIDEO_ARCHITECTURES = setOf(
+        SdArchitecture.WAN_SMALL,
+        SdArchitecture.WAN_LARGE,
+    )
+
     /** Default assumption when no variant is selected yet (search list). */
     const val DEFAULT_QUANT_TAG: String = "Q4_K_M"
 
@@ -232,6 +262,81 @@ object ModelSuitabilityCalculator {
             quantAssumed = null,
             isEstimate = false,
             reason = reason,
+        )
+    }
+
+    /**
+     * Architecture-aware rating for stable-diffusion.cpp models.
+     *
+     * Weight resolution priority:
+     * 1. [totalComponentBytes] — real file sizes (isEstimate = false).
+     * 2. [architecture] baseline scaled by [dominantQuantTag] BPW (isEstimate = true).
+     * 3. UNKNOWN when both unavailable.
+     */
+    fun rateDiffusion(
+        hints: DeviceHints,
+        architecture: SdArchitecture,
+        dominantQuantTag: String? = null,
+        totalComponentBytes: Long? = null,
+        canOffloadVae: Boolean = true,
+        flashAttnAvailable: Boolean = false,
+    ): SuitabilityResult {
+        val budgetBytes = hints.memoryBudgetMB * 1024L * 1024L
+
+        val rawWeightsBytes: Long? = when {
+            totalComponentBytes != null && totalComponentBytes > 0 -> totalComponentBytes
+            architecture != SdArchitecture.UNKNOWN -> {
+                val bpwRatio = (SD_QUANT_BPW[dominantQuantTag?.lowercase()] ?: SD_DEFAULT_BPW) / SD_Q4_BPW
+                (architecture.baseRamBytesQ4 * bpwRatio).toLong()
+            }
+            else -> null
+        }
+
+        if (rawWeightsBytes == null) return SuitabilityResult.unknown(budgetBytes)
+
+        val isEstimate = totalComponentBytes == null
+
+        var effectiveBytes = rawWeightsBytes
+        if (canOffloadVae)      effectiveBytes -= VAE_OFFLOAD_BYTES
+        if (flashAttnAvailable) effectiveBytes -= FLASH_ATTN_BYTES
+        effectiveBytes = max(effectiveBytes, rawWeightsBytes / 4)
+
+        val overheadBytes = max(
+            (effectiveBytes.toDouble() * OVERHEAD_RATIO).toLong(),
+            DIFFUSION_OVERHEAD_BYTES,
+        )
+        val estimatedBytes = effectiveBytes + overheadBytes
+        val ratio = estimatedBytes.toDouble() / budgetBytes.toDouble()
+        val baseRating = bucketize(ratio)
+
+        var current = baseRating
+        val notes = mutableListOf("SD RAM ratio ${formatRatio(ratio)} → ${baseRating.shortLabel()}")
+
+        if (hints.gpuBackendAvailable && architecture in DIT_ARCHITECTURES) {
+            val bumped = bumpUp(current)
+            if (bumped != current) {
+                notes += "GPU + DiT arch → bumped to ${bumped.shortLabel()}"
+                current = bumped
+            }
+        }
+        if (hints.performanceCoreCount in 1..3 && architecture in VIDEO_ARCHITECTURES) {
+            val bumped = bumpDown(current)
+            if (bumped != current) {
+                notes += "Only ${hints.performanceCoreCount} perf core(s) for video → dropped to ${bumped.shortLabel()}"
+                current = bumped
+            }
+        }
+
+        return SuitabilityResult(
+            rating         = current,
+            estimatedBytes = estimatedBytes,
+            budgetBytes    = budgetBytes,
+            weightsBytes   = effectiveBytes,
+            kvBytes        = 0L,
+            overheadBytes  = overheadBytes,
+            quantAssumed   = dominantQuantTag ?: "Q4 baseline",
+            isEstimate     = isEstimate,
+            reason         = notes.joinToString("; "),
         )
     }
 
