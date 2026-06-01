@@ -1,0 +1,62 @@
+package com.debanshu777.caraml.core.rating
+
+/**
+ * Maps HuggingFace model tags and model IDs to a known [SdArchitecture].
+ *
+ * Detection is purely lexical — no network calls, no file reads. Precision is sufficient
+ * for pre-download RAM estimates; post-download metadata from DiffusionRunner.getDiffusionModelMetadata
+ * provides ground-truth architecture.
+ *
+ * Priority order (first match wins): FLUX > SD3 > WAN_LARGE > WAN_SMALL > SDXL > SD1 > UNKNOWN
+ */
+object SdArchitectureClassifier {
+
+    private val FLUX_TAGS = setOf(
+        "flux", "flux.1", "flux1", "flux-dev", "flux-schnell",
+        "flux-fill", "flux-controls", "flex-2",
+    )
+    private val SD3_TAGS = setOf(
+        "stable-diffusion-3", "sd3", "sd-3", "stable-diffusion3", "sd3.5",
+    )
+    private val WAN_LARGE_TAGS = setOf(
+        "wan2.1-14b", "wan-14b", "wan2-14b", "wan2.2-14b",
+    )
+    private val WAN_SMALL_TAGS = setOf(
+        "wan", "wan2", "wan2.1", "wan2.1-1.3b", "wan-1.3b",
+    )
+    private val SDXL_TAGS = setOf(
+        "stable-diffusion-xl", "stable-diffusion-xl-base-1.0",
+        "sdxl", "sdxl-base",
+    )
+    private val SD1_TAGS = setOf(
+        "stable-diffusion", "stable-diffusion-v1", "stable-diffusion-v1-5",
+        "stable-diffusion-v2", "sd1", "sd-1", "sd2", "sd-2",
+    )
+
+    /**
+     * Classifies an SD model from HuggingFace tags and model ID.
+     *
+     * @param tags    List of HF tags from the model card. Pass empty list when unavailable.
+     * @param modelId The HF repo ID, e.g. "black-forest-labs/FLUX.1-dev". Path segments
+     *                after "/" and separated by "-", "_", "." are scanned as additional candidates.
+     */
+    fun classify(tags: List<String>, modelId: String = ""): SdArchitecture {
+        val normalized = buildSet<String> {
+            tags.forEach { tag -> add(tag.lowercase().trim()) }
+            // Split model ID into segments: "black-forest-labs/FLUX.1-dev" → ["flux.1", "dev", ...]
+            modelId.lowercase().split("/", "-", "_", ".").forEach { segment ->
+                if (segment.length >= 2) add(segment)
+            }
+        }
+
+        return when {
+            normalized.any { it in FLUX_TAGS }      -> SdArchitecture.FLUX
+            normalized.any { it in SD3_TAGS }       -> SdArchitecture.SD3
+            normalized.any { it in WAN_LARGE_TAGS } -> SdArchitecture.WAN_LARGE
+            normalized.any { it in WAN_SMALL_TAGS } -> SdArchitecture.WAN_SMALL
+            normalized.any { it in SDXL_TAGS }      -> SdArchitecture.SDXL
+            normalized.any { it in SD1_TAGS }       -> SdArchitecture.SD1
+            else                                    -> SdArchitecture.UNKNOWN
+        }
+    }
+}
