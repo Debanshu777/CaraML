@@ -154,5 +154,8 @@ The merged iOS `.a` includes both `llama_runner` and `diffusion_runner` objects.
 
 - Initial implementation of diffusion runner (llama/diffusion GGML sharing)
 - DiffusionInferenceRepository wired to chat UI (feature/diffusion-chat-window)
+- Added `DiffusionModelMetadata` data class (architecture string, dominantQuantType, estimatedRamBytes)
+- `DiffusionRunner` expect class gained `getDiffusionModelMetadata(modelPath)` — Android/JVM actuals use JNI `nativeGetDiffusionModelMetadata`, iOS actual uses cinterop `diffusion_runner_ios_get_metadata` with `CValue<DiffusionMetadataResultFFI>.useContents {}`
+- C++ layer: `diffusion_runner_core_get_metadata()` uses stable-diffusion.cpp `ModelLoader` to read GGUF headers without loading weights; JNI wrapper constructs `DiffusionModelMetadata` via `NewObject`; iOS FFI wrapper exposes `DiffusionMetadataResultFFI` struct via `.def`
 - Smart install system tracks component files (VAE, CLIP, T5) via `ComponentRepository`
 - `VideoGenParams` added for future txt2vid support

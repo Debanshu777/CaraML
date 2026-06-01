@@ -180,6 +180,10 @@ Run: `./gradlew :composeApp:jvmTest`
 
 - New `core/rating/` package: `ModelSuitabilityCalculator` (canonical llama.cpp BPW table, KV cache math with per-architecture shape lookup, HF Accelerate +20% overhead, GPU/CPU modifiers) + `SuitabilityChip`, `SuitabilityDot`, `SuitabilityInfoSheet` UI primitives
 - Search list rows now show a color-coded fit chip (Poor/Average/Good/Best); variant picker shows per-variant dots using accurate on-disk size; tap chip opens shared bottom-sheet explainer with footprint breakdown, ratio vs RAM budget, device snapshot, legend, and caveats
+- Added `SdArchitecture` enum (SD1/SDXL/SD3/FLUX/WAN_SMALL/WAN_LARGE with Q4 RAM profiles) and `SdArchitectureClassifier` (maps HF tags + model ID segments to architecture, priority: FLUX > SD3 > WAN_LARGE > WAN_SMALL > SDXL > SD1)
+- New `ModelSuitabilityCalculator.rateDiffusion(hints, architecture, ...)` overload: weight resolution from totalComponentBytes > arch baseline × BPW ratio > UNKNOWN; VAE offload −400 MB, flash attention −600 MB; GPU bumps DiT archs up, low perf-core count penalizes video archs
+- `ModelListItem` now branches on `pipelineTag` — diffusion models use `SdArchitectureClassifier` + `rateDiffusion()` instead of `rateLlm()`
+- `ModelDetailContent` overallResult uses diffusion branch for text-to-image/video: sums required component `sizeHint` values from `installBundleState` for accurate byte estimate
 - Details screen now shows overall model chip and per-GGUF-file rating dots; chip taps open the shared info sheet (hoisted at screen scope, matches search pattern)
 - Fixed stacked footprint bar in `SuitabilityInfoSheet` — children now use `weight(frac) + fillMaxHeight()` instead of `fillMaxWidth(fraction)` so weights/KV/overhead segments render side-by-side at full bar height
 - Device card on Models screen extended with rating legend swatches
