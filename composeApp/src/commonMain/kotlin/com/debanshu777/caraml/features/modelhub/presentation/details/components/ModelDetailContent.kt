@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.platform.DeviceHints
 import com.debanshu777.caraml.core.rating.ModelSuitabilityCalculator
+import com.debanshu777.caraml.core.rating.SdArchitectureClassifier
 import com.debanshu777.caraml.core.rating.SuitabilityResult
 import com.debanshu777.caraml.core.rating.ui.SuitabilityChip
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
@@ -119,15 +120,38 @@ fun ModelDetailContent(
             }
         }
 
-        // Overall device-fit chip (model-level, assumes default Q4_K_M when no variant chosen)
+        // Overall device-fit chip
         if (deviceHints != null) {
-            val overallResult = ModelSuitabilityCalculator.rateLlm(
-                hints = deviceHints,
-                numParameters = model.safetensors?.total ?: model.gguf?.total,
-                contextLength = model.gguf?.contextLength,
-                architecture = model.gguf?.architecture,
-                pipelineTag = model.pipelineTag,
-            )
+            val isDiffusion = model.pipelineTag == "text-to-image" ||
+                              model.pipelineTag == "text-to-video"
+            val overallResult = if (isDiffusion) {
+                val allTags = buildList {
+                    model.tags?.filterNotNull()?.let { addAll(it) }
+                    model.cardData?.tags?.filterNotNull()?.let { addAll(it) }
+                }
+                val arch = SdArchitectureClassifier.classify(
+                    tags = allTags,
+                    modelId = model.modelId ?: model.id ?: "",
+                )
+                val totalComponentBytes = installBundleState.components
+                    .filter { it.required }
+                    .mapNotNull { it.sizeHint?.trim()?.toLongOrNull() }
+                    .takeIf { it.isNotEmpty() }
+                    ?.sum()
+                ModelSuitabilityCalculator.rateDiffusion(
+                    hints = deviceHints,
+                    architecture = arch,
+                    totalComponentBytes = totalComponentBytes,
+                )
+            } else {
+                ModelSuitabilityCalculator.rateLlm(
+                    hints = deviceHints,
+                    numParameters = model.safetensors?.total ?: model.gguf?.total,
+                    contextLength = model.gguf?.contextLength,
+                    architecture = model.gguf?.architecture,
+                    pipelineTag = model.pipelineTag,
+                )
+            }
             SuitabilityChip(
                 rating = overallResult.rating,
                 onInfoClick = onRatingInfoClick?.let { cb ->
