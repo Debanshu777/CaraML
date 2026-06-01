@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.platform.DeviceHints
 import com.debanshu777.caraml.core.rating.ModelSuitabilityCalculator
+import com.debanshu777.caraml.core.rating.SdArchitectureClassifier
 import com.debanshu777.caraml.core.rating.SuitabilityResult
 import com.debanshu777.caraml.core.rating.ui.SuitabilityChip
 import com.debanshu777.huggingfacemanager.model.ListModelsResponse
@@ -65,11 +66,22 @@ fun ModelListItem(
             // explainer sheet hoisted in SearchScreen.
             if (deviceHints != null) {
                 Spacer(modifier = Modifier.height(8.dp))
-                val result = ModelSuitabilityCalculator.rateLlm(
-                    hints = deviceHints,
-                    numParameters = model.numParameters,
-                    pipelineTag = model.pipelineTag,
-                )
+                val result = if (model.pipelineTag == "text-to-image" || model.pipelineTag == "text-to-video") {
+                    val arch = SdArchitectureClassifier.classify(
+                        tags = emptyList(),
+                        modelId = model.id ?: "",
+                    )
+                    ModelSuitabilityCalculator.rateDiffusion(
+                        hints = deviceHints,
+                        architecture = arch,
+                    )
+                } else {
+                    ModelSuitabilityCalculator.rateLlm(
+                        hints = deviceHints,
+                        numParameters = model.numParameters,
+                        pipelineTag = model.pipelineTag,
+                    )
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     SuitabilityChip(
                         rating = result.rating,
