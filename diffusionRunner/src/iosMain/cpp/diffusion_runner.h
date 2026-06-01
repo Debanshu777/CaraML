@@ -52,6 +52,15 @@ void diffusion_runner_ios_free_png(unsigned char *data);
 void diffusion_runner_ios_free_result(struct PngResultFFI *result);
 void diffusion_runner_ios_release(long long handle);
 
+struct DiffusionMetadataResultFFI {
+    char architecture[64];
+    char dominant_quant[32];
+    long long estimated_ram;
+    int success;
+};
+
+struct DiffusionMetadataResultFFI diffusion_runner_ios_get_metadata(const char* model_path);
+
 #ifdef __cplusplus
 }
 #endif
