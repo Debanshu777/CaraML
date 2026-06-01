@@ -1,5 +1,6 @@
 #include "diffusion_runner_core.h"
 #include "stable-diffusion.h"
+#include "model.h"
 #include <memory>
 #include <unordered_map>
 #include <mutex>
@@ -331,4 +332,89 @@ void diffusion_runner_core_release(int64_t handle_id) {
         }
         g_handles.erase(it);
     }
+}
+
+/** Maps SDVersion enum to a compact family string for the Kotlin layer. */
+static const char* sd_arch_family(SDVersion v) {
+    switch (v) {
+        case VERSION_FLUX:
+        case VERSION_FLUX_FILL:
+        case VERSION_FLUX_CONTROLS:
+        case VERSION_FLEX_2:
+        case VERSION_FLUX2:
+        case VERSION_FLUX2_KLEIN: return "FLUX";
+
+        case VERSION_SD3: return "SD3";
+
+        case VERSION_WAN2_2_I2V:
+        case VERSION_WAN2_2_TI2V: return "WAN2_LARGE";
+        case VERSION_WAN2: return "WAN2_SMALL";
+
+        case VERSION_SDXL:
+        case VERSION_SDXL_INPAINT:
+        case VERSION_SDXL_PIX2PIX:
+        case VERSION_SDXL_VEGA:
+        case VERSION_SDXL_SSD1B:
+        case VERSION_SDXS_09: return "SDXL";
+
+        case VERSION_SD1:
+        case VERSION_SD1_INPAINT:
+        case VERSION_SD1_PIX2PIX:
+        case VERSION_SD1_TINY_UNET:
+        case VERSION_SD2:
+        case VERSION_SD2_INPAINT:
+        case VERSION_SD2_TINY_UNET:
+        case VERSION_SDXS_512_DS: return "SD1";
+
+        default: return "UNKNOWN";
+    }
+}
+
+DiffusionMetadataResult diffusion_runner_core_get_metadata(const char* model_path) {
+    DiffusionMetadataResult result = {};
+    result.success = false;
+    result.estimated_ram = 0;
+    result.architecture[0] = '\0';
+    result.dominant_quant[0] = '\0';
+
+    if (!model_path || model_path[0] == '\0') return result;
+
+    try {
+        ModelLoader loader;
+        if (!loader.init_from_file(std::string(model_path))) {
+            return result;
+        }
+
+        // Architecture
+        SDVersion version = loader.get_sd_version();
+        const char* arch_name = sd_arch_family(version);
+        strncpy(result.architecture, arch_name, sizeof(result.architecture) - 1);
+        result.architecture[sizeof(result.architecture) - 1] = '\0';
+
+        // Dominant quantization (most frequent non-F32 weight tensor type)
+        auto wtype_stat = loader.get_wtype_stat();
+        ggml_type dominant_type = GGML_TYPE_COUNT;
+        uint32_t max_count = 0;
+        for (const auto& kv : wtype_stat) {
+            if (kv.first != GGML_TYPE_F32 && kv.second > max_count) {
+                max_count = kv.second;
+                dominant_type = kv.first;
+            }
+        }
+        if (dominant_type != GGML_TYPE_COUNT) {
+            const char* quant_name = ggml_type_name(dominant_type);
+            if (quant_name) {
+                strncpy(result.dominant_quant, quant_name, sizeof(result.dominant_quant) - 1);
+                result.dominant_quant[sizeof(result.dominant_quant) - 1] = '\0';
+            }
+        }
+
+        // RAM estimate
+        result.estimated_ram = loader.get_params_mem_size(nullptr, GGML_TYPE_COUNT);
+        result.success = true;
+    } catch (...) {
+        // Leave success = false; caller checks result.success
+    }
+
+    return result;
 }

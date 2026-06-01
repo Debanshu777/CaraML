@@ -81,3 +81,21 @@ void diffusion_runner_core_release(int64_t handle);
 
 /** Returns the current step (0-based) and total steps for the ongoing generation. */
 void diffusion_runner_get_step_progress(int* step, int* total);
+
+/** Lightweight metadata from ModelLoader header scan. Heap-free, safe to return by value. */
+struct DiffusionMetadataResult {
+    char architecture[64];      /**< e.g. "FLUX", "SDXL", "SD3", "SD1", "WAN2_SMALL", "WAN2_LARGE", "UNKNOWN" */
+    char dominant_quant[32];    /**< ggml_type_name() of most frequent weight tensor. Empty string if none. */
+    int64_t estimated_ram;      /**< get_params_mem_size() result in bytes; 0 if unavailable. */
+    bool success;               /**< false if file could not be loaded or format unsupported. */
+};
+
+/**
+ * Queries model metadata without loading weights into GPU/CPU memory.
+ * Uses stable-diffusion.cpp ModelLoader to read GGUF tensor headers.
+ * Thread-safe; does not modify global state.
+ *
+ * @param model_path Absolute path to a .gguf model file.
+ * @return DiffusionMetadataResult; check result.success before reading fields.
+ */
+DiffusionMetadataResult diffusion_runner_core_get_metadata(const char* model_path);

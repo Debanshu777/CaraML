@@ -293,4 +293,34 @@ Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeGetStepProgress(JNIEn
     return arr;
 }
 
+JNIEXPORT jobject JNICALL
+Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeGetDiffusionModelMetadata(
+        JNIEnv* env, jobject /* thiz */, jstring modelPath) {
+
+    std::string path = jstring_to_string(env, modelPath);
+    DiffusionMetadataResult meta = diffusion_runner_core_get_metadata(path.c_str());
+
+    if (!meta.success) return nullptr;
+
+    jclass clazz = env->FindClass("com/debanshu777/diffusionrunner/DiffusionModelMetadata");
+    if (!clazz) return nullptr;
+
+    jmethodID ctor = env->GetMethodID(clazz, "<init>",
+        "(Ljava/lang/String;Ljava/lang/String;J)V");
+    if (!ctor) return nullptr;
+
+    jstring jArch = env->NewStringUTF(meta.architecture);
+    jstring jQuant = (meta.dominant_quant[0] != '\0')
+        ? env->NewStringUTF(meta.dominant_quant)
+        : nullptr;
+
+    jobject obj = env->NewObject(clazz, ctor, jArch, jQuant, (jlong)meta.estimated_ram);
+
+    env->DeleteLocalRef(jArch);
+    if (jQuant) env->DeleteLocalRef(jQuant);
+    env->DeleteLocalRef(clazz);
+
+    return obj;
+}
+
 }
