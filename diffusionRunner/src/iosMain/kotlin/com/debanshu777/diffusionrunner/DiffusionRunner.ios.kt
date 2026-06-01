@@ -1,8 +1,10 @@
 package com.debanshu777.diffusionrunner
 
+import com.debanshu777.diffusionrunner.cpp.DiffusionMetadataResultFFI
 import com.debanshu777.diffusionrunner.cpp.DiffusionModelConfigFFI
 import com.debanshu777.diffusionrunner.cpp.ImageGenConfigFFI
 import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_free_png
+import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_get_metadata
 import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_init
 import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_load_model
 import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_release
@@ -19,6 +21,8 @@ import kotlinx.cinterop.cstr
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.pointed
 import kotlinx.cinterop.readBytes
+import kotlinx.cinterop.toKString
+import kotlinx.cinterop.useContents
 import kotlinx.cinterop.value
 
 @OptIn(ExperimentalForeignApi::class)
@@ -149,4 +153,19 @@ actual class DiffusionRunner {
 
     // iOS doesn't poll native progress (generation returns all at once via the same thread)
     actual fun getStepProgress(): IntArray = intArrayOf(0, 0)
+
+    actual fun getDiffusionModelMetadata(modelPath: String): DiffusionModelMetadata? {
+        val result = diffusion_runner_ios_get_metadata(modelPath)
+        return result.useContents {
+            if (success == 0) return@useContents null
+            val arch = architecture.toKString().takeIf { it.isNotEmpty() }
+                ?: return@useContents null
+            val quant = dominant_quant.toKString().takeIf { it.isNotEmpty() }
+            DiffusionModelMetadata(
+                architecture = arch,
+                dominantQuantType = quant,
+                estimatedRamBytes = estimated_ram,
+            )
+        }
+    }
 }
