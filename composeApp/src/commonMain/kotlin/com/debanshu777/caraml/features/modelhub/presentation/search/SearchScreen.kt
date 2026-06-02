@@ -337,8 +337,8 @@ private fun SearchTabContent(
                                             onNavigateToDetails(id, browseMode)
                                         }
                                     },
-                                    deviceHints = if (isLlmHub) deviceHints else null,
-                                    onRatingInfoClick = if (isLlmHub) onRatingInfoClick else null,
+                                    deviceHints = deviceHints,
+                                    onRatingInfoClick = onRatingInfoClick,
                                 )
                             }
                         }

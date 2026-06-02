@@ -117,11 +117,10 @@ fun DetailsScreen(
                                 "Weight files" to
                                     "No weight files found (.gguf, .safetensors, .ckpt, .pth)"
                         }
-                        val ratingCallback: ((String, SuitabilityResult) -> Unit)? =
-                            if (isDiffusion) null else { id, result ->
-                                ratingSheetModelId = id
-                                ratingSheetResult = result
-                            }
+                        val ratingCallback: ((String, SuitabilityResult) -> Unit)? = { id, result ->
+                            ratingSheetModelId = id
+                            ratingSheetResult = result
+                        }
                         ModelDetailContent(
                             model = detail,
                             ggufFiles = ggufFiles,
@@ -135,7 +134,7 @@ fun DetailsScreen(
                             onVariantSelected = { path -> viewModel.selectVariant(path) },
                             onSmartInstall = { viewModel.smartInstall(modelId) },
                             showInstallBundle = isDiffusion,
-                            deviceHints = if (isDiffusion) null else storageInfo.deviceHints,
+                            deviceHints = storageInfo.deviceHints,
                             onRatingInfoClick = ratingCallback,
                             modifier = Modifier.fillMaxSize()
                         )
