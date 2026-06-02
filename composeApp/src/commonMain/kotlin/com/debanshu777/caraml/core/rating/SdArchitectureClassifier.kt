@@ -41,22 +41,28 @@ object SdArchitectureClassifier {
      *                after "/" and separated by "-", "_", "." are scanned as additional candidates.
      */
     fun classify(tags: List<String>, modelId: String = ""): SdArchitecture {
+        val normalizedId = modelId.lowercase()
         val normalized = buildSet<String> {
             tags.forEach { tag -> add(tag.lowercase().trim()) }
-            // Split model ID into segments: "black-forest-labs/FLUX.1-dev" → ["flux.1", "dev", ...]
-            modelId.lowercase().split("/", "-", "_", ".").forEach { segment ->
+            normalizedId.split("/", "-", "_", ".").forEach { segment ->
                 if (segment.length >= 2) add(segment)
             }
         }
 
+        // Check tag sets via exact segment match OR substring of the full model ID.
+        // Substring match catches compound tags like "stable-diffusion-xl" that never
+        // appear as individual split segments (e.g. "stabilityai/stable-diffusion-xl-base-1.0").
+        fun matches(tagSet: Set<String>) =
+            normalized.any { it in tagSet } || tagSet.any { normalizedId.contains(it) }
+
         return when {
-            normalized.any { it in FLUX_TAGS }      -> SdArchitecture.FLUX
-            normalized.any { it in SD3_TAGS }       -> SdArchitecture.SD3
-            normalized.any { it in WAN_LARGE_TAGS } -> SdArchitecture.WAN_LARGE
-            normalized.any { it in WAN_SMALL_TAGS } -> SdArchitecture.WAN_SMALL
-            normalized.any { it in SDXL_TAGS }      -> SdArchitecture.SDXL
-            normalized.any { it in SD1_TAGS }       -> SdArchitecture.SD1
-            else                                    -> SdArchitecture.UNKNOWN
+            matches(FLUX_TAGS)      -> SdArchitecture.FLUX
+            matches(SD3_TAGS)       -> SdArchitecture.SD3
+            matches(WAN_LARGE_TAGS) -> SdArchitecture.WAN_LARGE
+            matches(WAN_SMALL_TAGS) -> SdArchitecture.WAN_SMALL
+            matches(SDXL_TAGS)      -> SdArchitecture.SDXL
+            matches(SD1_TAGS)       -> SdArchitecture.SD1
+            else                    -> SdArchitecture.UNKNOWN
         }
     }
 }

@@ -111,6 +111,32 @@ class SdArchitectureClassifierTest {
         )
     }
 
+    // --- Substring match via model ID (compound tag names) ---
+
+    @Test
+    fun classifiesSdxlFromCompoundModelId() {
+        assertEquals(
+            SdArchitecture.SDXL,
+            SdArchitectureClassifier.classify(emptyList(), "stabilityai/stable-diffusion-xl-base-1.0"),
+        )
+    }
+
+    @Test
+    fun classifiesSd1FromCompoundModelId() {
+        assertEquals(
+            SdArchitecture.SD1,
+            SdArchitectureClassifier.classify(emptyList(), "runwayml/stable-diffusion-v1-5"),
+        )
+    }
+
+    @Test
+    fun classifiesSd3FromCompoundModelId() {
+        assertEquals(
+            SdArchitecture.SD3,
+            SdArchitectureClassifier.classify(emptyList(), "stabilityai/stable-diffusion-3-medium"),
+        )
+    }
+
     // --- Unknown ---
 
     @Test
