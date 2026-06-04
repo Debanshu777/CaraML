@@ -152,6 +152,12 @@ The merged iOS `.a` includes both `llama_runner` and `diffusion_runner` objects.
 
 <!-- Updated at end of each Claude Code session -->
 
+- Fix: SD Vulkan SIGABRT root cause — `SD_VULKAN=OFF` in Android CMakeLists is the real fix; `diffusion_runner_core.cpp` reverted: removed `diffusion_conv_direct=true` force and wtype=F16 auto-override from Vulkan detection block (these were failed workarounds); CLIP+VAE CPU-pin block kept as belt-and-suspenders for future Vulkan enablement
+- Fix: Vulkan SIGABRT in UNet compute — `diffusion_runner_core_load_model` now forces `diffusion_conv_direct=true` in Vulkan detection block; bypasses IM2COL path (ggml-vulkan only has F32/F32 and F32/F16 IM2COL pipelines; other type combos abort); takes effect on next native rebuild
+- Fix: Vulkan-Android crash mid-CLIP — `diffusion_runner_core_load_model` now auto-sets `keep_clip_on_cpu` + `keep_vae_on_cpu` when a Vulkan device is detected, dodging unsupported F16 softmax/norm pipeline aborts on Adreno/Mali GPUs; user-provided `true` flags still honored, UNet keeps Vulkan offload
+- DiffusionModelConfig extended: `taesdPath`, `vaeTiling`, `freeParamsImmediately` fields; `flowShift` now actually plumbed into `sd_sample_params_t.flow_shift` via `SdHandle` cache (per-gen overrides default)
+- SampleMethod gained `fromName(String)` resolver so registry string samplers ("euler", "euler_a", "lcm", etc.) map to the right enum
+- JNI + iOS FFI (`.def` / `.h` / `.cpp`) updated in lockstep with new model-config fields
 - Initial implementation of diffusion runner (llama/diffusion GGML sharing)
 - DiffusionInferenceRepository wired to chat UI (feature/diffusion-chat-window)
 - Added `DiffusionModelMetadata` data class (architecture string, dominantQuantType, estimatedRamBytes)

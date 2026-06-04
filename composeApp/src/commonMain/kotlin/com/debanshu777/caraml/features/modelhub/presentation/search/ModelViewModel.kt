@@ -8,6 +8,7 @@ import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
 import com.debanshu777.caraml.core.storage.localmodel.ModelType
 import com.debanshu777.caraml.core.platform.DeviceCapabilities
 import com.debanshu777.caraml.core.platform.DeviceHints
+import com.debanshu777.caraml.core.rating.parseSizeHintToBytes
 import com.debanshu777.huggingfacemanager.HuggingFaceApi
 import com.debanshu777.huggingfacemanager.api.ListModelsParams
 import com.debanshu777.huggingfacemanager.api.SearchModelsParams
@@ -914,23 +915,7 @@ class ModelViewModel(
         )
     }
 
-    private fun parseSizeHint(sizeHint: String): Long? {
-        return try {
-            val regex = Regex("""(\d+(?:\.\d+)?)\s*(GB|MB|KB|B)""", RegexOption.IGNORE_CASE)
-            val match = regex.find(sizeHint) ?: return null
-            val (valueStr, unit) = match.destructured
-            val value = valueStr.toDouble()
-            when (unit.uppercase()) {
-                "GB" -> (value * 1024 * 1024 * 1024).toLong()
-                "MB" -> (value * 1024 * 1024).toLong()
-                "KB" -> (value * 1024).toLong()
-                "B" -> value.toLong()
-                else -> null
-            }
-        } catch (_: Exception) {
-            null
-        }
-    }
+    private fun parseSizeHint(sizeHint: String): Long? = parseSizeHintToBytes(sizeHint)
 
     fun clearSetupDownloadError() {
         _setupDownloadError.update { null }

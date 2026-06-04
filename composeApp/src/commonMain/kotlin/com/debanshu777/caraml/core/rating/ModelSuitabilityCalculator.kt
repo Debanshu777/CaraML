@@ -85,6 +85,9 @@ object ModelSuitabilityCalculator {
     private const val SD_Q4_BPW      = 4.89
     private const val VAE_OFFLOAD_BYTES  = 400L * 1024 * 1024
     private const val FLASH_ATTN_BYTES   = 600L * 1024 * 1024
+    /** Conservative fallback for SD models whose architecture cannot be determined.
+     *  Sized at SDXL Q4 baseline (~3.5 GB) — reasonable median across SD1/SDXL/SD3. */
+    private const val UNKNOWN_SD_FALLBACK_BYTES = 3_500L * 1024 * 1024
     private val DIT_ARCHITECTURES = setOf(
         SdArchitecture.FLUX,
         SdArchitecture.SD3,
@@ -283,16 +286,14 @@ object ModelSuitabilityCalculator {
     ): SuitabilityResult {
         val budgetBytes = hints.memoryBudgetMB * 1024L * 1024L
 
-        val rawWeightsBytes: Long? = when {
+        val rawWeightsBytes: Long = when {
             totalComponentBytes != null && totalComponentBytes > 0 -> totalComponentBytes
             architecture != SdArchitecture.UNKNOWN -> {
                 val bpwRatio = (SD_QUANT_BPW[dominantQuantTag?.lowercase()] ?: SD_DEFAULT_BPW) / SD_Q4_BPW
                 (architecture.baseRamBytesQ4 * bpwRatio).toLong()
             }
-            else -> null
+            else -> UNKNOWN_SD_FALLBACK_BYTES
         }
-
-        if (rawWeightsBytes == null) return SuitabilityResult.unknown(budgetBytes)
 
         val isEstimate = totalComponentBytes == null
 
@@ -310,7 +311,12 @@ object ModelSuitabilityCalculator {
         val baseRating = bucketize(ratio)
 
         var current = baseRating
-        val notes = mutableListOf("SD RAM ratio ${formatRatio(ratio)} → ${baseRating.shortLabel()}")
+        val notes = mutableListOf<String>().apply {
+            if (architecture == SdArchitecture.UNKNOWN && totalComponentBytes == null) {
+                add("Unknown arch — using generic 3.5 GB estimate (SDXL baseline)")
+            }
+            add("SD RAM ratio ${formatRatio(ratio)} → ${baseRating.shortLabel()}")
+        }
 
         if (hints.gpuBackendAvailable && architecture in DIT_ARCHITECTURES) {
             val bumped = bumpUp(current)

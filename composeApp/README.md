@@ -178,6 +178,11 @@ Run: `./gradlew :composeApp:jvmTest`
 
 <!-- Updated at end of each Claude Code session -->
 
+- `DiffusionInferenceRepository.buildDiffusionModelConfig()` reverted: removed `diffusionConvDirect=true` from both selfContained and component branches (was a failed Vulkan workaround); selfContained branch also had spurious `offloadToCpu` propagation removed
+- `DiffusionInferenceRepository.buildDiffusionModelConfig()` selfContained branch now propagates `offloadToCpu` from `recommendedParams` (was missing, so registry `offloadToCpu=true` had no effect)
+- `DiffusionInferenceRepository.buildDiffusionModelConfig()` now always passes `diffusionConvDirect=true`; bypasses IM2COL path in ggml-vulkan that aborts when conv kernel type is not F32/F16
+- `DiffusionInferenceRepository.buildDiffusionModelConfig()` now propagates `flowShift`, `freeParamsImmediately` (auto-enabled when weights ≥ 65% of memory budget), `taesdPath` (auto-resolves `madebyollin/taesd` when downloaded), and `vaeTiling` (auto-enabled when width × height > 512²)
+- `ChatViewModel` image/video send paths now honor registry-pinned `sampleMethod` (via `SampleMethod.fromName`) and `seed` (falls back to current millis when unset)
 - New `core/rating/` package: `ModelSuitabilityCalculator` (canonical llama.cpp BPW table, KV cache math with per-architecture shape lookup, HF Accelerate +20% overhead, GPU/CPU modifiers) + `SuitabilityChip`, `SuitabilityDot`, `SuitabilityInfoSheet` UI primitives
 - Search list rows now show a color-coded fit chip (Poor/Average/Good/Best); variant picker shows per-variant dots using accurate on-disk size; tap chip opens shared bottom-sheet explainer with footprint breakdown, ratio vs RAM budget, device snapshot, legend, and caveats
 - Added `SdArchitecture` enum (SD1/SDXL/SD3/FLUX/WAN_SMALL/WAN_LARGE with Q4 RAM profiles) and `SdArchitectureClassifier` (maps HF tags + model ID segments to architecture, priority: FLUX > SD3 > WAN_LARGE > WAN_SMALL > SDXL > SD1)

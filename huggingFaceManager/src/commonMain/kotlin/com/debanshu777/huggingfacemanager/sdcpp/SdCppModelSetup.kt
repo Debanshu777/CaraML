@@ -41,6 +41,10 @@ data class SdCppRecommendedParams(
     val flowShift: Float? = null,
     val width: Int? = null,
     val height: Int? = null,
+    /** -1=auto-detect, 0=EPS, 1=V_PRED, 2=EDM_V_PRED, 3=FLOW, 4=FLUX_FLOW, 5=FLUX2_FLOW */
+    val prediction: Int = -1,
+    /** Optional fixed seed (-1L = random per-gen, null = no registry opinion). */
+    val seed: Long? = null,
 )
 
 /**
@@ -559,18 +563,78 @@ private val SETUP_REGISTRY: Map<String, SdCppModelSetup> = buildMap {
         components = emptyList(),
         selfContained = true
     )
-    
+
     // SD 1.x models
     put("CompVis/stable-diffusion-v-1-4-original", selfContainedSetup.copy(familyLabel = "Stable Diffusion v1.4"))
     put("runwayml/stable-diffusion-v1-5", selfContainedSetup.copy(familyLabel = "Stable Diffusion v1.5"))
-    put("stabilityai/sd-turbo", selfContainedSetup.copy(familyLabel = "SD-Turbo"))
-    
-    // SD 2.x models  
-    put("stabilityai/stable-diffusion-2-1", selfContainedSetup.copy(familyLabel = "Stable Diffusion v2.1"))
-    
-    // SDXL models
-    put("stabilityai/stable-diffusion-xl-base-1.0", selfContainedSetup.copy(familyLabel = "SDXL Base 1.0"))
-    put("stabilityai/sdxl-turbo", selfContainedSetup.copy(familyLabel = "SDXL-Turbo"))
+
+    // SD 2.x models
+    put("stabilityai/stable-diffusion-2-1", selfContainedSetup.copy(
+        familyLabel = "Stable Diffusion v2.1",
+        recommendedParams = SdCppRecommendedParams(prediction = 1) // V_PRED — skip Vulkan v-param test
+    ))
+
+    // SDXL models — diffusers format requires text_encoder_2 (OpenCLIP-G) as a separate component.
+    // sd-turbo and sdxl-turbo are SDXL-based; without text_encoder_2 stable-diffusion.cpp falls
+    // back to SD-2.x mode and feeds wrong-shaped conditioning to the UNet → crash.
+    put("stabilityai/sd-turbo", SdCppModelSetup(
+        familyLabel = "SD-Turbo",
+        description = "Distilled SDXL model. Fast 1–4 step generation at 512×512.",
+        components = listOf(
+            SdCppComponent(
+                role = ComponentRole.CLIP_G,
+                repoId = "stabilityai/sd-turbo",
+                filePath = "text_encoder_2/model.safetensors",
+                required = true,
+                sizeHint = "~1.4 GB",
+            )
+        ),
+        recommendedParams = SdCppRecommendedParams(
+            prediction = 1, // V_PRED — skip Vulkan v-param test
+            steps = 4,
+            cfgScale = 1.0f,
+            samplingMethod = "euler_a",
+            width = 512,
+            height = 512,
+        )
+    ))
+    put("stabilityai/stable-diffusion-xl-base-1.0", SdCppModelSetup(
+        familyLabel = "SDXL Base 1.0",
+        description = "Full-quality SDXL base model. Standard 1024×1024 generation.",
+        components = listOf(
+            SdCppComponent(
+                role = ComponentRole.CLIP_G,
+                repoId = "stabilityai/stable-diffusion-xl-base-1.0",
+                filePath = "text_encoder_2/model.safetensors",
+                required = true,
+                sizeHint = "~1.4 GB",
+            )
+        ),
+        recommendedParams = SdCppRecommendedParams(
+            width = 1024,
+            height = 1024,
+        )
+    ))
+    put("stabilityai/sdxl-turbo", SdCppModelSetup(
+        familyLabel = "SDXL-Turbo",
+        description = "Distilled SDXL model. Fast 1–4 step generation.",
+        components = listOf(
+            SdCppComponent(
+                role = ComponentRole.CLIP_G,
+                repoId = "stabilityai/sdxl-turbo",
+                filePath = "text_encoder_2/model.safetensors",
+                required = true,
+                sizeHint = "~1.4 GB",
+            )
+        ),
+        recommendedParams = SdCppRecommendedParams(
+            steps = 4,
+            cfgScale = 1.0f,
+            samplingMethod = "euler_a",
+            width = 512,
+            height = 512,
+        )
+    ))
     
     // SD3 models
     put("stabilityai/stable-diffusion-3-medium", selfContainedSetup.copy(familyLabel = "Stable Diffusion 3 Medium"))
@@ -581,14 +645,28 @@ private val SETUP_REGISTRY: Map<String, SdCppModelSetup> = buildMap {
     put("nota-ai/bk-sdm-v2-tiny", selfContainedSetup.copy(familyLabel = "BK-SDM v2 Tiny"))
     put("segmind/tiny-sd", selfContainedSetup.copy(familyLabel = "Tiny-SD"))
     put("segmind/portrait-finetuned", selfContainedSetup.copy(familyLabel = "Portrait Finetuned"))
-    put("nota-ai/bk-sdm-tiny", selfContainedSetup.copy(familyLabel = "BK-SDM Tiny"))
+    put("nota-ai/bk-sdm-tiny", selfContainedSetup.copy(
+        familyLabel = "BK-SDM Tiny",
+        // SD1.x architecture — EPS prediction (not V_PRED). Explicit value skips
+        // is_using_v_parameterization_for_sd2() probe which runs a test UNet forward
+        // pass and can crash on Vulkan or with tight memory.
+        recommendedParams = SdCppRecommendedParams(prediction = 0),
+    ))
     
     // PhotoMaker models
     put("bssrdf/PhotoMaker", selfContainedSetup.copy(familyLabel = "PhotoMaker"))
     put("bssrdf/PhotoMakerV2", selfContainedSetup.copy(familyLabel = "PhotoMaker v2"))
     
     // LCM models
-    put("latent-consistency/lcm-lora-sdv1-5", selfContainedSetup.copy(familyLabel = "LCM-LoRA SD1.5"))
+    put("latent-consistency/lcm-lora-sdv1-5", selfContainedSetup.copy(
+        familyLabel = "LCM-LoRA SD1.5",
+        // LCM: 4–8 steps, cfg ≈ 1.0–2.0, LCM sampler.
+        recommendedParams = SdCppRecommendedParams(
+            steps = 6,
+            cfgScale = 1.5f,
+            samplingMethod = "lcm",
+        )
+    ))
     
     // TAESD models
     put("madebyollin/taesd", selfContainedSetup.copy(familyLabel = "TAESD (Fast VAE)"))

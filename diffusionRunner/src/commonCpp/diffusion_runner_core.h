@@ -27,10 +27,17 @@ struct DiffusionModelConfig {
     bool diffusion_flash_attn = false;
     bool enable_mmap = false;
     bool diffusion_conv_direct = false;
+    bool free_params_immediately = false;
     int wtype = -1;
     float flow_shift = 0.0f;
     bool flow_shift_is_set = false;
     int n_threads = -1;
+    /** -1=auto-detect (PREDICTION_COUNT), 0=EPS, 1=V_PRED, 2=EDM_V_PRED, 3=FLOW, 4=FLUX_FLOW, 5=FLUX2_FLOW */
+    int prediction = -1;
+    /** Optional path to TAESD safetensors; replaces full VAE decoder for fast decode. Empty = disabled. */
+    const char *taesd_path = "";
+    /** Enable VAE tiling for large-image decoding to avoid OOM. Only the enabled flag is needed; lib auto-sizes. */
+    bool vae_tiling = false;
 };
 
 struct ImageGenConfig {
@@ -42,6 +49,9 @@ struct ImageGenConfig {
     float cfg_scale = 7.0f;
     int64_t seed = -1;
     int sample_method = 1;
+    float flow_shift = 0.0f;
+    bool flow_shift_is_set = false;
+    bool vae_tiling = false;
     const char **lora_paths = nullptr;
     float *lora_strengths = nullptr;
     int lora_count = 0;
@@ -57,6 +67,9 @@ struct VideoGenConfig {
     float cfg_scale = 7.0f;
     int64_t seed = -1;
     int sample_method = 1;
+    float flow_shift = 0.0f;
+    bool flow_shift_is_set = false;
+    bool vae_tiling = false;
     const char **lora_paths = nullptr;
     float *lora_strengths = nullptr;
     int lora_count = 0;

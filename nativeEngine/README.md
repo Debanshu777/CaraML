@@ -136,6 +136,9 @@ Create a **separate** Gradle module + CMake project. Do not add here unless it m
 
 <!-- Updated at end of each Claude Code session -->
 
+- Fix: SD Vulkan SIGABRT on Android — `SD_VULKAN` decoupled from `GGML_VULKAN` in Android `CMakeLists.txt`; `SD_VULKAN=OFF` means diffusion_runner is compiled without `SD_USE_VULKAN` so ggml-vulkan is not linked into it; `GGML_VULKAN=ON` is preserved for llama_runner (LLM inference); the `if(SD_VULKAN …)` guard on lines 156-170 now correctly prevents `SD_USE_VULKAN` from being defined when Vulkan is disabled for diffusion
+- Fix: Vulkan-Android image-gen crash — diffusion runner now pins CLIP + VAE to the CPU backend when a Vulkan device is present (works around missing F16 softmax/norm pipelines in ggml-vulkan on Adreno/Mali); diffusion UNet still runs on Vulkan
+- Fix: ggml-vulkan `supports_op` for `GROUP_NORM`/`NORM` now requires F32 type, preventing `GGML_ABORT` crash when SD2 models load with F16 weights on Vulkan
 - `GgmlUnified.cmake` now builds both llama.cpp and stable-diffusion.cpp from single GGML
 - Vulkan autodetect via NDK glslc (Android arm64)
 - GPU acceleration enabled: Vulkan (Android), Metal (iOS/macOS)

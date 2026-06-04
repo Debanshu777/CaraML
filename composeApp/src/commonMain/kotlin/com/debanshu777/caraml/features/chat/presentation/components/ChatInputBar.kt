@@ -56,7 +56,6 @@ private fun ChatInputBarPreview(
         Surface {
             ChatInputBar(
                 generationMode = GenerationMode.Text,
-                onGenerationModeChange = {},
                 isGenerating = false,
                 selectedModel = selectedModel,
                 topModels = persistentListOf(selectedModel),
@@ -77,7 +76,6 @@ private fun ChatInputBarNoModelPreview() {
         Surface {
             ChatInputBar(
                 generationMode = GenerationMode.Text,
-                onGenerationModeChange = {},
                 isGenerating = false,
                 selectedModel = null,
                 topModels = persistentListOf(),
@@ -100,7 +98,6 @@ private fun ChatInputBarGeneratingPreview() {
         Surface {
             ChatInputBar(
                 generationMode = GenerationMode.Text,
-                onGenerationModeChange = {},
                 isGenerating = true,
                 selectedModel = model,
                 topModels = persistentListOf(model),
@@ -130,7 +127,6 @@ private fun ChatInputBarImagePreview() {
         Surface {
             ChatInputBar(
                 generationMode = GenerationMode.Image,
-                onGenerationModeChange = {},
                 isGenerating = false,
                 selectedModel = diffusionModel,
                 topModels = persistentListOf(diffusionModel),
@@ -152,7 +148,6 @@ private fun ChatInputBarVideoPreview() {
         Surface {
             ChatInputBar(
                 generationMode = GenerationMode.Video,
-                onGenerationModeChange = {},
                 isGenerating = false,
                 selectedModel = videoModel,
                 topModels = persistentListOf(videoModel),
@@ -202,7 +197,6 @@ private fun ComposerGenerationModeChip(
 @Composable
 fun ChatInputBar(
     generationMode: GenerationMode,
-    onGenerationModeChange: (GenerationMode) -> Unit,
     isGenerating: Boolean,
     selectedModel: LocalModelEntity?,
     topModels: ImmutableList<LocalModelEntity>,
@@ -328,7 +322,6 @@ fun ChatInputBar(
             sheetState = sheetState,
             onDismiss = { showModelSheet = false },
             generationMode = generationMode,
-            onGenerationModeChange = onGenerationModeChange,
             topModels = topModels,
             selectedModel = selectedModel,
             onSelectModel = onSelectModel,

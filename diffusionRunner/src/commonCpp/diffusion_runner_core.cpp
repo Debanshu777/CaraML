@@ -1,12 +1,18 @@
 #include "diffusion_runner_core.h"
 #include "stable-diffusion.h"
 #include "model.h"
+#include "ggml.h"
+#ifdef SD_USE_VULKAN
+#include "ggml-vulkan.h"
+#endif
 #include <memory>
 #include <unordered_map>
 #include <mutex>
 #include <atomic>
 #include <cstdlib>
 #include <cstring>
+#include <cstdio>
+#include <cstdarg>
 
 // Define STB_IMAGE_WRITE_IMPLEMENTATION for PNG encoding
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -15,6 +21,9 @@
 
 struct SdHandle {
     sd_ctx_t *ctx = nullptr;
+    float flow_shift = 0.0f;
+    bool flow_shift_is_set = false;
+    bool vae_tiling = false;
 };
 
 // Global state
@@ -75,9 +84,41 @@ static void sd_log_callback(sd_log_level_t level, const char *text, void *data) 
     g_log_fn(log_level, text);
 }
 
+// ggml-level log callback. Vulkan backend errors (GGML_ABORT messages, "fatal error",
+// pipeline lookup failures) come through here, NOT through sd.cpp's logger. Without this
+// hook those messages disappear into stderr and we only see SIGABRT in logcat.
+static void dr_ggml_log_callback(ggml_log_level level, const char *text, void * /*user_data*/) {
+    if (!g_log_fn || !text) return;
+    DiffusionLogLevel log_level;
+    switch (level) {
+        case GGML_LOG_LEVEL_DEBUG: log_level = DIFFUSION_LOG_DEBUG; break;
+        case GGML_LOG_LEVEL_INFO:  log_level = DIFFUSION_LOG_INFO;  break;
+        case GGML_LOG_LEVEL_WARN:  log_level = DIFFUSION_LOG_WARN;  break;
+        case GGML_LOG_LEVEL_ERROR: log_level = DIFFUSION_LOG_ERROR; break;
+        case GGML_LOG_LEVEL_CONT:  log_level = DIFFUSION_LOG_DEBUG; break;
+        default:                   log_level = DIFFUSION_LOG_INFO;  break;
+    }
+    // Prefix so we can distinguish ggml lines from sd lines in logcat.
+    char buf[1024];
+    snprintf(buf, sizeof(buf), "[ggml] %s", text);
+    g_log_fn(log_level, buf);
+}
+
+// Small helper for one-shot formatted log lines from this file.
+static void dr_logf(DiffusionLogLevel level, const char *fmt, ...) {
+    if (!g_log_fn) return;
+    char buf[2048];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    g_log_fn(level, buf);
+}
+
 void diffusion_runner_core_set_logger(DiffusionLogFn fn) {
     g_log_fn = fn;
     sd_set_log_callback(sd_log_callback, nullptr);
+    ggml_log_set(dr_ggml_log_callback, nullptr);
 }
 
 void diffusion_runner_core_init(const char *backend_path) {
@@ -89,6 +130,48 @@ void diffusion_runner_core_init(const char *backend_path) {
 }
 
 int64_t diffusion_runner_core_load_model(const DiffusionModelConfig &config) {
+    dr_logf(DIFFUSION_LOG_INFO,
+            "load_model: ENTER model_path='%s' vae='%s' clip_l='%s' clip_g='%s' t5xxl='%s' llm='%s' "
+            "taesd='%s' offload=%d keep_clip_cpu=%d keep_vae_cpu=%d flash_attn=%d mmap=%d "
+            "conv_direct=%d free_immediate=%d wtype=%d prediction=%d flow_shift=%.4f set=%d "
+            "vae_tiling=%d n_threads=%d",
+            config.model_path ? config.model_path : "(null)",
+            config.vae_path ? config.vae_path : "",
+            config.clip_l_path ? config.clip_l_path : "",
+            config.clip_g_path ? config.clip_g_path : "",
+            config.t5xxl_path ? config.t5xxl_path : "",
+            config.llm_path ? config.llm_path : "",
+            config.taesd_path ? config.taesd_path : "",
+            (int)config.offload_to_cpu, (int)config.keep_clip_on_cpu, (int)config.keep_vae_on_cpu,
+            (int)config.diffusion_flash_attn, (int)config.enable_mmap,
+            (int)config.diffusion_conv_direct, (int)config.free_params_immediately,
+            config.wtype, config.prediction, config.flow_shift, (int)config.flow_shift_is_set,
+            (int)config.vae_tiling, config.n_threads);
+
+#ifdef SD_USE_VULKAN
+    {
+        int vk_count = ggml_backend_vk_get_device_count();
+        dr_logf(DIFFUSION_LOG_INFO, "load_model: SD_USE_VULKAN defined; vulkan_device_count=%d", vk_count);
+        for (int i = 0; i < vk_count; i++) {
+            char desc[256] = {0};
+            ggml_backend_vk_get_device_description(i, desc, sizeof(desc));
+            size_t free_mem = 0, total_mem = 0;
+            ggml_backend_vk_get_device_memory(i, &free_mem, &total_mem);
+            dr_logf(DIFFUSION_LOG_INFO,
+                    "load_model: vulkan device[%d]='%s' free=%.1fMB total=%.1fMB",
+                    i, desc,
+                    free_mem  / (1024.0 * 1024.0),
+                    total_mem / (1024.0 * 1024.0));
+        }
+    }
+#else
+    dr_logf(DIFFUSION_LOG_WARN,
+            "load_model: SD_USE_VULKAN NOT defined in this translation unit — "
+            "vulkan-aware workarounds (keep_clip_on_cpu, wtype=F16) are DISABLED here. "
+            "If sd.cpp was built with SD_USE_VULKAN, the backend will still pick Vulkan "
+            "and CLIP/VAE will crash with GGML_ABORT. Fix the CMake macro propagation.");
+#endif
+
     // Set up sd_ctx_params_t
     sd_ctx_params_t params = {};
     sd_ctx_params_init(&params);
@@ -103,51 +186,113 @@ int64_t diffusion_runner_core_load_model(const DiffusionModelConfig &config) {
         if (strlen(config.clip_l_path) > 0) params.clip_l_path = config.clip_l_path;
         if (strlen(config.clip_g_path) > 0) params.clip_g_path = config.clip_g_path;
         if (strlen(config.t5xxl_path) > 0) params.t5xxl_path = config.t5xxl_path;
+        dr_logf(DIFFUSION_LOG_INFO, "load_model: using split-component path layout (diffusion_model_path)");
     } else {
         params.model_path = config.model_path;
+        dr_logf(DIFFUSION_LOG_INFO, "load_model: using single-file path layout (model_path)");
     }
 
     params.offload_params_to_cpu = config.offload_to_cpu;
+    // ggml-vulkan on Android (Adreno/Mali) lacks F16 softmax/norm pipeline variants
+    // used by the CLIP transformer and VAE decoder. Submitting those graphs to the
+    // Vulkan backend triggers GGML_ABORT inside ggml_vk_op_get_pipeline.
+    // Mirror stable-diffusion.cpp's documented workaround: pin CLIP + VAE to the CPU
+    // backend whenever a Vulkan device is present. The heavy UNet stays on Vulkan.
+    // Caller opt-in (config flag = true) is preserved via OR.
+#ifdef SD_USE_VULKAN
+    if (ggml_backend_vk_get_device_count() > 0) {
+        params.keep_clip_on_cpu = true;
+        params.keep_vae_on_cpu  = true;
+        dr_logf(DIFFUSION_LOG_INFO,
+                "load_model: vulkan present → FORCING keep_clip_on_cpu=true, keep_vae_on_cpu=true");
+    } else {
+        params.keep_clip_on_cpu = config.keep_clip_on_cpu;
+        params.keep_vae_on_cpu  = config.keep_vae_on_cpu;
+    }
+#else
     params.keep_clip_on_cpu = config.keep_clip_on_cpu;
     params.keep_vae_on_cpu = config.keep_vae_on_cpu;
+#endif
     params.diffusion_flash_attn = config.diffusion_flash_attn;
     params.enable_mmap = config.enable_mmap;
     params.diffusion_conv_direct = config.diffusion_conv_direct;
+    params.free_params_immediately = config.free_params_immediately;
 
     if (config.wtype >= 0) {
         params.wtype = static_cast<sd_type_t>(config.wtype);
+        dr_logf(DIFFUSION_LOG_INFO, "load_model: caller wtype override = %d", config.wtype);
     }
-
     if (config.n_threads > 0) {
         params.n_threads = config.n_threads;
     } else if (config.n_threads == -1) {
         params.n_threads = sd_get_num_physical_cores();
     }
+    dr_logf(DIFFUSION_LOG_INFO, "load_model: resolved n_threads=%d", params.n_threads);
+
+    // Explicit prediction type overrides auto-detection.
+    // Critically: setting this skips is_using_v_parameterization_for_sd2() which
+    // runs a test UNet compute — that test can abort() on Vulkan for some models.
+    if (config.prediction >= 0 && config.prediction < PREDICTION_COUNT) {
+        params.prediction = static_cast<prediction_t>(config.prediction);
+        dr_logf(DIFFUSION_LOG_INFO, "load_model: explicit prediction=%d (skips v_param probe)", config.prediction);
+    } else {
+        dr_logf(DIFFUSION_LOG_WARN,
+                "load_model: prediction=auto — sd.cpp will run is_using_v_parameterization_for_sd2() "
+                "probe. This can crash on Vulkan for some SD2 models.");
+    }
+
+    // TAESD: tiny autoencoder — replaces full VAE decode for fast preview.
+    if (config.taesd_path && strlen(config.taesd_path) > 0) {
+        params.taesd_path = config.taesd_path;
+    }
+
+    dr_logf(DIFFUSION_LOG_INFO,
+            "load_model: → calling new_sd_ctx(wtype=%d, keep_clip_cpu=%d, keep_vae_cpu=%d, "
+            "offload=%d, flash_attn=%d, prediction=%d)",
+            (int)params.wtype, (int)params.keep_clip_on_cpu, (int)params.keep_vae_on_cpu,
+            (int)params.offload_params_to_cpu, (int)params.diffusion_flash_attn,
+            (int)params.prediction);
 
     // Create context
     sd_ctx_t *ctx = new_sd_ctx(&params);
     if (!ctx) {
+        dr_logf(DIFFUSION_LOG_ERROR, "load_model: new_sd_ctx returned NULL");
         return 0;  // Failed to load
     }
+    dr_logf(DIFFUSION_LOG_INFO, "load_model: new_sd_ctx OK");
 
     // Create handle
     auto handle = std::make_unique<SdHandle>();
     handle->ctx = ctx;
+    handle->flow_shift = config.flow_shift;
+    handle->flow_shift_is_set = config.flow_shift_is_set;
+    handle->vae_tiling = config.vae_tiling;
 
     std::lock_guard<std::mutex> lock(g_handles_mutex);
     int64_t handle_id = g_next_handle++;
     g_handles[handle_id] = std::move(handle);
 
+    dr_logf(DIFFUSION_LOG_INFO, "load_model: handle_id=%lld", (long long)handle_id);
     return handle_id;
 }
 
 PngResult diffusion_runner_core_txt2img(int64_t handle_id, const ImageGenConfig &config) {
     PngResult result = {nullptr, 0};
 
+    dr_logf(DIFFUSION_LOG_INFO,
+            "txt2img: ENTER handle=%lld dims=%dx%d steps=%d cfg=%.2f seed=%lld sampler=%d "
+            "vae_tile=%d lora_n=%d prompt_len=%zu neg_len=%zu",
+            (long long)handle_id, config.width, config.height, config.steps, config.cfg_scale,
+            (long long)config.seed, config.sample_method, (int)config.vae_tiling,
+            config.lora_count,
+            config.prompt ? strlen(config.prompt) : 0,
+            config.negative_prompt ? strlen(config.negative_prompt) : 0);
+
     // Find handle
     std::lock_guard<std::mutex> lock(g_handles_mutex);
     auto it = g_handles.find(handle_id);
     if (it == g_handles.end() || !it->second || !it->second->ctx) {
+        dr_logf(DIFFUSION_LOG_ERROR, "txt2img: invalid handle %lld", (long long)handle_id);
         return result;
     }
 
@@ -170,11 +315,19 @@ PngResult diffusion_runner_core_txt2img(int64_t handle_id, const ImageGenConfig 
     sample_params.sample_steps = config.steps;
     sample_params.guidance.txt_cfg = config.cfg_scale;
     sample_params.sample_method = static_cast<sample_method_t>(config.sample_method);
-
-    // Apply flow_shift to sample params if needed (note: flow_shift is in sample_params, not ctx_params)
-    // This would need to be passed from the config if needed
+    if (config.flow_shift_is_set) {
+        sample_params.flow_shift = config.flow_shift;
+    } else if (it->second->flow_shift_is_set) {
+        sample_params.flow_shift = it->second->flow_shift;
+    }
 
     gen_params.sample_params = sample_params;
+
+    // VAE tiling: enable when requested at gen-time or inherited from model config.
+    if (config.vae_tiling || it->second->vae_tiling) {
+        gen_params.vae_tiling_params.enabled = true;
+        // tile_size_x/y = 0 → library auto-picks via first_stage_model->get_tile_sizes()
+    }
 
     // Set up LoRA if provided
     std::vector<sd_lora_t> lora_configs;
@@ -199,10 +352,14 @@ PngResult diffusion_runner_core_txt2img(int64_t handle_id, const ImageGenConfig 
     sd_set_progress_callback(step_progress_callback, nullptr);
 
     // Generate image
+    dr_logf(DIFFUSION_LOG_INFO, "txt2img: → calling generate_image (this is where Vulkan CLIP crashes if mis-configured)");
     sd_image_t *images = generate_image(ctx, &gen_params);
     if (!images || !images[0].data) {
+        dr_logf(DIFFUSION_LOG_ERROR, "txt2img: generate_image returned NULL or empty (success path failed quietly)");
         return result;
     }
+    dr_logf(DIFFUSION_LOG_INFO, "txt2img: generate_image OK %dx%d ch=%d",
+            images[0].width, images[0].height, images[0].channel);
 
     // Convert to PNG
     PngWriteContext png_ctx;
@@ -258,8 +415,18 @@ std::vector<PngResult> diffusion_runner_core_video_gen(int64_t handle_id, const 
     sample_params.sample_steps = config.steps;
     sample_params.guidance.txt_cfg = config.cfg_scale;
     sample_params.sample_method = static_cast<sample_method_t>(config.sample_method);
+    if (config.flow_shift_is_set) {
+        sample_params.flow_shift = config.flow_shift;
+    } else if (it->second->flow_shift_is_set) {
+        sample_params.flow_shift = it->second->flow_shift;
+    }
 
     gen_params.sample_params = sample_params;
+
+    // VAE tiling: enable when requested at gen-time or inherited from model config.
+    if (config.vae_tiling || it->second->vae_tiling) {
+        gen_params.vae_tiling_params.enabled = true;
+    }
 
     // Set up LoRA if provided
     std::vector<sd_lora_t> lora_configs;

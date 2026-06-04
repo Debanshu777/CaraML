@@ -66,7 +66,12 @@ fun ModelListItem(
             // explainer sheet hoisted in SearchScreen.
             if (deviceHints != null) {
                 Spacer(modifier = Modifier.height(8.dp))
-                val result = if (model.pipelineTag == "text-to-image" || model.pipelineTag == "text-to-video") {
+                val isDiffusion = model.pipelineTag?.let { tag ->
+                    tag.contains("text-to-image", ignoreCase = true) ||
+                    tag.contains("text-to-video", ignoreCase = true) ||
+                    tag.contains("image-to-image", ignoreCase = true)
+                } == true
+                val result = if (isDiffusion) {
                     val arch = SdArchitectureClassifier.classify(
                         tags = emptyList(),
                         modelId = model.id ?: "",

@@ -13,10 +13,14 @@ struct DiffusionModelConfigFFI {
     int diffusion_flash_attn;
     int enable_mmap;
     int diffusion_conv_direct;
+    int free_params_immediately;
     int wtype;
     float flow_shift;
     int flow_shift_is_set;
     int n_threads;
+    int prediction;
+    const char *taesd_path;
+    int vae_tiling;
 };
 
 struct ImageGenConfigFFI {

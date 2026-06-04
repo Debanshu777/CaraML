@@ -31,7 +31,9 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.debanshu777.caraml.core.drawer.DrawerController
+import com.debanshu777.caraml.core.drawer.GenerationModeController
 import com.debanshu777.caraml.core.drawer.LocalDrawerController
+import com.debanshu777.caraml.core.drawer.LocalGenerationModeController
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
@@ -61,6 +63,18 @@ fun ChatScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val streamingState by viewModel.streamingState.collectAsStateWithLifecycle()
+    val modeController = LocalGenerationModeController.current
+
+    LaunchedEffect(modeController.mode) {
+        viewModel.setGenerationMode(modeController.mode)
+    }
+
+    val vmMode = (uiState as? ChatUiState.Ready)?.generationMode
+    LaunchedEffect(vmMode) {
+        if (vmMode != null && modeController.mode != vmMode) {
+            modeController.setState(vmMode)
+        }
+    }
 
     ChatScreenContent(
         uiState = uiState,
@@ -71,7 +85,6 @@ fun ChatScreen(
         onCancelGeneration = viewModel::cancelGeneration,
         onNavigateToSearch = onNavigateToSearch,
         onNavigateToModelDetail = onNavigateToModelDetail,
-        onGenerationModeChange = viewModel::setGenerationMode,
         contextIndicator = {
             ContextStatsIndicator(streamingStateFlow = viewModel.streamingState)
         },
@@ -89,7 +102,6 @@ fun ChatScreenContent(
     onCancelGeneration: () -> Unit,
     onNavigateToSearch: () -> Unit,
     onNavigateToModelDetail: (modelId: String, mode: ModelHubBrowseMode) -> Unit = { _, _ -> },
-    onGenerationModeChange: (GenerationMode) -> Unit,
     contextIndicator: @Composable RowScope.() -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -136,7 +148,6 @@ fun ChatScreenContent(
 
                     ChatInputBar(
                         generationMode = uiState.generationMode,
-                        onGenerationModeChange = onGenerationModeChange,
                         isGenerating = uiState.isGenerating,
                         selectedModel = uiState.selectedModel,
                         topModels = uiState.topModels,
@@ -298,7 +309,10 @@ private fun MissingComponentsScreen(
 private fun ChatScreenContentNoModelsPreview() {
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
-            CompositionLocalProvider(LocalDrawerController provides remember { DrawerController() }) {
+            CompositionLocalProvider(
+                LocalDrawerController provides remember { DrawerController() },
+                LocalGenerationModeController provides remember { GenerationModeController() },
+            ) {
                 ChatScreenContent(
                     uiState = ChatUiState.NoModels,
                     streamingState = StreamingState(),
@@ -306,7 +320,6 @@ private fun ChatScreenContentNoModelsPreview() {
                     onSendMessage = {},
                     onCancelGeneration = {},
                     onNavigateToSearch = {},
-                    onGenerationModeChange = {},
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -319,7 +332,10 @@ private fun ChatScreenContentNoModelsPreview() {
 private fun ChatScreenContentModelLoadingPreview() {
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
-            CompositionLocalProvider(LocalDrawerController provides remember { DrawerController() }) {
+            CompositionLocalProvider(
+                LocalDrawerController provides remember { DrawerController() },
+                LocalGenerationModeController provides remember { GenerationModeController() },
+            ) {
                 ChatScreenContent(
                     uiState = ChatUiState.ModelLoading,
                     streamingState = StreamingState(),
@@ -327,7 +343,6 @@ private fun ChatScreenContentModelLoadingPreview() {
                     onSendMessage = {},
                     onCancelGeneration = {},
                     onNavigateToSearch = {},
-                    onGenerationModeChange = {},
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -340,7 +355,10 @@ private fun ChatScreenContentModelLoadingPreview() {
 private fun ChatScreenContentModelErrorPreview() {
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
-            CompositionLocalProvider(LocalDrawerController provides remember { DrawerController() }) {
+            CompositionLocalProvider(
+                LocalDrawerController provides remember { DrawerController() },
+                LocalGenerationModeController provides remember { GenerationModeController() },
+            ) {
                 ChatScreenContent(
                     uiState = ChatUiState.ModelError(message = "Failed to load model"),
                     streamingState = StreamingState(),
@@ -348,7 +366,6 @@ private fun ChatScreenContentModelErrorPreview() {
                     onSendMessage = {},
                     onCancelGeneration = {},
                     onNavigateToSearch = {},
-                    onGenerationModeChange = {},
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -363,7 +380,10 @@ private fun ChatScreenContentReadyPreview() {
     val messages = ChatMessageListPreviewProvider().values.elementAt(1)
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
-            CompositionLocalProvider(LocalDrawerController provides remember { DrawerController() }) {
+            CompositionLocalProvider(
+                LocalDrawerController provides remember { DrawerController() },
+                LocalGenerationModeController provides remember { GenerationModeController() },
+            ) {
                 ChatScreenContent(
                     uiState = ChatUiState.Ready(
                         messages = messages.toImmutableList(),
@@ -377,7 +397,6 @@ private fun ChatScreenContentReadyPreview() {
                     onSendMessage = {},
                     onCancelGeneration = {},
                     onNavigateToSearch = {},
-                    onGenerationModeChange = {},
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -393,7 +412,10 @@ private fun ChatScreenContentReadyGeneratingPreview() {
     val liveStats = LiveGenerationStatsPreviewProvider().values.elementAt(0)
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
-            CompositionLocalProvider(LocalDrawerController provides remember { DrawerController() }) {
+            CompositionLocalProvider(
+                LocalDrawerController provides remember { DrawerController() },
+                LocalGenerationModeController provides remember { GenerationModeController() },
+            ) {
                 ChatScreenContent(
                     uiState = ChatUiState.Ready(
                         messages = messages.toImmutableList(),
@@ -409,7 +431,6 @@ private fun ChatScreenContentReadyGeneratingPreview() {
                     onSendMessage = {},
                     onCancelGeneration = {},
                     onNavigateToSearch = {},
-                    onGenerationModeChange = {},
                     modifier = Modifier.fillMaxSize()
                 )
             }

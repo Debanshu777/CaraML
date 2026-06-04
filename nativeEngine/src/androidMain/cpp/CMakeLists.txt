@@ -76,6 +76,14 @@ endif()
 
 # Stable Diffusion backend configuration
 set(SD_METAL OFF CACHE BOOL "" FORCE)
+# SD_VULKAN is intentionally OFF even when GGML_VULKAN is ON.
+# ggml_extend.hpp's GGMLRunner always offloads UNet params to the Vulkan backend at
+# inference time (line ~1967: "unet offload params … to runtime backend (Vulkan0)"),
+# regardless of load-time config flags like offload_params_to_cpu. On Mali-G715 and
+# Adreno, this triggers VK_ERROR_DEVICE_LOST ~2-3s into the first UNet step (GPU TDR).
+# No Kotlin/C++ config workaround can prevent it — the only fix is to not compile
+# stable-diffusion.cpp with SD_USE_VULKAN.
+# GGML_VULKAN remains ON so llama_runner still benefits from Vulkan for LLM inference.
 set(SD_VULKAN OFF CACHE BOOL "" FORCE)
 
 include("${CMAKE_CURRENT_LIST_DIR}/../../commonCpp/GgmlUnified.cmake")
@@ -113,6 +121,8 @@ add_library(
 )
 
 target_include_directories(diffusion_runner PRIVATE ${DIFFUSION_RUNNER_INCLUDE_DIRS})
+# ggml-vulkan.h needed for ggml_backend_vk_get_device_count() in diffusion_runner_core.cpp
+target_include_directories(diffusion_runner PRIVATE "${LLAMA_SRC}/ggml/include")
 
 target_link_libraries(diffusion_runner PRIVATE stable-diffusion ${log-lib})
 
@@ -141,6 +151,16 @@ if(GGML_BACKEND_DL)
             endif()
         endforeach()
     endif()
+endif()
+
+# SD_VULKAN=OFF means diffusion_runner is compiled without SD_USE_VULKAN, so
+# ggml-vulkan is NOT linked into diffusion_runner and no Vulkan paths are taken.
+# GGML_VULKAN=ON is still used by llama_runner (LLM inference).
+# This block is intentionally guarded by SD_VULKAN, not GGML_VULKAN.
+if(SD_VULKAN AND TARGET ggml-vulkan)
+    target_link_libraries(diffusion_runner PRIVATE $<TARGET_FILE:ggml-vulkan>)
+    add_dependencies(diffusion_runner ggml-vulkan)
+    target_compile_definitions(diffusion_runner PRIVATE SD_USE_VULKAN)
 endif()
 
 if(CMAKE_BUILD_TYPE MATCHES Release)

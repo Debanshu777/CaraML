@@ -25,6 +25,7 @@ import com.debanshu777.caraml.core.platform.DeviceHints
 import com.debanshu777.caraml.core.rating.ModelSuitabilityCalculator
 import com.debanshu777.caraml.core.rating.SdArchitectureClassifier
 import com.debanshu777.caraml.core.rating.SuitabilityResult
+import com.debanshu777.caraml.core.rating.parseSizeHintToBytes
 import com.debanshu777.caraml.core.rating.ui.SuitabilityChip
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
 import com.debanshu777.huggingfacemanager.model.ModelDetailResponse
@@ -135,7 +136,7 @@ fun ModelDetailContent(
                 )
                 val totalComponentBytes = installBundleState.components
                     .filter { it.required }
-                    .mapNotNull { it.sizeHint?.trim()?.toLongOrNull() }
+                    .mapNotNull { it.sizeHint?.let { h -> parseSizeHintToBytes(h) } }
                     .takeIf { it.isNotEmpty() }
                     ?.sum()
                 ModelSuitabilityCalculator.rateDiffusion(

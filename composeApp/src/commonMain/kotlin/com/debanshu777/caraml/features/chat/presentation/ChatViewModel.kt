@@ -18,6 +18,7 @@ import com.debanshu777.caraml.features.chat.domain.usecase.GetAvailableModelsUse
 import com.debanshu777.caraml.features.chat.domain.usecase.ManageContextUseCase
 import com.debanshu777.caraml.features.chat.domain.usecase.TrackModelUsageUseCase
 import com.debanshu777.diffusionrunner.ImageGenParams
+import com.debanshu777.diffusionrunner.SampleMethod
 import com.debanshu777.diffusionrunner.VideoGenParams
 import com.debanshu777.runner.StopReason
 import com.debanshu777.huggingfacemanager.sdcpp.SdCppRecommendedParams
@@ -400,7 +401,9 @@ class ChatViewModel(
                     height = rp?.height ?: 512,
                     steps = rp?.steps ?: 20,
                     cfgScale = rp?.cfgScale ?: 7f,
-                    seed = Clock.System.now().toEpochMilliseconds(),
+                    // Use registry-pinned seed when available; otherwise roll a new random seed.
+                    seed = rp?.seed ?: Clock.System.now().toEpochMilliseconds(),
+                    sampleMethod = SampleMethod.fromName(rp?.samplingMethod),
                 )
                 val result = diffusionRepository.generateImage(params)
                 result.fold(
@@ -439,7 +442,9 @@ class ChatViewModel(
                     videoFrames = 16,
                     steps = rp?.steps ?: 20,
                     cfgScale = rp?.cfgScale ?: 7f,
-                    seed = Clock.System.now().toEpochMilliseconds(),
+                    // Use registry-pinned seed when available; otherwise roll a new random seed.
+                    seed = rp?.seed ?: Clock.System.now().toEpochMilliseconds(),
+                    sampleMethod = SampleMethod.fromName(rp?.samplingMethod),
                 )
                 val result = diffusionRepository.generateVideo(params)
                 result.fold(

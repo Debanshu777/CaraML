@@ -50,10 +50,14 @@ actual class DiffusionRunner {
                 diffusion_flash_attn = if (config.diffusionFlashAttn) 1 else 0
                 enable_mmap = if (config.enableMmap) 1 else 0
                 diffusion_conv_direct = if (config.diffusionConvDirect) 1 else 0
+                free_params_immediately = if (config.freeParamsImmediately) 1 else 0
                 wtype = config.wtype
                 flow_shift = config.flowShift
                 flow_shift_is_set = if (config.flowShift.isFinite()) 1 else 0
                 n_threads = config.nThreads
+                prediction = config.prediction
+                taesd_path = config.taesdPath.cstr.ptr
+                vae_tiling = if (config.vaeTiling) 1 else 0
             }
         }
 

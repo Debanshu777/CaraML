@@ -75,6 +75,21 @@ class DiffusionInferenceRepository(
                 )
             }
 
+            // Component presence check: verify all required auxiliary files are on disk before
+            // attempting to load. Missing components (e.g. text_encoder_2 for SDXL) cause
+            // stable-diffusion.cpp to misidentify the architecture and crash with SIGABRT.
+            val setup = getModelSetup(model.modelId)
+            if (setup != null && !setup.selfContained) {
+                val missing = componentChecker.getMissingComponents(setup)
+                if (missing.isNotEmpty()) {
+                    val labels = missing.joinToString(", ") { it.role.displayLabel }
+                    return@withContext ModelLoadResult.Error(
+                        "Missing required components: $labels. " +
+                        "Open the model page to download them."
+                    )
+                }
+            }
+
             // Pre-flight memory check: sum of main model + all components vs device RAM.
             // Native loader will OOM-kill the process silently if weights don't fit, so we
             // refuse upfront with a clear error rather than crashing.
@@ -252,16 +267,25 @@ class DiffusionInferenceRepository(
 
     private fun buildDiffusionModelConfig(model: LocalModelEntity, modelPath: String): DiffusionModelConfig {
         val modelSetup = getModelSetup(model.modelId)
-        
+        val tightMemory = shouldFreeParamsImmediately(model, modelPath)
+        val taesdPath = resolveOptionalTaesdPath()
+
         if (modelSetup == null || modelSetup.selfContained) {
             // Fallback to legacy single-path behavior for unknown or self-contained models
-            return DiffusionModelConfig(modelPath = modelPath)
+            return DiffusionModelConfig(
+                modelPath = modelPath,
+                prediction = modelSetup?.recommendedParams?.prediction ?: -1,
+                flowShift = modelSetup?.recommendedParams?.flowShift ?: Float.POSITIVE_INFINITY,
+                freeParamsImmediately = tightMemory,
+                taesdPath = taesdPath,
+                vaeTiling = shouldEnableVaeTiling(modelSetup?.recommendedParams),
+            )
         }
-        
+
         // Resolve all component paths by role
         val componentPaths = componentChecker.resolveComponentsByRole(modelSetup)
         val params = modelSetup.recommendedParams
-        
+
         return DiffusionModelConfig(
             modelPath = modelPath,
             vaePath = componentPaths[ComponentRole.VAE] ?: "",
@@ -273,8 +297,13 @@ class DiffusionInferenceRepository(
             keepClipOnCpu = params?.clipOnCpu ?: false,
             keepVaeOnCpu = params?.keepVaeOnCpu ?: false,
             diffusionFlashAttn = params?.diffusionFlashAttn ?: false,
+            freeParamsImmediately = tightMemory,
+            flowShift = params?.flowShift ?: Float.POSITIVE_INFINITY,
+            prediction = params?.prediction ?: -1,
+            taesdPath = taesdPath,
+            vaeTiling = shouldEnableVaeTiling(params),
         ).also { config ->
-            AppLogger.d(TAG) { 
+            AppLogger.d(TAG) {
                 "Built DiffusionModelConfig for ${model.modelId}:\n" +
                 "  modelPath: $modelPath\n" +
                 "  vaePath: ${config.vaePath}\n" +
@@ -284,9 +313,59 @@ class DiffusionInferenceRepository(
                 "  t5xxlPath: ${config.t5xxlPath}\n" +
                 "  offloadToCpu: ${config.offloadToCpu}\n" +
                 "  keepClipOnCpu: ${config.keepClipOnCpu}\n" +
-                "  diffusionFlashAttn: ${config.diffusionFlashAttn}"
+                "  keepVaeOnCpu: ${config.keepVaeOnCpu}\n" +
+                "  diffusionFlashAttn: ${config.diffusionFlashAttn}\n" +
+                "  freeParamsImmediately: ${config.freeParamsImmediately}\n" +
+                "  flowShift: ${config.flowShift}\n" +
+                "  prediction: ${config.prediction}\n" +
+                "  taesdPath: ${config.taesdPath}\n" +
+                "  vaeTiling: ${config.vaeTiling}"
             }
         }
+    }
+
+    /**
+     * Auto-resolves a TAESD (tiny autoencoder) path if the "madebyollin/taesd" model has been
+     * downloaded. Returns empty string when not available — the field is optional in the runner.
+     */
+    private fun resolveOptionalTaesdPath(): String {
+        val taesdSetup = getModelSetup("madebyollin/taesd") ?: return ""
+        // TAESD is self-contained: its model file sits directly under its storage dir.
+        // The main model file has no fixed filename in the registry, so probe the dir for
+        // any .safetensors file (TAESD is typically a single small safetensors file).
+        val dir = storagePathProvider.getModelsStorageDirectory("madebyollin/taesd")
+        val candidates = listOf(
+            "$dir/taesd_decoder.safetensors",
+            "$dir/diffusion_pytorch_model.safetensors",
+        )
+        return candidates.firstOrNull { storagePathProvider.fileExists(it) } ?: ""
+    }
+
+    /**
+     * Returns true when the recommended (or default) output dimensions exceed 512×512.
+     * In that case VAE tiling is needed to avoid OOM during the decode step.
+     */
+    private fun shouldEnableVaeTiling(params: SdCppRecommendedParams?): Boolean {
+        val w = params?.width ?: 512
+        val h = params?.height ?: 512
+        return w * h > 512 * 512
+    }
+
+    /**
+     * Frees weights after each generation when device memory is tight (weights >= 65% of
+     * budget). Cuts steady-state RAM in half at the cost of re-loading on the next gen.
+     */
+    private fun shouldFreeParamsImmediately(model: LocalModelEntity, modelPath: String): Boolean {
+        val mainSize = storagePathProvider.getFileSize(modelPath)
+        val componentSize = getModelSetup(model.modelId)?.let { setup ->
+            if (setup.selfContained) 0L
+            else componentChecker.resolveComponentsByRole(setup).values
+                .sumOf { storagePathProvider.getFileSize(it) }
+        } ?: 0L
+        val totalBytes = mainSize + componentSize
+        val budgetBytes = deviceCapabilities.getDeviceHints().memoryBudgetMB * 1024L * 1024L
+        if (totalBytes <= 0L || budgetBytes <= 0L) return false
+        return totalBytes.toDouble() / budgetBytes.toDouble() >= 0.65
     }
 
 }

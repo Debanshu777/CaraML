@@ -126,6 +126,10 @@ when (val result = api.searchModels(params)) {
 
 <!-- Updated at end of each Claude Code session -->
 
+- `nota-ai/bk-sdm-tiny` registry now sets `prediction=0` (EPS) — skips `is_using_v_parameterization_for_sd2()` probe; `offloadToCpu` reverted (moot since Vulkan is now disabled for diffusion at build level via `SD_VULKAN=OFF`)
+- `nota-ai/bk-sdm-tiny` registry entry now sets `prediction=0` (EPS) — prevents `is_using_v_parameterization_for_sd2()` probe from running a test UNet forward pass; SD1.x is always EPS, never V-pred
+- `SdCppRecommendedParams` gained `seed: Long?` (registry-pinned seed for deterministic / debug generation)
+- SD-Turbo, SDXL-Turbo, LCM-LoRA registry entries now carry distilled-correct defaults (4–6 steps, cfg=1.0–1.5, `euler_a` / `lcm` sampler) instead of the generic 20-step / cfg=7 defaults
 - Smart install bundle support for multi-component diffusion models
 - `SdCppCuratedCatalog` + `SdCppComponentChecker` added
 - `ModelFileWeightFilter` for GGUF quantization variant filtering

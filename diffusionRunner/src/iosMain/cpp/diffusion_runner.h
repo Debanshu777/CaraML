@@ -17,10 +17,17 @@ struct DiffusionModelConfigFFI {
     int diffusion_flash_attn;
     int enable_mmap;
     int diffusion_conv_direct;
+    int free_params_immediately;
     int wtype;
     float flow_shift;
     int flow_shift_is_set;
     int n_threads;
+    /** -1=auto-detect, 0=EPS, 1=V_PRED, 2=EDM_V_PRED, 3=FLOW, 4=FLUX_FLOW, 5=FLUX2_FLOW */
+    int prediction;
+    /** Optional path to TAESD safetensors. Empty string = disabled. */
+    const char *taesd_path;
+    /** Enable VAE tiling (1=on, 0=off). Library auto-picks tile sizes when on. */
+    int vae_tiling;
 };
 
 struct ImageGenConfigFFI {
