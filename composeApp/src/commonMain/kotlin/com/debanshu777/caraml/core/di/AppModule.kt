@@ -58,6 +58,7 @@ val appModule = module {
             storagePathProvider = get(),
             runner = get(),
             deviceCapabilities = get(),
+            settingsRepository = get(),
         )
     }
 

@@ -14,7 +14,20 @@ if(APPLE)
     set(SD_VULKAN OFF CACHE BOOL "" FORCE)
 else()
     set(SD_METAL OFF CACHE BOOL "" FORCE)
+    # Vulkan GPU acceleration for diffusion on Linux/Windows.
+    # Auto-detects Vulkan SDK; falls back to CPU-only if not found.
     set(SD_VULKAN OFF CACHE BOOL "" FORCE)
+    foreach(_vk_prefix "$ENV{VULKAN_SDK}" "$ENV{VK_SDK_PATH}" "/usr" "/usr/local")
+        if(_vk_prefix AND EXISTS "${_vk_prefix}/include/vulkan/vulkan.h")
+            set(SD_VULKAN ON CACHE BOOL "" FORCE)
+            set(GGML_VULKAN ON CACHE BOOL "" FORCE)
+            message(STATUS "Vulkan found at ${_vk_prefix}/include — enabling SD_VULKAN for desktop diffusion")
+            break()
+        endif()
+    endforeach()
+    if(NOT SD_VULKAN)
+        message(STATUS "Vulkan SDK not found — desktop diffusion will run on CPU only")
+    endif()
 endif()
 
 include("${CMAKE_CURRENT_LIST_DIR}/../../commonCpp/GgmlUnified.cmake")
@@ -83,6 +96,18 @@ target_include_directories(diffusion_runner PRIVATE
 )
 
 target_link_libraries(diffusion_runner PRIVATE stable-diffusion)
+
+# ggml-vulkan.h needed for ggml_backend_vk_get_device_count() in diffusion_runner_core.cpp
+if(SD_VULKAN)
+    target_include_directories(diffusion_runner PRIVATE "${LLAMA_SRC}/ggml/include")
+endif()
+# Link ggml-vulkan into diffusion_runner when Vulkan is enabled.
+if(SD_VULKAN AND TARGET ggml-vulkan)
+    target_link_libraries(diffusion_runner PRIVATE ggml-vulkan)
+    target_compile_definitions(diffusion_runner PRIVATE SD_USE_VULKAN)
+    add_dependencies(diffusion_runner ggml-vulkan)
+    message(STATUS "diffusion_runner: linked ggml-vulkan for GPU-accelerated image generation")
+endif()
 set_target_properties(diffusion_runner PROPERTIES OUTPUT_NAME "diffusion_runner")
 
 if(CMAKE_BUILD_TYPE MATCHES Release)

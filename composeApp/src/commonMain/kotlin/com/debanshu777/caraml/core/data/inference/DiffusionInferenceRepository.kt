@@ -10,6 +10,7 @@ import com.debanshu777.diffusionrunner.VideoGenParams
 import com.debanshu777.diffusionrunner.generateImage
 import com.debanshu777.diffusionrunner.generateVideo
 import com.debanshu777.caraml.core.platform.PlatformPaths
+import com.debanshu777.caraml.core.data.settings.SettingsRepository
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import com.debanshu777.huggingfacemanager.model.DIFFUSERS_BUNDLE_DB_FILENAME
 import com.debanshu777.huggingfacemanager.model.isDiffusersModelDirectory
@@ -22,6 +23,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -34,6 +36,7 @@ class DiffusionInferenceRepository(
     private val storagePathProvider: StoragePathProvider,
     private val runner: DiffusionRunner,
     private val deviceCapabilities: DeviceCapabilities,
+    private val settingsRepository: SettingsRepository,
 ) {
     private val componentChecker = SdCppComponentChecker(storagePathProvider)
 
@@ -265,18 +268,23 @@ class DiffusionInferenceRepository(
         return storagePathProvider.isModelFileReadable(path)
     }
 
-    private fun buildDiffusionModelConfig(model: LocalModelEntity, modelPath: String): DiffusionModelConfig {
+    private suspend fun buildDiffusionModelConfig(model: LocalModelEntity, modelPath: String): DiffusionModelConfig {
         val modelSetup = getModelSetup(model.modelId)
         val tightMemory = shouldFreeParamsImmediately(model, modelPath)
         val taesdPath = resolveOptionalTaesdPath()
+        val hints = deviceCapabilities.getDeviceHints()
+        val settings = settingsRepository.getSettings().first()
+        val gpuEnabled = settings.useGpu && hints.gpuBackendAvailable
 
         if (modelSetup == null || modelSetup.selfContained) {
             // Fallback to legacy single-path behavior for unknown or self-contained models
             return DiffusionModelConfig(
                 modelPath = modelPath,
+                offloadToCpu = !gpuEnabled,
                 prediction = modelSetup?.recommendedParams?.prediction ?: -1,
                 flowShift = modelSetup?.recommendedParams?.flowShift ?: Float.POSITIVE_INFINITY,
                 freeParamsImmediately = tightMemory,
+                diffusionFlashAttn = gpuEnabled,
                 taesdPath = taesdPath,
                 vaeTiling = shouldEnableVaeTiling(modelSetup?.recommendedParams),
             )
@@ -293,7 +301,7 @@ class DiffusionInferenceRepository(
             clipLPath = componentPaths[ComponentRole.CLIP_L] ?: "",
             clipGPath = componentPaths[ComponentRole.CLIP_G] ?: "",
             t5xxlPath = componentPaths[ComponentRole.T5XXL] ?: componentPaths[ComponentRole.UMT5XXL] ?: "",
-            offloadToCpu = params?.offloadToCpu ?: false,
+            offloadToCpu = !gpuEnabled || (params?.offloadToCpu ?: false),
             keepClipOnCpu = params?.clipOnCpu ?: false,
             keepVaeOnCpu = params?.keepVaeOnCpu ?: false,
             diffusionFlashAttn = params?.diffusionFlashAttn ?: false,

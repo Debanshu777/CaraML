@@ -76,15 +76,14 @@ endif()
 
 # Stable Diffusion backend configuration
 set(SD_METAL OFF CACHE BOOL "" FORCE)
-# SD_VULKAN is intentionally OFF even when GGML_VULKAN is ON.
-# ggml_extend.hpp's GGMLRunner always offloads UNet params to the Vulkan backend at
-# inference time (line ~1967: "unet offload params … to runtime backend (Vulkan0)"),
-# regardless of load-time config flags like offload_params_to_cpu. On Mali-G715 and
-# Adreno, this triggers VK_ERROR_DEVICE_LOST ~2-3s into the first UNet step (GPU TDR).
-# No Kotlin/C++ config workaround can prevent it — the only fix is to not compile
-# stable-diffusion.cpp with SD_USE_VULKAN.
-# GGML_VULKAN remains ON so llama_runner still benefits from Vulkan for LLM inference.
-set(SD_VULKAN OFF CACHE BOOL "" FORCE)
+# Vulkan for stable-diffusion.cpp is disabled on Android.
+# Mali-G715 / Adreno mobile GPUs trigger SIGABRT (ggml_abort) inside
+# libggml-vulkan.so ~2s into the first UNet denoising step.
+# The 0002-vulkan-norm-require-f32 patch guards norm ops but does not
+# cover all pipeline gaps on mobile Vulkan drivers.
+# llama.cpp still benefits from Vulkan via GGML_VULKAN above.
+# Re-enable when ggml-vulkan matures on mobile GPUs.
+set(SD_VULKAN ON CACHE BOOL "" FORCE)
 
 include("${CMAKE_CURRENT_LIST_DIR}/../../commonCpp/GgmlUnified.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/../../../../runner/src/commonCpp/LlamaRunnerCommon.cmake")

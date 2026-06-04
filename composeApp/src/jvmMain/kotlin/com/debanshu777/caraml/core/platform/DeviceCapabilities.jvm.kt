@@ -24,7 +24,7 @@ actual class DeviceCapabilities actual constructor() {
             performanceCoreCount = perfCores.coerceAtLeast(2),
             totalCoreCount = totalCores,
             memoryBudgetMB = getPhysicalMemoryMB(),
-            gpuBackendAvailable = isMac,
+            gpuBackendAvailable = isMac || detectDesktopVulkan(),
         )
     }
 
@@ -90,5 +90,37 @@ actual class DeviceCapabilities actual constructor() {
             process.waitFor()
             if (process.exitValue() == 0) output else null
         } catch (_: Exception) { null }
+    }
+
+    private fun detectDesktopVulkan(): Boolean {
+        val osName = System.getProperty("os.name").lowercase()
+        return when {
+            osName.contains("linux") -> checkLinuxVulkan()
+            osName.contains("win") -> checkWindowsVulkan()
+            else -> false
+        }
+    }
+
+    private fun checkLinuxVulkan(): Boolean {
+        return try {
+            val output = readCommandOutput("ldconfig", "-p") ?: ""
+            val found = output.contains("libvulkan.so")
+            if (!found) {
+                // Fallback: probe common library paths
+                return listOf(
+                    "/usr/lib/x86_64-linux-gnu/libvulkan.so.1",
+                    "/usr/lib/libvulkan.so.1",
+                    "/usr/local/lib/libvulkan.so.1",
+                ).any { java.io.File(it).exists() }
+            }
+            found
+        } catch (_: Exception) { false }
+    }
+
+    private fun checkWindowsVulkan(): Boolean {
+        return try {
+            val systemRoot = System.getenv("SystemRoot") ?: "C:\\Windows"
+            java.io.File("$systemRoot\\System32\\vulkan-1.dll").exists()
+        } catch (_: Exception) { false }
     }
 }
