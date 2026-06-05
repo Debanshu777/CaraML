@@ -17,6 +17,10 @@ import com.debanshu777.caraml.features.chat.domain.usecase.GenerationResult
 import com.debanshu777.caraml.features.chat.domain.usecase.GetAvailableModelsUseCase
 import com.debanshu777.caraml.features.chat.domain.usecase.ManageContextUseCase
 import com.debanshu777.caraml.features.chat.domain.usecase.TrackModelUsageUseCase
+import com.debanshu777.caraml.core.rating.DiffusionStepPolicy
+import com.debanshu777.caraml.core.rating.DistilledHint
+import com.debanshu777.caraml.core.rating.SdArchitecture
+import com.debanshu777.caraml.core.rating.SdArchitectureClassifier
 import com.debanshu777.diffusionrunner.ImageGenParams
 import com.debanshu777.diffusionrunner.SampleMethod
 import com.debanshu777.diffusionrunner.VideoGenParams
@@ -394,16 +398,17 @@ class ChatViewModel(
         generationJob = viewModelScope.launch(Dispatchers.Default) {
             try {
                 val rp = _currentDiffusionParams.value
+                val sampler = SampleMethod.fromName(rp?.samplingMethod)
                 val params = ImageGenParams(
                     prompt = prompt,
                     negativePrompt = negative,
                     width = rp?.width ?: 512,
                     height = rp?.height ?: 512,
-                    steps = rp?.steps ?: 20,
+                    steps = rp?.steps ?: resolveDefaultSteps(sampler),
                     cfgScale = rp?.cfgScale ?: 7f,
                     // Use registry-pinned seed when available; otherwise roll a new random seed.
                     seed = rp?.seed ?: Clock.System.now().toEpochMilliseconds(),
-                    sampleMethod = SampleMethod.fromName(rp?.samplingMethod),
+                    sampleMethod = sampler,
                 )
                 val result = diffusionRepository.generateImage(params)
                 result.fold(
@@ -434,17 +439,18 @@ class ChatViewModel(
         generationJob = viewModelScope.launch(Dispatchers.Default) {
             try {
                 val rp = _currentDiffusionParams.value
+                val sampler = SampleMethod.fromName(rp?.samplingMethod)
                 val params = VideoGenParams(
                     prompt = prompt,
                     negativePrompt = negative,
                     width = rp?.width ?: 512,
                     height = rp?.height ?: 512,
                     videoFrames = 16,
-                    steps = rp?.steps ?: 20,
+                    steps = rp?.steps ?: resolveDefaultSteps(sampler),
                     cfgScale = rp?.cfgScale ?: 7f,
                     // Use registry-pinned seed when available; otherwise roll a new random seed.
                     seed = rp?.seed ?: Clock.System.now().toEpochMilliseconds(),
-                    sampleMethod = SampleMethod.fromName(rp?.samplingMethod),
+                    sampleMethod = sampler,
                 )
                 val result = diffusionRepository.generateVideo(params)
                 result.fold(
@@ -470,6 +476,16 @@ class ChatViewModel(
         if (!query.contains('|')) return query to ""
         val parts = query.split('|', limit = 2)
         return parts[0].trim() to parts.getOrElse(1) { "" }.trim()
+    }
+
+    private fun resolveDefaultSteps(sampler: SampleMethod): Int {
+        val model = _selectedModel.value ?: return 20
+        val arch = diffusionRepository.getLastLoadedArchitecture()
+            ?.let { SdArchitecture.fromNativeString(it) }
+            ?: SdArchitectureClassifier.classify(emptyList(), model.modelId)
+        val distilled = if (SdArchitectureClassifier.isDistilled(model.modelId))
+            DistilledHint.YES else DistilledHint.UNKNOWN
+        return DiffusionStepPolicy.recommend(arch, sampler, distilled).steps
     }
 
     private fun appendMessages(userMessage: ChatMessage, assistantMessage: ChatMessage) {

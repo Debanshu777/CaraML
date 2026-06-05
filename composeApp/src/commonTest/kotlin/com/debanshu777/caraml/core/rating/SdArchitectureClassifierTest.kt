@@ -2,6 +2,8 @@ package com.debanshu777.caraml.core.rating
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class SdArchitectureClassifierTest {
 
@@ -147,5 +149,62 @@ class SdArchitectureClassifierTest {
     @Test
     fun unknownForEmptyInput() {
         assertEquals(SdArchitecture.UNKNOWN, SdArchitectureClassifier.classify(emptyList()))
+    }
+
+    // --- isDistilled ---
+
+    @Test
+    fun isDistilled_sdTurbo() {
+        assertTrue(SdArchitectureClassifier.isDistilled("stabilityai/sd-turbo"))
+    }
+
+    @Test
+    fun isDistilled_sdxlTurbo() {
+        assertTrue(SdArchitectureClassifier.isDistilled("stabilityai/sdxl-turbo"))
+    }
+
+    @Test
+    fun isDistilled_fluxSchnell() {
+        assertTrue(SdArchitectureClassifier.isDistilled("black-forest-labs/FLUX.1-schnell"))
+    }
+
+    @Test
+    fun isDistilled_lcmLora() {
+        assertTrue(SdArchitectureClassifier.isDistilled("latent-consistency/lcm-lora-sdv1-5"))
+    }
+
+    @Test
+    fun isDistilled_ssd1b() {
+        assertTrue(SdArchitectureClassifier.isDistilled("segmind/SSD-1B"))
+    }
+
+    @Test
+    fun isDistilled_tinySd() {
+        assertTrue(SdArchitectureClassifier.isDistilled("segmind/tiny-sd"))
+    }
+
+    @Test
+    fun isDistilled_bkSdm() {
+        assertTrue(SdArchitectureClassifier.isDistilled("nota-ai/bk-sdm-v2-tiny"))
+    }
+
+    @Test
+    fun isNotDistilled_fluxDev() {
+        assertFalse(SdArchitectureClassifier.isDistilled("black-forest-labs/FLUX.1-dev"))
+    }
+
+    @Test
+    fun isNotDistilled_sdxlBase() {
+        assertFalse(SdArchitectureClassifier.isDistilled("stabilityai/stable-diffusion-xl-base-1.0"))
+    }
+
+    @Test
+    fun isNotDistilled_sd15() {
+        assertFalse(SdArchitectureClassifier.isDistilled("runwayml/stable-diffusion-v1-5"))
+    }
+
+    @Test
+    fun isDistilled_withTag() {
+        assertTrue(SdArchitectureClassifier.isDistilled("some/model", listOf("turbo")))
     }
 }

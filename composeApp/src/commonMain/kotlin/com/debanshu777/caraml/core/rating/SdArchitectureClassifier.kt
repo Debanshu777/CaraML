@@ -32,6 +32,9 @@ object SdArchitectureClassifier {
         "stable-diffusion", "stable-diffusion-v1", "stable-diffusion-v1-5",
         "stable-diffusion-v2", "sd1", "sd-1", "sd2", "sd-2",
     )
+    private val DISTILLED_SIGNALS = setOf(
+        "turbo", "schnell", "lightning", "lcm", "flash", "bk-sdm", "tiny-sd", "ssd-1b", "distilled",
+    )
 
     /**
      * Classifies an SD model from HuggingFace tags and model ID.
@@ -64,5 +67,18 @@ object SdArchitectureClassifier {
             matches(SD1_TAGS)       -> SdArchitecture.SD1
             else                    -> SdArchitecture.UNKNOWN
         }
+    }
+
+    /** Detects whether a model is a distilled/few-step variant based on its ID and tags. */
+    fun isDistilled(modelId: String, tags: List<String> = emptyList()): Boolean {
+        val normalizedId = modelId.lowercase()
+        val normalized = buildSet<String> {
+            tags.forEach { tag -> add(tag.lowercase().trim()) }
+            normalizedId.split("/", "-", "_", ".").forEach { segment ->
+                if (segment.length >= 2) add(segment)
+            }
+        }
+        return normalized.any { it in DISTILLED_SIGNALS } ||
+            DISTILLED_SIGNALS.any { normalizedId.contains(it) }
     }
 }

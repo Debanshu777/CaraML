@@ -39,6 +39,7 @@ class DiffusionInferenceRepository(
     private val settingsRepository: SettingsRepository,
 ) {
     private val componentChecker = SdCppComponentChecker(storagePathProvider)
+    private var lastLoadedArchStr: String? = null
 
     /**
      * Live diffusion progress.
@@ -111,6 +112,8 @@ class DiffusionInferenceRepository(
                     "Failed to load model. The file may be corrupted or unsupported.",
                 )
             }
+            // Cache the native architecture string for step-count policy lookups.
+            lastLoadedArchStr = runner.getDiffusionModelMetadata(modelPath)?.architecture
             AppLogger.i(TAG) { "loadModel: success" }
             ModelLoadResult.Success(contextSize = 0)
         } catch (e: Exception) {
@@ -228,7 +231,11 @@ class DiffusionInferenceRepository(
 
     fun release() {
         runner.release()
+        lastLoadedArchStr = null
     }
+
+    /** Architecture string reported by the native layer for the currently loaded model. */
+    fun getLastLoadedArchitecture(): String? = lastLoadedArchStr
 
     /** Returns recommended inference parameters for the given model, or null for unknown/simple models. */
     fun getRecommendedParams(model: LocalModelEntity): SdCppRecommendedParams? =
