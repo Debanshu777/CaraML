@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
@@ -22,9 +21,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.platform.DeviceHints
+import com.debanshu777.caraml.core.rating.ModelSuitabilityCalculator
+import com.debanshu777.caraml.core.rating.SdArchitectureClassifier
+import com.debanshu777.caraml.core.rating.SuitabilityResult
+import com.debanshu777.caraml.core.rating.parseSizeHintToBytes
+import com.debanshu777.caraml.core.rating.ui.SuitabilityChip
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
 import com.debanshu777.huggingfacemanager.model.ModelDetailResponse
 import com.debanshu777.caraml.features.modelhub.presentation.search.GgufFileUiState
+import com.debanshu777.caraml.features.modelhub.presentation.search.InstallBundleUiState
+import com.debanshu777.huggingfacemanager.sdcpp.getModelSetup
 
 @Composable
 fun ModelDetailContent(
@@ -32,9 +39,22 @@ fun ModelDetailContent(
     ggufFiles: List<GgufFileUiState>,
     isDownloading: Boolean,
     onDownloadClick: (String, String, DownloadMetadataDTO) -> Unit,
-    modifier: Modifier = Modifier
+    weightFilesHeading: String = "GGUF files",
+    weightFilesEmptyLabel: String = "No GGUF files found",
+    // Diffusion-specific
+    installBundleState: InstallBundleUiState = InstallBundleUiState(),
+    onVariantSelected: (String) -> Unit = {},
+    onSmartInstall: () -> Unit = {},
+    showInstallBundle: Boolean = false,
+    deviceHints: DeviceHints? = null,
+    onRatingInfoClick: ((modelId: String, result: SuitabilityResult) -> Unit)? = null,
+    modifier: Modifier = Modifier,
 ) {
     if (model == null) return
+
+    val modelId = model.modelId ?: model.id ?: ""
+    val modelSetup = if (modelId.isNotBlank()) getModelSetup(modelId) else null
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -42,6 +62,7 @@ fun ModelDetailContent(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // Title / author
         Text(
             text = model.modelId ?: model.id ?: "Unknown",
             style = MaterialTheme.typography.headlineSmall,
@@ -54,6 +75,8 @@ fun ModelDetailContent(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+
+        // Downloads / likes
         if (model.downloads != null || model.likes != null) {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -97,13 +120,55 @@ fun ModelDetailContent(
                 }
             }
         }
+
+        // Overall device-fit chip
+        if (deviceHints != null) {
+            val isDiffusion = model.pipelineTag == "text-to-image" ||
+                              model.pipelineTag == "text-to-video"
+            val overallResult = if (isDiffusion) {
+                val allTags = buildList {
+                    model.tags?.filterNotNull()?.let { addAll(it) }
+                    model.cardData?.tags?.filterNotNull()?.let { addAll(it) }
+                }
+                val arch = SdArchitectureClassifier.classify(
+                    tags = allTags,
+                    modelId = model.modelId ?: model.id ?: "",
+                )
+                val totalComponentBytes = installBundleState.components
+                    .filter { it.required }
+                    .mapNotNull { it.sizeHint?.let { h -> parseSizeHintToBytes(h) } }
+                    .takeIf { it.isNotEmpty() }
+                    ?.sum()
+                ModelSuitabilityCalculator.rateDiffusion(
+                    hints = deviceHints,
+                    architecture = arch,
+                    totalComponentBytes = totalComponentBytes,
+                )
+            } else {
+                ModelSuitabilityCalculator.rateLlm(
+                    hints = deviceHints,
+                    numParameters = model.safetensors?.total ?: model.gguf?.total,
+                    contextLength = model.gguf?.contextLength,
+                    architecture = model.gguf?.architecture,
+                    pipelineTag = model.pipelineTag,
+                )
+            }
+            SuitabilityChip(
+                rating = overallResult.rating,
+                onInfoClick = onRatingInfoClick?.let { cb ->
+                    { cb(model.modelId ?: model.id ?: "Unknown", overallResult) }
+                },
+            )
+        }
+
+        // Info card
         val hasInfo = model.libraryName != null || model.pipelineTag != null ||
             model.config?.modelType != null || model.config?.architectures?.filterNotNull()?.isNotEmpty() == true ||
             model.cardData?.license != null || model.cardData?.baseModel?.takeIf { it.isNotEmpty() } != null ||
             model.createdAt != null || model.lastModified != null
         if (hasInfo) {
             Surface(
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.medium,
                 tonalElevation = 1.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -130,6 +195,8 @@ fun ModelDetailContent(
                 }
             }
         }
+
+        // Tags
         model.tags?.filterNotNull()?.takeIf { it.isNotEmpty() }?.let { tags ->
             Text(
                 text = "Tags",
@@ -141,10 +208,7 @@ fun ModelDetailContent(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 tags.forEach { tag ->
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        tonalElevation = 1.dp
-                    ) {
+                    Surface(shape = MaterialTheme.shapes.large, tonalElevation = 1.dp) {
                         Text(
                             text = tag,
                             style = MaterialTheme.typography.labelMedium,
@@ -154,44 +218,75 @@ fun ModelDetailContent(
                 }
             }
         }
-        if (ggufFiles.isNotEmpty()) {
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+        if (showInstallBundle) {
+            // ── Diffusion model: unified Smart Install card ──
+            InstallBundleCard(
+                modelId = modelId,
+                state = installBundleState,
+                familyLabel = modelSetup?.familyLabel,
+                modelDescription = modelSetup?.description,
+                onVariantSelected = onVariantSelected,
+                onInstall = onSmartInstall,
+                modifier = Modifier.fillMaxWidth(),
+                deviceHints = null,
+                numParameters = null,
+                contextLength = null,
+                architecture = null,
+            )
+        } else {
+            // ── Language model: per-file GGUF list ──
             Text(
-                text = "GGUF Files",
+                text = weightFilesHeading,
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(bottom = 8.dp)
+                modifier = Modifier.padding(bottom = 4.dp)
             )
-            ggufFiles.forEach { item ->
-                GgufFileListItem(
-                    filename = item.filename,
-                    sizeBytes = item.sizeBytes,
-                    isDownloaded = item.isDownloaded,
-                    progress = item.progress,
-                    isDownloading = isDownloading,
-                    onDownloadClick = {
-                        onDownloadClick(
-                            model.modelId ?: model.id ?: "",
-                            item.path,
-                            DownloadMetadataDTO(
-                                sizeBytes = item.sizeBytes,
-                                author = model.author,
-                                libraryName = model.libraryName,
-                                pipelineTag = model.pipelineTag,
-                                contextLength = model.gguf?.contextLength
+            if (ggufFiles.isNotEmpty()) {
+                ggufFiles.forEach { item ->
+                    val fileRating = deviceHints?.let { hints ->
+                        ModelSuitabilityCalculator.rateLlm(
+                            hints = hints,
+                            numParameters = model.safetensors?.total ?: model.gguf?.total,
+                            sizeBytes = item.sizeBytes,
+                            quantTag = ModelSuitabilityCalculator.parseQuantTag(item.filename),
+                            contextLength = model.gguf?.contextLength,
+                            architecture = model.gguf?.architecture,
+                            pipelineTag = model.pipelineTag,
+                        ).rating
+                    }
+                    GgufFileListItem(
+                        filename = item.path.ifEmpty { item.filename },
+                        sizeBytes = item.sizeBytes,
+                        isDownloaded = item.isDownloaded,
+                        progress = item.progress,
+                        isDownloading = isDownloading,
+                        onDownloadClick = {
+                            onDownloadClick(
+                                model.modelId ?: model.id ?: "",
+                                item.path,
+                                DownloadMetadataDTO(
+                                    sizeBytes = item.sizeBytes,
+                                    author = model.author,
+                                    libraryName = model.libraryName,
+                                    pipelineTag = model.pipelineTag,
+                                    contextLength = model.gguf?.contextLength
+                                )
                             )
-                        )
-                    },
-                    modifier = Modifier.padding(vertical = 4.dp)
+                        },
+                        modifier = Modifier.padding(vertical = 4.dp),
+                        rating = fileRating,
+                    )
+                }
+            } else {
+                Text(
+                    text = weightFilesEmptyLabel,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-        } else {
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-            Text(
-                text = "No GGUF files found",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
     }
 }

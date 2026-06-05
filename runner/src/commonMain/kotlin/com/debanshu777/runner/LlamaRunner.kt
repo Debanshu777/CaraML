@@ -19,6 +19,7 @@ expect class LlamaRunner() {
     fun processUserPrompt(
         userPrompt: String,
         predictLength: Int,
+        grammar: String = "",
     ): Int
 
     fun unloadModel()
@@ -31,5 +32,9 @@ expect class LlamaRunner() {
 
     fun getStopReason(): Int
 
+    fun getGpuLayers(): Int
+
     fun clearContext()
+
+    fun getModelArchitecture(): String?
 }

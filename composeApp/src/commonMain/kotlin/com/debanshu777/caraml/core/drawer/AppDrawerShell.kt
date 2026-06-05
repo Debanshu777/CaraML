@@ -1,23 +1,35 @@
 package com.debanshu777.caraml.core.drawer
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChatBubbleOutline
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Chat
-import androidx.compose.material.icons.filled.ChatBubbleOutline
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Storage
 import androidx.compose.ui.Modifier
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import com.debanshu777.caraml.core.navigation.AppScreen
+import com.debanshu777.caraml.features.chat.domain.GenerationMode
 
 private val primaryDrawerItems = listOf(
     DrawerItem(
         id = "chat",
         title = "Chat",
         icon = Icons.Default.ChatBubbleOutline,
+    ),
+    DrawerItem(
+        id = "image",
+        title = "Image",
+        icon = Icons.Default.Image,
+    ),
+    DrawerItem(
+        id = "video",
+        title = "Video",
+        icon = Icons.Default.Videocam,
     ),
     DrawerItem(
         id = "models",
@@ -31,24 +43,11 @@ private val primaryDrawerItems = listOf(
     ),
 )
 
-private val itemIdToScreen: Map<String, AppScreen> = mapOf(
-    "chat" to AppScreen.Home,
-    "models" to AppScreen.Search,
-    "settings" to AppScreen.Settings,
-)
-
 private val primaryScreens = setOf<NavKey>(
     AppScreen.Home,
     AppScreen.Search,
     AppScreen.Settings,
 )
-
-private fun NavKey?.toDrawerItemId(): String? = when (this) {
-    is AppScreen.Home -> "chat"
-    is AppScreen.Search -> "models"
-    is AppScreen.Settings -> "settings"
-    else -> null
-}
 
 @Composable
 fun AppDrawerShell(
@@ -57,11 +56,25 @@ fun AppDrawerShell(
     content: @Composable () -> Unit,
 ) {
     val controller = remember { DrawerController() }
+    val modeController = remember { GenerationModeController() }
 
-    CompositionLocalProvider(LocalDrawerController provides controller) {
+    CompositionLocalProvider(
+        LocalDrawerController provides controller,
+        LocalGenerationModeController provides modeController,
+    ) {
         val currentScreen = backStack.lastOrNull()
-        val selectedItemId = currentScreen.toDrawerItemId()
         val gestureEnabled = currentScreen in primaryScreens
+
+        val selectedItemId = when {
+            currentScreen is AppScreen.Home -> when (modeController.mode) {
+                GenerationMode.Text -> "chat"
+                GenerationMode.Image -> "image"
+                GenerationMode.Video -> "video"
+            }
+            currentScreen is AppScreen.Search -> "models"
+            currentScreen is AppScreen.Settings -> "settings"
+            else -> null
+        }
 
         AnimatedDrawerScaffold(
             modifier = modifier,
@@ -73,10 +86,40 @@ fun AppDrawerShell(
                     items = primaryDrawerItems,
                     selectedItemId = selectedItemId,
                     onItemClick = { item ->
-                        val screen = itemIdToScreen[item.id]
-                        if (screen != null && currentScreen != screen) {
-                            backStack.clear()
-                            backStack.add(screen)
+                        when (item.id) {
+                            "chat" -> {
+                                modeController.setState(GenerationMode.Text)
+                                if (currentScreen != AppScreen.Home) {
+                                    backStack.clear()
+                                    backStack.add(AppScreen.Home)
+                                }
+                            }
+                            "image" -> {
+                                modeController.setState(GenerationMode.Image)
+                                if (currentScreen != AppScreen.Home) {
+                                    backStack.clear()
+                                    backStack.add(AppScreen.Home)
+                                }
+                            }
+                            "video" -> {
+                                modeController.setState(GenerationMode.Video)
+                                if (currentScreen != AppScreen.Home) {
+                                    backStack.clear()
+                                    backStack.add(AppScreen.Home)
+                                }
+                            }
+                            "models" -> {
+                                if (currentScreen != AppScreen.Search) {
+                                    backStack.clear()
+                                    backStack.add(AppScreen.Search)
+                                }
+                            }
+                            "settings" -> {
+                                if (currentScreen != AppScreen.Settings) {
+                                    backStack.clear()
+                                    backStack.add(AppScreen.Settings)
+                                }
+                            }
                         }
                         controller.close()
                     }

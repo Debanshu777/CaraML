@@ -1,7 +1,10 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,26 +14,33 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -40,11 +50,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.drawer.LocalDrawerController
+import com.debanshu777.caraml.core.platform.DeviceHints
+import com.debanshu777.caraml.core.rating.SuitabilityRating
+import com.debanshu777.caraml.core.rating.SuitabilityResult
+import com.debanshu777.caraml.core.rating.ui.SuitabilityChip
+import com.debanshu777.caraml.core.rating.ui.SuitabilityInfoSheet
+import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.DownloadedModelsViewModel
+import com.debanshu777.caraml.features.modelhub.presentation.downloaded.ReadinessFilter
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.components.LocalModelListItem
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelListItem
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchBar
@@ -57,7 +74,7 @@ import kotlinx.coroutines.launch
 fun SearchScreen(
     modelViewModel: ModelViewModel,
     downloadedModelsViewModel: DownloadedModelsViewModel,
-    onNavigateToDetails: (String) -> Unit,
+    onNavigateToDetails: (modelId: String, hubBrowseMode: ModelHubBrowseMode) -> Unit,
     onSelectModelAndGoBack: (LocalModelEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -66,10 +83,16 @@ fun SearchScreen(
 
     val storageInfo by modelViewModel.storageInfo.collectAsState()
 
+    // Shared bottom sheet — opened from any rating chip in the list.
+    var ratingSheetModelId by remember { mutableStateOf<String?>(null) }
+    var ratingSheetResult by remember { mutableStateOf<SuitabilityResult?>(null) }
+
     val drawerController = LocalDrawerController.current
+    val snackbarHostState = remember { SnackbarHostState() }
 
     Scaffold(
         modifier = modifier,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Models") },
@@ -83,6 +106,7 @@ fun SearchScreen(
     ) { paddingValues ->
         Column(modifier = Modifier.padding(paddingValues)) {
             StorageInfoBar(storageInfo = storageInfo)
+            DeviceInfoSection(deviceHints = storageInfo.deviceHints)
             PrimaryTabRow(selectedTabIndex = selectedTabIndex) {
                 tabs.forEachIndexed { index, title ->
                     Tab(
@@ -97,25 +121,49 @@ fun SearchScreen(
                 0 -> SearchTabContent(
                     viewModel = modelViewModel,
                     onNavigateToDetails = onNavigateToDetails,
+                    deviceHints = storageInfo.deviceHints,
+                    onRatingInfoClick = { id, result ->
+                        ratingSheetModelId = id
+                        ratingSheetResult = result
+                    },
                     modifier = Modifier.fillMaxSize()
                 )
 
                 1 -> DownloadedTabContent(
                     viewModel = downloadedModelsViewModel,
                     onSelectModelAndGoBack = onSelectModelAndGoBack,
+                    onNavigateToDetails = onNavigateToDetails,
+                    snackbarHostState = snackbarHostState,
                     modifier = Modifier.fillMaxSize()
                 )
             }
         }
+    }
+
+    val sheetResult = ratingSheetResult
+    val sheetModelId = ratingSheetModelId
+    if (sheetResult != null && sheetModelId != null) {
+        SuitabilityInfoSheet(
+            modelId = sheetModelId,
+            result = sheetResult,
+            deviceHints = storageInfo.deviceHints,
+            onDismiss = {
+                ratingSheetResult = null
+                ratingSheetModelId = null
+            },
+        )
     }
 }
 
 @Composable
 private fun SearchTabContent(
     viewModel: ModelViewModel,
-    onNavigateToDetails: (String) -> Unit,
+    onNavigateToDetails: (modelId: String, hubBrowseMode: ModelHubBrowseMode) -> Unit,
+    deviceHints: DeviceHints?,
+    onRatingInfoClick: (modelId: String, result: SuitabilityResult) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val browseMode by viewModel.browseMode.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val searchResponse by viewModel.searchResponse.collectAsState()
     val isSearchLoading by viewModel.isSearchLoading.collectAsState()
@@ -126,27 +174,64 @@ private fun SearchTabContent(
     val isListLoading by viewModel.isListLoading.collectAsState()
     val listError by viewModel.listError.collectAsState()
 
-    val isSearchMode = searchQuery.isNotEmpty() || searchResponse != null
+    val isLlmHub = browseMode == ModelHubBrowseMode.LanguageModels
+    val isSearchMode = isLlmHub && (searchQuery.isNotEmpty() || searchResponse != null)
 
     Column(modifier = modifier) {
+        val chipScroll = rememberScrollState()
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .horizontalScroll(chipScroll)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            SearchBar(
-                query = searchQuery,
-                onQueryChange = { viewModel.updateSearchQuery(it) },
-                onSearch = {
-                    if (searchQuery.isNotEmpty()) {
-                        viewModel.performSearch()
-                    } else {
-                        viewModel.loadModels()
-                    }
-                },
-                modifier = Modifier.fillMaxWidth()
+            FilterChip(
+                selected = browseMode == ModelHubBrowseMode.LanguageModels,
+                onClick = { viewModel.setBrowseMode(ModelHubBrowseMode.LanguageModels) },
+                label = { Text("LLM") }
             )
+            FilterChip(
+                selected = browseMode == ModelHubBrowseMode.DiffusionImage,
+                onClick = { viewModel.setBrowseMode(ModelHubBrowseMode.DiffusionImage) },
+                label = { Text("Image") }
+            )
+            FilterChip(
+                selected = browseMode == ModelHubBrowseMode.DiffusionVideo,
+                onClick = { viewModel.setBrowseMode(ModelHubBrowseMode.DiffusionVideo) },
+                label = { Text("Video") }
+            )
+        }
+
+        if (!isLlmHub) {
+            Text(
+                text = "Curated Hugging Face repos from stable-diffusion.cpp docs (no search).",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+            )
+        }
+
+        if (isLlmHub) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                SearchBar(
+                    query = searchQuery,
+                    onQueryChange = { viewModel.updateSearchQuery(it) },
+                    onSearch = {
+                        if (searchQuery.isNotEmpty()) {
+                            viewModel.performSearch()
+                        } else {
+                            viewModel.loadModels()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
 
         if (isSearchMode) {
@@ -166,7 +251,7 @@ private fun SearchTabContent(
                     }
                 }
             }
-        } else {
+        } else if (isLlmHub) {
             SortFilterChips(
                 sort = listParams.sort,
                 minParams = listParams.minParams,
@@ -208,7 +293,11 @@ private fun SearchTabContent(
                             ) { model ->
                                 SearchModelListItem(
                                     model = model,
-                                    onClick = { model.id?.let { id -> onNavigateToDetails(id) } }
+                                    onClick = {
+                                        model.id?.let { id ->
+                                            onNavigateToDetails(id, browseMode)
+                                        }
+                                    }
                                 )
                             }
                         }
@@ -225,7 +314,11 @@ private fun SearchTabContent(
                         )
 
                         listResponse?.models.isNullOrEmpty() -> Text(
-                            text = "No models found. Tap Search to try.",
+                            text = if (isLlmHub) {
+                                "No models found. Tap Search to try."
+                            } else {
+                                "No curated models in this list."
+                            },
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -239,7 +332,13 @@ private fun SearchTabContent(
                             ) { model ->
                                 ModelListItem(
                                     model = model,
-                                    onClick = { model.id?.let { id -> onNavigateToDetails(id) } }
+                                    onClick = {
+                                        model.id?.let { id ->
+                                            onNavigateToDetails(id, browseMode)
+                                        }
+                                    },
+                                    deviceHints = deviceHints,
+                                    onRatingInfoClick = onRatingInfoClick,
                                 )
                             }
                         }
@@ -247,6 +346,148 @@ private fun SearchTabContent(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun DeviceInfoSection(
+    deviceHints: DeviceHints?,
+    modifier: Modifier = Modifier
+) {
+    if (deviceHints == null) return
+
+    var expanded by remember { mutableStateOf(false) }
+    val spacing = LocalSpacing.current
+
+    val ramBudgetBytes = deviceHints.memoryBudgetMB * 1024 * 1024
+    val gpuText = if (deviceHints.gpuBackendAvailable) "Available" else "Unavailable"
+    val summary = "${deviceHints.performanceCoreCount}P/${deviceHints.totalCoreCount} cores · " +
+        "${formatStorageBytes(ramBudgetBytes)} RAM · GPU $gpuText"
+
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = spacing.l, vertical = spacing.s),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 1.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(spacing.m)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Device",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = if (expanded) "Collapse" else "Expand",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            if (!expanded) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = summary,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            AnimatedVisibility(visible = expanded) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    DeviceInfoRow(
+                        label = "Performance cores",
+                        value = "${deviceHints.performanceCoreCount} of ${deviceHints.totalCoreCount}"
+                    )
+                    if (deviceHints.perfCoreMask.isNotBlank()) {
+                        DeviceInfoRow(
+                            label = "Perf core mask",
+                            value = deviceHints.perfCoreMask
+                        )
+                    }
+                    DeviceInfoRow(
+                        label = "Total cores",
+                        value = "${deviceHints.totalCoreCount}"
+                    )
+                    DeviceInfoRow(
+                        label = "RAM budget",
+                        value = formatStorageBytes(ramBudgetBytes)
+                    )
+                    DeviceInfoRow(
+                        label = "GPU backend",
+                        value = gpuText,
+                        valueColor = if (deviceHints.gpuBackendAvailable) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Model fit rating",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        SuitabilityChip(rating = SuitabilityRating.BEST)
+                        SuitabilityChip(rating = SuitabilityRating.GOOD)
+                        SuitabilityChip(rating = SuitabilityRating.AVERAGE)
+                        SuitabilityChip(rating = SuitabilityRating.POOR)
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Estimated as weights + KV cache + ~20% overhead vs RAM budget. " +
+                            "Tap any chip in the list for details.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DeviceInfoRow(
+    label: String,
+    value: String,
+    valueColor: Color = MaterialTheme.colorScheme.onSurface,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.labelSmall,
+            color = valueColor
+        )
     }
 }
 
@@ -269,12 +510,12 @@ private fun StorageInfoBar(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        shape = RoundedCornerShape(12.dp),
+            .padding(horizontal = LocalSpacing.current.l, vertical = LocalSpacing.current.s),
+        shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         tonalElevation = 1.dp
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Column(modifier = Modifier.padding(LocalSpacing.current.m)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -283,7 +524,6 @@ private fun StorageInfoBar(
                 Text(
                     text = "Device Storage",
                     style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
@@ -304,7 +544,7 @@ private fun StorageInfoBar(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(8.dp)
-                    .clip(RoundedCornerShape(4.dp)),
+                    .clip(MaterialTheme.shapes.extraSmall),
                 color = if (usedFraction > 0.85f) {
                     MaterialTheme.colorScheme.error
                 } else {
@@ -322,7 +562,6 @@ private fun StorageInfoBar(
                 Text(
                     text = "Models: ${formatStorageBytes(storageInfo.usedByModelsBytes)}",
                     style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.primary
                 )
             }
@@ -352,41 +591,157 @@ private fun formatStorageBytes(bytes: Long): String {
 private fun DownloadedTabContent(
     viewModel: DownloadedModelsViewModel,
     onSelectModelAndGoBack: (LocalModelEntity) -> Unit,
+    onNavigateToDetails: (modelId: String, hubBrowseMode: ModelHubBrowseMode) -> Unit,
+    snackbarHostState: SnackbarHostState,
     modifier: Modifier = Modifier
 ) {
     val downloadedModels by viewModel.downloadedModels.collectAsState()
-    val scope = rememberCoroutineScope()
+    val selectionMode by viewModel.selectionMode.collectAsState()
+    val selectedIds by viewModel.selectedIds.collectAsState()
+    val isDeleting by viewModel.isDeleting.collectAsState()
+    val deleteResultMessage by viewModel.deleteResultMessage.collectAsState()
+    val readinessFilter by viewModel.readinessFilter.collectAsState()
 
-    Box(
-        modifier = modifier,
-        contentAlignment = if (downloadedModels.isEmpty()) Alignment.Center else Alignment.TopStart
-    ) {
-        if (downloadedModels.isEmpty()) {
-            Text(
-                text = "No downloaded models yet.\nBrowse and download models to see them here.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(16.dp)
-            )
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize()
+    val scope = rememberCoroutineScope()
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    LaunchedEffect(deleteResultMessage) {
+        val message = deleteResultMessage ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(message)
+        viewModel.acknowledgeDeleteResult()
+    }
+
+    Column(modifier = modifier.fillMaxSize()) {
+        if (selectionMode && downloadedModels.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                items(
-                    items = downloadedModels,
-                    key = { it.id }
-                ) { model ->
-                    LocalModelListItem(
-                        model = model,
-                        onClick = {
-                            scope.launch {
-                                viewModel.trackModelUsage(model)
-                            }
-                            onSelectModelAndGoBack(model)
-                        }
+                TextButton(
+                    onClick = { viewModel.clearSelection() },
+                    enabled = !isDeleting
+                ) {
+                    Text("Cancel")
+                }
+                FilledTonalButton(
+                    onClick = { showDeleteConfirm = true },
+                    enabled = selectedIds.isNotEmpty() && !isDeleting
+                ) {
+                    Text("Delete (${selectedIds.size})")
+                }
+            }
+        }
+
+        // Readiness filter chips (hidden during selection mode)
+        if (!selectionMode) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                ReadinessFilter.entries.forEach { filter ->
+                    FilterChip(
+                        selected = readinessFilter == filter,
+                        onClick = { viewModel.setReadinessFilter(filter) },
+                        label = {
+                            Text(
+                                when (filter) {
+                                    ReadinessFilter.ALL -> "All"
+                                    ReadinessFilter.READY -> "Ready"
+                                    ReadinessFilter.PARTIAL -> "Needs setup"
+                                }
+                            )
+                        },
                     )
                 }
             }
         }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            contentAlignment = if (downloadedModels.isEmpty()) Alignment.Center else Alignment.TopStart
+        ) {
+            if (downloadedModels.isEmpty()) {
+                Text(
+                    text = "No downloaded models yet.\nBrowse and download models to see them here.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(16.dp)
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    items(
+                        items = downloadedModels,
+                        key = { it.id }
+                    ) { model ->
+                        LocalModelListItem(
+                            model = model,
+                            selectionMode = selectionMode,
+                            isSelected = model.id in selectedIds,
+                            onOpenModel = {
+                                scope.launch {
+                                    viewModel.trackModelUsage(model)
+                                }
+                                onSelectModelAndGoBack(model)
+                            },
+                            onToggleSelect = { viewModel.toggleSelection(model) },
+                            onLongPress = {
+                                if (selectionMode) {
+                                    viewModel.toggleSelection(model)
+                                } else {
+                                    viewModel.beginSelection(model)
+                                }
+                            },
+                            onFixComponents = if (model.componentStatus == com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity.STATUS_PARTIAL) {
+                                {
+                                    val mode = when (model.modelType) {
+                                        com.debanshu777.caraml.core.storage.localmodel.ModelType.VIDEO -> ModelHubBrowseMode.DiffusionVideo
+                                        com.debanshu777.caraml.core.storage.localmodel.ModelType.IMAGE -> ModelHubBrowseMode.DiffusionImage
+                                        else -> ModelHubBrowseMode.DiffusionImage
+                                    }
+                                    onNavigateToDetails(model.modelId, mode)
+                                }
+                            } else null,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { if (!isDeleting) showDeleteConfirm = false },
+            title = { Text("Remove downloads?") },
+            text = { Text("Remove selected downloads from this device?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirm = false
+                        viewModel.deleteSelected()
+                    },
+                    enabled = !isDeleting
+                ) {
+                    Text("Remove")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showDeleteConfirm = false },
+                    enabled = !isDeleting
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }

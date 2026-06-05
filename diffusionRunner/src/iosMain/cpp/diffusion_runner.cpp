@@ -42,10 +42,14 @@ static DiffusionModelConfig convert_model_config(const DiffusionModelConfigFFI &
     config.diffusion_flash_attn = ffi_config.diffusion_flash_attn != 0;
     config.enable_mmap = ffi_config.enable_mmap != 0;
     config.diffusion_conv_direct = ffi_config.diffusion_conv_direct != 0;
+    config.free_params_immediately = ffi_config.free_params_immediately != 0;
     config.wtype = ffi_config.wtype;
     config.flow_shift = ffi_config.flow_shift;
     config.flow_shift_is_set = ffi_config.flow_shift_is_set != 0;
     config.n_threads = ffi_config.n_threads;
+    config.prediction = ffi_config.prediction;
+    config.taesd_path = ffi_config.taesd_path ? ffi_config.taesd_path : "";
+    config.vae_tiling = ffi_config.vae_tiling != 0;
     return config;
 }
 
@@ -111,6 +115,17 @@ void diffusion_runner_ios_free_result(PngResultFFI *result) {
 
 void diffusion_runner_ios_release(long long handle) {
     diffusion_runner_core_release(handle);
+}
+
+struct DiffusionMetadataResultFFI diffusion_runner_ios_get_metadata(const char* model_path) {
+    DiffusionMetadataResult core_result = diffusion_runner_core_get_metadata(model_path);
+
+    struct DiffusionMetadataResultFFI ffi = {};
+    ffi.success = core_result.success ? 1 : 0;
+    ffi.estimated_ram = (long long)core_result.estimated_ram;
+    strncpy(ffi.architecture,   core_result.architecture,   sizeof(ffi.architecture) - 1);
+    strncpy(ffi.dominant_quant, core_result.dominant_quant, sizeof(ffi.dominant_quant) - 1);
+    return ffi;
 }
 
 }

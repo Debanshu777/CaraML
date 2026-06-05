@@ -5,7 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Download
@@ -19,6 +19,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.rating.SuitabilityRating
+import com.debanshu777.caraml.core.rating.ui.SuitabilityDot
+import com.debanshu777.caraml.core.theme.LocalSpacing
 
 @Composable
 fun GgufFileListItem(
@@ -28,22 +31,35 @@ fun GgufFileListItem(
     progress: Float?,
     isDownloading: Boolean,
     onDownloadClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    rating: SuitabilityRating? = null,
 ) {
+    val hasDirectory = filename.contains('/')
+    val displayName = filename.substringAfterLast('/')
+    val directory = if (hasDirectory) filename.substringBeforeLast('/') + "/" else null
+
     Surface(
-        shape = RoundedCornerShape(12.dp),
+        shape = MaterialTheme.shapes.medium,
         tonalElevation = 1.dp,
         modifier = modifier.fillMaxWidth()
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            modifier = Modifier.fillMaxWidth().padding(LocalSpacing.current.m),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
+                if (directory != null) {
+                    Text(
+                        text = directory,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = if (filename.length > 40) filename.take(37) + "..." else filename,
+                        text = displayName,
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 1,
                         modifier = Modifier.weight(1f)
@@ -55,11 +71,17 @@ fun GgufFileListItem(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                    if (rating != null) {
+                        SuitabilityDot(
+                            rating = rating,
+                            modifier = Modifier.padding(start = 6.dp),
+                        )
+                    }
                 }
                 if (progress != null && progress >= 0) {
                     LinearProgressIndicator(
                         progress = { progress / 100f },
-                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                        modifier = Modifier.fillMaxWidth().padding(top = LocalSpacing.current.xs)
                     )
                     Text("${progress.toInt()}%", style = MaterialTheme.typography.labelSmall)
                 }
@@ -75,7 +97,7 @@ fun GgufFileListItem(
                     Icon(Icons.Default.Download, contentDescription = "Download")
                 }
             }
-    }
+        }
     }
 }
 

@@ -18,7 +18,21 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.features.chat.domain.GenerationMode
 import com.debanshu777.caraml.features.chat.presentation.components.providers.ErrorMessagePreviewProvider
+
+@Preview
+@Composable
+private fun NoCompatibleModelsScreenPreview() {
+    MaterialTheme {
+        Surface(modifier = Modifier.fillMaxSize()) {
+            NoCompatibleModelsScreen(
+                mode = GenerationMode.Image,
+                onDownloadModelClick = {},
+            )
+        }
+    }
+}
 
 @Preview
 @Composable
@@ -51,6 +65,47 @@ private fun ModelErrorScreenPreview(
                 errorMessage = errorMessage,
                 onTryAnotherModelClick = {}
             )
+        }
+    }
+}
+
+@Composable
+fun NoCompatibleModelsScreen(
+    mode: GenerationMode,
+    onDownloadModelClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val (title, subtitle) = when (mode) {
+        GenerationMode.Text ->
+            "No chat models downloaded" to "Download a language model (GGUF) to use text chat"
+        GenerationMode.Image ->
+            "No image models downloaded" to "Download a diffusion checkpoint to generate images"
+        GenerationMode.Video ->
+            "No video models downloaded" to "Download a diffusion checkpoint that supports video"
+    }
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleLarge,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+            Button(onClick = onDownloadModelClick) {
+                Text("Browse models")
+            }
         }
     }
 }

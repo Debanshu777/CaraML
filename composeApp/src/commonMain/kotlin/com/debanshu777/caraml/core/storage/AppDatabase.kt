@@ -5,13 +5,25 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.RoomDatabaseConstructor
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
+import com.debanshu777.caraml.core.storage.component.DownloadedComponentDao
+import com.debanshu777.caraml.core.storage.component.DownloadedComponentEntity
+import com.debanshu777.caraml.core.storage.component.ModelComponentLinkEntity
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelDao
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 
-@Database(entities = [LocalModelEntity::class], version = 3, exportSchema = false)
+@Database(
+    entities = [
+        LocalModelEntity::class,
+        DownloadedComponentEntity::class,
+        ModelComponentLinkEntity::class,
+    ],
+    version = 3,
+    exportSchema = false,
+)
 @ConstructedBy(AppDatabaseConstructor::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun localModelDao(): LocalModelDao
+    abstract fun downloadedComponentDao(): DownloadedComponentDao
 }
 
 @Suppress("NO_ACTUAL_FOR_EXPECT")

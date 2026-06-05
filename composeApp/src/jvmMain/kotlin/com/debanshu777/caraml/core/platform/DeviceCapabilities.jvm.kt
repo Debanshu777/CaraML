@@ -4,11 +4,11 @@ import java.io.File
 
 private const val TAG = "DeviceCapabilities"
 
-class JvmDeviceCapabilities : DeviceCapabilities {
+actual class DeviceCapabilities actual constructor() {
 
     private val cachedHints: DeviceHints by lazy { computeHints() }
 
-    override fun getDeviceHints(): DeviceHints = cachedHints
+    actual fun getDeviceHints(): DeviceHints = cachedHints
 
     private fun computeHints(): DeviceHints {
         val totalCores = Runtime.getRuntime().availableProcessors()
@@ -24,10 +24,7 @@ class JvmDeviceCapabilities : DeviceCapabilities {
             performanceCoreCount = perfCores.coerceAtLeast(2),
             totalCoreCount = totalCores,
             memoryBudgetMB = getPhysicalMemoryMB(),
-            // Metal is compiled into the macOS native library via CMakeLists.txt.
-            // This will be incorrect if someone builds the native lib without Metal support.
-            // TODO: probe for Metal at runtime via system_profiler if startup cost is acceptable.
-            gpuBackendAvailable = isMac,
+            gpuBackendAvailable = isMac || detectDesktopVulkan(),
         )
     }
 
@@ -93,5 +90,37 @@ class JvmDeviceCapabilities : DeviceCapabilities {
             process.waitFor()
             if (process.exitValue() == 0) output else null
         } catch (_: Exception) { null }
+    }
+
+    private fun detectDesktopVulkan(): Boolean {
+        val osName = System.getProperty("os.name").lowercase()
+        return when {
+            osName.contains("linux") -> checkLinuxVulkan()
+            osName.contains("win") -> checkWindowsVulkan()
+            else -> false
+        }
+    }
+
+    private fun checkLinuxVulkan(): Boolean {
+        return try {
+            val output = readCommandOutput("ldconfig", "-p") ?: ""
+            val found = output.contains("libvulkan.so")
+            if (!found) {
+                // Fallback: probe common library paths
+                return listOf(
+                    "/usr/lib/x86_64-linux-gnu/libvulkan.so.1",
+                    "/usr/lib/libvulkan.so.1",
+                    "/usr/local/lib/libvulkan.so.1",
+                ).any { java.io.File(it).exists() }
+            }
+            found
+        } catch (_: Exception) { false }
+    }
+
+    private fun checkWindowsVulkan(): Boolean {
+        return try {
+            val systemRoot = System.getenv("SystemRoot") ?: "C:\\Windows"
+            java.io.File("$systemRoot\\System32\\vulkan-1.dll").exists()
+        } catch (_: Exception) { false }
     }
 }

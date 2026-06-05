@@ -1,14 +1,29 @@
 package com.debanshu777.diffusionrunner
 
+import com.debanshu777.diffusionrunner.cpp.DiffusionMetadataResultFFI
 import com.debanshu777.diffusionrunner.cpp.DiffusionModelConfigFFI
 import com.debanshu777.diffusionrunner.cpp.ImageGenConfigFFI
 import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_free_png
+import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_get_metadata
 import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_init
 import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_load_model
 import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_release
 import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_txt2img
 import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_free_result
-import kotlinx.cinterop.*
+import kotlinx.cinterop.ByteVar
+import kotlinx.cinterop.CPointer
+import kotlinx.cinterop.CPointerVar
+import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.FloatVar
+import kotlinx.cinterop.allocArray
+import kotlinx.cinterop.cValue
+import kotlinx.cinterop.cstr
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.pointed
+import kotlinx.cinterop.readBytes
+import kotlinx.cinterop.toKString
+import kotlinx.cinterop.useContents
+import kotlinx.cinterop.value
 
 @OptIn(ExperimentalForeignApi::class)
 actual class DiffusionRunner {
@@ -35,10 +50,14 @@ actual class DiffusionRunner {
                 diffusion_flash_attn = if (config.diffusionFlashAttn) 1 else 0
                 enable_mmap = if (config.enableMmap) 1 else 0
                 diffusion_conv_direct = if (config.diffusionConvDirect) 1 else 0
+                free_params_immediately = if (config.freeParamsImmediately) 1 else 0
                 wtype = config.wtype
                 flow_shift = config.flowShift
                 flow_shift_is_set = if (config.flowShift.isFinite()) 1 else 0
                 n_threads = config.nThreads
+                prediction = config.prediction
+                taesd_path = config.taesdPath.cstr.ptr
+                vae_tiling = if (config.vaeTiling) 1 else 0
             }
         }
 
@@ -133,6 +152,24 @@ actual class DiffusionRunner {
         if (handle != 0L) {
             diffusion_runner_ios_release(handle)
             handle = 0L
+        }
+    }
+
+    // iOS doesn't poll native progress (generation returns all at once via the same thread)
+    actual fun getStepProgress(): IntArray = intArrayOf(0, 0)
+
+    actual fun getDiffusionModelMetadata(modelPath: String): DiffusionModelMetadata? {
+        val result = diffusion_runner_ios_get_metadata(modelPath)
+        return result.useContents {
+            if (success == 0) return@useContents null
+            val arch = architecture.toKString().takeIf { it.isNotEmpty() }
+                ?: return@useContents null
+            val quant = dominant_quant.toKString().takeIf { it.isNotEmpty() }
+            DiffusionModelMetadata(
+                architecture = arch,
+                dominantQuantType = quant,
+                estimatedRamBytes = estimated_ram,
+            )
         }
     }
 }

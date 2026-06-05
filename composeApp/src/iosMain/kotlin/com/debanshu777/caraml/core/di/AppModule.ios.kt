@@ -1,7 +1,5 @@
 package com.debanshu777.caraml.core.di
 
-import com.debanshu777.caraml.core.platform.DeviceCapabilities
-import com.debanshu777.caraml.core.platform.IosDeviceCapabilities
 import com.debanshu777.caraml.core.storage.AppDatabase
 import com.debanshu777.caraml.core.storage.getDatabaseBuilder
 import com.debanshu777.caraml.core.storage.getRoomDatabase
@@ -11,8 +9,6 @@ import org.koin.dsl.module
 
 actual val platformHuggingFaceModule = module {
     single<StoragePathProvider> { IosStoragePathProvider() }
-
-    single<DeviceCapabilities> { IosDeviceCapabilities() }
 
     single<AppDatabase> {
         val pathProvider = get<StoragePathProvider>()

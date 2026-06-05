@@ -67,9 +67,13 @@ DiffusionModelConfig extract_model_config(JNIEnv *env, jobject config) {
     jfieldID diffusionFlashAttnField = env->GetFieldID(configClass, "diffusionFlashAttn", "Z");
     jfieldID enableMmapField = env->GetFieldID(configClass, "enableMmap", "Z");
     jfieldID diffusionConvDirectField = env->GetFieldID(configClass, "diffusionConvDirect", "Z");
+    jfieldID freeParamsImmediatelyField = env->GetFieldID(configClass, "freeParamsImmediately", "Z");
     jfieldID wtypeField = env->GetFieldID(configClass, "wtype", "I");
     jfieldID flowShiftField = env->GetFieldID(configClass, "flowShift", "F");
     jfieldID nThreadsField = env->GetFieldID(configClass, "nThreads", "I");
+    jfieldID predictionField = env->GetFieldID(configClass, "prediction", "I");
+    jfieldID taesdPathField = env->GetFieldID(configClass, "taesdPath", "Ljava/lang/String;");
+    jfieldID vaeTilingField = env->GetFieldID(configClass, "vaeTiling", "Z");
 
     // Extract values
     static std::string model_path_str = jstring_to_string(env, (jstring) env->GetObjectField(config, modelPathField));
@@ -78,6 +82,7 @@ DiffusionModelConfig extract_model_config(JNIEnv *env, jobject config) {
     static std::string clip_l_path_str = jstring_to_string(env, (jstring) env->GetObjectField(config, clipLPathField));
     static std::string clip_g_path_str = jstring_to_string(env, (jstring) env->GetObjectField(config, clipGPathField));
     static std::string t5xxl_path_str = jstring_to_string(env, (jstring) env->GetObjectField(config, t5xxlPathField));
+    static std::string taesd_path_str = jstring_to_string(env, (jstring) env->GetObjectField(config, taesdPathField));
 
     DiffusionModelConfig cpp_config = {};
     cpp_config.model_path = model_path_str.c_str();
@@ -92,11 +97,15 @@ DiffusionModelConfig extract_model_config(JNIEnv *env, jobject config) {
     cpp_config.diffusion_flash_attn = env->GetBooleanField(config, diffusionFlashAttnField);
     cpp_config.enable_mmap = env->GetBooleanField(config, enableMmapField);
     cpp_config.diffusion_conv_direct = env->GetBooleanField(config, diffusionConvDirectField);
+    cpp_config.free_params_immediately = env->GetBooleanField(config, freeParamsImmediatelyField);
     cpp_config.wtype = env->GetIntField(config, wtypeField);
     float flow_shift = env->GetFloatField(config, flowShiftField);
     cpp_config.flow_shift = flow_shift;
     cpp_config.flow_shift_is_set = !std::isinf(flow_shift);
     cpp_config.n_threads = env->GetIntField(config, nThreadsField);
+    cpp_config.prediction = env->GetIntField(config, predictionField);
+    cpp_config.taesd_path = taesd_path_str.c_str();
+    cpp_config.vae_tiling = env->GetBooleanField(config, vaeTilingField);
 
     env->DeleteLocalRef(configClass);
     return cpp_config;
@@ -281,6 +290,46 @@ Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeVideoGen(JNIEnv *env,
 JNIEXPORT void JNICALL
 Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeRelease(JNIEnv *env, jobject thiz, jlong handle) {
     diffusion_runner_core_release(handle);
+}
+
+JNIEXPORT jintArray JNICALL
+Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeGetStepProgress(JNIEnv *env, jobject thiz) {
+    int step = 0, total = 0;
+    diffusion_runner_get_step_progress(&step, &total);
+    jintArray arr = env->NewIntArray(2);
+    jint values[2] = {step, total};
+    env->SetIntArrayRegion(arr, 0, 2, values);
+    return arr;
+}
+
+JNIEXPORT jobject JNICALL
+Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeGetDiffusionModelMetadata(
+        JNIEnv* env, jobject /* thiz */, jstring modelPath) {
+
+    std::string path = jstring_to_string(env, modelPath);
+    DiffusionMetadataResult meta = diffusion_runner_core_get_metadata(path.c_str());
+
+    if (!meta.success) return nullptr;
+
+    jclass clazz = env->FindClass("com/debanshu777/diffusionrunner/DiffusionModelMetadata");
+    if (!clazz) return nullptr;
+
+    jmethodID ctor = env->GetMethodID(clazz, "<init>",
+        "(Ljava/lang/String;Ljava/lang/String;J)V");
+    if (!ctor) return nullptr;
+
+    jstring jArch = env->NewStringUTF(meta.architecture);
+    jstring jQuant = (meta.dominant_quant[0] != '\0')
+        ? env->NewStringUTF(meta.dominant_quant)
+        : nullptr;
+
+    jobject obj = env->NewObject(clazz, ctor, jArch, jQuant, (jlong)meta.estimated_ram);
+
+    env->DeleteLocalRef(jArch);
+    if (jQuant) env->DeleteLocalRef(jQuant);
+    env->DeleteLocalRef(clazz);
+
+    return obj;
 }
 
 }

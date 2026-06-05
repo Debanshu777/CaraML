@@ -2,6 +2,8 @@ package com.debanshu777.huggingfacemanager.download
 
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.NSDocumentDirectory
+import platform.Foundation.NSDirectoryEnumerator
+import platform.Foundation.NSFileSize
 import platform.Foundation.NSFileSystemFreeSize
 import platform.Foundation.NSFileSystemSize
 import platform.Foundation.NSFileManager
@@ -56,4 +58,51 @@ class IosStoragePathProvider : StoragePathProvider {
         val mgr = NSFileManager.defaultManager
         return mgr.fileExistsAtPath(path) && mgr.isReadableFileAtPath(path)
     }
+
+    @OptIn(ExperimentalForeignApi::class)
+    override fun isDirectoryReadable(path: String): Boolean {
+        val mgr = NSFileManager.defaultManager
+        if (!mgr.isReadableFileAtPath(path)) return false
+        return mgr.contentsOfDirectoryAtPath(path, null) != null
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    override fun getFileSize(path: String): Long {
+        val mgr = NSFileManager.defaultManager
+        if (!mgr.fileExistsAtPath(path)) return 0L
+        val attrs = mgr.attributesOfItemAtPath(path, null) ?: return 0L
+        val size = (attrs[NSFileSize] as? NSNumber)?.longLongValue ?: 0L
+        // If it's a file, return its size; if directory, walk recursively
+        val children = mgr.contentsOfDirectoryAtPath(path, null) ?: return size
+        var total = 0L
+        for (child in children) {
+            total += getFileSize("$path/$child")
+        }
+        return total
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    override fun renameFile(from: String, to: String): Boolean =
+        try { NSFileManager.defaultManager.moveItemAtPath(from, to, null) } catch (_: Exception) { false }
+
+    @OptIn(ExperimentalForeignApi::class)
+    override fun deleteDownloadedModelContent(modelId: String, localPath: String): Boolean =
+        try {
+            val root = getModelsStorageDirectory(modelId).trimEnd('/')
+            val target = localPath.trimEnd('/')
+            if (!isPathWithinModelRoot(root, target)) return false
+            val mgr = NSFileManager.defaultManager
+            if (!mgr.fileExistsAtPath(target)) return true
+            mgr.removeItemAtPath(target, null)
+            !mgr.fileExistsAtPath(target)
+        } catch (_: Exception) {
+            false
+        }
+}
+
+private fun isPathWithinModelRoot(root: String, target: String): Boolean {
+    val rootNorm = root.trimEnd('/')
+    val targetNorm = target.trimEnd('/')
+    if (targetNorm == rootNorm) return true
+    return targetNorm.startsWith("$rootNorm/")
 }

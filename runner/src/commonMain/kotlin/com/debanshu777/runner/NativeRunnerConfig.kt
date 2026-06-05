@@ -13,6 +13,9 @@ data class NativeRunnerConfig(
     val typeV: Int = 1,
     val nGpuLayers: Int = -1,
     val useMmap: Boolean = true,
+    val useMlock: Boolean = false,
     val temperature: Float = 0.3f,
     val autoFit: Boolean = true,
+    val cpuMask: String = "",       // e.g. "4-7" or "4,5,6,7" or "" (no pinning)
+    val cpuMaskBatch: String = "",  // separate mask for batch prefill threads
 )

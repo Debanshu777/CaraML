@@ -19,6 +19,7 @@ import com.debanshu777.caraml.features.modelhub.presentation.search.ModelViewMod
 import com.debanshu777.caraml.features.modelhub.presentation.search.SearchScreen
 import com.debanshu777.caraml.features.settings.presentation.SettingsScreen
 import com.debanshu777.caraml.features.settings.presentation.SettingsViewModel
+import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 import org.koin.compose.viewmodel.koinViewModel
 
 @Composable
@@ -42,6 +43,10 @@ fun NavigationHost(
                     ChatScreen(
                         viewModel = chatViewModel,
                         onNavigateToSearch = { backStack.add(AppScreen.Search) },
+                        onNavigateToModelDetail = { modelId, mode ->
+                            backStack.add(AppScreen.Search)
+                            backStack.add(AppScreen.Details(modelId, mode))
+                        },
                     )
                 }
                 entry(AppScreen.Search) {
@@ -50,7 +55,9 @@ fun NavigationHost(
                     SearchScreen(
                         modelViewModel = modelViewModel,
                         downloadedModelsViewModel = downloadedModelsViewModel,
-                        onNavigateToDetails = { backStack.add(AppScreen.Details(it)) },
+                        onNavigateToDetails = { modelId, hubMode ->
+                            backStack.add(AppScreen.Details(modelId, hubMode))
+                        },
                         onSelectModelAndGoBack = { model ->
                             chatViewModel.selectModel(model)
                             backStack.removeLastOrNull()
@@ -62,6 +69,7 @@ fun NavigationHost(
                     DetailsScreen(
                         viewModel = modelViewModel,
                         modelId = key.modelId,
+                        hubBrowseMode = key.hubBrowseMode,
                         onBack = { backStack.removeLastOrNull() },
                     )
                 }

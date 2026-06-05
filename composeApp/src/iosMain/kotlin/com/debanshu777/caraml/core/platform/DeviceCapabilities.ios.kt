@@ -15,11 +15,11 @@ import platform.posix.uint64_tVar
 private const val TAG = "DeviceCapabilities"
 
 @OptIn(ExperimentalForeignApi::class)
-class IosDeviceCapabilities : DeviceCapabilities {
+actual class DeviceCapabilities actual constructor() {
 
     private val cachedHints: DeviceHints by lazy { computeHints() }
 
-    override fun getDeviceHints(): DeviceHints = cachedHints
+    actual fun getDeviceHints(): DeviceHints = cachedHints
 
     private fun computeHints(): DeviceHints {
         val perfCores = sysctlPerflevel0PhysicalCpu()
@@ -39,11 +39,6 @@ class IosDeviceCapabilities : DeviceCapabilities {
     }
 
     private fun getMemoryBudgetMB(): Long {
-        // NSProcessInfo.physicalMemory returns total device RAM in bytes.
-        // iOS jetsam limits are roughly 50-65% of total RAM on modern devices;
-        // we use 50% as a conservative budget to stay safely under the kill threshold.
-        // NOTE: os_proc_available_memory() would be more precise but isn't exposed
-        // in Kotlin/Native platform bindings without a custom cinterop definition.
         val totalBytes = NSProcessInfo.processInfo.physicalMemory.toLong()
         if (totalBytes > 0) {
             return (totalBytes * 0.50 / (1024 * 1024)).toLong()

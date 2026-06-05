@@ -1,9 +1,10 @@
 package com.debanshu777.caraml
 
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.rememberNavBackStack
@@ -11,11 +12,14 @@ import androidx.savedstate.serialization.SavedStateConfiguration
 import com.debanshu777.caraml.core.drawer.AppDrawerShell
 import com.debanshu777.caraml.core.navigation.AppScreen
 import com.debanshu777.caraml.core.navigation.NavigationHost
+import com.debanshu777.caraml.core.theme.CaraMLTheme
+import com.debanshu777.caraml.core.theme.ThemeViewModel
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import kotlinx.serialization.serializer
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
 import org.koin.compose.koinInject
+import org.koin.compose.viewmodel.koinViewModel
 
 private val config =
     SavedStateConfiguration {
@@ -33,7 +37,9 @@ private val config =
 
 @Composable
 fun App() {
-    MaterialTheme {
+    val themeViewModel: ThemeViewModel = koinViewModel()
+    val themePreferences by themeViewModel.preferences.collectAsState()
+    CaraMLTheme(themePreferences) {
         Surface(modifier = Modifier.fillMaxSize()) {
             val backStack = rememberNavBackStack(config, AppScreen.Home)
             AppDrawerShell(backStack = backStack) {

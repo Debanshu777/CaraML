@@ -17,4 +17,16 @@ data class LocalModelEntity(
     @ColumnInfo(name = "pipeline_tag") val pipelineTag: String?,
     @ColumnInfo(name = "usage_count", defaultValue = "0") val usageCount: Long = 0,
     @ColumnInfo(name = "context_length") val contextLength: Int? = null,
-)
+    @ColumnInfo(name = "model_type") val modelType: String? = null,
+    /** Cached readiness state: "ready", "partial", or null (unknown/not tracked yet). */
+    @ColumnInfo(name = "component_status") val componentStatus: String? = null,
+    /** True for main model weights; false for standalone component files. */
+    @ColumnInfo(name = "is_main_model", defaultValue = "1") val isMainModel: Boolean = true,
+    /** GGUF general.architecture string (e.g. "llama", "qwen2", "qwen3moe"). Null if not yet detected. */
+    @ColumnInfo(name = "arch") val arch: String? = null,
+) {
+    companion object {
+        const val STATUS_READY = "ready"
+        const val STATUS_PARTIAL = "partial"
+    }
+}

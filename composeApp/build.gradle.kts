@@ -92,6 +92,8 @@ kotlin {
             implementation(libs.navigation3.compose.ui)
             implementation(libs.navigation3.viewmodel)
             implementation(libs.kotlinx.collections.immutable)
+            implementation(libs.materialkolor)
+            implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.27.0")
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
@@ -119,6 +121,15 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+        jniLibs {
+            // GGML_BACKEND_DL=ON builds CPU backends as MODULE .so files that are
+            // loaded at runtime via ggml_backend_load_all_from_path(nativeLibraryDir).
+            // That function uses opendir()+dlopen() — it requires actual files on disk.
+            // With the modern default (useLegacyPackaging=false, minSdk=24), .so files
+            // are NOT extracted to nativeLibraryDir, so the dlopen scan finds nothing.
+            // Force extraction so the MODULE libs appear at nativeLibraryDir.
+            useLegacyPackaging = true
+        }
     }
     buildTypes {
         getByName("release") {
@@ -128,18 +139,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
-    }
-}
-
-compose.desktop {
-    application {
-        mainClass = "com.debanshu777.caraml.MainKt"
-
-        nativeDistributions {
-            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "com.debanshu777.caraml"
-            packageVersion = "1.0.0"
-        }
     }
 }
 
@@ -153,18 +152,28 @@ val desktopPlatform = when {
 val nativeDir =
     project(":nativeEngine").layout.buildDirectory.dir("llama-runner-desktop/$desktopPlatform").get().asFile.absolutePath
 
-tasks.matching { it.name == "run" || it.name.endsWith("Run") }.configureEach {
-    dependsOn(":nativeEngine:compileLlamaRunnerDesktop")
+compose.desktop {
+    application {
+        mainClass = "com.debanshu777.caraml.MainKt"
+
+        // Compose Desktop's `run` task is AbstractRunDistributableTask, NOT JavaExec.
+        // Standard `tasks.withType<JavaExec>` filter never matches it, so jvmArgs
+        // must be injected via the Compose DSL here to actually take effect.
+        jvmArgs += listOf(
+            "-Djava.library.path=$nativeDir",
+            "-Dcaraml.native.lib.dir=$nativeDir",
+        )
+
+        nativeDistributions {
+            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
+            packageName = "com.debanshu777.caraml"
+            packageVersion = "1.0.0"
+        }
+    }
 }
 
-tasks.withType(org.gradle.api.tasks.JavaExec::class.java).configureEach {
-    if (name == "run" || name.endsWith("Run")) {
-        dependsOn(":nativeEngine:compileLlamaRunnerDesktop")
-        jvmArgs(
-            "-Djava.library.path=$nativeDir",
-            "-Dcaraml.native.lib.dir=$nativeDir"
-        )
-    }
+tasks.matching { it.name == "run" || it.name.endsWith("Run") }.configureEach {
+    dependsOn(":nativeEngine:compileLlamaRunnerDesktop")
 }
 
 dependencies {

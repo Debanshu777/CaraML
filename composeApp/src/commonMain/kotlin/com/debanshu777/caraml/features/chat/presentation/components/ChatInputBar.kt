@@ -1,7 +1,6 @@
 package com.debanshu777.caraml.features.chat.presentation.components
 
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -9,34 +8,25 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,16 +39,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
-import com.debanshu777.caraml.features.chat.data.LiveGenerationStats
-import com.debanshu777.caraml.features.chat.presentation.StreamingState
+import com.debanshu777.caraml.features.chat.domain.GenerationMode
 import com.debanshu777.caraml.features.chat.presentation.components.providers.LiveGenerationStatsPreviewProvider
 import com.debanshu777.caraml.features.chat.presentation.components.providers.LocalModelPreviewProvider
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.StateFlow
 
 @Preview
 @Composable
@@ -68,6 +55,7 @@ private fun ChatInputBarPreview(
     MaterialTheme {
         Surface {
             ChatInputBar(
+                generationMode = GenerationMode.Text,
                 isGenerating = false,
                 selectedModel = selectedModel,
                 topModels = persistentListOf(selectedModel),
@@ -87,6 +75,7 @@ private fun ChatInputBarNoModelPreview() {
     MaterialTheme {
         Surface {
             ChatInputBar(
+                generationMode = GenerationMode.Text,
                 isGenerating = false,
                 selectedModel = null,
                 topModels = persistentListOf(),
@@ -108,6 +97,7 @@ private fun ChatInputBarGeneratingPreview() {
     MaterialTheme {
         Surface {
             ChatInputBar(
+                generationMode = GenerationMode.Text,
                 isGenerating = true,
                 selectedModel = model,
                 topModels = persistentListOf(model),
@@ -129,69 +119,84 @@ private fun ChatInputBarGeneratingPreview() {
     }
 }
 
+@Preview(name = "Image mode")
 @Composable
-private fun ContextProgressIndicator(
-    contextUsed: Int,
-    contextLimit: Int,
-    modifier: Modifier = Modifier
-) {
-    var expanded by remember { mutableStateOf(false) }
-
-    LaunchedEffect(expanded) {
-        if (expanded) {
-            delay(3000)
-            expanded = false
-        }
-    }
-
-    val progress = if (contextLimit > 0) {
-        (contextUsed.toFloat() / contextLimit).coerceIn(0f, 1f)
-    } else {
-        0f
-    }
-    val percent = if (contextLimit > 0) contextUsed * 100 / contextLimit else 0
-
-    Row(
-        modifier = modifier
-            .clickable { expanded = !expanded }
-            .animateContentSize(animationSpec = tween(300)),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        CircularProgressIndicator(
-            progress = { progress },
-            modifier = Modifier.size(24.dp),
-            strokeWidth = 2.dp
-        )
-        if (expanded) {
-            Text(
-                text = "$contextUsed/$contextLimit ($percent%)",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+private fun ChatInputBarImagePreview() {
+    val diffusionModel = LocalModelPreviewProvider().values.first { it.id == 4L }
+    MaterialTheme {
+        Surface {
+            ChatInputBar(
+                generationMode = GenerationMode.Image,
+                isGenerating = false,
+                selectedModel = diffusionModel,
+                topModels = persistentListOf(diffusionModel),
+                onSelectModel = {},
+                onDownloadModelClick = {},
+                onSendMessage = {},
+                onCancelGeneration = {},
+                modifier = Modifier.fillMaxWidth()
             )
         }
     }
 }
 
+@Preview(name = "Video mode")
 @Composable
-fun RowScope.ContextStatsIndicator(
-    streamingStateFlow: StateFlow<StreamingState>,
+private fun ChatInputBarVideoPreview() {
+    val videoModel = LocalModelPreviewProvider().values.first { it.id == 5L }
+    MaterialTheme {
+        Surface {
+            ChatInputBar(
+                generationMode = GenerationMode.Video,
+                isGenerating = false,
+                selectedModel = videoModel,
+                topModels = persistentListOf(videoModel),
+                onSelectModel = {},
+                onDownloadModelClick = {},
+                onSendMessage = {},
+                onCancelGeneration = {},
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}
+
+/**
+ * Compact mode badge for the composer: uses [LocalTextStyle] so line height matches the field text
+ * and placeholder; the TextField prefix row centers this with the input line vertically.
+ */
+@Composable
+private fun ComposerGenerationModeChip(
+    label: String,
+    modifier: Modifier = Modifier
 ) {
-    val state by streamingStateFlow.collectAsStateWithLifecycle()
-    val liveStats = state.liveStats
-    if (liveStats != null) {
-        ContextProgressIndicator(
-            contextUsed = liveStats.contextUsed,
-            contextLimit = liveStats.contextLimit,
-            modifier = Modifier.align(Alignment.CenterVertically)
+    val style = LocalTextStyle.current
+    Surface(
+        modifier = modifier.padding(end = LocalSpacing.current.s),
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        border = BorderStroke(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.38f)
+        ),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 0.dp),
+            style = style,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            maxLines = 1,
+            overflow = TextOverflow.Clip
         )
-        Spacer(modifier = Modifier.width(4.dp))
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatInputBar(
+    generationMode: GenerationMode,
     isGenerating: Boolean,
     selectedModel: LocalModelEntity?,
     topModels: ImmutableList<LocalModelEntity>,
@@ -206,25 +211,36 @@ fun ChatInputBar(
     var showModelSheet by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState()
 
+    val placeholderText = when (generationMode) {
+        GenerationMode.Text -> "How can I help you today?"
+        GenerationMode.Image -> "Describe an image"
+        GenerationMode.Video -> "Describe a video"
+    }
+
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
-        shape = RoundedCornerShape(16.dp),
-        tonalElevation = 2.dp
+            .padding(start = LocalSpacing.current.l, end = LocalSpacing.current.l, bottom = LocalSpacing.current.l),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        tonalElevation = 0.dp
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(8.dp)
-        ) {
+        Column {
             TextField(
+                modifier = Modifier.fillMaxWidth(),
                 value = inputText,
                 onValueChange = { inputText = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("How can I help you today?") },
+                placeholder = { Text(placeholderText) },
+                minLines = 1,
                 maxLines = 4,
                 enabled = !isGenerating,
+                prefix = {
+                    when (generationMode) {
+                        GenerationMode.Image -> ComposerGenerationModeChip(label = "Image")
+                        GenerationMode.Video -> ComposerGenerationModeChip(label = "Video")
+                        else -> {}
+                    }
+                },
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = Color.Transparent,
                     unfocusedContainerColor = Color.Transparent,
@@ -234,47 +250,47 @@ fun ChatInputBar(
                     disabledIndicatorColor = Color.Transparent
                 )
             )
-
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                modifier = Modifier.fillMaxWidth().padding(
+                    start = LocalSpacing.current.l,
+                    end = LocalSpacing.current.xs,
+                    bottom = LocalSpacing.current.xs
+                ),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                contextIndicator()
-                IconButton(
-                    modifier = Modifier.weight(1f),
-                    onClick = { }
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "Add attachment"
-                    )
+                if(generationMode == GenerationMode.Text) {
+                    contextIndicator()
                 }
-                Spacer(modifier = Modifier.width(4.dp))
+
                 Row(
-                    modifier = Modifier.weight(8f).clickable { showModelSheet = true },
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { showModelSheet = true }
+                        .padding(vertical = LocalSpacing.current.s),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.End
                 ) {
+                    Spacer(modifier= Modifier.weight(0.5f))
                     Text(
-                        modifier = Modifier.weight(7f),
-                        text = selectedModel?.modelId?.substringAfterLast("/") ?: "Select Model",
+                        modifier = Modifier.weight(1f, fill = false),
+                        text = selectedModel?.modelId?.substringAfterLast("/") ?: "Select model",
                         style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         overflow = TextOverflow.Ellipsis,
                         textAlign = TextAlign.End,
                         maxLines = 1
                     )
                     Icon(
-                        modifier = Modifier.weight(1f),
                         imageVector = Icons.Default.ArrowDropDown,
-                        contentDescription = "Select model"
+                        contentDescription = "Select model",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(24.dp)
                     )
                 }
-                Spacer(modifier = Modifier.width(4.dp))
+
                 if (isGenerating) {
-                    IconButton(
-                        modifier = Modifier.weight(1f),
-                        onClick = onCancelGeneration,
-                        enabled = true
+                    FilledIconButton(
+                        onClick = onCancelGeneration
                     ) {
                         Icon(
                             imageVector = Icons.Default.Stop,
@@ -282,8 +298,7 @@ fun ChatInputBar(
                         )
                     }
                 } else {
-                    IconButton(
-                        modifier = Modifier.weight(1f),
+                    FilledIconButton(
                         onClick = {
                             if (inputText.isNotBlank()) {
                                 onSendMessage(inputText)
@@ -293,7 +308,7 @@ fun ChatInputBar(
                         enabled = inputText.isNotBlank()
                     ) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Send,
+                            imageVector = Icons.AutoMirrored.Default.Send,
                             contentDescription = "Send message"
                         )
                     }
@@ -303,93 +318,14 @@ fun ChatInputBar(
     }
 
     if (showModelSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showModelSheet = false },
-            sheetState = sheetState
-        ) {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .padding(bottom = 32.dp)
-            ) {
-                item {
-                    Text(
-                        text = "Select Model",
-                        style = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.padding(vertical = 16.dp)
-                    )
-                }
-
-                items(topModels) { model ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                onSelectModel(model)
-                                showModelSheet = false
-                            }
-                            .padding(vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = model.modelId.substringAfterLast("/"),
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                            Text(
-                                text = model.filename,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-
-                        if (model.id == selectedModel?.id) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = "Selected",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-                    }
-                }
-
-                if (topModels.isNotEmpty()) {
-                    item {
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                    }
-                }
-
-                item {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                showModelSheet = false
-                                onDownloadModelClick()
-                            }
-                            .padding(vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Download,
-                            contentDescription = "Download model",
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Text(
-                            text = "Download model",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                }
-
-                item {
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
-            }
-        }
+        ChatModelPickerSheet(
+            sheetState = sheetState,
+            onDismiss = { showModelSheet = false },
+            generationMode = generationMode,
+            topModels = topModels,
+            selectedModel = selectedModel,
+            onSelectModel = onSelectModel,
+            onDownloadModelClick = onDownloadModelClick
+        )
     }
 }

@@ -5,8 +5,10 @@ data class DeviceHints(
     val totalCoreCount: Int,
     val memoryBudgetMB: Long,
     val gpuBackendAvailable: Boolean,
+    /** "4-7" or comma list on Android; empty on iOS/JVM. */
+    val perfCoreMask: String = "",
 )
 
-interface DeviceCapabilities {
+expect class DeviceCapabilities() {
     fun getDeviceHints(): DeviceHints
 }
