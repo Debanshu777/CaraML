@@ -1,12 +1,19 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
-    alias(libs.plugins.androidLibrary)
+    alias(libs.plugins.androidMultiplatformLibrary)
     alias(libs.plugins.kotlinSerialization)
 }
 
 kotlin {
-    androidTarget {
-        publishLibraryVariants("release", "debug")
+    android {
+        namespace = "com.debanshu777.huggingfacemanager"
+        compileSdk = 36
+        minSdk = 24
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_17)
+        }
     }
     val xcfName = "huggingFaceManagerKit"
 
@@ -63,19 +70,5 @@ kotlin {
                 implementation(libs.ktor.client.cio)
             }
         }
-    }
-}
-
-android {
-    namespace = "com.debanshu777.huggingfacemanager"
-    compileSdk = 36
-    
-    defaultConfig {
-        minSdk = 24
-    }
-    
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
     }
 }

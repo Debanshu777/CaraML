@@ -3,7 +3,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
-    alias(libs.plugins.androidApplication)
+    alias(libs.plugins.androidMultiplatformLibrary)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.composeHotReload)
@@ -14,7 +14,10 @@ plugins {
 val minIos = "17.2"
 
 kotlin {
-    androidTarget {
+    android {
+        namespace = "com.debanshu777.caraml.shared"
+        compileSdk = libs.versions.android.compileSdk.get().toInt()
+        minSdk = libs.versions.android.minSdk.get().toInt()
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_21)
         }
@@ -63,9 +66,7 @@ kotlin {
     sourceSets {
         androidMain.dependencies {
             implementation(libs.compose.uiToolingPreview)
-            implementation(libs.androidx.activity.compose)
             implementation(project.dependencies.platform(libs.koin.bom))
-            implementation(libs.koin.android)
             implementation(libs.koin.core)
         }
         commonMain.dependencies {
@@ -106,42 +107,6 @@ kotlin {
     }
 }
 
-android {
-    namespace = "com.debanshu777.caraml"
-    compileSdk = libs.versions.android.compileSdk.get().toInt()
-
-    defaultConfig {
-        applicationId = "com.debanshu777.caraml"
-        minSdk = libs.versions.android.minSdk.get().toInt()
-        targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "1.0"
-    }
-    packaging {
-        resources {
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
-        }
-        jniLibs {
-            // GGML_BACKEND_DL=ON builds CPU backends as MODULE .so files that are
-            // loaded at runtime via ggml_backend_load_all_from_path(nativeLibraryDir).
-            // That function uses opendir()+dlopen() — it requires actual files on disk.
-            // With the modern default (useLegacyPackaging=false, minSdk=24), .so files
-            // are NOT extracted to nativeLibraryDir, so the dlopen scan finds nothing.
-            // Force extraction so the MODULE libs appear at nativeLibraryDir.
-            useLegacyPackaging = true
-        }
-    }
-    buildTypes {
-        getByName("release") {
-            isMinifyEnabled = false
-        }
-    }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
-    }
-}
-
 val desktopPlatform = when {
     System.getProperty("os.name").lowercase().contains("mac") -> "macos"
     System.getProperty("os.name").lowercase().contains("linux") -> "linux"
@@ -177,7 +142,6 @@ tasks.matching { it.name == "run" || it.name.endsWith("Run") }.configureEach {
 }
 
 dependencies {
-    debugImplementation(libs.compose.uiTooling)
     add("kspAndroid", libs.androidx.room.compiler)
     add("kspIosArm64", libs.androidx.room.compiler)
     add("kspIosSimulatorArm64", libs.androidx.room.compiler)

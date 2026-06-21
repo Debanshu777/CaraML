@@ -1,5 +1,4 @@
 plugins {
-    alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.androidLibrary)
 }
 
@@ -32,24 +31,6 @@ fun Project.findTool(name: String): String {
     throw GradleException(
         "Cannot find required tool '$name'. Install it or set ${name.uppercase()}_PATH=/full/path/to/$name"
     )
-}
-
-kotlin {
-    androidTarget {
-        publishLibraryVariants("release", "debug")
-    }
-
-    jvm()
-
-    sourceSets {
-        commonMain {
-            dependencies {
-                implementation(libs.kotlin.stdlib)
-            }
-        }
-        androidMain { dependencies { } }
-        jvmMain { dependencies { } }
-    }
 }
 
 val hostOsName = System.getProperty("os.name").lowercase()
@@ -90,7 +71,8 @@ fun discoverPatches(): List<PatchEntry> {
 
 tasks.register("applyNativePatches") {
     group = "llama-native"
-    description = "Apply libraries/patches/* to the corresponding submodule working trees (idempotent)."
+    description =
+        "Apply libraries/patches/* to the corresponding submodule working trees (idempotent)."
     doLast {
         val patches = discoverPatches()
         if (patches.isEmpty()) {
@@ -101,7 +83,7 @@ tasks.register("applyNativePatches") {
             if (!workingDir.isDirectory) {
                 throw GradleException(
                     "applyNativePatches: working directory does not exist: ${workingDir.absolutePath}\n" +
-                    "Did you run `git submodule update --init --recursive`?"
+                            "Did you run `git submodule update --init --recursive`?"
                 )
             }
             val rel = patchFile.relativeTo(rootProject.projectDir).path
@@ -123,15 +105,19 @@ tasks.register("applyNativePatches") {
             }.result.get()
             if (checkForward.exitValue != 0) {
                 throw GradleException(
-                    "applyNativePatches: cannot apply $rel cleanly to ${workingDir.relativeTo(rootProject.projectDir)}.\n" +
-                    "Either upstream changed the patched region (regenerate the patch) or the working tree is dirty."
+                    "applyNativePatches: cannot apply $rel cleanly to ${
+                        workingDir.relativeTo(
+                            rootProject.projectDir
+                        )
+                    }.\n" +
+                            "Either upstream changed the patched region (regenerate the patch) or the working tree is dirty."
                 )
             }
             // Apply.
-            exec {
+            providers.exec {
                 workingDir(workingDir)
                 commandLine("git", "apply", patchFile.absolutePath)
-            }
+            }.result.get()
             logger.lifecycle("applyNativePatches: applied $rel")
         }
     }
@@ -139,7 +125,8 @@ tasks.register("applyNativePatches") {
 
 tasks.register("revertNativePatches") {
     group = "llama-native"
-    description = "Reverse-apply libraries/patches/* on the submodule working trees. Use before bumping a submodule."
+    description =
+        "Reverse-apply libraries/patches/* on the submodule working trees. Use before bumping a submodule."
     doLast {
         val patches = discoverPatches().reversed()
         patches.forEach { (workingDir, patchFile) ->
@@ -154,10 +141,10 @@ tasks.register("revertNativePatches") {
                 logger.lifecycle("revertNativePatches: $rel not applied — skipping")
                 return@forEach
             }
-            exec {
+            providers.exec {
                 workingDir(workingDir)
                 commandLine("git", "apply", "-R", patchFile.absolutePath)
-            }
+            }.result.get()
             logger.lifecycle("revertNativePatches: reverted $rel")
         }
     }
@@ -224,7 +211,8 @@ if (isMacHost) {
             .dir("${CaramlNativeLayout.IOS_SUBDIR}/$sdkName/$kotlinArchName")
             .get()
             .asFile
-        val buildTaskName = "buildLlamaRunnerCMake${kotlinArchName.replaceFirstChar { it.uppercase() }}"
+        val buildTaskName =
+            "buildLlamaRunnerCMake${kotlinArchName.replaceFirstChar { it.uppercase() }}"
 
         tasks.register(buildTaskName, Exec::class) {
             dependsOn("applyNativePatches")
@@ -455,7 +443,7 @@ android {
 tasks.matching {
     val n = it.name
     n.startsWith("configureCMake") || n.startsWith("buildCMake") ||
-        n.startsWith("externalNativeBuild")
+            n.startsWith("externalNativeBuild")
 }.configureEach {
     dependsOn("applyNativePatches")
 }

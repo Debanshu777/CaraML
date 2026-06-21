@@ -1,13 +1,20 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
-    alias(libs.plugins.androidLibrary)
+    alias(libs.plugins.androidMultiplatformLibrary)
 }
 
 val minIos = "17.2"
 
 kotlin {
-    androidTarget {
-        publishLibraryVariants("release", "debug")
+    android {
+        namespace = "com.debanshu777.runner"
+        compileSdk = 36
+        minSdk = 24
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_17)
+        }
     }
 
     jvm()
@@ -116,29 +123,5 @@ kotlin {
                 implementation(project(":nativeEngine"))
             }
         }
-
-        jvmMain {
-            dependencies {
-                implementation(project(":nativeEngine"))
-            }
-        }
-    }
-}
-
-android {
-    namespace = "com.debanshu777.runner"
-    compileSdk = 36
-
-    defaultConfig {
-        minSdk = 24
-
-        ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
-        }
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
     }
 }

@@ -1,10 +1,10 @@
 # CLAUDE.md
 
-Guidance for Claude Code (claude.ai/code) working in this repo.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
 
-**CaraML** — KMP app for on-device AI inference, targeting Android, iOS, Desktop (JVM). Integrates llama.cpp (LLM) + stable-diffusion.cpp (image/video). HuggingFace Hub for model discovery + downloads.
+**CaraML** is a Kotlin Multiplatform (KMP) application for on-device AI inference, targeting Android, iOS, and Desktop (JVM). It integrates llama.cpp for LLM inference and stable-diffusion.cpp for image/video generation, with HuggingFace Hub integration for model discovery and downloads.
 
 ## Build Commands
 
@@ -28,19 +28,19 @@ Guidance for Claude Code (claude.ai/code) working in this repo.
 
 ## Module Structure
 
-- **`:composeApp`** - Main multiplatform Compose UI (Android, iOS arm64/simulator, JVM Desktop)
-- **`:huggingFaceManager`** - HuggingFace API client, model search/list, download manager with progress tracking
+- **`:composeApp`** - Main multiplatform Compose UI app (Android, iOS arm64/simulator, JVM Desktop)
+- **`:huggingFaceManager`** - Multiplatform library: HuggingFace API client, model search/list, download manager with progress tracking
 - **`:runner`** - Kotlin wrapper around native llama.cpp inference (expect/actual + JNI/cinterop)
 - **`:diffusionRunner`** - Kotlin wrapper around native stable-diffusion.cpp (expect/actual + JNI/cinterop)
-- **`:nativeEngine`** - CMake build orchestration for native C/C++ libs; produces static libs for iOS + shared libs for JVM
+- **`:nativeEngine`** - CMake build orchestration for all native C/C++ libraries; produces static libs for iOS and shared libs for JVM
 
 ## Architecture
 
 ### Source Sets
-Shared logic in `commonMain`. Platform-specific: `expect`/`actual` with `androidMain`, `iosMain`, `jvmMain`.
+All shared logic lives in `commonMain`. Platform-specific code uses Kotlin's `expect`/`actual` pattern with corresponding `androidMain`, `iosMain`, `jvmMain` folders.
 
 ### Feature Organization (composeApp)
-MVVM under `com.debanshu777.caraml.features.{feature}/`:
+Features follow MVVM under `com.debanshu777.caraml.features.{feature}/`:
 - `data/` - Data models, repositories
 - `domain/` - Business logic, use cases
 - `presentation/` - ViewModels, Composable screens and components
@@ -74,12 +74,12 @@ Three features: **chat** (LLM/diffusion inference UI), **modelhub** (browse/sear
 - **Ktor** for HTTP (OkHttp on Android, Darwin on iOS, CIO on JVM)
 - `NativeRunnerConfig` adapts inference parameters (threads, GPU layers, context size, KV cache quantization) based on `DeviceCapabilities`
 - Platform entry points: `MainActivity.kt` (Android), `main.kt` (JVM), `MainViewController.kt` (iOS)
-- Native builds require CMake, full JDK with JNI headers (desktop), macOS for iOS targets
+- Native builds require CMake, full JDK with JNI headers (desktop), and macOS for iOS targets
 - Gradle JVM args: `-Xmx6144M`, Kotlin daemon: `-Xmx2048M` (configured in `gradle.properties`)
 
 ## README Update Policy
 
-At session end, update `## Recent Changes` in:
+At the **end of every Claude Code session**, update the `## Recent Changes` section in these files to reflect what changed during the session:
 - `README.md` (root)
 - `composeApp/README.md`
 - `huggingFaceManager/README.md`
@@ -87,7 +87,7 @@ At session end, update `## Recent Changes` in:
 - `diffusionRunner/README.md`
 - `nativeEngine/README.md`
 
-Update only relevant module READMEs. Keep bullets concise. Replace stale entries.
+Only update the module READMEs that are relevant to changes made. Keep bullet points concise. Replace stale entries rather than growing the list unboundedly.
 
 ## Claude Model Usage Policy
 
