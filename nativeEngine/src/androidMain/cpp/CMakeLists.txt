@@ -34,6 +34,12 @@ if(DEFINED ANDROID_ABI)
             set(_VULKAN_HPP_FOUND FALSE)
             set(_SPIRV_HPP_FOUND FALSE)
 
+            # ggml-vulkan/CMakeLists.txt also does find_package(SPIRV-Headers CONFIG REQUIRED),
+            # which needs SPIRV-Headers' CMake config package, not just the raw headers above.
+            # The NDK toolchain's default find_package search excludes host paths like
+            # /opt/homebrew, so point it at the config directory explicitly when present.
+            set(_SPIRV_HEADERS_CONFIG_FOUND FALSE)
+
             if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
                 # Homebrew: brew install vulkan-headers spirv-headers
                 foreach(_brew_prefix "/opt/homebrew" "/usr/local")
@@ -42,6 +48,13 @@ if(DEFINED ANDROID_ABI)
                         message(STATUS "Vulkan/SPIRV C++ headers: ${_brew_prefix}/include")
                         set(_VULKAN_HPP_FOUND TRUE)
                         set(_SPIRV_HPP_FOUND TRUE)
+                        break()
+                    endif()
+                endforeach()
+                foreach(_brew_prefix "/opt/homebrew" "/usr/local")
+                    if(EXISTS "${_brew_prefix}/share/cmake/SPIRV-Headers/SPIRV-HeadersConfig.cmake")
+                        set(SPIRV-Headers_DIR "${_brew_prefix}/share/cmake/SPIRV-Headers" CACHE PATH "" FORCE)
+                        set(_SPIRV_HEADERS_CONFIG_FOUND TRUE)
                         break()
                     endif()
                 endforeach()
@@ -56,10 +69,21 @@ if(DEFINED ANDROID_ABI)
                         break()
                     endif()
                 endforeach()
+                foreach(_sys_prefix "/usr" "/usr/local")
+                    if(EXISTS "${_sys_prefix}/share/cmake/SPIRV-Headers/SPIRV-HeadersConfig.cmake")
+                        set(SPIRV-Headers_DIR "${_sys_prefix}/share/cmake/SPIRV-Headers" CACHE PATH "" FORCE)
+                        set(_SPIRV_HEADERS_CONFIG_FOUND TRUE)
+                        break()
+                    endif()
+                endforeach()
             endif()
 
             if(NOT _VULKAN_HPP_FOUND OR NOT _SPIRV_HPP_FOUND)
                 message(WARNING "vulkan.hpp/spirv.hpp not found. On macOS: brew install vulkan-headers spirv-headers. Disabling Vulkan.")
+                set(GGML_VULKAN OFF CACHE BOOL "" FORCE)
+            elseif(NOT _SPIRV_HEADERS_CONFIG_FOUND)
+                message(WARNING "SPIRV-Headers CMake config package not found (ggml-vulkan now requires it). "
+                                 "On macOS: brew install spirv-headers. Disabling Vulkan.")
                 set(GGML_VULKAN OFF CACHE BOOL "" FORCE)
             endif()
         else()

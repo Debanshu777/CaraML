@@ -12,6 +12,7 @@
 
 #include "chat.h"
 #include "common.h"
+#include "fit.h"
 #include "ggml.h"
 #include "ggml-backend.h"
 #include "llama.h"
@@ -352,8 +353,9 @@ bool llama_runner_core_load_model(const char *model_path, const LlamaRunnerConfi
     ctx_params.offload_kqv     = g_config.offload_kqv;
     ctx_params.type_k          = static_cast<ggml_type>(g_config.type_k);
     ctx_params.type_v          = static_cast<ggml_type>(g_config.type_v);
-    model_params.use_mmap      = g_config.use_mmap;
-    model_params.use_mlock     = g_config.use_mlock;
+    model_params.load_mode     = g_config.use_mlock
+                                    ? (g_config.use_mmap ? LLAMA_LOAD_MODE_MMAP_MLOCK : LLAMA_LOAD_MODE_MLOCK)
+                                    : (g_config.use_mmap ? LLAMA_LOAD_MODE_MMAP : LLAMA_LOAD_MODE_NONE);
 
     if (g_config.auto_fit) {
         log_line(LLAMA_LOG_INFO, "load: Using llama_params_fit() for automatic memory optimization");
@@ -374,12 +376,12 @@ bool llama_runner_core_load_model(const char *model_path, const LlamaRunnerConfi
         buft_overrides.back() = {nullptr, nullptr};
         std::vector<size_t> margins(llama_max_devices(), 0);
 
-        auto status = llama_params_fit(
+        auto status = common_fit_params(
             model_path, &model_params, &ctx_params,
             tensor_split.data(), buft_overrides.data(), margins.data(),
             g_config.n_ctx_min, GGML_LOG_LEVEL_INFO);
 
-        if (status == LLAMA_PARAMS_FIT_STATUS_SUCCESS) {
+        if (status == COMMON_PARAMS_FIT_STATUS_SUCCESS) {
             model_params.tensor_split = tensor_split.data();
             log_line(LLAMA_LOG_INFO, "load: params_fit succeeded - n_gpu_layers=%d, n_ctx=%u",
                 model_params.n_gpu_layers, ctx_params.n_ctx);
