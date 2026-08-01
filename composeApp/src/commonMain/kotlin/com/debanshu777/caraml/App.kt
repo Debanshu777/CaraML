@@ -1,6 +1,9 @@
 package com.debanshu777.caraml
 
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -14,11 +17,9 @@ import com.debanshu777.caraml.core.navigation.AppScreen
 import com.debanshu777.caraml.core.navigation.NavigationHost
 import com.debanshu777.caraml.core.theme.CaraMLTheme
 import com.debanshu777.caraml.core.theme.ThemeViewModel
-import com.debanshu777.huggingfacemanager.download.StoragePathProvider
-import kotlinx.serialization.serializer
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
-import org.koin.compose.koinInject
+import kotlinx.serialization.serializer
 import org.koin.compose.viewmodel.koinViewModel
 
 private val config =
@@ -40,7 +41,10 @@ fun App() {
     val themeViewModel: ThemeViewModel = koinViewModel()
     val themePreferences by themeViewModel.preferences.collectAsState()
     CaraMLTheme(themePreferences) {
-        Surface(modifier = Modifier.fillMaxSize()) {
+        Surface(
+            modifier = Modifier.fillMaxSize()
+                .windowInsetsPadding(WindowInsets.ime)
+        ) {
             val backStack = rememberNavBackStack(config, AppScreen.Home)
             AppDrawerShell(backStack = backStack) {
                 NavigationHost(
