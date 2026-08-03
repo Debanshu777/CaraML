@@ -141,4 +141,16 @@ const char* llama_runner_get_model_architecture(void) {
     return llama_runner_core_get_model_architecture();
 }
 
+char *llama_runner_get_reasoning(void) {
+    return strdup(llama_runner_core_get_reasoning());
+}
+
+char *llama_runner_get_content(void) {
+    return strdup(llama_runner_core_get_content());
+}
+
+int llama_runner_supports_thinking(void) {
+    return llama_runner_core_supports_thinking();
+}
+
 }

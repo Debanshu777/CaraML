@@ -34,3 +34,6 @@ int llama_runner_get_stop_reason(void);
 int llama_runner_get_gpu_layers(void);
 void llama_runner_clear_context(void);
 const char* llama_runner_get_model_architecture(void);
+char* llama_runner_get_reasoning(void);
+char* llama_runner_get_content(void);
+int llama_runner_supports_thinking(void);
