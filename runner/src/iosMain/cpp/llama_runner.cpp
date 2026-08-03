@@ -109,8 +109,8 @@ int llama_runner_process_system_prompt(const char *prompt) {
     return llama_runner_core_process_system_prompt(prompt);
 }
 
-int llama_runner_process_user_prompt(const char *prompt, int predict_length, const char *grammar) {
-    return llama_runner_core_process_user_prompt(prompt, predict_length, grammar);
+int llama_runner_process_user_prompt(const char *prompt, int predict_length) {
+    return llama_runner_core_process_user_prompt(prompt, predict_length);
 }
 
 void llama_runner_unload_model(void) { llama_runner_core_unload(); }

@@ -62,7 +62,7 @@ void llama_runner_core_cancel_generate();
 void llama_runner_core_finalize_generation();
 
 int llama_runner_core_process_system_prompt(const char *system_prompt);
-int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_length, const char *grammar);
+int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_length);
 
 int llama_runner_core_get_context_used();
 int llama_runner_core_get_context_limit();

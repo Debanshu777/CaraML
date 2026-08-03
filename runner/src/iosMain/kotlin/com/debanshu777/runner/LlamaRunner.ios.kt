@@ -13,8 +13,11 @@ import com.debanshu777.runner.cpp.llama_runner_init
 import com.debanshu777.runner.cpp.llama_runner_load_model_v2
 import com.debanshu777.runner.cpp.llama_runner_next_token
 import com.debanshu777.runner.cpp.llama_runner_process_system_prompt
+import com.debanshu777.runner.cpp.llama_runner_get_content
+import com.debanshu777.runner.cpp.llama_runner_get_reasoning
 import com.debanshu777.runner.cpp.llama_runner_process_user_prompt
 import com.debanshu777.runner.cpp.llama_runner_shutdown
+import com.debanshu777.runner.cpp.llama_runner_supports_thinking
 import com.debanshu777.runner.cpp.llama_runner_unload_model
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.cValue
@@ -75,11 +78,26 @@ actual class LlamaRunner {
     }
 
     @OptIn(ExperimentalForeignApi::class)
-    actual fun processUserPrompt(userPrompt: String, predictLength: Int, grammar: String): Int {
+    actual fun processUserPrompt(userPrompt: String, predictLength: Int): Int {
         require(userPrompt.isNotBlank()) { "userPrompt must not be blank" }
         require(predictLength > 0) { "predictLength must be > 0" }
-        return llama_runner_process_user_prompt(userPrompt, predictLength, grammar.ifEmpty { null })
+        return llama_runner_process_user_prompt(userPrompt, predictLength)
     }
+
+    @OptIn(ExperimentalForeignApi::class)
+    actual fun getReasoning(): String {
+        val p = llama_runner_get_reasoning() ?: return ""
+        return try { p.toKString() } finally { free(p) }
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    actual fun getContent(): String {
+        val p = llama_runner_get_content() ?: return ""
+        return try { p.toKString() } finally { free(p) }
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    actual fun supportsThinking(): Boolean = llama_runner_supports_thinking() != 0
 
     @OptIn(ExperimentalForeignApi::class)
     actual fun unloadModel() {

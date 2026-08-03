@@ -880,7 +880,7 @@ int llama_runner_core_process_system_prompt(const char *system_prompt) {
     return 0;
 }
 
-int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_length, const char *grammar) {
+int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_length) {
     if (!g_model || !g_context || !g_sampler) {
         log_line(LLAMA_LOG_ERROR, "process_user_prompt: Model not loaded");
         return 1;
@@ -894,7 +894,7 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
     g_reasoning_accum.clear();
     g_content_accum.clear();
 
-    if (!apply_sampler_for_turn(/*temperature*/ -1.0f, grammar)) {
+    if (!apply_sampler_for_turn(/*temperature*/ -1.0f, nullptr)) {
         log_line(LLAMA_LOG_ERROR, "process_user_prompt: Failed to reconfigure sampler");
         return 1;
     }

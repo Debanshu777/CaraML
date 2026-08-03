@@ -162,14 +162,10 @@ Java_com_debanshu777_runner_LlamaRunner_nativeProcessSystemPrompt(JNIEnv *env, j
 
 extern "C" JNIEXPORT jint JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeProcessUserPrompt(
-    JNIEnv *env, jobject, jstring prompt, jint predictLength, jstring grammar) {
+    JNIEnv *env, jobject, jstring prompt, jint predictLength) {
     const char *p = env->GetStringUTFChars(prompt, nullptr);
-    const char *g = grammar ? env->GetStringUTFChars(grammar, nullptr) : nullptr;
-    const int ret = llama_runner_core_process_user_prompt(p, static_cast<int>(predictLength), g);
+    const int ret = llama_runner_core_process_user_prompt(p, static_cast<int>(predictLength));
     env->ReleaseStringUTFChars(prompt, p);
-    if (g) {
-        env->ReleaseStringUTFChars(grammar, g);
-    }
     return static_cast<jint>(ret);
 }
 

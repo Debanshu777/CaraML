@@ -33,11 +33,15 @@ actual class LlamaRunner {
         return nativeProcessSystemPrompt(systemPrompt)
     }
 
-    actual fun processUserPrompt(userPrompt: String, predictLength: Int, grammar: String): Int {
+    actual fun processUserPrompt(userPrompt: String, predictLength: Int): Int {
         require(userPrompt.isNotBlank()) { "userPrompt must not be blank" }
         require(predictLength > 0) { "predictLength must be > 0" }
-        return nativeProcessUserPrompt(userPrompt, predictLength, grammar.ifEmpty { null })
+        return nativeProcessUserPrompt(userPrompt, predictLength)
     }
+
+    actual fun getReasoning(): String = nativeGetReasoning()
+    actual fun getContent(): String = nativeGetContent()
+    actual fun supportsThinking(): Boolean = nativeSupportsThinking() != 0
 
     actual fun unloadModel() {
         nativeUnloadModel()
@@ -73,7 +77,11 @@ actual class LlamaRunner {
 
     private external fun nativeProcessSystemPrompt(prompt: String): Int
 
-    private external fun nativeProcessUserPrompt(prompt: String, predictLength: Int, grammar: String?): Int
+    private external fun nativeProcessUserPrompt(prompt: String, predictLength: Int): Int
+
+    private external fun nativeGetReasoning(): String
+    private external fun nativeGetContent(): String
+    private external fun nativeSupportsThinking(): Int
 
     private external fun nativeUnloadModel()
     private external fun nativeShutdown()
