@@ -69,6 +69,17 @@ static std::string g_assistant_buffer;
 // is decoded together with the first user prompt.
 static bool g_pending_chat_decode = false;
 
+// Parser params for splitting reasoning vs content from the model's own
+// template format. Rebuilt at each generation start from g_chat_msgs so the
+// forced-open generation_prompt (e.g. a template-injected "<think>") is fed to
+// common_chat_parse and the reasoning/content split stays aligned.
+common_chat_parser_params g_parser_params;
+// Cumulative parsed reasoning/content for the current turn, refreshed per token.
+std::string g_reasoning_accum;
+std::string g_content_accum;
+// Template capability: does this model's chat template support thinking?
+bool g_supports_thinking = false;
+
 static void log_line(LlamaLogLevel level, const char *fmt, ...);
 
 // Lazily resolve ggml_threadpool_new/free via the backend registry.
@@ -139,6 +150,37 @@ static std::optional<std::string> try_chat_format_single(
             "chat template format_single failed (role=%s): unknown exception",
             role.c_str());
         return std::nullopt;
+    }
+}
+
+// Rebuild g_parser_params from the current chat history so per-token parsing
+// knows the template's format, PEG parser arena, and forced-open generation
+// prompt. Called at generation start (after the user message is in g_chat_msgs).
+static void capture_parser_params() {
+    g_parser_params = common_chat_parser_params{};
+    if (!g_chat_templates || !g_chat_templates.get()) {
+        return;
+    }
+    try {
+        common_chat_templates_inputs inputs;
+        inputs.use_jinja              = true;
+        inputs.messages               = g_chat_msgs;
+        inputs.add_generation_prompt  = true;
+        inputs.reasoning_format       = COMMON_REASONING_FORMAT_AUTO;
+        inputs.enable_thinking        = true;
+        common_chat_params p = common_chat_templates_apply(g_chat_templates.get(), inputs);
+        g_parser_params.format            = p.format;
+        g_parser_params.generation_prompt = p.generation_prompt;
+        g_parser_params.reasoning_format  = COMMON_REASONING_FORMAT_AUTO;
+        g_parser_params.parser            = p.parser.empty()
+            ? common_peg_arena{}
+            : ([&]{ common_peg_arena a; a.load(p.parser); return a; })();
+        log_line(LLAMA_LOG_INFO,
+            "capture_parser_params: format=%s gen_prompt_len=%zu",
+            common_chat_format_name(p.format), p.generation_prompt.size());
+    } catch (const std::exception &e) {
+        log_line(LLAMA_LOG_WARN, "capture_parser_params failed: %s", e.what());
+        g_parser_params = common_chat_parser_params{};
     }
 }
 
@@ -497,6 +539,10 @@ bool llama_runner_core_load_model(const char *model_path, const LlamaRunnerConfi
     }
 
     g_chat_templates = common_chat_templates_init(g_model, "");
+    g_supports_thinking = g_chat_templates
+        ? common_chat_templates_support_enable_thinking(g_chat_templates.get())
+        : false;
+    log_line(LLAMA_LOG_INFO, "load: supports_thinking=%d", g_supports_thinking ? 1 : 0);
     g_chat_msgs.clear();
     g_pending_chat_decode = false;
     g_system_prompt_position = 0;
@@ -814,6 +860,8 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
     g_streaming_n_generated = 0;
     g_assistant_buffer.clear();
     g_stop_reason = STOP_NONE;
+    g_reasoning_accum.clear();
+    g_content_accum.clear();
 
     if (!apply_sampler_for_turn(/*temperature*/ -1.0f, grammar)) {
         log_line(LLAMA_LOG_ERROR, "process_user_prompt: Failed to reconfigure sampler");
@@ -933,6 +981,7 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
                         static_cast<llama_pos>(suffix.size());
                     g_max_tokens_remaining = predict_length;
                     g_streaming_tokens.clear();
+                    capture_parser_params();
                     return 0;
                 }
 
@@ -973,6 +1022,7 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
     g_current_position = decode_start_pos + static_cast<llama_pos>(tokens.size());
     g_max_tokens_remaining = predict_length;
     g_streaming_tokens.clear();
+    capture_parser_params();
     return 0;
 }
 
