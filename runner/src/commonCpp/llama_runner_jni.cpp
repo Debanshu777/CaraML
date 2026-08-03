@@ -129,12 +129,14 @@ Java_com_debanshu777_runner_LlamaRunner_nativeNextToken(JNIEnv *env, jobject) {
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeGetReasoning(JNIEnv *env, jobject) {
-    return env->NewStringUTF(llama_runner_core_get_reasoning());
+    const char *s = llama_runner_core_get_reasoning();
+    return env->NewStringUTF(s ? s : "");
 }
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeGetContent(JNIEnv *env, jobject) {
-    return env->NewStringUTF(llama_runner_core_get_content());
+    const char *s = llama_runner_core_get_content();
+    return env->NewStringUTF(s ? s : "");
 }
 
 extern "C" JNIEXPORT jint JNICALL
