@@ -178,6 +178,7 @@ Run: `./gradlew :composeApp:jvmTest`
 
 <!-- Updated at end of each Claude Code session -->
 
+- `generateResponse` emits `InferenceChunk`; removed `ReasoningModelClassifier` and structured-output prompt suffixes
 - `DiffusionInferenceRepository.buildDiffusionModelConfig()` reverted: removed `diffusionConvDirect=true` from both selfContained and component branches (was a failed Vulkan workaround); selfContained branch also had spurious `offloadToCpu` propagation removed
 - `DiffusionInferenceRepository.buildDiffusionModelConfig()` selfContained branch now propagates `offloadToCpu` from `recommendedParams` (was missing, so registry `offloadToCpu=true` had no effect)
 - `DiffusionInferenceRepository.buildDiffusionModelConfig()` now always passes `diffusionConvDirect=true`; bypasses IM2COL path in ggml-vulkan that aborts when conv kernel type is not F32/F16

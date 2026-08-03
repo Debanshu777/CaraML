@@ -134,8 +134,8 @@ The native `.so`/`.a`/`.dylib` is built by `:nativeEngine`, not this module. Thi
 
 <!-- Updated at end of each Claude Code session -->
 
+- Added native reasoning/content accessors + `supportsThinking`; new `InferenceChunk` + `generateStructuredChunks`; removed `StructuredOutputGrammar`/`StructuredOutputParser`; `processUserPrompt` no longer takes a grammar
 - GPU layer offloading via `NativeRunnerConfig.gpuLayers`
 - KV cache quantization support (`kvCacheType`)
-- Structured output / GBNF grammar support
 - Improved chat template handling in core.cpp
 - Patch system integration (applied pre-build by `:nativeEngine`)
