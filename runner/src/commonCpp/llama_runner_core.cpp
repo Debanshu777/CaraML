@@ -73,12 +73,12 @@ static bool g_pending_chat_decode = false;
 // template format. Rebuilt at each generation start from g_chat_msgs so the
 // forced-open generation_prompt (e.g. a template-injected "<think>") is fed to
 // common_chat_parse and the reasoning/content split stays aligned.
-common_chat_parser_params g_parser_params;
+static common_chat_parser_params g_parser_params;
 // Cumulative parsed reasoning/content for the current turn, refreshed per token.
-std::string g_reasoning_accum;
-std::string g_content_accum;
+static std::string g_reasoning_accum;
+static std::string g_content_accum;
 // Template capability: does this model's chat template support thinking?
-bool g_supports_thinking = false;
+static bool g_supports_thinking = false;
 
 static void log_line(LlamaLogLevel level, const char *fmt, ...);
 
@@ -337,6 +337,31 @@ int decode_tokens_in_batches(
         }
     }
     return 0;
+}
+
+// Re-parse the cumulative assistant buffer into reasoning/content. Called after
+// each token (is_partial=true) and once at finalize (is_partial=false).
+static void reparse_assistant_buffer(bool is_partial) {
+    if (g_assistant_buffer.empty()) {
+        g_reasoning_accum.clear();
+        g_content_accum.clear();
+        return;
+    }
+    try {
+        common_chat_msg msg = common_chat_parse(
+            g_assistant_buffer, is_partial, g_parser_params);
+        g_reasoning_accum = msg.reasoning_content;
+        g_content_accum   = msg.content;
+    } catch (const std::exception &e) {
+        // Lenient fallback: if parsing throws (malformed partial), leave the
+        // last good accumulators in place; on final pass, surface raw buffer as
+        // content so nothing is lost.
+        if (!is_partial) {
+            g_reasoning_accum.clear();
+            g_content_accum = g_assistant_buffer;
+        }
+        log_line(LLAMA_LOG_WARN, "reparse_assistant_buffer failed: %s", e.what());
+    }
 }
 
 } // namespace
@@ -641,12 +666,14 @@ const char *llama_runner_core_next_token() {
     if (g_cancel_flag) {
         log_line(LLAMA_LOG_INFO, "next_token: cancelled");
         g_stop_reason = STOP_CANCELLED;
+        reparse_assistant_buffer(/*is_partial*/ false);
         finalize_assistant_turn();
         return nullptr;
     }
     if (g_max_tokens_remaining <= 0) {
         log_line(LLAMA_LOG_INFO, "next_token: max_tokens reached");
         g_stop_reason = STOP_MAX_TOKENS;
+        reparse_assistant_buffer(/*is_partial*/ false);
         finalize_assistant_turn();
         return nullptr;
     }
@@ -656,6 +683,7 @@ const char *llama_runner_core_next_token() {
     if (g_chat_templates && g_current_position >= static_cast<llama_pos>(n_ctx) - headroom) {
         log_line(LLAMA_LOG_INFO, "next_token: context full");
         g_stop_reason = STOP_CONTEXT_FULL;
+        reparse_assistant_buffer(/*is_partial*/ false);
         finalize_assistant_turn();
         return nullptr;
     }
@@ -737,6 +765,7 @@ const char *llama_runner_core_next_token() {
         }
 
         g_stop_reason = STOP_EOG;
+        reparse_assistant_buffer(/*is_partial*/ false);
         finalize_assistant_turn();
         return nullptr;
     }
@@ -767,6 +796,7 @@ const char *llama_runner_core_next_token() {
         g_cached_utf8_chars.clear();
         if (g_chat_templates) {
             g_assistant_buffer += g_current_token;
+            reparse_assistant_buffer(/*is_partial*/ true);
         }
         return g_current_token.c_str();
     }
@@ -780,6 +810,7 @@ void llama_runner_core_cancel_generate() {
 void llama_runner_core_finalize_generation() {
     // Persist assistant content into templated chat history when generation
     // is ended by caller rather than EOG/cancel/max-token boundary.
+    reparse_assistant_buffer(/*is_partial*/ false);
     finalize_assistant_turn();
     g_cached_utf8_chars.clear();
 }
@@ -1095,6 +1126,18 @@ const char* llama_runner_core_get_model_architecture() {
     buf[0] = '\0';
     llama_model_meta_val_str(g_model, "general.architecture", buf, sizeof(buf));
     return buf;
+}
+
+const char *llama_runner_core_get_reasoning() {
+    return g_reasoning_accum.c_str();
+}
+
+const char *llama_runner_core_get_content() {
+    return g_content_accum.c_str();
+}
+
+int llama_runner_core_supports_thinking() {
+    return g_supports_thinking ? 1 : 0;
 }
 
 void llama_runner_core_clear_context() {
