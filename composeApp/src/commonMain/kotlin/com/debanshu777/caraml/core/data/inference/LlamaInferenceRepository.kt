@@ -12,9 +12,11 @@ import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
 import com.debanshu777.caraml.features.chat.domain.ReasoningModelClassifier
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import com.debanshu777.runner.LlamaRunner
+import com.debanshu777.runner.MARKDOWN_OUTPUT_GRAMMAR
 import com.debanshu777.runner.NativeRunnerConfig
 import com.debanshu777.runner.STRICT_THINKING_OUTPUT_GRAMMAR
 import com.debanshu777.runner.generateFlowTokens
+import com.debanshu777.runner.markdownFormattingSystemPromptSuffix
 import com.debanshu777.runner.structuredOutputSystemPromptSuffix
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -210,7 +212,7 @@ class LlamaInferenceRepository(
                 }
 
                 val systemPrompt = settings.systemPrompt.ifBlank { FALLBACK_SYSTEM_PROMPT } +
-                    if (isReasoningModel) structuredOutputSystemPromptSuffix() else ""
+                    if (isReasoningModel) structuredOutputSystemPromptSuffix() else markdownFormattingSystemPromptSuffix()
 
                 val spRet = runner.processSystemPrompt(systemPrompt)
                 if (spRet != 0) {
@@ -377,7 +379,7 @@ class LlamaInferenceRepository(
             "generate: promptLen=${userPrompt.length}, remainingCtx=$remainingCtx, " +
             "context=${runner.getContextUsed()}/${runner.getContextLimit()}"
         }
-        val ret = runner.processUserPrompt(userPrompt, remainingCtx, if (isReasoningModel) STRICT_THINKING_OUTPUT_GRAMMAR else "")
+        val ret = runner.processUserPrompt(userPrompt, remainingCtx, if (isReasoningModel) STRICT_THINKING_OUTPUT_GRAMMAR else MARKDOWN_OUTPUT_GRAMMAR)
         if (ret != 0) {
             throw IllegalStateException("Failed to process message")
         }
@@ -487,7 +489,7 @@ class LlamaInferenceRepository(
                         append("The most recent exchange was:\n")
                         append(lastExchange)
                     }
-                    if (isReasoningModel) append(structuredOutputSystemPromptSuffix())
+                    append(if (isReasoningModel) structuredOutputSystemPromptSuffix() else markdownFormattingSystemPromptSuffix())
                 }
 
                 val ret = runner.processSystemPrompt(systemPrompt)

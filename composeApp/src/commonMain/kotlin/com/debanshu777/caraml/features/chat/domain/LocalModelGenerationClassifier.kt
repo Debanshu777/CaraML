@@ -9,6 +9,8 @@ private fun LocalModelEntity.filenameLower(): String = filename.lowercase()
 
 private fun LocalModelEntity.isGguf(): Boolean = filenameLower().endsWith(".gguf")
 
+private fun LocalModelEntity.isMultimodalProjector(): Boolean = filenameLower().contains("mmproj")
+
 private fun LocalModelEntity.isDiffusionFileExtension(): Boolean {
     val n = filenameLower()
     return n.endsWith(".safetensors") ||
@@ -27,6 +29,7 @@ private fun LocalModelEntity.hasExplicitModelType(): Boolean =
  * When [LocalModelEntity.modelType] is set at download time, that value wins.
  */
 fun LocalModelEntity.isTextChatModel(): Boolean {
+    if (!isMainModel || isMultimodalProjector()) return false
     if (hasExplicitModelType()) {
         return modelType == ModelType.TEXT
     }

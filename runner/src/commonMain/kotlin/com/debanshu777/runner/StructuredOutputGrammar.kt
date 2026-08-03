@@ -1,6 +1,22 @@
 package com.debanshu777.runner
 
 /**
+ * Shared GBNF rules enforcing structural well-formedness of markdown, without
+ * constraining content or ordering: every fenced code block and every
+ * `**bold**` marker that is opened must be closed. `<` is excluded from plain
+ * text so this composes cleanly inside the `<output>` body of
+ * [STRICT_THINKING_OUTPUT_GRAMMAR].
+ */
+private const val MARKDOWN_SEGMENT_RULES = """
+md-segment  ::= code-fence | bold | plain-char
+code-fence  ::= "```" fence-char* "```"
+fence-char  ::= [^`] | "`" [^`] | "``" [^`]
+bold        ::= "**" bold-char* "**"
+bold-char   ::= [^*] | "*" [^*]
+plain-char  ::= [^`*<]
+"""
+
+/**
  * GBNF grammar that constrains the model to emit an optional `<think>...</think>`
  * (or `<thinking>...</thinking>`) reasoning block followed by a required
  * `<output>...</output>` block containing the final markdown answer.
@@ -16,9 +32,24 @@ package com.debanshu777.runner
  *    backtick code fences instead.
  */
 val STRICT_THINKING_OUTPUT_GRAMMAR: String = """
-root           ::= thinking-block? "<output>" body "</output>"
+root           ::= thinking-block? "<output>" md-segment* "</output>"
 thinking-block ::= "<think>" body "</think>" | "<thinking>" body "</thinking>"
 body           ::= [^<]*
+$MARKDOWN_SEGMENT_RULES
+""".trimIndent()
+
+/**
+ * GBNF grammar enforcing only structural well-formedness of GitHub-flavored
+ * markdown: every fenced code block and every `**bold**` marker that is
+ * opened must be closed. Content and ordering are unconstrained — this is
+ * intentionally loose so it doesn't fight the model's natural phrasing.
+ *
+ * Applied to non-reasoning models, which have no `<think>/<output>` wrapper
+ * to piggyback the same constraint onto.
+ */
+val MARKDOWN_OUTPUT_GRAMMAR: String = """
+root ::= md-segment*
+$MARKDOWN_SEGMENT_RULES
 """.trimIndent()
 
 /**
@@ -37,4 +68,15 @@ You MUST format every reply as follows:
 
 Example:
 <think>The user is asking about X. I should explain Y because Z.</think><output>Here is the answer in **markdown**.</output>
+""".trimIndent()
+
+/**
+ * System-prompt suffix paired with [MARKDOWN_OUTPUT_GRAMMAR]. Explains the
+ * markdown-formatting contract to non-reasoning models, which have no
+ * `<think>/<output>` wrapper to carry the equivalent instruction.
+ */
+fun markdownFormattingSystemPromptSuffix(): String = """
+
+# Response Format
+Format your reply using GitHub-flavored markdown (headings, lists, fenced code blocks, bold/italic) where it helps readability. Always close what you open: every ``` code fence must have a matching closing ``` fence, and every **bold** marker must have a matching closing **.
 """.trimIndent()

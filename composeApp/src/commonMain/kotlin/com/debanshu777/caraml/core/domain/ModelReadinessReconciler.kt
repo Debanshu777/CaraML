@@ -20,6 +20,7 @@ class ModelReadinessReconciler(
     private val componentChecker = SdCppComponentChecker(storagePathProvider)
 
     suspend fun reconcile() {
+        localModelRepository.demoteMmprojFilesFromMain()
         val models = localModelRepository.getMainModels()
         for (model in models) {
             val setup = getModelSetup(model.modelId)

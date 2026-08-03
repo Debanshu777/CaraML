@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
@@ -90,34 +91,44 @@ fun AppDrawerShell(
                             "chat" -> {
                                 modeController.setState(GenerationMode.Text)
                                 if (currentScreen != AppScreen.Home) {
-                                    backStack.clear()
-                                    backStack.add(AppScreen.Home)
+                                    Snapshot.withMutableSnapshot {
+                                        backStack.clear()
+                                        backStack.add(AppScreen.Home)
+                                    }
                                 }
                             }
                             "image" -> {
                                 modeController.setState(GenerationMode.Image)
                                 if (currentScreen != AppScreen.Home) {
-                                    backStack.clear()
-                                    backStack.add(AppScreen.Home)
+                                    Snapshot.withMutableSnapshot {
+                                        backStack.clear()
+                                        backStack.add(AppScreen.Home)
+                                    }
                                 }
                             }
                             "video" -> {
                                 modeController.setState(GenerationMode.Video)
                                 if (currentScreen != AppScreen.Home) {
-                                    backStack.clear()
-                                    backStack.add(AppScreen.Home)
+                                    Snapshot.withMutableSnapshot {
+                                        backStack.clear()
+                                        backStack.add(AppScreen.Home)
+                                    }
                                 }
                             }
                             "models" -> {
                                 if (currentScreen != AppScreen.Search) {
-                                    backStack.clear()
-                                    backStack.add(AppScreen.Search)
+                                    Snapshot.withMutableSnapshot {
+                                        backStack.clear()
+                                        backStack.add(AppScreen.Search)
+                                    }
                                 }
                             }
                             "settings" -> {
                                 if (currentScreen != AppScreen.Settings) {
-                                    backStack.clear()
-                                    backStack.add(AppScreen.Settings)
+                                    Snapshot.withMutableSnapshot {
+                                        backStack.clear()
+                                        backStack.add(AppScreen.Settings)
+                                    }
                                 }
                             }
                         }

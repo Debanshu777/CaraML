@@ -30,7 +30,6 @@ private val config =
                     subclass(AppScreen.Home::class, serializer<AppScreen.Home>())
                     subclass(AppScreen.Search::class, serializer<AppScreen.Search>())
                     subclass(AppScreen.Details::class, serializer<AppScreen.Details>())
-                    subclass(AppScreen.Chat::class, serializer<AppScreen.Chat>())
                     subclass(AppScreen.Settings::class, serializer<AppScreen.Settings>())
                 }
             }

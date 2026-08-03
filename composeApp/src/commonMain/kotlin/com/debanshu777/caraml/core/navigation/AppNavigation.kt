@@ -31,7 +31,7 @@ fun NavigationHost(
     NavDisplay(
         modifier = modifier,
         backStack = backStack,
-        onBack = { backStack.removeLastOrNull() },
+        onBack = { if (backStack.size > 1) backStack.removeLastOrNull() },
         entryDecorators =
             listOf(
                 rememberSaveableStateHolderNavEntryDecorator(),
@@ -60,7 +60,7 @@ fun NavigationHost(
                         },
                         onSelectModelAndGoBack = { model ->
                             chatViewModel.selectModel(model)
-                            backStack.removeLastOrNull()
+                            if (backStack.size > 1) backStack.removeLastOrNull()
                         }
                     )
                 }
@@ -70,7 +70,7 @@ fun NavigationHost(
                         viewModel = modelViewModel,
                         modelId = key.modelId,
                         hubBrowseMode = key.hubBrowseMode,
-                        onBack = { backStack.removeLastOrNull() },
+                        onBack = { if (backStack.size > 1) backStack.removeLastOrNull() },
                     )
                 }
                 entry(AppScreen.Settings) {
