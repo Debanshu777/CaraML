@@ -127,6 +127,21 @@ Java_com_debanshu777_runner_LlamaRunner_nativeNextToken(JNIEnv *env, jobject) {
     return env->NewStringUTF(tok);
 }
 
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_debanshu777_runner_LlamaRunner_nativeGetReasoning(JNIEnv *env, jobject) {
+    return env->NewStringUTF(llama_runner_core_get_reasoning());
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_debanshu777_runner_LlamaRunner_nativeGetContent(JNIEnv *env, jobject) {
+    return env->NewStringUTF(llama_runner_core_get_content());
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_debanshu777_runner_LlamaRunner_nativeSupportsThinking(JNIEnv *, jobject) {
+    return static_cast<jint>(llama_runner_core_supports_thinking());
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeCancelGenerate(JNIEnv *, jobject) {
     llama_runner_core_cancel_generate();
