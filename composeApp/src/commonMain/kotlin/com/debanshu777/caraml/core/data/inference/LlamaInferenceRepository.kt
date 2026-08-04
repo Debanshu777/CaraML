@@ -300,7 +300,9 @@ class LlamaInferenceRepository(
             if (raw <= 0) AUTO_FIT_CONTEXT_CAP else raw.coerceAtMost(AUTO_FIT_CONTEXT_CAP)
         }
         val modelSizeMB = getModelFileSizeMB(model)
-        val useMlock = modelSizeMB <= 4096 && hints.memoryBudgetMB >= 6000
+        // mlock always fails on Android (RLIMIT_MEMLOCK ~64KB) and is pointless when
+        // weights are GPU-offloaded. Only meaningful for CPU-resident small models.
+        val useMlock = !gpuEnabled && modelSizeMB <= 4096 && hints.memoryBudgetMB >= 6000
 
         // After Phase 03: gen and batch are pinned to perfCores, so cap batch to perfCores.
         // Drop isLargeModel branch — native safety net handles thread adjustment.
