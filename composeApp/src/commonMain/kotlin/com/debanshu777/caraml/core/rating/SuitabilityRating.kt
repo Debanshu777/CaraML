@@ -51,6 +51,7 @@ data class SuitabilityResult(
     val quantAssumed: String?,
     val isEstimate: Boolean,
     val reason: String,
+    val warnings: List<String> = emptyList(),
 ) {
     companion object {
         fun unknown(budgetBytes: Long): SuitabilityResult = SuitabilityResult(
