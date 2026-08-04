@@ -48,6 +48,10 @@ class LlamaInferenceRepository(
          * 16384 is a reasonable default for mobile; users can override via model settings.
          */
         private const val AUTO_FIT_CONTEXT_CAP = 16384
+
+        /** When true, skip GPU attempt on first load for hybrid-SSM archs (they always fail on Vulkan).
+         *  Task 1 self-learns after runtime failure regardless; disable if ggml-vulkan adds qwen35 support. */
+        private const val DENYLIST_HYBRID_SSM_VULKAN = true
     }
 
     /**
@@ -286,9 +290,10 @@ class LlamaInferenceRepository(
         // Cache is keyed on modelPath + memory tier (GB) + gpuEnabled flag.
         val gpuActive = hints.gpuBackendAvailable
         val knownIncompatible = modelPath.isNotBlank() && modelPath in gpuIncompatible
-        val gpuEnabled = settings.useGpu && gpuActive && !knownIncompatible
-        if (knownIncompatible) {
-            AppLogger.i(TAG) { "buildRunnerConfig: GPU load previously failed for this model — using CPU config directly" }
+        val archDenied = DENYLIST_HYBRID_SSM_VULKAN && archFamily(model.arch) == ArchFamily.HYBRID_SSM
+        val gpuEnabled = settings.useGpu && gpuActive && !knownIncompatible && !archDenied
+        if (knownIncompatible || archDenied) {
+            AppLogger.i(TAG) { "buildRunnerConfig: GPU disabled for this model (incompatible=$knownIncompatible, archDenied=$archDenied)" }
         }
         val cacheKey = if (modelPath.isNotBlank()) paramsFitCacheKey(modelPath, hints.memoryBudgetMB, gpuEnabled) else ""
         val cachedFit = if (cacheKey.isNotBlank()) paramsFitCache[cacheKey] else null
