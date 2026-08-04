@@ -73,4 +73,6 @@ void llama_runner_core_clear_context();
 const char* llama_runner_core_get_model_architecture();
 const char *llama_runner_core_get_reasoning();
 const char *llama_runner_core_get_content();
+const char *llama_runner_core_get_reasoning_delta();
+const char *llama_runner_core_get_content_delta();
 int llama_runner_core_supports_thinking();

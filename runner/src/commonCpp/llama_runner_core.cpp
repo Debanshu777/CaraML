@@ -77,6 +77,22 @@ static common_chat_parser_params g_parser_params;
 // Cumulative parsed reasoning/content for the current turn, refreshed per token.
 static std::string g_reasoning_accum;
 static std::string g_content_accum;
+
+// Byte offsets already emitted as deltas. Reset per turn (see reset_delta_offsets).
+static size_t g_reasoning_emitted = 0;
+static size_t g_content_emitted = 0;
+
+// Holding buffers so the returned const char* outlives the accessor call.
+static std::string g_reasoning_delta_buf;
+static std::string g_content_delta_buf;
+
+static void reset_delta_offsets() {
+    g_reasoning_emitted = 0;
+    g_content_emitted = 0;
+    g_reasoning_delta_buf.clear();
+    g_content_delta_buf.clear();
+}
+
 // Template capability: does this model's chat template support thinking?
 static bool g_supports_thinking = false;
 
@@ -308,6 +324,7 @@ void finalize_assistant_turn() {
         asst_msg.content = g_assistant_buffer;
         g_chat_msgs.push_back(asst_msg);
         g_assistant_buffer.clear();
+        reset_delta_offsets();
     }
 }
 
@@ -614,6 +631,7 @@ bool llama_runner_core_start_generate(const char *prompt, int max_tokens, float 
     g_cached_utf8_chars.clear();
     g_streaming_n_generated = 0;
     g_assistant_buffer.clear();
+    reset_delta_offsets();
 
     if (!apply_sampler_for_turn(temperature, grammar)) {
         log_line(LLAMA_LOG_ERROR, "start_generate: Failed to reconfigure sampler");
@@ -826,6 +844,7 @@ int llama_runner_core_process_system_prompt(const char *system_prompt) {
     g_system_prompt_position = 0;
     g_current_position = 0;
     g_assistant_buffer.clear();
+    reset_delta_offsets();
     g_kv_token_history.clear();
     llama_memory_seq_rm(llama_get_memory(g_context), 0, -1, -1);
 
@@ -890,6 +909,7 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
     g_cached_utf8_chars.clear();
     g_streaming_n_generated = 0;
     g_assistant_buffer.clear();
+    reset_delta_offsets();
     g_stop_reason = STOP_NONE;
     g_reasoning_accum.clear();
     g_content_accum.clear();
@@ -1090,6 +1110,7 @@ void llama_runner_core_unload() {
     g_active_grammar.clear();
     g_actual_gpu_layers = 0;
     g_kv_token_history.clear();
+    reset_delta_offsets();
     log_line(LLAMA_LOG_INFO, "unload: Model unloaded");
 }
 
@@ -1136,6 +1157,34 @@ const char *llama_runner_core_get_content() {
     return g_content_accum.c_str();
 }
 
+// Returns bytes appended to g_reasoning_accum since the last call. If the
+// accumulator shrank (parser retroactively reclassified bytes), returns the
+// FULL accumulator prefixed with a 0x01 sentinel so the caller knows to
+// replace, not append. Empty string means no new bytes.
+const char *llama_runner_core_get_reasoning_delta() {
+    const std::string &acc = g_reasoning_accum;
+    if (acc.size() < g_reasoning_emitted) {
+        g_reasoning_delta_buf = std::string(1, '\x01') + acc;
+        g_reasoning_emitted = acc.size();
+        return g_reasoning_delta_buf.c_str();
+    }
+    g_reasoning_delta_buf = acc.substr(g_reasoning_emitted);
+    g_reasoning_emitted = acc.size();
+    return g_reasoning_delta_buf.c_str();
+}
+
+const char *llama_runner_core_get_content_delta() {
+    const std::string &acc = g_content_accum;
+    if (acc.size() < g_content_emitted) {
+        g_content_delta_buf = std::string(1, '\x01') + acc;
+        g_content_emitted = acc.size();
+        return g_content_delta_buf.c_str();
+    }
+    g_content_delta_buf = acc.substr(g_content_emitted);
+    g_content_emitted = acc.size();
+    return g_content_delta_buf.c_str();
+}
+
 int llama_runner_core_supports_thinking() {
     return g_supports_thinking ? 1 : 0;
 }
@@ -1155,6 +1204,7 @@ void llama_runner_core_clear_context() {
     g_chat_msgs.clear();
     g_pending_chat_decode = false;
     g_assistant_buffer.clear();
+    reset_delta_offsets();
     g_cached_utf8_chars.clear();
     g_streaming_tokens.clear();
     g_streaming_n_generated = 0;
