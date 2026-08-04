@@ -79,6 +79,14 @@ class LlamaInferenceRepository(
     private data class ParamsFitResult(val nGpuLayers: Int, val nCtx: Int)
     private val paramsFitCache = mutableMapOf<String, ParamsFitResult>()
 
+    /**
+     * Model paths whose GPU (Vulkan) load has failed at runtime. On reload we
+     * skip the doomed ~3s GPU attempt and build a CPU config directly. Populated
+     * from loadModel when the GPU load falls back to CPU. Self-learning: covers
+     * any arch that fails at runtime, not just a hard-coded denylist.
+     */
+    private val gpuIncompatible = mutableSetOf<String>()
+
     private fun paramsFitCacheKey(modelPath: String, memBudgetMB: Long, gpuEnabled: Boolean): String {
         val memTierGB = memBudgetMB / 1024  // round down to GB — tolerates minor fluctuations
         return "$modelPath:$memTierGB:$gpuEnabled"
@@ -164,7 +172,13 @@ class LlamaInferenceRepository(
                         nThreadsBatch = config.nThreadsBatch,
                     )
                     loaded = runner.loadModel(modelPath = modelPath, config = fallback)
-                    if (loaded) fallback else null
+                    if (loaded) {
+                        if (modelPath.isNotBlank()) {
+                            gpuIncompatible += modelPath
+                            AppLogger.w(TAG, "loadModel: recorded GPU-incompatible model — future loads skip GPU")
+                        }
+                        fallback
+                    } else null
                 } else null
 
                 val effectiveConfig = cpuFallbackConfig ?: config
@@ -271,7 +285,11 @@ class LlamaInferenceRepository(
         // Phase 10: params_fit cache — skip the ~1.2s probe on repeated loads of the same model.
         // Cache is keyed on modelPath + memory tier (GB) + gpuEnabled flag.
         val gpuActive = hints.gpuBackendAvailable
-        val gpuEnabled = settings.useGpu && gpuActive
+        val knownIncompatible = modelPath.isNotBlank() && modelPath in gpuIncompatible
+        val gpuEnabled = settings.useGpu && gpuActive && !knownIncompatible
+        if (knownIncompatible) {
+            AppLogger.i(TAG) { "buildRunnerConfig: GPU load previously failed for this model — using CPU config directly" }
+        }
         val cacheKey = if (modelPath.isNotBlank()) paramsFitCacheKey(modelPath, hints.memoryBudgetMB, gpuEnabled) else ""
         val cachedFit = if (cacheKey.isNotBlank()) paramsFitCache[cacheKey] else null
         if (cachedFit != null) {
