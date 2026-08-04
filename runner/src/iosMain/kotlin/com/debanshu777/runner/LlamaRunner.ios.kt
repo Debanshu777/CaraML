@@ -14,7 +14,9 @@ import com.debanshu777.runner.cpp.llama_runner_load_model_v2
 import com.debanshu777.runner.cpp.llama_runner_next_token
 import com.debanshu777.runner.cpp.llama_runner_process_system_prompt
 import com.debanshu777.runner.cpp.llama_runner_get_content
+import com.debanshu777.runner.cpp.llama_runner_get_content_delta
 import com.debanshu777.runner.cpp.llama_runner_get_reasoning
+import com.debanshu777.runner.cpp.llama_runner_get_reasoning_delta
 import com.debanshu777.runner.cpp.llama_runner_process_user_prompt
 import com.debanshu777.runner.cpp.llama_runner_shutdown
 import com.debanshu777.runner.cpp.llama_runner_supports_thinking
@@ -98,6 +100,18 @@ actual class LlamaRunner {
 
     @OptIn(ExperimentalForeignApi::class)
     actual fun supportsThinking(): Boolean = llama_runner_supports_thinking() != 0
+
+    @OptIn(ExperimentalForeignApi::class)
+    actual fun getReasoningDelta(): String {
+        val p = llama_runner_get_reasoning_delta() ?: return ""
+        return try { p.toKString() } finally { free(p) }
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    actual fun getContentDelta(): String {
+        val p = llama_runner_get_content_delta() ?: return ""
+        return try { p.toKString() } finally { free(p) }
+    }
 
     @OptIn(ExperimentalForeignApi::class)
     actual fun unloadModel() {

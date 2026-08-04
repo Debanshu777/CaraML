@@ -37,3 +37,5 @@ const char* llama_runner_get_model_architecture(void);
 char* llama_runner_get_reasoning(void);
 char* llama_runner_get_content(void);
 int llama_runner_supports_thinking(void);
+char* llama_runner_get_reasoning_delta(void);
+char* llama_runner_get_content_delta(void);

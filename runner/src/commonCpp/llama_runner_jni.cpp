@@ -144,6 +144,18 @@ Java_com_debanshu777_runner_LlamaRunner_nativeSupportsThinking(JNIEnv *, jobject
     return static_cast<jint>(llama_runner_core_supports_thinking());
 }
 
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_debanshu777_runner_LlamaRunner_nativeGetReasoningDelta(JNIEnv *env, jobject) {
+    const char *s = llama_runner_core_get_reasoning_delta();
+    return env->NewStringUTF(s ? s : "");
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_debanshu777_runner_LlamaRunner_nativeGetContentDelta(JNIEnv *env, jobject) {
+    const char *s = llama_runner_core_get_content_delta();
+    return env->NewStringUTF(s ? s : "");
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeCancelGenerate(JNIEnv *, jobject) {
     llama_runner_core_cancel_generate();

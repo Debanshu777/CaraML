@@ -42,6 +42,8 @@ actual class LlamaRunner {
     actual fun getReasoning(): String = nativeGetReasoning()
     actual fun getContent(): String = nativeGetContent()
     actual fun supportsThinking(): Boolean = nativeSupportsThinking() != 0
+    actual fun getReasoningDelta(): String = nativeGetReasoningDelta()
+    actual fun getContentDelta(): String = nativeGetContentDelta()
 
     actual fun unloadModel() {
         nativeUnloadModel()
@@ -82,6 +84,8 @@ actual class LlamaRunner {
     private external fun nativeGetReasoning(): String
     private external fun nativeGetContent(): String
     private external fun nativeSupportsThinking(): Int
+    private external fun nativeGetReasoningDelta(): String
+    private external fun nativeGetContentDelta(): String
 
     private external fun nativeUnloadModel()
     private external fun nativeShutdown()

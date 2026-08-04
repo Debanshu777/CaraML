@@ -27,6 +27,10 @@ expect class LlamaRunner() {
 
     fun supportsThinking(): Boolean
 
+    fun getReasoningDelta(): String
+
+    fun getContentDelta(): String
+
     fun unloadModel()
 
     fun shutdown()

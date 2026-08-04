@@ -153,4 +153,12 @@ int llama_runner_supports_thinking(void) {
     return llama_runner_core_supports_thinking();
 }
 
+char *llama_runner_get_reasoning_delta(void) {
+    return strdup(llama_runner_core_get_reasoning_delta());
+}
+
+char *llama_runner_get_content_delta(void) {
+    return strdup(llama_runner_core_get_content_delta());
+}
+
 }
