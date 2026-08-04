@@ -13,25 +13,42 @@ fun LlamaRunner.generateFlowTokens(): Flow<String> = flow {
 }
 
 /**
- * Streams cumulative [InferenceChunk] snapshots. After each generated token the
- * native layer has already re-parsed the assistant buffer into reasoning vs
- * content (see llama_runner_core reparse), so we simply read both accumulators.
+ * Streams cumulative [InferenceChunk] snapshots assembled in Kotlin from native
+ * O(n) deltas. Native returns only the appended tail per token; a delta prefixed
+ * with '' is a resync payload (parser retroactively reclassified tail bytes)
+ * whose remainder replaces the accumulated stream.
  */
 fun LlamaRunner.generateStructuredChunks(): Flow<InferenceChunk> =
     structuredChunkFlow(
         nextToken = { nextToken() },
-        reasoning = { getReasoning() },
-        content = { getContent() },
+        reasoningDelta = { getReasoningDelta() },
+        contentDelta = { getContentDelta() },
     )
 
-/** Testable core loop — no native dependency. */
+private const val RESYNC_SENTINEL = ''
+
+/** Testable core loop — no native dependency. Accumulates deltas into cumulative chunks. */
 internal fun structuredChunkFlow(
     nextToken: () -> String?,
-    reasoning: () -> String,
-    content: () -> String,
+    reasoningDelta: () -> String,
+    contentDelta: () -> String,
 ): Flow<InferenceChunk> = flow {
+    val reasoning = StringBuilder()
+    val content = StringBuilder()
     while (true) {
         nextToken() ?: break
-        emit(InferenceChunk(reasoning = reasoning(), content = content()))
+        applyDelta(reasoning, reasoningDelta())
+        applyDelta(content, contentDelta())
+        emit(InferenceChunk(reasoning = reasoning.toString(), content = content.toString()))
+    }
+}
+
+private fun applyDelta(acc: StringBuilder, delta: String) {
+    if (delta.isEmpty()) return
+    if (delta[0] == RESYNC_SENTINEL) {
+        acc.setLength(0)
+        acc.append(delta, 1, delta.length)
+    } else {
+        acc.append(delta)
     }
 }

@@ -7,17 +7,31 @@ import kotlin.test.assertEquals
 
 class LlamaRunnerExtTest {
     @Test
-    fun emitsCumulativeSnapshotsPerToken() = runTest {
-        val tokens = ArrayDeque(listOf("<think>", "hi", "</think>", "Answer"))
-        // reasoning/content mirror what native would return cumulatively
-        val reasoning = ArrayDeque(listOf("", "hi", "hi", "hi"))
-        val content = ArrayDeque(listOf("", "", "", "Answer"))
+    fun deltaFlow_accumulates_appends() = runTest {
+        val tokens = ArrayDeque(listOf("a", "b", "c"))
+        val reasoningDeltas = ArrayDeque(listOf("Th", "ink", ""))
+        val contentDeltas = ArrayDeque(listOf("", "", "Hi"))
         val chunks = structuredChunkFlow(
             nextToken = { tokens.removeFirstOrNull() },
-            reasoning = { reasoning.removeFirst() },
-            content = { content.removeFirst() },
+            reasoningDelta = { reasoningDeltas.removeFirstOrNull() ?: "" },
+            contentDelta = { contentDeltas.removeFirstOrNull() ?: "" },
         ).toList()
-        assertEquals(4, chunks.size)
-        assertEquals(InferenceChunk("hi", "Answer"), chunks.last())
+        assertEquals("Think", chunks.last().reasoning)
+        assertEquals("Hi", chunks.last().content)
+    }
+
+    @Test
+    fun deltaFlow_resync_sentinel_replaces() = runTest {
+        val tokens = ArrayDeque(listOf("a", "b"))
+        // second reasoning delta starts with resync sentinel + new full text
+        val reasoningDeltas = ArrayDeque(listOf("Thinking", "Think"))
+        val contentDeltas = ArrayDeque(listOf("", "ing done"))
+        val chunks = structuredChunkFlow(
+            nextToken = { tokens.removeFirstOrNull() },
+            reasoningDelta = { reasoningDeltas.removeFirstOrNull() ?: "" },
+            contentDelta = { contentDeltas.removeFirstOrNull() ?: "" },
+        ).toList()
+        assertEquals("Think", chunks.last().reasoning)
+        assertEquals("ing done", chunks.last().content)
     }
 }
