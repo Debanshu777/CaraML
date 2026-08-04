@@ -21,6 +21,7 @@ kotlin {
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_21)
         }
+        withHostTest {}
     }
 
     val nativeEngineProject = project(":nativeEngine")

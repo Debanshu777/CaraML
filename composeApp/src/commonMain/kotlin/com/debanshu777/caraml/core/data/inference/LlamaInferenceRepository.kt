@@ -162,13 +162,32 @@ class LlamaInferenceRepository(
                     config = config,
                 )
 
-                // If GPU-accelerated load fails (e.g. Vulkan device lacks required
-                // features — throws std::vector/length_error inside ggml_vk_init),
-                // retry with CPU-only.  This keeps the app functional on devices
-                // that claim Vulkan support but can't satisfy ggml-vulkan's
-                // feature requirements (shaderIntegerDotProduct etc.).
+                // A GPU load can fail for TWO very different reasons:
+                //   (a) Transient — the previously-loaded model's Vulkan buffers
+                //       haven't been fully released by the driver yet, so this
+                //       load hits a spurious device OOM. Retrying the SAME GPU
+                //       config after the failed attempt tore itself down usually
+                //       succeeds (driver memory is now reclaimed).
+                //   (b) Permanent — the arch/quant genuinely can't build a Vulkan
+                //       graph on this device (e.g. hybrid-SSM qwen35 throws
+                //       std::length_error inside ggml_vk_init). No retry will help.
+                // We MUST NOT record (a) as GPU-incompatible — doing so permanently
+                // and wrongly demotes a healthy GPU model to CPU for the rest of the
+                // session. So retry GPU ONCE first; only fall back to CPU (and only
+                // then record incompatibility) if the retry also fails.
+                if (!loaded && config.nGpuLayers != 0) {
+                    AppLogger.w(TAG, "loadModel: GPU load failed — retrying GPU once (may be transient driver memory)")
+                    loaded = runner.loadModel(modelPath = modelPath, config = config)
+                    if (loaded) {
+                        AppLogger.i(TAG) { "loadModel: GPU retry succeeded — transient failure, not recording incompatibility" }
+                    }
+                }
+
+                // If the GPU retry also failed, the incompatibility is genuine.
+                // Fall back to CPU-only and record the model so future loads skip
+                // the doomed GPU attempt.
                 val cpuFallbackConfig = if (!loaded && config.nGpuLayers != 0) {
-                    AppLogger.w(TAG, "loadModel: GPU load failed — retrying CPU-only")
+                    AppLogger.w(TAG, "loadModel: GPU load failed twice — falling back to CPU-only")
                     val fallback = config.copy(
                         nGpuLayers   = 0,
                         offloadKqv   = false,
