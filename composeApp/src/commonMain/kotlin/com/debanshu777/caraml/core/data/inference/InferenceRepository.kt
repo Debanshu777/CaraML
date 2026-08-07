@@ -1,6 +1,7 @@
 package com.debanshu777.caraml.core.data.inference
 
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
+import com.debanshu777.runner.InferenceChunk
 import kotlinx.coroutines.flow.Flow
 
 sealed interface ModelLoadResult {
@@ -11,7 +12,7 @@ sealed interface ModelLoadResult {
 interface InferenceRepository {
     suspend fun loadModel(model: LocalModelEntity): ModelLoadResult
     suspend fun unloadModel()
-    fun generateResponse(userPrompt: String): Flow<String>
+    fun generateResponse(userPrompt: String): Flow<InferenceChunk>
     fun cancelGeneration()
     fun getContextUsed(): Int
     fun getContextLimit(): Int

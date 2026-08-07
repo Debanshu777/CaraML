@@ -6,8 +6,8 @@ import com.debanshu777.caraml.core.platform.AppLogger
 import com.debanshu777.caraml.features.chat.data.InferenceMetrics
 import com.debanshu777.caraml.features.chat.data.LiveGenerationStats
 import com.debanshu777.caraml.features.chat.data.TokenTimer
+import com.debanshu777.runner.InferenceChunk
 import com.debanshu777.runner.StopReason
-import com.debanshu777.runner.StructuredOutputParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.flowOn
@@ -40,18 +40,17 @@ class GenerateResponseUseCase(
     ): GenerationResult {
         val contextLimit = inferenceRepository.getContextLimit()
         val timer = TokenTimer()
-        val parser = StructuredOutputParser()
         val benchMode = BenchmarkUtils.benchmarkMode
         val detailedTimer = if (benchMode) BenchmarkUtils.DetailedTokenTimer() else null
         var firstToken = true
 
         detailedTimer?.startPrefill()
 
-        fun emitSnapshot(snapshot: StructuredOutputParser.Snapshot) {
+        fun emit(thinking: String, output: String) {
             val (tokenCount, tokensPerSecond) = timer.buildLiveMetrics()
             onToken(
-                snapshot.thinking,
-                snapshot.output,
+                thinking,
+                output,
                 LiveGenerationStats(
                     contextUsed = inferenceRepository.getContextUsed(),
                     contextLimit = contextLimit,
@@ -61,31 +60,22 @@ class GenerateResponseUseCase(
             )
         }
 
-        try {
-            inferenceRepository.generateResponse(userPrompt)
-                .onEach {
-                    timer.onToken()
-                    if (detailedTimer != null) {
-                        if (firstToken) {
-                            detailedTimer.onFirstToken()
-                            firstToken = false
-                        } else {
-                            detailedTimer.onToken()
-                        }
+        inferenceRepository.generateResponse(userPrompt)
+            .onEach {
+                timer.onToken()
+                if (detailedTimer != null) {
+                    if (firstToken) {
+                        detailedTimer.onFirstToken()
+                        firstToken = false
+                    } else {
+                        detailedTimer.onToken()
                     }
                 }
-                .flowOn(Dispatchers.IO)
-                .collect { token ->
-                    val snapshot = parser.accept(token)
-                    emitSnapshot(snapshot)
-                }
-        } finally {
-            emitSnapshot(parser.finish())
-        }
-
-        if (parser.isInFallback) {
-            AppLogger.w(TAG, "structured output: fell back to raw stream")
-        }
+            }
+            .flowOn(Dispatchers.IO)
+            .collect { chunk ->
+                emit(chunk.reasoning, chunk.content)
+            }
 
         val metrics = timer.buildMetrics()
         val stopReason = inferenceRepository.getStopReason()

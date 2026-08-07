@@ -109,8 +109,8 @@ int llama_runner_process_system_prompt(const char *prompt) {
     return llama_runner_core_process_system_prompt(prompt);
 }
 
-int llama_runner_process_user_prompt(const char *prompt, int predict_length, const char *grammar) {
-    return llama_runner_core_process_user_prompt(prompt, predict_length, grammar);
+int llama_runner_process_user_prompt(const char *prompt, int predict_length) {
+    return llama_runner_core_process_user_prompt(prompt, predict_length);
 }
 
 void llama_runner_unload_model(void) { llama_runner_core_unload(); }
@@ -139,6 +139,26 @@ void llama_runner_clear_context(void) {
 
 const char* llama_runner_get_model_architecture(void) {
     return llama_runner_core_get_model_architecture();
+}
+
+char *llama_runner_get_reasoning(void) {
+    return strdup(llama_runner_core_get_reasoning());
+}
+
+char *llama_runner_get_content(void) {
+    return strdup(llama_runner_core_get_content());
+}
+
+int llama_runner_supports_thinking(void) {
+    return llama_runner_core_supports_thinking();
+}
+
+char *llama_runner_get_reasoning_delta(void) {
+    return strdup(llama_runner_core_get_reasoning_delta());
+}
+
+char *llama_runner_get_content_delta(void) {
+    return strdup(llama_runner_core_get_content_delta());
 }
 
 }

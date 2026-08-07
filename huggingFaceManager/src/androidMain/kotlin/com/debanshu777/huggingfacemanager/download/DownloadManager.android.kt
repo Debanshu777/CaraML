@@ -63,6 +63,9 @@ actual class DownloadManager actual constructor(
                         send(DownloadProgressDTO(bytesReceived, contentLength, pct))
                     }
                 }
+                if (contentLength != null && bytesReceived != contentLength) {
+                    throw IncompleteDownloadException(bytesReceived, contentLength)
+                }
                 // Emit final progress with localPath set
                 send(
                     DownloadProgressDTO(

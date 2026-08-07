@@ -9,13 +9,12 @@ import com.debanshu777.caraml.core.settings.KvQuantPreset
 import com.debanshu777.caraml.core.data.settings.SettingsRepository
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
-import com.debanshu777.caraml.features.chat.domain.ReasoningModelClassifier
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
+import com.debanshu777.runner.InferenceChunk
 import com.debanshu777.runner.LlamaRunner
 import com.debanshu777.runner.NativeRunnerConfig
-import com.debanshu777.runner.STRICT_THINKING_OUTPUT_GRAMMAR
 import com.debanshu777.runner.generateFlowTokens
-import com.debanshu777.runner.structuredOutputSystemPromptSuffix
+import com.debanshu777.runner.generateStructuredChunks
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -49,6 +48,10 @@ class LlamaInferenceRepository(
          * 16384 is a reasonable default for mobile; users can override via model settings.
          */
         private const val AUTO_FIT_CONTEXT_CAP = 16384
+
+        /** When true, skip GPU attempt on first load for hybrid-SSM archs (they always fail on Vulkan).
+         *  Task 1 self-learns after runtime failure regardless; disable if ggml-vulkan adds qwen35 support. */
+        private const val DENYLIST_HYBRID_SSM_VULKAN = true
     }
 
     /**
@@ -80,6 +83,14 @@ class LlamaInferenceRepository(
     private data class ParamsFitResult(val nGpuLayers: Int, val nCtx: Int)
     private val paramsFitCache = mutableMapOf<String, ParamsFitResult>()
 
+    /**
+     * Model paths whose GPU (Vulkan) load has failed at runtime. On reload we
+     * skip the doomed ~3s GPU attempt and build a CPU config directly. Populated
+     * from loadModel when the GPU load falls back to CPU. Self-learning: covers
+     * any arch that fails at runtime, not just a hard-coded denylist.
+     */
+    private val gpuIncompatible = mutableSetOf<String>()
+
     private fun paramsFitCacheKey(modelPath: String, memBudgetMB: Long, gpuEnabled: Boolean): String {
         val memTierGB = memBudgetMB / 1024  // round down to GB — tolerates minor fluctuations
         return "$modelPath:$memTierGB:$gpuEnabled"
@@ -100,9 +111,6 @@ class LlamaInferenceRepository(
 
     /** Cached runtime config string built after each successful model load. */
     @Volatile private var lastRuntimeConfig: String = ""
-
-    /** True when the currently-loaded model is a reasoning model; false otherwise. */
-    @Volatile private var isReasoningModel: Boolean = false
 
     override suspend fun loadModel(model: LocalModelEntity): ModelLoadResult =
         nativeLock.withLock {
@@ -135,9 +143,6 @@ class LlamaInferenceRepository(
 
                 runner.initialize(nativeLibDir)
 
-                isReasoningModel = ReasoningModelClassifier.isReasoningModel(model.modelId)
-                AppLogger.i(TAG) { "loadModel: isReasoningModel=$isReasoningModel (modelId=${model.modelId})" }
-
                 val settings = currentSettings()
 
                 val config = buildRunnerConfig(
@@ -157,13 +162,32 @@ class LlamaInferenceRepository(
                     config = config,
                 )
 
-                // If GPU-accelerated load fails (e.g. Vulkan device lacks required
-                // features — throws std::vector/length_error inside ggml_vk_init),
-                // retry with CPU-only.  This keeps the app functional on devices
-                // that claim Vulkan support but can't satisfy ggml-vulkan's
-                // feature requirements (shaderIntegerDotProduct etc.).
+                // A GPU load can fail for TWO very different reasons:
+                //   (a) Transient — the previously-loaded model's Vulkan buffers
+                //       haven't been fully released by the driver yet, so this
+                //       load hits a spurious device OOM. Retrying the SAME GPU
+                //       config after the failed attempt tore itself down usually
+                //       succeeds (driver memory is now reclaimed).
+                //   (b) Permanent — the arch/quant genuinely can't build a Vulkan
+                //       graph on this device (e.g. hybrid-SSM qwen35 throws
+                //       std::length_error inside ggml_vk_init). No retry will help.
+                // We MUST NOT record (a) as GPU-incompatible — doing so permanently
+                // and wrongly demotes a healthy GPU model to CPU for the rest of the
+                // session. So retry GPU ONCE first; only fall back to CPU (and only
+                // then record incompatibility) if the retry also fails.
+                if (!loaded && config.nGpuLayers != 0) {
+                    AppLogger.w(TAG, "loadModel: GPU load failed — retrying GPU once (may be transient driver memory)")
+                    loaded = runner.loadModel(modelPath = modelPath, config = config)
+                    if (loaded) {
+                        AppLogger.i(TAG) { "loadModel: GPU retry succeeded — transient failure, not recording incompatibility" }
+                    }
+                }
+
+                // If the GPU retry also failed, the incompatibility is genuine.
+                // Fall back to CPU-only and record the model so future loads skip
+                // the doomed GPU attempt.
                 val cpuFallbackConfig = if (!loaded && config.nGpuLayers != 0) {
-                    AppLogger.w(TAG, "loadModel: GPU load failed — retrying CPU-only")
+                    AppLogger.w(TAG, "loadModel: GPU load failed twice — falling back to CPU-only")
                     val fallback = config.copy(
                         nGpuLayers   = 0,
                         offloadKqv   = false,
@@ -171,7 +195,13 @@ class LlamaInferenceRepository(
                         nThreadsBatch = config.nThreadsBatch,
                     )
                     loaded = runner.loadModel(modelPath = modelPath, config = fallback)
-                    if (loaded) fallback else null
+                    if (loaded) {
+                        if (modelPath.isNotBlank()) {
+                            gpuIncompatible += modelPath
+                            AppLogger.w(TAG, "loadModel: recorded GPU-incompatible model — future loads skip GPU")
+                        }
+                        fallback
+                    } else null
                 } else null
 
                 val effectiveConfig = cpuFallbackConfig ?: config
@@ -209,8 +239,7 @@ class LlamaInferenceRepository(
                     )
                 }
 
-                val systemPrompt = settings.systemPrompt.ifBlank { FALLBACK_SYSTEM_PROMPT } +
-                    if (isReasoningModel) structuredOutputSystemPromptSuffix() else ""
+                val systemPrompt = settings.systemPrompt.ifBlank { FALLBACK_SYSTEM_PROMPT }
 
                 val spRet = runner.processSystemPrompt(systemPrompt)
                 if (spRet != 0) {
@@ -279,7 +308,12 @@ class LlamaInferenceRepository(
         // Phase 10: params_fit cache — skip the ~1.2s probe on repeated loads of the same model.
         // Cache is keyed on modelPath + memory tier (GB) + gpuEnabled flag.
         val gpuActive = hints.gpuBackendAvailable
-        val gpuEnabled = settings.useGpu && gpuActive
+        val knownIncompatible = modelPath.isNotBlank() && modelPath in gpuIncompatible
+        val archDenied = DENYLIST_HYBRID_SSM_VULKAN && archFamily(model.arch) == ArchFamily.HYBRID_SSM
+        val gpuEnabled = settings.useGpu && gpuActive && !knownIncompatible && !archDenied
+        if (knownIncompatible || archDenied) {
+            AppLogger.i(TAG) { "buildRunnerConfig: GPU disabled for this model (incompatible=$knownIncompatible, archDenied=$archDenied)" }
+        }
         val cacheKey = if (modelPath.isNotBlank()) paramsFitCacheKey(modelPath, hints.memoryBudgetMB, gpuEnabled) else ""
         val cachedFit = if (cacheKey.isNotBlank()) paramsFitCache[cacheKey] else null
         if (cachedFit != null) {
@@ -290,7 +324,9 @@ class LlamaInferenceRepository(
             if (raw <= 0) AUTO_FIT_CONTEXT_CAP else raw.coerceAtMost(AUTO_FIT_CONTEXT_CAP)
         }
         val modelSizeMB = getModelFileSizeMB(model)
-        val useMlock = modelSizeMB <= 4096 && hints.memoryBudgetMB >= 6000
+        // mlock always fails on Android (RLIMIT_MEMLOCK ~64KB) and is pointless when
+        // weights are GPU-offloaded. Only meaningful for CPU-resident small models.
+        val useMlock = !gpuEnabled && modelSizeMB <= 4096 && hints.memoryBudgetMB >= 6000
 
         // After Phase 03: gen and batch are pinned to perfCores, so cap batch to perfCores.
         // Drop isLargeModel branch — native safety net handles thread adjustment.
@@ -371,19 +407,19 @@ class LlamaInferenceRepository(
         return (model.sizeBytes ?: 0L) / (1024 * 1024)
     }
 
-    override fun generateResponse(userPrompt: String): Flow<String> = flow {
+    override fun generateResponse(userPrompt: String): Flow<InferenceChunk> = flow {
         val remainingCtx = (runner.getContextLimit() - runner.getContextUsed()).coerceAtLeast(1)
         AppLogger.i(TAG) {
             "generate: promptLen=${userPrompt.length}, remainingCtx=$remainingCtx, " +
             "context=${runner.getContextUsed()}/${runner.getContextLimit()}"
         }
-        val ret = runner.processUserPrompt(userPrompt, remainingCtx, if (isReasoningModel) STRICT_THINKING_OUTPUT_GRAMMAR else "")
+        val ret = runner.processUserPrompt(userPrompt, remainingCtx)
         if (ret != 0) {
             throw IllegalStateException("Failed to process message")
         }
         try {
-            runner.generateFlowTokens().collect { token ->
-                emit(token)
+            runner.generateStructuredChunks().collect { chunk ->
+                emit(chunk)
             }
         } finally {
             runner.finalizeGeneration()
@@ -487,7 +523,6 @@ class LlamaInferenceRepository(
                         append("The most recent exchange was:\n")
                         append(lastExchange)
                     }
-                    if (isReasoningModel) append(structuredOutputSystemPromptSuffix())
                 }
 
                 val ret = runner.processSystemPrompt(systemPrompt)

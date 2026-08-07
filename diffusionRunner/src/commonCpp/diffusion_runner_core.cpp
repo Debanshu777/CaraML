@@ -1,11 +1,13 @@
 #include "diffusion_runner_core.h"
 #include "stable-diffusion.h"
 #include "model.h"
+#include "model_loader.h"
 #include "ggml.h"
 #ifdef SD_USE_VULKAN
 #include "ggml-vulkan.h"
 #endif
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <mutex>
 #include <atomic>
@@ -192,31 +194,39 @@ int64_t diffusion_runner_core_load_model(const DiffusionModelConfig &config) {
         dr_logf(DIFFUSION_LOG_INFO, "load_model: using single-file path layout (model_path)");
     }
 
-    params.offload_params_to_cpu = config.offload_to_cpu;
+    // sd.cpp's old offload_params_to_cpu / keep_clip_on_cpu / keep_vae_on_cpu / free_params_immediately
+    // bools were replaced by unified --backend / --params-backend module assignment strings
+    // (see libraries/stable-diffusion.cpp/docs/backend.md, "Compatibility flags"). free_params_immediately
+    // has no direct successor; params_backend=disk covers "reload+release" but that's a heavier
+    // behavior change than "free after first use" so it is intentionally not auto-mapped here.
+    std::string backend_assignment;
+    std::string params_backend_assignment;
     // ggml-vulkan on Android (Adreno/Mali) lacks F16 softmax/norm pipeline variants
     // used by the CLIP transformer and VAE decoder. Submitting those graphs to the
     // Vulkan backend triggers GGML_ABORT inside ggml_vk_op_get_pipeline.
     // Mirror stable-diffusion.cpp's documented workaround: pin CLIP + VAE to the CPU
     // backend whenever a Vulkan device is present. The heavy UNet stays on Vulkan.
     // Caller opt-in (config flag = true) is preserved via OR.
+    bool keep_clip_on_cpu = config.keep_clip_on_cpu;
+    bool keep_vae_on_cpu  = config.keep_vae_on_cpu;
 #ifdef SD_USE_VULKAN
     if (ggml_backend_vk_get_device_count() > 0) {
-        params.keep_clip_on_cpu = true;
-        params.keep_vae_on_cpu  = true;
+        keep_clip_on_cpu = true;
+        keep_vae_on_cpu  = true;
         dr_logf(DIFFUSION_LOG_INFO,
                 "load_model: vulkan present → FORCING keep_clip_on_cpu=true, keep_vae_on_cpu=true");
-    } else {
-        params.keep_clip_on_cpu = config.keep_clip_on_cpu;
-        params.keep_vae_on_cpu  = config.keep_vae_on_cpu;
     }
-#else
-    params.keep_clip_on_cpu = config.keep_clip_on_cpu;
-    params.keep_vae_on_cpu = config.keep_vae_on_cpu;
 #endif
+    if (keep_clip_on_cpu) backend_assignment += "te=cpu,";
+    if (keep_vae_on_cpu)  backend_assignment += "vae=cpu,";
+    if (!backend_assignment.empty()) backend_assignment.pop_back();
+    if (config.offload_to_cpu) params_backend_assignment = "*=cpu";
+    if (!backend_assignment.empty()) params.backend = backend_assignment.c_str();
+    if (!params_backend_assignment.empty()) params.params_backend = params_backend_assignment.c_str();
+
     params.diffusion_flash_attn = config.diffusion_flash_attn;
     params.enable_mmap = config.enable_mmap;
     params.diffusion_conv_direct = config.diffusion_conv_direct;
-    params.free_params_immediately = config.free_params_immediately;
 
     if (config.wtype >= 0) {
         params.wtype = static_cast<sd_type_t>(config.wtype);
@@ -247,11 +257,11 @@ int64_t diffusion_runner_core_load_model(const DiffusionModelConfig &config) {
     }
 
     dr_logf(DIFFUSION_LOG_INFO,
-            "load_model: → calling new_sd_ctx(wtype=%d, keep_clip_cpu=%d, keep_vae_cpu=%d, "
-            "offload=%d, flash_attn=%d, prediction=%d)",
-            (int)params.wtype, (int)params.keep_clip_on_cpu, (int)params.keep_vae_on_cpu,
-            (int)params.offload_params_to_cpu, (int)params.diffusion_flash_attn,
-            (int)params.prediction);
+            "load_model: → calling new_sd_ctx(wtype=%d, backend='%s', params_backend='%s', "
+            "flash_attn=%d, prediction=%d)",
+            (int)params.wtype, params.backend ? params.backend : "",
+            params.params_backend ? params.params_backend : "",
+            (int)params.diffusion_flash_attn, (int)params.prediction);
 
     // Create context
     sd_ctx_t *ctx = new_sd_ctx(&params);
@@ -353,8 +363,10 @@ PngResult diffusion_runner_core_txt2img(int64_t handle_id, const ImageGenConfig 
 
     // Generate image
     dr_logf(DIFFUSION_LOG_INFO, "txt2img: → calling generate_image (this is where Vulkan CLIP crashes if mis-configured)");
-    sd_image_t *images = generate_image(ctx, &gen_params);
-    if (!images || !images[0].data) {
+    sd_image_t *images = nullptr;
+    int num_images_out = 0;
+    bool gen_ok = generate_image(ctx, &gen_params, &images, &num_images_out);
+    if (!gen_ok || !images || num_images_out <= 0 || !images[0].data) {
         dr_logf(DIFFUSION_LOG_ERROR, "txt2img: generate_image returned NULL or empty (success path failed quietly)");
         return result;
     }
@@ -450,8 +462,13 @@ std::vector<PngResult> diffusion_runner_core_video_gen(int64_t handle_id, const 
 
     // Generate video frames
     int num_frames_out = 0;
-    sd_image_t *images = generate_video(ctx, &gen_params, &num_frames_out);
-    if (!images || num_frames_out <= 0) {
+    sd_image_t *images = nullptr;
+    sd_audio_t *audio_out = nullptr;
+    bool gen_ok = generate_video(ctx, &gen_params, &images, &num_frames_out, &audio_out);
+    if (audio_out) {
+        free_sd_audio(audio_out);
+    }
+    if (!gen_ok || !images || num_frames_out <= 0) {
         return results;
     }
 

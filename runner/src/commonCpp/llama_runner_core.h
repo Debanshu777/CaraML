@@ -62,7 +62,7 @@ void llama_runner_core_cancel_generate();
 void llama_runner_core_finalize_generation();
 
 int llama_runner_core_process_system_prompt(const char *system_prompt);
-int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_length, const char *grammar);
+int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_length);
 
 int llama_runner_core_get_context_used();
 int llama_runner_core_get_context_limit();
@@ -71,3 +71,8 @@ int llama_runner_core_get_stop_reason();
 int llama_runner_core_get_gpu_layers();
 void llama_runner_core_clear_context();
 const char* llama_runner_core_get_model_architecture();
+const char *llama_runner_core_get_reasoning();
+const char *llama_runner_core_get_content();
+const char *llama_runner_core_get_reasoning_delta();
+const char *llama_runner_core_get_content_delta();
+int llama_runner_core_supports_thinking();

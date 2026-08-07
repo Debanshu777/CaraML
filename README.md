@@ -216,6 +216,9 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 
 <!-- This section is updated at the end of each Claude Code session -->
 
+- Inference perf: O(n²) → O(n) JNI emission via native delta accessors (`getReasoningDelta`/`getContentDelta`) with resync-sentinel support; reduces GC churn and dropped frames on long replies
+- Inference perf: hybrid-SSM arch Vulkan denylist (qwen35, jamba, mamba, etc.) skips doomed first-load GPU attempt; suitability sheet now shows runnability warnings for IQ-quant + CPU-only and hybrid-SSM models
+- Reasoning/content split now uses llama.cpp native `common_chat_parse` (per-model chat template), replacing the custom GBNF grammar and name-based classifier
 - Fix: SD Vulkan SIGABRT on Mali-G715/Adreno — `SD_VULKAN` decoupled from `GGML_VULKAN` in Android CMakeLists; `SD_VULKAN=OFF` compiles stable-diffusion.cpp without `SD_USE_VULKAN`, preventing `GGMLRunner` from initializing Vulkan for image generation; `GGML_VULKAN` stays ON for LLM inference; root cause was `ggml_extend.hpp:1967` unconditionally offloading UNet params to Vulkan at inference time regardless of config flags
 - Fix: bk-sdm-tiny model registry now sets `prediction=0` (EPS) explicitly, preventing `is_using_v_parameterization_for_sd2()` probe
 - Fix: `DiffusionInferenceRepository` selfContained branch now propagates `offloadToCpu` from `recommendedParams`

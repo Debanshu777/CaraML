@@ -12,6 +12,7 @@
 
 #include "chat.h"
 #include "common.h"
+#include "fit.h"
 #include "ggml.h"
 #include "ggml-backend.h"
 #include "llama.h"
@@ -67,6 +68,33 @@ static std::string g_assistant_buffer;
 // Qwen3-style templates that demand a user query). The deferred system content
 // is decoded together with the first user prompt.
 static bool g_pending_chat_decode = false;
+
+// Parser params for splitting reasoning vs content from the model's own
+// template format. Rebuilt at each generation start from g_chat_msgs so the
+// forced-open generation_prompt (e.g. a template-injected "<think>") is fed to
+// common_chat_parse and the reasoning/content split stays aligned.
+static common_chat_parser_params g_parser_params;
+// Cumulative parsed reasoning/content for the current turn, refreshed per token.
+static std::string g_reasoning_accum;
+static std::string g_content_accum;
+
+// Byte offsets already emitted as deltas. Reset per turn (see reset_delta_offsets).
+static size_t g_reasoning_emitted = 0;
+static size_t g_content_emitted = 0;
+
+// Holding buffers so the returned const char* outlives the accessor call.
+static std::string g_reasoning_delta_buf;
+static std::string g_content_delta_buf;
+
+static void reset_delta_offsets() {
+    g_reasoning_emitted = 0;
+    g_content_emitted = 0;
+    g_reasoning_delta_buf.clear();
+    g_content_delta_buf.clear();
+}
+
+// Template capability: does this model's chat template support thinking?
+static bool g_supports_thinking = false;
 
 static void log_line(LlamaLogLevel level, const char *fmt, ...);
 
@@ -138,6 +166,37 @@ static std::optional<std::string> try_chat_format_single(
             "chat template format_single failed (role=%s): unknown exception",
             role.c_str());
         return std::nullopt;
+    }
+}
+
+// Rebuild g_parser_params from the current chat history so per-token parsing
+// knows the template's format, PEG parser arena, and forced-open generation
+// prompt. Called at generation start (after the user message is in g_chat_msgs).
+static void capture_parser_params() {
+    g_parser_params = common_chat_parser_params{};
+    if (!g_chat_templates || !g_chat_templates.get()) {
+        return;
+    }
+    try {
+        common_chat_templates_inputs inputs;
+        inputs.use_jinja              = true;
+        inputs.messages               = g_chat_msgs;
+        inputs.add_generation_prompt  = true;
+        inputs.reasoning_format       = COMMON_REASONING_FORMAT_AUTO;
+        inputs.enable_thinking        = true;
+        common_chat_params p = common_chat_templates_apply(g_chat_templates.get(), inputs);
+        g_parser_params.format            = p.format;
+        g_parser_params.generation_prompt = p.generation_prompt;
+        g_parser_params.reasoning_format  = COMMON_REASONING_FORMAT_AUTO;
+        g_parser_params.parser            = p.parser.empty()
+            ? common_peg_arena{}
+            : ([&]{ common_peg_arena a; a.load(p.parser); return a; })();
+        log_line(LLAMA_LOG_INFO,
+            "capture_parser_params: format=%s gen_prompt_len=%zu",
+            common_chat_format_name(p.format), p.generation_prompt.size());
+    } catch (const std::exception &e) {
+        log_line(LLAMA_LOG_WARN, "capture_parser_params failed: %s", e.what());
+        g_parser_params = common_chat_parser_params{};
     }
 }
 
@@ -265,6 +324,7 @@ void finalize_assistant_turn() {
         asst_msg.content = g_assistant_buffer;
         g_chat_msgs.push_back(asst_msg);
         g_assistant_buffer.clear();
+        reset_delta_offsets();
     }
 }
 
@@ -294,6 +354,31 @@ int decode_tokens_in_batches(
         }
     }
     return 0;
+}
+
+// Re-parse the cumulative assistant buffer into reasoning/content. Called after
+// each token (is_partial=true) and once at finalize (is_partial=false).
+static void reparse_assistant_buffer(bool is_partial) {
+    if (g_assistant_buffer.empty()) {
+        g_reasoning_accum.clear();
+        g_content_accum.clear();
+        return;
+    }
+    try {
+        common_chat_msg msg = common_chat_parse(
+            g_assistant_buffer, is_partial, g_parser_params);
+        g_reasoning_accum = msg.reasoning_content;
+        g_content_accum   = msg.content;
+    } catch (const std::exception &e) {
+        // Lenient fallback: if parsing throws (malformed partial), leave the
+        // last good accumulators in place; on final pass, surface raw buffer as
+        // content so nothing is lost.
+        if (!is_partial) {
+            g_reasoning_accum.clear();
+            g_content_accum = g_assistant_buffer;
+        }
+        log_line(LLAMA_LOG_WARN, "reparse_assistant_buffer failed: %s", e.what());
+    }
 }
 
 } // namespace
@@ -352,8 +437,9 @@ bool llama_runner_core_load_model(const char *model_path, const LlamaRunnerConfi
     ctx_params.offload_kqv     = g_config.offload_kqv;
     ctx_params.type_k          = static_cast<ggml_type>(g_config.type_k);
     ctx_params.type_v          = static_cast<ggml_type>(g_config.type_v);
-    model_params.use_mmap      = g_config.use_mmap;
-    model_params.use_mlock     = g_config.use_mlock;
+    model_params.load_mode     = g_config.use_mlock
+                                    ? (g_config.use_mmap ? LLAMA_LOAD_MODE_MMAP_MLOCK : LLAMA_LOAD_MODE_MLOCK)
+                                    : (g_config.use_mmap ? LLAMA_LOAD_MODE_MMAP : LLAMA_LOAD_MODE_NONE);
 
     if (g_config.auto_fit) {
         log_line(LLAMA_LOG_INFO, "load: Using llama_params_fit() for automatic memory optimization");
@@ -374,12 +460,12 @@ bool llama_runner_core_load_model(const char *model_path, const LlamaRunnerConfi
         buft_overrides.back() = {nullptr, nullptr};
         std::vector<size_t> margins(llama_max_devices(), 0);
 
-        auto status = llama_params_fit(
+        auto status = common_fit_params(
             model_path, &model_params, &ctx_params,
             tensor_split.data(), buft_overrides.data(), margins.data(),
             g_config.n_ctx_min, GGML_LOG_LEVEL_INFO);
 
-        if (status == LLAMA_PARAMS_FIT_STATUS_SUCCESS) {
+        if (status == COMMON_PARAMS_FIT_STATUS_SUCCESS) {
             model_params.tensor_split = tensor_split.data();
             log_line(LLAMA_LOG_INFO, "load: params_fit succeeded - n_gpu_layers=%d, n_ctx=%u",
                 model_params.n_gpu_layers, ctx_params.n_ctx);
@@ -495,6 +581,10 @@ bool llama_runner_core_load_model(const char *model_path, const LlamaRunnerConfi
     }
 
     g_chat_templates = common_chat_templates_init(g_model, "");
+    g_supports_thinking = g_chat_templates
+        ? common_chat_templates_support_enable_thinking(g_chat_templates.get())
+        : false;
+    log_line(LLAMA_LOG_INFO, "load: supports_thinking=%d", g_supports_thinking ? 1 : 0);
     g_chat_msgs.clear();
     g_pending_chat_decode = false;
     g_system_prompt_position = 0;
@@ -541,6 +631,7 @@ bool llama_runner_core_start_generate(const char *prompt, int max_tokens, float 
     g_cached_utf8_chars.clear();
     g_streaming_n_generated = 0;
     g_assistant_buffer.clear();
+    reset_delta_offsets();
 
     if (!apply_sampler_for_turn(temperature, grammar)) {
         log_line(LLAMA_LOG_ERROR, "start_generate: Failed to reconfigure sampler");
@@ -593,12 +684,14 @@ const char *llama_runner_core_next_token() {
     if (g_cancel_flag) {
         log_line(LLAMA_LOG_INFO, "next_token: cancelled");
         g_stop_reason = STOP_CANCELLED;
+        reparse_assistant_buffer(/*is_partial*/ false);
         finalize_assistant_turn();
         return nullptr;
     }
     if (g_max_tokens_remaining <= 0) {
         log_line(LLAMA_LOG_INFO, "next_token: max_tokens reached");
         g_stop_reason = STOP_MAX_TOKENS;
+        reparse_assistant_buffer(/*is_partial*/ false);
         finalize_assistant_turn();
         return nullptr;
     }
@@ -608,6 +701,7 @@ const char *llama_runner_core_next_token() {
     if (g_chat_templates && g_current_position >= static_cast<llama_pos>(n_ctx) - headroom) {
         log_line(LLAMA_LOG_INFO, "next_token: context full");
         g_stop_reason = STOP_CONTEXT_FULL;
+        reparse_assistant_buffer(/*is_partial*/ false);
         finalize_assistant_turn();
         return nullptr;
     }
@@ -689,6 +783,7 @@ const char *llama_runner_core_next_token() {
         }
 
         g_stop_reason = STOP_EOG;
+        reparse_assistant_buffer(/*is_partial*/ false);
         finalize_assistant_turn();
         return nullptr;
     }
@@ -719,6 +814,7 @@ const char *llama_runner_core_next_token() {
         g_cached_utf8_chars.clear();
         if (g_chat_templates) {
             g_assistant_buffer += g_current_token;
+            reparse_assistant_buffer(/*is_partial*/ true);
         }
         return g_current_token.c_str();
     }
@@ -732,6 +828,7 @@ void llama_runner_core_cancel_generate() {
 void llama_runner_core_finalize_generation() {
     // Persist assistant content into templated chat history when generation
     // is ended by caller rather than EOG/cancel/max-token boundary.
+    reparse_assistant_buffer(/*is_partial*/ false);
     finalize_assistant_turn();
     g_cached_utf8_chars.clear();
 }
@@ -747,6 +844,7 @@ int llama_runner_core_process_system_prompt(const char *system_prompt) {
     g_system_prompt_position = 0;
     g_current_position = 0;
     g_assistant_buffer.clear();
+    reset_delta_offsets();
     g_kv_token_history.clear();
     llama_memory_seq_rm(llama_get_memory(g_context), 0, -1, -1);
 
@@ -801,7 +899,7 @@ int llama_runner_core_process_system_prompt(const char *system_prompt) {
     return 0;
 }
 
-int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_length, const char *grammar) {
+int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_length) {
     if (!g_model || !g_context || !g_sampler) {
         log_line(LLAMA_LOG_ERROR, "process_user_prompt: Model not loaded");
         return 1;
@@ -811,9 +909,12 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
     g_cached_utf8_chars.clear();
     g_streaming_n_generated = 0;
     g_assistant_buffer.clear();
+    reset_delta_offsets();
     g_stop_reason = STOP_NONE;
+    g_reasoning_accum.clear();
+    g_content_accum.clear();
 
-    if (!apply_sampler_for_turn(/*temperature*/ -1.0f, grammar)) {
+    if (!apply_sampler_for_turn(/*temperature*/ -1.0f, nullptr)) {
         log_line(LLAMA_LOG_ERROR, "process_user_prompt: Failed to reconfigure sampler");
         return 1;
     }
@@ -931,6 +1032,7 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
                         static_cast<llama_pos>(suffix.size());
                     g_max_tokens_remaining = predict_length;
                     g_streaming_tokens.clear();
+                    capture_parser_params();
                     return 0;
                 }
 
@@ -971,6 +1073,7 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
     g_current_position = decode_start_pos + static_cast<llama_pos>(tokens.size());
     g_max_tokens_remaining = predict_length;
     g_streaming_tokens.clear();
+    capture_parser_params();
     return 0;
 }
 
@@ -1007,6 +1110,7 @@ void llama_runner_core_unload() {
     g_active_grammar.clear();
     g_actual_gpu_layers = 0;
     g_kv_token_history.clear();
+    reset_delta_offsets();
     log_line(LLAMA_LOG_INFO, "unload: Model unloaded");
 }
 
@@ -1045,6 +1149,46 @@ const char* llama_runner_core_get_model_architecture() {
     return buf;
 }
 
+const char *llama_runner_core_get_reasoning() {
+    return g_reasoning_accum.c_str();
+}
+
+const char *llama_runner_core_get_content() {
+    return g_content_accum.c_str();
+}
+
+// Returns bytes appended to g_reasoning_accum since the last call. If the
+// accumulator shrank (parser retroactively reclassified bytes), returns the
+// FULL accumulator prefixed with a 0x01 sentinel so the caller knows to
+// replace, not append. Empty string means no new bytes.
+const char *llama_runner_core_get_reasoning_delta() {
+    const std::string &acc = g_reasoning_accum;
+    if (acc.size() < g_reasoning_emitted) {
+        g_reasoning_delta_buf = std::string(1, '\x01') + acc;
+        g_reasoning_emitted = acc.size();
+        return g_reasoning_delta_buf.c_str();
+    }
+    g_reasoning_delta_buf = acc.substr(g_reasoning_emitted);
+    g_reasoning_emitted = acc.size();
+    return g_reasoning_delta_buf.c_str();
+}
+
+const char *llama_runner_core_get_content_delta() {
+    const std::string &acc = g_content_accum;
+    if (acc.size() < g_content_emitted) {
+        g_content_delta_buf = std::string(1, '\x01') + acc;
+        g_content_emitted = acc.size();
+        return g_content_delta_buf.c_str();
+    }
+    g_content_delta_buf = acc.substr(g_content_emitted);
+    g_content_emitted = acc.size();
+    return g_content_delta_buf.c_str();
+}
+
+int llama_runner_core_supports_thinking() {
+    return g_supports_thinking ? 1 : 0;
+}
+
 void llama_runner_core_clear_context() {
     if (!g_context) {
         log_line(LLAMA_LOG_WARN, "clear_context: No context to clear");
@@ -1060,6 +1204,7 @@ void llama_runner_core_clear_context() {
     g_chat_msgs.clear();
     g_pending_chat_decode = false;
     g_assistant_buffer.clear();
+    reset_delta_offsets();
     g_cached_utf8_chars.clear();
     g_streaming_tokens.clear();
     g_streaming_n_generated = 0;

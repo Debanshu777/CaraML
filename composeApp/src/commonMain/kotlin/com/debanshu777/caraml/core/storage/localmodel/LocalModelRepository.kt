@@ -34,6 +34,10 @@ class LocalModelRepository(private val dao: LocalModelDao) {
         dao.updateArch(modelId, arch)
     }
 
+    suspend fun demoteMmprojFilesFromMain() {
+        dao.demoteMmprojFilesFromMain()
+    }
+
     suspend fun insert(
         modelId: String,
         filename: String,

@@ -344,4 +344,42 @@ class ModelSuitabilityCalculatorTest {
         assertTrue(r.reason.contains("RAM ratio"))
         assertEquals(16L * 1024 * 1024 * 1024, r.budgetBytes)
     }
+
+    // --- runnability warnings ---
+
+    @Test
+    fun iqQuant_cpuOnly_warns() {
+        val r = ModelSuitabilityCalculator.rateLlm(
+            hints = hints(ramMb = 6000, gpu = false),
+            numParameters = 800_000_000L,
+            sizeBytes = 500L * 1024 * 1024,
+            quantTag = "IQ4_XS",
+            architecture = "llama",
+        )
+        assertTrue(r.warnings.any { it.contains("KleidiAI", ignoreCase = true) })
+    }
+
+    @Test
+    fun hybridSsm_warns() {
+        val r = ModelSuitabilityCalculator.rateLlm(
+            hints = hints(ramMb = 8000, gpu = true),
+            numParameters = 800_000_000L,
+            sizeBytes = 500L * 1024 * 1024,
+            quantTag = "IQ4_XS",
+            architecture = "qwen35",
+        )
+        assertTrue(r.warnings.any { it.contains("hybrid SSM", ignoreCase = true) })
+    }
+
+    @Test
+    fun q4_0_gpu_dense_noWarnings() {
+        val r = ModelSuitabilityCalculator.rateLlm(
+            hints = hints(ramMb = 8000, gpu = true),
+            numParameters = 800_000_000L,
+            sizeBytes = 500L * 1024 * 1024,
+            quantTag = "Q4_0",
+            architecture = "llama",
+        )
+        assertEquals(emptyList(), r.warnings)
+    }
 }

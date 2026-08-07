@@ -127,6 +127,35 @@ Java_com_debanshu777_runner_LlamaRunner_nativeNextToken(JNIEnv *env, jobject) {
     return env->NewStringUTF(tok);
 }
 
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_debanshu777_runner_LlamaRunner_nativeGetReasoning(JNIEnv *env, jobject) {
+    const char *s = llama_runner_core_get_reasoning();
+    return env->NewStringUTF(s ? s : "");
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_debanshu777_runner_LlamaRunner_nativeGetContent(JNIEnv *env, jobject) {
+    const char *s = llama_runner_core_get_content();
+    return env->NewStringUTF(s ? s : "");
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_debanshu777_runner_LlamaRunner_nativeSupportsThinking(JNIEnv *, jobject) {
+    return static_cast<jint>(llama_runner_core_supports_thinking());
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_debanshu777_runner_LlamaRunner_nativeGetReasoningDelta(JNIEnv *env, jobject) {
+    const char *s = llama_runner_core_get_reasoning_delta();
+    return env->NewStringUTF(s ? s : "");
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_debanshu777_runner_LlamaRunner_nativeGetContentDelta(JNIEnv *env, jobject) {
+    const char *s = llama_runner_core_get_content_delta();
+    return env->NewStringUTF(s ? s : "");
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeCancelGenerate(JNIEnv *, jobject) {
     llama_runner_core_cancel_generate();
@@ -147,14 +176,10 @@ Java_com_debanshu777_runner_LlamaRunner_nativeProcessSystemPrompt(JNIEnv *env, j
 
 extern "C" JNIEXPORT jint JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeProcessUserPrompt(
-    JNIEnv *env, jobject, jstring prompt, jint predictLength, jstring grammar) {
+    JNIEnv *env, jobject, jstring prompt, jint predictLength) {
     const char *p = env->GetStringUTFChars(prompt, nullptr);
-    const char *g = grammar ? env->GetStringUTFChars(grammar, nullptr) : nullptr;
-    const int ret = llama_runner_core_process_user_prompt(p, static_cast<int>(predictLength), g);
+    const int ret = llama_runner_core_process_user_prompt(p, static_cast<int>(predictLength));
     env->ReleaseStringUTFChars(prompt, p);
-    if (g) {
-        env->ReleaseStringUTFChars(grammar, g);
-    }
     return static_cast<jint>(ret);
 }
 

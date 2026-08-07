@@ -123,6 +123,30 @@ object ModelSuitabilityCalculator {
         "gemma2" to ArchShape(42, 8, 256),
     )
 
+    /** GGUF architectures known to fall back to CPU on Vulkan-only GPUs (hybrid SSM + GDN graph unsupported). */
+    private val HYBRID_SSM_ARCHS = setOf(
+        "qwen3next", "qwen35", "jamba", "mamba", "ssm",
+        "recurrent_gemma", "granite_hybrid",
+    )
+
+    private fun runnabilityWarnings(
+        hints: DeviceHints,
+        quantTag: String?,
+        architecture: String?,
+    ): List<String> {
+        val out = mutableListOf<String>()
+        val isHybridSsm = architecture?.lowercase() in HYBRID_SSM_ARCHS
+        if (isHybridSsm) {
+            out += "This architecture (hybrid SSM) falls back to CPU on this device's GPU — expect very slow generation."
+        }
+        val isIq = quantTag?.uppercase()?.startsWith("IQ") == true
+        val willRunCpu = !hints.gpuBackendAvailable || isHybridSsm
+        if (isIq && willRunCpu) {
+            out += "This quantization (IQ*) has no KleidiAI CPU acceleration — expect slow generation. Prefer a Q4_0 or Q8_0 variant."
+        }
+        return out
+    }
+
     private const val FP16_BYTES = 2
     private const val MIN_OVERHEAD_BYTES = 500L * 1024 * 1024            // 500 MB floor
     private const val OVERHEAD_RATIO = 0.20                              // HF Accelerate +20%
@@ -220,6 +244,7 @@ object ModelSuitabilityCalculator {
             quantAssumed = effectiveQuant,
             isEstimate = isEstimate,
             reason = reason,
+            warnings = runnabilityWarnings(hints, effectiveQuant, architecture),
         )
     }
 

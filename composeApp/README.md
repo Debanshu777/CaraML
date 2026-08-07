@@ -178,6 +178,9 @@ Run: `./gradlew :composeApp:jvmTest`
 
 <!-- Updated at end of each Claude Code session -->
 
+- `SuitabilityResult` now carries `warnings: List<String>`; `ModelSuitabilityCalculator.rateLlm` emits runnability warnings for IQ-quant CPU-only and hybrid-SSM models; `SuitabilityInfoSheet` renders a "Runnability" section with warning icon when present
+- `LlamaInferenceRepository`: hybrid-SSM arch Vulkan denylist (`DENYLIST_HYBRID_SSM_VULKAN=true`) skips doomed GPU attempt on first load; combines with runtime `gpuIncompatible` self-learning set
+- `generateResponse` emits `InferenceChunk`; removed `ReasoningModelClassifier` and structured-output prompt suffixes
 - `DiffusionInferenceRepository.buildDiffusionModelConfig()` reverted: removed `diffusionConvDirect=true` from both selfContained and component branches (was a failed Vulkan workaround); selfContained branch also had spurious `offloadToCpu` propagation removed
 - `DiffusionInferenceRepository.buildDiffusionModelConfig()` selfContained branch now propagates `offloadToCpu` from `recommendedParams` (was missing, so registry `offloadToCpu=true` had no effect)
 - `DiffusionInferenceRepository.buildDiffusionModelConfig()` now always passes `diffusionConvDirect=true`; bypasses IM2COL path in ggml-vulkan that aborts when conv kernel type is not F32/F16

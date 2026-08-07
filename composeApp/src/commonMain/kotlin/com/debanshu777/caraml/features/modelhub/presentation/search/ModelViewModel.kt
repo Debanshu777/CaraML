@@ -16,6 +16,7 @@ import com.debanshu777.huggingfacemanager.api.error.DataError
 import com.debanshu777.huggingfacemanager.api.error.Result
 import com.debanshu777.huggingfacemanager.download.DownloadManager
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
+import com.debanshu777.huggingfacemanager.download.IncompleteDownloadException
 import com.debanshu777.huggingfacemanager.download.InsufficientStorageException
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import com.debanshu777.huggingfacemanager.model.DIFFUSERS_BUNDLE_DB_FILENAME
@@ -497,6 +498,10 @@ class ModelViewModel(
                 }
                 _ggufFiles.update { list -> list.map { it.copy(progress = null) } }
                 _setupComponents.update { list -> list.map { it.copy(progress = null) } }
+            } catch (_: IncompleteDownloadException) {
+                _downloadError.update { "Download was interrupted and the file is incomplete. Please try again." }
+                _ggufFiles.update { list -> list.map { it.copy(progress = null) } }
+                _setupComponents.update { list -> list.map { it.copy(progress = null) } }
             } catch (_: Exception) {
                 _downloadError.update { "Install failed. Please check your connection and try again." }
                 _ggufFiles.update { list -> list.map { it.copy(progress = null) } }
@@ -533,6 +538,9 @@ class ModelViewModel(
                 _downloadError.update {
                     "Not enough storage space. Need $required but only $available is available."
                 }
+                _ggufFiles.update { list -> list.map { it.copy(progress = null) } }
+            } catch (_: IncompleteDownloadException) {
+                _downloadError.update { "Download was interrupted and the file is incomplete. Please try again." }
                 _ggufFiles.update { list -> list.map { it.copy(progress = null) } }
             } catch (_: Exception) {
                 _downloadError.update { "Download failed. Please check your connection and try again." }
@@ -571,9 +579,10 @@ class ModelViewModel(
             }
             if (progress.localPath != null) {
                 val relativePath = path.trim().replace('\\', '/').trimStart('/')
+                val filename = relativePath.substringAfterLast('/').ifEmpty { relativePath }
                 localModelRepository.insert(
                     modelId = modelId,
-                    filename = relativePath.substringAfterLast('/').ifEmpty { relativePath },
+                    filename = filename,
                     localPath = progress.localPath!!,
                     sizeBytes = metadata.sizeBytes,
                     author = metadata.author,
@@ -581,7 +590,7 @@ class ModelViewModel(
                     pipelineTag = metadata.pipelineTag,
                     contextLength = metadata.contextLength,
                     modelType = modelType,
-                    isMainModel = true,
+                    isMainModel = !filename.contains("mmproj", ignoreCase = true),
                 )
             }
         }

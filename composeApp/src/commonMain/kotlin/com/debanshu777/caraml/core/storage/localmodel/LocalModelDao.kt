@@ -42,4 +42,7 @@ interface LocalModelDao {
 
     @Query("UPDATE local_model SET arch = :arch WHERE model_id = :modelId")
     suspend fun updateArch(modelId: String, arch: String)
+
+    @Query("UPDATE local_model SET is_main_model = 0 WHERE is_main_model = 1 AND filename LIKE '%mmproj%'")
+    suspend fun demoteMmprojFilesFromMain()
 }
