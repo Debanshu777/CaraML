@@ -299,7 +299,7 @@ object ModelSuitabilityCalculator {
      * Weight resolution priority:
      * 1. [totalComponentBytes] — real file sizes (isEstimate = false).
      * 2. [architecture] baseline scaled by [dominantQuantTag] BPW (isEstimate = true).
-     * 3. UNKNOWN when both unavailable.
+     * 3. Generic 3.5 GB fallback when both are unavailable.
      */
     fun rateDiffusion(
         hints: DeviceHints,

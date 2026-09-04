@@ -164,19 +164,19 @@ Three features: **chat**, **modelhub**, **settings**.
 
 | Layer | Library / Version |
 |-------|-------------------|
-| Language | Kotlin 2.3.10 |
-| UI | Compose Multiplatform 1.10.1 |
-| DI | Koin 4.2.0-RC1 |
-| HTTP | Ktor 3.4.1 |
+| Language | Kotlin 2.4.0 |
+| UI | Compose Multiplatform 1.11.1 |
+| DI | Koin 4.2.2 |
+| HTTP | Ktor 3.5.0 |
 | Database | Room 2.8.4 |
-| Preferences | DataStore 1.1.7 |
-| Navigation | Navigation3 1.0.0-alpha06 |
+| Preferences | DataStore 1.2.1 |
+| Navigation | Navigation3 1.1.1 |
 | Theming | Material3 1.10.0-alpha05 + materialKolor 4.1.1 |
-| Coroutines | kotlinx-coroutines 1.10.2 |
-| Build | AGP 8.13.2, KSP 2.3.5 |
+| Coroutines | kotlinx-coroutines 1.11.0 |
+| Build | JDK 21+, AGP 9.2.1, KSP 2.3.9 |
 | Android SDK | minSdk 28, compileSdk 36 |
 | iOS | min 17.2 |
-| JVM target | 21 |
+| Android bytecode | 21 (`composeApp`), 17 (supporting KMP libraries) |
 | Inference | llama.cpp (latest), stable-diffusion.cpp (latest) |
 
 ---
@@ -184,11 +184,14 @@ Three features: **chat**, **modelhub**, **settings**.
 ## Tests
 
 ```bash
+./gradlew verifyProject          # Preferred local/CI JVM gate
 ./gradlew :composeApp:allTests    # All platform tests
 ./gradlew :composeApp:jvmTest     # JVM tests only
 ```
 
-Test coverage includes: `BenchmarkUtils`, `LocalModelGenerationClassifier`, `ReasoningModelClassifier`.
+GitHub Actions runs `verifyProject` for pull requests and pushes to `main`.
+
+Test coverage includes benchmark helpers, model-generation classification, suitability ratings, architecture detection, and diffusion step policy.
 
 ---
 
@@ -214,8 +217,12 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 
 ## Recent Changes
 
-<!-- This section is updated at the end of each Claude Code session -->
+<!-- This section is updated at the end of each AI-assisted development session -->
 
+- Added a least-privilege GitHub Actions JVM test gate and weekly Dependabot updates; actions are pinned to immutable release commits
+- Removed the obsolete Obsidian MCP config and persisted Graphify's `libraries/` exclusion
+- Consolidated shared Claude Code and Codex project guidance into `AGENTS.md`; `CLAUDE.md` is now a thin import wrapper containing only Claude-specific model policy
+- Added a Graphify knowledge graph for app-owned modules, with interactive HTML, GraphRAG JSON, labeled communities, and an audit report; vendored `libraries/` sources are excluded
 - Inference perf: O(n²) → O(n) JNI emission via native delta accessors (`getReasoningDelta`/`getContentDelta`) with resync-sentinel support; reduces GC churn and dropped frames on long replies
 - Inference perf: hybrid-SSM arch Vulkan denylist (qwen35, jamba, mamba, etc.) skips doomed first-load GPU attempt; suitability sheet now shows runnability warnings for IQ-quant + CPU-only and hybrid-SSM models
 - Reasoning/content split now uses llama.cpp native `common_chat_parse` (per-model chat template), replacing the custom GBNF grammar and name-based classifier

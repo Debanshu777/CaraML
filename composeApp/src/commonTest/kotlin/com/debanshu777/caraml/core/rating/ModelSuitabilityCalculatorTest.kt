@@ -215,13 +215,16 @@ class ModelSuitabilityCalculatorTest {
     // ─── rateDiffusion() architecture-aware overload ───
 
     @Test
-    fun rateDiffusion_returnsUnknownWhenArchUnknownAndNoBytesProvided() {
+    fun rateDiffusion_usesGenericFallbackWhenArchUnknownAndNoBytesProvided() {
         val h = hints(ramMb = 16 * 1024L)
         val result = ModelSuitabilityCalculator.rateDiffusion(
             hints = h,
             architecture = SdArchitecture.UNKNOWN,
         )
-        assertEquals(SuitabilityRating.UNKNOWN, result.rating)
+        assertEquals(SuitabilityRating.BEST, result.rating)
+        assertEquals(true, result.isEstimate)
+        assertNotNull(result.estimatedBytes)
+        assertTrue(result.reason.contains("generic 3.5 GB estimate"))
     }
 
     @Test
