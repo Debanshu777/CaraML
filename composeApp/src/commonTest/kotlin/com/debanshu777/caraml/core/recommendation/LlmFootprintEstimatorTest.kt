@@ -59,6 +59,42 @@ class LlmFootprintEstimatorTest {
     }
 
     @Test
+    fun reducingMicroBatchLowersGraphMemoryWithoutChangingPersistentKv() {
+        val descriptor = descriptor(shape = TransformerShape(32, 8, 32, 4_096, 128))
+        val largeMicroBatch = estimator.estimate(
+            descriptor,
+            plan(context = 4_096, batch = 512, microBatch = 256),
+            MemoryCalibration.None,
+        )
+        val smallMicroBatch = estimator.estimate(
+            descriptor,
+            plan(context = 4_096, batch = 512, microBatch = 128),
+            MemoryCalibration.None,
+        )
+
+        assertTrue(host(smallMicroBatch).lowBytes < host(largeMicroBatch).lowBytes)
+        assertTrue(host(smallMicroBatch).likelyBytes < host(largeMicroBatch).likelyBytes)
+        assertTrue(host(smallMicroBatch).highBytes < host(largeMicroBatch).highBytes)
+        assertEquals(largeMicroBatch.storageBytes, smallMicroBatch.storageBytes)
+
+        fun contextDelta(microBatch: Int): Long {
+            val small = estimator.estimate(
+                descriptor,
+                plan(context = 2_048, batch = 512, microBatch = microBatch),
+                MemoryCalibration.None,
+            )
+            val large = estimator.estimate(
+                descriptor,
+                plan(context = 4_096, batch = 512, microBatch = microBatch),
+                MemoryCalibration.None,
+            )
+            return host(large).likelyBytes - host(small).likelyBytes
+        }
+
+        assertEquals(contextDelta(256), contextDelta(128))
+    }
+
+    @Test
     fun missingShapeWidensOnlyRuntimeMemoryAndKeepsExactStorage() {
         val descriptor = descriptor(sizeBytes = 2L * GIB, shape = null)
         val estimate = estimator.estimate(descriptor, plan(), MemoryCalibration.None)
@@ -122,6 +158,59 @@ class LlmFootprintEstimatorTest {
         assertTrue(assertNotNull(estimate.gpuMemoryBytes).highBytes >= 2L * GIB)
         assertEquals(Confidence.LOW, estimate.confidence.memory)
         assertTrue(estimate.evidence.any { it.reason == AssessmentReason.GPU_LAYER_SPLIT_UNKNOWN })
+    }
+
+    @Test
+    fun acceleratorZeroIsRejectedWhileCpuZeroRemainsHostOnly() {
+        val descriptor = descriptor(shape = TransformerShape(32, 8, 32, 4_096, 128))
+        val invalidAccelerator = estimator.estimate(
+            descriptor,
+            plan(backend = BackendKind.CUDA, topology = MemoryTopology.DISCRETE, gpuLayers = 0),
+            MemoryCalibration.None,
+        )
+        val cpu = estimator.estimate(descriptor, plan(backend = BackendKind.CPU, gpuLayers = 0), MemoryCalibration.None)
+
+        assertNull(invalidAccelerator.hostMemoryBytes)
+        assertNull(invalidAccelerator.gpuMemoryBytes)
+        assertTrue(invalidAccelerator.evidence.any { it.reason == AssessmentReason.INVALID_WORKLOAD })
+        assertNotNull(cpu.hostMemoryBytes)
+        assertNull(cpu.gpuMemoryBytes)
+    }
+
+    @Test
+    fun partialAndFullDiscreteEndpointsRemainIndependent() {
+        val descriptor = descriptor(shape = TransformerShape(32, 8, 32, 4_096, 128))
+        val partial = estimator.estimate(
+            descriptor,
+            plan(backend = BackendKind.CUDA, topology = MemoryTopology.DISCRETE, gpuLayers = 16),
+            MemoryCalibration.None,
+        )
+        val full = estimator.estimate(
+            descriptor,
+            plan(backend = BackendKind.CUDA, topology = MemoryTopology.DISCRETE, gpuLayers = 32),
+            MemoryCalibration.None,
+        )
+
+        assertTrue(assertNotNull(full.hostMemoryBytes).highBytes < assertNotNull(partial.hostMemoryBytes).highBytes)
+        assertTrue(assertNotNull(full.gpuMemoryBytes).lowBytes > assertNotNull(partial.gpuMemoryBytes).lowBytes)
+        assertNull(partial.sharedMemoryBytes)
+        assertNull(full.sharedMemoryBytes)
+    }
+
+    @Test
+    fun autoDiscretePlacementWidensEveryPotentiallyAffectedPool() {
+        val descriptor = descriptor(sizeBytes = 2L * GIB, shape = TransformerShape(32, 8, 32, 4_096, 128))
+        val cpu = estimator.estimate(descriptor, plan(backend = BackendKind.CPU), MemoryCalibration.None)
+        val auto = estimator.estimate(
+            descriptor,
+            plan(backend = BackendKind.CUDA, topology = MemoryTopology.DISCRETE, gpuLayers = null),
+            MemoryCalibration.None,
+        )
+
+        assertTrue(assertNotNull(auto.hostMemoryBytes).highBytes >= host(cpu).highBytes)
+        assertTrue(assertNotNull(auto.gpuMemoryBytes).highBytes >= host(cpu).highBytes)
+        assertEquals(Confidence.LOW, auto.confidence.memory)
+        assertTrue(auto.evidence.any { it.reason == AssessmentReason.GPU_LAYER_SPLIT_UNKNOWN })
     }
 
     @Test
@@ -198,6 +287,7 @@ class LlmFootprintEstimatorTest {
     private fun plan(
         context: Int = 4_096,
         batch: Int = 128,
+        microBatch: Int = batch.coerceAtMost(128),
         sequences: Int = 1,
         cacheType: KvCacheType = KvCacheType.Q8_0,
         backend: BackendKind = BackendKind.CPU,
@@ -206,7 +296,7 @@ class LlmFootprintEstimatorTest {
     ) = LlmRunPlan(
         contextTokens = context,
         batchSize = batch,
-        microBatchSize = batch.coerceAtMost(128),
+        microBatchSize = microBatch,
         sequenceCount = sequences,
         keyCacheType = cacheType,
         valueCacheType = cacheType,

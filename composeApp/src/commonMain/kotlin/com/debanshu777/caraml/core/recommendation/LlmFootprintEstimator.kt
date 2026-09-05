@@ -51,6 +51,7 @@ class LlmFootprintEstimator {
                 gpuLayerCount = plan.gpuLayerCount,
                 runtime = components.runtime,
                 acceleratorDynamic = components.acceleratorDynamic,
+                allDynamic = components.allDynamic,
                 calibration = calibration,
             )
             else -> PoolResult.Invalid(AssessmentReason.BACKEND_CAPABILITY_UNKNOWN)
@@ -94,6 +95,7 @@ class LlmFootprintEstimator {
             plan.microBatchSize !in 1..plan.batchSize ||
             plan.sequenceCount !in 1..WorkloadLimits.MAX_SEQUENCE_COUNT ||
             plan.gpuLayerCount?.let { it < 0 } == true ||
+            (plan.backend != BackendKind.CPU && plan.gpuLayerCount == 0) ||
             descriptor.contextLimit?.let { plan.contextTokens > it } == true ||
             descriptor.transformerShape?.layerCount?.let { layers ->
                 plan.gpuLayerCount?.let { it > layers }
@@ -149,7 +151,7 @@ class LlmFootprintEstimator {
             }
         }
 
-        val graph = when (val value = graphRange(shape, plan.batchSize)) {
+        val graph = when (val value = graphRange(shape, plan.batchSize, plan.microBatchSize)) {
             is RangeResult.Invalid -> return ComponentResult.Invalid(value.reason)
             is RangeResult.Value -> {
                 if (value.inferred) {
@@ -231,7 +233,7 @@ class LlmFootprintEstimator {
         return rangeFromChecked(low, likely, high)
     }
 
-    private fun graphRange(shape: TransformerShape?, batchSize: Int): RangeResult {
+    private fun graphRange(shape: TransformerShape?, batchSize: Int, microBatchSize: Int): RangeResult {
         val hidden = when {
             shape?.hiddenSize != null -> CheckedLong.Value(shape.hiddenSize.toLong())
             shape?.attentionHeadCount != null && shape.headDim != null ->
@@ -239,7 +241,11 @@ class LlmFootprintEstimator {
             else -> null
         }
         if (hidden == null) {
-            val base = checkedMultiply(batchSize.toLong(), 256L * 1_024L)
+            val batch = checkedMultiply(batchSize.toLong(), 128L * 1_024L)
+            val microBatch = checkedMultiply(microBatchSize.toLong(), 256L * 1_024L)
+            if (batch is CheckedLong.Invalid) return RangeResult.Invalid(batch.reason)
+            if (microBatch is CheckedLong.Invalid) return RangeResult.Invalid(microBatch.reason)
+            val base = checkedAdd((batch as CheckedLong.Value).value, (microBatch as CheckedLong.Value).value)
             if (base is CheckedLong.Invalid) return RangeResult.Invalid(base.reason)
             base as CheckedLong.Value
             val likely = checkedMultiply(base.value, 2L)
@@ -248,10 +254,16 @@ class LlmFootprintEstimator {
         }
         if (hidden is CheckedLong.Invalid) return RangeResult.Invalid(hidden.reason)
         hidden as CheckedLong.Value
-        val payload = checkedProduct(hidden.value, batchSize.toLong(), 2L)
-        if (payload is CheckedLong.Invalid) return RangeResult.Invalid(payload.reason)
-        payload as CheckedLong.Value
-        val base = checkedAdd(payload.value, 16L * MIB)
+        val batchPayload = checkedMultiply(hidden.value, batchSize.toLong())
+        val microBatchPayload = checkedProduct(hidden.value, microBatchSize.toLong(), 2L)
+        if (batchPayload is CheckedLong.Invalid) return RangeResult.Invalid(batchPayload.reason)
+        if (microBatchPayload is CheckedLong.Invalid) return RangeResult.Invalid(microBatchPayload.reason)
+        val graphPayload = checkedAdd(
+            (batchPayload as CheckedLong.Value).value,
+            (microBatchPayload as CheckedLong.Value).value,
+        )
+        if (graphPayload is CheckedLong.Invalid) return RangeResult.Invalid(graphPayload.reason)
+        val base = checkedAdd((graphPayload as CheckedLong.Value).value, 16L * MIB)
         if (base is CheckedLong.Invalid) return RangeResult.Invalid(base.reason)
         base as CheckedLong.Value
         val likely = multiplyRatioCeil(base.value, 3L, 2L)
@@ -309,17 +321,24 @@ class LlmFootprintEstimator {
         gpuLayerCount: Int?,
         runtime: EstimateRange,
         acceleratorDynamic: EstimateRange,
+        allDynamic: EstimateRange,
         calibration: MemoryCalibration,
     ): PoolResult {
         if (layerCount == null || gpuLayerCount == null) {
             val half = weights / 2L
             val hostWeights = validRange(0L, half, weights)
             val gpuWeights = validRange(0L, weights - half, weights)
+            val hostDynamic = validRange(runtime.lowBytes, runtime.likelyBytes, allDynamic.highBytes)
+            val gpuDynamic = validRange(
+                acceleratorDynamic.lowBytes,
+                acceleratorDynamic.likelyBytes,
+                allDynamic.highBytes,
+            )
             return buildDiscreteResult(
                 hostWeights,
                 gpuWeights,
-                runtime,
-                acceleratorDynamic,
+                hostDynamic,
+                gpuDynamic,
                 calibration,
                 lowConfidence = true,
                 evidence = listOf(

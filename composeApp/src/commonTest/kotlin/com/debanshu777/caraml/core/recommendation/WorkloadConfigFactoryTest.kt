@@ -133,6 +133,31 @@ class WorkloadConfigFactoryTest {
         assertEquals(listOf(KvCacheType.F16, KvCacheType.Q8_0), workload.allowedKvCacheTypes)
     }
 
+    @Test
+    fun rejectsAcceleratorZeroAndGpuLayerCountsBeyondTheDescriptor() {
+        val zeroAccelerator = factory.llm(
+            request(),
+            descriptor(),
+            settings(
+                backend = BackendKind.CUDA,
+                memoryTopology = MemoryTopology.DISCRETE,
+                gpuLayerCount = 0,
+            ),
+        )
+        val excessiveLayers = factory.llm(
+            request(),
+            descriptor(),
+            settings(
+                backend = BackendKind.CUDA,
+                memoryTopology = MemoryTopology.DISCRETE,
+                gpuLayerCount = 33,
+            ),
+        )
+
+        assertIs<WorkloadConfigResult.Invalid>(zeroAccelerator)
+        assertIs<WorkloadConfigResult.Invalid>(excessiveLayers)
+    }
+
     private fun ready(
         request: LlmWorkloadRequest,
         settings: PlanningSettings = settings(),
@@ -169,6 +194,9 @@ class WorkloadConfigFactoryTest {
         allowBatchFallback: Boolean = true,
         allowKvCacheFallback: Boolean = true,
         allowedKvCacheTypes: Collection<KvCacheType> = KvCacheType.entries,
+        backend: BackendKind = BackendKind.CPU,
+        memoryTopology: MemoryTopology = MemoryTopology.UNKNOWN,
+        gpuLayerCount: Int? = 0,
     ) = PlanningSettings(
         engineMaxContextTokens = engineMaxContextTokens,
         engineMaxBatchSize = engineMaxBatchSize,
@@ -178,9 +206,9 @@ class WorkloadConfigFactoryTest {
         allowBatchFallback = allowBatchFallback,
         allowKvCacheFallback = allowKvCacheFallback,
         allowedKvCacheTypes = allowedKvCacheTypes,
-        backend = BackendKind.CPU,
-        memoryTopology = MemoryTopology.UNKNOWN,
-        gpuLayerCount = 0,
+        backend = backend,
+        memoryTopology = memoryTopology,
+        gpuLayerCount = gpuLayerCount,
     )
 
     private fun descriptor(contextLimit: Int? = 131_072) = llmDescriptor(

@@ -122,20 +122,113 @@ class LlmRunPlanGeneratorTest {
         assertEquals(listOf(RunPlanCompromise.CONTEXT_REDUCED), plan.compromises)
     }
 
+    @Test
+    fun contextFallbacksNeverViolatePromptAndGenerationReserve() {
+        val plans = generator.llmCandidates(
+            descriptor(),
+            workload(
+                context = 8_192,
+                minimumContext = 512,
+                promptTokens = 2_000,
+                generationReserveTokens = 1_000,
+                kv = explicitF16(),
+            ),
+            settings(allowBatchFallback = false, allowKvCacheFallback = false),
+        )
+
+        assertTrue(plans.isNotEmpty())
+        assertTrue(plans.all { it.contextTokens >= 3_000 })
+        assertEquals(3_000, plans.minOf { it.contextTokens })
+    }
+
+    @Test
+    fun overflowingReserveCannotCreateAFavorableCandidate() {
+        val workload = LlmWorkloadConfig(
+            userRequestedContextTokens = 8_192,
+            contextTokens = 8_192,
+            minimumContextTokens = 512,
+            promptTokens = Int.MAX_VALUE,
+            generationReserveTokens = Int.MAX_VALUE,
+            batchSize = 512,
+            microBatchSize = 256,
+            sequenceCount = 1,
+            kvCacheSelection = explicitF16(),
+            allowContextFallback = true,
+            allowBatchFallback = true,
+            allowKvCacheFallback = true,
+            allowedKvCacheTypes = KvCacheType.entries,
+            evidence = emptyList(),
+        )
+
+        assertTrue(generator.llmCandidates(descriptor(), workload, settings()).isEmpty())
+    }
+
+    @Test
+    fun boundedFrontierRetainsTheFullyPermittedJointFallback() {
+        val settings = settings()
+        val plans = generator.llmCandidates(
+            descriptor(),
+            workload(
+                context = 32_768,
+                minimumContext = 512,
+                kv = KvCacheSelection.Auto,
+                batch = 512,
+                microBatch = 256,
+                settings = settings,
+            ),
+            settings,
+        )
+
+        assertTrue(plans.size <= 24)
+        assertEquals(plans.distinct(), plans)
+        assertTrue(plans.first().compromises.isEmpty())
+        assertTrue(
+            plans.any {
+                it.contextTokens == 512 &&
+                    it.keyCacheType == KvCacheType.Q4_0 &&
+                    it.valueCacheType == KvCacheType.Q4_0 &&
+                    it.batchSize == 128 &&
+                    it.microBatchSize == 128 &&
+                    it.compromises.containsAll(RunPlanCompromise.entries)
+            },
+        )
+        assertEquals(plans, generator.llmCandidates(descriptor(), workload(
+            context = 32_768,
+            minimumContext = 512,
+            settings = settings,
+        ), settings))
+    }
+
+    @Test
+    fun suppliedSettingsCannotBypassKvOrGpuLayerLimits() {
+        val explicitQ8 = workload(kv = KvCacheSelection.Explicit(KvCacheType.Q8_0, KvCacheType.Q8_0))
+        val disallowedKv = settings(allowedKvCacheTypes = listOf(KvCacheType.F16))
+        val excessiveGpuLayers = settings(
+            backend = BackendKind.CUDA,
+            memoryTopology = MemoryTopology.DISCRETE,
+            gpuLayerCount = 33,
+        )
+
+        assertTrue(generator.llmCandidates(descriptor(), explicitQ8, disallowedKv).isEmpty())
+        assertTrue(generator.llmCandidates(descriptor(), explicitQ8, excessiveGpuLayers).isEmpty())
+    }
+
     private fun workload(
         context: Int = 8_192,
         minimumContext: Int = 512,
         kv: KvCacheSelection = KvCacheSelection.Auto,
         batch: Int = 512,
         microBatch: Int = 256,
+        promptTokens: Int = 256,
+        generationReserveTokens: Int = 256,
         settings: PlanningSettings = settings(),
     ): LlmWorkloadConfig {
         val result = factory.llm(
             LlmWorkloadRequest(
                 contextTokens = context,
                 minimumContextTokens = minimumContext,
-                promptTokens = 256,
-                generationReserveTokens = 256,
+                promptTokens = promptTokens,
+                generationReserveTokens = generationReserveTokens,
                 batchSize = batch,
                 microBatchSize = microBatch,
                 sequenceCount = 1,
@@ -152,6 +245,9 @@ class LlmRunPlanGeneratorTest {
         allowBatchFallback: Boolean = true,
         allowKvCacheFallback: Boolean = true,
         allowedKvCacheTypes: Collection<KvCacheType> = KvCacheType.entries,
+        backend: BackendKind = BackendKind.CPU,
+        memoryTopology: MemoryTopology = MemoryTopology.UNKNOWN,
+        gpuLayerCount: Int? = 0,
     ) = PlanningSettings(
         engineMaxContextTokens = 131_072,
         engineMaxBatchSize = 1_024,
@@ -161,9 +257,9 @@ class LlmRunPlanGeneratorTest {
         allowBatchFallback = allowBatchFallback,
         allowKvCacheFallback = allowKvCacheFallback,
         allowedKvCacheTypes = allowedKvCacheTypes,
-        backend = BackendKind.CPU,
-        memoryTopology = MemoryTopology.UNKNOWN,
-        gpuLayerCount = 0,
+        backend = backend,
+        memoryTopology = memoryTopology,
+        gpuLayerCount = gpuLayerCount,
     )
 
     private fun descriptor(maxContext: Int? = 131_072) = llmDescriptor(

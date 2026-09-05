@@ -8,7 +8,11 @@ class WorkloadConfigFactory {
         descriptor: LlmModelDescriptor,
         settings: PlanningSettings,
     ): WorkloadConfigResult {
-        if (!validRequest(request) || !validSettings(settings) || !validDescriptorLimit(descriptor.contextLimit)) {
+        if (
+            !validRequest(request) ||
+            !validSettings(settings, descriptor.transformerShape?.layerCount) ||
+            !validDescriptorLimit(descriptor.contextLimit)
+        ) {
             return invalidWorkload()
         }
 
@@ -75,7 +79,7 @@ class WorkloadConfigFactory {
             request.sequenceCount in 1..WorkloadLimits.MAX_SEQUENCE_COUNT
     }
 
-    private fun validSettings(settings: PlanningSettings): Boolean =
+    private fun validSettings(settings: PlanningSettings, modelLayerCount: Int?): Boolean =
         settings.engineMaxContextTokens in 1..DescriptorLimits.MAX_CONTEXT_TOKENS &&
             settings.engineMaxBatchSize in 1..WorkloadLimits.MAX_BATCH_SIZE &&
             settings.engineMaxMicroBatchSize in 1..WorkloadLimits.MAX_BATCH_SIZE &&
@@ -83,7 +87,14 @@ class WorkloadConfigFactory {
             settings.allowedKvCacheTypes.isNotEmpty() &&
             settings.allowedKvCacheTypes.size <= KvCacheType.entries.size &&
             settings.gpuLayerCount?.let { it >= 0 } != false &&
-            (settings.backend != BackendKind.CPU || settings.gpuLayerCount in listOf(null, 0))
+            validPlacement(settings, modelLayerCount)
+
+    private fun validPlacement(settings: PlanningSettings, modelLayerCount: Int?): Boolean = when {
+        settings.backend == BackendKind.CPU -> settings.gpuLayerCount in listOf(null, 0)
+        settings.gpuLayerCount == 0 -> false
+        settings.gpuLayerCount != null && modelLayerCount != null -> settings.gpuLayerCount <= modelLayerCount
+        else -> true
+    }
 
     private fun validDescriptorLimit(value: Int?): Boolean =
         value == null || value in 1..DescriptorLimits.MAX_CONTEXT_TOKENS
