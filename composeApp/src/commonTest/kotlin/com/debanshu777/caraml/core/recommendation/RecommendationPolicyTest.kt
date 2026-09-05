@@ -241,6 +241,78 @@ class RecommendationPolicyTest {
     }
 
     @Test
+    fun lowBackendHeadroomConfidenceCannotBePromotedByCallerBuiltSharedBudget() {
+        val lowConfidenceHeadroom = BackendCapability(
+            kind = BackendKind.METAL,
+            status = BackendStatus.AVAILABLE,
+            additionalAllocatableBytes = 1_000,
+            availabilityConfidence = Confidence.HIGH,
+            headroomConfidence = Confidence.LOW,
+            evidence = listOf(
+                Evidence(AssessmentReason.RESOURCE_READING_VALIDATED, Confidence.LOW, "metal-headroom"),
+            ),
+        )
+        val accelerated = task6PlanAssessment(
+            plan = task6LlmPlan(backend = BackendKind.METAL, topology = MemoryTopology.UNIFIED),
+            host = null,
+            shared = task6Range(100, 100, 100),
+        )
+
+        val result = policy.recommend(
+            assessment = task6Assessment(plans = listOf(accelerated)),
+            snapshot = task6Snapshot(
+                hostBudget = null,
+                sharedBudget = 1_000,
+                sharedConfidence = Confidence.HIGH,
+                topology = MemoryTopology.UNIFIED,
+                backends = listOf(lowConfidenceHeadroom),
+            ),
+            profile = RecommendationProfile(),
+        )
+
+        assertEquals(RecommendationCategory.NEEDS_INFORMATION, result.category)
+        assertEquals(listOf(AssessmentReason.ASSESSMENT_GRAPH_INVALID), result.reasons)
+    }
+
+    @Test
+    fun baseBudgetConfidenceCannotExceedContributingResourcePoolConfidence() {
+        val cpuAssessment = task6Assessment()
+        val discreteAssessment = task6Assessment(
+            plans = listOf(
+                task6PlanAssessment(
+                    plan = task6LlmPlan(backend = BackendKind.CUDA, topology = MemoryTopology.DISCRETE),
+                    host = task6Range(100, 100, 100),
+                    gpu = task6Range(100, 100, 100),
+                ),
+            ),
+        )
+        val mismatches = listOf(
+            cpuAssessment to task6Snapshot(
+                hostConfidence = Confidence.HIGH,
+                resourceHostConfidence = Confidence.LOW,
+            ),
+            discreteAssessment to task6Snapshot(
+                hostBudget = 1_000,
+                gpuBudget = 1_000,
+                gpuConfidence = Confidence.HIGH,
+                resourceGpuConfidence = Confidence.LOW,
+                topology = MemoryTopology.DISCRETE,
+                backends = listOf(task6Backend(BackendKind.CUDA)),
+            ),
+            cpuAssessment to task6Snapshot(
+                storageConfidence = Confidence.HIGH,
+                resourceStorageConfidence = Confidence.LOW,
+            ),
+        )
+
+        mismatches.forEach { (assessment, snapshot) ->
+            val result = policy.recommend(assessment, snapshot, RecommendationProfile())
+            assertEquals(RecommendationCategory.NEEDS_INFORMATION, result.category)
+            assertEquals(listOf(AssessmentReason.ASSESSMENT_GRAPH_INVALID), result.reasons)
+        }
+    }
+
+    @Test
     fun acceleratedLlmWithUnknownTopologyIsInvalidAtThePolicyBoundary() {
         val plan = task6LlmPlan(
             backend = BackendKind.CUDA,
@@ -1072,6 +1144,9 @@ internal fun task6Snapshot(
     gpuConfidence: Confidence? = gpuBudget?.let { Confidence.HIGH },
     sharedConfidence: Confidence? = sharedBudget?.let { Confidence.HIGH },
     storageConfidence: Confidence? = storageBudget?.let { Confidence.HIGH },
+    resourceHostConfidence: Confidence? = (sharedBudget ?: hostBudget)?.let { Confidence.HIGH },
+    resourceGpuConfidence: Confidence? = gpuBudget?.let { Confidence.HIGH },
+    resourceStorageConfidence: Confidence? = storageBudget?.let { Confidence.HIGH },
     topology: MemoryTopology = if (gpuBudget == null) MemoryTopology.UNKNOWN else MemoryTopology.DISCRETE,
     backends: Collection<BackendCapability> = listOf(
         task6Backend(if (gpuBudget == null) BackendKind.CPU else BackendKind.CUDA),
@@ -1092,6 +1167,9 @@ internal fun task6Snapshot(
         gpuBytes = gpuBudget,
         storageBytes = storageBudget,
         capturedAtEpochMs = capturedAtEpochMs,
+        hostConfidence = resourceHostConfidence,
+        gpuConfidence = resourceGpuConfidence,
+        storageConfidence = resourceStorageConfidence,
         evidence = resourceEvidence,
     ),
     baseHostBudgetBytes = hostBudget,

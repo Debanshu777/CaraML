@@ -300,3 +300,57 @@ Planned message: `fix(recommendation): bound public assessment graphs` (SHA retu
 ## Concerns
 
 - No blocker. Honest unknown performance and video non-comparability behavior remain unchanged.
+
+---
+
+# Fix Round 4 — budget confidence provenance
+
+Status: complete; all required gates pass.
+
+## Implementation
+
+- Fixed the public snapshot provenance check so source bytes retain their matching confidence. A present base budget is now rejected when its confidence is stronger than the weakest contributing raw resource or applicable accelerator-headroom confidence.
+- Host and storage validate against their matching `ResourceSnapshot` source. Discrete GPU validates against every present GPU-resource/backend-headroom contributor, and unified shared validates against every present host/GPU/backend contributor.
+- Absent optional sources remain absent rather than becoming requirements. Capacity comparison remains an independent minimum across sources; no host, GPU, or shared capacity is summed.
+- Malformed caller-built snapshots return `NEEDS_INFORMATION` with `ASSESSMENT_GRAPH_INVALID` before fitting or utility.
+
+## TDD evidence
+
+- Exact reviewer reproduction RED: `./gradlew :composeApp:jvmTest --quiet --tests '*RecommendationPolicyTest.lowBackendHeadroomConfidenceCannotBePromotedByCallerBuiltSharedBudget'` — FAIL, 1 test, `expected:<NEEDS_INFORMATION> but was:<RECOMMENDED>`, exit 1.
+- Expanded four-pool RED: the two focused policy tests failed 2/2 before production changes, covering unified shared/backend, discrete GPU/resource, host/resource, and storage/resource confidence promotion.
+- Focused GREEN: the same two-test command passed 2/2 after preserving confidence alongside each source byte value.
+
+## Final verification
+
+- Focused optimizer/policy/snapshot gate: `./gradlew :composeApp:jvmTest --quiet --tests '*RunPlanOptimizerTest*' --tests '*RecommendationPolicyTest*' --tests '*DeviceSnapshotProviderTest*' --tests '*DeviceSnapshotPolicyTest*' --tests '*DeviceSnapshotJvmPolicyTest*'` — PASS, 71 tests across 5 suites, 0 skipped/failures/errors, exit 0.
+- Full recommendation regression: `./gradlew :composeApp:jvmTest --quiet --tests 'com.debanshu777.caraml.core.recommendation.*'` — PASS, 189 tests across 15 suites, 0 skipped/failures/errors, exit 0.
+- iOS simulator: `./gradlew :composeApp:compileKotlinIosSimulatorArm64 --quiet` — PASS, exit 0. Existing native/OpenSSL and expect/actual warnings remain unrelated.
+- Android supported assembly: `./gradlew :composeApp:assembleAndroidMain --quiet` — PASS, exit 0.
+
+## Files
+
+- `.superpowers/sdd/2026-09-05-device-aware-model-recommendation/task-6-report.md`
+- `composeApp/src/commonMain/kotlin/com/debanshu777/caraml/core/recommendation/RunPlanOptimizer.kt`
+- `composeApp/src/commonTest/kotlin/com/debanshu777/caraml/core/recommendation/RecommendationPolicyTest.kt`
+
+## Self-review and security
+
+- Confirmed confidence comparison uses the same versioned enum ordering already used by policy confidence caps and can only reject overclaimed evidence; it cannot improve a category.
+- Confirmed source lists contain only present, coherent readings already checked at the public graph boundary. Genuine absence is preserved, while an empty source list cannot substantiate a present base budget.
+- Confirmed capacity and confidence minima are evaluated independently, with no arithmetic or cross-pool summing and no overflow surface.
+- Confirmed this is common Kotlin using existing immutable values and APIs; there is no KMP API, provider, persistence, cache, or personalization change.
+- Confirmed no secrets, dependencies, network calls, dynamic execution, sensitive logging, or unrelated P0/P1 edits were added.
+
+## Staging audit
+
+- Interactively staged exactly the three Fix Round 4 implementation/test/report paths above; unrelated dirty work remains excluded.
+- Inspected the complete cached diff; `git diff --cached --check` passed with no whitespace errors.
+
+## Commit
+
+Planned message: `fix(recommendation): validate budget confidence provenance` (SHA returned in the handoff).
+
+## Concerns and ledger handoff
+
+- No blocker for this round.
+- Deferred exactly as directed: the separately reported zero-headroom handling minor remains open and unchanged for a later review round.

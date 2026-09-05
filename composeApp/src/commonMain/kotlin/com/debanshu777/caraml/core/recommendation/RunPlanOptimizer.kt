@@ -282,23 +282,43 @@ class RunPlanOptimizer(
         }
 
         val backendHeadrooms = snapshot.hardwareProfile.backends.mapNotNull { backend ->
-            backend.additionalAllocatableBytes?.takeIf {
-                backend.status == BackendStatus.AVAILABLE && backend.headroomConfidence != null
-            }
+            if (backend.status != BackendStatus.AVAILABLE || backend.kind == BackendKind.CPU) return@mapNotNull null
+            budgetSource(backend.additionalAllocatableBytes, backend.headroomConfidence)
         }
-        val hostSource = resources.additionalAllocatableHostBytes
-        val gpuSources = listOfNotNull(resources.additionalAllocatableGpuBytes) + backendHeadrooms
-        val sharedSources = listOfNotNull(hostSource, resources.additionalAllocatableGpuBytes) + backendHeadrooms
-        if (snapshot.baseHostBudgetBytes?.let { hostSource == null || it > hostSource } == true ||
-            snapshot.baseGpuBudgetBytes?.let { gpuSources.isEmpty() || it > gpuSources.min() } == true ||
-            snapshot.baseSharedBudgetBytes?.let { sharedSources.isEmpty() || it > sharedSources.min() } == true ||
-            snapshot.baseStorageBudgetBytes?.let {
-                resources.freeStorageBytes == null || it > resources.freeStorageBytes
-            } == true
+        val hostSource = budgetSource(
+            resources.additionalAllocatableHostBytes,
+            resources.confidence.host,
+        )
+        val gpuSources = listOfNotNull(
+            budgetSource(resources.additionalAllocatableGpuBytes, resources.confidence.gpu),
+        ) + backendHeadrooms
+        val sharedSources = listOfNotNull(
+            hostSource,
+            budgetSource(resources.additionalAllocatableGpuBytes, resources.confidence.gpu),
+        ) + backendHeadrooms
+        val storageSource = budgetSource(resources.freeStorageBytes, resources.confidence.storage)
+        if (budgetExceedsSourceConfidence(snapshot.baseHostBudgetBytes, confidence.host, listOfNotNull(hostSource)) ||
+            budgetExceedsSourceConfidence(snapshot.baseGpuBudgetBytes, confidence.gpu, gpuSources) ||
+            budgetExceedsSourceConfidence(snapshot.baseSharedBudgetBytes, confidence.shared, sharedSources) ||
+            budgetExceedsSourceConfidence(snapshot.baseStorageBudgetBytes, confidence.storage, listOfNotNull(storageSource))
         ) {
             return true
         }
         return false
+    }
+
+    private fun budgetSource(bytes: Long?, confidence: Confidence?): Pair<Long, Confidence>? =
+        if (bytes == null || confidence == null) null else bytes to confidence
+
+    private fun budgetExceedsSourceConfidence(
+        bytes: Long?,
+        confidence: Confidence?,
+        sources: List<Pair<Long, Confidence>>,
+    ): Boolean {
+        if (bytes == null || confidence == null) return false
+        return sources.isEmpty() ||
+            bytes > sources.minOf { it.first } ||
+            confidence.ordinal > sources.minOf { it.second.ordinal }
     }
 
     private fun budgetPairIsMalformed(bytes: Long?, confidence: Confidence?): Boolean =
