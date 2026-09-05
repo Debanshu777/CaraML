@@ -7,6 +7,9 @@ object WorkloadLimits {
     const val MAX_BATCH_SIZE: Int = 65_536
     const val MAX_SEQUENCE_COUNT: Int = 1_024
     const val DEFAULT_MIN_LLM_CONTEXT_TOKENS: Int = 512
+    const val MAX_DIFFUSION_FRAMES: Int = 4_096
+    const val MAX_DIFFUSION_STEPS: Int = 10_000
+    const val DEFAULT_IMAGE_DIMENSION_MULTIPLE: Int = 64
 }
 
 enum class KvCacheType {
@@ -52,6 +55,14 @@ data class PlanningSettings private constructor(
     val backend: BackendKind,
     val memoryTopology: MemoryTopology,
     val gpuLayerCount: Int?,
+    val engineImageDimensionMultiple: Int,
+    val engineMaxImageDimension: Int,
+    val engineMaxDiffusionFrames: Int,
+    val engineMaxDiffusionSteps: Int,
+    val supportsVaeTiling: Boolean,
+    val supportsMaxVram: Boolean,
+    val supportsLayerStreaming: Boolean,
+    val maxVramBytes: Long?,
 ) {
     constructor(
         engineMaxContextTokens: Int,
@@ -65,6 +76,14 @@ data class PlanningSettings private constructor(
         backend: BackendKind,
         memoryTopology: MemoryTopology,
         gpuLayerCount: Int?,
+        engineImageDimensionMultiple: Int = WorkloadLimits.DEFAULT_IMAGE_DIMENSION_MULTIPLE,
+        engineMaxImageDimension: Int = DescriptorLimits.MAX_IMAGE_DIMENSION,
+        engineMaxDiffusionFrames: Int = WorkloadLimits.MAX_DIFFUSION_FRAMES,
+        engineMaxDiffusionSteps: Int = WorkloadLimits.MAX_DIFFUSION_STEPS,
+        supportsVaeTiling: Boolean = false,
+        supportsMaxVram: Boolean = false,
+        supportsLayerStreaming: Boolean = false,
+        maxVramBytes: Long? = null,
     ) : this(
         engineMaxContextTokens = engineMaxContextTokens,
         engineMaxBatchSize = engineMaxBatchSize,
@@ -77,6 +96,14 @@ data class PlanningSettings private constructor(
         backend = backend,
         memoryTopology = memoryTopology,
         gpuLayerCount = gpuLayerCount,
+        engineImageDimensionMultiple = engineImageDimensionMultiple,
+        engineMaxImageDimension = engineMaxImageDimension,
+        engineMaxDiffusionFrames = engineMaxDiffusionFrames,
+        engineMaxDiffusionSteps = engineMaxDiffusionSteps,
+        supportsVaeTiling = supportsVaeTiling,
+        supportsMaxVram = supportsMaxVram,
+        supportsLayerStreaming = supportsLayerStreaming,
+        maxVramBytes = maxVramBytes,
     )
 }
 
@@ -126,6 +153,77 @@ data class LlmWorkloadConfig private constructor(
         allowBatchFallback = allowBatchFallback,
         allowKvCacheFallback = allowKvCacheFallback,
         allowedKvCacheTypes = allowedKvCacheTypes.distinct(),
+        evidence = evidence.toList(),
+    )
+}
+
+@ConsistentCopyVisibility
+data class DiffusionWorkloadConfig private constructor(
+    val mode: DiffusionMode,
+    val width: Int,
+    val height: Int,
+    val minimumWidth: Int,
+    val minimumHeight: Int,
+    val frameCount: Int,
+    val minimumFrameCount: Int,
+    val batchSize: Int,
+    val steps: Int,
+    val vaeTiling: Boolean,
+    val offloadToCpu: Boolean,
+    val keepClipOnCpu: Boolean,
+    val keepVaeOnCpu: Boolean,
+    val maxVramBytes: Long?,
+    val layerStreaming: Boolean,
+    val allowResolutionFallback: Boolean,
+    val allowFrameCountFallback: Boolean,
+    val allowVaeTilingFallback: Boolean,
+    val allowMaxVramFallback: Boolean,
+    val allowLayerStreamingFallback: Boolean,
+    override val evidence: List<Evidence>,
+) : WorkloadConfig {
+    constructor(
+        mode: DiffusionMode,
+        width: Int,
+        height: Int,
+        minimumWidth: Int,
+        minimumHeight: Int,
+        frameCount: Int,
+        minimumFrameCount: Int,
+        batchSize: Int,
+        steps: Int,
+        vaeTiling: Boolean,
+        offloadToCpu: Boolean,
+        keepClipOnCpu: Boolean,
+        keepVaeOnCpu: Boolean,
+        maxVramBytes: Long?,
+        layerStreaming: Boolean,
+        allowResolutionFallback: Boolean,
+        allowFrameCountFallback: Boolean,
+        allowVaeTilingFallback: Boolean,
+        allowMaxVramFallback: Boolean,
+        allowLayerStreamingFallback: Boolean,
+        evidence: Collection<Evidence>,
+    ) : this(
+        mode = mode,
+        width = width,
+        height = height,
+        minimumWidth = minimumWidth,
+        minimumHeight = minimumHeight,
+        frameCount = frameCount,
+        minimumFrameCount = minimumFrameCount,
+        batchSize = batchSize,
+        steps = steps,
+        vaeTiling = vaeTiling,
+        offloadToCpu = offloadToCpu,
+        keepClipOnCpu = keepClipOnCpu,
+        keepVaeOnCpu = keepVaeOnCpu,
+        maxVramBytes = maxVramBytes,
+        layerStreaming = layerStreaming,
+        allowResolutionFallback = allowResolutionFallback,
+        allowFrameCountFallback = allowFrameCountFallback,
+        allowVaeTilingFallback = allowVaeTilingFallback,
+        allowMaxVramFallback = allowMaxVramFallback,
+        allowLayerStreamingFallback = allowLayerStreamingFallback,
         evidence = evidence.toList(),
     )
 }

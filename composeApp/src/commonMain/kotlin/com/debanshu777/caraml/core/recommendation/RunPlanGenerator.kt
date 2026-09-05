@@ -3,6 +3,7 @@ package com.debanshu777.caraml.core.recommendation
 import com.debanshu777.caraml.core.platform.BackendKind
 
 private const val MAX_LLM_PLAN_CANDIDATES = 24
+private const val MAX_DIFFUSION_PLAN_CANDIDATES = 12
 private val CONTEXT_BUCKETS = listOf(16_384, 8_192, 4_096, 2_048, 1_024, 512)
 private val BATCH_BUCKETS = listOf(512, 256, 128)
 private val KV_PREFERENCE_ORDER = listOf(KvCacheType.F16, KvCacheType.Q8_0, KvCacheType.Q4_0)
@@ -113,6 +114,247 @@ class RunPlanGenerator {
         return candidates.toList()
     }
 
+    fun diffusionCandidates(
+        descriptor: DiffusionModelDescriptor,
+        workload: DiffusionWorkloadConfig,
+        settings: PlanningSettings,
+    ): List<DiffusionRunPlan> {
+        if (!validDiffusionInputs(descriptor, workload, settings)) return emptyList()
+
+        val candidates = LinkedHashSet<DiffusionRunPlan>(MAX_DIFFUSION_PLAN_CANDIDATES)
+        fun add(
+            width: Int = workload.width,
+            height: Int = workload.height,
+            frameCount: Int = workload.frameCount,
+            vaeTiling: Boolean = workload.vaeTiling,
+            offloadToCpu: Boolean = workload.offloadToCpu,
+            maxVramBytes: Long? = workload.maxVramBytes,
+            layerStreaming: Boolean = workload.layerStreaming,
+            requiresUserAcceptance: Boolean = false,
+            compromises: Collection<DiffusionPlanCompromise> = emptyList(),
+        ) {
+            if (candidates.size >= MAX_DIFFUSION_PLAN_CANDIDATES) return
+            candidates += DiffusionRunPlan(
+                mode = workload.mode,
+                width = width,
+                height = height,
+                frameCount = frameCount,
+                batchSize = workload.batchSize,
+                steps = workload.steps,
+                vaeTiling = vaeTiling,
+                offloadToCpu = offloadToCpu,
+                keepClipOnCpu = workload.keepClipOnCpu,
+                keepVaeOnCpu = workload.keepVaeOnCpu,
+                maxVramBytes = maxVramBytes,
+                layerStreaming = layerStreaming,
+                requiresUserAcceptance = requiresUserAcceptance,
+                backend = settings.backend,
+                memoryTopology = settings.memoryTopology,
+                compromises = compromises,
+            )
+        }
+
+        add()
+
+        val optionalAxes = buildList {
+            if (!workload.vaeTiling && workload.allowVaeTilingFallback && settings.supportsVaeTiling) {
+                add(DiffusionFallbackAxis.VAE_TILING)
+            }
+            if (
+                workload.maxVramBytes == null && workload.allowMaxVramFallback &&
+                settings.supportsMaxVram && settings.maxVramBytes != null &&
+                settings.memoryTopology == com.debanshu777.caraml.core.platform.MemoryTopology.DISCRETE
+            ) {
+                add(DiffusionFallbackAxis.MAX_VRAM)
+            }
+            if (
+                !workload.layerStreaming && workload.allowLayerStreamingFallback && settings.supportsLayerStreaming &&
+                settings.backend != BackendKind.CPU
+            ) {
+                add(DiffusionFallbackAxis.LAYER_STREAMING)
+            }
+        }
+        for (mask in 1 until (1 shl optionalAxes.size)) {
+            var vaeTiling = workload.vaeTiling
+            var offloadToCpu = workload.offloadToCpu
+            var maxVramBytes = workload.maxVramBytes
+            var layerStreaming = workload.layerStreaming
+            val compromises = mutableListOf<DiffusionPlanCompromise>()
+            optionalAxes.forEachIndexed { index, axis ->
+                if (mask and (1 shl index) == 0) return@forEachIndexed
+                when (axis) {
+                    DiffusionFallbackAxis.VAE_TILING -> {
+                        vaeTiling = true
+                        compromises += DiffusionPlanCompromise.VAE_TILING
+                    }
+                    DiffusionFallbackAxis.MAX_VRAM -> {
+                        maxVramBytes = settings.maxVramBytes
+                        compromises += DiffusionPlanCompromise.MAX_VRAM_LIMIT
+                    }
+                    DiffusionFallbackAxis.LAYER_STREAMING -> {
+                        layerStreaming = true
+                        if (!offloadToCpu) {
+                            offloadToCpu = true
+                            compromises += DiffusionPlanCompromise.CPU_OFFLOAD
+                        }
+                        compromises += DiffusionPlanCompromise.LAYER_STREAMING
+                    }
+                }
+            }
+            add(
+                vaeTiling = vaeTiling,
+                offloadToCpu = offloadToCpu,
+                maxVramBytes = maxVramBytes,
+                layerStreaming = layerStreaming,
+                compromises = compromises,
+            )
+        }
+
+        if (workload.mode == DiffusionMode.VIDEO && workload.allowFrameCountFallback) {
+            val reducedFrames = maxOf(workload.minimumFrameCount, workload.frameCount / 2)
+            if (reducedFrames < workload.frameCount) {
+                add(
+                    frameCount = reducedFrames,
+                    requiresUserAcceptance = true,
+                    compromises = listOf(DiffusionPlanCompromise.FRAME_COUNT_REDUCED),
+                )
+            }
+        }
+
+        if (workload.allowResolutionFallback) {
+            lowerResolutionCandidates(workload, settings.engineImageDimensionMultiple).forEach { resolution ->
+                add(
+                    width = resolution.first,
+                    height = resolution.second,
+                    requiresUserAcceptance = true,
+                    compromises = listOf(DiffusionPlanCompromise.LOWER_RESOLUTION),
+                )
+            }
+        }
+        return candidates.toList().take(MAX_DIFFUSION_PLAN_CANDIDATES)
+    }
+
+    private fun validDiffusionInputs(
+        descriptor: DiffusionModelDescriptor,
+        workload: DiffusionWorkloadConfig,
+        settings: PlanningSettings,
+    ): Boolean {
+        val multiple = settings.engineImageDimensionMultiple
+        if (
+            !validDiffusionDescriptor(descriptor) || descriptor.mode != workload.mode ||
+            multiple !in 1..DescriptorLimits.MAX_IMAGE_DIMENSION ||
+            settings.engineMaxImageDimension !in 1..DescriptorLimits.MAX_IMAGE_DIMENSION ||
+            settings.engineMaxDiffusionFrames !in 1..WorkloadLimits.MAX_DIFFUSION_FRAMES ||
+            settings.engineMaxDiffusionSteps !in 1..WorkloadLimits.MAX_DIFFUSION_STEPS ||
+            settings.engineMaxBatchSize !in 1..WorkloadLimits.MAX_BATCH_SIZE ||
+            workload.width !in 1..settings.engineMaxImageDimension ||
+            workload.height !in 1..settings.engineMaxImageDimension ||
+            workload.minimumWidth !in 1..workload.width ||
+            workload.minimumHeight !in 1..workload.height ||
+            workload.width % multiple != 0 || workload.height % multiple != 0 ||
+            workload.frameCount !in 1..settings.engineMaxDiffusionFrames ||
+            workload.minimumFrameCount !in 1..workload.frameCount ||
+            workload.batchSize !in 1..settings.engineMaxBatchSize ||
+            workload.steps !in 1..settings.engineMaxDiffusionSteps ||
+            (workload.mode == DiffusionMode.IMAGE &&
+                (workload.frameCount != 1 || workload.minimumFrameCount != 1)) ||
+            (settings.backend != BackendKind.CPU && settings.memoryTopology == com.debanshu777.caraml.core.platform.MemoryTopology.UNKNOWN) ||
+            (settings.backend == BackendKind.CPU && (workload.maxVramBytes != null || workload.layerStreaming))
+        ) {
+            return false
+        }
+        if (workload.vaeTiling && !settings.supportsVaeTiling) return false
+        if (workload.layerStreaming && (!settings.supportsLayerStreaming || !workload.offloadToCpu)) return false
+        if (workload.maxVramBytes != null) {
+            if (
+                !settings.supportsMaxVram ||
+                settings.memoryTopology != com.debanshu777.caraml.core.platform.MemoryTopology.DISCRETE ||
+                workload.maxVramBytes !in 1..DescriptorLimits.MAX_BUNDLE_BYTES
+            ) return false
+            if (settings.maxVramBytes != null && workload.maxVramBytes > settings.maxVramBytes) return false
+        }
+        if (settings.maxVramBytes?.let { it !in 1..DescriptorLimits.MAX_BUNDLE_BYTES } == true) {
+            return false
+        }
+        return true
+    }
+
+    private fun validDiffusionDescriptor(descriptor: DiffusionModelDescriptor): Boolean {
+        if (
+            descriptor.repositoryId.isBlank() || descriptor.revision.isBlank() || descriptor.family.isBlank() ||
+            descriptor.family.length > DescriptorLimits.MAX_METADATA_STRING_LENGTH ||
+            descriptor.width?.let { it !in 1..DescriptorLimits.MAX_IMAGE_DIMENSION } == true ||
+            descriptor.height?.let { it !in 1..DescriptorLimits.MAX_IMAGE_DIMENSION } == true ||
+            descriptor.components.isEmpty() || descriptor.components.size > DescriptorLimits.MAX_COMPONENTS ||
+            !descriptor.requiredComponentsPresent || descriptor.components.none { it.isPrimary }
+        ) {
+            return false
+        }
+        val seen = mutableSetOf<String>()
+        var bundleBytes = 0L
+        for (component in descriptor.components) {
+            val file = component.file
+            if (
+                file.repositoryId != descriptor.repositoryId || file.revision != descriptor.revision ||
+                file.path.isBlank() || file.path.length > DescriptorLimits.MAX_RELATIVE_PATH_LENGTH ||
+                file.sizeBytes !in 1..DescriptorLimits.MAX_FILE_BYTES ||
+                (!component.isPrimary && component.role == null) ||
+                !seen.add("${file.repositoryId}:${file.revision}:${file.path}")
+            ) {
+                return false
+            }
+            bundleBytes = when (val sum = checkedAdd(bundleBytes, file.sizeBytes)) {
+                is CheckedLong.Invalid -> return false
+                is CheckedLong.Value -> sum.value
+            }
+            if (bundleBytes > DescriptorLimits.MAX_BUNDLE_BYTES) return false
+        }
+        return true
+    }
+
+    private fun lowerResolutionCandidates(
+        workload: DiffusionWorkloadConfig,
+        multiple: Int,
+    ): List<Pair<Int, Int>> {
+        val divisor = greatestCommonDivisor(workload.width, workload.height)
+        val widthUnits = workload.width / divisor
+        val heightUnits = workload.height / divisor
+        val minimumUnit = maxOf(
+            ceilingDivide(workload.minimumWidth, widthUnits),
+            ceilingDivide(workload.minimumHeight, heightUnits),
+        )
+        val alignedMinimumUnit = ceilingDivide(minimumUnit, multiple) * multiple
+        return listOf(3 to 4, 1 to 2).mapNotNull { (numerator, denominator) ->
+            val requestedUnit = ((divisor.toLong() * numerator / denominator) / multiple * multiple).toInt()
+            val unit = maxOf(requestedUnit, alignedMinimumUnit)
+            val width = widthUnits.toLong() * unit
+            val height = heightUnits.toLong() * unit
+            if (
+                unit <= 0 || width >= workload.width || height >= workload.height ||
+                width < workload.minimumWidth || height < workload.minimumHeight ||
+                width > Int.MAX_VALUE || height > Int.MAX_VALUE
+            ) {
+                null
+            } else {
+                width.toInt() to height.toInt()
+            }
+        }.distinct()
+    }
+
+    private fun greatestCommonDivisor(left: Int, right: Int): Int {
+        var a = left
+        var b = right
+        while (b != 0) {
+            val remainder = a % b
+            a = b
+            b = remainder
+        }
+        return a
+    }
+
+    private fun ceilingDivide(value: Int, divisor: Int): Int =
+        ((value.toLong() + divisor - 1L) / divisor).toInt()
+
     private fun validInputs(
         descriptor: LlmModelDescriptor,
         workload: LlmWorkloadConfig,
@@ -158,6 +400,12 @@ class RunPlanGenerator {
             settings.gpuLayerCount <= descriptor.transformerShape.layerCount
         else -> true
     }
+}
+
+private enum class DiffusionFallbackAxis {
+    VAE_TILING,
+    MAX_VRAM,
+    LAYER_STREAMING,
 }
 
 private data class CandidateIndex(
