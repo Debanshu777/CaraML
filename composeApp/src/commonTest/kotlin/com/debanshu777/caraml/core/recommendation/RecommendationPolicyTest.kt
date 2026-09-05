@@ -100,6 +100,35 @@ class RecommendationPolicyTest {
     }
 
     @Test
+    fun definiteCompatibilityPrecedesLiveDeviceChangesButStructuralMismatchStillWins() {
+        val incompatible = Compatibility.Incompatible(listOf(AssessmentReason.UNSUPPORTED_FORMAT))
+        val staleSnapshot = task6Snapshot(
+            topology = MemoryTopology.UNIFIED,
+            backends = emptyList(),
+            hostBudget = null,
+            sharedBudget = null,
+        )
+        val knownIncompatible = policy.recommend(
+            task6Assessment(compatibility = incompatible),
+            staleSnapshot,
+            RecommendationProfile(),
+        )
+        val inconsistent = policy.recommend(
+            task6Assessment(
+                compatibility = incompatible,
+                innerCompatibility = Compatibility.Compatible,
+            ),
+            staleSnapshot,
+            RecommendationProfile(),
+        )
+
+        assertEquals(RecommendationCategory.INCOMPATIBLE, knownIncompatible.category)
+        assertEquals(listOf(AssessmentReason.UNSUPPORTED_FORMAT), knownIncompatible.reasons)
+        assertEquals(RecommendationCategory.NEEDS_INFORMATION, inconsistent.category)
+        assertEquals(listOf(AssessmentReason.ASSESSMENT_GRAPH_INVALID), inconsistent.reasons)
+    }
+
+    @Test
     fun cachedTopologyOrCandidateTopologyMismatchNeedsFreshAssessment() {
         val assessedTopologyMismatch = policy.recommend(
             task6Assessment(innerTopology = MemoryTopology.UNIFIED),
@@ -165,6 +194,182 @@ class RecommendationPolicyTest {
 
         assertEquals(RecommendationCategory.NEEDS_INFORMATION, result.category)
         assertEquals(listOf(AssessmentReason.DEVICE_CAPABILITIES_CHANGED), result.reasons)
+    }
+
+    @Test
+    fun oversizedCandidateAndBackendGraphsAreRejectedBeforeIteration() {
+        val tooManyLlm = (0..RecommendationPolicyV1.MAX_LLM_CANDIDATES).map { index ->
+            task6PlanAssessment(plan = task6LlmPlan(keyContext = 1_024 + index))
+        }
+        val tooManyDiffusion = (0..RecommendationPolicyV1.MAX_DIFFUSION_CANDIDATES).map { index ->
+            task6PlanAssessment(
+                plan = task6DiffusionPlan(width = 512 + index),
+                host = null,
+                shared = task6Range(100, 100, 100),
+            )
+        }
+        val tooManyBackends = BackendKind.entries.map(::task6Backend) + task6Backend(BackendKind.CPU)
+
+        val results = listOf(
+            policy.recommend(task6Assessment(plans = tooManyLlm), task6Snapshot(), RecommendationProfile()),
+            policy.recommend(
+                task6Assessment(plans = tooManyDiffusion, innerTopology = MemoryTopology.UNIFIED),
+                task6Snapshot(
+                    hostBudget = null,
+                    sharedBudget = 1_000,
+                    topology = MemoryTopology.UNIFIED,
+                    backends = listOf(task6Backend(BackendKind.METAL)),
+                ),
+                RecommendationProfile(),
+            ),
+            policy.recommend(
+                task6Assessment(),
+                task6Snapshot(backends = tooManyBackends),
+                RecommendationProfile(),
+            ),
+        )
+
+        results.forEach { result ->
+            assertEquals(RecommendationCategory.NEEDS_INFORMATION, result.category)
+            assertEquals(listOf(AssessmentReason.ASSESSMENT_GRAPH_INVALID), result.reasons)
+        }
+    }
+
+    @Test
+    fun candidateSnapshotIsBoundedBeforeCopyingUntrustedCollections() {
+        var reads = 0
+        val candidate = task6PlanAssessment()
+        val untrusted = object : AbstractCollection<PlanAssessment>() {
+            override val size: Int = 1
+            override fun iterator(): Iterator<PlanAssessment> = object : Iterator<PlanAssessment> {
+                private var remaining = 100
+                override fun hasNext(): Boolean = remaining > 0
+                override fun next(): PlanAssessment {
+                    remaining -= 1
+                    reads += 1
+                    return candidate
+                }
+            }
+        }
+
+        val assessed = AssessedPlans(
+            values = untrusted,
+            assessmentKey = TASK6_ASSESSMENT_KEY,
+            compatibility = Compatibility.Compatible,
+            memoryTopology = MemoryTopology.UNKNOWN,
+        )
+
+        assertTrue(reads <= RecommendationPolicyV1.MAX_LLM_CANDIDATES + 1)
+        val result = policy.recommend(
+            task6Assessment(plans = assessed.values),
+            task6Snapshot(),
+            RecommendationProfile(),
+        )
+        assertEquals(RecommendationCategory.NEEDS_INFORMATION, result.category)
+    }
+
+    @Test
+    fun duplicateMixedAndMalformedPlansFailClosedBeforeUtility() {
+        val duplicate = task6PlanAssessment()
+        val mixedLlm = task6PlanAssessment(
+            plan = task6LlmPlan(topology = MemoryTopology.UNIFIED),
+            host = task6Range(100, 100, 100),
+        )
+        val mixedDiffusion = task6PlanAssessment(
+            plan = task6DiffusionPlan(),
+            host = null,
+            shared = task6Range(100, 100, 100),
+        )
+        val malformedLlm = task6PlanAssessment(plan = task6LlmPlan(keyContext = 0))
+        val malformedDiffusion = task6PlanAssessment(
+            plan = task6DiffusionPlan(width = 0),
+            host = null,
+            shared = task6Range(100, 100, 100),
+        )
+        val unifiedSnapshot = task6Snapshot(
+            hostBudget = null,
+            sharedBudget = 1_000,
+            topology = MemoryTopology.UNIFIED,
+            backends = listOf(task6Backend(BackendKind.CPU), task6Backend(BackendKind.METAL)),
+        )
+
+        val results = listOf(
+            policy.recommend(task6Assessment(plans = listOf(duplicate, duplicate)), task6Snapshot(), RecommendationProfile()),
+            policy.recommend(
+                task6Assessment(plans = listOf(mixedLlm, mixedDiffusion), innerTopology = MemoryTopology.UNIFIED),
+                unifiedSnapshot,
+                RecommendationProfile(),
+            ),
+            policy.recommend(task6Assessment(plans = listOf(malformedLlm)), task6Snapshot(), RecommendationProfile()),
+            policy.recommend(
+                task6Assessment(plans = listOf(malformedDiffusion), innerTopology = MemoryTopology.UNIFIED),
+                unifiedSnapshot,
+                RecommendationProfile(),
+            ),
+        )
+
+        results.forEach { result ->
+            assertEquals(RecommendationCategory.NEEDS_INFORMATION, result.category)
+            assertEquals(listOf(AssessmentReason.ASSESSMENT_GRAPH_INVALID), result.reasons)
+        }
+    }
+
+    @Test
+    fun impossibleMemoryPoolShapesAndContradictoryUnknownPerformanceFailClosed() {
+        val extraGpuPool = task6PlanAssessment(gpu = task6Range(1, 1, 1))
+        val missingUnifiedPool = task6PlanAssessment(
+            plan = task6DiffusionPlan(),
+            host = null,
+            shared = null,
+        )
+        val unknownWithHighWrapper = task6PlanAssessment(
+            confidence = task6Confidence(performance = Confidence.HIGH),
+            performance = PerformanceEstimate.Unknown(AssessmentReason.SPEED_NOT_VERIFIED),
+        )
+        val unknownWithoutEvidence = task6PlanAssessment(
+            performance = PerformanceEstimate.Unknown(
+                AssessmentReason.SPEED_NOT_VERIFIED,
+                evidence = emptyList(),
+            ),
+        )
+        val unifiedSnapshot = task6Snapshot(
+            hostBudget = null,
+            sharedBudget = 1_000,
+            topology = MemoryTopology.UNIFIED,
+            backends = listOf(task6Backend(BackendKind.METAL)),
+        )
+
+        val malformedPool = policy.recommend(
+            task6Assessment(plans = listOf(extraGpuPool)),
+            task6Snapshot(),
+            RecommendationProfile(),
+        )
+        val missingPool = policy.recommend(
+                task6Assessment(plans = listOf(missingUnifiedPool), innerTopology = MemoryTopology.UNIFIED),
+                unifiedSnapshot,
+                RecommendationProfile(),
+        )
+        val invalidPerformance = listOf(
+            policy.recommend(
+                task6Assessment(plans = listOf(unknownWithHighWrapper)),
+                task6Snapshot(),
+                RecommendationProfile(),
+            ),
+            policy.recommend(
+                task6Assessment(plans = listOf(unknownWithoutEvidence)),
+                task6Snapshot(),
+                RecommendationProfile(),
+            ),
+        )
+
+        assertEquals(RecommendationCategory.NEEDS_INFORMATION, malformedPool.category)
+        assertEquals(listOf(AssessmentReason.ASSESSMENT_GRAPH_INVALID), malformedPool.reasons)
+        assertEquals(RecommendationCategory.NEEDS_INFORMATION, missingPool.category)
+        assertEquals(listOf(AssessmentReason.MEMORY_BOUNDS_UNKNOWN), missingPool.reasons)
+        invalidPerformance.forEach { result ->
+            assertEquals(RecommendationCategory.NEEDS_INFORMATION, result.category)
+            assertEquals(listOf(AssessmentReason.INVALID_PERFORMANCE_EVIDENCE), result.reasons)
+        }
     }
 
     @Test
@@ -679,6 +884,8 @@ internal fun task6Backend(
     kind = kind,
     status = status,
     additionalAllocatableBytes = null,
+    availabilityConfidence = Confidence.HIGH,
+    headroomConfidence = null,
     evidence = listOf(
         Evidence(
             if (status == BackendStatus.AVAILABLE) {

@@ -175,7 +175,7 @@ data class AssessedPlans private constructor(
         reasons: Collection<AssessmentReason> = emptyList(),
         evidence: Collection<Evidence> = emptyList(),
     ) : this(
-        values = values.toList(),
+        values = values.asSequence().take(RecommendationPolicyV1.MAX_LLM_CANDIDATES + 1).toList(),
         assessmentKey = assessmentKey,
         compatibility = compatibility,
         memoryTopology = memoryTopology,

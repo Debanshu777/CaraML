@@ -166,20 +166,8 @@ class DiffusionFootprintEstimator {
         descriptor: DiffusionModelDescriptor,
         plan: DiffusionRunPlan,
     ): AssessmentReason? {
-        if (
-            descriptor.mode != plan.mode ||
-            plan.width !in 1..DescriptorLimits.MAX_IMAGE_DIMENSION ||
-            plan.height !in 1..DescriptorLimits.MAX_IMAGE_DIMENSION ||
-            plan.frameCount !in 1..WorkloadLimits.MAX_DIFFUSION_FRAMES ||
-            plan.batchSize !in 1..WorkloadLimits.MAX_BATCH_SIZE ||
-            plan.steps !in 1..WorkloadLimits.MAX_DIFFUSION_STEPS ||
-            (plan.mode == DiffusionMode.IMAGE && plan.frameCount != 1) ||
-            plan.maxVramBytes?.let { it !in 1..DescriptorLimits.MAX_BUNDLE_BYTES } == true ||
-            (plan.backend == BackendKind.CPU && (plan.maxVramBytes != null || plan.layerStreaming)) ||
-            (plan.backend != BackendKind.CPU && plan.memoryTopology == MemoryTopology.UNKNOWN) ||
-            (plan.maxVramBytes != null && plan.memoryTopology != MemoryTopology.DISCRETE) ||
-            (plan.layerStreaming && !plan.offloadToCpu)
-        ) {
+        validateRunPlan(plan)?.let { return it }
+        if (descriptor.mode != plan.mode) {
             return AssessmentReason.INVALID_WORKLOAD
         }
         return null

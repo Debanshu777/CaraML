@@ -54,6 +54,8 @@ actual class DeviceCapabilities actual constructor() {
                     kind = BackendKind.VULKAN,
                     status = BackendStatus.UNKNOWN,
                     additionalAllocatableBytes = null,
+                    availabilityConfidence = Confidence.LOW,
+                    headroomConfidence = null,
                     evidence = listOf(vulkanEvidence),
                 ),
             ),
@@ -308,6 +310,8 @@ actual class DeviceCapabilities actual constructor() {
         kind = BackendKind.CPU,
         status = BackendStatus.AVAILABLE,
         additionalAllocatableBytes = null,
+        availabilityConfidence = Confidence.HIGH,
+        headroomConfidence = null,
         evidence = listOf(
             Evidence(AssessmentReason.BACKEND_CAPABILITY_VERIFIED, Confidence.HIGH, "android-cpu-runtime"),
         ),

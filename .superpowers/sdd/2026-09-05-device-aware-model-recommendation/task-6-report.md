@@ -176,3 +176,67 @@ Planned message: `fix(recommendation): harden device fit evidence policy` (this 
 
 - No Task 6 blocker. `NoCalibrationSource` remains intentionally uncalibrated until Task 14 supplies a validated engine version and measurements.
 - Video performance remains intentionally non-blocking until comparable video calibration exists.
+
+---
+
+# Fix Round 2 — bounded assessment graphs and typed headroom provenance
+
+Status: complete; all required gates pass.
+
+## Implementation
+
+- Split backend availability confidence from allocatable-headroom confidence. Availability evidence can no longer establish a memory budget, and present-but-untrusted readings remain distinct from genuinely absent readings.
+- Made unified-memory derivation fail closed: any present untrusted host/GPU constraint suppresses the shared budget; one trustworthy source is used only when the other is genuinely absent; two trustworthy sources use the lower byte bound and weaker matching confidence.
+- Added versioned candidate/backend limits and bounded immutable snapshots before validation. Oversize, duplicate, mixed-kind, malformed, topology-stale, unavailable-backend, impossible-pool, and contradictory performance graphs now return structured Needs-information results before fitting or utility.
+- Centralized run-plan field and execution-invariant validation across generation, footprint estimation, performance estimation, and policy ingestion; stable keys are produced by the same canonical representation used for consistency checks.
+- Preserved precedence: outer/inner identity and compatibility agreement is checked first, then definite Incompatible or Compatibility.Unknown returns immediately; only compatible graphs are checked against current device/backend state.
+- Mapped CPU host estimates to the shared pool on unified-memory snapshots while retaining host-only behavior for discrete CPU execution. Host and shared budgets are never combined.
+- Added deterministic 1,000-seed monotonic coverage for independent snapshot storage-budget confidence changes.
+
+## TDD evidence
+
+- Typed-headroom RED: `./gradlew :composeApp:jvmTest --tests '*DeviceSnapshotProviderTest*'` failed at test compilation because `BackendCapability` lacked separate `availabilityConfidence` and `headroomConfidence` fields. GREEN: the focused provider suite passed after the tri-state budget implementation.
+- Malformed-graph RED: `./gradlew :composeApp:jvmTest --tests '*RecommendationPolicyTest*' --tests '*RunPlanOptimizerTest*'` failed at test compilation on missing candidate/backend limits and the shared plan validator. GREEN: all then-current 34 focused tests passed after bounded graph validation.
+- Bounded-copy security RED: the malicious collection test executed 1 test with 1 failure because an untrusted collection could under-report `size` while yielding 100 entries. GREEN: the exact test passed after a capped sequence snapshot, preventing an unbounded scan (CWE-400).
+- Precedence RED: the focused definite-incompatibility test executed 1 test with 1 failure when live topology validation was deliberately placed before the compatibility result. GREEN: it passed after restoring identity → compatibility → live-graph ordering.
+- Unified CPU RED: `./gradlew :composeApp:jvmTest --tests '*SuitabilityEngineTest.cpu*'` executed 3 tests with 2 failures for LLM and diffusion unified-memory CPU paths; the discrete regression passed. GREEN: all 3 passed after matching CPU host requirements to the shared snapshot budget on unified systems.
+- Storage-confidence property GREEN on first execution: the new deterministic 1,000-seed property passed because the existing confidence cap was already monotonic; it adds the required independent snapshot storage-budget dimension without production expansion.
+
+## Final verification
+
+- Focused five-class gate: `./gradlew :composeApp:jvmTest --tests '*PerformanceEstimatorTest*' --tests '*SuitabilityEngineTest*' --tests '*RunPlanOptimizerTest*' --tests '*RecommendationPolicyTest*' --tests '*RecommendationPolicyPropertyTest*'` — PASS, 64 tests across 5 suites, 0 skipped/failures/errors, `BUILD SUCCESSFUL in 9s`.
+- Recommendation regression: `./gradlew :composeApp:jvmTest --tests 'com.debanshu777.caraml.core.recommendation.*'` — PASS, 177 tests across 15 suites, 0 skipped/failures/errors, `BUILD SUCCESSFUL in 2s`.
+- Device snapshot cross-check: `./gradlew :composeApp:jvmTest --tests '*DeviceSnapshotProviderTest*' --tests '*DeviceSnapshotPolicyTest*' --tests '*DeviceSnapshotJvmPolicyTest*'` — PASS, 27 tests, 0 skipped/failures/errors, `BUILD SUCCESSFUL in 1s`.
+- iOS simulator: `./gradlew :composeApp:compileKotlinIosSimulatorArm64 --quiet` — PASS, exit 0.
+- Android supported assembly: `./gradlew :composeApp:assembleAndroidMain --quiet` — PASS, exit 0.
+
+## Files
+
+- `.superpowers/sdd/2026-09-05-device-aware-model-recommendation/task-6-report.md`
+- `composeApp/src/{androidMain,iosMain,jvmMain}/kotlin/com/debanshu777/caraml/core/platform/DeviceCapabilities.*.kt`
+- `composeApp/src/commonMain/kotlin/com/debanshu777/caraml/core/platform/DeviceSnapshot.kt`
+- `composeApp/src/commonMain/kotlin/com/debanshu777/caraml/core/recommendation/{AssessmentModels,DeviceSnapshotProvider,DiffusionFootprintEstimator,LlmFootprintEstimator,PerformanceEstimator,RecommendationProfile,RunPlan,RunPlanGenerator,RunPlanOptimizer,RunPlanValidation}.kt`
+- `composeApp/src/commonTest/kotlin/com/debanshu777/caraml/core/recommendation/{CompatibilityCheckerTest,DeviceSnapshotProviderTest,RecommendationPolicyPropertyTest,RecommendationPolicyTest,RunPlanOptimizerTest,SuitabilityEngineTest}.kt`
+
+## Self-review and security
+
+- Confirmed objective assessment remains profile-neutral; no personalized category or preference enters static assessment/cache state.
+- Confirmed all public collection-bearing inputs are bounded before scanning and snapshotted immutably; limits reject overlarge graphs rather than silently accepting a favorable prefix.
+- Confirmed compatibility precedence cannot be changed by a later device/backend/topology snapshot, while inconsistent outer/inner identity still fails closed.
+- Confirmed backend availability and memory-headroom confidence are independent; unknown or malformed headroom cannot create a favorable budget.
+- Confirmed CPU unified mapping compares one required range with one shared budget; discrete pools remain independent and no host/GPU/shared values are summed.
+- Confirmed canonical plan validation is reused at every trust boundary and rejects invalid numeric bounds, execution invariants, pool shapes, performance kinds/confidences, and duplicate keys before utility.
+- No secrets, network access, dynamic execution, sensitive logging, or new dependencies were added.
+
+## Staging audit
+
+- Interactively staged exactly the 21 Fix Round 2 implementation/test/report paths above; unrelated P0/P1 dirty work remains excluded.
+- Inspected the complete cached diff in bounded production/test sections; `git diff --cached --check` passed with no whitespace errors.
+
+## Commit
+
+Planned message: `fix(recommendation): validate bounded device fit graphs` (SHA returned in the handoff).
+
+## Concerns
+
+- No blocker. Honest unknown performance remains allowed only with coherent Low-confidence evidence; video remains non-blocking until comparable calibration exists.

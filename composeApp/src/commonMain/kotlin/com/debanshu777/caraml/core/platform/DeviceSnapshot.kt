@@ -6,6 +6,7 @@ import com.debanshu777.caraml.core.recommendation.Evidence
 
 internal const val MAX_LOGICAL_CORE_COUNT = 1_024
 internal const val RESOURCE_SNAPSHOT_MAX_AGE_MS = 30_000L
+private const val MAX_BACKEND_CAPABILITY_SNAPSHOT = 6
 
 enum class MemoryTopology {
     UNIFIED,
@@ -53,17 +54,23 @@ data class BackendCapability private constructor(
     val kind: BackendKind,
     val status: BackendStatus,
     val additionalAllocatableBytes: Long?,
+    val availabilityConfidence: Confidence?,
+    val headroomConfidence: Confidence?,
     val evidence: List<Evidence>,
 ) {
     constructor(
         kind: BackendKind,
         status: BackendStatus,
         additionalAllocatableBytes: Long?,
+        availabilityConfidence: Confidence?,
+        headroomConfidence: Confidence?,
         evidence: Collection<Evidence>,
     ) : this(
         kind = kind,
         status = status,
         additionalAllocatableBytes = additionalAllocatableBytes,
+        availabilityConfidence = availabilityConfidence,
+        headroomConfidence = headroomConfidence,
         evidence = evidence.toList(),
     )
 }
@@ -91,7 +98,7 @@ data class HardwareProfile private constructor(
         logicalCoreCount = logicalCoreCount,
         performanceCoreCount = performanceCoreCount,
         instructionSets = instructionSets.toSet(),
-        backends = backends.toList(),
+        backends = backends.asSequence().take(MAX_BACKEND_CAPABILITY_SNAPSHOT).toList(),
         memoryTopology = memoryTopology,
         evidence = evidence.toList(),
     )

@@ -29,6 +29,10 @@ enum class RecommendationCategory {
 }
 
 internal object RecommendationPolicyV1 {
+    const val MAX_LLM_CANDIDATES: Int = 24
+    const val MAX_DIFFUSION_CANDIDATES: Int = 12
+    const val MAX_BACKEND_CAPABILITIES: Int = 5
+
     data class UtilityWeights(
         val performance: Double,
         val energy: Double,

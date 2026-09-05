@@ -125,6 +125,8 @@ class CompatibilityCheckerTest {
                 kind = BackendKind.CPU,
                 status = BackendStatus.AVAILABLE,
                 additionalAllocatableBytes = null,
+                availabilityConfidence = Confidence.HIGH,
+                headroomConfidence = null,
                 evidence = emptyList(),
             ),
         ),

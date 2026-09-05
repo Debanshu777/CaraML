@@ -70,7 +70,11 @@ class DeviceSnapshotProvider internal constructor(
                 "platform-low-memory-signal",
             )
         }
-        val resources = normalized.withStorageAndEvidence(storage.bytes, storage.confidence, providerEvidence)
+        val resources = normalized.withStorageAndEvidence(
+            storage.bytesOrNull,
+            storage.confidenceOrNull,
+            providerEvidence,
+        )
 
         val hostBudget = resources.additionalAllocatableHostBytes?.let { allocatable ->
             val minimum = resources.platformMinimumReserveHostBytes
@@ -81,36 +85,41 @@ class DeviceSnapshotProvider internal constructor(
                 minimum = minimum,
             )
         }
-        val host = BudgetReading(hostBudget, resources.confidence.host.takeIf { hostBudget != null })
-        val resourceGpu = BudgetReading(
+        val host = budgetReading(
+            hostBudget,
+            resources.confidence.host,
+            wasPresent = rawResources.additionalAllocatableHostBytes != null,
+        )
+        val resourceGpu = budgetReading(
             resources.additionalAllocatableGpuBytes,
-            resources.confidence.gpu.takeIf { resources.additionalAllocatableGpuBytes != null },
-        ).knownOrNull()
+            resources.confidence.gpu,
+            wasPresent = rawResources.additionalAllocatableGpuBytes != null,
+        )
         val gpu = minimumBudget(resourceGpu, backendGpuBudget(backends, providerEvidence))
         val (baseHost, baseGpu, baseShared, budgetConfidence) = when (resolvedProfile.memoryTopology) {
             MemoryTopology.UNIFIED -> {
-                val shared = minimumBudget(host.knownOrNull(), gpu)
+                val shared = minimumBudget(host, gpu)
                 BudgetResult(
                     host = null,
                     gpu = null,
-                    shared = shared?.bytes,
-                    confidence = ResourcePoolConfidence(shared = shared?.confidence),
+                    shared = shared.bytesOrNull,
+                    confidence = ResourcePoolConfidence(shared = shared.confidenceOrNull),
                 )
             }
             MemoryTopology.DISCRETE -> BudgetResult(
-                host = host.knownOrNull()?.bytes,
-                gpu = gpu?.bytes,
+                host = host.bytesOrNull,
+                gpu = gpu.bytesOrNull,
                 shared = null,
                 confidence = ResourcePoolConfidence(
-                    host = host.knownOrNull()?.confidence,
-                    gpu = gpu?.confidence,
+                    host = host.confidenceOrNull,
+                    gpu = gpu.confidenceOrNull,
                 ),
             )
             MemoryTopology.UNKNOWN -> BudgetResult(
-                host = host.knownOrNull()?.bytes,
+                host = host.bytesOrNull,
                 gpu = null,
                 shared = null,
-                confidence = ResourcePoolConfidence(host = host.knownOrNull()?.confidence),
+                confidence = ResourcePoolConfidence(host = host.confidenceOrNull),
             )
         }
         val allEvidence = buildList {
@@ -126,11 +135,11 @@ class DeviceSnapshotProvider internal constructor(
             baseHostBudgetBytes = baseHost,
             baseGpuBudgetBytes = baseGpu,
             baseSharedBudgetBytes = baseShared,
-            baseStorageBudgetBytes = storage.bytes?.let(::computeStorageBudget),
+            baseStorageBudgetBytes = storage.bytesOrNull?.let(::computeStorageBudget),
             isFresh = fresh,
             evidence = allEvidence,
             budgetConfidence = budgetConfidence.copy(
-                storage = storage.confidence.takeIf { storage.bytes != null },
+                storage = storage.confidenceOrNull,
             ),
         )
     }
@@ -161,8 +170,21 @@ class DeviceSnapshotProvider internal constructor(
         fallback: List<BackendCapability>,
         evidence: MutableList<Evidence>,
     ): List<BackendCapability> = try {
-        val reported = backendCapabilitySource.capabilities().toList()
-        if (reported.isEmpty()) fallback.toList() else mergeBackends(fallback, reported)
+        val reported = backendCapabilitySource.capabilities().asSequence()
+            .take(RecommendationPolicyV1.MAX_BACKEND_CAPABILITIES + 1)
+            .toList()
+        when {
+            reported.isEmpty() -> fallback.toList()
+            reported.size > RecommendationPolicyV1.MAX_BACKEND_CAPABILITIES -> {
+                evidence += Evidence(
+                    AssessmentReason.ASSESSMENT_GRAPH_INVALID,
+                    Confidence.LOW,
+                    "backend-capability-limit-exceeded",
+                )
+                reported
+            }
+            else -> mergeBackends(fallback, reported)
+        }
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (_: Exception) {
@@ -175,13 +197,15 @@ class DeviceSnapshotProvider internal constructor(
     }
 
     private fun readStorage(evidence: MutableList<Evidence>): BudgetReading = try {
-        storageBytesSource().takeIf { it > 0L }?.let { BudgetReading(it, Confidence.HIGH) } ?: run {
+        storageBytesSource().takeIf { it > 0L }?.let {
+            BudgetReading.Known(it, Confidence.HIGH)
+        } ?: run {
             evidence += Evidence(
                 AssessmentReason.INVALID_STORAGE_READING,
                 Confidence.LOW,
                 "free-storage-not-positive",
             )
-            BudgetReading(null, null)
+            BudgetReading.Untrusted
         }
     } catch (cancellation: CancellationException) {
         throw cancellation
@@ -191,7 +215,7 @@ class DeviceSnapshotProvider internal constructor(
             Confidence.LOW,
             "free-storage-unavailable",
         )
-        BudgetReading(null, null)
+        BudgetReading.Absent
     }
 
     private fun readResources(
@@ -226,8 +250,8 @@ class DeviceSnapshotProvider internal constructor(
     private fun backendGpuBudget(
         backends: List<BackendCapability>,
         evidence: MutableList<Evidence>,
-    ): BudgetReading? {
-        val headrooms = mutableListOf<BudgetReading>()
+    ): BudgetReading {
+        var headroom: BudgetReading = BudgetReading.Absent
         for (backend in backends) {
             if (backend.kind == com.debanshu777.caraml.core.platform.BackendKind.CPU ||
                 backend.status != com.debanshu777.caraml.core.platform.BackendStatus.AVAILABLE
@@ -239,13 +263,22 @@ class DeviceSnapshotProvider internal constructor(
                     Confidence.LOW,
                     "backend-${backend.kind}-headroom",
                 )
+                headroom = minimumBudget(headroom, BudgetReading.Untrusted)
             } else {
-                val confidence = backend.evidence.minOfOrNull { it.confidence.ordinal }
-                    ?.let(Confidence.entries::get)
-                if (confidence != null) headrooms += BudgetReading(value, confidence)
+                val reading = backend.headroomConfidence?.let {
+                    BudgetReading.Known(value, it)
+                } ?: BudgetReading.Untrusted
+                if (reading == BudgetReading.Untrusted) {
+                    evidence += Evidence(
+                        AssessmentReason.RESOURCE_READING_UNAVAILABLE,
+                        Confidence.LOW,
+                        "backend-${backend.kind}-headroom-confidence",
+                    )
+                }
+                headroom = minimumBudget(headroom, reading)
             }
         }
-        return headrooms.minByOrNull { it.bytes ?: Long.MAX_VALUE }
+        return headroom
     }
 
     private fun normalizeResources(
@@ -307,20 +340,40 @@ class DeviceSnapshotProvider internal constructor(
         return merged.values.toList()
     }
 
-    private fun minimumBudget(first: BudgetReading?, second: BudgetReading?): BudgetReading? = when {
-        first != null && second != null -> BudgetReading(
-            bytes = minOf(requireNotNull(first.bytes), requireNotNull(second.bytes)),
-            confidence = minConfidence(requireNotNull(first.confidence), requireNotNull(second.confidence)),
+    private fun minimumBudget(first: BudgetReading, second: BudgetReading): BudgetReading = when {
+        first == BudgetReading.Untrusted || second == BudgetReading.Untrusted -> BudgetReading.Untrusted
+        first is BudgetReading.Known && second is BudgetReading.Known -> BudgetReading.Known(
+            bytes = minOf(first.bytes, second.bytes),
+            confidence = minConfidence(first.confidence, second.confidence),
         )
-        first != null -> first
-        else -> second
+        first is BudgetReading.Known -> first
+        second is BudgetReading.Known -> second
+        else -> BudgetReading.Absent
     }
 
     private fun minConfidence(first: Confidence, second: Confidence): Confidence =
         if (first.ordinal <= second.ordinal) first else second
 
-    private data class BudgetReading(val bytes: Long?, val confidence: Confidence?) {
-        fun knownOrNull(): BudgetReading? = takeIf { bytes != null && bytes >= 0L && confidence != null }
+    private fun budgetReading(
+        bytes: Long?,
+        confidence: Confidence?,
+        wasPresent: Boolean = bytes != null,
+    ): BudgetReading = when {
+        !wasPresent -> BudgetReading.Absent
+        bytes == null || bytes < 0L || confidence == null -> BudgetReading.Untrusted
+        else -> BudgetReading.Known(bytes, confidence)
+    }
+
+    private sealed interface BudgetReading {
+        data object Absent : BudgetReading
+        data object Untrusted : BudgetReading
+        data class Known(val bytes: Long, val confidence: Confidence) : BudgetReading
+
+        val bytesOrNull: Long?
+            get() = (this as? Known)?.bytes
+
+        val confidenceOrNull: Confidence?
+            get() = (this as? Known)?.confidence
     }
 
     private data class BudgetResult(

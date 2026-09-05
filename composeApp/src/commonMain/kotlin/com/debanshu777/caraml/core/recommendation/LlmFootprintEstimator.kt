@@ -82,6 +82,7 @@ class LlmFootprintEstimator {
         plan: LlmRunPlan,
         calibration: MemoryCalibration,
     ): AssessmentReason? {
+        validateRunPlan(plan)?.let { return it }
         if (descriptor.file.sizeBytes !in 1..DescriptorLimits.MAX_FILE_BYTES) {
             return AssessmentReason.INVALID_METADATA
         }
@@ -90,17 +91,10 @@ class LlmFootprintEstimator {
         }.orEmpty()
         if (shapeValues.filterNotNull().any { it <= 0 }) return AssessmentReason.INVALID_METADATA
         if (
-            plan.contextTokens !in 1..DescriptorLimits.MAX_CONTEXT_TOKENS ||
-            plan.batchSize !in 1..WorkloadLimits.MAX_BATCH_SIZE ||
-            plan.microBatchSize !in 1..plan.batchSize ||
-            plan.sequenceCount !in 1..WorkloadLimits.MAX_SEQUENCE_COUNT ||
-            plan.gpuLayerCount?.let { it < 0 } == true ||
-            (plan.backend != BackendKind.CPU && plan.gpuLayerCount == 0) ||
             descriptor.contextLimit?.let { plan.contextTokens > it } == true ||
             descriptor.transformerShape?.layerCount?.let { layers ->
                 plan.gpuLayerCount?.let { it > layers }
-            } == true ||
-            (plan.backend == BackendKind.CPU && plan.gpuLayerCount !in listOf(null, 0))
+            } == true
         ) {
             return AssessmentReason.INVALID_WORKLOAD
         }

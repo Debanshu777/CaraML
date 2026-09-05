@@ -2,8 +2,6 @@ package com.debanshu777.caraml.core.recommendation
 
 import com.debanshu777.caraml.core.platform.BackendKind
 
-private const val MAX_LLM_PLAN_CANDIDATES = 24
-private const val MAX_DIFFUSION_PLAN_CANDIDATES = 12
 private val CONTEXT_BUCKETS = listOf(16_384, 8_192, 4_096, 2_048, 1_024, 512)
 private val BATCH_BUCKETS = listOf(512, 256, 128)
 private val KV_PREFERENCE_ORDER = listOf(KvCacheType.F16, KvCacheType.Q8_0, KvCacheType.Q4_0)
@@ -48,9 +46,9 @@ class RunPlanGenerator {
             }
         }.distinct()
 
-        val candidates = LinkedHashSet<LlmRunPlan>(MAX_LLM_PLAN_CANDIDATES)
+        val candidates = LinkedHashSet<LlmRunPlan>(RecommendationPolicyV1.MAX_LLM_CANDIDATES)
         fun add(contextIndex: Int, kvIndex: Int, batchIndex: Int) {
-            if (candidates.size >= MAX_LLM_PLAN_CANDIDATES) return
+            if (candidates.size >= RecommendationPolicyV1.MAX_LLM_CANDIDATES) return
             val context = contexts[contextIndex]
             val kv = kvPairs[kvIndex]
             val batch = batches[batchIndex]
@@ -70,7 +68,7 @@ class RunPlanGenerator {
                 if (microBatch != workload.microBatchSize) add(RunPlanCompromise.MICRO_BATCH_REDUCED)
                 if (kv != requestedTypes) add(RunPlanCompromise.KV_CACHE_REDUCED)
             }
-            candidates += LlmRunPlan(
+            val candidate = LlmRunPlan(
                 contextTokens = context,
                 batchSize = batch,
                 microBatchSize = microBatch,
@@ -82,6 +80,7 @@ class RunPlanGenerator {
                 gpuLayerCount = if (settings.backend == BackendKind.CPU) 0 else settings.gpuLayerCount,
                 compromises = compromises,
             )
+            if (validateRunPlan(candidate) == null) candidates += candidate
         }
 
         val endpoint = CandidateIndex(contexts.lastIndex, kvPairs.lastIndex, batches.lastIndex)
@@ -104,7 +103,7 @@ class RunPlanGenerator {
 
         add(CandidateIndex.REQUESTED.contextIndex, CandidateIndex.REQUESTED.kvIndex, CandidateIndex.REQUESTED.batchIndex)
         frontier.forEach { candidate ->
-            if (candidates.size < MAX_LLM_PLAN_CANDIDATES - 1 || endpoint == CandidateIndex.REQUESTED) {
+            if (candidates.size < RecommendationPolicyV1.MAX_LLM_CANDIDATES - 1 || endpoint == CandidateIndex.REQUESTED) {
                 add(candidate.contextIndex, candidate.kvIndex, candidate.batchIndex)
             }
         }
@@ -122,7 +121,7 @@ class RunPlanGenerator {
         if (!validDiffusionInputs(descriptor, workload, settings)) return emptyList()
         val effectiveOffloadToCpu = settings.backend == BackendKind.CPU || workload.offloadToCpu
 
-        val candidates = LinkedHashSet<DiffusionRunPlan>(MAX_DIFFUSION_PLAN_CANDIDATES)
+        val candidates = LinkedHashSet<DiffusionRunPlan>(RecommendationPolicyV1.MAX_DIFFUSION_CANDIDATES)
         fun add(
             width: Int = workload.width,
             height: Int = workload.height,
@@ -134,8 +133,8 @@ class RunPlanGenerator {
             requiresUserAcceptance: Boolean = false,
             compromises: Collection<DiffusionPlanCompromise> = emptyList(),
         ) {
-            if (candidates.size >= MAX_DIFFUSION_PLAN_CANDIDATES) return
-            candidates += DiffusionRunPlan(
+            if (candidates.size >= RecommendationPolicyV1.MAX_DIFFUSION_CANDIDATES) return
+            val candidate = DiffusionRunPlan(
                 mode = workload.mode,
                 width = width,
                 height = height,
@@ -153,6 +152,7 @@ class RunPlanGenerator {
                 memoryTopology = settings.memoryTopology,
                 compromises = compromises,
             )
+            if (validateRunPlan(candidate) == null) candidates += candidate
         }
 
         add()
@@ -233,7 +233,7 @@ class RunPlanGenerator {
                 )
             }
         }
-        return candidates.toList().take(MAX_DIFFUSION_PLAN_CANDIDATES)
+        return candidates.toList().take(RecommendationPolicyV1.MAX_DIFFUSION_CANDIDATES)
     }
 
     private fun validDiffusionInputs(

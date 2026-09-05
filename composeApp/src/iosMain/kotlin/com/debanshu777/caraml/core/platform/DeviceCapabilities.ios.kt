@@ -72,6 +72,8 @@ actual class DeviceCapabilities actual constructor() {
                     kind = BackendKind.METAL,
                     status = metalStatus,
                     additionalAllocatableBytes = null,
+                    availabilityConfidence = if (simulator) Confidence.HIGH else Confidence.LOW,
+                    headroomConfidence = null,
                     evidence = listOf(
                         Evidence(metalReason, if (simulator) Confidence.HIGH else Confidence.LOW, "ios-metal-runner-registry-unchecked"),
                     ),
@@ -323,6 +325,8 @@ actual class DeviceCapabilities actual constructor() {
         kind = BackendKind.CPU,
         status = BackendStatus.AVAILABLE,
         additionalAllocatableBytes = null,
+        availabilityConfidence = Confidence.HIGH,
+        headroomConfidence = null,
         evidence = listOf(
             Evidence(AssessmentReason.BACKEND_CAPABILITY_VERIFIED, Confidence.HIGH, "ios-cpu-runtime"),
         ),

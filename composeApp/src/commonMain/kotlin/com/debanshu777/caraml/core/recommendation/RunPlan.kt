@@ -65,18 +65,7 @@ data class LlmRunPlan private constructor(
     )
 
     override val stableKey: String
-        get() = buildString {
-            append("llm:")
-            append(contextTokens).append(':')
-            append(batchSize).append(':')
-            append(microBatchSize).append(':')
-            append(sequenceCount).append(':')
-            append(keyCacheType.name).append(':')
-            append(valueCacheType.name).append(':')
-            append(backend.name).append(':')
-            append(memoryTopology.name).append(':')
-            append(gpuLayerCount?.toString() ?: "auto")
-        }
+        get() = canonicalRunPlanStableKey(this)
 }
 
 @ConsistentCopyVisibility
@@ -135,21 +124,5 @@ data class DiffusionRunPlan private constructor(
     )
 
     override val stableKey: String
-        get() = buildString {
-            append("diffusion:")
-            append(mode.name).append(':')
-            append(width).append(':')
-            append(height).append(':')
-            append(frameCount).append(':')
-            append(batchSize).append(':')
-            append(steps).append(':')
-            append(vaeTiling).append(':')
-            append(offloadToCpu).append(':')
-            append(keepClipOnCpu).append(':')
-            append(keepVaeOnCpu).append(':')
-            append(maxVramBytes?.toString() ?: "none").append(':')
-            append(layerStreaming).append(':')
-            append(backend.name).append(':')
-            append(memoryTopology.name)
-        }
+        get() = canonicalRunPlanStableKey(this)
 }

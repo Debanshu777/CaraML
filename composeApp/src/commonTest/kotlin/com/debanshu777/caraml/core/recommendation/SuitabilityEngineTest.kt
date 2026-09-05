@@ -161,6 +161,73 @@ class SuitabilityEngineTest {
         assertTrue(unknown.evidence.any { it.reason == AssessmentReason.QUALITY_NOT_VERIFIED })
     }
 
+    @Test
+    fun cpuLlmOnUnifiedMemoryUsesTheSharedDevicePoolEndToEnd() {
+        val result = recommendCpu(
+            descriptor = task6LlmDescriptor(),
+            workload = task6LlmWorkload(),
+            topology = MemoryTopology.UNIFIED,
+        )
+
+        assertEquals(RecommendationCategory.RECOMMENDED, result.category, result.toString())
+        assertTrue(result.selectedPlan is LlmRunPlan)
+    }
+
+    @Test
+    fun cpuDiffusionOnUnifiedMemoryUsesTheSharedDevicePoolEndToEnd() {
+        val result = recommendCpu(
+            descriptor = task6DiffusionDescriptor(),
+            workload = task6DiffusionWorkload(),
+            topology = MemoryTopology.UNIFIED,
+        )
+
+        assertEquals(RecommendationCategory.RECOMMENDED, result.category, result.toString())
+        assertTrue(result.selectedPlan is DiffusionRunPlan)
+    }
+
+    @Test
+    fun cpuOnDiscreteMemoryContinuesToUseOnlyTheHostPool() {
+        val result = recommendCpu(
+            descriptor = task6LlmDescriptor(),
+            workload = task6LlmWorkload(),
+            topology = MemoryTopology.DISCRETE,
+        )
+
+        assertEquals(RecommendationCategory.RECOMMENDED, result.category, result.toString())
+        assertTrue(result.selectedPlan is LlmRunPlan)
+    }
+
+    private fun recommendCpu(
+        descriptor: ModelDescriptor,
+        workload: WorkloadConfig,
+        topology: MemoryTopology,
+    ): PersonalizedRecommendation {
+        val hardware = task6Hardware(backend = BackendKind.CPU, topology = topology)
+        val suitability = engine(SupportEvidence.Supported)
+        val assessed = suitability.assessPlans(descriptor, hardware, workload)
+        val snapshot = if (topology == MemoryTopology.UNIFIED) {
+            task6Snapshot(
+                hostBudget = null,
+                sharedBudget = 20_000_000_000L,
+                storageBudget = 20_000_000_000L,
+                topology = topology,
+                backends = listOf(task6Backend(BackendKind.CPU)),
+            )
+        } else {
+            task6Snapshot(
+                hostBudget = 20_000_000_000L,
+                storageBudget = 20_000_000_000L,
+                topology = topology,
+                backends = listOf(task6Backend(BackendKind.CPU)),
+            )
+        }
+        return RecommendationPolicy().recommend(
+            suitability.assemble(assessed, snapshot),
+            snapshot,
+            RecommendationProfile(),
+        )
+    }
+
     private fun engine(support: SupportEvidence): SuitabilityEngine = SuitabilityEngine(
         compatibilityChecker = CompatibilityChecker(EngineCapabilitySource { support }),
         calibrationSource = NoCalibrationSource,

@@ -64,6 +64,20 @@ class DeviceSnapshotProviderTest {
     }
 
     @Test
+    fun unifiedPresentButUntrustedConstraintSuppressesSharedBudget() = runBlocking {
+        val snapshot = provider(
+            topology = MemoryTopology.UNIFIED,
+            hostBytes = 4L * GIB,
+            gpuBytes = 1L * GIB,
+            hostConfidence = Confidence.HIGH,
+            gpuConfidence = null,
+        ).capture()
+
+        assertNull(snapshot.baseSharedBudgetBytes)
+        assertNull(snapshot.budgetConfidence.shared)
+    }
+
+    @Test
     fun discreteBudgetConfidenceKeepsHostAndGpuEvidenceSeparate() = runBlocking {
         val snapshot = provider(
             topology = MemoryTopology.DISCRETE,
@@ -123,6 +137,8 @@ class DeviceSnapshotProviderTest {
                         kind = BackendKind.METAL,
                         status = BackendStatus.AVAILABLE,
                         additionalAllocatableBytes = 1L * GIB,
+                        availabilityConfidence = Confidence.HIGH,
+                        headroomConfidence = Confidence.HIGH,
                         evidence = listOf(
                             Evidence(
                                 AssessmentReason.RESOURCE_READING_VALIDATED,
@@ -136,6 +152,51 @@ class DeviceSnapshotProviderTest {
         ).capture()
 
         assertEquals(1L * GIB, snapshot.baseSharedBudgetBytes)
+        assertEquals(Confidence.HIGH, snapshot.budgetConfidence.shared)
+    }
+
+    @Test
+    fun backendAvailabilityEvidenceDoesNotEstablishHeadroomConfidence() = runBlocking {
+        val snapshot = provider(
+            topology = MemoryTopology.UNIFIED,
+            hostBytes = 4L * GIB,
+            gpuBytes = null,
+            backendCapabilities = {
+                listOf(
+                    cpu(),
+                    BackendCapability(
+                        kind = BackendKind.METAL,
+                        status = BackendStatus.AVAILABLE,
+                        additionalAllocatableBytes = 1L * GIB,
+                        availabilityConfidence = Confidence.HIGH,
+                        headroomConfidence = null,
+                        evidence = listOf(
+                            Evidence(
+                                AssessmentReason.BACKEND_CAPABILITY_VERIFIED,
+                                Confidence.HIGH,
+                                "availability-only",
+                            ),
+                        ),
+                    ),
+                )
+            },
+        ).capture()
+
+        assertNull(snapshot.baseSharedBudgetBytes)
+        assertNull(snapshot.budgetConfidence.shared)
+    }
+
+    @Test
+    fun unifiedTrustworthySingleHostSourceProducesSharedBudget() = runBlocking {
+        val snapshot = provider(
+            topology = MemoryTopology.UNIFIED,
+            hostBytes = 4L * GIB,
+            gpuBytes = null,
+            hostConfidence = Confidence.MEDIUM,
+        ).capture()
+
+        assertEquals(3L * GIB, snapshot.baseSharedBudgetBytes)
+        assertEquals(Confidence.MEDIUM, snapshot.budgetConfidence.shared)
     }
 
     @Test
@@ -188,6 +249,8 @@ class DeviceSnapshotProviderTest {
             kind = BackendKind.VULKAN,
             status = BackendStatus.UNKNOWN,
             additionalAllocatableBytes = null,
+            availabilityConfidence = null,
+            headroomConfidence = null,
             evidence = emptyList(),
         )
 
@@ -345,6 +408,8 @@ class DeviceSnapshotProviderTest {
         kind = BackendKind.CPU,
         status = BackendStatus.AVAILABLE,
         additionalAllocatableBytes = null,
+        availabilityConfidence = Confidence.HIGH,
+        headroomConfidence = null,
         evidence = emptyList(),
     )
 

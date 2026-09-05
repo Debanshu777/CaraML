@@ -11,6 +11,18 @@ class RunPlanOptimizerTest {
     private val optimizer = RunPlanOptimizer()
 
     @Test
+    fun sharedRunPlanValidationOwnsBoundsAndCanonicalStableKeys() {
+        val valid = task6LlmPlan()
+        val invalidLlm = task6LlmPlan(keyContext = 0)
+        val invalidDiffusion = task6DiffusionPlan(width = DescriptorLimits.MAX_IMAGE_DIMENSION + 1)
+
+        assertEquals(null, validateRunPlan(valid))
+        assertEquals(valid.stableKey, canonicalRunPlanStableKey(valid))
+        assertEquals(AssessmentReason.INVALID_WORKLOAD, validateRunPlan(invalidLlm))
+        assertEquals(AssessmentReason.INVALID_WORKLOAD, validateRunPlan(invalidDiffusion))
+    }
+
+    @Test
     fun versionedUtilityAndQualityConstantsMatchThePolicyFixture() {
         assertEquals(0.05, RecommendationPolicyV1.UTILITY_METRIC_MIN)
         assertEquals(1.0, RecommendationPolicyV1.UTILITY_METRIC_MAX)

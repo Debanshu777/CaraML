@@ -165,7 +165,7 @@ class PerformanceEstimator {
         hardware: HardwareProfile,
         calibration: CalibrationSource,
     ): PerformanceEstimate {
-        if (!validPlan(plan)) {
+        if (validateRunPlan(plan) != null) {
             return unknown(AssessmentReason.INVALID_PERFORMANCE_EVIDENCE, "run-plan")
         }
         val backend = hardware.backends.firstOrNull { it.kind == plan.backend }
@@ -426,22 +426,6 @@ class PerformanceEstimator {
 
     private fun validCorrection(value: CalibrationCorrection): Boolean =
         validPositiveFinite(value.likely) && validPositiveFinite(value.high) && value.high >= value.likely
-
-    private fun validPlan(plan: RunPlan): Boolean = when (plan) {
-        is LlmRunPlan ->
-            plan.contextTokens in 1..DescriptorLimits.MAX_CONTEXT_TOKENS &&
-                plan.batchSize in 1..WorkloadLimits.MAX_BATCH_SIZE &&
-                plan.microBatchSize in 1..plan.batchSize &&
-                plan.sequenceCount in 1..WorkloadLimits.MAX_SEQUENCE_COUNT &&
-                plan.gpuLayerCount?.let { it >= 0 } != false
-        is DiffusionRunPlan ->
-            plan.width in 1..DescriptorLimits.MAX_IMAGE_DIMENSION &&
-                plan.height in 1..DescriptorLimits.MAX_IMAGE_DIMENSION &&
-                plan.frameCount in 1..WorkloadLimits.MAX_DIFFUSION_FRAMES &&
-                plan.batchSize in 1..WorkloadLimits.MAX_BATCH_SIZE &&
-                plan.steps in 1..WorkloadLimits.MAX_DIFFUSION_STEPS &&
-                (plan.mode != DiffusionMode.IMAGE || plan.frameCount == 1)
-    }
 
     private fun validPositiveFinite(value: Double): Boolean = value.isFinite() && value > 0.0
 

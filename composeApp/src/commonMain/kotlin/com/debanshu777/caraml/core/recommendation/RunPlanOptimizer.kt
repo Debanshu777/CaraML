@@ -60,7 +60,7 @@ class RunPlanOptimizer(
         snapshot: DeviceSnapshot,
         profile: RecommendationProfile,
     ): SelectedPlan {
-        assessmentGraphIssue(assessment, snapshot)?.let { issue ->
+        assessmentIdentityIssue(assessment)?.let { issue ->
             return emptySelection(RecommendationCategory.NEEDS_INFORMATION, listOf(issue))
         }
         when (val compatibility = assessment.compatibility) {
@@ -73,6 +73,9 @@ class RunPlanOptimizer(
                 compatibility.reasons.ifEmpty { listOf(AssessmentReason.ENGINE_SUPPORT_UNKNOWN) },
             )
             Compatibility.Compatible -> Unit
+        }
+        compatibleGraphIssue(assessment, snapshot)?.let { issue ->
+            return emptySelection(RecommendationCategory.NEEDS_INFORMATION, listOf(issue))
         }
         if (!snapshotIsFresh(snapshot)) {
             return emptySelection(
@@ -112,10 +115,7 @@ class RunPlanOptimizer(
         return snapshot.resources.isFreshAt(now, RecommendationPolicyV1.RESOURCE_SNAPSHOT_MAX_AGE_MS)
     }
 
-    private fun assessmentGraphIssue(
-        assessment: ModelAssessment,
-        snapshot: DeviceSnapshot,
-    ): AssessmentReason? {
+    private fun assessmentIdentityIssue(assessment: ModelAssessment): AssessmentReason? {
         val plans = assessment.planAssessments
         if (assessment.assessmentKey.isBlank() ||
             assessment.assessmentKey != plans.assessmentKey ||
@@ -123,25 +123,93 @@ class RunPlanOptimizer(
         ) {
             return AssessmentReason.ASSESSMENT_GRAPH_INVALID
         }
+        return null
+    }
+
+    private fun compatibleGraphIssue(
+        assessment: ModelAssessment,
+        snapshot: DeviceSnapshot,
+    ): AssessmentReason? {
+        val plans = assessment.planAssessments
+        val backends = snapshot.hardwareProfile.backends
+        if (backends.size > RecommendationPolicyV1.MAX_BACKEND_CAPABILITIES ||
+            backends.map { it.kind }.toSet().size != backends.size ||
+            backends.any(::backendCapabilityIsMalformed)
+        ) {
+            return AssessmentReason.ASSESSMENT_GRAPH_INVALID
+        }
+        val firstPlan = plans.values.firstOrNull()?.plan as? RunPlan
+        if (firstPlan != null) {
+            val limit = when (firstPlan) {
+                is LlmRunPlan -> RecommendationPolicyV1.MAX_LLM_CANDIDATES
+                is DiffusionRunPlan -> RecommendationPolicyV1.MAX_DIFFUSION_CANDIDATES
+            }
+            if (plans.values.size > limit) return AssessmentReason.ASSESSMENT_GRAPH_INVALID
+        } else if (plans.values.isNotEmpty()) {
+            return AssessmentReason.ASSESSMENT_GRAPH_INVALID
+        }
         if (plans.memoryTopology != snapshot.hardwareProfile.memoryTopology) {
             return AssessmentReason.DEVICE_CAPABILITIES_CHANGED
         }
+        val stableKeys = mutableSetOf<String>()
         for (candidate in plans.values) {
             val plan = candidate.plan as? RunPlan ?: return AssessmentReason.ASSESSMENT_GRAPH_INVALID
-            if (!performanceMatchesPlan(plan, candidate.performance)) {
-                return AssessmentReason.INVALID_PERFORMANCE_EVIDENCE
+            if (!samePlanKind(requireNotNull(firstPlan), plan) || !stableKeys.add(plan.stableKey)) {
+                return AssessmentReason.ASSESSMENT_GRAPH_INVALID
             }
             if (plan.memoryTopology != snapshot.hardwareProfile.memoryTopology) {
                 return AssessmentReason.DEVICE_CAPABILITIES_CHANGED
             }
-            val matchingBackends = snapshot.hardwareProfile.backends.filter { it.kind == plan.backend }
+            val matchingBackends = backends.filter { it.kind == plan.backend }
             if (matchingBackends.size != 1 || matchingBackends.single().status !=
-                com.debanshu777.caraml.core.platform.BackendStatus.AVAILABLE
+                com.debanshu777.caraml.core.platform.BackendStatus.AVAILABLE ||
+                matchingBackends.single().availabilityConfidence == null
             ) {
                 return AssessmentReason.DEVICE_CAPABILITIES_CHANGED
             }
+            if (validateRunPlan(plan) != null || !memoryPoolShapeIsCoherent(plan, candidate)) {
+                return AssessmentReason.ASSESSMENT_GRAPH_INVALID
+            }
+            if (!performanceMatchesPlan(plan, candidate.performance) ||
+                !performanceEvidenceIsCoherent(candidate)
+            ) {
+                return AssessmentReason.INVALID_PERFORMANCE_EVIDENCE
+            }
         }
         return null
+    }
+
+    private fun backendCapabilityIsMalformed(
+        capability: com.debanshu777.caraml.core.platform.BackendCapability,
+    ): Boolean =
+        capability.additionalAllocatableBytes?.let { it < 0L } == true ||
+            (capability.status == com.debanshu777.caraml.core.platform.BackendStatus.AVAILABLE &&
+                capability.availabilityConfidence == null) ||
+            (capability.status != com.debanshu777.caraml.core.platform.BackendStatus.AVAILABLE &&
+                (capability.additionalAllocatableBytes != null || capability.headroomConfidence != null)) ||
+            (capability.additionalAllocatableBytes == null && capability.headroomConfidence != null) ||
+            (capability.kind == com.debanshu777.caraml.core.platform.BackendKind.CPU &&
+                (capability.additionalAllocatableBytes != null || capability.headroomConfidence != null))
+
+    private fun samePlanKind(first: RunPlan, second: RunPlan): Boolean =
+        first is LlmRunPlan && second is LlmRunPlan ||
+            first is DiffusionRunPlan && second is DiffusionRunPlan
+
+    private fun memoryPoolShapeIsCoherent(plan: RunPlan, assessment: PlanAssessment): Boolean = when {
+        plan.backend == com.debanshu777.caraml.core.platform.BackendKind.CPU ->
+            assessment.gpuMemoryBytes == null && assessment.sharedMemoryBytes == null
+        plan.memoryTopology == MemoryTopology.UNIFIED ->
+            assessment.hostMemoryBytes == null && assessment.gpuMemoryBytes == null
+        plan.memoryTopology == MemoryTopology.DISCRETE -> assessment.sharedMemoryBytes == null
+        else -> false
+    }
+
+    private fun performanceEvidenceIsCoherent(assessment: PlanAssessment): Boolean {
+        val performance = assessment.performance
+        if (performance !is PerformanceEstimate.Unknown) return true
+        return assessment.confidence.performance == Confidence.LOW && performance.evidence.any {
+            it.reason == performance.reason && it.confidence == Confidence.LOW
+        }
     }
 
     private fun classifyCandidate(
@@ -248,6 +316,15 @@ class RunPlanOptimizer(
             return RequiredPool(safeRange, policyBudget.value, confidence)
         }
         return when {
+            plan.backend == com.debanshu777.caraml.core.platform.BackendKind.CPU &&
+                plan.memoryTopology == MemoryTopology.UNIFIED ->
+                listOfNotNull(
+                    required(
+                        assessment.hostMemoryBytes,
+                        snapshot.baseSharedBudgetBytes,
+                        snapshot.budgetConfidence.shared,
+                    ),
+                ).takeIf { it.size == 1 }
             plan.backend == com.debanshu777.caraml.core.platform.BackendKind.CPU ->
                 listOfNotNull(
                     required(

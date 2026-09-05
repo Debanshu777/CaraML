@@ -119,6 +119,26 @@ class RecommendationPolicyPropertyTest {
     }
 
     @Test
+    fun loweringSnapshotStorageBudgetConfidenceNeverImprovesCategoryAcrossOneThousandSeeds() {
+        val random = Random(6_009)
+        repeat(1_000) { seed ->
+            val risk = RiskTolerance.entries[random.nextInt(RiskTolerance.entries.size)]
+            val plan = task6PlanAssessment(storage = randomRange(random, 2_500))
+            val storageBudget = random.nextLong(1, 2_500)
+            fun recommendation(confidence: Confidence): RecommendationCategory = policy.recommend(
+                task6Assessment(plans = listOf(plan)),
+                task6Snapshot(
+                    storageBudget = storageBudget,
+                    storageConfidence = confidence,
+                ),
+                RecommendationProfile(riskTolerance = risk),
+            ).category
+
+            assertConfidenceDoesNotImprove(seed, ::recommendation)
+        }
+    }
+
+    @Test
     fun experimentalIsNeverStricterThanConservativeAcrossOneThousandSeeds() {
         val random = Random(6_004)
         repeat(1_000) { seed ->
