@@ -1,5 +1,7 @@
 package com.debanshu777.caraml.core.recommendation
 
+import com.debanshu777.caraml.core.platform.MemoryTopology
+
 enum class Confidence {
     LOW,
     MEDIUM,
@@ -54,6 +56,24 @@ enum class AssessmentReason {
     UNKNOWN_ARCHITECTURE,
     COMPONENT_ROLE_UNKNOWN,
     GPU_ALLOCATION_UNKNOWN,
+    INVALID_PERFORMANCE_EVIDENCE,
+    PERFORMANCE_ESTIMATED,
+    PERFORMANCE_CALIBRATED,
+    SPEED_NOT_VERIFIED,
+    PERFORMANCE_TARGET_MISSED,
+    PERFORMANCE_UNCERTAIN,
+    MEMORY_BOUNDS_UNKNOWN,
+    STORAGE_BOUNDS_UNKNOWN,
+    MEMORY_FIT_COMFORTABLE,
+    MEMORY_FIT_LIKELY,
+    MEMORY_FIT_BORDERLINE,
+    MEMORY_NO_FIT,
+    STORAGE_NO_FIT,
+    TIGHT_MEMORY_FIT,
+    FALLBACK_PLAN_REQUIRED,
+    SAFETY_EVIDENCE_LIMITED,
+    ENERGY_NOT_VERIFIED,
+    QUALITY_PROXY_USED,
 }
 
 data class Evidence(
@@ -109,6 +129,8 @@ data class PlanAssessment private constructor(
     val storageBytes: EstimateRange?,
     val confidence: AssessmentConfidence,
     val evidence: List<Evidence>,
+    val performance: PerformanceEstimate,
+    val utilityMetrics: PlanUtilityMetrics,
 ) {
     constructor(
         plan: PlanReference,
@@ -118,6 +140,8 @@ data class PlanAssessment private constructor(
         storageBytes: EstimateRange?,
         confidence: AssessmentConfidence,
         evidence: Collection<Evidence>,
+        performance: PerformanceEstimate = PerformanceEstimate.Unknown(AssessmentReason.SPEED_NOT_VERIFIED),
+        utilityMetrics: PlanUtilityMetrics = PlanUtilityMetrics(),
     ) : this(
         plan = plan,
         hostMemoryBytes = hostMemoryBytes,
@@ -126,14 +150,35 @@ data class PlanAssessment private constructor(
         storageBytes = storageBytes,
         confidence = confidence,
         evidence = evidence.toList(),
+        performance = performance,
+        utilityMetrics = utilityMetrics,
     )
 }
 
 @ConsistentCopyVisibility
 data class AssessedPlans private constructor(
     val values: List<PlanAssessment>,
+    val assessmentKey: String,
+    val compatibility: Compatibility,
+    val memoryTopology: MemoryTopology,
+    val reasons: List<AssessmentReason>,
+    val evidence: List<Evidence>,
 ) {
-    constructor(values: Collection<PlanAssessment>) : this(values.toList())
+    constructor(
+        values: Collection<PlanAssessment>,
+        assessmentKey: String = "",
+        compatibility: Compatibility = Compatibility.Compatible,
+        memoryTopology: MemoryTopology = MemoryTopology.UNKNOWN,
+        reasons: Collection<AssessmentReason> = emptyList(),
+        evidence: Collection<Evidence> = emptyList(),
+    ) : this(
+        values = values.toList(),
+        assessmentKey = assessmentKey,
+        compatibility = compatibility,
+        memoryTopology = memoryTopology,
+        reasons = reasons.toList(),
+        evidence = evidence.toList(),
+    )
 }
 
 @ConsistentCopyVisibility
