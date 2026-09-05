@@ -225,7 +225,7 @@ class DiffusionRunPlanGeneratorTest {
             workload(),
             settings(
                 backend = BackendKind.CPU,
-                topology = MemoryTopology.UNKNOWN,
+                topology = MemoryTopology.DISCRETE,
                 supportsMaxVram = true,
                 supportsLayerStreaming = true,
                 maxVramBytes = 2L * GIB,
@@ -236,7 +236,7 @@ class DiffusionRunPlanGeneratorTest {
             workload(offloadToCpu = true),
             settings(
                 backend = BackendKind.CPU,
-                topology = MemoryTopology.UNKNOWN,
+                topology = MemoryTopology.DISCRETE,
                 supportsMaxVram = true,
                 supportsLayerStreaming = true,
                 maxVramBytes = 2L * GIB,

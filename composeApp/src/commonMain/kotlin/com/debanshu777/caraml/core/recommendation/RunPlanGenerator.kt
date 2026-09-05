@@ -164,6 +164,7 @@ class RunPlanGenerator {
             if (
                 workload.maxVramBytes == null && workload.allowMaxVramFallback &&
                 settings.supportsMaxVram && settings.maxVramBytes != null &&
+                settings.backend != BackendKind.CPU &&
                 settings.memoryTopology == com.debanshu777.caraml.core.platform.MemoryTopology.DISCRETE
             ) {
                 add(DiffusionFallbackAxis.MAX_VRAM)
