@@ -213,6 +213,37 @@ class LlmRunPlanGeneratorTest {
         assertTrue(generator.llmCandidates(descriptor(), explicitQ8, excessiveGpuLayers).isEmpty())
     }
 
+    @Test
+    fun gpuLayerPlacementRejectsNegativeAndPreservesValidBoundaryCases() {
+        val workload = workload(kv = explicitF16())
+
+        fun acceleratorPlans(gpuLayerCount: Int?) = generator.llmCandidates(
+            descriptor(),
+            workload,
+            settings(
+                backend = BackendKind.CUDA,
+                memoryTopology = MemoryTopology.DISCRETE,
+                gpuLayerCount = gpuLayerCount,
+            ),
+        )
+        fun assertAccepted(gpuLayerCount: Int?) {
+            val plans = acceleratorPlans(gpuLayerCount)
+            assertTrue(plans.isNotEmpty())
+            assertTrue(plans.all { it.gpuLayerCount == gpuLayerCount })
+        }
+
+        assertTrue(acceleratorPlans(-1).isEmpty())
+        assertTrue(acceleratorPlans(0).isEmpty())
+        assertAccepted(16)
+        assertAccepted(32)
+        assertAccepted(null)
+        assertTrue(acceleratorPlans(33).isEmpty())
+
+        val cpuPlans = generator.llmCandidates(descriptor(), workload, settings(gpuLayerCount = 0))
+        assertTrue(cpuPlans.isNotEmpty())
+        assertTrue(cpuPlans.all { it.gpuLayerCount == 0 })
+    }
+
     private fun workload(
         context: Int = 8_192,
         minimumContext: Int = 512,

@@ -151,6 +151,7 @@ class RunPlanGenerator {
     }
 
     private fun validPlacement(descriptor: LlmModelDescriptor, settings: PlanningSettings): Boolean = when {
+        settings.gpuLayerCount?.let { it < 0 } == true -> false
         settings.backend == BackendKind.CPU -> settings.gpuLayerCount in listOf(null, 0)
         settings.gpuLayerCount == 0 -> false
         settings.gpuLayerCount != null && descriptor.transformerShape?.layerCount != null ->
