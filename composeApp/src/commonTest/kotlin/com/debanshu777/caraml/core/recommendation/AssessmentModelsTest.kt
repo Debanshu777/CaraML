@@ -6,6 +6,28 @@ import kotlin.test.assertNull
 import kotlin.test.assertSame
 
 class AssessmentModelsTest {
+    // Exact constructor types make adding policy fields to ModelAssessment (even with defaults)
+    // a compile-time contract failure without relying on JVM reflection.
+    private val objectiveAssessmentConstructor: (
+        String,
+        Compatibility,
+        AssessedPlans,
+        Long?,
+        Long?,
+        Long?,
+        Long?,
+        AssessmentConfidence,
+        Collection<Evidence>,
+    ) -> ModelAssessment = ::ModelAssessment
+
+    private val personalizedRecommendationConstructor: (
+        String,
+        RecommendationCategory,
+        PlanReference?,
+        Collection<AssessmentReason>,
+        RecommendationProfile,
+    ) -> PersonalizedRecommendation = ::PersonalizedRecommendation
+
     private data class FixturePlan(
         override val stableKey: String,
     ) : PlanReference
@@ -35,16 +57,16 @@ class AssessmentModelsTest {
             confidence = confidence,
             evidence = evidence,
         )
-        val assessment = ModelAssessment(
-            assessmentKey = "assessment-key",
-            compatibility = Compatibility.Compatible,
-            planAssessments = AssessedPlans(listOf(planAssessment)),
-            baseHostBudgetBytes = 4_000L,
-            baseGpuBudgetBytes = null,
-            baseSharedBudgetBytes = null,
-            baseStorageBudgetBytes = 8_000L,
-            confidence = confidence,
-            evidence = evidence,
+        val assessment = objectiveAssessmentConstructor(
+            "assessment-key",
+            Compatibility.Compatible,
+            AssessedPlans(listOf(planAssessment)),
+            4_000L,
+            null,
+            null,
+            8_000L,
+            confidence,
+            evidence,
         )
 
         assertEquals("assessment-key", assessment.assessmentKey)
@@ -65,12 +87,12 @@ class AssessmentModelsTest {
             riskTolerance = RiskTolerance.BALANCED,
             optimizationPriority = OptimizationPriority.QUALITY_CONTEXT,
         )
-        val recommendation = PersonalizedRecommendation(
-            assessmentKey = "assessment-key",
-            category = RecommendationCategory.USABLE,
-            selectedPlan = selectedPlan,
-            reasons = listOf(AssessmentReason.INVALID_METADATA),
-            profile = profile,
+        val recommendation = personalizedRecommendationConstructor(
+            "assessment-key",
+            RecommendationCategory.USABLE,
+            selectedPlan,
+            listOf(AssessmentReason.INVALID_METADATA),
+            profile,
         )
 
         assertEquals("assessment-key", recommendation.assessmentKey)
@@ -78,6 +100,68 @@ class AssessmentModelsTest {
         assertEquals(selectedPlan, recommendation.selectedPlan)
         assertEquals(listOf(AssessmentReason.INVALID_METADATA), recommendation.reasons)
         assertEquals(profile, recommendation.profile)
+    }
+
+    @Test
+    fun contractsSnapshotCallerOwnedCollections() {
+        val reasons = mutableListOf(AssessmentReason.INVALID_METADATA)
+        val evidence = mutableListOf(
+            Evidence(
+                reason = AssessmentReason.INVALID_METADATA,
+                confidence = Confidence.LOW,
+            ),
+        )
+        val plan = FixturePlan(stableKey = "repo/model@revision:plan-1")
+        val confidence = AssessmentConfidence(
+            compatibility = Confidence.LOW,
+            memory = Confidence.LOW,
+            storage = Confidence.LOW,
+            performance = Confidence.LOW,
+        )
+        val incompatible = Compatibility.Incompatible(reasons, evidence)
+        val unknown = Compatibility.Unknown(reasons, evidence)
+        val planAssessment = PlanAssessment(
+            plan = plan,
+            hostMemoryBytes = null,
+            gpuMemoryBytes = null,
+            sharedMemoryBytes = null,
+            storageBytes = null,
+            confidence = confidence,
+            evidence = evidence,
+        )
+        val callerPlans = mutableListOf(planAssessment)
+        val assessedPlans = AssessedPlans(callerPlans)
+        val assessment = ModelAssessment(
+            assessmentKey = "assessment-key",
+            compatibility = incompatible,
+            planAssessments = assessedPlans,
+            baseHostBudgetBytes = null,
+            baseGpuBudgetBytes = null,
+            baseSharedBudgetBytes = null,
+            baseStorageBudgetBytes = null,
+            confidence = confidence,
+            evidence = evidence,
+        )
+        val recommendation = PersonalizedRecommendation(
+            assessmentKey = assessment.assessmentKey,
+            category = RecommendationCategory.NEEDS_INFORMATION,
+            selectedPlan = null,
+            reasons = reasons,
+            profile = RecommendationProfile(),
+        )
+
+        reasons.clear()
+        evidence.clear()
+        callerPlans.clear()
+
+        assertEquals(listOf(AssessmentReason.INVALID_METADATA), incompatible.reasons)
+        assertEquals(listOf(AssessmentReason.INVALID_METADATA), unknown.reasons)
+        assertEquals(1, incompatible.evidence.size)
+        assertEquals(1, unknown.evidence.size)
+        assertEquals(1, planAssessment.evidence.size)
+        assertEquals(listOf(planAssessment), assessedPlans.values)
+        assertEquals(1, assessment.evidence.size)
+        assertEquals(listOf(AssessmentReason.INVALID_METADATA), recommendation.reasons)
     }
 
     private fun validRange(low: Long, likely: Long, high: Long): EstimateRange =

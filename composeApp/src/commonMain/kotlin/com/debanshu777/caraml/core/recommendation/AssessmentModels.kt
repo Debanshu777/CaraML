@@ -28,15 +28,27 @@ data class Evidence(
 sealed interface Compatibility {
     data object Compatible : Compatibility
 
-    data class Incompatible(
+    @ConsistentCopyVisibility
+    data class Incompatible private constructor(
         val reasons: List<AssessmentReason>,
-        val evidence: List<Evidence> = emptyList(),
-    ) : Compatibility
+        val evidence: List<Evidence>,
+    ) : Compatibility {
+        constructor(
+            reasons: Collection<AssessmentReason>,
+            evidence: Collection<Evidence> = emptyList(),
+        ) : this(reasons.toList(), evidence.toList())
+    }
 
-    data class Unknown(
+    @ConsistentCopyVisibility
+    data class Unknown private constructor(
         val reasons: List<AssessmentReason>,
-        val evidence: List<Evidence> = emptyList(),
-    ) : Compatibility
+        val evidence: List<Evidence>,
+    ) : Compatibility {
+        constructor(
+            reasons: Collection<AssessmentReason>,
+            evidence: Collection<Evidence> = emptyList(),
+        ) : this(reasons.toList(), evidence.toList())
+    }
 }
 
 enum class FitBand {
@@ -51,7 +63,8 @@ interface PlanReference {
     val stableKey: String
 }
 
-data class PlanAssessment(
+@ConsistentCopyVisibility
+data class PlanAssessment private constructor(
     val plan: PlanReference,
     val hostMemoryBytes: EstimateRange?,
     val gpuMemoryBytes: EstimateRange?,
@@ -59,13 +72,35 @@ data class PlanAssessment(
     val storageBytes: EstimateRange?,
     val confidence: AssessmentConfidence,
     val evidence: List<Evidence>,
-)
+) {
+    constructor(
+        plan: PlanReference,
+        hostMemoryBytes: EstimateRange?,
+        gpuMemoryBytes: EstimateRange?,
+        sharedMemoryBytes: EstimateRange?,
+        storageBytes: EstimateRange?,
+        confidence: AssessmentConfidence,
+        evidence: Collection<Evidence>,
+    ) : this(
+        plan = plan,
+        hostMemoryBytes = hostMemoryBytes,
+        gpuMemoryBytes = gpuMemoryBytes,
+        sharedMemoryBytes = sharedMemoryBytes,
+        storageBytes = storageBytes,
+        confidence = confidence,
+        evidence = evidence.toList(),
+    )
+}
 
-data class AssessedPlans(
+@ConsistentCopyVisibility
+data class AssessedPlans private constructor(
     val values: List<PlanAssessment>,
-)
+) {
+    constructor(values: Collection<PlanAssessment>) : this(values.toList())
+}
 
-data class ModelAssessment(
+@ConsistentCopyVisibility
+data class ModelAssessment private constructor(
     val assessmentKey: String,
     val compatibility: Compatibility,
     val planAssessments: AssessedPlans,
@@ -75,12 +110,49 @@ data class ModelAssessment(
     val baseStorageBudgetBytes: Long?,
     val confidence: AssessmentConfidence,
     val evidence: List<Evidence>,
-)
+) {
+    constructor(
+        assessmentKey: String,
+        compatibility: Compatibility,
+        planAssessments: AssessedPlans,
+        baseHostBudgetBytes: Long?,
+        baseGpuBudgetBytes: Long?,
+        baseSharedBudgetBytes: Long?,
+        baseStorageBudgetBytes: Long?,
+        confidence: AssessmentConfidence,
+        evidence: Collection<Evidence>,
+    ) : this(
+        assessmentKey = assessmentKey,
+        compatibility = compatibility,
+        planAssessments = planAssessments,
+        baseHostBudgetBytes = baseHostBudgetBytes,
+        baseGpuBudgetBytes = baseGpuBudgetBytes,
+        baseSharedBudgetBytes = baseSharedBudgetBytes,
+        baseStorageBudgetBytes = baseStorageBudgetBytes,
+        confidence = confidence,
+        evidence = evidence.toList(),
+    )
+}
 
-data class PersonalizedRecommendation(
+@ConsistentCopyVisibility
+data class PersonalizedRecommendation private constructor(
     val assessmentKey: String,
     val category: RecommendationCategory,
     val selectedPlan: PlanReference?,
     val reasons: List<AssessmentReason>,
     val profile: RecommendationProfile,
-)
+) {
+    constructor(
+        assessmentKey: String,
+        category: RecommendationCategory,
+        selectedPlan: PlanReference?,
+        reasons: Collection<AssessmentReason>,
+        profile: RecommendationProfile,
+    ) : this(
+        assessmentKey = assessmentKey,
+        category = category,
+        selectedPlan = selectedPlan,
+        reasons = reasons.toList(),
+        profile = profile,
+    )
+}
