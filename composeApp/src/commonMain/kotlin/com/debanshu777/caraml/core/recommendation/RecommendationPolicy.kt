@@ -9,45 +9,22 @@ class RecommendationPolicy(
         assessment: ModelAssessment,
         snapshot: DeviceSnapshot,
         profile: RecommendationProfile,
-    ): PersonalizedRecommendation {
-        when (val compatibility = assessment.compatibility) {
-            is Compatibility.Incompatible -> return PersonalizedRecommendation(
-                assessmentKey = assessment.assessmentKey,
-                category = RecommendationCategory.INCOMPATIBLE,
-                selectedPlan = null,
-                reasons = compatibility.reasons.distinct().ifEmpty {
-                    listOf(AssessmentReason.UNSUPPORTED_ENGINE_FEATURE)
-                },
-                profile = profile,
-            )
-            is Compatibility.Unknown -> return PersonalizedRecommendation(
-                assessmentKey = assessment.assessmentKey,
-                category = RecommendationCategory.NEEDS_INFORMATION,
-                selectedPlan = null,
-                reasons = compatibility.reasons.distinct().ifEmpty {
-                    listOf(AssessmentReason.ENGINE_SUPPORT_UNKNOWN)
-                },
-                profile = profile,
-            )
-            Compatibility.Compatible -> Unit
-        }
-        if (!runPlanOptimizer.snapshotIsFresh(snapshot)) {
-            return PersonalizedRecommendation(
-                assessmentKey = assessment.assessmentKey,
-                category = RecommendationCategory.NEEDS_INFORMATION,
-                selectedPlan = null,
-                reasons = listOf(AssessmentReason.RESOURCE_SNAPSHOT_STALE),
-                profile = profile,
-            )
-        }
-        val selected = runPlanOptimizer.select(assessment, snapshot, profile)
-        return PersonalizedRecommendation(
+    ): PersonalizedRecommendation = evaluate(assessment, snapshot, profile).recommendation
+
+    private fun evaluate(
+        assessment: ModelAssessment,
+        snapshot: DeviceSnapshot,
+        profile: RecommendationProfile,
+    ): PolicyEvaluation {
+        val selection = runPlanOptimizer.select(assessment, snapshot, profile)
+        val recommendation = PersonalizedRecommendation(
             assessmentKey = assessment.assessmentKey,
-            category = selected.category,
-            selectedPlan = selected.plan,
-            reasons = selected.reasons.ifEmpty { listOf(AssessmentReason.MEMORY_BOUNDS_UNKNOWN) },
+            category = selection.category,
+            selectedPlan = selection.plan,
+            reasons = selection.reasons.ifEmpty { listOf(AssessmentReason.MEMORY_BOUNDS_UNKNOWN) },
             profile = profile,
         )
+        return PolicyEvaluation(recommendation, selection)
     }
 
     fun sortKey(
@@ -55,11 +32,12 @@ class RecommendationPolicy(
         snapshot: DeviceSnapshot,
         profile: RecommendationProfile,
     ): RecommendationSortKey {
-        val recommendation = recommend(assessment, snapshot, profile)
+        val evaluation = evaluate(assessment, snapshot, profile)
+        val recommendation = evaluation.recommendation
         val selected = if (
             recommendation.category == RecommendationCategory.INCOMPATIBLE ||
             recommendation.category == RecommendationCategory.NEEDS_INFORMATION && assessment.planAssessments.values.isEmpty()
-        ) null else runPlanOptimizer.select(assessment, snapshot, profile)
+        ) null else evaluation.selection
         val confidence = selected?.let {
             AssessmentConfidence(
                 compatibility = assessment.confidence.compatibility,
@@ -79,4 +57,9 @@ class RecommendationPolicy(
             },
         )
     }
+
+    private data class PolicyEvaluation(
+        val recommendation: PersonalizedRecommendation,
+        val selection: SelectedPlan,
+    )
 }

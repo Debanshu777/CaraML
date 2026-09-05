@@ -38,16 +38,20 @@ class RecommendationPolicyPropertyTest {
     }
 
     @Test
-    fun loweringSafetyConfidenceNeverImprovesCategoryAcrossOneThousandSeeds() {
+    fun loweringCompatibilityConfidenceNeverImprovesCategoryAcrossOneThousandSeeds() {
         val random = Random(6_003)
         repeat(1_000) { seed ->
             val risk = RiskTolerance.entries[random.nextInt(RiskTolerance.entries.size)]
-            val plan = task6PlanAssessment(host = task6Range(100, 100, 100))
+            val plan = task6PlanAssessment(host = randomRange(random, 1_500))
+            val hostBudget = random.nextLong(1, 1_500)
             fun recommendation(confidence: Confidence): RecommendationCategory = policy.recommend(
                 task6Assessment(
-                    plans = listOf(plan.copyForTask6(confidence = task6Confidence(memory = confidence))),
+                    plans = listOf(
+                        plan.copyForTask6(confidence = task6Confidence(compatibility = confidence)),
+                    ),
+                    confidence = task6Confidence(compatibility = confidence),
                 ),
-                task6Snapshot(),
+                task6Snapshot(hostBudget = hostBudget),
                 RecommendationProfile(riskTolerance = risk),
             ).category
 
@@ -56,6 +60,61 @@ class RecommendationPolicyPropertyTest {
             val low = recommendation(Confidence.LOW)
             assertTrue(severity(medium) >= severity(high), "seed=$seed high=$high medium=$medium")
             assertTrue(severity(low) >= severity(medium), "seed=$seed medium=$medium low=$low")
+        }
+    }
+
+    @Test
+    fun loweringSelectedPlanMemoryConfidenceNeverImprovesCategoryAcrossOneThousandSeeds() {
+        val random = Random(6_006)
+        repeat(1_000) { seed ->
+            val risk = RiskTolerance.entries[random.nextInt(RiskTolerance.entries.size)]
+            val plan = task6PlanAssessment(host = randomRange(random, 1_500))
+            val hostBudget = random.nextLong(1, 1_500)
+            fun recommendation(confidence: Confidence): RecommendationCategory = policy.recommend(
+                task6Assessment(
+                    plans = listOf(plan.copyForTask6(confidence = task6Confidence(memory = confidence))),
+                ),
+                task6Snapshot(hostBudget = hostBudget),
+                RecommendationProfile(riskTolerance = risk),
+            ).category
+
+            assertConfidenceDoesNotImprove(seed, ::recommendation)
+        }
+    }
+
+    @Test
+    fun loweringSnapshotMemoryConfidenceNeverImprovesCategoryAcrossOneThousandSeeds() {
+        val random = Random(6_007)
+        repeat(1_000) { seed ->
+            val risk = RiskTolerance.entries[random.nextInt(RiskTolerance.entries.size)]
+            val plan = task6PlanAssessment(host = randomRange(random, 1_500))
+            val hostBudget = random.nextLong(1, 1_500)
+            fun recommendation(confidence: Confidence): RecommendationCategory = policy.recommend(
+                task6Assessment(plans = listOf(plan)),
+                task6Snapshot(hostBudget = hostBudget, hostConfidence = confidence),
+                RecommendationProfile(riskTolerance = risk),
+            ).category
+
+            assertConfidenceDoesNotImprove(seed, ::recommendation)
+        }
+    }
+
+    @Test
+    fun loweringSelectedPlanStorageConfidenceNeverImprovesCategoryAcrossOneThousandSeeds() {
+        val random = Random(6_008)
+        repeat(1_000) { seed ->
+            val risk = RiskTolerance.entries[random.nextInt(RiskTolerance.entries.size)]
+            val plan = task6PlanAssessment(storage = randomRange(random, 2_500))
+            val storageBudget = random.nextLong(1, 2_500)
+            fun recommendation(confidence: Confidence): RecommendationCategory = policy.recommend(
+                task6Assessment(
+                    plans = listOf(plan.copyForTask6(confidence = task6Confidence(storage = confidence))),
+                ),
+                task6Snapshot(storageBudget = storageBudget),
+                RecommendationProfile(riskTolerance = risk),
+            ).category
+
+            assertConfidenceDoesNotImprove(seed, ::recommendation)
         }
     }
 
@@ -88,7 +147,7 @@ class RecommendationPolicyPropertyTest {
     }
 
     @Test
-    fun incompatibilityAndLowConfidenceHardSlowResultsStayWithinSafetyBounds() {
+    fun incompatibilityAndLowerConfidenceHardSlowResultsStayWithinSafetyBounds() {
         val random = Random(6_005)
         repeat(1_000) { seed ->
             val profile = RecommendationProfile(
@@ -102,21 +161,28 @@ class RecommendationPolicyPropertyTest {
                 task6Snapshot(),
                 profile,
             )
-            val uncertainSlow = policy.recommend(
+            fun hardSlow(confidence: Confidence) = policy.recommend(
                 task6Assessment(
                     plans = listOf(
                         task6PlanAssessment(
-                            performance = task6LlmPerformance(0.01, Confidence.LOW),
+                            confidence = task6Confidence(performance = confidence),
+                            performance = task6LlmPerformance(0.01, confidence),
                         ),
                     ),
                 ),
                 task6Snapshot(),
                 profile,
             )
+            val highSlow = hardSlow(Confidence.HIGH)
+            val mediumSlow = hardSlow(Confidence.MEDIUM)
+            val uncertainSlow = hardSlow(Confidence.LOW)
 
             assertEquals(RecommendationCategory.INCOMPATIBLE, incompatible.category, "seed=$seed")
+            assertEquals(RecommendationCategory.NOT_SUITABLE, highSlow.category, "seed=$seed")
+            assertEquals(RecommendationCategory.NOT_SUITABLE, mediumSlow.category, "seed=$seed")
             assertEquals(RecommendationCategory.RISKY, uncertainSlow.category, "seed=$seed")
             assertTrue(uncertainSlow.reasons.contains(AssessmentReason.PERFORMANCE_UNCERTAIN))
+            assertTrue(uncertainSlow.reasons.contains(AssessmentReason.SPEED_NOT_VERIFIED))
         }
     }
 
@@ -134,6 +200,24 @@ class RecommendationPolicyPropertyTest {
         RecommendationCategory.NEEDS_INFORMATION -> 3
         RecommendationCategory.NOT_SUITABLE -> 4
         RecommendationCategory.INCOMPATIBLE -> 5
+    }
+
+    private fun randomRange(random: Random, upperExclusive: Long): EstimateRange {
+        val low = random.nextLong(1, upperExclusive)
+        val likely = random.nextLong(low, upperExclusive)
+        val high = random.nextLong(likely, upperExclusive)
+        return task6Range(low, likely, high)
+    }
+
+    private fun assertConfidenceDoesNotImprove(
+        seed: Int,
+        recommendation: (Confidence) -> RecommendationCategory,
+    ) {
+        val high = recommendation(Confidence.HIGH)
+        val medium = recommendation(Confidence.MEDIUM)
+        val low = recommendation(Confidence.LOW)
+        assertTrue(severity(medium) >= severity(high), "seed=$seed high=$high medium=$medium")
+        assertTrue(severity(low) >= severity(medium), "seed=$seed medium=$medium low=$low")
     }
 }
 

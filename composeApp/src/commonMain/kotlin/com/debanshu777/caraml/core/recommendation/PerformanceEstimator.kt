@@ -15,7 +15,7 @@ data class CalibrationKey(
     val architectureFamily: String,
     val quantizationFamily: String,
     val workloadBucket: String,
-    val engineVersion: String = "unknown",
+    val engineVersion: String,
     val estimatorVersion: Int = PerformanceEstimator.VERSION,
     val metricKind: MetricKind = MetricKind.PERFORMANCE,
     val memoryPool: String? = null,
@@ -48,12 +48,14 @@ data class CalibrationCorrection(
 )
 
 interface CalibrationSource {
+    fun engineVersion(): String?
     fun backendProfileFor(backend: BackendKind): BackendPerformanceProfile?
     fun correctionFor(key: CalibrationKey): CalibrationCorrection?
     fun revision(): Long
 }
 
 data object NoCalibrationSource : CalibrationSource {
+    override fun engineVersion(): String? = null
     override fun backendProfileFor(backend: BackendKind): BackendPerformanceProfile? = null
     override fun correctionFor(key: CalibrationKey): CalibrationCorrection? = null
     override fun revision(): Long = 0L
@@ -170,6 +172,11 @@ class PerformanceEstimator {
         if (backend == null || backend.status != BackendStatus.AVAILABLE) {
             return unknown(AssessmentReason.SPEED_NOT_VERIFIED, "backend-not-validated")
         }
+        val engineVersion = calibration.engineVersion()
+            ?: return unknown(AssessmentReason.SPEED_NOT_VERIFIED, "engine-version-unavailable")
+        if (!isValidEngineVersion(engineVersion)) {
+            return unknown(AssessmentReason.INVALID_PERFORMANCE_EVIDENCE, "engine-version-invalid")
+        }
         val backendProfile = calibration.backendProfileFor(plan.backend)
             ?: return unknown(AssessmentReason.SPEED_NOT_VERIFIED, "calibration-unavailable")
         if (!validPositiveFinite(backendProfile.sustainedBytesPerSecond) ||
@@ -178,7 +185,7 @@ class PerformanceEstimator {
             return unknown(AssessmentReason.INVALID_PERFORMANCE_EVIDENCE, "backend-profile")
         }
 
-        val key = calibrationKey(descriptor, plan)
+        val key = calibrationKey(descriptor, plan, engineVersion)
         val correction = calibration.correctionFor(key)
         if (correction != null && !validCorrection(correction)) {
             return unknown(AssessmentReason.INVALID_PERFORMANCE_EVIDENCE, "calibration-correction")
@@ -327,7 +334,11 @@ class PerformanceEstimator {
         return PerformanceEstimate.DiffusionImage(secondsPerStep, total, reference, evidence)
     }
 
-    private fun calibrationKey(descriptor: ModelDescriptor, plan: RunPlan): CalibrationKey = CalibrationKey(
+    private fun calibrationKey(
+        descriptor: ModelDescriptor,
+        plan: RunPlan,
+        engineVersion: String,
+    ): CalibrationKey = CalibrationKey(
         backend = plan.backend,
         architectureFamily = when (descriptor) {
             is LlmModelDescriptor -> descriptor.architecture ?: "unknown"
@@ -345,6 +356,7 @@ class PerformanceEstimator {
             is LlmRunPlan -> "ctx-${plan.contextTokens}"
             is DiffusionRunPlan -> "${plan.mode.name.lowercase()}-${plan.width}x${plan.height}-${plan.steps}"
         },
+        engineVersion = engineVersion,
     )
 
     private fun durationRange(
@@ -433,6 +445,9 @@ class PerformanceEstimator {
 
     private fun validPositiveFinite(value: Double): Boolean = value.isFinite() && value > 0.0
 
+    private fun isValidEngineVersion(value: String): Boolean =
+        value.length in 1..DescriptorLimits.MAX_METADATA_STRING_LENGTH && ENGINE_VERSION.matches(value)
+
     private fun minimumConfidence(first: Confidence, second: Confidence): Confidence =
         if (first.ordinal <= second.ordinal) first else second
 
@@ -447,5 +462,6 @@ class PerformanceEstimator {
         private const val DEFAULT_PROMPT_REFERENCE_TOKENS: Int = 512
         private const val REFERENCE_PIXELS: Long = 512L * 512L
         private const val REFERENCE_STEPS: Int = 20
+        private val ENGINE_VERSION = Regex("[A-Za-z0-9][A-Za-z0-9._+-]*")
     }
 }

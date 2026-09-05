@@ -104,6 +104,10 @@ actual class DeviceCapabilities actual constructor() {
             },
             capturedAtEpochMs = (NSDate().timeIntervalSince1970 * 1_000.0).toLong(),
             evidence = evidence,
+            confidence = ResourcePoolConfidence(
+                host = available?.let { Confidence.HIGH },
+                gpu = gpuHeadroom?.let { Confidence.HIGH },
+            ),
         )
     }
 

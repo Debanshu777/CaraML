@@ -2,12 +2,42 @@ package com.debanshu777.caraml.core.recommendation
 
 import com.debanshu777.caraml.core.platform.BackendKind
 import com.debanshu777.caraml.core.platform.MemoryTopology
+import com.debanshu777.caraml.core.rating.SdArchitecture
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class RunPlanOptimizerTest {
     private val optimizer = RunPlanOptimizer()
+
+    @Test
+    fun versionedUtilityAndQualityConstantsMatchThePolicyFixture() {
+        assertEquals(0.05, RecommendationPolicyV1.UTILITY_METRIC_MIN)
+        assertEquals(1.0, RecommendationPolicyV1.UTILITY_METRIC_MAX)
+        assertEquals(
+            mapOf(
+                OptimizationPriority.SPEED_EFFICIENCY to
+                    RecommendationPolicyV1.UtilityWeights(0.60, 0.25, 0.05, 0.00, 0.10),
+                OptimizationPriority.BALANCED to
+                    RecommendationPolicyV1.UtilityWeights(0.30, 0.10, 0.30, 0.20, 0.10),
+                OptimizationPriority.QUALITY_CONTEXT to
+                    RecommendationPolicyV1.UtilityWeights(0.10, 0.05, 0.55, 0.25, 0.05),
+            ),
+            RecommendationPolicyV1.utilityWeights,
+        )
+        assertEquals(
+            RecommendationPolicyV1.QualityProxyWeights(0.50, 0.35),
+            RecommendationPolicyV1.llmQualityProxyWeights,
+        )
+        assertEquals(
+            RecommendationPolicyV1.QualityProxyWeights(0.35, 0.65),
+            RecommendationPolicyV1.diffusionQualityProxyWeights,
+        )
+        assertEquals(0.92, RecommendationPolicyV1.llmQuantizationQualityProxy.getValue("Q8_0"))
+        assertEquals(0.80, RecommendationPolicyV1.diffusionArchitectureQualityProxy.getValue(SdArchitecture.SDXL))
+        assertEquals(13_000_000_000L, RecommendationPolicyV1.LLM_PARAMETER_QUALITY_TARGET)
+        assertEquals(1_073_741_824L, RecommendationPolicyV1.STORAGE_EFFICIENCY_TARGET_BYTES)
+    }
 
     @Test
     fun directSelectionCannotBypassHardIncompatibility() {
@@ -44,6 +74,35 @@ class RunPlanOptimizerTest {
 
         assertEquals(safe.plan.stableKey, selected.plan?.stableKey)
         assertEquals(RecommendationCategory.RECOMMENDED, selected.category)
+    }
+
+    @Test
+    fun unusedLowConfidenceCandidateDoesNotCapTheSelectedHighConfidencePlan() {
+        val selectedPlan = task6PlanAssessment(
+            plan = task6LlmPlan(keyContext = 4_096),
+            host = task6Range(100, 100, 100),
+            confidence = task6Confidence(memory = Confidence.HIGH),
+            metrics = PlanUtilityMetrics(quality = 1.0),
+        )
+        val unusedLowCandidate = task6PlanAssessment(
+            plan = task6LlmPlan(keyContext = 2_048),
+            host = task6Range(900, 900, 900),
+            confidence = task6Confidence(memory = Confidence.LOW),
+            metrics = PlanUtilityMetrics(quality = 0.1),
+        )
+
+        val selected = optimizer.select(
+            task6Assessment(
+                plans = listOf(selectedPlan, unusedLowCandidate),
+                confidence = task6Confidence(memory = Confidence.LOW),
+            ),
+            task6Snapshot(hostConfidence = Confidence.HIGH),
+            RecommendationProfile(),
+        )
+
+        assertEquals(selectedPlan.plan.stableKey, selected.plan?.stableKey)
+        assertEquals(RecommendationCategory.RECOMMENDED, selected.category)
+        assertEquals(Confidence.HIGH, selected.safetyConfidence)
     }
 
     @Test

@@ -8,6 +8,7 @@ import com.debanshu777.caraml.core.platform.HardwareProfile
 import com.debanshu777.caraml.core.platform.MemoryTopology
 import com.debanshu777.caraml.core.platform.PowerPolicyState
 import com.debanshu777.caraml.core.platform.ResourceSnapshot
+import com.debanshu777.caraml.core.platform.ResourcePoolConfidence
 import com.debanshu777.caraml.core.platform.ThermalState
 import com.debanshu777.caraml.core.rating.SdArchitecture
 import com.debanshu777.huggingfacemanager.sdcpp.ComponentRole
@@ -69,6 +70,101 @@ class RecommendationPolicyTest {
         assertEquals(listOf(AssessmentReason.UNSUPPORTED_FORMAT), incompatible.reasons)
         assertEquals(RecommendationCategory.NEEDS_INFORMATION, unknown.category)
         assertEquals(listOf(AssessmentReason.ENGINE_SUPPORT_UNKNOWN), unknown.reasons)
+    }
+
+    @Test
+    fun mismatchedOuterAndInnerAssessmentIdentityOrCompatibilityNeedsInformation() {
+        val identityMismatch = policy.recommend(
+            task6Assessment(
+                assessmentKey = "outer/model@revision:file.gguf",
+                innerAssessmentKey = "inner/model@revision:file.gguf",
+            ),
+            task6Snapshot(),
+            RecommendationProfile(),
+        )
+        val compatibilityMismatch = policy.recommend(
+            task6Assessment(
+                compatibility = Compatibility.Compatible,
+                innerCompatibility = Compatibility.Unknown(
+                    listOf(AssessmentReason.ENGINE_SUPPORT_UNKNOWN),
+                ),
+            ),
+            task6Snapshot(),
+            RecommendationProfile(),
+        )
+
+        listOf(identityMismatch, compatibilityMismatch).forEach { result ->
+            assertEquals(RecommendationCategory.NEEDS_INFORMATION, result.category)
+            assertEquals(listOf(AssessmentReason.ASSESSMENT_GRAPH_INVALID), result.reasons)
+        }
+    }
+
+    @Test
+    fun cachedTopologyOrCandidateTopologyMismatchNeedsFreshAssessment() {
+        val assessedTopologyMismatch = policy.recommend(
+            task6Assessment(innerTopology = MemoryTopology.UNIFIED),
+            task6Snapshot(topology = MemoryTopology.UNKNOWN),
+            RecommendationProfile(),
+        )
+        val candidateTopologyMismatch = policy.recommend(
+            task6Assessment(
+                plans = listOf(
+                    task6PlanAssessment(
+                        plan = task6LlmPlan(topology = MemoryTopology.UNIFIED),
+                        host = null,
+                        shared = task6Range(100, 100, 100),
+                    ),
+                ),
+                innerTopology = MemoryTopology.UNKNOWN,
+            ),
+            task6Snapshot(topology = MemoryTopology.UNKNOWN),
+            RecommendationProfile(),
+        )
+
+        listOf(assessedTopologyMismatch, candidateTopologyMismatch).forEach { result ->
+            assertEquals(RecommendationCategory.NEEDS_INFORMATION, result.category)
+            assertEquals(listOf(AssessmentReason.DEVICE_CAPABILITIES_CHANGED), result.reasons)
+        }
+    }
+
+    @Test
+    fun unavailableBackendInAnyCandidateInvalidatesTheCachedCandidateGraph() {
+        val availableCpu = task6PlanAssessment(plan = task6LlmPlan(keyContext = 4_096))
+        val staleCuda = task6PlanAssessment(
+            plan = task6LlmPlan(
+                keyContext = 2_048,
+                backend = BackendKind.CUDA,
+                topology = MemoryTopology.UNKNOWN,
+            ),
+        )
+        val snapshot = task6Snapshot(
+            topology = MemoryTopology.UNKNOWN,
+            backends = listOf(
+                task6Backend(BackendKind.CPU, BackendStatus.AVAILABLE),
+                task6Backend(BackendKind.CUDA, BackendStatus.UNAVAILABLE),
+            ),
+        )
+
+        val result = policy.recommend(
+            task6Assessment(plans = listOf(availableCpu, staleCuda)),
+            snapshot,
+            RecommendationProfile(),
+        )
+
+        assertEquals(RecommendationCategory.NEEDS_INFORMATION, result.category)
+        assertEquals(listOf(AssessmentReason.DEVICE_CAPABILITIES_CHANGED), result.reasons)
+    }
+
+    @Test
+    fun cpuPlanAlsoRequiresACurrentAvailableBackendCapability() {
+        val result = policy.recommend(
+            task6Assessment(),
+            task6Snapshot(backends = emptyList()),
+            RecommendationProfile(),
+        )
+
+        assertEquals(RecommendationCategory.NEEDS_INFORMATION, result.category)
+        assertEquals(listOf(AssessmentReason.DEVICE_CAPABILITIES_CHANGED), result.reasons)
     }
 
     @Test
@@ -186,6 +282,83 @@ class RecommendationPolicyTest {
     }
 
     @Test
+    fun performanceEstimateKindMustMatchTheExecutablePlan() {
+        val diffusionEstimate = PerformanceEstimate.DiffusionImage(
+            secondsPerStep = task6PerformanceRange(1.0, Confidence.HIGH),
+            totalTimeSeconds = task6PerformanceRange(20.0, Confidence.HIGH),
+            referenceTotalTimeSeconds = task6PerformanceRange(20.0, Confidence.HIGH),
+            evidence = emptyList(),
+        )
+        val llmWithDiffusionEstimate = policy.recommend(
+            task6Assessment(
+                plans = listOf(
+                    task6PlanAssessment(
+                        performance = diffusionEstimate,
+                        confidence = task6Confidence(performance = Confidence.HIGH),
+                    ),
+                ),
+            ),
+            task6Snapshot(),
+            RecommendationProfile(),
+        )
+
+        val diffusionPlan = task6DiffusionPlan()
+        val imageWithLlmEstimate = policy.recommend(
+            task6Assessment(
+                plans = listOf(
+                    task6PlanAssessment(
+                        plan = diffusionPlan,
+                        host = null,
+                        shared = task6Range(100, 100, 100),
+                        performance = task6LlmPerformance(10.0, Confidence.HIGH),
+                        confidence = task6Confidence(performance = Confidence.HIGH),
+                    ),
+                ),
+            ),
+            task6Snapshot(
+                hostBudget = null,
+                sharedBudget = 1_000,
+                topology = MemoryTopology.UNIFIED,
+                backends = listOf(task6Backend(BackendKind.METAL)),
+            ),
+            RecommendationProfile(),
+        )
+
+        listOf(llmWithDiffusionEstimate, imageWithLlmEstimate).forEach { result ->
+            assertEquals(RecommendationCategory.NEEDS_INFORMATION, result.category)
+            assertEquals(listOf(AssessmentReason.INVALID_PERFORMANCE_EVIDENCE), result.reasons)
+        }
+    }
+
+    @Test
+    fun comparedRangeAndWrapperPerformanceConfidenceAreReconciledConservatively() {
+        val promptHighDecodeLow = PerformanceEstimate.Llm(
+            promptTokensPerSecond = task6PerformanceRange(10.0, Confidence.HIGH),
+            decodeTokensPerSecond = task6PerformanceRange(0.1, Confidence.LOW),
+            timeToFirstTokenSeconds = task6PerformanceRange(1.0, Confidence.HIGH),
+            loadTimeSeconds = task6PerformanceRange(1.0, Confidence.HIGH),
+            evidence = emptyList(),
+        )
+        val rangeLowWrapperHigh = recommend(
+            range = task6Range(100, 100, 100),
+            performance = promptHighDecodeLow,
+            performanceWrapperConfidence = Confidence.HIGH,
+        )
+        val rangeHighWrapperLow = recommend(
+            range = task6Range(100, 100, 100),
+            performance = task6LlmPerformance(0.1, Confidence.HIGH),
+            performanceWrapperConfidence = Confidence.LOW,
+        )
+
+        listOf(rangeLowWrapperHigh, rangeHighWrapperLow).forEach { result ->
+            assertEquals(RecommendationCategory.RISKY, result.category)
+            assertTrue(result.reasons.contains(AssessmentReason.INVALID_PERFORMANCE_EVIDENCE))
+            assertTrue(result.reasons.contains(AssessmentReason.PERFORMANCE_UNCERTAIN))
+            assertTrue(result.reasons.contains(AssessmentReason.SPEED_NOT_VERIFIED))
+        }
+    }
+
+    @Test
     fun storageReserveAndNoFitAreProfileIndependent() {
         RiskTolerance.entries.forEach { risk ->
             val result = policy.recommend(
@@ -227,6 +400,25 @@ class RecommendationPolicyTest {
     }
 
     @Test
+    fun sortKeyReusesOneSelectionAtTheFreshnessBoundary() {
+        var clockReads = 0
+        val boundaryPolicy = RecommendationPolicy(
+            RunPlanOptimizer(clock = {
+                clockReads += 1
+                31_000L
+            }),
+        )
+
+        boundaryPolicy.sortKey(
+            task6Assessment(),
+            task6Snapshot(capturedAtEpochMs = 1_000L),
+            RecommendationProfile(),
+        )
+
+        assertEquals(1, clockReads)
+    }
+
+    @Test
     fun diffusionReferenceTargetUsesTheSameDowngradeAndHardFloorRules() {
         fun image(seconds: Double) = PerformanceEstimate.DiffusionImage(
             secondsPerStep = task6PerformanceRange(seconds / 20.0, Confidence.MEDIUM),
@@ -265,27 +457,50 @@ class RecommendationPolicyTest {
         risk: RiskTolerance = RiskTolerance.BALANCED,
         performance: PerformanceEstimate = PerformanceEstimate.Unknown(AssessmentReason.SPEED_NOT_VERIFIED),
         metrics: PlanUtilityMetrics = PlanUtilityMetrics(),
-    ): PersonalizedRecommendation = policy.recommend(
-        task6Assessment(
-            plans = listOf(
-                task6PlanAssessment(
-                    host = range,
-                    confidence = task6Confidence(
-                        performance = when (performance) {
-                            is PerformanceEstimate.Unknown -> Confidence.LOW
-                            is PerformanceEstimate.Llm -> performance.decodeTokensPerSecond.confidence
-                            is PerformanceEstimate.DiffusionImage -> performance.referenceTotalTimeSeconds.confidence
-                            is PerformanceEstimate.DiffusionVideo -> performance.totalTimeSeconds.confidence
-                        },
-                    ),
-                    performance = performance,
-                    metrics = metrics,
+        performanceWrapperConfidence: Confidence? = null,
+    ): PersonalizedRecommendation {
+        val diffusionMode = when (performance) {
+            is PerformanceEstimate.DiffusionImage -> DiffusionMode.IMAGE
+            is PerformanceEstimate.DiffusionVideo -> DiffusionMode.VIDEO
+            is PerformanceEstimate.Llm, is PerformanceEstimate.Unknown -> null
+        }
+        val plan = diffusionMode?.let(::task6DiffusionPlan) ?: task6LlmPlan()
+        val planAssessment = task6PlanAssessment(
+            plan = plan,
+            host = range.takeIf { diffusionMode == null },
+            shared = range.takeIf { diffusionMode != null },
+            confidence = task6Confidence(
+                performance = performanceWrapperConfidence ?: when (performance) {
+                    is PerformanceEstimate.Unknown -> Confidence.LOW
+                    is PerformanceEstimate.Llm -> performance.decodeTokensPerSecond.confidence
+                    is PerformanceEstimate.DiffusionImage -> performance.referenceTotalTimeSeconds.confidence
+                    is PerformanceEstimate.DiffusionVideo -> performance.totalTimeSeconds.confidence
+                },
+            ),
+            performance = performance,
+            metrics = metrics,
+        )
+        val snapshot = if (diffusionMode == null) {
+            task6Snapshot(hostBudget = 1_000, storageBudget = 2_000)
+        } else {
+            task6Snapshot(
+                hostBudget = null,
+                sharedBudget = 1_000,
+                storageBudget = 2_000,
+                topology = MemoryTopology.UNIFIED,
+                backends = listOf(task6Backend(BackendKind.METAL)),
+            )
+        }
+        return policy.recommend(
+            task6Assessment(
+                plans = listOf(
+                    planAssessment,
                 ),
             ),
-        ),
-        task6Snapshot(hostBudget = 1_000, storageBudget = 2_000),
-        RecommendationProfile(riskTolerance = risk),
-    )
+            snapshot,
+            RecommendationProfile(riskTolerance = risk),
+        )
+    }
 
     private fun rangeFor(band: FitBand, budget: Long): EstimateRange = when (band) {
         FitBand.COMFORTABLE -> task6Range(budget, budget, budget)
@@ -351,10 +566,20 @@ internal fun task6Assessment(
     compatibility: Compatibility = Compatibility.Compatible,
     plans: List<PlanAssessment> = listOf(task6PlanAssessment()),
     confidence: AssessmentConfidence = task6Confidence(),
+    assessmentKey: String = TASK6_ASSESSMENT_KEY,
+    innerAssessmentKey: String = assessmentKey,
+    innerCompatibility: Compatibility = compatibility,
+    innerTopology: MemoryTopology = (plans.firstOrNull()?.plan as? RunPlan)?.memoryTopology
+        ?: MemoryTopology.UNKNOWN,
 ) = ModelAssessment(
-    assessmentKey = "owner/model@0123456789abcdef0123456789abcdef01234567:model-Q4_K_M.gguf",
+    assessmentKey = assessmentKey,
     compatibility = compatibility,
-    planAssessments = AssessedPlans(plans),
+    planAssessments = AssessedPlans(
+        values = plans,
+        assessmentKey = innerAssessmentKey,
+        compatibility = innerCompatibility,
+        memoryTopology = innerTopology,
+    ),
     baseHostBudgetBytes = 1_000,
     baseGpuBudgetBytes = null,
     baseSharedBudgetBytes = null,
@@ -370,10 +595,18 @@ internal fun task6Snapshot(
     storageBudget: Long? = 2_000,
     isFresh: Boolean = true,
     capturedAtEpochMs: Long = Clock.System.now().toEpochMilliseconds(),
+    hostConfidence: Confidence? = hostBudget?.let { Confidence.HIGH },
+    gpuConfidence: Confidence? = gpuBudget?.let { Confidence.HIGH },
+    sharedConfidence: Confidence? = sharedBudget?.let { Confidence.HIGH },
+    storageConfidence: Confidence? = storageBudget?.let { Confidence.HIGH },
+    topology: MemoryTopology = if (gpuBudget == null) MemoryTopology.UNKNOWN else MemoryTopology.DISCRETE,
+    backends: List<BackendCapability> = listOf(
+        task6Backend(if (gpuBudget == null) BackendKind.CPU else BackendKind.CUDA),
+    ),
 ) = DeviceSnapshot(
     hardwareProfile = task6Hardware(
-        backend = if (gpuBudget == null) BackendKind.CPU else BackendKind.CUDA,
-        topology = if (gpuBudget == null) MemoryTopology.UNKNOWN else MemoryTopology.DISCRETE,
+        topology = topology,
+        backends = backends,
     ),
     resources = task6ResourceSnapshot(
         hostBytes = hostBudget,
@@ -387,6 +620,12 @@ internal fun task6Snapshot(
     baseStorageBudgetBytes = storageBudget,
     isFresh = isFresh,
     evidence = emptyList(),
+    budgetConfidence = ResourcePoolConfidence(
+        host = hostConfidence,
+        gpu = gpuConfidence,
+        shared = sharedConfidence,
+        storage = storageConfidence,
+    ),
 )
 
 internal fun task6ResourceSnapshot(
@@ -394,6 +633,9 @@ internal fun task6ResourceSnapshot(
     gpuBytes: Long? = null,
     storageBytes: Long? = 2_000,
     capturedAtEpochMs: Long = Clock.System.now().toEpochMilliseconds(),
+    hostConfidence: Confidence? = hostBytes?.let { Confidence.HIGH },
+    gpuConfidence: Confidence? = gpuBytes?.let { Confidence.HIGH },
+    storageConfidence: Confidence? = storageBytes?.let { Confidence.HIGH },
 ) = ResourceSnapshot(
     additionalAllocatableHostBytes = hostBytes,
     additionalAllocatableGpuBytes = gpuBytes,
@@ -407,6 +649,11 @@ internal fun task6ResourceSnapshot(
     powerPolicyState = PowerPolicyState.NORMAL,
     capturedAtEpochMs = capturedAtEpochMs,
     evidence = emptyList(),
+    confidence = ResourcePoolConfidence(
+        host = hostConfidence,
+        gpu = gpuConfidence,
+        storage = storageConfidence,
+    ),
 )
 
 internal fun task6Hardware(
@@ -414,14 +661,35 @@ internal fun task6Hardware(
     performanceCores: Int? = 4,
     backend: BackendKind = BackendKind.CPU,
     topology: MemoryTopology = MemoryTopology.UNKNOWN,
+    backends: List<BackendCapability> = listOf(task6Backend(backend)),
 ) = HardwareProfile(
     cpuArchitecture = "fixture",
     logicalCoreCount = logicalCores,
     performanceCoreCount = performanceCores,
     instructionSets = emptySet(),
-    backends = listOf(BackendCapability(backend, BackendStatus.AVAILABLE, null, emptyList())),
+    backends = backends,
     memoryTopology = topology,
     evidence = emptyList(),
+)
+
+internal fun task6Backend(
+    kind: BackendKind,
+    status: BackendStatus = BackendStatus.AVAILABLE,
+) = BackendCapability(
+    kind = kind,
+    status = status,
+    additionalAllocatableBytes = null,
+    evidence = listOf(
+        Evidence(
+            if (status == BackendStatus.AVAILABLE) {
+                AssessmentReason.BACKEND_CAPABILITY_VERIFIED
+            } else {
+                AssessmentReason.REQUIRED_BACKEND_UNAVAILABLE
+            },
+            Confidence.HIGH,
+            "fixture-${kind.name.lowercase()}",
+        ),
+    ),
 )
 
 internal fun task6LlmPlan(
@@ -446,6 +714,7 @@ internal fun task6LlmPlan(
 internal fun task6LlmDescriptor(
     sizeBytes: Long = 1_073_741_824L,
     parameterCount: Long? = 7_000_000_000L,
+    quantization: QuantizationEvidence = QuantizationEvidence.Known("Q4_K_M"),
 ) = LlmModelDescriptor(
     repositoryId = "owner/model",
     revision = "0123456789abcdef0123456789abcdef01234567",
@@ -460,7 +729,7 @@ internal fun task6LlmDescriptor(
         evidence = emptyList(),
     ),
     architecture = "llama",
-    quantization = QuantizationEvidence.Known("Q4_K_M"),
+    quantization = quantization,
     parameterCount = parameterCount,
     contextLimit = 16_384,
     transformerShape = TransformerShape(32, 8, 32, 4_096, 128),
@@ -503,7 +772,11 @@ internal fun task6InvalidLlmWorkload() = LlmWorkloadConfig(
     evidence = emptyList(),
 )
 
-internal fun task6DiffusionDescriptor(mode: DiffusionMode = DiffusionMode.IMAGE): DiffusionModelDescriptor {
+internal fun task6DiffusionDescriptor(
+    mode: DiffusionMode = DiffusionMode.IMAGE,
+    architecture: SdArchitecture = SdArchitecture.SDXL,
+    quantizationDistribution: Set<String> = setOf("F16"),
+): DiffusionModelDescriptor {
     val primary = ModelFileIdentity(
         repositoryId = "owner/diffusion",
         revision = "0123456789abcdef0123456789abcdef01234567",
@@ -533,15 +806,39 @@ internal fun task6DiffusionDescriptor(mode: DiffusionMode = DiffusionMode.IMAGE)
         ),
         mode = mode,
         family = "SDXL",
-        architecture = SdArchitecture.SDXL,
+        architecture = architecture,
         width = 1_024,
         height = 1_024,
-        quantizationDistribution = setOf("F16"),
+        quantizationDistribution = quantizationDistribution,
         requiredComponentsPresent = true,
         requiredEngineFeatures = emptyList(),
         evidence = emptyList(),
     )
 }
+
+internal fun task6DiffusionWorkload() = DiffusionWorkloadConfig(
+    mode = DiffusionMode.IMAGE,
+    width = 512,
+    height = 512,
+    minimumWidth = 512,
+    minimumHeight = 512,
+    frameCount = 1,
+    minimumFrameCount = 1,
+    batchSize = 1,
+    steps = 20,
+    vaeTiling = false,
+    offloadToCpu = false,
+    keepClipOnCpu = false,
+    keepVaeOnCpu = false,
+    maxVramBytes = null,
+    layerStreaming = false,
+    allowResolutionFallback = false,
+    allowFrameCountFallback = false,
+    allowVaeTilingFallback = false,
+    allowMaxVramFallback = false,
+    allowLayerStreamingFallback = false,
+    evidence = emptyList(),
+)
 
 internal fun task6DiffusionPlan(
     mode: DiffusionMode = DiffusionMode.IMAGE,
@@ -567,3 +864,6 @@ internal fun task6DiffusionPlan(
     memoryTopology = MemoryTopology.UNIFIED,
     compromises = emptyList(),
 )
+
+private const val TASK6_ASSESSMENT_KEY =
+    "owner/model@0123456789abcdef0123456789abcdef01234567:model-Q4_K_M.gguf"

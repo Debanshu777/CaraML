@@ -8,6 +8,7 @@ import com.debanshu777.caraml.core.platform.HardwareProfile
 import com.debanshu777.caraml.core.platform.MemoryTopology
 import com.debanshu777.caraml.core.platform.PowerPolicyState
 import com.debanshu777.caraml.core.platform.ResourceSnapshot
+import com.debanshu777.caraml.core.platform.ResourcePoolConfidence
 import com.debanshu777.caraml.core.platform.ThermalState
 import com.debanshu777.caraml.core.platform.computeBaseBudget
 import com.debanshu777.caraml.core.platform.computeStorageBudget
@@ -53,7 +54,7 @@ class DeviceSnapshotProvider internal constructor(
 
         val rawResources = readResources(now, providerEvidence)
         val normalized = normalizeResources(rawResources, resolvedProfile.memoryTopology, providerEvidence)
-        val storageBytes = readStorage(providerEvidence)
+        val storage = readStorage(providerEvidence)
         val fresh = normalized.isFreshAt(now)
         if (!fresh) {
             providerEvidence += Evidence(
@@ -69,23 +70,48 @@ class DeviceSnapshotProvider internal constructor(
                 "platform-low-memory-signal",
             )
         }
-        val resources = normalized.withStorageAndEvidence(storageBytes, providerEvidence)
+        val resources = normalized.withStorageAndEvidence(storage.bytes, storage.confidence, providerEvidence)
 
         val hostBudget = resources.additionalAllocatableHostBytes?.let { allocatable ->
             val minimum = resources.platformMinimumReserveHostBytes
-            if (minimum == null) null else computeBaseBudget(
+            if (minimum == null || resources.confidence.host == null) null else computeBaseBudget(
                 allocatable = allocatable,
                 osThreshold = resources.osPressureReserveHostBytes ?: 0L,
                 noiseP95 = resources.observedAppFootprintNoiseP95Bytes ?: 0L,
                 minimum = minimum,
             )
         }
-        val backendGpuBudget = backendGpuBudget(backends, providerEvidence)
-        val gpuBudget = minKnown(resources.additionalAllocatableGpuBytes, backendGpuBudget)
-        val (baseHost, baseGpu, baseShared) = when (resolvedProfile.memoryTopology) {
-            MemoryTopology.UNIFIED -> Triple(null, null, minKnown(hostBudget, gpuBudget))
-            MemoryTopology.DISCRETE -> Triple(hostBudget, gpuBudget, null)
-            MemoryTopology.UNKNOWN -> Triple(hostBudget, null, null)
+        val host = BudgetReading(hostBudget, resources.confidence.host.takeIf { hostBudget != null })
+        val resourceGpu = BudgetReading(
+            resources.additionalAllocatableGpuBytes,
+            resources.confidence.gpu.takeIf { resources.additionalAllocatableGpuBytes != null },
+        ).knownOrNull()
+        val gpu = minimumBudget(resourceGpu, backendGpuBudget(backends, providerEvidence))
+        val (baseHost, baseGpu, baseShared, budgetConfidence) = when (resolvedProfile.memoryTopology) {
+            MemoryTopology.UNIFIED -> {
+                val shared = minimumBudget(host.knownOrNull(), gpu)
+                BudgetResult(
+                    host = null,
+                    gpu = null,
+                    shared = shared?.bytes,
+                    confidence = ResourcePoolConfidence(shared = shared?.confidence),
+                )
+            }
+            MemoryTopology.DISCRETE -> BudgetResult(
+                host = host.knownOrNull()?.bytes,
+                gpu = gpu?.bytes,
+                shared = null,
+                confidence = ResourcePoolConfidence(
+                    host = host.knownOrNull()?.confidence,
+                    gpu = gpu?.confidence,
+                ),
+            )
+            MemoryTopology.UNKNOWN -> BudgetResult(
+                host = host.knownOrNull()?.bytes,
+                gpu = null,
+                shared = null,
+                confidence = ResourcePoolConfidence(host = host.knownOrNull()?.confidence),
+            )
         }
         val allEvidence = buildList {
             addAll(resolvedProfile.evidence)
@@ -100,9 +126,12 @@ class DeviceSnapshotProvider internal constructor(
             baseHostBudgetBytes = baseHost,
             baseGpuBudgetBytes = baseGpu,
             baseSharedBudgetBytes = baseShared,
-            baseStorageBudgetBytes = storageBytes?.let(::computeStorageBudget),
+            baseStorageBudgetBytes = storage.bytes?.let(::computeStorageBudget),
             isFresh = fresh,
             evidence = allEvidence,
+            budgetConfidence = budgetConfidence.copy(
+                storage = storage.confidence.takeIf { storage.bytes != null },
+            ),
         )
     }
 
@@ -145,14 +174,14 @@ class DeviceSnapshotProvider internal constructor(
         fallback.toList()
     }
 
-    private fun readStorage(evidence: MutableList<Evidence>): Long? = try {
-        storageBytesSource().takeIf { it > 0L } ?: run {
+    private fun readStorage(evidence: MutableList<Evidence>): BudgetReading = try {
+        storageBytesSource().takeIf { it > 0L }?.let { BudgetReading(it, Confidence.HIGH) } ?: run {
             evidence += Evidence(
                 AssessmentReason.INVALID_STORAGE_READING,
                 Confidence.LOW,
                 "free-storage-not-positive",
             )
-            null
+            BudgetReading(null, null)
         }
     } catch (cancellation: CancellationException) {
         throw cancellation
@@ -162,7 +191,7 @@ class DeviceSnapshotProvider internal constructor(
             Confidence.LOW,
             "free-storage-unavailable",
         )
-        null
+        BudgetReading(null, null)
     }
 
     private fun readResources(
@@ -197,8 +226,8 @@ class DeviceSnapshotProvider internal constructor(
     private fun backendGpuBudget(
         backends: List<BackendCapability>,
         evidence: MutableList<Evidence>,
-    ): Long? {
-        val headrooms = mutableListOf<Long>()
+    ): BudgetReading? {
+        val headrooms = mutableListOf<BudgetReading>()
         for (backend in backends) {
             if (backend.kind == com.debanshu777.caraml.core.platform.BackendKind.CPU ||
                 backend.status != com.debanshu777.caraml.core.platform.BackendStatus.AVAILABLE
@@ -211,10 +240,12 @@ class DeviceSnapshotProvider internal constructor(
                     "backend-${backend.kind}-headroom",
                 )
             } else {
-                headrooms += value
+                val confidence = backend.evidence.minOfOrNull { it.confidence.ordinal }
+                    ?.let(Confidence.entries::get)
+                if (confidence != null) headrooms += BudgetReading(value, confidence)
             }
         }
-        return headrooms.minOrNull()
+        return headrooms.minByOrNull { it.bytes ?: Long.MAX_VALUE }
     }
 
     private fun normalizeResources(
@@ -259,6 +290,10 @@ class DeviceSnapshotProvider internal constructor(
             powerPolicyState = value.powerPolicyState,
             capturedAtEpochMs = value.capturedAtEpochMs,
             evidence = value.evidence,
+            confidence = ResourcePoolConfidence(
+                host = value.confidence.host.takeIf { host != null },
+                gpu = value.confidence.gpu.takeIf { gpu != null },
+            ),
         )
     }
 
@@ -272,9 +307,26 @@ class DeviceSnapshotProvider internal constructor(
         return merged.values.toList()
     }
 
-    private fun minKnown(first: Long?, second: Long?): Long? = when {
-        first != null && second != null -> minOf(first, second)
+    private fun minimumBudget(first: BudgetReading?, second: BudgetReading?): BudgetReading? = when {
+        first != null && second != null -> BudgetReading(
+            bytes = minOf(requireNotNull(first.bytes), requireNotNull(second.bytes)),
+            confidence = minConfidence(requireNotNull(first.confidence), requireNotNull(second.confidence)),
+        )
         first != null -> first
         else -> second
     }
+
+    private fun minConfidence(first: Confidence, second: Confidence): Confidence =
+        if (first.ordinal <= second.ordinal) first else second
+
+    private data class BudgetReading(val bytes: Long?, val confidence: Confidence?) {
+        fun knownOrNull(): BudgetReading? = takeIf { bytes != null && bytes >= 0L && confidence != null }
+    }
+
+    private data class BudgetResult(
+        val host: Long?,
+        val gpu: Long?,
+        val shared: Long?,
+        val confidence: ResourcePoolConfidence,
+    )
 }

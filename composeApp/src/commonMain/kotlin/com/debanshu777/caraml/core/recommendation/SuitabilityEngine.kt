@@ -8,6 +8,8 @@ import com.debanshu777.caraml.core.platform.MemoryTopology
 import com.debanshu777.caraml.core.platform.ResourceSnapshot
 import com.debanshu777.caraml.core.platform.computeBaseBudget
 import com.debanshu777.caraml.core.platform.computeStorageBudget
+import kotlin.math.exp
+import kotlin.math.ln
 
 class SuitabilityEngine(
     private val compatibilityChecker: CompatibilityChecker,
@@ -57,6 +59,7 @@ class SuitabilityEngine(
                 else -> invalidPlanAssessment(plan)
             }
             val performance = performanceEstimator.estimate(descriptor, plan, hardwareProfile, calibrationSource)
+            val utility = utilityMetrics(descriptor, plan, workload, footprint)
             PlanAssessment(
                 plan = footprint.plan,
                 hostMemoryBytes = footprint.hostMemoryBytes,
@@ -64,12 +67,10 @@ class SuitabilityEngine(
                 sharedMemoryBytes = footprint.sharedMemoryBytes,
                 storageBytes = footprint.storageBytes,
                 confidence = footprint.confidence.copy(performance = performanceConfidence(performance)),
-                evidence = footprint.evidence + performance.evidence + listOf(
+                evidence = footprint.evidence + performance.evidence + utility.evidence +
                     Evidence(AssessmentReason.ENERGY_NOT_VERIFIED, Confidence.LOW, "energy-metric-omitted"),
-                    Evidence(AssessmentReason.QUALITY_PROXY_USED, Confidence.MEDIUM, "plan-derived-proxy"),
-                ),
                 performance = performance,
-                utilityMetrics = utilityMetrics(plan, workload, footprint),
+                utilityMetrics = utility.metrics,
             )
         }
         return AssessedPlans(
@@ -193,32 +194,93 @@ class SuitabilityEngine(
     }
 
     private fun utilityMetrics(
+        descriptor: ModelDescriptor,
         plan: RunPlan,
         workload: WorkloadConfig,
         footprint: PlanAssessment,
-    ): PlanUtilityMetrics {
-        val quality = when (plan) {
-            is LlmRunPlan -> when (plan.keyCacheType) {
-                KvCacheType.F16 -> 1.0
-                KvCacheType.Q8_0 -> 0.85
-                KvCacheType.Q4_0 -> 0.65
-            }
-            is DiffusionRunPlan -> if (workload is DiffusionWorkloadConfig) {
-                safeRatio(
-                    plan.width.toDouble() * plan.height.toDouble(),
-                    workload.width.toDouble() * workload.height.toDouble(),
-                )
-            } else null
-        }
+    ): UtilityAssessment {
+        val quality = qualityProxy(descriptor)
         val context = when {
             plan is LlmRunPlan && workload is LlmWorkloadConfig ->
                 safeRatio(plan.contextTokens.toDouble(), workload.contextTokens.toDouble())
             else -> null
         }
         val storageEfficiency = footprint.storageBytes?.highBytes?.takeIf { it > 0L }?.let {
-            safeRatio(ONE_GIB.toDouble(), it.toDouble())
+            safeRatio(RecommendationPolicyV1.STORAGE_EFFICIENCY_TARGET_BYTES.toDouble(), it.toDouble())
         }
-        return PlanUtilityMetrics(null, null, quality, context, storageEfficiency)
+        val evidence = if (quality.value == null) {
+            listOf(Evidence(AssessmentReason.QUALITY_NOT_VERIFIED, Confidence.LOW, "quality-proxy-unavailable"))
+        } else {
+            listOf(
+                Evidence(
+                    AssessmentReason.QUALITY_PROXY_USED,
+                    Confidence.MEDIUM,
+                    "quality-proxy:${quality.components.joinToString("+")};not-benchmark",
+                ),
+            )
+        }
+        return UtilityAssessment(
+            PlanUtilityMetrics(null, null, quality.value, context, storageEfficiency),
+            evidence,
+        )
+    }
+
+    private fun qualityProxy(descriptor: ModelDescriptor): QualityProxy = when (descriptor) {
+        is LlmModelDescriptor -> {
+            val weights = RecommendationPolicyV1.llmQualityProxyWeights
+            val values = buildList {
+                val quantization = (descriptor.quantization as? QuantizationEvidence.Known)
+                    ?.quantization
+                    ?.let(RecommendationPolicyV1.llmQuantizationQualityProxy::get)
+                if (quantization != null) add(WeightedProxy(quantization, weights.quantization, "llm-quantization"))
+                val parameterScale = descriptor.parameterCount
+                    ?.takeIf { it in 1..DescriptorLimits.MAX_PARAMETERS }
+                    ?.let {
+                        safeRatio(
+                            it.toDouble(),
+                            RecommendationPolicyV1.LLM_PARAMETER_QUALITY_TARGET.toDouble(),
+                        )
+                    }
+                if (parameterScale != null) add(WeightedProxy(parameterScale, weights.scale, "parameter-scale"))
+            }
+            combinedQualityProxy(values)
+        }
+        is DiffusionModelDescriptor -> {
+            val weights = RecommendationPolicyV1.diffusionQualityProxyWeights
+            val values = buildList {
+                RecommendationPolicyV1.diffusionArchitectureQualityProxy[descriptor.architecture]?.let {
+                    add(WeightedProxy(it, weights.scale, "diffusion-architecture"))
+                }
+                val quantizations = descriptor.quantizationDistribution.map {
+                    RecommendationPolicyV1.diffusionQuantizationQualityProxy[it]
+                }
+                if (quantizations.isNotEmpty() && quantizations.none { it == null }) {
+                    val normalized = quantizations.filterNotNull()
+                    val geometric = exp(normalized.sumOf { ln(it) } / normalized.size.toDouble())
+                    add(WeightedProxy(geometric, weights.quantization, "diffusion-quantization"))
+                }
+            }
+            combinedQualityProxy(values)
+        }
+    }
+
+    private fun combinedQualityProxy(values: List<WeightedProxy>): QualityProxy {
+        val usable = values.filter {
+            it.value.isFinite() && it.value > 0.0 && it.weight.isFinite() && it.weight > 0.0
+        }
+        val weightSum = usable.sumOf { it.weight }
+        if (!weightSum.isFinite() || weightSum <= 0.0) return QualityProxy(null, emptyList())
+        val value = exp(
+            usable.sumOf {
+                it.weight * ln(
+                    it.value.coerceIn(
+                        RecommendationPolicyV1.UTILITY_METRIC_MIN,
+                        RecommendationPolicyV1.UTILITY_METRIC_MAX,
+                    ),
+                )
+            } / weightSum,
+        )
+        return QualityProxy(value.takeIf { it.isFinite() }, usable.map { it.component })
     }
 
     private fun invalidPlans(
@@ -295,7 +357,7 @@ class SuitabilityEngine(
             numerator / denominator
         } else null
 
-    private companion object {
-        const val ONE_GIB: Long = 1_073_741_824L
-    }
+    private data class UtilityAssessment(val metrics: PlanUtilityMetrics, val evidence: List<Evidence>)
+    private data class WeightedProxy(val value: Double, val weight: Double, val component: String)
+    private data class QualityProxy(val value: Double?, val components: List<String>)
 }

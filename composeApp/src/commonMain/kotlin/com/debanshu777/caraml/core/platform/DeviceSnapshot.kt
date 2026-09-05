@@ -41,6 +41,13 @@ enum class PowerPolicyState {
     UNKNOWN,
 }
 
+data class ResourcePoolConfidence(
+    val host: Confidence? = null,
+    val gpu: Confidence? = null,
+    val shared: Confidence? = null,
+    val storage: Confidence? = null,
+)
+
 @ConsistentCopyVisibility
 data class BackendCapability private constructor(
     val kind: BackendKind,
@@ -125,6 +132,7 @@ data class ResourceSnapshot private constructor(
     val powerPolicyState: PowerPolicyState,
     val capturedAtEpochMs: Long,
     val evidence: List<Evidence>,
+    val confidence: ResourcePoolConfidence,
 ) {
     constructor(
         additionalAllocatableHostBytes: Long?,
@@ -139,6 +147,7 @@ data class ResourceSnapshot private constructor(
         powerPolicyState: PowerPolicyState,
         capturedAtEpochMs: Long,
         evidence: Collection<Evidence>,
+        confidence: ResourcePoolConfidence = ResourcePoolConfidence(),
     ) : this(
         additionalAllocatableHostBytes = additionalAllocatableHostBytes,
         additionalAllocatableGpuBytes = additionalAllocatableGpuBytes,
@@ -152,6 +161,7 @@ data class ResourceSnapshot private constructor(
         powerPolicyState = powerPolicyState,
         capturedAtEpochMs = capturedAtEpochMs,
         evidence = evidence.toList(),
+        confidence = confidence,
     )
 
     fun isFreshAt(
@@ -164,6 +174,7 @@ data class ResourceSnapshot private constructor(
 
     internal fun withStorageAndEvidence(
         storageBytes: Long?,
+        storageConfidence: Confidence?,
         additionalEvidence: Collection<Evidence>,
     ): ResourceSnapshot = ResourceSnapshot(
         additionalAllocatableHostBytes = additionalAllocatableHostBytes,
@@ -178,6 +189,9 @@ data class ResourceSnapshot private constructor(
         powerPolicyState = powerPolicyState,
         capturedAtEpochMs = capturedAtEpochMs,
         evidence = evidence + additionalEvidence,
+        confidence = confidence.copy(
+            storage = storageConfidence.takeIf { storageBytes != null },
+        ),
     )
 }
 
@@ -191,6 +205,7 @@ data class DeviceSnapshot private constructor(
     val baseStorageBudgetBytes: Long?,
     val isFresh: Boolean,
     val evidence: List<Evidence>,
+    val budgetConfidence: ResourcePoolConfidence,
 ) {
     constructor(
         hardwareProfile: HardwareProfile,
@@ -201,6 +216,7 @@ data class DeviceSnapshot private constructor(
         baseStorageBudgetBytes: Long?,
         isFresh: Boolean,
         evidence: Collection<Evidence>,
+        budgetConfidence: ResourcePoolConfidence = ResourcePoolConfidence(),
     ) : this(
         hardwareProfile = hardwareProfile,
         resources = resources,
@@ -210,6 +226,7 @@ data class DeviceSnapshot private constructor(
         baseStorageBudgetBytes = baseStorageBudgetBytes,
         isFresh = isFresh,
         evidence = evidence.toList(),
+        budgetConfidence = budgetConfidence,
     )
 }
 

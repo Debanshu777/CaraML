@@ -60,6 +60,9 @@ class RunPlanOptimizer(
         snapshot: DeviceSnapshot,
         profile: RecommendationProfile,
     ): SelectedPlan {
+        assessmentGraphIssue(assessment, snapshot)?.let { issue ->
+            return emptySelection(RecommendationCategory.NEEDS_INFORMATION, listOf(issue))
+        }
         when (val compatibility = assessment.compatibility) {
             is Compatibility.Incompatible -> return emptySelection(
                 RecommendationCategory.INCOMPATIBLE,
@@ -109,6 +112,38 @@ class RunPlanOptimizer(
         return snapshot.resources.isFreshAt(now, RecommendationPolicyV1.RESOURCE_SNAPSHOT_MAX_AGE_MS)
     }
 
+    private fun assessmentGraphIssue(
+        assessment: ModelAssessment,
+        snapshot: DeviceSnapshot,
+    ): AssessmentReason? {
+        val plans = assessment.planAssessments
+        if (assessment.assessmentKey.isBlank() ||
+            assessment.assessmentKey != plans.assessmentKey ||
+            assessment.compatibility != plans.compatibility
+        ) {
+            return AssessmentReason.ASSESSMENT_GRAPH_INVALID
+        }
+        if (plans.memoryTopology != snapshot.hardwareProfile.memoryTopology) {
+            return AssessmentReason.DEVICE_CAPABILITIES_CHANGED
+        }
+        for (candidate in plans.values) {
+            val plan = candidate.plan as? RunPlan ?: return AssessmentReason.ASSESSMENT_GRAPH_INVALID
+            if (!performanceMatchesPlan(plan, candidate.performance)) {
+                return AssessmentReason.INVALID_PERFORMANCE_EVIDENCE
+            }
+            if (plan.memoryTopology != snapshot.hardwareProfile.memoryTopology) {
+                return AssessmentReason.DEVICE_CAPABILITIES_CHANGED
+            }
+            val matchingBackends = snapshot.hardwareProfile.backends.filter { it.kind == plan.backend }
+            if (matchingBackends.size != 1 || matchingBackends.single().status !=
+                com.debanshu777.caraml.core.platform.BackendStatus.AVAILABLE
+            ) {
+                return AssessmentReason.DEVICE_CAPABILITIES_CHANGED
+            }
+        }
+        return null
+    }
+
     private fun classifyCandidate(
         assessment: ModelAssessment,
         planAssessment: PlanAssessment,
@@ -125,6 +160,8 @@ class RunPlanOptimizer(
         val storage = planAssessment.storageBytes
             ?: return needsInformation(planAssessment, candidateIndex, AssessmentReason.STORAGE_BOUNDS_UNKNOWN)
         val storageBudget = snapshot.baseStorageBudgetBytes?.takeIf { it >= 0L }
+            ?: return needsInformation(planAssessment, candidateIndex, AssessmentReason.STORAGE_BOUNDS_UNKNOWN)
+        val storageBudgetConfidence = snapshot.budgetConfidence.storage
             ?: return needsInformation(planAssessment, candidateIndex, AssessmentReason.STORAGE_BOUNDS_UNKNOWN)
 
         val memoryBand = requiredPools.maxOfOrNull { fitBand(it.range, it.policyBudget) }
@@ -146,10 +183,10 @@ class RunPlanOptimizer(
         val safetyConfidence = minimumConfidence(
             assessment.confidence.compatibility,
             planAssessment.confidence.compatibility,
-            assessment.confidence.memory,
             planAssessment.confidence.memory,
-            assessment.confidence.storage,
             planAssessment.confidence.storage,
+            storageBudgetConfidence,
+            *requiredPools.map { it.budgetConfidence }.toTypedArray(),
         )
         category = applySafetyConfidenceCap(category, safetyConfidence, profile.riskTolerance).also { capped ->
             if (capped != category) reasons += AssessmentReason.SAFETY_EVIDENCE_LIMITED
@@ -161,7 +198,12 @@ class RunPlanOptimizer(
             reasons += AssessmentReason.FALLBACK_PLAN_REQUIRED
         }
 
-        val performanceConfidence = planAssessment.confidence.performance
+        val rangeConfidence = comparedPerformanceConfidence(planAssessment.performance)
+        val wrapperConfidence = planAssessment.confidence.performance
+        val performanceConfidence = minimumConfidence(wrapperConfidence, rangeConfidence)
+        if (wrapperConfidence != rangeConfidence) {
+            reasons += AssessmentReason.INVALID_PERFORMANCE_EVIDENCE
+        }
         category = applyPerformancePolicy(
             category,
             planAssessment.performance,
@@ -198,22 +240,43 @@ class RunPlanOptimizer(
         snapshot: DeviceSnapshot,
         reservePercent: Int,
     ): List<RequiredPool>? {
-        fun required(range: EstimateRange?, baseBudget: Long?): RequiredPool? {
+        fun required(range: EstimateRange?, baseBudget: Long?, budgetConfidence: Confidence?): RequiredPool? {
             val safeRange = range ?: return null
             val budget = baseBudget?.takeIf { it >= 0L } ?: return null
+            val confidence = budgetConfidence ?: return null
             val policyBudget = checkedPercentage(budget, 100 - reservePercent) as? CheckedLong.Value ?: return null
-            return RequiredPool(safeRange, policyBudget.value)
+            return RequiredPool(safeRange, policyBudget.value, confidence)
         }
         return when {
             plan.backend == com.debanshu777.caraml.core.platform.BackendKind.CPU ->
-                listOfNotNull(required(assessment.hostMemoryBytes, snapshot.baseHostBudgetBytes))
+                listOfNotNull(
+                    required(
+                        assessment.hostMemoryBytes,
+                        snapshot.baseHostBudgetBytes,
+                        snapshot.budgetConfidence.host,
+                    ),
+                )
                     .takeIf { it.size == 1 }
             plan.memoryTopology == MemoryTopology.UNIFIED ->
-                listOfNotNull(required(assessment.sharedMemoryBytes, snapshot.baseSharedBudgetBytes))
+                listOfNotNull(
+                    required(
+                        assessment.sharedMemoryBytes,
+                        snapshot.baseSharedBudgetBytes,
+                        snapshot.budgetConfidence.shared,
+                    ),
+                )
                     .takeIf { it.size == 1 }
             plan.memoryTopology == MemoryTopology.DISCRETE -> {
-                val host = required(assessment.hostMemoryBytes, snapshot.baseHostBudgetBytes)
-                val gpu = required(assessment.gpuMemoryBytes, snapshot.baseGpuBudgetBytes)
+                val host = required(
+                    assessment.hostMemoryBytes,
+                    snapshot.baseHostBudgetBytes,
+                    snapshot.budgetConfidence.host,
+                )
+                val gpu = required(
+                    assessment.gpuMemoryBytes,
+                    snapshot.baseGpuBudgetBytes,
+                    snapshot.budgetConfidence.gpu,
+                )
                 if (host == null || gpu == null) null else listOf(host, gpu)
             }
             else -> null
@@ -281,6 +344,25 @@ class RunPlanOptimizer(
                 worseOf(current, RecommendationCategory.RISKY)
             }
         }
+    }
+
+    private fun performanceMatchesPlan(
+        plan: RunPlan,
+        performance: PerformanceEstimate,
+    ): Boolean = when (performance) {
+        is PerformanceEstimate.Unknown -> true
+        is PerformanceEstimate.Llm -> plan is LlmRunPlan
+        is PerformanceEstimate.DiffusionImage ->
+            plan is DiffusionRunPlan && plan.mode == DiffusionMode.IMAGE
+        is PerformanceEstimate.DiffusionVideo ->
+            plan is DiffusionRunPlan && plan.mode == DiffusionMode.VIDEO
+    }
+
+    private fun comparedPerformanceConfidence(performance: PerformanceEstimate): Confidence = when (performance) {
+        is PerformanceEstimate.Unknown -> Confidence.LOW
+        is PerformanceEstimate.Llm -> performance.decodeTokensPerSecond.confidence
+        is PerformanceEstimate.DiffusionImage -> performance.referenceTotalTimeSeconds.confidence
+        is PerformanceEstimate.DiffusionVideo -> performance.totalTimeSeconds.confidence
     }
 
     private fun applySafetyConfidenceCap(
@@ -363,7 +445,11 @@ class RunPlanOptimizer(
         -1,
     )
 
-    private data class RequiredPool(val range: EstimateRange, val policyBudget: Long)
+    private data class RequiredPool(
+        val range: EstimateRange,
+        val policyBudget: Long,
+        val budgetConfidence: Confidence,
+    )
     private enum class PerformanceStatus { PASS, TARGET_MISS, HARD_MISS, INVALID }
 }
 
@@ -400,11 +486,14 @@ internal fun preferenceUtility(
     metrics: PlanUtilityMetrics,
     priority: OptimizationPriority,
 ): Double {
-    val weights = when (priority) {
-        OptimizationPriority.SPEED_EFFICIENCY -> doubleArrayOf(0.60, 0.25, 0.05, 0.00, 0.10)
-        OptimizationPriority.BALANCED -> doubleArrayOf(0.30, 0.10, 0.30, 0.20, 0.10)
-        OptimizationPriority.QUALITY_CONTEXT -> doubleArrayOf(0.10, 0.05, 0.55, 0.25, 0.05)
-    }
+    val configured = RecommendationPolicyV1.utilityWeights.getValue(priority)
+    val weights = doubleArrayOf(
+        configured.performance,
+        configured.energy,
+        configured.quality,
+        configured.context,
+        configured.storage,
+    )
     val values = arrayOf(
         metrics.performance,
         metrics.energy,
@@ -418,7 +507,10 @@ internal fun preferenceUtility(
         val value = values[index]
         val weight = weights[index]
         if (value != null && value.isFinite() && weight > 0.0) {
-            val clamped = value.coerceIn(0.05, 1.0)
+            val clamped = value.coerceIn(
+                RecommendationPolicyV1.UTILITY_METRIC_MIN,
+                RecommendationPolicyV1.UTILITY_METRIC_MAX,
+            )
             weightSum += weight
             weightedLog += weight * ln(clamped)
         }

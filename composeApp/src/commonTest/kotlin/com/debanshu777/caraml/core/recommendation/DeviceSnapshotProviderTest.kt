@@ -7,6 +7,7 @@ import com.debanshu777.caraml.core.platform.HardwareProfile
 import com.debanshu777.caraml.core.platform.MemoryTopology
 import com.debanshu777.caraml.core.platform.PowerPolicyState
 import com.debanshu777.caraml.core.platform.ResourceSnapshot
+import com.debanshu777.caraml.core.platform.ResourcePoolConfidence
 import com.debanshu777.caraml.core.platform.ThermalState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -48,6 +49,68 @@ class DeviceSnapshotProviderTest {
     }
 
     @Test
+    fun unifiedBudgetConfidenceUsesTheWeakestContributingPool() = runBlocking {
+        val snapshot = provider(
+            topology = MemoryTopology.UNIFIED,
+            hostBytes = 4L * GIB,
+            gpuBytes = 2L * GIB,
+            hostConfidence = Confidence.HIGH,
+            gpuConfidence = Confidence.LOW,
+        ).capture()
+
+        assertEquals(Confidence.LOW, snapshot.budgetConfidence.shared)
+        assertNull(snapshot.budgetConfidence.host)
+        assertNull(snapshot.budgetConfidence.gpu)
+    }
+
+    @Test
+    fun discreteBudgetConfidenceKeepsHostAndGpuEvidenceSeparate() = runBlocking {
+        val snapshot = provider(
+            topology = MemoryTopology.DISCRETE,
+            hostBytes = 4L * GIB,
+            gpuBytes = 2L * GIB,
+            hostConfidence = Confidence.HIGH,
+            gpuConfidence = Confidence.LOW,
+        ).capture()
+
+        assertEquals(Confidence.HIGH, snapshot.budgetConfidence.host)
+        assertEquals(Confidence.LOW, snapshot.budgetConfidence.gpu)
+        assertNull(snapshot.budgetConfidence.shared)
+    }
+
+    @Test
+    fun budgetWithUnknownSourceConfidenceRemainsUnavailable() = runBlocking {
+        val snapshot = provider(
+            topology = MemoryTopology.UNKNOWN,
+            hostBytes = 4L * GIB,
+            gpuBytes = null,
+            hostConfidence = null,
+        ).capture()
+
+        assertNull(snapshot.baseHostBudgetBytes)
+        assertNull(snapshot.budgetConfidence.host)
+    }
+
+    @Test
+    fun lowConfidenceDesktopFallbackCannotBecomeBalancedRecommended() = runBlocking {
+        val snapshot = provider(
+            topology = MemoryTopology.UNKNOWN,
+            hostBytes = 4L * GIB,
+            gpuBytes = null,
+            hostConfidence = Confidence.LOW,
+        ).capture()
+
+        val recommendation = RecommendationPolicy(RunPlanOptimizer(clock = { 1_000L })).recommend(
+            task6Assessment(plans = listOf(task6PlanAssessment(host = task6Range(100, 100, 100)))),
+            snapshot,
+            RecommendationProfile(riskTolerance = RiskTolerance.BALANCED),
+        )
+
+        assertEquals(RecommendationCategory.RISKY, recommendation.category, recommendation.toString())
+        assertTrue(recommendation.reasons.contains(AssessmentReason.SAFETY_EVIDENCE_LIMITED))
+    }
+
+    @Test
     fun unifiedMemoryIncludesRegisteredBackendHeadroomInTheMinimum() = runBlocking {
         val snapshot = provider(
             topology = MemoryTopology.UNIFIED,
@@ -60,7 +123,13 @@ class DeviceSnapshotProviderTest {
                         kind = BackendKind.METAL,
                         status = BackendStatus.AVAILABLE,
                         additionalAllocatableBytes = 1L * GIB,
-                        evidence = emptyList(),
+                        evidence = listOf(
+                            Evidence(
+                                AssessmentReason.RESOURCE_READING_VALIDATED,
+                                Confidence.HIGH,
+                                "metal-headroom-fixture",
+                            ),
+                        ),
                     ),
                 )
             },
@@ -228,6 +297,8 @@ class DeviceSnapshotProviderTest {
         dispatcher: CoroutineDispatcher = ImmediateDispatcher,
         backendCapabilities: () -> List<BackendCapability> = { listOf(cpu()) },
         hardwareProfile: HardwareProfile = hardware(topology),
+        hostConfidence: Confidence? = hostBytes?.let { Confidence.HIGH },
+        gpuConfidence: Confidence? = gpuBytes?.let { Confidence.HIGH },
     ) = DeviceSnapshotProvider(
         hardwareProfileSource = { hardwareProfile },
         resourceSnapshotSource = {
@@ -244,6 +315,10 @@ class DeviceSnapshotProviderTest {
                 powerPolicyState = PowerPolicyState.UNKNOWN,
                 capturedAtEpochMs = capturedAtEpochMs,
                 evidence = emptyList(),
+                confidence = ResourcePoolConfidence(
+                    host = hostConfidence,
+                    gpu = gpuConfidence,
+                ),
             )
         },
         backendCapabilitySource = backendCapabilities,

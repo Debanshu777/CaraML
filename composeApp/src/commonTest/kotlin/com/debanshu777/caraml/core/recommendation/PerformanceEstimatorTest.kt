@@ -162,13 +162,75 @@ class PerformanceEstimatorTest {
         )
     }
 
+    @Test
+    fun missingOrInvalidEngineVersionPreventsCalibrationLookup() {
+        val profile = BackendPerformanceProfile(GIB.toDouble(), 1.0e12, Confidence.HIGH)
+        val missing = estimator.estimate(
+            task6LlmDescriptor(),
+            task6LlmPlan(),
+            task6Hardware(),
+            FixedCalibrationSource(profile = profile, engineVersion = null),
+        )
+        val invalid = estimator.estimate(
+            task6LlmDescriptor(),
+            task6LlmPlan(),
+            task6Hardware(),
+            FixedCalibrationSource(profile = profile, engineVersion = "runner version with spaces"),
+        )
+
+        assertEquals(AssessmentReason.SPEED_NOT_VERIFIED, assertIs<PerformanceEstimate.Unknown>(missing).reason)
+        assertEquals(
+            AssessmentReason.INVALID_PERFORMANCE_EVIDENCE,
+            assertIs<PerformanceEstimate.Unknown>(invalid).reason,
+        )
+    }
+
+    @Test
+    fun calibrationKeysAndCorrectionsArePartitionedByEngineVersion() {
+        val profile = BackendPerformanceProfile(GIB.toDouble(), 1.0e12, Confidence.HIGH)
+        val versionOne = FixedCalibrationSource(
+            profile = profile,
+            engineVersion = "llama-1.0.0",
+            correction = CalibrationCorrection(likely = 2.0, high = 2.0, confidence = Confidence.HIGH),
+            correctionEngineVersion = "llama-1.0.0",
+        )
+        val versionTwo = FixedCalibrationSource(
+            profile = profile,
+            engineVersion = "llama-2.0.0",
+            correction = CalibrationCorrection(likely = 2.0, high = 2.0, confidence = Confidence.HIGH),
+            correctionEngineVersion = "llama-1.0.0",
+        )
+
+        val first = assertIs<PerformanceEstimate.Llm>(
+            estimator.estimate(task6LlmDescriptor(sizeBytes = GIB), task6LlmPlan(), task6Hardware(), versionOne),
+        )
+        val second = assertIs<PerformanceEstimate.Llm>(
+            estimator.estimate(task6LlmDescriptor(sizeBytes = GIB), task6LlmPlan(), task6Hardware(), versionTwo),
+        )
+
+        assertEquals("llama-1.0.0", versionOne.seenKeys.single().engineVersion)
+        assertEquals("llama-2.0.0", versionTwo.seenKeys.single().engineVersion)
+        assertTrue(versionOne.seenKeys.single() != versionTwo.seenKeys.single())
+        assertEquals(0.5, first.decodeTokensPerSecond.likely, 0.000_001)
+        assertEquals(1.0, second.decodeTokensPerSecond.likely, 0.000_001)
+    }
+
     private class FixedCalibrationSource(
         private val profile: BackendPerformanceProfile?,
         private val correction: CalibrationCorrection? = null,
+        private val engineVersion: String? = "runner-1.0.0",
+        private val correctionEngineVersion: String? = engineVersion,
     ) : CalibrationSource {
+        val seenKeys = mutableListOf<CalibrationKey>()
+
+        override fun engineVersion(): String? = engineVersion
+
         override fun backendProfileFor(backend: BackendKind): BackendPerformanceProfile? = profile
 
-        override fun correctionFor(key: CalibrationKey): CalibrationCorrection? = correction
+        override fun correctionFor(key: CalibrationKey): CalibrationCorrection? {
+            seenKeys += key
+            return correction.takeIf { key.engineVersion == correctionEngineVersion }
+        }
 
         override fun revision(): Long = 7L
     }

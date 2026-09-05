@@ -2,6 +2,7 @@ package com.debanshu777.caraml.core.recommendation
 
 import com.debanshu777.caraml.core.platform.BackendKind
 import com.debanshu777.caraml.core.platform.MemoryTopology
+import com.debanshu777.caraml.core.rating.SdArchitecture
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -86,6 +87,78 @@ class SuitabilityEngineTest {
 
         assertTrue(assessed.values.isEmpty())
         assertTrue(assessed.reasons.contains(AssessmentReason.INVALID_WORKLOAD))
+    }
+
+    @Test
+    fun validatedLlmQuantizationAndParameterScaleAffectEvidencedQualityUtility() {
+        val engine = engine(SupportEvidence.Supported)
+        val lower = engine.assessPlans(
+            task6LlmDescriptor(
+                parameterCount = 3_000_000_000L,
+                quantization = QuantizationEvidence.Known("Q4_K_M"),
+            ),
+            task6Hardware(),
+            task6LlmWorkload(),
+        ).values.first()
+        val higher = engine.assessPlans(
+            task6LlmDescriptor(
+                parameterCount = 13_000_000_000L,
+                quantization = QuantizationEvidence.Known("Q8_0"),
+            ),
+            task6Hardware(),
+            task6LlmWorkload(),
+        ).values.first()
+
+        assertTrue(requireNotNull(higher.utilityMetrics.quality) > requireNotNull(lower.utilityMetrics.quality))
+        assertEquals(0.9521354, higher.utilityMetrics.quality, 0.0000001)
+        assertEquals(1.0, higher.utilityMetrics.storageEfficiency)
+        assertTrue(higher.evidence.any {
+            it.reason == AssessmentReason.QUALITY_PROXY_USED &&
+                it.detail?.contains("not-benchmark") == true
+        })
+    }
+
+    @Test
+    fun unrecognizedQuantizationTokenIsOmittedWithoutLooseStringGuessing() {
+        val engine = engine(SupportEvidence.Supported)
+        fun quality(quantization: QuantizationEvidence): Double? = engine.assessPlans(
+            task6LlmDescriptor(parameterCount = null, quantization = quantization),
+            task6Hardware(),
+            task6LlmWorkload(),
+        ).values.first().utilityMetrics.quality
+
+        val unknown = quality(QuantizationEvidence.Unknown)
+        assertEquals(null, unknown)
+        assertEquals(unknown, quality(QuantizationEvidence.Known("Q4ISH")))
+    }
+
+    @Test
+    fun diffusionQualityUsesTypedArchitectureAndExactQuantizationOrIsOmitted() {
+        val engine = engine(SupportEvidence.Supported)
+        val hardware = task6Hardware(
+            backend = BackendKind.METAL,
+            topology = MemoryTopology.UNIFIED,
+        )
+        val known = engine.assessPlans(
+            task6DiffusionDescriptor(
+                architecture = SdArchitecture.SDXL,
+                quantizationDistribution = setOf("F16"),
+            ),
+            hardware,
+            task6DiffusionWorkload(),
+        ).values.first()
+        val unknown = engine.assessPlans(
+            task6DiffusionDescriptor(
+                architecture = SdArchitecture.UNKNOWN,
+                quantizationDistribution = emptySet(),
+            ),
+            hardware,
+            task6DiffusionWorkload(),
+        ).values.first()
+
+        assertTrue(requireNotNull(known.utilityMetrics.quality) > 0.5)
+        assertEquals(null, unknown.utilityMetrics.quality)
+        assertTrue(unknown.evidence.any { it.reason == AssessmentReason.QUALITY_NOT_VERIFIED })
     }
 
     private fun engine(support: SupportEvidence): SuitabilityEngine = SuitabilityEngine(

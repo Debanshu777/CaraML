@@ -102,6 +102,9 @@ actual class DeviceCapabilities actual constructor() {
                 } ?: PowerPolicyState.UNKNOWN,
                 capturedAtEpochMs = capturedAt,
                 evidence = evidence,
+                confidence = ResourcePoolConfidence(
+                    host = available?.let { Confidence.HIGH },
+                ),
             )
         } catch (exception: Exception) {
             AppLogger.w(TAG, "Resource snapshot collection failed", exception)

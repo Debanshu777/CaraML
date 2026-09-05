@@ -74,6 +74,7 @@ actual class DeviceCapabilities actual constructor() {
     actual fun getResourceSnapshot(): ResourceSnapshot {
         val reading = readAvailablePhysicalMemory()
         val evidence = reading.evidence.toMutableList()
+        var hostConfidence = reading.bytes?.let { confidenceOf(reading.evidence) }
         val available = reading.bytes ?: readTotalPhysicalMemoryBytes()?.let { total ->
             evidence += Evidence(
                 AssessmentReason.RESOURCE_READING_UNAVAILABLE,
@@ -82,6 +83,7 @@ actual class DeviceCapabilities actual constructor() {
             )
             conservativeMemoryBudget(totalBytes = total, currentlyAvailableBytes = null)
                 .takeIf { it > 0L }
+                ?.also { hostConfidence = Confidence.LOW }
         }
         if (available == null) {
             evidence += Evidence(
@@ -116,6 +118,7 @@ actual class DeviceCapabilities actual constructor() {
             powerPolicyState = PowerPolicyState.UNKNOWN,
             capturedAtEpochMs = System.currentTimeMillis(),
             evidence = evidence,
+            confidence = ResourcePoolConfidence(host = hostConfidence.takeIf { available != null }),
         )
     }
 
@@ -352,6 +355,9 @@ actual class DeviceCapabilities actual constructor() {
         Confidence.HIGH,
         detail,
     )
+
+    private fun confidenceOf(evidence: Collection<Evidence>): Confidence? =
+        evidence.minOfOrNull { it.confidence.ordinal }?.let(Confidence.entries::get)
 
     private fun unavailableEvidence(detail: String) = Evidence(
         AssessmentReason.RESOURCE_READING_UNAVAILABLE,
