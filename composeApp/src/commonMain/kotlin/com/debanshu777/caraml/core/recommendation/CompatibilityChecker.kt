@@ -1,10 +1,12 @@
 package com.debanshu777.caraml.core.recommendation
 
+import com.debanshu777.caraml.core.platform.HardwareProfile
+
 class CompatibilityChecker(
     private val engineCapabilitySource: EngineCapabilitySource,
 ) {
     @Suppress("UNUSED_PARAMETER")
-    fun check(descriptor: ModelDescriptor, hardwareProfile: Any): Compatibility {
+    fun check(descriptor: ModelDescriptor, hardwareProfile: HardwareProfile): Compatibility {
         val hardFailure = when (descriptor) {
             is LlmModelDescriptor -> checkLlm(descriptor)
             is DiffusionModelDescriptor -> checkDiffusion(descriptor)

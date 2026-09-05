@@ -1,5 +1,10 @@
 package com.debanshu777.caraml.core.recommendation
 
+import com.debanshu777.caraml.core.platform.BackendCapability
+import com.debanshu777.caraml.core.platform.BackendKind
+import com.debanshu777.caraml.core.platform.BackendStatus
+import com.debanshu777.caraml.core.platform.HardwareProfile
+import com.debanshu777.caraml.core.platform.MemoryTopology
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -14,7 +19,7 @@ class CompatibilityCheckerTest {
             SupportEvidence.Supported
         })
 
-        val result = checker.check(llmDescriptor(ggufVersion = 1), Unit)
+        val result = checker.check(llmDescriptor(ggufVersion = 1), hardwareProfile())
 
         assertIs<Compatibility.Incompatible>(result)
         assertTrue(AssessmentReason.UNSUPPORTED_GGUF_VERSION in result.reasons)
@@ -29,7 +34,7 @@ class CompatibilityCheckerTest {
             SupportEvidence.Supported
         })
 
-        val result = checker.check(diffusionDescriptor(requiredComponentsPresent = false), Unit)
+        val result = checker.check(diffusionDescriptor(requiredComponentsPresent = false), hardwareProfile())
 
         assertIs<Compatibility.Incompatible>(result)
         assertTrue(AssessmentReason.MISSING_REQUIRED_COMPONENT in result.reasons)
@@ -43,11 +48,11 @@ class CompatibilityCheckerTest {
                 reasons = listOf(AssessmentReason.UNSUPPORTED_ARCHITECTURE),
                 evidence = listOf(Evidence(AssessmentReason.UNSUPPORTED_ARCHITECTURE, Confidence.HIGH)),
             )
-        }).check(llmDescriptor(), Unit)
+        }).check(llmDescriptor(), hardwareProfile())
         assertIs<Compatibility.Incompatible>(unsupported)
 
         val unknown = CompatibilityChecker(UnknownEngineCapabilitySource)
-            .check(llmDescriptor(), Unit)
+            .check(llmDescriptor(), hardwareProfile())
         assertIs<Compatibility.Unknown>(unknown)
         assertTrue(AssessmentReason.ENGINE_SUPPORT_UNKNOWN in unknown.reasons)
     }
@@ -55,13 +60,13 @@ class CompatibilityCheckerTest {
     @Test
     fun supportedEngineEvidenceProducesCompatibility() {
         val checker = CompatibilityChecker(EngineCapabilitySource { SupportEvidence.Supported })
-        assertEquals(Compatibility.Compatible, checker.check(llmDescriptor(), Unit))
+        assertEquals(Compatibility.Compatible, checker.check(llmDescriptor(), hardwareProfile()))
     }
 
     @Test
     fun missingGgufVersionRemainsUnknownEvenWhenOtherEngineFeaturesAreSupported() {
         val checker = CompatibilityChecker(EngineCapabilitySource { SupportEvidence.Supported })
-        val result = checker.check(llmDescriptor(ggufVersion = null), Unit)
+        val result = checker.check(llmDescriptor(ggufVersion = null), hardwareProfile())
         assertIs<Compatibility.Unknown>(result)
         assertTrue(AssessmentReason.GGUF_VERSION_UNKNOWN in result.reasons)
     }
@@ -107,6 +112,23 @@ class CompatibilityCheckerTest {
         gitOid = null,
         lfsOid = null,
         xetHash = null,
+        evidence = emptyList(),
+    )
+
+    private fun hardwareProfile() = HardwareProfile(
+        cpuArchitecture = "test",
+        logicalCoreCount = 8,
+        performanceCoreCount = 4,
+        instructionSets = emptySet(),
+        backends = listOf(
+            BackendCapability(
+                kind = BackendKind.CPU,
+                status = BackendStatus.AVAILABLE,
+                additionalAllocatableBytes = null,
+                evidence = emptyList(),
+            ),
+        ),
+        memoryTopology = MemoryTopology.UNIFIED,
         evidence = emptyList(),
     )
 
