@@ -27,6 +27,7 @@ import platform.darwin.MACH_TASK_BASIC_INFO_COUNT
 import platform.darwin.host_statistics64
 import platform.darwin.mach_msg_type_number_tVar
 import platform.darwin.mach_host_self
+import platform.darwin.mach_port_deallocate
 import platform.darwin.mach_task_basic_info_data_t
 import platform.darwin.mach_task_self_
 import platform.darwin.sysctlbyname
@@ -45,7 +46,11 @@ actual class DeviceCapabilities actual constructor() {
     actual fun getDeviceHints(): DeviceHints = cachedHints
 
     actual fun getHardwareProfile(): HardwareProfile {
-        val logicalReading = NSProcessInfo.processInfo.activeProcessorCount.toInt()
+        val logicalResult = validatedUnsignedCoreCount(
+            NSProcessInfo.processInfo.activeProcessorCount,
+            "active-processor-count",
+        )
+        val logicalReading = logicalResult.value
         val performanceReading = sysctlPerflevel0PhysicalCpuOrNull()
             ?: fallbackPerformanceCoreCount(logicalReading)
         val simulator = isRunningOnSimulator()
@@ -73,7 +78,7 @@ actual class DeviceCapabilities actual constructor() {
                 ),
             ),
             memoryTopology = MemoryTopology.UNIFIED,
-            evidence = emptyList(),
+            evidence = logicalResult.evidence,
         )
     }
 
@@ -103,9 +108,10 @@ actual class DeviceCapabilities actual constructor() {
     }
 
     private fun computeHints(): DeviceHints {
-        val totalCores = NSProcessInfo.processInfo.activeProcessorCount.toInt()
-            .takeIf { it in 1..MAX_LOGICAL_CORE_COUNT }
-            ?: 1
+        val totalCores = validatedUnsignedCoreCount(
+            NSProcessInfo.processInfo.activeProcessorCount,
+            "active-processor-count",
+        ).value
         val perfCores = sysctlPerflevel0PhysicalCpuOrNull()
             ?.takeIf { it in 1..totalCores }
             ?: fallbackPerformanceCoreCount(totalCores)!!
@@ -229,44 +235,52 @@ actual class DeviceCapabilities actual constructor() {
         }
     }
 
-    private fun readAvailableMemoryOrNull(evidence: MutableList<Evidence>): Long? = memScoped {
-        val stats = alloc<vm_statistics64_data_t>()
-        val count = alloc<mach_msg_type_number_tVar>()
-        count.value = HOST_VM_INFO64_COUNT
-        val result = host_statistics64(
-            mach_host_self(),
-            HOST_VM_INFO64,
-            stats.ptr.reinterpret(),
-            count.ptr,
-        )
-        if (result != KERN_SUCCESS) {
-            evidence += unavailableEvidence("host_statistics64")
-            return@memScoped null
-        }
-        val free = stats.free_count.toULong()
-        val inactive = stats.inactive_count.toULong()
-        val speculative = stats.speculative_count.toULong()
-        if (ULong.MAX_VALUE - free < inactive || ULong.MAX_VALUE - free - inactive < speculative) {
-            evidence += invalidMemoryEvidence("host_statistics64-page-count")
-            return@memScoped null
-        }
-        val pages = free + inactive + speculative
-        val pageSize = vm_page_size
-        if (pageSize == 0uL || pages > ULong.MAX_VALUE / pageSize) {
-            evidence += invalidMemoryEvidence("host_statistics64-byte-count")
-            return@memScoped null
-        }
-        val bytes = checkedUnsignedBytes(pages * pageSize, "host_statistics64", evidence)
-        if (bytes == null || bytes <= 0L) {
-            evidence += unavailableEvidence("host_statistics64-empty")
-            null
-        } else {
-            evidence += Evidence(
-                AssessmentReason.RESOURCE_READING_VALIDATED,
-                Confidence.HIGH,
-                "host_statistics64",
-            )
-            bytes
+    private fun readAvailableMemoryOrNull(evidence: MutableList<Evidence>): Long? {
+        val hostPort = mach_host_self()
+        return withOwnedMachPort(
+            port = hostPort,
+            deallocate = { mach_port_deallocate(mach_task_self_, it) },
+        ) { ownedHostPort ->
+            memScoped {
+                val stats = alloc<vm_statistics64_data_t>()
+                val count = alloc<mach_msg_type_number_tVar>()
+                count.value = HOST_VM_INFO64_COUNT
+                val result = host_statistics64(
+                    ownedHostPort,
+                    HOST_VM_INFO64,
+                    stats.ptr.reinterpret(),
+                    count.ptr,
+                )
+                if (result != KERN_SUCCESS) {
+                    evidence += unavailableEvidence("host_statistics64")
+                    return@memScoped null
+                }
+                val free = stats.free_count.toULong()
+                val inactive = stats.inactive_count.toULong()
+                val speculative = stats.speculative_count.toULong()
+                if (ULong.MAX_VALUE - free < inactive || ULong.MAX_VALUE - free - inactive < speculative) {
+                    evidence += invalidMemoryEvidence("host_statistics64-page-count")
+                    return@memScoped null
+                }
+                val pages = free + inactive + speculative
+                val pageSize = vm_page_size
+                if (pageSize == 0uL || pages > ULong.MAX_VALUE / pageSize) {
+                    evidence += invalidMemoryEvidence("host_statistics64-byte-count")
+                    return@memScoped null
+                }
+                val bytes = checkedUnsignedBytes(pages * pageSize, "host_statistics64", evidence)
+                if (bytes == null || bytes <= 0L) {
+                    evidence += unavailableEvidence("host_statistics64-empty")
+                    null
+                } else {
+                    evidence += Evidence(
+                        AssessmentReason.RESOURCE_READING_VALIDATED,
+                        Confidence.HIGH,
+                        "host_statistics64",
+                    )
+                    bytes
+                }
+            }
         }
     }
 

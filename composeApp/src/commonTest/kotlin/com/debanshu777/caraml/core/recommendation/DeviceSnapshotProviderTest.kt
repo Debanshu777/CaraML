@@ -192,6 +192,31 @@ class DeviceSnapshotProviderTest {
         assertTrue(snapshot.evidence.any { it.reason == AssessmentReason.RESOURCE_READING_UNAVAILABLE })
     }
 
+    @Test
+    fun captureRevalidatesEveryHardwareProfileReturnedByItsSource() = runBlocking {
+        val invalidProfiles = listOf(
+            hardware(MemoryTopology.UNIFIED, logicalCoreCount = 0, performanceCoreCount = 1),
+            hardware(MemoryTopology.UNIFIED, logicalCoreCount = 1_025, performanceCoreCount = 1),
+            hardware(MemoryTopology.UNIFIED, logicalCoreCount = 8, performanceCoreCount = 9),
+        )
+
+        invalidProfiles.forEach { invalidProfile ->
+            val snapshot = provider(
+                topology = MemoryTopology.UNIFIED,
+                hostBytes = 4L * GIB,
+                gpuBytes = null,
+                hardwareProfile = invalidProfile,
+            ).capture()
+
+            assertEquals(
+                invalidProfile.logicalCoreCount.takeIf { it in 1..1_024 } ?: 1,
+                snapshot.hardwareProfile.logicalCoreCount,
+            )
+            assertNull(snapshot.hardwareProfile.performanceCoreCount)
+            assertTrue(snapshot.evidence.any { it.reason == AssessmentReason.INVALID_CORE_COUNT })
+        }
+    }
+
     private fun provider(
         topology: MemoryTopology,
         hostBytes: Long?,
@@ -202,8 +227,9 @@ class DeviceSnapshotProviderTest {
         lowMemory: Boolean? = null,
         dispatcher: CoroutineDispatcher = ImmediateDispatcher,
         backendCapabilities: () -> List<BackendCapability> = { listOf(cpu()) },
+        hardwareProfile: HardwareProfile = hardware(topology),
     ) = DeviceSnapshotProvider(
-        hardwareProfileSource = { hardware(topology) },
+        hardwareProfileSource = { hardwareProfile },
         resourceSnapshotSource = {
             ResourceSnapshot(
                 additionalAllocatableHostBytes = hostBytes,
@@ -226,10 +252,14 @@ class DeviceSnapshotProviderTest {
         clock = { nowEpochMs },
     )
 
-    private fun hardware(topology: MemoryTopology) = HardwareProfile(
+    private fun hardware(
+        topology: MemoryTopology,
+        logicalCoreCount: Int = 8,
+        performanceCoreCount: Int? = 4,
+    ) = HardwareProfile(
         cpuArchitecture = "test",
-        logicalCoreCount = 8,
-        performanceCoreCount = 4,
+        logicalCoreCount = logicalCoreCount,
+        performanceCoreCount = performanceCoreCount,
         instructionSets = emptySet(),
         backends = listOf(cpu()),
         memoryTopology = topology,

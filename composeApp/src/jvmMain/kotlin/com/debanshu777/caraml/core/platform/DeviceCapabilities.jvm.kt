@@ -37,6 +37,7 @@ actual class DeviceCapabilities actual constructor() {
     actual fun getHardwareProfile(): HardwareProfile {
         val logicalReading = Runtime.getRuntime().availableProcessors()
         val logical = logicalReading.takeIf { it in 1..MAX_LOGICAL_CORE_COUNT }
+        val architecture = System.getProperty("os.arch").orEmpty()
         val isMac = osName().let { it.contains("mac") || it.contains("darwin") }
         val performanceReading = if (isMac) {
             readBoundedCommand(PERFORMANCE_CORE_COMMAND)?.trim()?.toIntOrNull()
@@ -46,10 +47,10 @@ actual class DeviceCapabilities actual constructor() {
         }
         val gpuKind = if (isMac) BackendKind.METAL else BackendKind.VULKAN
         return validatedHardwareProfile(
-            cpuArchitecture = System.getProperty("os.arch").orEmpty(),
+            cpuArchitecture = architecture,
             logicalCoreCountReading = logicalReading,
             performanceCoreCountReading = performanceReading,
-            instructionSets = setOfNotNull(System.getProperty("os.arch")),
+            instructionSets = setOf(architecture).filter { it.isNotEmpty() }.toSet(),
             backends = listOf(
                 cpuBackendCapability(),
                 BackendCapability(
@@ -65,7 +66,7 @@ actual class DeviceCapabilities actual constructor() {
                     ),
                 ),
             ),
-            memoryTopology = if (isMac) MemoryTopology.UNIFIED else MemoryTopology.UNKNOWN,
+            memoryTopology = desktopMemoryTopology(osName(), architecture),
             evidence = emptyList(),
         )
     }
@@ -376,5 +377,16 @@ actual class DeviceCapabilities actual constructor() {
             PERFORMANCE_CORE_COMMAND,
             LDCONFIG_COMMAND,
         )
+    }
+}
+
+internal fun desktopMemoryTopology(osName: String, architecture: String): MemoryTopology {
+    val normalizedOs = osName.trim().lowercase()
+    if (!normalizedOs.contains("mac") && !normalizedOs.contains("darwin")) {
+        return MemoryTopology.UNKNOWN
+    }
+    return when (architecture.trim().lowercase()) {
+        "arm64", "aarch64" -> MemoryTopology.UNIFIED
+        else -> MemoryTopology.UNKNOWN
     }
 }

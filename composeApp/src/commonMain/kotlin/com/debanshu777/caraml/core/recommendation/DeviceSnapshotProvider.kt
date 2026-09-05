@@ -107,7 +107,7 @@ class DeviceSnapshotProvider internal constructor(
     }
 
     private fun readHardware(evidence: MutableList<Evidence>): HardwareProfile = try {
-        hardwareProfileSource()
+        hardwareProfileSource().revalidated()
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (_: Exception) {

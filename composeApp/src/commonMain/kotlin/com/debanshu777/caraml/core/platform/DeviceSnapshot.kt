@@ -99,6 +99,16 @@ data class HardwareProfile private constructor(
             memoryTopology = memoryTopology,
             evidence = evidence,
         )
+
+    internal fun revalidated(): HardwareProfile = validatedHardwareProfile(
+        cpuArchitecture = cpuArchitecture,
+        logicalCoreCountReading = logicalCoreCount,
+        performanceCoreCountReading = performanceCoreCount,
+        instructionSets = instructionSets,
+        backends = backends,
+        memoryTopology = memoryTopology,
+        evidence = evidence,
+    )
 }
 
 @ConsistentCopyVisibility
@@ -208,6 +218,33 @@ internal fun fallbackPerformanceCoreCount(logicalCoreCount: Int): Int? =
         .takeIf { it in 1..MAX_LOGICAL_CORE_COUNT }
         ?.let { logical -> maxOf(1, logical / 2).coerceAtMost(logical) }
 
+internal data class ValidatedCoreCount(
+    val value: Int,
+    val evidence: List<Evidence>,
+)
+
+internal fun validatedUnsignedCoreCount(
+    reading: ULong,
+    detail: String,
+): ValidatedCoreCount = if (reading in 1uL..MAX_LOGICAL_CORE_COUNT.toULong()) {
+    ValidatedCoreCount(reading.toInt(), emptyList())
+} else {
+    ValidatedCoreCount(
+        value = 1,
+        evidence = listOf(invalidCoreEvidence("$detail=$reading")),
+    )
+}
+
+internal fun <T> withOwnedMachPort(
+    port: UInt,
+    deallocate: (UInt) -> Unit,
+    block: (UInt) -> T,
+): T = try {
+    block(port)
+} finally {
+    deallocate(port)
+}
+
 internal fun validatedHardwareProfile(
     cpuArchitecture: String,
     logicalCoreCountReading: Int,
@@ -218,13 +255,15 @@ internal fun validatedHardwareProfile(
     evidence: Collection<Evidence> = emptyList(),
 ): HardwareProfile {
     val validationEvidence = evidence.toMutableList()
-    val logicalCoreCount = logicalCoreCountReading.takeIf { it in 1..MAX_LOGICAL_CORE_COUNT }
+    val logicalCoreCountIsValid = logicalCoreCountReading in 1..MAX_LOGICAL_CORE_COUNT
+    val logicalCoreCount = logicalCoreCountReading.takeIf { logicalCoreCountIsValid }
         ?: 1.also {
             validationEvidence += invalidCoreEvidence(
                 "logical-core-count=$logicalCoreCountReading",
             )
         }
-    val performanceCoreCount = performanceCoreCountReading?.takeIf { it in 1..logicalCoreCount }
+    val performanceCoreCount = performanceCoreCountReading
+        ?.takeIf { logicalCoreCountIsValid && it in 1..logicalCoreCount }
         ?: run {
             if (performanceCoreCountReading != null) {
                 validationEvidence += invalidCoreEvidence(

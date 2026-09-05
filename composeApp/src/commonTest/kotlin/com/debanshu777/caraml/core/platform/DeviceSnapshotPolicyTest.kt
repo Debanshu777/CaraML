@@ -3,6 +3,7 @@ package com.debanshu777.caraml.core.platform
 import com.debanshu777.caraml.core.recommendation.AssessmentReason
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -67,6 +68,53 @@ class DeviceSnapshotPolicyTest {
         assertEquals(1, profile.logicalCoreCount)
         assertNull(profile.performanceCoreCount)
         assertTrue(profile.evidence.any { it.reason == AssessmentReason.INVALID_CORE_COUNT })
+    }
+
+    @Test
+    fun unsignedCoreCountsAreValidatedBeforeNarrowingToInt() {
+        val valid = validatedUnsignedCoreCount(8uL, "active-processor-count")
+        val justOverLimit = validatedUnsignedCoreCount(1_025uL, "active-processor-count")
+        val wrapsToEightIfNarrowedFirst = validatedUnsignedCoreCount(
+            4_294_967_304uL,
+            "active-processor-count",
+        )
+        val maximum = validatedUnsignedCoreCount(ULong.MAX_VALUE, "active-processor-count")
+
+        assertEquals(8, valid.value)
+        assertTrue(valid.evidence.isEmpty())
+        listOf(justOverLimit, wrapsToEightIfNarrowedFirst, maximum).forEach { reading ->
+            assertEquals(1, reading.value)
+            assertTrue(reading.evidence.any { it.reason == AssessmentReason.INVALID_CORE_COUNT })
+        }
+    }
+
+    @Test
+    fun ownedMachPortIsReleasedAfterSuccessfulCollection() {
+        var releasedPort: UInt? = null
+
+        val result = withOwnedMachPort(
+            port = 7u,
+            deallocate = { releasedPort = it },
+            block = { 42L },
+        )
+
+        assertEquals(42L, result)
+        assertEquals(7u, releasedPort)
+    }
+
+    @Test
+    fun ownedMachPortIsReleasedWhenCollectionThrows() {
+        var releasedPort: UInt? = null
+
+        assertFailsWith<IllegalStateException> {
+            withOwnedMachPort(
+                port = 11u,
+                deallocate = { releasedPort = it },
+                block = { error("collection failed") },
+            )
+        }
+
+        assertEquals(11u, releasedPort)
     }
 
     @Test
