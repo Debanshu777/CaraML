@@ -39,6 +39,7 @@ data class LlmRunPlan private constructor(
     override val memoryTopology: MemoryTopology,
     val gpuLayerCount: Int?,
     override val compromises: List<RunPlanCompromise>,
+    internal val collectionLimitExceeded: Boolean,
 ) : RunPlan {
     constructor(
         contextTokens: Int,
@@ -61,7 +62,32 @@ data class LlmRunPlan private constructor(
         backend = backend,
         memoryTopology = memoryTopology,
         gpuLayerCount = gpuLayerCount,
-        compromises = compromises.distinct(),
+        compromises = boundedCollectionSnapshot(compromises, RecommendationPolicyV1.MAX_PLAN_COMPROMISES),
+    )
+
+    private constructor(
+        contextTokens: Int,
+        batchSize: Int,
+        microBatchSize: Int,
+        sequenceCount: Int,
+        keyCacheType: KvCacheType,
+        valueCacheType: KvCacheType,
+        backend: BackendKind,
+        memoryTopology: MemoryTopology,
+        gpuLayerCount: Int?,
+        compromises: BoundedCollectionSnapshot<RunPlanCompromise>,
+    ) : this(
+        contextTokens = contextTokens,
+        batchSize = batchSize,
+        microBatchSize = microBatchSize,
+        sequenceCount = sequenceCount,
+        keyCacheType = keyCacheType,
+        valueCacheType = valueCacheType,
+        backend = backend,
+        memoryTopology = memoryTopology,
+        gpuLayerCount = gpuLayerCount,
+        compromises = compromises.values.distinct(),
+        collectionLimitExceeded = compromises.limitExceeded,
     )
 
     override val stableKey: String
@@ -86,6 +112,7 @@ data class DiffusionRunPlan private constructor(
     override val backend: BackendKind,
     override val memoryTopology: MemoryTopology,
     override val compromises: List<DiffusionPlanCompromise>,
+    internal val collectionLimitExceeded: Boolean,
 ) : RunPlan {
     constructor(
         mode: DiffusionMode,
@@ -120,7 +147,44 @@ data class DiffusionRunPlan private constructor(
         requiresUserAcceptance = requiresUserAcceptance,
         backend = backend,
         memoryTopology = memoryTopology,
-        compromises = compromises.distinct(),
+        compromises = boundedCollectionSnapshot(compromises, RecommendationPolicyV1.MAX_PLAN_COMPROMISES),
+    )
+
+    private constructor(
+        mode: DiffusionMode,
+        width: Int,
+        height: Int,
+        frameCount: Int,
+        batchSize: Int,
+        steps: Int,
+        vaeTiling: Boolean,
+        offloadToCpu: Boolean,
+        keepClipOnCpu: Boolean,
+        keepVaeOnCpu: Boolean,
+        maxVramBytes: Long?,
+        layerStreaming: Boolean,
+        requiresUserAcceptance: Boolean,
+        backend: BackendKind,
+        memoryTopology: MemoryTopology,
+        compromises: BoundedCollectionSnapshot<DiffusionPlanCompromise>,
+    ) : this(
+        mode = mode,
+        width = width,
+        height = height,
+        frameCount = frameCount,
+        batchSize = batchSize,
+        steps = steps,
+        vaeTiling = vaeTiling,
+        offloadToCpu = offloadToCpu,
+        keepClipOnCpu = keepClipOnCpu,
+        keepVaeOnCpu = keepVaeOnCpu,
+        maxVramBytes = maxVramBytes,
+        layerStreaming = layerStreaming,
+        requiresUserAcceptance = requiresUserAcceptance,
+        backend = backend,
+        memoryTopology = memoryTopology,
+        compromises = compromises.values.distinct(),
+        collectionLimitExceeded = compromises.limitExceeded,
     )
 
     override val stableKey: String

@@ -240,3 +240,63 @@ Planned message: `fix(recommendation): validate bounded device fit graphs` (SHA 
 ## Concerns
 
 - No blocker. Honest unknown performance remains allowed only with coherent Low-confidence evidence; video remains non-blocking until comparable calibration exists.
+
+---
+
+# Fix Round 3 — public snapshot invariants and bounded nested graphs
+
+Status: complete; all required gates pass.
+
+## Implementation
+
+- Closed the public snapshot trust boundary: every present base/resource budget must have matching confidence, budget pools must match topology, budgets cannot exceed their bounded source readings, and every backend status/availability/headroom combination must be coherent. Present allocatable accelerator bytes without headroom confidence now fail closed before fit.
+- Required every accelerated LLM plan to declare `UNIFIED` or `DISCRETE` topology in the shared validator. Generation emits no invalid candidate, footprint/performance estimation returns structured invalid evidence, and policy rejects direct malformed graphs.
+- Added a shared iterator-bounded snapshot primitive that never trusts `Collection.size`, materializes immutable lists, reads only to its versioned cap plus overflow detection, preserves an explicit overflow flag, and rethrows `CancellationException` unchanged.
+- Versioned limits now cover candidate lists, compatibility reasons, evidence at every assessment/performance/device layer, backend capabilities, instruction sets, and plan compromises. Overflow and iterator failure remain bounded and produce `COLLECTION_LIMIT_EXCEEDED` before compatibility selection, fitting, or utility.
+- Preserved overflow state through hardware revalidation/backend replacement and resource normalization/storage enrichment so a favorable truncated prefix cannot regain trust.
+
+## TDD evidence
+
+- Public headroom invariant RED: the two focused policy tests executed with 2 failures because `AVAILABLE + bytes + null headroomConfidence`, unmatched budget confidence, and impossible topology pool shapes could reach fit. GREEN: both passed after live snapshot/backend validation.
+- Accelerated LLM topology RED: the focused generator, footprint estimator, performance estimator, and policy command executed 4 tests with 4 failures because non-CPU `UNKNOWN` topology remained accepted. GREEN: all four passed after the shared validator gained the invariant.
+- Nested collection RED: the three focused malicious under-reporting collection tests executed with 3 failures because nested compatibility, plan/performance, compromise, backend/hardware/resource, and snapshot collections either scanned their full input or lost overflow provenance. GREEN: all three passed with bounded reads and the structured overflow reason.
+- Cancellation RED/GREEN: after adding the direct bounded-Iterable test, deliberately removing the explicit cancellation branch made the exact 1-test command fail; restoring `CancellationException` passthrough made the same test pass.
+- The combined initial Round 3 GREEN command passed all then-current 9 adversarial tests; the final direct Iterable/cancellation test brings dedicated Round 3 coverage to 10 tests.
+
+## Final verification
+
+- Exact Task 6 five-class gate: `./gradlew :composeApp:jvmTest --quiet --tests '*PerformanceEstimatorTest*' --tests '*SuitabilityEngineTest*' --tests '*RunPlanOptimizerTest*' --tests '*RecommendationPolicyTest*' --tests '*RecommendationPolicyPropertyTest*'` — PASS, 72 tests across 5 suites, 0 skipped/failures/errors, exit 0.
+- Full recommendation regression: `./gradlew :composeApp:jvmTest --quiet --tests 'com.debanshu777.caraml.core.recommendation.*'` — PASS, 187 tests across 15 suites, 0 skipped/failures/errors, exit 0.
+- Snapshot regression: `./gradlew :composeApp:jvmTest --quiet --tests '*DeviceSnapshotProviderTest*' --tests '*DeviceSnapshotPolicyTest*' --tests '*DeviceSnapshotJvmPolicyTest*'` — PASS, 27 tests across 3 suites, 0 skipped/failures/errors, exit 0.
+- Combined Task 4/5 plan gate: `./gradlew :composeApp:jvmTest --quiet --tests '*DiffusionRunPlanGeneratorTest*' --tests '*DiffusionFootprintEstimatorTest*' --tests '*LlmRunPlanGeneratorTest*' --tests '*LlmFootprintEstimatorTest*' --tests '*WorkloadConfigFactoryTest*'` — PASS, 70 tests across 5 suites, 0 skipped/failures/errors, exit 0.
+- iOS simulator: `./gradlew :composeApp:compileKotlinIosSimulatorArm64 --quiet` — PASS, exit 0.
+- Android supported assembly: `./gradlew :composeApp:assembleAndroidMain --quiet` — PASS, exit 0.
+
+## Files
+
+- `.superpowers/sdd/2026-09-05-device-aware-model-recommendation/task-6-report.md`
+- `composeApp/src/commonMain/kotlin/com/debanshu777/caraml/core/platform/DeviceSnapshot.kt`
+- `composeApp/src/commonMain/kotlin/com/debanshu777/caraml/core/recommendation/{AssessmentModels,BoundedCollectionSnapshot,DeviceSnapshotProvider,PerformanceEstimator,RecommendationProfile,RunPlan,RunPlanOptimizer,RunPlanValidation}.kt`
+- `composeApp/src/commonTest/kotlin/com/debanshu777/caraml/core/recommendation/{LlmFootprintEstimatorTest,LlmRunPlanGeneratorTest,PerformanceEstimatorTest,RecommendationPolicyTest}.kt`
+
+## Self-review and security
+
+- Confirmed overflow flags are checked after outer/inner identity equality but before definite compatibility results, because an overflowed compatibility reason set is not a trustworthy definite result.
+- Confirmed every public collection reachable from `ModelAssessment` or `DeviceSnapshot` before policy validation is snapshotted without consulting caller-reported size; all subsequent scans are over version-bounded immutable copies (CWE-400).
+- Confirmed overflow cannot disappear during provider revalidation/normalization, and both collection overflow and iterator exceptions fail closed without swallowing coroutine cancellation.
+- Confirmed backend availability evidence never substitutes for headroom confidence, incoherent headroom cannot coexist with a usable GPU/shared budget, and base budgets remain independently sourced without pool summing.
+- Confirmed accelerated LLM topology is owned by the shared plan validator used by generator, both estimators, and policy; CPU `UNKNOWN` topology remains valid and unchanged.
+- Confirmed no profile/personalization state entered objective assessment or cache state, and no secrets, network calls, dynamic execution, sensitive logging, or dependencies were added.
+
+## Staging audit
+
+- Interactively staged exactly the 14 Fix Round 3 implementation/test/report paths above; unrelated dirty work remains excluded.
+- Inspected the complete cached diff in bounded production, test, and report sections; `git diff --cached --check` passed with no whitespace errors.
+
+## Commit
+
+Planned message: `fix(recommendation): bound public assessment graphs` (SHA returned in the handoff).
+
+## Concerns
+
+- No blocker. Honest unknown performance and video non-comparability behavior remain unchanged.

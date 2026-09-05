@@ -77,6 +77,7 @@ enum class AssessmentReason {
     QUALITY_NOT_VERIFIED,
     ASSESSMENT_GRAPH_INVALID,
     DEVICE_CAPABILITIES_CHANGED,
+    COLLECTION_LIMIT_EXCEEDED,
 }
 
 data class Evidence(
@@ -92,22 +93,48 @@ sealed interface Compatibility {
     data class Incompatible private constructor(
         val reasons: List<AssessmentReason>,
         val evidence: List<Evidence>,
+        internal val collectionLimitExceeded: Boolean,
     ) : Compatibility {
         constructor(
             reasons: Collection<AssessmentReason>,
             evidence: Collection<Evidence> = emptyList(),
-        ) : this(reasons.toList(), evidence.toList())
+        ) : this(
+            boundedCollectionSnapshot(reasons, RecommendationPolicyV1.MAX_ASSESSMENT_REASONS),
+            boundedCollectionSnapshot(evidence, RecommendationPolicyV1.MAX_EVIDENCE_ENTRIES),
+        )
+
+        private constructor(
+            reasons: BoundedCollectionSnapshot<AssessmentReason>,
+            evidence: BoundedCollectionSnapshot<Evidence>,
+        ) : this(
+            reasons = reasons.values,
+            evidence = evidence.values,
+            collectionLimitExceeded = reasons.limitExceeded || evidence.limitExceeded,
+        )
     }
 
     @ConsistentCopyVisibility
     data class Unknown private constructor(
         val reasons: List<AssessmentReason>,
         val evidence: List<Evidence>,
+        internal val collectionLimitExceeded: Boolean,
     ) : Compatibility {
         constructor(
             reasons: Collection<AssessmentReason>,
             evidence: Collection<Evidence> = emptyList(),
-        ) : this(reasons.toList(), evidence.toList())
+        ) : this(
+            boundedCollectionSnapshot(reasons, RecommendationPolicyV1.MAX_ASSESSMENT_REASONS),
+            boundedCollectionSnapshot(evidence, RecommendationPolicyV1.MAX_EVIDENCE_ENTRIES),
+        )
+
+        private constructor(
+            reasons: BoundedCollectionSnapshot<AssessmentReason>,
+            evidence: BoundedCollectionSnapshot<Evidence>,
+        ) : this(
+            reasons = reasons.values,
+            evidence = evidence.values,
+            collectionLimitExceeded = reasons.limitExceeded || evidence.limitExceeded,
+        )
     }
 }
 
@@ -134,6 +161,7 @@ data class PlanAssessment private constructor(
     val evidence: List<Evidence>,
     val performance: PerformanceEstimate,
     val utilityMetrics: PlanUtilityMetrics,
+    internal val collectionLimitExceeded: Boolean,
 ) {
     constructor(
         plan: PlanReference,
@@ -152,9 +180,32 @@ data class PlanAssessment private constructor(
         sharedMemoryBytes = sharedMemoryBytes,
         storageBytes = storageBytes,
         confidence = confidence,
-        evidence = evidence.toList(),
+        evidence = boundedCollectionSnapshot(evidence, RecommendationPolicyV1.MAX_EVIDENCE_ENTRIES),
         performance = performance,
         utilityMetrics = utilityMetrics,
+    )
+
+    private constructor(
+        plan: PlanReference,
+        hostMemoryBytes: EstimateRange?,
+        gpuMemoryBytes: EstimateRange?,
+        sharedMemoryBytes: EstimateRange?,
+        storageBytes: EstimateRange?,
+        confidence: AssessmentConfidence,
+        evidence: BoundedCollectionSnapshot<Evidence>,
+        performance: PerformanceEstimate,
+        utilityMetrics: PlanUtilityMetrics,
+    ) : this(
+        plan = plan,
+        hostMemoryBytes = hostMemoryBytes,
+        gpuMemoryBytes = gpuMemoryBytes,
+        sharedMemoryBytes = sharedMemoryBytes,
+        storageBytes = storageBytes,
+        confidence = confidence,
+        evidence = evidence.values,
+        performance = performance,
+        utilityMetrics = utilityMetrics,
+        collectionLimitExceeded = evidence.limitExceeded,
     )
 }
 
@@ -166,6 +217,7 @@ data class AssessedPlans private constructor(
     val memoryTopology: MemoryTopology,
     val reasons: List<AssessmentReason>,
     val evidence: List<Evidence>,
+    internal val collectionLimitExceeded: Boolean,
 ) {
     constructor(
         values: Collection<PlanAssessment>,
@@ -175,13 +227,45 @@ data class AssessedPlans private constructor(
         reasons: Collection<AssessmentReason> = emptyList(),
         evidence: Collection<Evidence> = emptyList(),
     ) : this(
-        values = values.asSequence().take(RecommendationPolicyV1.MAX_LLM_CANDIDATES + 1).toList(),
+        values = boundedPlanAssessmentSnapshot(values),
         assessmentKey = assessmentKey,
         compatibility = compatibility,
         memoryTopology = memoryTopology,
-        reasons = reasons.toList(),
-        evidence = evidence.toList(),
+        reasons = boundedCollectionSnapshot(reasons, RecommendationPolicyV1.MAX_ASSESSMENT_REASONS),
+        evidence = boundedCollectionSnapshot(evidence, RecommendationPolicyV1.MAX_EVIDENCE_ENTRIES),
     )
+
+    private constructor(
+        values: BoundedCollectionSnapshot<PlanAssessment>,
+        assessmentKey: String,
+        compatibility: Compatibility,
+        memoryTopology: MemoryTopology,
+        reasons: BoundedCollectionSnapshot<AssessmentReason>,
+        evidence: BoundedCollectionSnapshot<Evidence>,
+    ) : this(
+        values = values.values,
+        assessmentKey = assessmentKey,
+        compatibility = compatibility,
+        memoryTopology = memoryTopology,
+        reasons = reasons.values,
+        evidence = evidence.values,
+        collectionLimitExceeded = values.limitExceeded || reasons.limitExceeded || evidence.limitExceeded,
+    )
+}
+
+private fun boundedPlanAssessmentSnapshot(
+    values: Iterable<PlanAssessment>,
+): BoundedCollectionSnapshot<PlanAssessment> {
+    val snapshot = boundedCollectionSnapshot(values, RecommendationPolicyV1.MAX_LLM_CANDIDATES)
+    val limit = when (snapshot.values.firstOrNull()?.plan) {
+        is DiffusionRunPlan -> RecommendationPolicyV1.MAX_DIFFUSION_CANDIDATES
+        else -> RecommendationPolicyV1.MAX_LLM_CANDIDATES
+    }
+    return if (snapshot.values.size > limit) {
+        BoundedCollectionSnapshot(snapshot.values.take(limit), limitExceeded = true)
+    } else {
+        snapshot
+    }
 }
 
 @ConsistentCopyVisibility
@@ -195,6 +279,7 @@ data class ModelAssessment private constructor(
     val baseStorageBudgetBytes: Long?,
     val confidence: AssessmentConfidence,
     val evidence: List<Evidence>,
+    internal val collectionLimitExceeded: Boolean,
 ) {
     constructor(
         assessmentKey: String,
@@ -215,7 +300,30 @@ data class ModelAssessment private constructor(
         baseSharedBudgetBytes = baseSharedBudgetBytes,
         baseStorageBudgetBytes = baseStorageBudgetBytes,
         confidence = confidence,
-        evidence = evidence.toList(),
+        evidence = boundedCollectionSnapshot(evidence, RecommendationPolicyV1.MAX_EVIDENCE_ENTRIES),
+    )
+
+    private constructor(
+        assessmentKey: String,
+        compatibility: Compatibility,
+        planAssessments: AssessedPlans,
+        baseHostBudgetBytes: Long?,
+        baseGpuBudgetBytes: Long?,
+        baseSharedBudgetBytes: Long?,
+        baseStorageBudgetBytes: Long?,
+        confidence: AssessmentConfidence,
+        evidence: BoundedCollectionSnapshot<Evidence>,
+    ) : this(
+        assessmentKey = assessmentKey,
+        compatibility = compatibility,
+        planAssessments = planAssessments,
+        baseHostBudgetBytes = baseHostBudgetBytes,
+        baseGpuBudgetBytes = baseGpuBudgetBytes,
+        baseSharedBudgetBytes = baseSharedBudgetBytes,
+        baseStorageBudgetBytes = baseStorageBudgetBytes,
+        confidence = confidence,
+        evidence = evidence.values,
+        collectionLimitExceeded = evidence.limitExceeded,
     )
 }
 

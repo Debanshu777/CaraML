@@ -1,5 +1,8 @@
 package com.debanshu777.caraml.core.recommendation
 
+import com.debanshu777.caraml.core.platform.BackendCapability
+import com.debanshu777.caraml.core.platform.BackendKind
+import com.debanshu777.caraml.core.platform.BackendStatus
 import com.debanshu777.caraml.core.platform.DeviceSnapshot
 import com.debanshu777.caraml.core.platform.MemoryTopology
 import kotlin.math.exp
@@ -61,6 +64,9 @@ class RunPlanOptimizer(
         profile: RecommendationProfile,
     ): SelectedPlan {
         assessmentIdentityIssue(assessment)?.let { issue ->
+            return emptySelection(RecommendationCategory.NEEDS_INFORMATION, listOf(issue))
+        }
+        collectionGraphIssue(assessment, snapshot)?.let { issue ->
             return emptySelection(RecommendationCategory.NEEDS_INFORMATION, listOf(issue))
         }
         when (val compatibility = assessment.compatibility) {
@@ -132,6 +138,7 @@ class RunPlanOptimizer(
     ): AssessmentReason? {
         val plans = assessment.planAssessments
         val backends = snapshot.hardwareProfile.backends
+        if (snapshotBudgetIssue(snapshot)) return AssessmentReason.ASSESSMENT_GRAPH_INVALID
         if (backends.size > RecommendationPolicyV1.MAX_BACKEND_CAPABILITIES ||
             backends.map { it.kind }.toSet().size != backends.size ||
             backends.any(::backendCapabilityIsMalformed)
@@ -180,16 +187,122 @@ class RunPlanOptimizer(
     }
 
     private fun backendCapabilityIsMalformed(
-        capability: com.debanshu777.caraml.core.platform.BackendCapability,
+        capability: BackendCapability,
     ): Boolean =
-        capability.additionalAllocatableBytes?.let { it < 0L } == true ||
-            (capability.status == com.debanshu777.caraml.core.platform.BackendStatus.AVAILABLE &&
+        capability.additionalAllocatableBytes?.let { it <= 0L } == true ||
+            (capability.status == BackendStatus.AVAILABLE &&
                 capability.availabilityConfidence == null) ||
-            (capability.status != com.debanshu777.caraml.core.platform.BackendStatus.AVAILABLE &&
+            (capability.status == BackendStatus.AVAILABLE &&
+                (capability.additionalAllocatableBytes == null) != (capability.headroomConfidence == null)) ||
+            (capability.status != BackendStatus.AVAILABLE &&
                 (capability.additionalAllocatableBytes != null || capability.headroomConfidence != null)) ||
             (capability.additionalAllocatableBytes == null && capability.headroomConfidence != null) ||
-            (capability.kind == com.debanshu777.caraml.core.platform.BackendKind.CPU &&
+            (capability.kind == BackendKind.CPU &&
                 (capability.additionalAllocatableBytes != null || capability.headroomConfidence != null))
+
+    private fun collectionGraphIssue(
+        assessment: ModelAssessment,
+        snapshot: DeviceSnapshot,
+    ): AssessmentReason? {
+        val plans = assessment.planAssessments
+        if (assessment.collectionLimitExceeded ||
+            compatibilityCollectionLimitExceeded(assessment.compatibility) ||
+            plans.collectionLimitExceeded ||
+            compatibilityCollectionLimitExceeded(plans.compatibility) ||
+            snapshot.collectionLimitExceeded ||
+            snapshot.resources.collectionLimitExceeded ||
+            snapshot.hardwareProfile.collectionLimitExceeded ||
+            snapshot.hardwareProfile.backends.any { it.collectionLimitExceeded }
+        ) {
+            return AssessmentReason.COLLECTION_LIMIT_EXCEEDED
+        }
+        for (candidate in plans.values) {
+            if (candidate.collectionLimitExceeded ||
+                (candidate.plan as? LlmRunPlan)?.collectionLimitExceeded == true ||
+                (candidate.plan as? DiffusionRunPlan)?.collectionLimitExceeded == true ||
+                performanceCollectionLimitExceeded(candidate.performance)
+            ) {
+                return AssessmentReason.COLLECTION_LIMIT_EXCEEDED
+            }
+        }
+        return null
+    }
+
+    private fun compatibilityCollectionLimitExceeded(value: Compatibility): Boolean = when (value) {
+        Compatibility.Compatible -> false
+        is Compatibility.Incompatible -> value.collectionLimitExceeded
+        is Compatibility.Unknown -> value.collectionLimitExceeded
+    }
+
+    private fun performanceCollectionLimitExceeded(value: PerformanceEstimate): Boolean = when (value) {
+        is PerformanceEstimate.Unknown -> value.collectionLimitExceeded
+        is PerformanceEstimate.Llm -> value.collectionLimitExceeded || listOf(
+            value.promptTokensPerSecond,
+            value.decodeTokensPerSecond,
+            value.timeToFirstTokenSeconds,
+            value.loadTimeSeconds,
+        ).any { it.collectionLimitExceeded }
+        is PerformanceEstimate.DiffusionImage -> value.collectionLimitExceeded || listOf(
+            value.secondsPerStep,
+            value.totalTimeSeconds,
+            value.referenceTotalTimeSeconds,
+        ).any { it.collectionLimitExceeded }
+        is PerformanceEstimate.DiffusionVideo -> value.collectionLimitExceeded || listOf(
+            value.secondsPerStep,
+            value.secondsPerFrame,
+            value.totalTimeSeconds,
+        ).any { it.collectionLimitExceeded }
+    }
+
+    private fun snapshotBudgetIssue(snapshot: DeviceSnapshot): Boolean {
+        val resources = snapshot.resources
+        val confidence = snapshot.budgetConfidence
+        if (budgetPairIsMalformed(snapshot.baseHostBudgetBytes, confidence.host) ||
+            budgetPairIsMalformed(snapshot.baseGpuBudgetBytes, confidence.gpu) ||
+            budgetPairIsMalformed(snapshot.baseSharedBudgetBytes, confidence.shared) ||
+            budgetPairIsMalformed(snapshot.baseStorageBudgetBytes, confidence.storage) ||
+            budgetPairIsMalformed(resources.additionalAllocatableHostBytes, resources.confidence.host) ||
+            budgetPairIsMalformed(resources.additionalAllocatableGpuBytes, resources.confidence.gpu) ||
+            budgetPairIsMalformed(resources.freeStorageBytes, resources.confidence.storage)
+        ) {
+            return true
+        }
+        when (snapshot.hardwareProfile.memoryTopology) {
+            MemoryTopology.UNIFIED -> if (
+                snapshot.baseHostBudgetBytes != null || confidence.host != null ||
+                snapshot.baseGpuBudgetBytes != null || confidence.gpu != null
+            ) return true
+            MemoryTopology.DISCRETE -> if (
+                snapshot.baseSharedBudgetBytes != null || confidence.shared != null
+            ) return true
+            MemoryTopology.UNKNOWN -> if (
+                snapshot.baseGpuBudgetBytes != null || confidence.gpu != null ||
+                snapshot.baseSharedBudgetBytes != null || confidence.shared != null
+            ) return true
+        }
+
+        val backendHeadrooms = snapshot.hardwareProfile.backends.mapNotNull { backend ->
+            backend.additionalAllocatableBytes?.takeIf {
+                backend.status == BackendStatus.AVAILABLE && backend.headroomConfidence != null
+            }
+        }
+        val hostSource = resources.additionalAllocatableHostBytes
+        val gpuSources = listOfNotNull(resources.additionalAllocatableGpuBytes) + backendHeadrooms
+        val sharedSources = listOfNotNull(hostSource, resources.additionalAllocatableGpuBytes) + backendHeadrooms
+        if (snapshot.baseHostBudgetBytes?.let { hostSource == null || it > hostSource } == true ||
+            snapshot.baseGpuBudgetBytes?.let { gpuSources.isEmpty() || it > gpuSources.min() } == true ||
+            snapshot.baseSharedBudgetBytes?.let { sharedSources.isEmpty() || it > sharedSources.min() } == true ||
+            snapshot.baseStorageBudgetBytes?.let {
+                resources.freeStorageBytes == null || it > resources.freeStorageBytes
+            } == true
+        ) {
+            return true
+        }
+        return false
+    }
+
+    private fun budgetPairIsMalformed(bytes: Long?, confidence: Confidence?): Boolean =
+        bytes?.let { it < 0L } == true || (bytes == null) != (confidence == null)
 
     private fun samePlanKind(first: RunPlan, second: RunPlan): Boolean =
         first is LlmRunPlan && second is LlmRunPlan ||

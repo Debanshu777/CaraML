@@ -12,9 +12,11 @@ import com.debanshu777.caraml.core.platform.ResourcePoolConfidence
 import com.debanshu777.caraml.core.platform.ThermalState
 import com.debanshu777.caraml.core.rating.SdArchitecture
 import com.debanshu777.huggingfacemanager.sdcpp.ComponentRole
+import kotlinx.coroutines.CancellationException
 import kotlin.time.Clock
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class RecommendationPolicyTest {
@@ -157,6 +159,106 @@ class RecommendationPolicyTest {
     }
 
     @Test
+    fun callerBuiltBudgetsCannotHidePresentUntrustedBackendHeadroom() {
+        val untrustedHeadroom = BackendCapability(
+            kind = BackendKind.CUDA,
+            status = BackendStatus.AVAILABLE,
+            additionalAllocatableBytes = 1_000,
+            availabilityConfidence = Confidence.HIGH,
+            headroomConfidence = null,
+            evidence = listOf(
+                Evidence(AssessmentReason.BACKEND_CAPABILITY_VERIFIED, Confidence.HIGH, "availability-only"),
+            ),
+        )
+        val unifiedPlan = task6PlanAssessment(
+            plan = task6LlmPlan(backend = BackendKind.CUDA, topology = MemoryTopology.UNIFIED),
+            host = null,
+            shared = task6Range(100, 100, 100),
+        )
+        val discretePlan = task6PlanAssessment(
+            plan = task6LlmPlan(backend = BackendKind.CUDA, topology = MemoryTopology.DISCRETE),
+            host = task6Range(100, 100, 100),
+            gpu = task6Range(100, 100, 100),
+        )
+
+        val results = listOf(
+            policy.recommend(
+                task6Assessment(plans = listOf(unifiedPlan)),
+                task6Snapshot(
+                    hostBudget = null,
+                    sharedBudget = 1_000,
+                    topology = MemoryTopology.UNIFIED,
+                    backends = listOf(untrustedHeadroom),
+                ),
+                RecommendationProfile(),
+            ),
+            policy.recommend(
+                task6Assessment(plans = listOf(discretePlan)),
+                task6Snapshot(
+                    hostBudget = 1_000,
+                    gpuBudget = 1_000,
+                    topology = MemoryTopology.DISCRETE,
+                    backends = listOf(untrustedHeadroom),
+                ),
+                RecommendationProfile(),
+            ),
+        )
+
+        results.forEach { result ->
+            assertEquals(RecommendationCategory.NEEDS_INFORMATION, result.category)
+            assertEquals(listOf(AssessmentReason.ASSESSMENT_GRAPH_INVALID), result.reasons)
+        }
+    }
+
+    @Test
+    fun budgetConfidenceAndTopologyShapeMustMatchEveryPresentBaseBudget() {
+        val unifiedPlan = task6PlanAssessment(
+            plan = task6LlmPlan(backend = BackendKind.METAL, topology = MemoryTopology.UNIFIED),
+            host = null,
+            shared = task6Range(100, 100, 100),
+        )
+        val assessment = task6Assessment(plans = listOf(unifiedPlan))
+        val validBackend = task6Backend(BackendKind.METAL)
+        val missingConfidence = task6Snapshot(
+            hostBudget = null,
+            sharedBudget = 1_000,
+            sharedConfidence = null,
+            topology = MemoryTopology.UNIFIED,
+            backends = listOf(validBackend),
+        )
+        val impossibleHostPool = task6Snapshot(
+            hostBudget = 1_000,
+            sharedBudget = 1_000,
+            topology = MemoryTopology.UNIFIED,
+            backends = listOf(validBackend),
+        )
+
+        listOf(missingConfidence, impossibleHostPool).forEach { snapshot ->
+            val result = policy.recommend(assessment, snapshot, RecommendationProfile())
+            assertEquals(RecommendationCategory.NEEDS_INFORMATION, result.category)
+            assertEquals(listOf(AssessmentReason.ASSESSMENT_GRAPH_INVALID), result.reasons)
+        }
+    }
+
+    @Test
+    fun acceleratedLlmWithUnknownTopologyIsInvalidAtThePolicyBoundary() {
+        val plan = task6LlmPlan(
+            backend = BackendKind.CUDA,
+            topology = MemoryTopology.UNKNOWN,
+            gpuLayers = 16,
+        )
+        val result = policy.recommend(
+            task6Assessment(plans = listOf(task6PlanAssessment(plan = plan))),
+            task6Snapshot(backends = listOf(task6Backend(BackendKind.CUDA))),
+            RecommendationProfile(),
+        )
+
+        assertEquals(AssessmentReason.INVALID_WORKLOAD, validateRunPlan(plan))
+        assertEquals(RecommendationCategory.NEEDS_INFORMATION, result.category)
+        assertEquals(listOf(AssessmentReason.ASSESSMENT_GRAPH_INVALID), result.reasons)
+    }
+
+    @Test
     fun unavailableBackendInAnyCandidateInvalidatesTheCachedCandidateGraph() {
         val availableCpu = task6PlanAssessment(plan = task6LlmPlan(keyContext = 4_096))
         val staleCuda = task6PlanAssessment(
@@ -231,8 +333,173 @@ class RecommendationPolicyTest {
 
         results.forEach { result ->
             assertEquals(RecommendationCategory.NEEDS_INFORMATION, result.category)
-            assertEquals(listOf(AssessmentReason.ASSESSMENT_GRAPH_INVALID), result.reasons)
+            assertEquals(listOf(AssessmentReason.COLLECTION_LIMIT_EXCEEDED), result.reasons)
         }
+    }
+
+    @Test
+    fun underReportingCandidateBackendAndCompatibilityCollectionsFailClosedAtBoundedReads() {
+        var candidateReads = 0
+        var backendReads = 0
+        var compatibilityReads = 0
+        val candidates = underReportingCollection(task6PlanAssessment(), 100) { candidateReads += 1 }
+        val backends = underReportingCollection(task6Backend(BackendKind.CPU), 100) { backendReads += 1 }
+        val compatibility = Compatibility.Incompatible(
+            reasons = underReportingCollection(AssessmentReason.UNSUPPORTED_FORMAT, 100) {
+                compatibilityReads += 1
+            },
+        )
+
+        val results = listOf(
+            policy.recommend(
+                task6Assessment(plans = candidates, innerTopology = MemoryTopology.UNKNOWN),
+                task6Snapshot(),
+                RecommendationProfile(),
+            ),
+            policy.recommend(
+                task6Assessment(),
+                task6Snapshot(backends = backends),
+                RecommendationProfile(),
+            ),
+            policy.recommend(
+                task6Assessment(compatibility = compatibility),
+                task6Snapshot(),
+                RecommendationProfile(),
+            ),
+        )
+
+        assertTrue(candidateReads <= 25, "candidate reads=$candidateReads")
+        assertTrue(backendReads <= 6, "backend reads=$backendReads")
+        assertTrue(compatibilityReads <= 33, "compatibility reads=$compatibilityReads")
+        results.forEach { result ->
+            assertEquals(RecommendationCategory.NEEDS_INFORMATION, result.category)
+            assertEquals(listOf("COLLECTION_LIMIT_EXCEEDED"), result.reasons.map { it.name })
+        }
+    }
+
+    @Test
+    fun boundedIterableSnapshotStopsAtTheLimitAndDoesNotSwallowCancellation() {
+        var reads = 0
+        val source = object : Iterable<Int> {
+            override fun iterator(): Iterator<Int> = object : Iterator<Int> {
+                private var next = 0
+                override fun hasNext(): Boolean = next < 100
+                override fun next(): Int = next++.also { reads += 1 }
+            }
+        }
+
+        val snapshot = boundedCollectionSnapshot(source, 4)
+
+        assertEquals(listOf(0, 1, 2, 3), snapshot.values)
+        assertTrue(snapshot.limitExceeded)
+        assertTrue(reads <= 5, "iterable reads=$reads")
+        assertFailsWith<CancellationException> {
+            boundedCollectionSnapshot(
+                source = Iterable<Int> {
+                    object : Iterator<Int> {
+                        override fun hasNext(): Boolean = throw CancellationException("cancelled")
+                        override fun next(): Int = throw NoSuchElementException()
+                    }
+                },
+                limit = 4,
+            )
+        }
+    }
+
+    @Test
+    fun underReportingPlanPerformanceAndCompromiseCollectionsFailClosedAtBoundedReads() {
+        var planEvidenceReads = 0
+        var performanceEvidenceReads = 0
+        var rangeEvidenceReads = 0
+        var compromiseReads = 0
+        val evidence = Evidence(AssessmentReason.PERFORMANCE_ESTIMATED, Confidence.HIGH, "bounded")
+        val performanceRange = requireNotNull(
+            PerformanceRange.create(
+                low = 1.0,
+                likely = 2.0,
+                high = 3.0,
+                confidence = Confidence.HIGH,
+                evidence = underReportingCollection(evidence, 100) { rangeEvidenceReads += 1 },
+            ),
+        )
+        val performance = PerformanceEstimate.Llm(
+            promptTokensPerSecond = performanceRange,
+            decodeTokensPerSecond = performanceRange,
+            timeToFirstTokenSeconds = performanceRange,
+            loadTimeSeconds = performanceRange,
+            evidence = underReportingCollection(evidence, 100) { performanceEvidenceReads += 1 },
+        )
+        val planEvidence = task6PlanAssessment(
+            evidence = underReportingCollection(evidence, 100) { planEvidenceReads += 1 },
+        )
+        val performanceEvidence = task6PlanAssessment(performance = performance)
+        val compromised = task6PlanAssessment(
+            plan = task6LlmPlan(
+                compromises = underReportingCollection(RunPlanCompromise.CONTEXT_REDUCED, 100) {
+                    compromiseReads += 1
+                },
+            ),
+        )
+
+        listOf(planEvidence, performanceEvidence, compromised).forEach { candidate ->
+            val result = policy.recommend(
+                task6Assessment(plans = listOf(candidate)),
+                task6Snapshot(),
+                RecommendationProfile(),
+            )
+            assertEquals(RecommendationCategory.NEEDS_INFORMATION, result.category)
+            assertEquals(listOf("COLLECTION_LIMIT_EXCEEDED"), result.reasons.map { it.name })
+        }
+        assertTrue(planEvidenceReads <= 65, "plan evidence reads=$planEvidenceReads")
+        assertTrue(performanceEvidenceReads <= 65, "performance evidence reads=$performanceEvidenceReads")
+        assertTrue(rangeEvidenceReads <= 65, "range evidence reads=$rangeEvidenceReads")
+        assertTrue(compromiseReads <= 9, "compromise reads=$compromiseReads")
+    }
+
+    @Test
+    fun underReportingNestedSnapshotCollectionsFailClosedAtBoundedReads() {
+        var backendEvidenceReads = 0
+        var instructionReads = 0
+        var hardwareEvidenceReads = 0
+        var resourceEvidenceReads = 0
+        var snapshotEvidenceReads = 0
+        val evidence = Evidence(AssessmentReason.RESOURCE_READING_VALIDATED, Confidence.HIGH, "bounded")
+        val backend = BackendCapability(
+            kind = BackendKind.CPU,
+            status = BackendStatus.AVAILABLE,
+            additionalAllocatableBytes = null,
+            availabilityConfidence = Confidence.HIGH,
+            headroomConfidence = null,
+            evidence = underReportingCollection(evidence, 100) { backendEvidenceReads += 1 },
+        )
+        val snapshots = listOf(
+            task6Snapshot(backends = listOf(backend)),
+            task6Snapshot(
+                instructionSets = underReportingCollection("neon", 100) { instructionReads += 1 },
+            ),
+            task6Snapshot(
+                hardwareEvidence = underReportingCollection(evidence, 100) { hardwareEvidenceReads += 1 },
+            ),
+            task6Snapshot(
+                resourceEvidence = underReportingCollection(evidence, 100) { resourceEvidenceReads += 1 },
+            ),
+            task6Snapshot(
+                evidence = underReportingCollection(evidence, 100) { snapshotEvidenceReads += 1 },
+            ),
+        )
+
+        snapshots.forEach { snapshot ->
+            val result = policy.recommend(task6Assessment(), snapshot, RecommendationProfile())
+            assertEquals(RecommendationCategory.NEEDS_INFORMATION, result.category)
+            assertEquals(listOf("COLLECTION_LIMIT_EXCEEDED"), result.reasons.map { it.name })
+        }
+        listOf(
+            backendEvidenceReads,
+            instructionReads,
+            hardwareEvidenceReads,
+            resourceEvidenceReads,
+            snapshotEvidenceReads,
+        ).forEach { reads -> assertTrue(reads <= 65, "nested reads=$reads") }
     }
 
     @Test
@@ -753,6 +1020,7 @@ internal fun task6PlanAssessment(
     shared: EstimateRange? = null,
     storage: EstimateRange? = task6Range(100, 100, 100),
     confidence: AssessmentConfidence = task6Confidence(),
+    evidence: Collection<Evidence> = emptyList(),
     performance: PerformanceEstimate = PerformanceEstimate.Unknown(AssessmentReason.SPEED_NOT_VERIFIED),
     metrics: PlanUtilityMetrics = PlanUtilityMetrics(0.5, null, 0.5, 0.5, 0.5),
 ) = PlanAssessment(
@@ -762,14 +1030,14 @@ internal fun task6PlanAssessment(
     sharedMemoryBytes = shared,
     storageBytes = storage,
     confidence = confidence,
-    evidence = emptyList(),
+    evidence = evidence,
     performance = performance,
     utilityMetrics = metrics,
 )
 
 internal fun task6Assessment(
     compatibility: Compatibility = Compatibility.Compatible,
-    plans: List<PlanAssessment> = listOf(task6PlanAssessment()),
+    plans: Collection<PlanAssessment> = listOf(task6PlanAssessment()),
     confidence: AssessmentConfidence = task6Confidence(),
     assessmentKey: String = TASK6_ASSESSMENT_KEY,
     innerAssessmentKey: String = assessmentKey,
@@ -805,26 +1073,33 @@ internal fun task6Snapshot(
     sharedConfidence: Confidence? = sharedBudget?.let { Confidence.HIGH },
     storageConfidence: Confidence? = storageBudget?.let { Confidence.HIGH },
     topology: MemoryTopology = if (gpuBudget == null) MemoryTopology.UNKNOWN else MemoryTopology.DISCRETE,
-    backends: List<BackendCapability> = listOf(
+    backends: Collection<BackendCapability> = listOf(
         task6Backend(if (gpuBudget == null) BackendKind.CPU else BackendKind.CUDA),
     ),
+    instructionSets: Collection<String> = emptySet(),
+    hardwareEvidence: Collection<Evidence> = emptyList(),
+    resourceEvidence: Collection<Evidence> = emptyList(),
+    evidence: Collection<Evidence> = emptyList(),
 ) = DeviceSnapshot(
     hardwareProfile = task6Hardware(
         topology = topology,
         backends = backends,
+        instructionSets = instructionSets,
+        evidence = hardwareEvidence,
     ),
     resources = task6ResourceSnapshot(
-        hostBytes = hostBudget,
+        hostBytes = if (topology == MemoryTopology.UNIFIED) sharedBudget else hostBudget,
         gpuBytes = gpuBudget,
         storageBytes = storageBudget,
         capturedAtEpochMs = capturedAtEpochMs,
+        evidence = resourceEvidence,
     ),
     baseHostBudgetBytes = hostBudget,
     baseGpuBudgetBytes = gpuBudget,
     baseSharedBudgetBytes = sharedBudget,
     baseStorageBudgetBytes = storageBudget,
     isFresh = isFresh,
-    evidence = emptyList(),
+    evidence = evidence,
     budgetConfidence = ResourcePoolConfidence(
         host = hostConfidence,
         gpu = gpuConfidence,
@@ -841,6 +1116,7 @@ internal fun task6ResourceSnapshot(
     hostConfidence: Confidence? = hostBytes?.let { Confidence.HIGH },
     gpuConfidence: Confidence? = gpuBytes?.let { Confidence.HIGH },
     storageConfidence: Confidence? = storageBytes?.let { Confidence.HIGH },
+    evidence: Collection<Evidence> = emptyList(),
 ) = ResourceSnapshot(
     additionalAllocatableHostBytes = hostBytes,
     additionalAllocatableGpuBytes = gpuBytes,
@@ -853,7 +1129,7 @@ internal fun task6ResourceSnapshot(
     thermalState = ThermalState.NOMINAL,
     powerPolicyState = PowerPolicyState.NORMAL,
     capturedAtEpochMs = capturedAtEpochMs,
-    evidence = emptyList(),
+    evidence = evidence,
     confidence = ResourcePoolConfidence(
         host = hostConfidence,
         gpu = gpuConfidence,
@@ -866,15 +1142,17 @@ internal fun task6Hardware(
     performanceCores: Int? = 4,
     backend: BackendKind = BackendKind.CPU,
     topology: MemoryTopology = MemoryTopology.UNKNOWN,
-    backends: List<BackendCapability> = listOf(task6Backend(backend)),
+    backends: Collection<BackendCapability> = listOf(task6Backend(backend)),
+    instructionSets: Collection<String> = emptySet(),
+    evidence: Collection<Evidence> = emptyList(),
 ) = HardwareProfile(
     cpuArchitecture = "fixture",
     logicalCoreCount = logicalCores,
     performanceCoreCount = performanceCores,
-    instructionSets = emptySet(),
+    instructionSets = instructionSets,
     backends = backends,
     memoryTopology = topology,
-    evidence = emptyList(),
+    evidence = evidence,
 )
 
 internal fun task6Backend(
@@ -904,7 +1182,7 @@ internal fun task6LlmPlan(
     backend: BackendKind = BackendKind.CPU,
     topology: MemoryTopology = MemoryTopology.UNKNOWN,
     gpuLayers: Int? = if (backend == BackendKind.CPU) 0 else 16,
-    compromises: List<RunPlanCompromise> = emptyList(),
+    compromises: Collection<RunPlanCompromise> = emptyList(),
 ) = LlmRunPlan(
     contextTokens = keyContext,
     batchSize = 128,
@@ -917,6 +1195,27 @@ internal fun task6LlmPlan(
     gpuLayerCount = gpuLayers,
     compromises = compromises,
 )
+
+private fun <T> underReportingCollection(
+    value: T,
+    actualCount: Int,
+    onRead: () -> Unit,
+): Collection<T> = object : AbstractCollection<T>() {
+    override val size: Int = 0
+
+    override fun iterator(): Iterator<T> = object : Iterator<T> {
+        private var remaining = actualCount
+
+        override fun hasNext(): Boolean = remaining > 0
+
+        override fun next(): T {
+            if (remaining <= 0) throw NoSuchElementException()
+            remaining -= 1
+            onRead()
+            return value
+        }
+    }
+}
 
 internal fun task6LlmDescriptor(
     sizeBytes: Long = 1_073_741_824L,

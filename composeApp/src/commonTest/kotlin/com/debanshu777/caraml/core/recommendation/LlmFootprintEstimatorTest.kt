@@ -178,6 +178,20 @@ class LlmFootprintEstimatorTest {
     }
 
     @Test
+    fun acceleratedLlmWithUnknownTopologyHasNoUsableMemoryEstimate() {
+        val estimate = estimator.estimate(
+            descriptor(),
+            plan(backend = BackendKind.CUDA, topology = MemoryTopology.UNKNOWN, gpuLayers = 16),
+            MemoryCalibration.None,
+        )
+
+        assertNull(estimate.hostMemoryBytes)
+        assertNull(estimate.gpuMemoryBytes)
+        assertNull(estimate.sharedMemoryBytes)
+        assertTrue(estimate.evidence.any { it.reason == AssessmentReason.INVALID_WORKLOAD })
+    }
+
+    @Test
     fun partialAndFullDiscreteEndpointsRemainIndependent() {
         val descriptor = descriptor(shape = TransformerShape(32, 8, 32, 4_096, 128))
         val partial = estimator.estimate(

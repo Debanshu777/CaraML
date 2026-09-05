@@ -68,6 +68,7 @@ data class PerformanceRange private constructor(
     val high: Double,
     val confidence: Confidence,
     val evidence: List<Evidence>,
+    internal val collectionLimitExceeded: Boolean,
 ) {
     companion object {
         fun create(
@@ -81,7 +82,9 @@ data class PerformanceRange private constructor(
             low > 0.0 && low <= likely && likely <= high &&
             high <= RecommendationPolicyV1.MAX_SERIALIZED_RATE
         ) {
-            PerformanceRange(low, likely, high, confidence, evidence.toList())
+            boundedCollectionSnapshot(evidence, RecommendationPolicyV1.MAX_EVIDENCE_ENTRIES).let { snapshot ->
+                PerformanceRange(low, likely, high, confidence, snapshot.values, snapshot.limitExceeded)
+            }
         } else {
             null
         }
@@ -95,11 +98,20 @@ sealed interface PerformanceEstimate {
     data class Unknown private constructor(
         val reason: AssessmentReason,
         override val evidence: List<Evidence>,
+        internal val collectionLimitExceeded: Boolean,
     ) : PerformanceEstimate {
         constructor(
             reason: AssessmentReason,
             evidence: Collection<Evidence> = listOf(Evidence(reason, Confidence.LOW)),
-        ) : this(reason, evidence.toList())
+        ) : this(
+            reason,
+            boundedCollectionSnapshot(evidence, RecommendationPolicyV1.MAX_EVIDENCE_ENTRIES),
+        )
+
+        private constructor(
+            reason: AssessmentReason,
+            evidence: BoundedCollectionSnapshot<Evidence>,
+        ) : this(reason, evidence.values, evidence.limitExceeded)
     }
 
     @ConsistentCopyVisibility
@@ -109,6 +121,7 @@ sealed interface PerformanceEstimate {
         val timeToFirstTokenSeconds: PerformanceRange,
         val loadTimeSeconds: PerformanceRange,
         override val evidence: List<Evidence>,
+        internal val collectionLimitExceeded: Boolean,
     ) : PerformanceEstimate {
         constructor(
             promptTokensPerSecond: PerformanceRange,
@@ -121,7 +134,22 @@ sealed interface PerformanceEstimate {
             decodeTokensPerSecond,
             timeToFirstTokenSeconds,
             loadTimeSeconds,
-            evidence.toList(),
+            boundedCollectionSnapshot(evidence, RecommendationPolicyV1.MAX_EVIDENCE_ENTRIES),
+        )
+
+        private constructor(
+            promptTokensPerSecond: PerformanceRange,
+            decodeTokensPerSecond: PerformanceRange,
+            timeToFirstTokenSeconds: PerformanceRange,
+            loadTimeSeconds: PerformanceRange,
+            evidence: BoundedCollectionSnapshot<Evidence>,
+        ) : this(
+            promptTokensPerSecond,
+            decodeTokensPerSecond,
+            timeToFirstTokenSeconds,
+            loadTimeSeconds,
+            evidence.values,
+            evidence.limitExceeded,
         )
     }
 
@@ -131,13 +159,32 @@ sealed interface PerformanceEstimate {
         val totalTimeSeconds: PerformanceRange,
         val referenceTotalTimeSeconds: PerformanceRange,
         override val evidence: List<Evidence>,
+        internal val collectionLimitExceeded: Boolean,
     ) : PerformanceEstimate {
         constructor(
             secondsPerStep: PerformanceRange,
             totalTimeSeconds: PerformanceRange,
             referenceTotalTimeSeconds: PerformanceRange,
             evidence: Collection<Evidence>,
-        ) : this(secondsPerStep, totalTimeSeconds, referenceTotalTimeSeconds, evidence.toList())
+        ) : this(
+            secondsPerStep,
+            totalTimeSeconds,
+            referenceTotalTimeSeconds,
+            boundedCollectionSnapshot(evidence, RecommendationPolicyV1.MAX_EVIDENCE_ENTRIES),
+        )
+
+        private constructor(
+            secondsPerStep: PerformanceRange,
+            totalTimeSeconds: PerformanceRange,
+            referenceTotalTimeSeconds: PerformanceRange,
+            evidence: BoundedCollectionSnapshot<Evidence>,
+        ) : this(
+            secondsPerStep,
+            totalTimeSeconds,
+            referenceTotalTimeSeconds,
+            evidence.values,
+            evidence.limitExceeded,
+        )
     }
 
     @ConsistentCopyVisibility
@@ -147,6 +194,7 @@ sealed interface PerformanceEstimate {
         val totalTimeSeconds: PerformanceRange,
         val comparableForPolicy: Boolean,
         override val evidence: List<Evidence>,
+        internal val collectionLimitExceeded: Boolean,
     ) : PerformanceEstimate {
         constructor(
             secondsPerStep: PerformanceRange,
@@ -154,7 +202,28 @@ sealed interface PerformanceEstimate {
             totalTimeSeconds: PerformanceRange,
             comparableForPolicy: Boolean,
             evidence: Collection<Evidence>,
-        ) : this(secondsPerStep, secondsPerFrame, totalTimeSeconds, comparableForPolicy, evidence.toList())
+        ) : this(
+            secondsPerStep,
+            secondsPerFrame,
+            totalTimeSeconds,
+            comparableForPolicy,
+            boundedCollectionSnapshot(evidence, RecommendationPolicyV1.MAX_EVIDENCE_ENTRIES),
+        )
+
+        private constructor(
+            secondsPerStep: PerformanceRange,
+            secondsPerFrame: PerformanceRange,
+            totalTimeSeconds: PerformanceRange,
+            comparableForPolicy: Boolean,
+            evidence: BoundedCollectionSnapshot<Evidence>,
+        ) : this(
+            secondsPerStep,
+            secondsPerFrame,
+            totalTimeSeconds,
+            comparableForPolicy,
+            evidence.values,
+            evidence.limitExceeded,
+        )
     }
 }
 

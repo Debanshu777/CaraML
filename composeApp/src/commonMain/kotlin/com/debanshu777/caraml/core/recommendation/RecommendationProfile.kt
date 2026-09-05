@@ -32,6 +32,10 @@ internal object RecommendationPolicyV1 {
     const val MAX_LLM_CANDIDATES: Int = 24
     const val MAX_DIFFUSION_CANDIDATES: Int = 12
     const val MAX_BACKEND_CAPABILITIES: Int = 5
+    const val MAX_ASSESSMENT_REASONS: Int = 32
+    const val MAX_EVIDENCE_ENTRIES: Int = 64
+    const val MAX_INSTRUCTION_SETS: Int = 64
+    const val MAX_PLAN_COMPROMISES: Int = 8
 
     data class UtilityWeights(
         val performance: Double,

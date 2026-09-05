@@ -24,6 +24,27 @@ class PerformanceEstimatorTest {
     }
 
     @Test
+    fun acceleratedLlmWithUnknownTopologyIsInvalidPerformanceEvidence() {
+        val result = estimator.estimate(
+            descriptor = task6LlmDescriptor(),
+            plan = task6LlmPlan(
+                backend = BackendKind.CUDA,
+                topology = MemoryTopology.UNKNOWN,
+                gpuLayers = 16,
+            ),
+            hardware = task6Hardware(backend = BackendKind.CUDA),
+            calibration = FixedCalibrationSource(
+                profile = BackendPerformanceProfile(GIB.toDouble(), 1.0e12, Confidence.HIGH),
+            ),
+        )
+
+        assertEquals(
+            AssessmentReason.INVALID_PERFORMANCE_EVIDENCE,
+            assertIs<PerformanceEstimate.Unknown>(result).reason,
+        )
+    }
+
+    @Test
     fun llmRooflineUsesBackendBandwidthComputeAndCalibrationCorrection() {
         val estimate = estimator.estimate(
             descriptor = task6LlmDescriptor(sizeBytes = GIB, parameterCount = 1_000_000_000L),

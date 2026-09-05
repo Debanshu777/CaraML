@@ -1,12 +1,14 @@
 package com.debanshu777.caraml.core.platform
 
 import com.debanshu777.caraml.core.recommendation.AssessmentReason
+import com.debanshu777.caraml.core.recommendation.BoundedCollectionSnapshot
 import com.debanshu777.caraml.core.recommendation.Confidence
 import com.debanshu777.caraml.core.recommendation.Evidence
+import com.debanshu777.caraml.core.recommendation.RecommendationPolicyV1
+import com.debanshu777.caraml.core.recommendation.boundedCollectionSnapshot
 
 internal const val MAX_LOGICAL_CORE_COUNT = 1_024
 internal const val RESOURCE_SNAPSHOT_MAX_AGE_MS = 30_000L
-private const val MAX_BACKEND_CAPABILITY_SNAPSHOT = 6
 
 enum class MemoryTopology {
     UNIFIED,
@@ -57,6 +59,7 @@ data class BackendCapability private constructor(
     val availabilityConfidence: Confidence?,
     val headroomConfidence: Confidence?,
     val evidence: List<Evidence>,
+    internal val collectionLimitExceeded: Boolean,
 ) {
     constructor(
         kind: BackendKind,
@@ -71,7 +74,24 @@ data class BackendCapability private constructor(
         additionalAllocatableBytes = additionalAllocatableBytes,
         availabilityConfidence = availabilityConfidence,
         headroomConfidence = headroomConfidence,
-        evidence = evidence.toList(),
+        evidence = boundedCollectionSnapshot(evidence, RecommendationPolicyV1.MAX_EVIDENCE_ENTRIES),
+    )
+
+    private constructor(
+        kind: BackendKind,
+        status: BackendStatus,
+        additionalAllocatableBytes: Long?,
+        availabilityConfidence: Confidence?,
+        headroomConfidence: Confidence?,
+        evidence: BoundedCollectionSnapshot<Evidence>,
+    ) : this(
+        kind = kind,
+        status = status,
+        additionalAllocatableBytes = additionalAllocatableBytes,
+        availabilityConfidence = availabilityConfidence,
+        headroomConfidence = headroomConfidence,
+        evidence = evidence.values,
+        collectionLimitExceeded = evidence.limitExceeded,
     )
 }
 
@@ -84,6 +104,7 @@ data class HardwareProfile private constructor(
     val backends: List<BackendCapability>,
     val memoryTopology: MemoryTopology,
     val evidence: List<Evidence>,
+    internal val collectionLimitExceeded: Boolean,
 ) {
     constructor(
         cpuArchitecture: String,
@@ -97,22 +118,44 @@ data class HardwareProfile private constructor(
         cpuArchitecture = cpuArchitecture,
         logicalCoreCount = logicalCoreCount,
         performanceCoreCount = performanceCoreCount,
-        instructionSets = instructionSets.toSet(),
-        backends = backends.asSequence().take(MAX_BACKEND_CAPABILITY_SNAPSHOT).toList(),
+        instructionSets = boundedCollectionSnapshot(instructionSets, RecommendationPolicyV1.MAX_INSTRUCTION_SETS),
+        backends = boundedCollectionSnapshot(backends, RecommendationPolicyV1.MAX_BACKEND_CAPABILITIES),
         memoryTopology = memoryTopology,
-        evidence = evidence.toList(),
+        evidence = boundedCollectionSnapshot(evidence, RecommendationPolicyV1.MAX_EVIDENCE_ENTRIES),
     )
 
-    internal fun withBackends(value: Collection<BackendCapability>): HardwareProfile =
-        HardwareProfile(
+    private constructor(
+        cpuArchitecture: String,
+        logicalCoreCount: Int,
+        performanceCoreCount: Int?,
+        instructionSets: BoundedCollectionSnapshot<String>,
+        backends: BoundedCollectionSnapshot<BackendCapability>,
+        memoryTopology: MemoryTopology,
+        evidence: BoundedCollectionSnapshot<Evidence>,
+    ) : this(
+        cpuArchitecture = cpuArchitecture,
+        logicalCoreCount = logicalCoreCount,
+        performanceCoreCount = performanceCoreCount,
+        instructionSets = instructionSets.values.toSet(),
+        backends = backends.values,
+        memoryTopology = memoryTopology,
+        evidence = evidence.values,
+        collectionLimitExceeded = instructionSets.limitExceeded || backends.limitExceeded || evidence.limitExceeded,
+    )
+
+    internal fun withBackends(value: Collection<BackendCapability>): HardwareProfile {
+        val snapshot = boundedCollectionSnapshot(value, RecommendationPolicyV1.MAX_BACKEND_CAPABILITIES)
+        return HardwareProfile(
             cpuArchitecture = cpuArchitecture,
             logicalCoreCount = logicalCoreCount,
             performanceCoreCount = performanceCoreCount,
             instructionSets = instructionSets,
-            backends = value,
+            backends = snapshot.values,
             memoryTopology = memoryTopology,
             evidence = evidence,
+            collectionLimitExceeded = collectionLimitExceeded || snapshot.limitExceeded,
         )
+    }
 
     internal fun revalidated(): HardwareProfile = validatedHardwareProfile(
         cpuArchitecture = cpuArchitecture,
@@ -122,7 +165,22 @@ data class HardwareProfile private constructor(
         backends = backends,
         memoryTopology = memoryTopology,
         evidence = evidence,
-    )
+    ).withCollectionLimitExceeded(collectionLimitExceeded)
+
+    internal fun withCollectionLimitExceeded(value: Boolean): HardwareProfile = if (!value) {
+        this
+    } else {
+        HardwareProfile(
+            cpuArchitecture = cpuArchitecture,
+            logicalCoreCount = logicalCoreCount,
+            performanceCoreCount = performanceCoreCount,
+            instructionSets = instructionSets,
+            backends = backends,
+            memoryTopology = memoryTopology,
+            evidence = evidence,
+            collectionLimitExceeded = true,
+        )
+    }
 }
 
 @ConsistentCopyVisibility
@@ -140,6 +198,7 @@ data class ResourceSnapshot private constructor(
     val capturedAtEpochMs: Long,
     val evidence: List<Evidence>,
     val confidence: ResourcePoolConfidence,
+    internal val collectionLimitExceeded: Boolean,
 ) {
     constructor(
         additionalAllocatableHostBytes: Long?,
@@ -167,8 +226,39 @@ data class ResourceSnapshot private constructor(
         thermalState = thermalState,
         powerPolicyState = powerPolicyState,
         capturedAtEpochMs = capturedAtEpochMs,
-        evidence = evidence.toList(),
+        evidence = boundedCollectionSnapshot(evidence, RecommendationPolicyV1.MAX_EVIDENCE_ENTRIES),
         confidence = confidence,
+    )
+
+    private constructor(
+        additionalAllocatableHostBytes: Long?,
+        additionalAllocatableGpuBytes: Long?,
+        currentProcessBytes: Long?,
+        freeStorageBytes: Long?,
+        osPressureReserveHostBytes: Long?,
+        observedAppFootprintNoiseP95Bytes: Long?,
+        platformMinimumReserveHostBytes: Long?,
+        lowMemory: Boolean?,
+        thermalState: ThermalState,
+        powerPolicyState: PowerPolicyState,
+        capturedAtEpochMs: Long,
+        evidence: BoundedCollectionSnapshot<Evidence>,
+        confidence: ResourcePoolConfidence,
+    ) : this(
+        additionalAllocatableHostBytes = additionalAllocatableHostBytes,
+        additionalAllocatableGpuBytes = additionalAllocatableGpuBytes,
+        currentProcessBytes = currentProcessBytes,
+        freeStorageBytes = freeStorageBytes,
+        osPressureReserveHostBytes = osPressureReserveHostBytes,
+        observedAppFootprintNoiseP95Bytes = observedAppFootprintNoiseP95Bytes,
+        platformMinimumReserveHostBytes = platformMinimumReserveHostBytes,
+        lowMemory = lowMemory,
+        thermalState = thermalState,
+        powerPolicyState = powerPolicyState,
+        capturedAtEpochMs = capturedAtEpochMs,
+        evidence = evidence.values,
+        confidence = confidence,
+        collectionLimitExceeded = evidence.limitExceeded,
     )
 
     fun isFreshAt(
@@ -183,23 +273,52 @@ data class ResourceSnapshot private constructor(
         storageBytes: Long?,
         storageConfidence: Confidence?,
         additionalEvidence: Collection<Evidence>,
-    ): ResourceSnapshot = ResourceSnapshot(
-        additionalAllocatableHostBytes = additionalAllocatableHostBytes,
-        additionalAllocatableGpuBytes = additionalAllocatableGpuBytes,
-        currentProcessBytes = currentProcessBytes,
-        freeStorageBytes = storageBytes,
-        osPressureReserveHostBytes = osPressureReserveHostBytes,
-        observedAppFootprintNoiseP95Bytes = observedAppFootprintNoiseP95Bytes,
-        platformMinimumReserveHostBytes = platformMinimumReserveHostBytes,
-        lowMemory = lowMemory,
-        thermalState = thermalState,
-        powerPolicyState = powerPolicyState,
-        capturedAtEpochMs = capturedAtEpochMs,
-        evidence = evidence + additionalEvidence,
-        confidence = confidence.copy(
-            storage = storageConfidence.takeIf { storageBytes != null },
-        ),
-    )
+    ): ResourceSnapshot {
+        val additional = boundedCollectionSnapshot(additionalEvidence, RecommendationPolicyV1.MAX_EVIDENCE_ENTRIES)
+        val combined = boundedCollectionSnapshot(
+            evidence + additional.values,
+            RecommendationPolicyV1.MAX_EVIDENCE_ENTRIES,
+        )
+        return ResourceSnapshot(
+            additionalAllocatableHostBytes = additionalAllocatableHostBytes,
+            additionalAllocatableGpuBytes = additionalAllocatableGpuBytes,
+            currentProcessBytes = currentProcessBytes,
+            freeStorageBytes = storageBytes,
+            osPressureReserveHostBytes = osPressureReserveHostBytes,
+            observedAppFootprintNoiseP95Bytes = observedAppFootprintNoiseP95Bytes,
+            platformMinimumReserveHostBytes = platformMinimumReserveHostBytes,
+            lowMemory = lowMemory,
+            thermalState = thermalState,
+            powerPolicyState = powerPolicyState,
+            capturedAtEpochMs = capturedAtEpochMs,
+            evidence = combined.values,
+            confidence = confidence.copy(
+                storage = storageConfidence.takeIf { storageBytes != null },
+            ),
+            collectionLimitExceeded = collectionLimitExceeded || additional.limitExceeded || combined.limitExceeded,
+        )
+    }
+
+    internal fun withCollectionLimitExceeded(value: Boolean): ResourceSnapshot = if (!value) {
+        this
+    } else {
+        ResourceSnapshot(
+            additionalAllocatableHostBytes = additionalAllocatableHostBytes,
+            additionalAllocatableGpuBytes = additionalAllocatableGpuBytes,
+            currentProcessBytes = currentProcessBytes,
+            freeStorageBytes = freeStorageBytes,
+            osPressureReserveHostBytes = osPressureReserveHostBytes,
+            observedAppFootprintNoiseP95Bytes = observedAppFootprintNoiseP95Bytes,
+            platformMinimumReserveHostBytes = platformMinimumReserveHostBytes,
+            lowMemory = lowMemory,
+            thermalState = thermalState,
+            powerPolicyState = powerPolicyState,
+            capturedAtEpochMs = capturedAtEpochMs,
+            evidence = evidence,
+            confidence = confidence,
+            collectionLimitExceeded = true,
+        )
+    }
 }
 
 @ConsistentCopyVisibility
@@ -213,6 +332,7 @@ data class DeviceSnapshot private constructor(
     val isFresh: Boolean,
     val evidence: List<Evidence>,
     val budgetConfidence: ResourcePoolConfidence,
+    internal val collectionLimitExceeded: Boolean,
 ) {
     constructor(
         hardwareProfile: HardwareProfile,
@@ -232,8 +352,31 @@ data class DeviceSnapshot private constructor(
         baseSharedBudgetBytes = baseSharedBudgetBytes,
         baseStorageBudgetBytes = baseStorageBudgetBytes,
         isFresh = isFresh,
-        evidence = evidence.toList(),
+        evidence = boundedCollectionSnapshot(evidence, RecommendationPolicyV1.MAX_EVIDENCE_ENTRIES),
         budgetConfidence = budgetConfidence,
+    )
+
+    private constructor(
+        hardwareProfile: HardwareProfile,
+        resources: ResourceSnapshot,
+        baseHostBudgetBytes: Long?,
+        baseGpuBudgetBytes: Long?,
+        baseSharedBudgetBytes: Long?,
+        baseStorageBudgetBytes: Long?,
+        isFresh: Boolean,
+        evidence: BoundedCollectionSnapshot<Evidence>,
+        budgetConfidence: ResourcePoolConfidence,
+    ) : this(
+        hardwareProfile = hardwareProfile,
+        resources = resources,
+        baseHostBudgetBytes = baseHostBudgetBytes,
+        baseGpuBudgetBytes = baseGpuBudgetBytes,
+        baseSharedBudgetBytes = baseSharedBudgetBytes,
+        baseStorageBudgetBytes = baseStorageBudgetBytes,
+        isFresh = isFresh,
+        evidence = evidence.values,
+        budgetConfidence = budgetConfidence,
+        collectionLimitExceeded = evidence.limitExceeded,
     )
 }
 
@@ -278,7 +421,19 @@ internal fun validatedHardwareProfile(
     memoryTopology: MemoryTopology,
     evidence: Collection<Evidence> = emptyList(),
 ): HardwareProfile {
-    val validationEvidence = evidence.toMutableList()
+    val instructionSnapshot = boundedCollectionSnapshot(
+        instructionSets,
+        RecommendationPolicyV1.MAX_INSTRUCTION_SETS,
+    )
+    val backendSnapshot = boundedCollectionSnapshot(
+        backends,
+        RecommendationPolicyV1.MAX_BACKEND_CAPABILITIES,
+    )
+    val evidenceSnapshot = boundedCollectionSnapshot(
+        evidence,
+        RecommendationPolicyV1.MAX_EVIDENCE_ENTRIES,
+    )
+    val validationEvidence = evidenceSnapshot.values.toMutableList()
     val logicalCoreCountIsValid = logicalCoreCountReading in 1..MAX_LOGICAL_CORE_COUNT
     val logicalCoreCount = logicalCoreCountReading.takeIf { logicalCoreCountIsValid }
         ?: 1.also {
@@ -300,10 +455,12 @@ internal fun validatedHardwareProfile(
         cpuArchitecture = cpuArchitecture.take(128),
         logicalCoreCount = logicalCoreCount,
         performanceCoreCount = performanceCoreCount,
-        instructionSets = instructionSets.filter { it.length <= 64 }.toSet(),
-        backends = backends,
+        instructionSets = instructionSnapshot.values.filter { it.length <= 64 }.toSet(),
+        backends = backendSnapshot.values,
         memoryTopology = memoryTopology,
         evidence = validationEvidence,
+    ).withCollectionLimitExceeded(
+        instructionSnapshot.limitExceeded || backendSnapshot.limitExceeded || evidenceSnapshot.limitExceeded,
     )
 }
 

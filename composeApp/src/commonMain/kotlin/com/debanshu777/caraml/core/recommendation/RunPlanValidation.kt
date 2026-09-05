@@ -6,16 +6,19 @@ import com.debanshu777.caraml.core.platform.MemoryTopology
 internal fun validateRunPlan(plan: RunPlan): AssessmentReason? {
     val fieldsAreValid = when (plan) {
         is LlmRunPlan ->
-            plan.contextTokens in 1..DescriptorLimits.MAX_CONTEXT_TOKENS &&
+            !plan.collectionLimitExceeded &&
+                plan.contextTokens in 1..DescriptorLimits.MAX_CONTEXT_TOKENS &&
                 plan.batchSize in 1..WorkloadLimits.MAX_BATCH_SIZE &&
                 plan.microBatchSize in 1..plan.batchSize &&
                 plan.sequenceCount in 1..WorkloadLimits.MAX_SEQUENCE_COUNT &&
                 plan.gpuLayerCount?.let { it >= 0 } != false &&
                 (plan.backend != BackendKind.CPU || plan.gpuLayerCount in listOf(null, 0)) &&
-                (plan.backend == BackendKind.CPU || plan.gpuLayerCount != 0)
+                (plan.backend == BackendKind.CPU || plan.gpuLayerCount != 0) &&
+                (plan.backend == BackendKind.CPU || plan.memoryTopology != MemoryTopology.UNKNOWN)
 
         is DiffusionRunPlan ->
-            plan.width in 1..DescriptorLimits.MAX_IMAGE_DIMENSION &&
+            !plan.collectionLimitExceeded &&
+                plan.width in 1..DescriptorLimits.MAX_IMAGE_DIMENSION &&
                 plan.height in 1..DescriptorLimits.MAX_IMAGE_DIMENSION &&
                 plan.frameCount in 1..WorkloadLimits.MAX_DIFFUSION_FRAMES &&
                 plan.batchSize in 1..WorkloadLimits.MAX_BATCH_SIZE &&

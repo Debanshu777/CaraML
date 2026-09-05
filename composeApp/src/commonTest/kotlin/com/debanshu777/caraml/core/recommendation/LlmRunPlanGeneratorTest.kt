@@ -31,6 +31,22 @@ class LlmRunPlanGeneratorTest {
     }
 
     @Test
+    fun acceleratedLlmWithUnknownTopologyProducesNoCandidates() {
+        val accelerated = settings(
+            backend = BackendKind.CUDA,
+            memoryTopology = MemoryTopology.UNKNOWN,
+            gpuLayerCount = 16,
+        )
+        val plans = generator.llmCandidates(
+            descriptor(),
+            workload(settings = accelerated),
+            accelerated,
+        )
+
+        assertTrue(plans.isEmpty())
+    }
+
+    @Test
     fun contextFallbacksUseOnlyLowerBucketsAndTheExactMinimum() {
         val plans = generator.llmCandidates(
             descriptor(maxContext = 131_072),

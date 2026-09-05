@@ -327,7 +327,7 @@ class DeviceSnapshotProvider internal constructor(
                 host = value.confidence.host.takeIf { host != null },
                 gpu = value.confidence.gpu.takeIf { gpu != null },
             ),
-        )
+        ).withCollectionLimitExceeded(value.collectionLimitExceeded)
     }
 
     private fun mergeBackends(
