@@ -5,6 +5,7 @@ import com.debanshu777.huggingfacemanager.repository.HuggingFaceRepository
 import com.debanshu777.huggingfacemanager.usecase.GetModelDetailUseCase
 import com.debanshu777.huggingfacemanager.usecase.GetModelConfigUseCase
 import com.debanshu777.huggingfacemanager.usecase.GetModelFileTreeUseCase
+import com.debanshu777.huggingfacemanager.usecase.GetRecommendationModelDetailUseCase
 import com.debanshu777.huggingfacemanager.usecase.ListModelsUseCase
 import com.debanshu777.huggingfacemanager.usecase.ListRecommendationModelsUseCase
 import com.debanshu777.huggingfacemanager.usecase.SearchModelsUseCase
@@ -21,6 +22,7 @@ interface HuggingFaceApi {
     val listRecommendationModels: ListRecommendationModelsUseCase
     val searchModels: SearchModelsUseCase
     val getModelDetail: GetModelDetailUseCase
+    val getRecommendationModelDetail: GetRecommendationModelDetailUseCase
     val getModelFileTree: GetModelFileTreeUseCase
     val getModelConfig: GetModelConfigUseCase
 }
@@ -67,6 +69,7 @@ fun createHuggingFaceApi(baseUrl: String = HuggingFaceConstants.DEFAULT_BASE_URL
         listRecommendationModels = ListRecommendationModelsUseCase(repository),
         searchModels = SearchModelsUseCase(repository),
         getModelDetail = GetModelDetailUseCase(repository),
+        getRecommendationModelDetail = GetRecommendationModelDetailUseCase(repository),
         getModelFileTree = GetModelFileTreeUseCase(repository),
         getModelConfig = GetModelConfigUseCase(repository),
     )
@@ -77,6 +80,7 @@ private class DefaultHuggingFaceApi(
     override val listRecommendationModels: ListRecommendationModelsUseCase,
     override val searchModels: SearchModelsUseCase,
     override val getModelDetail: GetModelDetailUseCase,
+    override val getRecommendationModelDetail: GetRecommendationModelDetailUseCase,
     override val getModelFileTree: GetModelFileTreeUseCase,
     override val getModelConfig: GetModelConfigUseCase,
 ) : HuggingFaceApi

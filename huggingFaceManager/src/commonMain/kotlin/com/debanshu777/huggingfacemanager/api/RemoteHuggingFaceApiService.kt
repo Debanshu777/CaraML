@@ -91,17 +91,28 @@ class RemoteHuggingFaceApiService private constructor(
     }
 
     suspend fun getModelDetail(modelId: String): Result<ModelDetailResponse, DataError.Network> {
-        val segments = validatedModelSegments(modelId)
-            ?: return Result.Error(DataError.Network.Unknown)
-        val url = URLBuilder(trustedOrigin).apply {
-            appendPathSegments("api", "models")
-            appendPathSegments(segments, encodeSlash = true)
-        }.build()
+        val url = modelDetailUrl(modelId) ?: return Result.Error(DataError.Network.Unknown)
+
+        return clientWrapper.networkGetUsecase(endpoint = url.toString())
+    }
+
+    suspend fun getRecommendationModelDetail(
+        modelId: String,
+    ): Result<ModelDetailResponse, DataError.Network> {
+        val url = modelDetailUrl(modelId) ?: return Result.Error(DataError.Network.Unknown)
 
         return clientWrapper.networkGetUsecase(
             endpoint = url.toString(),
             decode = { body -> RecommendationMetadataV1.decodeDetail(strictJson, body) },
         )
+    }
+
+    private fun modelDetailUrl(modelId: String): Url? {
+        val segments = validatedModelSegments(modelId) ?: return null
+        return URLBuilder(trustedOrigin).apply {
+            appendPathSegments("api", "models")
+            appendPathSegments(segments, encodeSlash = true)
+        }.build()
     }
 
     suspend fun getModelConfig(

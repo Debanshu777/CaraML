@@ -27,6 +27,10 @@ class HuggingFaceRepository(
     suspend fun getModelDetail(modelId: String): Result<ModelDetailResponse, DataError.Network> =
         api.getModelDetail(modelId)
 
+    suspend fun getRecommendationModelDetail(
+        modelId: String,
+    ): Result<ModelDetailResponse, DataError.Network> = api.getRecommendationModelDetail(modelId)
+
     suspend fun getModelFileTree(
         modelId: String,
         revision: String,

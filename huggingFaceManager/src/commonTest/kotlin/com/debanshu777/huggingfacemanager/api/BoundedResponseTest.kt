@@ -265,6 +265,27 @@ class BoundedResponseTest {
     }
 
     @Test
+    fun ordinaryDetailAcceptsUnknownHarmlessFields() = runTest {
+        val client = HttpClient(MockEngine {
+            respond("{\"id\":\"owner/model\",\"sha\":\"$REVISION\",\"futureDisplayField\":true}")
+        })
+        try {
+            val service = RemoteHuggingFaceApiService(
+                client,
+                Json { ignoreUnknownKeys = true },
+                "https://huggingface.co",
+            )
+
+            val result = assertIs<Result.Success<ModelDetailResponse, DataError.Network>>(
+                service.getModelDetail("owner/model"),
+            )
+            assertEquals("owner/model", result.data.id)
+        } finally {
+            client.close()
+        }
+    }
+
+    @Test
     fun recommendationDetailRejectsUnknownFields() = runTest {
         val client = HttpClient(MockEngine {
             respond("{\"id\":\"owner/model\",\"sha\":\"$REVISION\",\"unexpected\":true}")
@@ -277,7 +298,7 @@ class BoundedResponseTest {
             )
             assertEquals(
                 Result.Error(DataError.Network.Serialization),
-                service.getModelDetail("owner/model"),
+                service.getRecommendationModelDetail("owner/model"),
             )
         } finally {
             client.close()
@@ -297,7 +318,7 @@ class BoundedResponseTest {
             )
             assertEquals(
                 Result.Error(DataError.Network.Serialization),
-                service.getModelDetail("owner/model"),
+                service.getRecommendationModelDetail("owner/model"),
             )
         } finally {
             client.close()
@@ -314,7 +335,7 @@ class BoundedResponseTest {
             val service = RemoteHuggingFaceApiService(client, Json, "https://huggingface.co")
             assertEquals(
                 Result.Error(DataError.Network.Serialization),
-                service.getModelDetail("owner/model"),
+                service.getRecommendationModelDetail("owner/model"),
             )
         } finally {
             client.close()
