@@ -9,6 +9,7 @@ import com.debanshu777.huggingfacemanager.model.ModelDetailResponse
 import com.debanshu777.huggingfacemanager.model.ListModelsResponse
 import com.debanshu777.huggingfacemanager.model.ModelFileTreeResponse
 import com.debanshu777.huggingfacemanager.model.SearchModelsResponse
+import com.debanshu777.huggingfacemanager.model.TransformerConfigResponse
 
 class HuggingFaceRepository(
     private val api: RemoteHuggingFaceApiService
@@ -22,6 +23,15 @@ class HuggingFaceRepository(
     suspend fun getModelDetail(modelId: String): Result<ModelDetailResponse, DataError.Network> =
         api.getModelDetail(modelId)
 
-    suspend fun getModelFileTree(modelId: String): Result<List<ModelFileTreeResponse>, DataError.Network> =
-        api.getModelFileTree(modelId)
+    suspend fun getModelFileTree(
+        modelId: String,
+        revision: String,
+    ): Result<List<ModelFileTreeResponse>, DataError.Network> =
+        api.getModelFileTree(modelId, revision)
+
+    suspend fun getModelConfig(
+        modelId: String,
+        revision: String,
+    ): Result<TransformerConfigResponse, DataError.Network> =
+        api.getModelConfig(modelId, revision)
 }

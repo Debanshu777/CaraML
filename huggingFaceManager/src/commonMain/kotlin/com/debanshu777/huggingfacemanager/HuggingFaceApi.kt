@@ -3,6 +3,7 @@ package com.debanshu777.huggingfacemanager
 import com.debanshu777.huggingfacemanager.api.RemoteHuggingFaceApiService
 import com.debanshu777.huggingfacemanager.repository.HuggingFaceRepository
 import com.debanshu777.huggingfacemanager.usecase.GetModelDetailUseCase
+import com.debanshu777.huggingfacemanager.usecase.GetModelConfigUseCase
 import com.debanshu777.huggingfacemanager.usecase.GetModelFileTreeUseCase
 import com.debanshu777.huggingfacemanager.usecase.ListModelsUseCase
 import com.debanshu777.huggingfacemanager.usecase.SearchModelsUseCase
@@ -19,6 +20,7 @@ interface HuggingFaceApi {
     val searchModels: SearchModelsUseCase
     val getModelDetail: GetModelDetailUseCase
     val getModelFileTree: GetModelFileTreeUseCase
+    val getModelConfig: GetModelConfigUseCase
 }
 
 object HuggingFaceConstants {
@@ -60,7 +62,8 @@ fun createHuggingFaceApi(baseUrl: String = HuggingFaceConstants.DEFAULT_BASE_URL
         listModels = ListModelsUseCase(repository),
         searchModels = SearchModelsUseCase(repository),
         getModelDetail = GetModelDetailUseCase(repository),
-        getModelFileTree = GetModelFileTreeUseCase(repository)
+        getModelFileTree = GetModelFileTreeUseCase(repository),
+        getModelConfig = GetModelConfigUseCase(repository),
     )
 }
 
@@ -68,5 +71,6 @@ private class DefaultHuggingFaceApi(
     override val listModels: ListModelsUseCase,
     override val searchModels: SearchModelsUseCase,
     override val getModelDetail: GetModelDetailUseCase,
-    override val getModelFileTree: GetModelFileTreeUseCase
+    override val getModelFileTree: GetModelFileTreeUseCase,
+    override val getModelConfig: GetModelConfigUseCase,
 ) : HuggingFaceApi

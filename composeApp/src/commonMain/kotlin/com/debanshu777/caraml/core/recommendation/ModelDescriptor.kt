@@ -1,0 +1,189 @@
+package com.debanshu777.caraml.core.recommendation
+
+import com.debanshu777.huggingfacemanager.sdcpp.ComponentRole
+
+object DescriptorLimits {
+    const val MAX_FILE_BYTES: Long = 1L shl 50
+    const val MAX_BUNDLE_BYTES: Long = 2L shl 50
+    const val MAX_COMPONENTS: Int = 4_096
+    const val MAX_PARAMETERS: Long = 1_000_000_000_000_000L
+    const val MAX_CONTEXT_TOKENS: Int = 16_777_216
+    const val MAX_IMAGE_DIMENSION: Int = 65_536
+    const val MAX_MODEL_ID_LENGTH: Int = 193
+    const val MAX_REPOSITORY_SEGMENT_LENGTH: Int = 96
+    const val MAX_RELATIVE_PATH_LENGTH: Int = 1_024
+    const val MAX_PATH_SEGMENT_LENGTH: Int = 255
+    const val MAX_METADATA_STRING_LENGTH: Int = 256
+    const val MAX_METADATA_COLLECTION_SIZE: Int = 256
+}
+
+enum class ModelFormat {
+    GGUF,
+    SAFETENSORS,
+    CHECKPOINT,
+}
+
+enum class DiffusionMode {
+    IMAGE,
+    VIDEO,
+}
+
+@ConsistentCopyVisibility
+data class ModelFileIdentity private constructor(
+    val repositoryId: String,
+    val revision: String,
+    val path: String,
+    val sizeBytes: Long,
+    val gitOid: String?,
+    val lfsOid: String?,
+    val xetHash: String?,
+    val evidence: List<Evidence>,
+) {
+    constructor(
+        repositoryId: String,
+        revision: String,
+        path: String,
+        sizeBytes: Long,
+        gitOid: String?,
+        lfsOid: String?,
+        xetHash: String?,
+        evidence: Collection<Evidence>,
+    ) : this(
+        repositoryId = repositoryId,
+        revision = revision,
+        path = path,
+        sizeBytes = sizeBytes,
+        gitOid = gitOid,
+        lfsOid = lfsOid,
+        xetHash = xetHash,
+        evidence = evidence.toList(),
+    )
+}
+
+data class TransformerShape(
+    val layerCount: Int?,
+    val kvHeadCount: Int?,
+    val attentionHeadCount: Int?,
+    val hiddenSize: Int?,
+    val headDim: Int?,
+)
+
+sealed interface ModelDescriptor {
+    val repositoryId: String
+    val revision: String
+    val format: ModelFormat
+    val requiredEngineFeatures: Set<String>
+    val evidence: List<Evidence>
+}
+
+@ConsistentCopyVisibility
+data class LlmModelDescriptor private constructor(
+    override val repositoryId: String,
+    override val revision: String,
+    val file: ModelFileIdentity,
+    val architecture: String?,
+    val quantization: QuantizationEvidence,
+    val parameterCount: Long?,
+    val contextLimit: Int?,
+    val transformerShape: TransformerShape?,
+    val ggufVersion: Int?,
+    override val requiredEngineFeatures: Set<String>,
+    override val evidence: List<Evidence>,
+) : ModelDescriptor {
+    override val format: ModelFormat = ModelFormat.GGUF
+
+    constructor(
+        repositoryId: String,
+        revision: String,
+        file: ModelFileIdentity,
+        architecture: String?,
+        quantization: QuantizationEvidence,
+        parameterCount: Long?,
+        contextLimit: Int?,
+        transformerShape: TransformerShape?,
+        ggufVersion: Int?,
+        requiredEngineFeatures: Collection<String>,
+        evidence: Collection<Evidence>,
+    ) : this(
+        repositoryId = repositoryId,
+        revision = revision,
+        file = file,
+        architecture = architecture,
+        quantization = quantization,
+        parameterCount = parameterCount,
+        contextLimit = contextLimit,
+        transformerShape = transformerShape,
+        ggufVersion = ggufVersion,
+        requiredEngineFeatures = requiredEngineFeatures.toSet(),
+        evidence = evidence.toList(),
+    )
+}
+
+data class DiffusionComponentDescriptor(
+    val file: ModelFileIdentity,
+    val role: ComponentRole?,
+    val required: Boolean,
+    val isPrimary: Boolean,
+    val quantization: QuantizationEvidence = QuantizationEvidence.Unknown,
+)
+
+@ConsistentCopyVisibility
+data class DiffusionModelDescriptor private constructor(
+    override val repositoryId: String,
+    override val revision: String,
+    val components: List<DiffusionComponentDescriptor>,
+    val mode: DiffusionMode,
+    val family: String,
+    val quantizationDistribution: Set<String>,
+    val requiredComponentsPresent: Boolean,
+    override val requiredEngineFeatures: Set<String>,
+    override val evidence: List<Evidence>,
+) : ModelDescriptor {
+    override val format: ModelFormat = components.firstOrNull { it.isPrimary }
+        ?.file
+        ?.path
+        ?.let(::modelFormatForPath)
+        ?: ModelFormat.SAFETENSORS
+
+    constructor(
+        repositoryId: String,
+        revision: String,
+        components: Collection<DiffusionComponentDescriptor>,
+        mode: DiffusionMode,
+        family: String,
+        quantizationDistribution: Collection<String>,
+        requiredComponentsPresent: Boolean,
+        requiredEngineFeatures: Collection<String>,
+        evidence: Collection<Evidence>,
+    ) : this(
+        repositoryId = repositoryId,
+        revision = revision,
+        components = components.toList(),
+        mode = mode,
+        family = family,
+        quantizationDistribution = quantizationDistribution.toSet(),
+        requiredComponentsPresent = requiredComponentsPresent,
+        requiredEngineFeatures = requiredEngineFeatures.toSet(),
+        evidence = evidence.toList(),
+    )
+}
+
+internal fun modelFormatForPath(path: String): ModelFormat? = when {
+    path.endsWith(".gguf", ignoreCase = true) -> ModelFormat.GGUF
+    path.endsWith(".safetensors", ignoreCase = true) -> ModelFormat.SAFETENSORS
+    path.endsWith(".ckpt", ignoreCase = true) || path.endsWith(".pth", ignoreCase = true) ->
+        ModelFormat.CHECKPOINT
+    else -> null
+}
+
+sealed interface DescriptorBuildResult {
+    data class Ready(val descriptor: ModelDescriptor) : DescriptorBuildResult
+
+    data class NeedsVariant(
+        val repositoryId: String,
+        val reasons: List<AssessmentReason>,
+        val assumedQuantization: String? = null,
+    ) : DescriptorBuildResult
+
+    data class Invalid(val reasons: List<AssessmentReason>) : DescriptorBuildResult
+}

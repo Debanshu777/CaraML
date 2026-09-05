@@ -3,12 +3,22 @@ package com.debanshu777.huggingfacemanager.api
 import com.debanshu777.huggingfacemanager.api.error.DataError
 import com.debanshu777.huggingfacemanager.api.error.Result
 import io.ktor.client.HttpClient
-import io.ktor.client.request.get
 import io.ktor.client.request.parameter
-import io.ktor.client.statement.bodyAsText
+import io.ktor.client.request.prepareGet
+import io.ktor.client.statement.bodyAsChannel
+import io.ktor.http.HttpHeaders
 import io.ktor.util.network.UnresolvedAddressException
+import io.ktor.utils.io.readRemaining
+import kotlinx.io.readByteArray
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+
+@PublishedApi
+internal data class BoundedNetworkResponse<T>(
+    val data: T,
+    val linkHeader: String?,
+)
 
 class ClientWrapper(
     @PublishedApi internal val networkClient: HttpClient,
@@ -17,38 +27,85 @@ class ClientWrapper(
     suspend inline fun <reified T> networkGetUsecase(
         endpoint: String,
         queries: Map<String, String>? = null,
+        maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
     ): Result<T, DataError.Network> {
-        val response = try {
-            networkClient.get(endpoint) {
+        return when (val result = networkGetBounded<T>(endpoint, queries, maxResponseBytes)) {
+            is Result.Success -> Result.Success(result.data.data)
+            is Result.Error -> Result.Error(result.error)
+        }
+    }
+
+    @PublishedApi
+    internal suspend inline fun <reified T> networkGetBounded(
+        endpoint: String,
+        queries: Map<String, String>? = null,
+        maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
+    ): Result<BoundedNetworkResponse<T>, DataError.Network> {
+        require(maxResponseBytes in 1..DEFAULT_MAX_RESPONSE_BYTES) {
+            "Response byte limit is outside the supported range"
+        }
+        return try {
+            networkClient.prepareGet(endpoint) {
                 queries?.forEach { (key, value) ->
                     parameter(key, value)
                 }
-            }
-        } catch (_: UnresolvedAddressException) {
-            return Result.Error(DataError.Network.NoInternet)
-        } catch (_: SerializationException) {
-            return Result.Error(DataError.Network.Serialization)
-        } catch (_: Exception) {
-            return Result.Error(DataError.Network.Unknown)
-        }
+            }.execute { response ->
+                when (response.status.value) {
+                    in 200..299 -> {
+                        try {
+                            val contentLengthHeader = response.headers[HttpHeaders.ContentLength]
+                            val declaredLength = contentLengthHeader?.toLongOrNull()
+                            if (contentLengthHeader != null &&
+                                (declaredLength == null || declaredLength < 0L)
+                            ) {
+                                return@execute Result.Error(DataError.Network.Serialization)
+                            }
+                            if (declaredLength != null && declaredLength > maxResponseBytes) {
+                                return@execute Result.Error(DataError.Network.PayloadTooLarge)
+                            }
+                            val bytes = response.bodyAsChannel()
+                                .readRemaining(maxResponseBytes + 1L)
+                                .readByteArray()
+                            if (bytes.size.toLong() > maxResponseBytes) {
+                                return@execute Result.Error(DataError.Network.PayloadTooLarge)
+                            }
+                            val bodyText = bytes.decodeToString(throwOnInvalidSequence = true)
+                            val data = json.decodeFromString<T>(bodyText)
+                            Result.Success(
+                                BoundedNetworkResponse(
+                                    data = data,
+                                    linkHeader = response.headers[HttpHeaders.Link],
+                                ),
+                            )
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (_: SerializationException) {
+                            Result.Error(DataError.Network.Serialization)
+                        } catch (_: Exception) {
+                            Result.Error(DataError.Network.Unknown)
+                        }
+                    }
 
-        return when (response.status.value) {
-            in 200..299 -> {
-                try {
-                    val bodyText = response.bodyAsText()
-                    val data = json.decodeFromString<T>(bodyText)
-                    Result.Success(data)
-                } catch (_: SerializationException) {
-                    Result.Error(DataError.Network.Serialization)
+                    401 -> Result.Error(DataError.Network.Unauthorized)
+                    408 -> Result.Error(DataError.Network.RequestTimeout)
+                    409 -> Result.Error(DataError.Network.Conflict)
+                    413 -> Result.Error(DataError.Network.PayloadTooLarge)
+                    in 500..599 -> Result.Error(DataError.Network.ServerError)
+                    else -> Result.Error(DataError.Network.Unknown)
                 }
             }
-
-            401 -> Result.Error(DataError.Network.Unauthorized)
-            408 -> Result.Error(DataError.Network.RequestTimeout)
-            409 -> Result.Error(DataError.Network.Conflict)
-            413 -> Result.Error(DataError.Network.PayloadTooLarge)
-            in 500..599 -> Result.Error(DataError.Network.ServerError)
-            else -> Result.Error(DataError.Network.Unknown)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: UnresolvedAddressException) {
+            Result.Error(DataError.Network.NoInternet)
+        } catch (_: SerializationException) {
+            Result.Error(DataError.Network.Serialization)
+        } catch (_: Exception) {
+            Result.Error(DataError.Network.Unknown)
         }
+    }
+
+    companion object {
+        const val DEFAULT_MAX_RESPONSE_BYTES: Long = 8L * 1024L * 1024L
     }
 }
