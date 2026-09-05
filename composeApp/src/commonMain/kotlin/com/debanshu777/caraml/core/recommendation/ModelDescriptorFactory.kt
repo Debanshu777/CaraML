@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.core.recommendation
 
+import com.debanshu777.caraml.core.rating.SdArchitecture
 import com.debanshu777.huggingfacemanager.model.ListModelsResponse
 import com.debanshu777.huggingfacemanager.model.ModelDetailResponse
 import com.debanshu777.huggingfacemanager.model.ModelFileTreeResponse
@@ -189,6 +190,7 @@ class ModelDescriptorFactory {
         if (primaryFiles.isEmpty() && !setup.selfContained) {
             return invalid(AssessmentReason.MISSING_REQUIRED_COMPONENT)
         }
+        if (primaryFiles.size != 1) return invalid(AssessmentReason.INVALID_METADATA)
 
         val components = identities.map { identity ->
             val key = RepositoryPath(identity.repositoryId, identity.path)
@@ -203,6 +205,7 @@ class ModelDescriptorFactory {
         }
         val distribution = components
             .flatMapTo(linkedSetOf()) { it.quantization.quantizations }
+        val architecture = resolveDiffusionArchitecture(common.repositoryId, components)
         return DescriptorBuildResult.Ready(
             DiffusionModelDescriptor(
                 repositoryId = common.repositoryId,
@@ -210,6 +213,7 @@ class ModelDescriptorFactory {
                 components = components,
                 mode = mode,
                 family = setup.familyLabel,
+                architecture = architecture.value,
                 width = width,
                 height = height,
                 quantizationDistribution = distribution,
@@ -222,6 +226,7 @@ class ModelDescriptorFactory {
                     add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.HIGH, "format:primary-file-extension"))
                     add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.HIGH, "mode:caller"))
                     add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.MEDIUM, "family:setup"))
+                    add(architecture.evidence)
                     add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.HIGH, "required-components:setup"))
                     add(
                         Evidence(
@@ -280,6 +285,56 @@ class ModelDescriptorFactory {
         if (!validateDetailCollections(detail)) return null
         return CommonIdentity(repositoryId, revision)
     }
+
+    private fun resolveDiffusionArchitecture(
+        repositoryId: String,
+        components: List<DiffusionComponentDescriptor>,
+    ): DiffusionArchitectureResolution {
+        DIFFUSION_ARCHITECTURE_BY_REPOSITORY[repositoryId]?.let { architecture ->
+            return DiffusionArchitectureResolution(
+                value = architecture,
+                evidence = Evidence(
+                    AssessmentReason.METADATA_VALIDATED,
+                    Confidence.HIGH,
+                    "architecture:registry-repository",
+                ),
+            )
+        }
+        if (repositoryId in SIZE_DISAMBIGUATED_WAN_REPOSITORIES) {
+            var primaryBytes = 0L
+            for (component in components) {
+                if (!component.isPrimary) continue
+                primaryBytes = when (val result = checkedAdd(primaryBytes, component.file.sizeBytes)) {
+                    is CheckedLong.Invalid -> return unknownDiffusionArchitecture()
+                    is CheckedLong.Value -> result.value
+                }
+            }
+            if (primaryBytes > 0L) {
+                return DiffusionArchitectureResolution(
+                    value = if (primaryBytes > WAN_LARGE_PRIMARY_BYTES) {
+                        SdArchitecture.WAN_LARGE
+                    } else {
+                        SdArchitecture.WAN_SMALL
+                    },
+                    evidence = Evidence(
+                        AssessmentReason.METADATA_VALIDATED,
+                        Confidence.MEDIUM,
+                        "architecture:registry-primary-size",
+                    ),
+                )
+            }
+        }
+        return unknownDiffusionArchitecture()
+    }
+
+    private fun unknownDiffusionArchitecture() = DiffusionArchitectureResolution(
+        value = null,
+        evidence = Evidence(
+            AssessmentReason.UNKNOWN_ARCHITECTURE,
+            Confidence.LOW,
+            "architecture:registry-unrecognized",
+        ),
+    )
 
     private fun commonValidationReason(detail: ModelDetailResponse): AssessmentReason {
         val candidateIds = listOfNotNull(detail.modelId, detail.id).distinct()
@@ -476,6 +531,11 @@ class ModelDescriptorFactory {
 
     private data class RepositoryPath(val repositoryId: String, val path: String)
 
+    private data class DiffusionArchitectureResolution(
+        val value: SdArchitecture?,
+        val evidence: Evidence,
+    )
+
     private sealed interface ShapeResult {
         data class Valid(val shape: TransformerShape?) : ShapeResult
         data object Invalid : ShapeResult
@@ -487,5 +547,49 @@ class ModelDescriptorFactory {
         const val MAX_ARCHITECTURE_LENGTH = 64
         const val MAX_TRANSFORMER_FIELD = 1_048_576
         const val MAX_LFS_POINTER_BYTES = 1_048_576
+        const val WAN_LARGE_PRIMARY_BYTES = 12L * 1_073_741_824L
+
+        val SIZE_DISAMBIGUATED_WAN_REPOSITORIES = setOf(
+            "Comfy-Org/Wan_2.1_ComfyUI_repackaged",
+            "Comfy-Org/Wan_2.2_ComfyUI_Repackaged",
+        )
+
+        val DIFFUSION_ARCHITECTURE_BY_REPOSITORY = mapOf(
+            "CompVis/stable-diffusion-v-1-4-original" to SdArchitecture.SD1,
+            "runwayml/stable-diffusion-v1-5" to SdArchitecture.SD1,
+            "stabilityai/stable-diffusion-2-1" to SdArchitecture.SD1,
+            "stabilityai/sd-turbo" to SdArchitecture.SD1,
+            "stabilityai/stable-diffusion-xl-base-1.0" to SdArchitecture.SDXL,
+            "stabilityai/sdxl-turbo" to SdArchitecture.SDXL,
+            "segmind/SSD-1B" to SdArchitecture.SDXL,
+            "stabilityai/stable-diffusion-3-medium" to SdArchitecture.SD3,
+            "stabilityai/stable-diffusion-3.5-large" to SdArchitecture.SD3,
+            "Comfy-Org/stable-diffusion-3.5-fp8" to SdArchitecture.SD3,
+            "black-forest-labs/FLUX.1-dev" to SdArchitecture.FLUX,
+            "black-forest-labs/FLUX.1-schnell" to SdArchitecture.FLUX,
+            "leejet/FLUX.1-dev-gguf" to SdArchitecture.FLUX,
+            "leejet/FLUX.1-schnell-gguf" to SdArchitecture.FLUX,
+            "black-forest-labs/FLUX.2-dev" to SdArchitecture.FLUX,
+            "city96/FLUX.2-dev-gguf" to SdArchitecture.FLUX,
+            "black-forest-labs/FLUX.2-klein-4B" to SdArchitecture.FLUX,
+            "leejet/FLUX.2-klein-4B-GGUF" to SdArchitecture.FLUX,
+            "black-forest-labs/FLUX.2-klein-base-4B" to SdArchitecture.FLUX,
+            "leejet/FLUX.2-klein-base-4B-GGUF" to SdArchitecture.FLUX,
+            "black-forest-labs/FLUX.2-klein-9B" to SdArchitecture.FLUX,
+            "leejet/FLUX.2-klein-9B-GGUF" to SdArchitecture.FLUX,
+            "black-forest-labs/FLUX.2-klein-base-9B" to SdArchitecture.FLUX,
+            "leejet/FLUX.2-klein-base-9B-GGUF" to SdArchitecture.FLUX,
+            "black-forest-labs/FLUX.1-Kontext-dev" to SdArchitecture.FLUX,
+            "QuantStack/FLUX.1-Kontext-dev-GGUF" to SdArchitecture.FLUX,
+            "city96/Wan2.1-T2V-14B-gguf" to SdArchitecture.WAN_LARGE,
+            "QuantStack/Wan2.1_14B_VACE-GGUF" to SdArchitecture.WAN_LARGE,
+            "city96/Wan2.1-I2V-14B-480P-gguf" to SdArchitecture.WAN_LARGE,
+            "city96/Wan2.1-I2V-14B-720P-gguf" to SdArchitecture.WAN_LARGE,
+            "city96/Wan2.1-FLF2V-14B-720P-gguf" to SdArchitecture.WAN_LARGE,
+            "calcuis/wan-1.3b-gguf" to SdArchitecture.WAN_SMALL,
+            "QuantStack/Wan2.2-TI2V-5B-GGUF" to SdArchitecture.WAN_SMALL,
+            "QuantStack/Wan2.2-T2V-A14B-GGUF" to SdArchitecture.WAN_LARGE,
+            "QuantStack/Wan2.2-I2V-A14B-GGUF" to SdArchitecture.WAN_LARGE,
+        )
     }
 }

@@ -2,6 +2,7 @@ package com.debanshu777.caraml.core.recommendation
 
 import com.debanshu777.caraml.core.platform.BackendKind
 import com.debanshu777.caraml.core.platform.MemoryTopology
+import com.debanshu777.caraml.core.rating.SdArchitecture
 import com.debanshu777.huggingfacemanager.sdcpp.ComponentRole
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -31,7 +32,7 @@ class DiffusionFootprintEstimatorTest {
     @Test
     fun unknownArchitectureNeedsInformationInsteadOfUsingAFavorableFallback() {
         val estimate = estimator.estimate(
-            descriptor(family = "unrecognized-experimental-family"),
+            descriptor(family = "FLUX-false-prefix", architecture = null),
             plan(backend = BackendKind.CPU),
             MemoryCalibration.None,
         )
@@ -42,6 +43,18 @@ class DiffusionFootprintEstimatorTest {
         assertEquals(Confidence.LOW, estimate.confidence.memory)
         assertTrue(estimate.evidence.any { it.reason == AssessmentReason.UNKNOWN_ARCHITECTURE })
         assertNotNull(estimate.storageBytes)
+    }
+
+    @Test
+    fun estimatorUsesOnlyTheValidatedTypedArchitecture() {
+        val estimate = estimator.estimate(
+            descriptor(family = "not-a-flux-label", architecture = SdArchitecture.FLUX),
+            plan(backend = BackendKind.CPU),
+            MemoryCalibration.None,
+        )
+
+        assertNotNull(estimate.hostMemoryBytes)
+        assertTrue(estimate.evidence.any { it.detail == "diffusion-coefficients:v1:FLUX" })
     }
 
     @Test
@@ -61,6 +74,66 @@ class DiffusionFootprintEstimatorTest {
         assertNull(estimate.hostMemoryBytes)
         assertTrue(estimate.evidence.any { it.reason == AssessmentReason.COMPONENT_ROLE_UNKNOWN })
         assertEquals(2L * GIB + 384L * MIB, assertNotNull(estimate.storageBytes).highBytes)
+    }
+
+    @Test
+    fun explicitAuxiliaryRolesCannotMasqueradeAsThePrimaryModel() {
+        listOf(ComponentRole.VAE, ComponentRole.CLIP_L, ComponentRole.HIGH_NOISE_MODEL).forEach { role ->
+            val estimate = estimator.estimate(
+                descriptor(
+                    components = listOf(
+                        component("conflict-$role.safetensors", 2L * GIB + 128L * MIB, role, isPrimary = true),
+                    ),
+                ),
+                plan(
+                    backend = BackendKind.CUDA,
+                    topology = MemoryTopology.DISCRETE,
+                    keepClipOnCpu = true,
+                    keepVaeOnCpu = true,
+                ),
+                MemoryCalibration.None,
+            )
+
+            assertNull(estimate.hostMemoryBytes, role.name)
+            assertNull(estimate.gpuMemoryBytes, role.name)
+            assertEquals(2L * GIB + 128L * MIB, assertNotNull(estimate.storageBytes).highBytes)
+            assertTrue(estimate.evidence.any { it.reason == AssessmentReason.COMPONENT_ROLE_UNKNOWN })
+        }
+    }
+
+    @Test
+    fun duplicatePrimaryRepresentationsNeedInformationWithFullStorageEvidence() {
+        val estimate = estimator.estimate(
+            descriptor(
+                components = listOf(
+                    component("primary-a.safetensors", 2L * GIB, null, isPrimary = true),
+                    component("primary-b.safetensors", 1L * GIB, null, isPrimary = true),
+                ),
+            ),
+            plan(backend = BackendKind.CPU),
+            MemoryCalibration.None,
+        )
+
+        assertNull(estimate.hostMemoryBytes)
+        assertEquals(3L * GIB, assertNotNull(estimate.storageBytes).highBytes)
+        assertTrue(estimate.evidence.any { it.reason == AssessmentReason.COMPONENT_ROLE_UNKNOWN })
+    }
+
+    @Test
+    fun highNoiseModelIsAnExplicitAdditionalDiffusionWeightRole() {
+        val estimate = estimator.estimate(
+            descriptor(
+                components = listOf(
+                    component("diffusion.safetensors", 2L * GIB, null, isPrimary = true),
+                    component("high-noise.safetensors", 1L * GIB, ComponentRole.HIGH_NOISE_MODEL),
+                ),
+            ),
+            plan(backend = BackendKind.CPU),
+            MemoryCalibration.None,
+        )
+
+        assertNotNull(estimate.hostMemoryBytes)
+        assertTrue(estimate.evidence.any { it.detail == "component-weights:primary:${3L * GIB}" })
     }
 
     @Test
@@ -133,6 +206,23 @@ class DiffusionFootprintEstimatorTest {
         assertNotNull(discrete.hostMemoryBytes)
         assertNotNull(discrete.gpuMemoryBytes)
         assertNull(discrete.sharedMemoryBytes)
+    }
+
+    @Test
+    fun ordinaryDiscretePlanRetainsPositiveVersionedHostRuntimeMemory() {
+        val estimate = estimator.estimate(
+            descriptor(),
+            plan(backend = BackendKind.CUDA, topology = MemoryTopology.DISCRETE),
+            MemoryCalibration.None,
+        )
+
+        val host = assertNotNull(estimate.hostMemoryBytes)
+        assertTrue(host.lowBytes > 0L)
+        assertTrue(host.likelyBytes > 0L)
+        assertTrue(host.highBytes > 0L)
+        assertNotNull(estimate.gpuMemoryBytes)
+        assertNull(estimate.sharedMemoryBytes)
+        assertTrue(estimate.evidence.any { it.detail == "host-runtime:diffusion-v1" })
     }
 
     @Test
@@ -339,12 +429,13 @@ class DiffusionFootprintEstimatorTest {
     private fun descriptor(
         mode: DiffusionMode = DiffusionMode.IMAGE,
         family: String = "FLUX",
+        architecture: SdArchitecture? = SdArchitecture.FLUX,
         components: List<DiffusionComponentDescriptor> = listOf(
             component("diffusion.safetensors", 2L * GIB, null, isPrimary = true),
             component("vae.safetensors", 256L * MIB, ComponentRole.VAE),
             component("clip.safetensors", 384L * MIB, ComponentRole.CLIP_L),
         ),
-    ) = diffusionDescriptor(mode, family, components)
+    ) = diffusionDescriptor(mode, family, components, architecture = architecture)
 
     private fun host(assessment: PlanAssessment): EstimateRange = assertNotNull(assessment.hostMemoryBytes)
 
@@ -368,12 +459,14 @@ internal fun diffusionDescriptor(
     components: List<DiffusionComponentDescriptor>,
     width: Int? = 1_024,
     height: Int? = 768,
+    architecture: SdArchitecture? = SdArchitecture.FLUX,
 ): DiffusionModelDescriptor = DiffusionModelDescriptor(
     repositoryId = "owner/model",
     revision = "0123456789abcdef0123456789abcdef01234567",
     components = components,
     mode = mode,
     family = family,
+    architecture = architecture,
     width = width,
     height = height,
     quantizationDistribution = setOf("F16"),

@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.core.recommendation
 
+import com.debanshu777.caraml.core.rating.SdArchitecture
 import com.debanshu777.huggingfacemanager.model.ListModelsResponse
 import com.debanshu777.huggingfacemanager.model.ModelDetailResponse
 import com.debanshu777.huggingfacemanager.model.ModelFileTreeResponse
@@ -11,6 +12,7 @@ import com.debanshu777.huggingfacemanager.sdcpp.SdCppRecommendedParams
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -173,6 +175,21 @@ class ModelDescriptorFactoryTest {
     }
 
     @Test
+    fun rejectsMultipleDerivedPrimaryRepresentations() {
+        val result = factory.buildDiffusion(
+            detail(repositoryId = "stabilityai/stable-diffusion-3-medium"),
+            listOf(
+                file(path = "primary-a.safetensors"),
+                file(path = "primary-b.safetensors"),
+            ),
+            SdCppModelSetup("Stable Diffusion 3 Medium", "description", emptyList(), selfContained = true),
+            DiffusionMode.IMAGE,
+        )
+
+        assertIs<DescriptorBuildResult.Invalid>(result)
+    }
+
+    @Test
     fun preservesMixedQuantizationDistributionForACompleteDiffusionGraph() {
         val setup = SdCppModelSetup(
             familyLabel = "family",
@@ -286,6 +303,89 @@ class ModelDescriptorFactoryTest {
     }
 
     @Test
+    fun derivesDiffusionArchitectureOnlyFromExactAllowlistedRepositories() {
+        val cases = listOf(
+            "CompVis/stable-diffusion-v-1-4-original" to SdArchitecture.SD1,
+            "runwayml/stable-diffusion-v1-5" to SdArchitecture.SD1,
+            "stabilityai/stable-diffusion-2-1" to SdArchitecture.SD1,
+            "stabilityai/sd-turbo" to SdArchitecture.SD1,
+            "stabilityai/stable-diffusion-xl-base-1.0" to SdArchitecture.SDXL,
+            "segmind/SSD-1B" to SdArchitecture.SDXL,
+            "stabilityai/stable-diffusion-3-medium" to SdArchitecture.SD3,
+            "stabilityai/stable-diffusion-3.5-large" to SdArchitecture.SD3,
+            "Comfy-Org/stable-diffusion-3.5-fp8" to SdArchitecture.SD3,
+            "black-forest-labs/FLUX.1-dev" to SdArchitecture.FLUX,
+            "leejet/FLUX.1-schnell-gguf" to SdArchitecture.FLUX,
+            "black-forest-labs/FLUX.2-dev" to SdArchitecture.FLUX,
+            "leejet/FLUX.2-klein-4B-GGUF" to SdArchitecture.FLUX,
+            "QuantStack/FLUX.1-Kontext-dev-GGUF" to SdArchitecture.FLUX,
+            "city96/Wan2.1-T2V-14B-gguf" to SdArchitecture.WAN_LARGE,
+            "city96/Wan2.1-I2V-14B-480P-gguf" to SdArchitecture.WAN_LARGE,
+            "calcuis/wan-1.3b-gguf" to SdArchitecture.WAN_SMALL,
+            "QuantStack/Wan2.2-TI2V-5B-GGUF" to SdArchitecture.WAN_SMALL,
+            "QuantStack/Wan2.2-T2V-A14B-GGUF" to SdArchitecture.WAN_LARGE,
+            "QuantStack/Wan2.2-I2V-A14B-GGUF" to SdArchitecture.WAN_LARGE,
+        )
+        val setup = SdCppModelSetup("misleading-FLUX-prefix", "description", emptyList(), selfContained = true)
+
+        cases.forEach { (repositoryId, expected) ->
+            val descriptor = assertIs<DiffusionModelDescriptor>(
+                assertIs<DescriptorBuildResult.Ready>(
+                    factory.buildDiffusion(
+                        detail(repositoryId = repositoryId),
+                        listOf(file()),
+                        setup,
+                        DiffusionMode.IMAGE,
+                    ),
+                ).descriptor,
+            )
+
+            assertEquals(expected, descriptor.architecture, repositoryId)
+            assertNotNull(descriptor.evidence.singleOrNull { it.detail == "architecture:registry-repository" })
+        }
+    }
+
+    @Test
+    fun ambiguousWanRepositoriesRequireValidatedPrimarySizeEvidence() {
+        val setup = SdCppModelSetup("Wan2.2", "description", emptyList(), selfContained = true)
+        fun architecture(size: Long): DiffusionModelDescriptor = assertIs(
+            assertIs<DescriptorBuildResult.Ready>(
+                factory.buildDiffusion(
+                    detail(repositoryId = "Comfy-Org/Wan_2.2_ComfyUI_Repackaged"),
+                    listOf(file(size = size)),
+                    setup,
+                    DiffusionMode.VIDEO,
+                ),
+            ).descriptor,
+        )
+
+        val small = architecture(8L * GIB)
+        val large = architecture(13L * GIB)
+
+        assertEquals(SdArchitecture.WAN_SMALL, small.architecture)
+        assertEquals(SdArchitecture.WAN_LARGE, large.architecture)
+        assertTrue(small.evidence.any { it.detail == "architecture:registry-primary-size" })
+        assertTrue(large.evidence.any { it.detail == "architecture:registry-primary-size" })
+    }
+
+    @Test
+    fun unrecognizedRepositoryDoesNotPromoteAFamilyPrefixToArchitecture() {
+        val descriptor = assertIs<DiffusionModelDescriptor>(
+            assertIs<DescriptorBuildResult.Ready>(
+                factory.buildDiffusion(
+                    detail(repositoryId = "owner/FLUX-like-model"),
+                    listOf(file()),
+                    SdCppModelSetup("FLUX.1", "description", emptyList(), selfContained = true),
+                    DiffusionMode.IMAGE,
+                ),
+            ).descriptor,
+        )
+
+        assertNull(descriptor.architecture)
+        assertTrue(descriptor.evidence.any { it.detail == "architecture:registry-unrecognized" })
+    }
+
+    @Test
     fun rejectsOverlongAndOversizedRemoteCollections() {
         val overlongDetail = detail().copy(
             gguf = detail().gguf?.copy(architecture = "a".repeat(65)),
@@ -334,9 +434,10 @@ class ModelDescriptorFactoryTest {
     private fun detail(
         totalParameters: Long? = 7_000_000_000L,
         contextLength: Int? = 8_192,
+        repositoryId: String = "owner/model",
     ) = ModelDetailResponse(
-        id = "owner/model",
-        modelId = "owner/model",
+        id = repositoryId,
+        modelId = repositoryId,
         sha = REVISION,
         gguf = ModelDetailResponse.Gguf(
             architecture = "llama",
@@ -368,5 +469,6 @@ class ModelDescriptorFactoryTest {
 
     private companion object {
         const val REVISION = "0123456789abcdef0123456789abcdef01234567"
+        const val GIB = 1_073_741_824L
     }
 }

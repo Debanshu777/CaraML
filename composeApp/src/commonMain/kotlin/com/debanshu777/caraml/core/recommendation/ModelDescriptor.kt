@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.core.recommendation
 
+import com.debanshu777.caraml.core.rating.SdArchitecture
 import com.debanshu777.huggingfacemanager.sdcpp.ComponentRole
 
 object DescriptorLimits {
@@ -134,6 +135,7 @@ data class DiffusionModelDescriptor private constructor(
     val components: List<DiffusionComponentDescriptor>,
     val mode: DiffusionMode,
     val family: String,
+    val architecture: SdArchitecture?,
     val width: Int?,
     val height: Int?,
     val quantizationDistribution: Set<String>,
@@ -153,6 +155,7 @@ data class DiffusionModelDescriptor private constructor(
         components: Collection<DiffusionComponentDescriptor>,
         mode: DiffusionMode,
         family: String,
+        architecture: SdArchitecture? = null,
         width: Int? = null,
         height: Int? = null,
         quantizationDistribution: Collection<String>,
@@ -165,6 +168,7 @@ data class DiffusionModelDescriptor private constructor(
         components = components.toList(),
         mode = mode,
         family = family,
+        architecture = architecture,
         width = width,
         height = height,
         quantizationDistribution = quantizationDistribution.toSet(),

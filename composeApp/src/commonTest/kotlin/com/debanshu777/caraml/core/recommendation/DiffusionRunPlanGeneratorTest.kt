@@ -199,14 +199,28 @@ class DiffusionRunPlanGeneratorTest {
             components = listOf(component("diffusion.safetensors", 0L, role = null, isPrimary = true)),
         )
         val invalidNativeDimension = descriptor(nativeWidth = 0)
+        val conflictingPrimaryRole = descriptor(
+            components = listOf(
+                component("diffusion.safetensors", 2L * GIB, role = null, isPrimary = true),
+                component("vae.safetensors", 256L * MIB, role = ComponentRole.VAE, isPrimary = true),
+            ),
+        )
+        val duplicatePrimary = descriptor(
+            components = listOf(
+                component("primary-a.safetensors", 2L * GIB, role = null, isPrimary = true),
+                component("primary-b.safetensors", 1L * GIB, role = null, isPrimary = true),
+            ),
+        )
 
         assertTrue(generator.diffusionCandidates(invalidDescriptor, workload(), settings()).isEmpty())
         assertTrue(generator.diffusionCandidates(invalidNativeDimension, workload(), settings()).isEmpty())
+        assertTrue(generator.diffusionCandidates(conflictingPrimaryRole, workload(), settings()).isEmpty())
+        assertTrue(generator.diffusionCandidates(duplicatePrimary, workload(), settings()).isEmpty())
     }
 
     @Test
-    fun cpuPreservesTheRequestedFlagsAndNeverGeneratesGpuOnlyFallbacks() {
-        val plans = generator.diffusionCandidates(
+    fun cpuNormalizesOffloadToTheExecutableFlagAndNeverGeneratesGpuOnlyFallbacks() {
+        val requestedFalse = generator.diffusionCandidates(
             descriptor(),
             workload(),
             settings(
@@ -217,11 +231,25 @@ class DiffusionRunPlanGeneratorTest {
                 maxVramBytes = 2L * GIB,
             ),
         )
+        val requestedTrue = generator.diffusionCandidates(
+            descriptor(),
+            workload(offloadToCpu = true),
+            settings(
+                backend = BackendKind.CPU,
+                topology = MemoryTopology.UNKNOWN,
+                supportsMaxVram = true,
+                supportsLayerStreaming = true,
+                maxVramBytes = 2L * GIB,
+            ),
+        )
 
-        assertTrue(plans.isNotEmpty())
-        assertFalse(plans.first().offloadToCpu)
-        assertTrue(plans.none { it.maxVramBytes != null })
-        assertTrue(plans.none { it.layerStreaming })
+        assertTrue(requestedFalse.isNotEmpty())
+        assertTrue(requestedTrue.isNotEmpty())
+        assertTrue(requestedFalse.all { it.offloadToCpu })
+        assertTrue(requestedTrue.all { it.offloadToCpu })
+        assertEquals(requestedTrue.first().stableKey, requestedFalse.first().stableKey)
+        assertTrue(requestedFalse.none { it.maxVramBytes != null || it.layerStreaming })
+        assertTrue(requestedTrue.none { it.maxVramBytes != null || it.layerStreaming })
     }
 
     @Test
@@ -278,6 +306,7 @@ class DiffusionRunPlanGeneratorTest {
         frameCount: Int = if (mode == DiffusionMode.IMAGE) 1 else 32,
         minimumFrameCount: Int = if (mode == DiffusionMode.IMAGE) 1 else 8,
         vaeTiling: Boolean = false,
+        offloadToCpu: Boolean = false,
         layerStreaming: Boolean = false,
         allowResolutionFallback: Boolean = true,
         allowFrameCountFallback: Boolean = false,
@@ -293,7 +322,7 @@ class DiffusionRunPlanGeneratorTest {
         batchSize = batchSize,
         steps = 20,
         vaeTiling = vaeTiling,
-        offloadToCpu = false,
+        offloadToCpu = offloadToCpu,
         keepClipOnCpu = false,
         keepVaeOnCpu = false,
         maxVramBytes = null,

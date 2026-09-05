@@ -120,6 +120,7 @@ class RunPlanGenerator {
         settings: PlanningSettings,
     ): List<DiffusionRunPlan> {
         if (!validDiffusionInputs(descriptor, workload, settings)) return emptyList()
+        val effectiveOffloadToCpu = settings.backend == BackendKind.CPU || workload.offloadToCpu
 
         val candidates = LinkedHashSet<DiffusionRunPlan>(MAX_DIFFUSION_PLAN_CANDIDATES)
         fun add(
@@ -127,7 +128,7 @@ class RunPlanGenerator {
             height: Int = workload.height,
             frameCount: Int = workload.frameCount,
             vaeTiling: Boolean = workload.vaeTiling,
-            offloadToCpu: Boolean = workload.offloadToCpu,
+            offloadToCpu: Boolean = effectiveOffloadToCpu,
             maxVramBytes: Long? = workload.maxVramBytes,
             layerStreaming: Boolean = workload.layerStreaming,
             requiresUserAcceptance: Boolean = false,
@@ -176,7 +177,7 @@ class RunPlanGenerator {
         }
         for (mask in 1 until (1 shl optionalAxes.size)) {
             var vaeTiling = workload.vaeTiling
-            var offloadToCpu = workload.offloadToCpu
+            var offloadToCpu = effectiveOffloadToCpu
             var maxVramBytes = workload.maxVramBytes
             var layerStreaming = workload.layerStreaming
             val compromises = mutableListOf<DiffusionPlanCompromise>()
@@ -286,7 +287,8 @@ class RunPlanGenerator {
             descriptor.width?.let { it !in 1..DescriptorLimits.MAX_IMAGE_DIMENSION } == true ||
             descriptor.height?.let { it !in 1..DescriptorLimits.MAX_IMAGE_DIMENSION } == true ||
             descriptor.components.isEmpty() || descriptor.components.size > DescriptorLimits.MAX_COMPONENTS ||
-            !descriptor.requiredComponentsPresent || descriptor.components.none { it.isPrimary }
+            !descriptor.requiredComponentsPresent || descriptor.components.count { it.isPrimary } != 1 ||
+            descriptor.components.any { it.isPrimary && it.role != null }
         ) {
             return false
         }

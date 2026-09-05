@@ -28,7 +28,7 @@ class DiffusionFootprintEstimator {
             return conservativeAssessment(plan, storage, reason)
         }
 
-        val architecture = architectureForFamily(descriptor.family)
+        val architecture = descriptor.architecture?.takeUnless { it == SdArchitecture.UNKNOWN }
             ?: return conservativeAssessment(plan, storage, AssessmentReason.UNKNOWN_ARCHITECTURE)
         val coefficients = DiffusionArchitectureCoefficientsV1.forArchitecture(architecture)
             ?: return conservativeAssessment(plan, storage, AssessmentReason.UNKNOWN_ARCHITECTURE)
@@ -114,6 +114,12 @@ class DiffusionFootprintEstimator {
         }
 
         val storage = diffusionExactRange(total)
+        if (
+            descriptor.components.count { it.isPrimary } != 1 ||
+            descriptor.components.any { it.isPrimary && it.role != null }
+        ) {
+            return DiffusionWeightsResult.Invalid(AssessmentReason.COMPONENT_ROLE_UNKNOWN, storage)
+        }
         val seenAuxiliaryRoles = mutableSetOf<ComponentRole>()
         var primary = 0L
         var vae = 0L
@@ -121,7 +127,8 @@ class DiffusionFootprintEstimator {
         for (component in descriptor.components) {
             val file = component.file
             val destination = when {
-                component.isPrimary || component.role == ComponentRole.HIGH_NOISE_MODEL -> DiffusionWeightRole.PRIMARY
+                component.isPrimary -> DiffusionWeightRole.PRIMARY
+                component.role == ComponentRole.HIGH_NOISE_MODEL -> DiffusionWeightRole.PRIMARY
                 component.role == ComponentRole.VAE -> DiffusionWeightRole.VAE
                 component.role == null -> {
                     return DiffusionWeightsResult.Invalid(
@@ -281,7 +288,19 @@ class DiffusionFootprintEstimator {
         activations: DiffusionActivations,
         calibration: MemoryCalibration,
     ): DiffusionAllocationResult {
+        val evidence = mutableListOf(
+            Evidence(
+                AssessmentReason.METADATA_VALIDATED,
+                Confidence.MEDIUM,
+                "host-runtime:diffusion-v1",
+            ),
+        )
+        val hostRuntime = when (val result = diffusionHostRuntimeRange(weights.total)) {
+            is DiffusionRangeResult.Invalid -> return DiffusionAllocationResult.Invalid(result.reason, evidence)
+            is DiffusionRangeResult.Value -> result.range
+        }
         val hostNonPrimary = diffusionAddRanges(
+            hostRuntime,
             if (plan.offloadToCpu || plan.keepClipOnCpu) {
                 diffusionExactRange(weights.conditioning)
             } else {
@@ -320,7 +339,6 @@ class DiffusionFootprintEstimator {
         gpuFixed as DiffusionRangeResult.Value
 
         var lowConfidence = false
-        val evidence = mutableListOf<Evidence>()
         val primaryAllocation = when {
             plan.layerStreaming -> {
                 lowConfidence = true
@@ -436,23 +454,6 @@ private object DiffusionArchitectureCoefficientsV1 {
     fun forArchitecture(architecture: SdArchitecture): DiffusionArchitectureCoefficients? = values[architecture]
 }
 
-private fun architectureForFamily(family: String): SdArchitecture? {
-    val normalized = family.trim().uppercase().replace('-', '_').replace(' ', '_')
-    return when {
-        normalized.startsWith("FLUX") || normalized.startsWith("FLEX") -> SdArchitecture.FLUX
-        normalized.startsWith("SD3") || normalized.startsWith("STABLE_DIFFUSION_3") -> SdArchitecture.SD3
-        normalized.startsWith("SDXL") || normalized.startsWith("STABLE_DIFFUSION_XL") -> SdArchitecture.SDXL
-        normalized.startsWith("SD1") || normalized.startsWith("SD2") ||
-            normalized.startsWith("STABLE_DIFFUSION_1") || normalized.startsWith("STABLE_DIFFUSION_2") ->
-            SdArchitecture.SD1
-        normalized.contains("WAN") && (normalized.contains("LARGE") || normalized.contains("14B")) ->
-            SdArchitecture.WAN_LARGE
-        normalized.contains("WAN") && (normalized.contains("SMALL") || normalized.contains("1.3B")) ->
-            SdArchitecture.WAN_SMALL
-        else -> null
-    }
-}
-
 private data class DiffusionWeights(
     val primary: Long,
     val vae: Long,
@@ -510,6 +511,12 @@ private fun streamingPrimaryRange(weights: Long): DiffusionRangeResult = diffusi
     diffusionMultiplyRatio(weights, 40L, 100L),
     diffusionMultiplyRatio(weights, 48L, 100L),
     diffusionMultiplyRatio(weights, 60L, 100L),
+)
+
+private fun diffusionHostRuntimeRange(totalWeights: Long): DiffusionRangeResult = diffusionRangeFromChecked(
+    CheckedLong.Value(64L * DIFFUSION_MIB),
+    CheckedLong.Value(128L * DIFFUSION_MIB),
+    checkedAdd(totalWeights, 256L * DIFFUSION_MIB),
 )
 
 private fun diffusionAddRanges(vararg ranges: EstimateRange): DiffusionRangeResult {
