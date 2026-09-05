@@ -21,6 +21,33 @@ import kotlin.test.assertIs
 
 class BoundedResponseTest {
     @Test
+    fun redirectIsRejectedBeforeAnUntrustedLocationIsRequested() = runTest {
+        var requests = 0
+        val client = HttpClient(MockEngine {
+            requests++
+            if (requests == 1) {
+                respond(
+                    content = "",
+                    status = HttpStatusCode.Found,
+                    headers = headersOf(HttpHeaders.Location, "https://attacker.invalid/model"),
+                )
+            } else {
+                respond("{\"id\":\"attacker/model\"}")
+            }
+        })
+        try {
+            val result = ClientWrapper(client, Json).networkGetUsecase<ModelDetailResponse>(
+                endpoint = "https://huggingface.co/api/models/owner/model",
+            )
+
+            assertEquals(Result.Error(DataError.Network.Unknown), result)
+            assertEquals(1, requests)
+        } finally {
+            client.close()
+        }
+    }
+
+    @Test
     fun chunkedBodyOverLimitIsRejectedBeforeDecode() = runTest {
         val client = HttpClient(MockEngine {
             respond("{\"payload\":\"${"x".repeat(64)}\"}")
@@ -179,6 +206,23 @@ class BoundedResponseTest {
     }
 
     @Test
+    fun entryBeyondRemainingBudgetIsRejectedBeforeItIsDecoded() = runTest {
+        val entries = (0 until 4_096).joinToString(prefix = "[", postfix = ",\"not-an-object\"]") {
+            "{\"path\":\"$it.gguf\",\"size\":1,\"type\":\"file\"}"
+        }
+        val client = HttpClient(MockEngine { respond(entries) })
+        try {
+            val service = RemoteHuggingFaceApiService(client, Json, "https://huggingface.co")
+            assertEquals(
+                Result.Error(DataError.Network.PayloadTooLarge),
+                service.getModelFileTree("owner/model", REVISION),
+            )
+        } finally {
+            client.close()
+        }
+    }
+
+    @Test
     fun cancellationStopsPaginationImmediately() = runTest {
         val client = HttpClient(MockEngine { throw CancellationException("stop") })
         try {
@@ -215,6 +259,84 @@ class BoundedResponseTest {
                 service.getModelConfig("owner/model", "main"),
             )
             assertEquals(2, seenPaths.size)
+        } finally {
+            client.close()
+        }
+    }
+
+    @Test
+    fun recommendationDetailRejectsUnknownFields() = runTest {
+        val client = HttpClient(MockEngine {
+            respond("{\"id\":\"owner/model\",\"sha\":\"$REVISION\",\"unexpected\":true}")
+        })
+        try {
+            val service = RemoteHuggingFaceApiService(
+                client,
+                Json { ignoreUnknownKeys = true },
+                "https://huggingface.co",
+            )
+            assertEquals(
+                Result.Error(DataError.Network.Serialization),
+                service.getModelDetail("owner/model"),
+            )
+        } finally {
+            client.close()
+        }
+    }
+
+    @Test
+    fun recommendationDetailRejectsQuotedNumericTypes() = runTest {
+        val client = HttpClient(MockEngine {
+            respond("{\"id\":\"owner/model\",\"sha\":\"$REVISION\",\"downloads\":\"1\"}")
+        })
+        try {
+            val service = RemoteHuggingFaceApiService(
+                client,
+                Json { isLenient = true; ignoreUnknownKeys = true },
+                "https://huggingface.co",
+            )
+            assertEquals(
+                Result.Error(DataError.Network.Serialization),
+                service.getModelDetail("owner/model"),
+            )
+        } finally {
+            client.close()
+        }
+    }
+
+    @Test
+    fun recommendationDetailRejectsOversizedNestedCollections() = runTest {
+        val tags = List(257) { "\"tag-$it\"" }.joinToString()
+        val client = HttpClient(MockEngine {
+            respond("{\"id\":\"owner/model\",\"sha\":\"$REVISION\",\"tags\":[$tags]}")
+        })
+        try {
+            val service = RemoteHuggingFaceApiService(client, Json, "https://huggingface.co")
+            assertEquals(
+                Result.Error(DataError.Network.Serialization),
+                service.getModelDetail("owner/model"),
+            )
+        } finally {
+            client.close()
+        }
+    }
+
+    @Test
+    fun recommendationListUsesTheStrictVersionedProjection() = runTest {
+        val client = HttpClient(MockEngine {
+            respond("{\"models\":[{\"id\":\"owner/model\",\"unexpected\":true}]}")
+        })
+        try {
+            val service = RemoteHuggingFaceApiService(
+                client,
+                Json { ignoreUnknownKeys = true },
+                "https://huggingface.co",
+            )
+            assertIs<Result.Success<*, *>>(service.listModels(ListModelsParams()))
+            assertEquals(
+                Result.Error(DataError.Network.Serialization),
+                service.listRecommendationModels(ListModelsParams()),
+            )
         } finally {
             client.close()
         }

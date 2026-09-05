@@ -14,6 +14,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 
+internal class ResponseLimitExceededException : SerializationException("Response item limit exceeded")
+
 @PublishedApi
 internal data class BoundedNetworkResponse<T>(
     val data: T,
@@ -21,9 +23,14 @@ internal data class BoundedNetworkResponse<T>(
 )
 
 class ClientWrapper(
-    @PublishedApi internal val networkClient: HttpClient,
+    networkClient: HttpClient,
     @PublishedApi internal val json: Json,
 ) {
+    @PublishedApi
+    internal val networkClient = networkClient.config {
+        followRedirects = false
+    }
+
     suspend inline fun <reified T> networkGetUsecase(
         endpoint: String,
         queries: Map<String, String>? = null,
@@ -35,12 +42,63 @@ class ClientWrapper(
         }
     }
 
+    internal suspend fun <T> networkGetUsecase(
+        endpoint: String,
+        queries: Map<String, String>? = null,
+        maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
+        decode: (String) -> T,
+    ): Result<T, DataError.Network> {
+        return when (val result = networkGetBounded(endpoint, queries, maxResponseBytes, decode)) {
+            is Result.Success -> Result.Success(result.data.data)
+            is Result.Error -> Result.Error(result.error)
+        }
+    }
+
     @PublishedApi
     internal suspend inline fun <reified T> networkGetBounded(
         endpoint: String,
         queries: Map<String, String>? = null,
         maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
+    ): Result<BoundedNetworkResponse<T>, DataError.Network> = networkGetBounded(
+        endpoint = endpoint,
+        queries = queries,
+        maxResponseBytes = maxResponseBytes,
+        decode = { bodyText -> json.decodeFromString<T>(bodyText) },
+    )
+
+    @PublishedApi
+    internal suspend fun <T> networkGetBounded(
+        endpoint: String,
+        queries: Map<String, String>? = null,
+        maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
+        decode: (String) -> T,
     ): Result<BoundedNetworkResponse<T>, DataError.Network> {
+        return when (val response = networkGetTextBounded(endpoint, queries, maxResponseBytes)) {
+            is Result.Error -> Result.Error(response.error)
+            is Result.Success -> try {
+                Result.Success(
+                    BoundedNetworkResponse(
+                        data = decode(response.data.data),
+                        linkHeader = response.data.linkHeader,
+                    ),
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: ResponseLimitExceededException) {
+                Result.Error(DataError.Network.PayloadTooLarge)
+            } catch (_: SerializationException) {
+                Result.Error(DataError.Network.Serialization)
+            } catch (_: Exception) {
+                Result.Error(DataError.Network.Unknown)
+            }
+        }
+    }
+
+    private suspend fun networkGetTextBounded(
+        endpoint: String,
+        queries: Map<String, String>?,
+        maxResponseBytes: Long,
+    ): Result<BoundedNetworkResponse<String>, DataError.Network> {
         require(maxResponseBytes in 1..DEFAULT_MAX_RESPONSE_BYTES) {
             "Response byte limit is outside the supported range"
         }
@@ -70,17 +128,14 @@ class ClientWrapper(
                                 return@execute Result.Error(DataError.Network.PayloadTooLarge)
                             }
                             val bodyText = bytes.decodeToString(throwOnInvalidSequence = true)
-                            val data = json.decodeFromString<T>(bodyText)
                             Result.Success(
                                 BoundedNetworkResponse(
-                                    data = data,
+                                    data = bodyText,
                                     linkHeader = response.headers[HttpHeaders.Link],
                                 ),
                             )
                         } catch (e: CancellationException) {
                             throw e
-                        } catch (_: SerializationException) {
-                            Result.Error(DataError.Network.Serialization)
                         } catch (_: Exception) {
                             Result.Error(DataError.Network.Unknown)
                         }
@@ -98,8 +153,6 @@ class ClientWrapper(
             throw e
         } catch (_: UnresolvedAddressException) {
             Result.Error(DataError.Network.NoInternet)
-        } catch (_: SerializationException) {
-            Result.Error(DataError.Network.Serialization)
         } catch (_: Exception) {
             Result.Error(DataError.Network.Unknown)
         }

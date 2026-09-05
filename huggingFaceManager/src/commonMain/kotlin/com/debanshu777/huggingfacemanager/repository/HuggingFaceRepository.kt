@@ -17,6 +17,10 @@ class HuggingFaceRepository(
     suspend fun listModels(params: ListModelsParams): Result<ListModelsResponse, DataError.Network> =
         api.listModels(params)
 
+    suspend fun listRecommendationModels(
+        params: ListModelsParams,
+    ): Result<ListModelsResponse, DataError.Network> = api.listRecommendationModels(params)
+
     suspend fun searchModels(params: SearchModelsParams): Result<SearchModelsResponse, DataError.Network> =
         api.searchModels(params)
 

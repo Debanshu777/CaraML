@@ -7,6 +7,7 @@ import com.debanshu777.huggingfacemanager.model.TransformerConfigResponse
 import com.debanshu777.huggingfacemanager.sdcpp.ComponentRole
 import com.debanshu777.huggingfacemanager.sdcpp.SdCppComponent
 import com.debanshu777.huggingfacemanager.sdcpp.SdCppModelSetup
+import com.debanshu777.huggingfacemanager.sdcpp.SdCppRecommendedParams
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -194,6 +195,94 @@ class ModelDescriptorFactoryTest {
         val descriptor = assertIs<DiffusionModelDescriptor>(result.descriptor)
         assertEquals(setOf("Q4_K_M", "F16"), descriptor.quantizationDistribution)
         assertEquals(ComponentRole.VAE, descriptor.components.single { !it.isPrimary }.role)
+    }
+
+    @Test
+    fun crossRepositoryDiffusionComponentNeedsAnIndependentSnapshot() {
+        val setup = SdCppModelSetup(
+            familyLabel = "family",
+            description = "description",
+            components = listOf(
+                SdCppComponent(ComponentRole.VAE, "other/model", "vae.safetensors"),
+            ),
+        )
+
+        val result = factory.buildDiffusion(
+            detail(),
+            listOf(file(path = "main.safetensors"), file(path = "vae.safetensors")),
+            setup,
+            DiffusionMode.IMAGE,
+        )
+
+        val needsVariant = assertIs<DescriptorBuildResult.NeedsVariant>(result)
+        assertTrue(AssessmentReason.MISSING_REQUIRED_COMPONENT in needsVariant.reasons)
+        assertNull(needsVariant.assumedQuantization)
+    }
+
+    @Test
+    fun rejectsDiffusionDimensionsOutsideTheParserCeiling() {
+        val setup = SdCppModelSetup(
+            familyLabel = "family",
+            description = "description",
+            components = emptyList(),
+            recommendedParams = SdCppRecommendedParams(
+                width = DescriptorLimits.MAX_IMAGE_DIMENSION + 1,
+                height = 512,
+            ),
+            selfContained = true,
+        )
+
+        assertIs<DescriptorBuildResult.Invalid>(
+            factory.buildDiffusion(
+                detail(),
+                listOf(file(path = "main.safetensors")),
+                setup,
+                DiffusionMode.IMAGE,
+            ),
+        )
+    }
+
+    @Test
+    fun recordsEvidenceForEveryNormalizedLlmAndDiffusionFact() {
+        val llm = assertIs<LlmModelDescriptor>(
+            assertIs<DescriptorBuildResult.Ready>(
+                factory.buildLlm(
+                    detail().copy(tags = listOf("gguf-v3")),
+                    file(),
+                    null,
+                ),
+            ).descriptor,
+        )
+        assertTrue(llm.evidence.any { it.detail == "context:hub-metadata" })
+        assertTrue(llm.evidence.any { it.detail == "quantization:filename" })
+        assertTrue(llm.evidence.any { it.detail == "gguf-version:tag" })
+
+        val setup = SdCppModelSetup(
+            familyLabel = "family",
+            description = "description",
+            components = listOf(
+                SdCppComponent(ComponentRole.VAE, "owner/model", "vae-F16.safetensors"),
+            ),
+            recommendedParams = SdCppRecommendedParams(width = 1_024, height = 768),
+        )
+        val diffusion = assertIs<DiffusionModelDescriptor>(
+            assertIs<DescriptorBuildResult.Ready>(
+                factory.buildDiffusion(
+                    detail(),
+                    listOf(file(path = "main.safetensors"), file(path = "vae-F16.safetensors")),
+                    setup,
+                    DiffusionMode.IMAGE,
+                ),
+            ).descriptor,
+        )
+        val details = diffusion.evidence.mapNotNullTo(mutableSetOf()) { it.detail }
+        assertEquals(1_024, diffusion.width)
+        assertEquals(768, diffusion.height)
+        assertTrue("mode:caller" in details)
+        assertTrue("family:setup" in details)
+        assertTrue("width:setup" in details)
+        assertTrue("height:setup" in details)
+        assertTrue("component-role:setup" in details)
     }
 
     @Test

@@ -6,6 +6,7 @@ import com.debanshu777.huggingfacemanager.usecase.GetModelDetailUseCase
 import com.debanshu777.huggingfacemanager.usecase.GetModelConfigUseCase
 import com.debanshu777.huggingfacemanager.usecase.GetModelFileTreeUseCase
 import com.debanshu777.huggingfacemanager.usecase.ListModelsUseCase
+import com.debanshu777.huggingfacemanager.usecase.ListRecommendationModelsUseCase
 import com.debanshu777.huggingfacemanager.usecase.SearchModelsUseCase
 import io.ktor.client.plugins.HttpRequestRetry
 import io.ktor.client.plugins.HttpTimeout
@@ -17,6 +18,7 @@ import kotlinx.serialization.json.Json
 
 interface HuggingFaceApi {
     val listModels: ListModelsUseCase
+    val listRecommendationModels: ListRecommendationModelsUseCase
     val searchModels: SearchModelsUseCase
     val getModelDetail: GetModelDetailUseCase
     val getModelFileTree: GetModelFileTreeUseCase
@@ -36,6 +38,8 @@ fun createHuggingFaceApi(baseUrl: String = HuggingFaceConstants.DEFAULT_BASE_URL
     }
 
     val httpClient = createPlatformHttpClient {
+        followRedirects = false
+
         install(ContentNegotiation) {
             json(json, contentType = ContentType.Application.Json)
         }
@@ -60,6 +64,7 @@ fun createHuggingFaceApi(baseUrl: String = HuggingFaceConstants.DEFAULT_BASE_URL
     val repository = HuggingFaceRepository(api)
     return DefaultHuggingFaceApi(
         listModels = ListModelsUseCase(repository),
+        listRecommendationModels = ListRecommendationModelsUseCase(repository),
         searchModels = SearchModelsUseCase(repository),
         getModelDetail = GetModelDetailUseCase(repository),
         getModelFileTree = GetModelFileTreeUseCase(repository),
@@ -69,6 +74,7 @@ fun createHuggingFaceApi(baseUrl: String = HuggingFaceConstants.DEFAULT_BASE_URL
 
 private class DefaultHuggingFaceApi(
     override val listModels: ListModelsUseCase,
+    override val listRecommendationModels: ListRecommendationModelsUseCase,
     override val searchModels: SearchModelsUseCase,
     override val getModelDetail: GetModelDetailUseCase,
     override val getModelFileTree: GetModelFileTreeUseCase,

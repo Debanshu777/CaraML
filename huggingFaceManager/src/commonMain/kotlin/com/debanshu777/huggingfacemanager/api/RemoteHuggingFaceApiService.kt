@@ -45,33 +45,37 @@ class RemoteHuggingFaceApiService private constructor(
     ) : this(client, json, validateHubOrigin(baseUrl, allowTestLoopback))
 
     private val clientWrapper = ClientWrapper(client, json)
-    private val strictRecommendationClient = ClientWrapper(
-        client,
-        Json(from = json) {
-            ignoreUnknownKeys = false
-            isLenient = false
-            coerceInputValues = false
-        },
-    )
+    private val strictJson = Json(from = json) {
+        ignoreUnknownKeys = false
+        isLenient = false
+        coerceInputValues = false
+    }
 
     suspend fun listModels(params: ListModelsParams): Result<ListModelsResponse, DataError.Network> {
-        val url = URLBuilder(trustedOrigin).apply {
-            appendPathSegments("models-json")
-            parameters.apply {
-                append(
-                    "num_parameters",
-                    "min:${params.minParams.apiValue},max:${params.maxParams.apiValue}",
-                )
-                append("library", params.library.joinToString(","))
-                append("apps", params.apps.joinToString(","))
-                append("sort", params.sort.apiValue)
-                append("withCount", params.withCount.toString())
-                append("p", params.page.toString())
-            }
-        }.build()
-
-        return clientWrapper.networkGetUsecase(endpoint = url.toString())
+        return clientWrapper.networkGetUsecase(endpoint = listModelsUrl(params).toString())
     }
+
+    suspend fun listRecommendationModels(
+        params: ListModelsParams,
+    ): Result<ListModelsResponse, DataError.Network> = clientWrapper.networkGetUsecase(
+        endpoint = listModelsUrl(params).toString(),
+        decode = { body -> RecommendationMetadataV1.decodeList(strictJson, body) },
+    )
+
+    private fun listModelsUrl(params: ListModelsParams): Url = URLBuilder(trustedOrigin).apply {
+        appendPathSegments("models-json")
+        parameters.apply {
+            append(
+                "num_parameters",
+                "min:${params.minParams.apiValue},max:${params.maxParams.apiValue}",
+            )
+            append("library", params.library.joinToString(","))
+            append("apps", params.apps.joinToString(","))
+            append("sort", params.sort.apiValue)
+            append("withCount", params.withCount.toString())
+            append("p", params.page.toString())
+        }
+    }.build()
 
     suspend fun searchModels(params: SearchModelsParams): Result<SearchModelsResponse, DataError.Network> {
         val url = URLBuilder(trustedOrigin).apply {
@@ -94,7 +98,10 @@ class RemoteHuggingFaceApiService private constructor(
             appendPathSegments(segments, encodeSlash = true)
         }.build()
 
-        return clientWrapper.networkGetUsecase(endpoint = url.toString())
+        return clientWrapper.networkGetUsecase(
+            endpoint = url.toString(),
+            decode = { body -> RecommendationMetadataV1.decodeDetail(strictJson, body) },
+        )
     }
 
     suspend fun getModelConfig(
@@ -108,9 +115,10 @@ class RemoteHuggingFaceApiService private constructor(
             appendPathSegments(segments, encodeSlash = true)
             appendPathSegments("resolve", revision, "config.json")
         }.build()
-        return strictRecommendationClient.networkGetUsecase(
+        return clientWrapper.networkGetUsecase(
             endpoint = url.toString(),
             maxResponseBytes = CONFIG_RESPONSE_LIMIT_BYTES,
+            decode = { body -> strictJson.decodeFromString<TransformerConfigResponse>(body) },
         )
     }
 
@@ -131,8 +139,18 @@ class RemoteHuggingFaceApiService private constructor(
         repeat(MAX_TREE_PAGES) { pageIndex ->
             val pageUrl = treeUrl(segments, revision, cursor)
             when (
-                val page = strictRecommendationClient
-                    .networkGetBounded<List<ModelFileTreeResponse>>(pageUrl.toString())
+                val page = clientWrapper.networkGetBounded(
+                    endpoint = pageUrl.toString(),
+                    decode = { body ->
+                        strictJson.decodeFromString(
+                            BoundedListSerializer(
+                                ModelFileTreeResponse.serializer(),
+                                MAX_TREE_ENTRIES - entries.size,
+                            ),
+                            body,
+                        )
+                    },
+                )
             ) {
                 is Result.Error -> return Result.Error(page.error)
                 is Result.Success -> {
@@ -153,6 +171,9 @@ class RemoteHuggingFaceApiService private constructor(
                     entries += pageEntries
 
                     val link = page.data.linkHeader ?: return Result.Success(entries.toList())
+                    if (entries.size == MAX_TREE_ENTRIES) {
+                        return Result.Error(DataError.Network.PayloadTooLarge)
+                    }
                     if (pageIndex == MAX_TREE_PAGES - 1) {
                         return Result.Error(DataError.Network.PayloadTooLarge)
                     }

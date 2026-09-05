@@ -57,8 +57,11 @@ class ModelDescriptorFactory {
             ShapeResult.Invalid -> return invalid(AssessmentReason.INVALID_METADATA)
             is ShapeResult.Valid -> validated.shape
         }
+        val ggufVersion = parseGgufVersion(detail.tags)
         val evidence = buildList {
+            add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.HIGH, "repository:model-detail"))
             add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.HIGH, "revision:hub-sha"))
+            add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.HIGH, "format:file-extension"))
             addAll(identity.evidence)
             if (parameterCount != null) {
                 add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.MEDIUM, "parameters:hub-metadata"))
@@ -66,8 +69,43 @@ class ModelDescriptorFactory {
             if (architecture != null) {
                 add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.MEDIUM, "architecture:hub-metadata"))
             }
+            if (contextLimit != null) {
+                val source = if (detail.gguf?.contextLength != null) "hub-metadata" else "transformer-config"
+                add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.MEDIUM, "context:$source"))
+            }
+            add(
+                Evidence(
+                    AssessmentReason.METADATA_VALIDATED,
+                    if (quantization is QuantizationEvidence.Unknown) Confidence.LOW else Confidence.MEDIUM,
+                    "quantization:filename",
+                ),
+            )
+            if (ggufVersion != null) {
+                add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.MEDIUM, "gguf-version:tag"))
+            }
             if (shape != null) {
                 add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.MEDIUM, "shape:transformer-config"))
+                if (shape.layerCount != null) {
+                    add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.MEDIUM, "layer-count:transformer-config"))
+                }
+                if (shape.kvHeadCount != null) {
+                    add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.MEDIUM, "kv-head-count:transformer-config"))
+                }
+                if (shape.attentionHeadCount != null) {
+                    add(
+                        Evidence(
+                            AssessmentReason.METADATA_VALIDATED,
+                            Confidence.MEDIUM,
+                            "attention-head-count:transformer-config",
+                        ),
+                    )
+                }
+                if (shape.hiddenSize != null) {
+                    add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.MEDIUM, "hidden-size:transformer-config"))
+                }
+                if (shape.headDim != null) {
+                    add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.MEDIUM, "head-dim:transformer-config"))
+                }
             }
         }
         return DescriptorBuildResult.Ready(
@@ -80,7 +118,7 @@ class ModelDescriptorFactory {
                 parameterCount = parameterCount,
                 contextLimit = contextLimit,
                 transformerShape = shape,
-                ggufVersion = parseGgufVersion(detail.tags),
+                ggufVersion = ggufVersion,
                 requiredEngineFeatures = emptySet(),
                 evidence = evidence,
             ),
@@ -106,14 +144,28 @@ class ModelDescriptorFactory {
         }
         val setupReason = validateSetup(setup.components)
         if (setupReason != null) return invalid(setupReason)
+        if (setup.components.any { it.repoId != common.repositoryId }) {
+            return DescriptorBuildResult.NeedsVariant(
+                repositoryId = common.repositoryId,
+                reasons = listOf(AssessmentReason.MISSING_REQUIRED_COMPONENT),
+                assumedQuantization = null,
+            )
+        }
+        val width = setup.recommendedParams?.width
+        val height = setup.recommendedParams?.height
+        if (!isValidImageDimension(width) || !isValidImageDimension(height)) {
+            return invalid(AssessmentReason.INVALID_METADATA)
+        }
 
         val identities = ArrayList<ModelFileIdentity>(files.size)
-        val seenPaths = HashSet<String>(files.size)
+        val seenFiles = HashSet<RepositoryPath>(files.size)
         var bundleBytes = 0L
         for (file in files) {
             val identity = buildFileIdentity(common.repositoryId, common.revision, file)
                 ?: return invalid(fileValidationReason(file))
-            if (!seenPaths.add(identity.path)) return invalid(AssessmentReason.INVALID_FILE_PATH)
+            if (!seenFiles.add(RepositoryPath(identity.repositoryId, identity.path))) {
+                return invalid(AssessmentReason.INVALID_FILE_PATH)
+            }
             if (modelFormatForPath(identity.path) == null) return invalid(AssessmentReason.UNSUPPORTED_FORMAT)
             bundleBytes = when (val sum = checkedAdd(bundleBytes, identity.sizeBytes)) {
                 is CheckedLong.Value -> sum.value
@@ -125,24 +177,27 @@ class ModelDescriptorFactory {
             identities += identity
         }
 
-        val filesByPath = identities.associateBy { it.path }
-        val componentsByPath = setup.components.associateBy { it.filePath }
-        val missingRequired = setup.components.any { it.required && it.filePath !in filesByPath }
+        val filesByKey = identities.associateBy { RepositoryPath(it.repositoryId, it.path) }
+        val componentsByKey = setup.components.associateBy { RepositoryPath(it.repoId, it.filePath) }
+        val missingRequired = setup.components.any { component ->
+            component.required && RepositoryPath(component.repoId, component.filePath) !in filesByKey
+        }
         if (missingRequired) return invalid(AssessmentReason.MISSING_REQUIRED_COMPONENT)
 
-        val primaryPaths = identities.mapTo(mutableSetOf()) { it.path }
-            .apply { removeAll(componentsByPath.keys) }
-        if (primaryPaths.isEmpty() && !setup.selfContained) {
+        val primaryFiles = identities.mapTo(mutableSetOf()) { RepositoryPath(it.repositoryId, it.path) }
+            .apply { removeAll(componentsByKey.keys) }
+        if (primaryFiles.isEmpty() && !setup.selfContained) {
             return invalid(AssessmentReason.MISSING_REQUIRED_COMPONENT)
         }
 
         val components = identities.map { identity ->
-            val setupComponent = componentsByPath[identity.path]
+            val key = RepositoryPath(identity.repositoryId, identity.path)
+            val setupComponent = componentsByKey[key]
             DiffusionComponentDescriptor(
                 file = identity,
                 role = setupComponent?.role,
                 required = setupComponent?.required ?: true,
-                isPrimary = identity.path in primaryPaths || setup.selfContained && componentsByPath.isEmpty(),
+                isPrimary = key in primaryFiles || setup.selfContained && componentsByKey.isEmpty(),
                 quantization = QuantizationParser.parseFilename(identity.path),
             )
         }
@@ -155,12 +210,56 @@ class ModelDescriptorFactory {
                 components = components,
                 mode = mode,
                 family = setup.familyLabel,
+                width = width,
+                height = height,
                 quantizationDistribution = distribution,
                 requiredComponentsPresent = true,
                 requiredEngineFeatures = emptySet(),
                 evidence = buildList {
+                    add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.HIGH, "repository:model-detail"))
                     add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.HIGH, "revision:hub-sha"))
                     components.forEach { addAll(it.file.evidence) }
+                    add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.HIGH, "format:primary-file-extension"))
+                    add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.HIGH, "mode:caller"))
+                    add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.MEDIUM, "family:setup"))
+                    add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.HIGH, "required-components:setup"))
+                    add(
+                        Evidence(
+                            AssessmentReason.METADATA_VALIDATED,
+                            if (distribution.isEmpty()) Confidence.LOW else Confidence.MEDIUM,
+                            "quantization-distribution:filenames",
+                        ),
+                    )
+                    if (width != null) {
+                        add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.MEDIUM, "width:setup"))
+                    }
+                    if (height != null) {
+                        add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.MEDIUM, "height:setup"))
+                    }
+                    components.forEach { component ->
+                        if (component.role != null) {
+                            add(
+                                Evidence(
+                                    AssessmentReason.METADATA_VALIDATED,
+                                    Confidence.HIGH,
+                                    "component-role:setup",
+                                ),
+                            )
+                        }
+                        add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.HIGH, "component-required:setup"))
+                        add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.HIGH, "component-primary:derived"))
+                        add(
+                            Evidence(
+                                AssessmentReason.METADATA_VALIDATED,
+                                if (component.quantization is QuantizationEvidence.Unknown) {
+                                    Confidence.LOW
+                                } else {
+                                    Confidence.MEDIUM
+                                },
+                                "component-quantization:filename",
+                            ),
+                        )
+                    }
                 },
             ),
         )
@@ -368,9 +467,14 @@ class ModelDescriptorFactory {
     private fun isValidParameterCount(value: Long?): Boolean =
         value == null || value in 1..DescriptorLimits.MAX_PARAMETERS
 
+    private fun isValidImageDimension(value: Int?): Boolean =
+        value == null || value in 1..DescriptorLimits.MAX_IMAGE_DIMENSION
+
     private fun invalid(reason: AssessmentReason) = DescriptorBuildResult.Invalid(listOf(reason))
 
     private data class CommonIdentity(val repositoryId: String, val revision: String)
+
+    private data class RepositoryPath(val repositoryId: String, val path: String)
 
     private sealed interface ShapeResult {
         data class Valid(val shape: TransformerShape?) : ShapeResult
