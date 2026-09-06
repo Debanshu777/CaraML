@@ -157,3 +157,10 @@ Only the existing non-fatal native OpenSSL/OpenGL notices and expect/actual beta
 
 - Backend selection priority is intentionally unchanged in this round.
 - Stable-digest padding behavior is intentionally unchanged in this round.
+
+## Fix Round 2 — Version-Catalog Closure
+
+- Verified clean `b5aa8f1` contained `implementation(libs.kotlinx.coroutinesTest)` in `composeApp/build.gradle.kts` but no `kotlinx-coroutinesTest` alias in `gradle/libs.versions.toml`, so the Task 7 test dependency was not resolvable from a clean checkout.
+- Added exactly `kotlinx-coroutinesTest = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }` to the staged catalog. The adjacent dirty `kotlinx-coroutinesCore` alias and trailing blank-line change remain unstaged.
+- The exact focused Task 7 command and the full `com.debanshu777.caraml.core.recommendation.*` JVM suite both completed `BUILD SUCCESSFUL`.
+- HEAD/index inspection confirms the build-script reference and catalog alias are both present in the commit candidate. The cached diff contains only this alias and this report section; `git diff --cached --check` is clean.
