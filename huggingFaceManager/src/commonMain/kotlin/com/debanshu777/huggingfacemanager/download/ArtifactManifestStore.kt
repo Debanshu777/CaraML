@@ -8,12 +8,25 @@ import okio.FileSystem
 import okio.HashingSource
 import okio.Path
 import okio.Path.Companion.toPath
+import okio.Sink
 import okio.buffer
 
 enum class ManifestJournalPhase {
     PREPARED,
     OLD_PRESERVED,
     NEW_PUBLISHED,
+}
+
+private enum class ManifestJournalStep {
+    PREPARED,
+    OLD_TARGET_PRESERVED,
+    OLD_MANIFEST_PRESERVED,
+    OLD_PRESERVED,
+    NEW_TARGET_PUBLISHED,
+    NEW_MANIFEST_PUBLISHED,
+    NEW_PUBLISHED,
+    OLD_TARGET_REMOVED,
+    OLD_MANIFEST_REMOVED,
 }
 
 class ArtifactVerificationException : Exception("Downloaded artifact could not be verified")
@@ -25,9 +38,11 @@ data class ArtifactManifestEntry private constructor(
     val identity: DownloadArtifactIdentity,
     val byteCount: Long,
     val contentSha256: String,
+    val bundleId: String = requireNotNull(artifactBundleId(listOf(identity))),
+    val localRelativePath: String = identity.relativePath,
 ) {
     init {
-        require(isValid(logicalRole, identity, byteCount, contentSha256)) {
+        require(isValid(logicalRole, identity, byteCount, contentSha256, bundleId, localRelativePath)) {
             "Invalid artifact manifest entry"
         }
     }
@@ -38,8 +53,19 @@ data class ArtifactManifestEntry private constructor(
             identity: DownloadArtifactIdentity,
             byteCount: Long,
             contentSha256: String,
-        ): ArtifactManifestEntry? = if (isValid(logicalRole, identity, byteCount, contentSha256)) {
-            ArtifactManifestEntry(logicalRole, identity, byteCount, contentSha256.lowercase())
+            bundleId: String = requireNotNull(artifactBundleId(listOf(identity))),
+            localRelativePath: String = identity.relativePath,
+        ): ArtifactManifestEntry? = if (
+            isValid(logicalRole, identity, byteCount, contentSha256, bundleId, localRelativePath)
+        ) {
+            ArtifactManifestEntry(
+                logicalRole,
+                identity,
+                byteCount,
+                contentSha256.lowercase(),
+                bundleId.lowercase(),
+                localRelativePath,
+            )
         } else {
             null
         }
@@ -49,12 +75,18 @@ data class ArtifactManifestEntry private constructor(
             identity: DownloadArtifactIdentity,
             byteCount: Long,
             contentSha256: String,
+            bundleId: String,
+            localRelativePath: String,
         ): Boolean =
             logicalRole.isNotEmpty() && logicalRole.length <= MAX_LOGICAL_ROLE_LENGTH &&
                 logicalRole == logicalRole.trim() &&
                 logicalRole.all { it.isLetterOrDigit() || it in "._-" } &&
                 byteCount == identity.expectedBytes &&
-                contentSha256.length == 64 && contentSha256.all(::isAsciiHexDigit)
+                contentSha256.length == 64 && contentSha256.all(::isAsciiHexDigit) &&
+                bundleId.length == 64 && bundleId.all(::isAsciiHexDigit) &&
+                runCatching {
+                    validateDownloadRequest(identity.repositoryId, localRelativePath).relativePath
+                }.getOrNull() == localRelativePath
     }
 }
 
@@ -91,8 +123,10 @@ data class ArtifactManifest private constructor(
                     entry.identity,
                     entry.byteCount,
                     entry.contentSha256,
-                ) != null && roles.add(entry.logicalRole) &&
-                    paths.add("${entry.identity.repositoryId}\u0000${entry.identity.relativePath}")
+                    entry.bundleId,
+                    entry.localRelativePath,
+                ) != null && roles.add("${entry.bundleId}\u0000${entry.logicalRole}") &&
+                    paths.add("${entry.identity.repositoryId}\u0000${entry.localRelativePath}")
             }
         }
     }
@@ -102,6 +136,7 @@ private const val MAX_MANIFEST_ENTRIES = 64
 private const val MAX_LOGICAL_ROLE_LENGTH = 64
 
 private val manifestEntryComparator = compareBy<ArtifactManifestEntry>(
+    { it.bundleId },
     { it.logicalRole },
     { it.identity.repositoryId },
     { it.identity.relativePath },
@@ -111,6 +146,7 @@ private fun canonicalBundleDigest(entries: List<ArtifactManifestEntry>): String 
     val buffer = Buffer()
     entries.sortedWith(manifestEntryComparator).forEach { entry ->
         buffer.writeLengthPrefixed(entry.logicalRole)
+        buffer.writeLengthPrefixed(entry.bundleId)
         buffer.writeLengthPrefixed(entry.identity.repositoryId)
         buffer.writeLengthPrefixed(entry.identity.immutableRevision)
         buffer.writeLengthPrefixed(entry.identity.relativePath)
@@ -133,11 +169,17 @@ private data class ArtifactCommitJournal(
     val version: Int,
     val phase: ManifestJournalPhase,
     val relativePath: String,
+    val transactionId: String? = null,
+    val hadPreviousGeneration: Boolean? = null,
+    val hadPreviousTarget: Boolean? = null,
+    val hadPreviousManifest: Boolean? = null,
+    val step: ManifestJournalStep? = null,
 )
 
 class ArtifactManifestStore(
     private val modelRoot: Path,
     private val fileSystem: FileSystem = FileSystem.SYSTEM,
+    durability: ArtifactDurability? = null,
     private val phaseObserver: (ManifestJournalPhase) -> Unit = {},
 ) {
     companion object {
@@ -152,6 +194,8 @@ class ArtifactManifestStore(
     private val manifestPreviousPath = "$manifestPath.previous".toPath()
     private val journalPath = modelRoot / JOURNAL_FILE_NAME
     private val journalPartPath = "$journalPath.part".toPath()
+    private val durability = durability ?: artifactDurability(modelRoot, fileSystem)
+    private val secureRoot = if (fileSystem === FileSystem.SYSTEM) SecureArtifactRoot(modelRoot) else null
     private val json = Json {
         encodeDefaults = true
         ignoreUnknownKeys = false
@@ -161,131 +205,270 @@ class ArtifactManifestStore(
 
     fun read(): ArtifactManifest? = readManifest(manifestPath)
 
+    fun readValidated(): ArtifactManifest? = read()?.takeIf { validateManifest(manifestPath) }
+
+    fun containsValidated(entry: ArtifactManifestEntry): Boolean =
+        readValidated()?.entries?.singleOrNull {
+            it.bundleId == entry.bundleId && it.logicalRole == entry.logicalRole &&
+                it.identity == entry.identity && it.localRelativePath == entry.localRelativePath &&
+                it.contentSha256 == entry.contentSha256 && it.byteCount == entry.byteCount
+        } != null
+
+    internal fun prepareStaged(relativePath: String): Sink {
+        val target = validatedTarget(relativePath) ?: throw IllegalArgumentException("Invalid model file path")
+        val staged = target.sibling(PART_SUFFIX)
+        ensureParent(staged)
+        durableDelete(staged)
+        return openSink(staged, mustCreate = true)
+    }
+
+    internal fun syncStaged(relativePath: String) {
+        val target = validatedTarget(relativePath) ?: throw IllegalArgumentException("Invalid model file path")
+        sync(target.sibling(PART_SUFFIX))
+    }
+
+    internal fun discardStaged(relativePath: String) {
+        val target = validatedTarget(relativePath) ?: throw IllegalArgumentException("Invalid model file path")
+        durableDelete(target.sibling(PART_SUFFIX))
+    }
+
+    internal fun hasPendingTransaction(): Boolean = exists(journalPath)
+
+    internal fun close() = secureRoot?.close()
+
     fun commit(relativePath: String, entry: ArtifactManifestEntry) {
         recover()
         val target = validatedTarget(relativePath) ?: throw IllegalArgumentException("Invalid model file path")
         val staged = target.sibling(PART_SUFFIX)
         if (!validateFile(staged, entry)) throw ArtifactVerificationException()
-        val existing = read()?.entries.orEmpty()
+        if (exists(target.sibling(PREVIOUS_SUFFIX)) || exists(manifestPreviousPath)) {
+            throw ArtifactVerificationException()
+        }
+        val previousManifest = read()
+        val targetExists = exists(target)
+        val manifestExists = exists(manifestPath)
+        if (manifestExists && (previousManifest == null || !validateManifest(manifestPath))) {
+            throw ArtifactVerificationException()
+        }
+        if (targetExists && previousManifest?.entries?.none { it.localRelativePath == relativePath } != false) {
+            throw ArtifactVerificationException()
+        }
+        val existing = previousManifest?.entries.orEmpty()
         val retained = existing.filterNot {
-            it.logicalRole == entry.logicalRole ||
+            it.bundleId == entry.bundleId && it.logicalRole == entry.logicalRole ||
                 it.identity.repositoryId == entry.identity.repositoryId &&
-                it.identity.relativePath == entry.identity.relativePath
+                it.localRelativePath == entry.localRelativePath
         }
         val nextManifest = ArtifactManifest.create(retained + entry) ?: throw ArtifactVerificationException()
         writeManifestPart(nextManifest)
-        writeJournal(ManifestJournalPhase.PREPARED, relativePath)
-
-        preserveOldGeneration(target)
-        writeJournal(ManifestJournalPhase.OLD_PRESERVED, relativePath)
-
-        publishNewGeneration(target)
-        writeJournal(ManifestJournalPhase.NEW_PUBLISHED, relativePath)
-
-        if (!validateManifest(manifestPath)) {
-            restorePreviousGeneration(target)
-            throw ArtifactVerificationException()
-        }
-        finishTransaction(target)
+        val journal = ArtifactCommitJournal(
+            version = ArtifactManifest.VERSION,
+            phase = ManifestJournalPhase.PREPARED,
+            relativePath = relativePath,
+            transactionId = nextManifest.bundleDigest,
+            hadPreviousTarget = targetExists,
+            hadPreviousManifest = manifestExists,
+            step = ManifestJournalStep.PREPARED,
+        )
+        writeJournal(journal)
+        continueTransaction(journal, target)
     }
 
     fun recover() {
-        if (!fileSystem.exists(journalPath)) return
-        val journal = readJournal() ?: run {
-            fileSystem.delete(journalPath, mustExist = false)
-            fileSystem.delete(journalPartPath, mustExist = false)
+        if (!exists(journalPath)) return
+        val decoded = readJournal() ?: run {
+            durableDelete(journalPartPath)
+            durableDelete(journalPath)
             return
         }
-        val target = validatedTarget(journal.relativePath) ?: run {
-            fileSystem.delete(journalPath, mustExist = false)
-            fileSystem.delete(journalPartPath, mustExist = false)
+        val target = validatedTarget(decoded.relativePath) ?: run {
+            durableDelete(journalPartPath)
+            durableDelete(journalPath)
             return
         }
-        when (journal.phase) {
-            ManifestJournalPhase.PREPARED -> {
-                if (validateManifest(manifestPartPath, target to target.sibling(PART_SUFFIX))) {
-                    preserveOldGeneration(target)
-                    writeJournal(ManifestJournalPhase.OLD_PRESERVED, journal.relativePath)
-                    publishNewGeneration(target)
-                    writeJournal(ManifestJournalPhase.NEW_PUBLISHED, journal.relativePath)
-                    if (validateManifest(manifestPath)) finishTransaction(target)
-                    else restorePreviousGeneration(target)
-                } else {
-                    discardPreparedGeneration(target)
-                }
-            }
-            ManifestJournalPhase.OLD_PRESERVED -> {
-                if (validateManifest(manifestPartPath, target to target.sibling(PART_SUFFIX))) {
-                    publishNewGeneration(target)
-                    writeJournal(ManifestJournalPhase.NEW_PUBLISHED, journal.relativePath)
-                    if (validateManifest(manifestPath)) finishTransaction(target)
-                    else restorePreviousGeneration(target)
-                } else {
-                    restorePreviousGeneration(target)
-                }
-            }
-            ManifestJournalPhase.NEW_PUBLISHED -> {
-                if (validateManifest(manifestPath)) finishTransaction(target)
-                else restorePreviousGeneration(target)
-            }
+        val journal = normalizedJournal(decoded, target) ?: return
+        if (newGenerationIsRecoverable(journal, target)) {
+            continueTransaction(journal, target)
+        } else {
+            restorePreviousGeneration(journal, target)
         }
     }
+
+    private fun normalizedJournal(journal: ArtifactCommitJournal, target: Path): ArtifactCommitJournal? {
+        val manifest = readManifest(manifestPartPath) ?: readManifest(manifestPath) ?: return null
+        val transactionId = journal.transactionId ?: manifest.bundleDigest
+        if (transactionId.length != 64 || !transactionId.all(::isAsciiHexDigit) ||
+            manifest.bundleDigest != transactionId
+        ) return null
+        val previousTarget = target.sibling(PREVIOUS_SUFFIX)
+        val hadPreviousTarget = journal.hadPreviousTarget ?: journal.hadPreviousGeneration ?: when (journal.phase) {
+            ManifestJournalPhase.PREPARED ->
+                exists(previousTarget) || exists(target)
+            ManifestJournalPhase.OLD_PRESERVED, ManifestJournalPhase.NEW_PUBLISHED ->
+                exists(previousTarget)
+        }
+        val hadPreviousManifest = journal.hadPreviousManifest ?: journal.hadPreviousGeneration ?: when (journal.phase) {
+            ManifestJournalPhase.PREPARED ->
+                exists(manifestPreviousPath) || exists(manifestPath)
+            ManifestJournalPhase.OLD_PRESERVED, ManifestJournalPhase.NEW_PUBLISHED ->
+                exists(manifestPreviousPath)
+        }
+        return journal.copy(
+            transactionId = transactionId,
+            hadPreviousTarget = hadPreviousTarget,
+            hadPreviousManifest = hadPreviousManifest,
+            step = journal.step ?: when (journal.phase) {
+                ManifestJournalPhase.PREPARED -> ManifestJournalStep.PREPARED
+                ManifestJournalPhase.OLD_PRESERVED -> ManifestJournalStep.OLD_PRESERVED
+                ManifestJournalPhase.NEW_PUBLISHED -> ManifestJournalStep.NEW_PUBLISHED
+            },
+        )
+    }
+
+    private fun continueTransaction(initial: ArtifactCommitJournal, target: Path) {
+        var journal = initial
+        if (journal.phase == ManifestJournalPhase.PREPARED) {
+            preserveExactlyOnce(target, target.sibling(PREVIOUS_SUFFIX), journal.hadPreviousTarget == true)
+            journal = journal.advance(ManifestJournalPhase.PREPARED, ManifestJournalStep.OLD_TARGET_PRESERVED)
+            preserveExactlyOnce(manifestPath, manifestPreviousPath, journal.hadPreviousManifest == true)
+            journal = journal.advance(ManifestJournalPhase.PREPARED, ManifestJournalStep.OLD_MANIFEST_PRESERVED)
+            journal = journal.advance(ManifestJournalPhase.OLD_PRESERVED, ManifestJournalStep.OLD_PRESERVED)
+        }
+        if (journal.phase == ManifestJournalPhase.OLD_PRESERVED) {
+            publishExactlyOnce(target.sibling(PART_SUFFIX), target)
+            journal = journal.advance(ManifestJournalPhase.OLD_PRESERVED, ManifestJournalStep.NEW_TARGET_PUBLISHED)
+            publishExactlyOnce(manifestPartPath, manifestPath)
+            journal = journal.advance(ManifestJournalPhase.OLD_PRESERVED, ManifestJournalStep.NEW_MANIFEST_PUBLISHED)
+            journal = journal.advance(ManifestJournalPhase.NEW_PUBLISHED, ManifestJournalStep.NEW_PUBLISHED)
+        }
+        if (!validateManifest(manifestPath) || readManifest(manifestPath)?.bundleDigest != journal.transactionId) {
+            restorePreviousGeneration(journal, target)
+            throw ArtifactVerificationException()
+        }
+        finishTransaction(journal, target)
+    }
+
+    private fun newGenerationIsRecoverable(journal: ArtifactCommitJournal, target: Path): Boolean {
+        val candidateManifestPath = when {
+            exists(manifestPartPath) -> manifestPartPath
+            exists(manifestPath) -> manifestPath
+            else -> return false
+        }
+        val candidate = readManifest(candidateManifestPath) ?: return false
+        if (candidate.bundleDigest != journal.transactionId) return false
+        val candidateTarget = when {
+            exists(target.sibling(PART_SUFFIX)) -> target.sibling(PART_SUFFIX)
+            exists(target) -> target
+            else -> return false
+        }
+        return validateManifest(candidateManifestPath, target to candidateTarget)
+    }
+
+    private fun ArtifactCommitJournal.advance(
+        nextPhase: ManifestJournalPhase,
+        nextStep: ManifestJournalStep,
+    ): ArtifactCommitJournal = copy(phase = nextPhase, step = nextStep).also(::writeJournal)
 
     private fun writeManifestPart(manifest: ArtifactManifest) {
         val encoded = json.encodeToString(manifest).encodeToByteArray()
         if (encoded.size > MAX_MANIFEST_BYTES) throw ArtifactVerificationException()
-        fileSystem.createDirectories(modelRoot)
-        fileSystem.delete(manifestPartPath, mustExist = false)
-        fileSystem.write(manifestPartPath, mustCreate = true) { write(encoded) }
+        ensureParent(manifestPartPath)
+        durableDelete(manifestPartPath)
+        val sink = openSink(manifestPartPath, mustCreate = true).buffer()
+        try {
+            sink.write(encoded)
+        } finally {
+            sink.close()
+        }
         sync(manifestPartPath)
     }
 
-    private fun writeJournal(phase: ManifestJournalPhase, relativePath: String) {
-        val encoded = json.encodeToString(ArtifactCommitJournal(ArtifactManifest.VERSION, phase, relativePath))
-            .encodeToByteArray()
+    private fun writeJournal(journal: ArtifactCommitJournal) {
+        val encoded = json.encodeToString(journal).encodeToByteArray()
         if (encoded.size > MAX_JOURNAL_BYTES) throw ArtifactVerificationException()
-        fileSystem.delete(journalPartPath, mustExist = false)
-        fileSystem.write(journalPartPath, mustCreate = true) { write(encoded) }
+        durableDelete(journalPartPath)
+        val sink = openSink(journalPartPath, mustCreate = true).buffer()
+        try {
+            sink.write(encoded)
+        } finally {
+            sink.close()
+        }
         sync(journalPartPath)
-        fileSystem.atomicMove(journalPartPath, journalPath)
-        phaseObserver(phase)
+        durableMove(journalPartPath, journalPath)
+        if (journal.step == ManifestJournalStep.PREPARED ||
+            journal.step == ManifestJournalStep.OLD_PRESERVED ||
+            journal.step == ManifestJournalStep.NEW_PUBLISHED
+        ) phaseObserver(journal.phase)
     }
 
-    private fun preserveOldGeneration(target: Path) {
+    private fun preserveExactlyOnce(source: Path, previous: Path, required: Boolean) {
+        val sourceExists = exists(source)
+        val previousExists = exists(previous)
+        if (!required) {
+            if (sourceExists || previousExists) throw ArtifactVerificationException()
+            return
+        }
+        when {
+            sourceExists && !previousExists -> durableMove(source, previous)
+            !sourceExists && previousExists -> Unit
+            else -> throw ArtifactVerificationException()
+        }
+    }
+
+    private fun publishExactlyOnce(staged: Path, published: Path) {
+        val stagedExists = exists(staged)
+        val publishedExists = exists(published)
+        when {
+            stagedExists && !publishedExists -> durableMove(staged, published)
+            !stagedExists && publishedExists -> Unit
+            else -> throw ArtifactVerificationException()
+        }
+    }
+
+    private fun finishTransaction(initial: ArtifactCommitJournal, target: Path) {
+        var journal = initial
+        durableDelete(target.sibling(PREVIOUS_SUFFIX))
+        journal = journal.advance(ManifestJournalPhase.NEW_PUBLISHED, ManifestJournalStep.OLD_TARGET_REMOVED)
+        durableDelete(manifestPreviousPath)
+        journal = journal.advance(ManifestJournalPhase.NEW_PUBLISHED, ManifestJournalStep.OLD_MANIFEST_REMOVED)
+        durableDelete(manifestPartPath)
+        durableDelete(journalPartPath)
+        durableDelete(journalPath)
+    }
+
+    private fun restorePreviousGeneration(journal: ArtifactCommitJournal, target: Path) {
         val previousTarget = target.sibling(PREVIOUS_SUFFIX)
-        fileSystem.delete(previousTarget, mustExist = false)
-        fileSystem.delete(manifestPreviousPath, mustExist = false)
-        if (fileSystem.exists(target)) fileSystem.atomicMove(target, previousTarget)
-        if (fileSystem.exists(manifestPath)) fileSystem.atomicMove(manifestPath, manifestPreviousPath)
-    }
-
-    private fun publishNewGeneration(target: Path) {
-        fileSystem.atomicMove(target.sibling(PART_SUFFIX), target)
-        fileSystem.atomicMove(manifestPartPath, manifestPath)
-    }
-
-    private fun finishTransaction(target: Path) {
-        fileSystem.delete(target.sibling(PREVIOUS_SUFFIX), mustExist = false)
-        fileSystem.delete(manifestPreviousPath, mustExist = false)
-        fileSystem.delete(manifestPartPath, mustExist = false)
-        fileSystem.delete(journalPath, mustExist = false)
-        fileSystem.delete(journalPartPath, mustExist = false)
-    }
-
-    private fun restorePreviousGeneration(target: Path) {
-        val previousTarget = target.sibling(PREVIOUS_SUFFIX)
-        fileSystem.delete(target, mustExist = false)
-        fileSystem.delete(manifestPath, mustExist = false)
-        if (fileSystem.exists(previousTarget)) fileSystem.atomicMove(previousTarget, target)
-        if (fileSystem.exists(manifestPreviousPath)) fileSystem.atomicMove(manifestPreviousPath, manifestPath)
+        if (journal.hadPreviousTarget == true) {
+            if (exists(previousTarget)) {
+                durableDelete(target)
+                durableMove(previousTarget, target)
+            } else if (!exists(target)) {
+                throw ArtifactVerificationException()
+            }
+        } else {
+            durableDelete(target)
+        }
+        if (journal.hadPreviousManifest == true) {
+            if (exists(manifestPreviousPath)) {
+                durableDelete(manifestPath)
+                durableMove(manifestPreviousPath, manifestPath)
+            } else if (!exists(manifestPath)) {
+                throw ArtifactVerificationException()
+            }
+        } else {
+            durableDelete(manifestPath)
+        }
         discardPreparedGeneration(target)
+        if (journal.hadPreviousManifest == true && !validateManifest(manifestPath)) {
+            throw ArtifactVerificationException()
+        }
     }
 
     private fun discardPreparedGeneration(target: Path) {
-        fileSystem.delete(target.sibling(PART_SUFFIX), mustExist = false)
-        fileSystem.delete(manifestPartPath, mustExist = false)
-        fileSystem.delete(journalPath, mustExist = false)
-        fileSystem.delete(journalPartPath, mustExist = false)
+        durableDelete(target.sibling(PART_SUFFIX))
+        durableDelete(manifestPartPath)
+        durableDelete(journalPartPath)
+        durableDelete(journalPath)
     }
 
     private fun readManifest(path: Path): ArtifactManifest? = readBounded(path, MAX_MANIFEST_BYTES)?.let { bytes ->
@@ -299,11 +482,23 @@ class ArtifactManifestStore(
     }
 
     private fun readBounded(path: Path, maxBytes: Int): ByteArray? {
+        secureRoot?.let { return it.readBounded(relativeToRoot(path), maxBytes) }
         if (!fileSystem.exists(path)) return null
         if (fileSystem.metadataOrNull(path)?.symlinkTarget != null) return null
-        val size = fileSystem.metadata(path).size ?: return null
-        if (size !in 1L..maxBytes.toLong()) return null
-        return runCatching { fileSystem.read(path) { readByteArray() } }.getOrNull()
+        return runCatching {
+            val source = fileSystem.source(path)
+            try {
+                val sink = Buffer()
+                val limit = maxBytes.toLong() + 1L
+                while (sink.size < limit) {
+                    val read = source.read(sink, minOf(8_192L, limit - sink.size))
+                    if (read == -1L) break
+                }
+                sink.readByteArray().takeIf { it.size in 1..maxBytes }
+            } finally {
+                source.close()
+            }
+        }.getOrNull()
     }
 
     private fun validateManifest(
@@ -312,13 +507,21 @@ class ArtifactManifestStore(
     ): Boolean {
         val manifest = readManifest(path) ?: return false
         return manifest.entries.all { entry ->
-            val finalPath = validatedTarget(entry.identity.relativePath) ?: return false
+            val finalPath = validatedTarget(entry.localRelativePath) ?: return false
             val pathToCheck = if (stagedOverride?.first == finalPath) stagedOverride.second else finalPath
             validateFile(pathToCheck, entry)
         }
     }
 
     private fun validateFile(path: Path, entry: ArtifactManifestEntry): Boolean {
+        secureRoot?.let { secure ->
+            val relative = relativeToRoot(path)
+            return secure.size(relative) == entry.byteCount &&
+                secure.sha256(relative, entry.byteCount)?.let { digest ->
+                    digest == entry.contentSha256 &&
+                        entry.identity.expectedSha256OrNull()?.let { it == digest } != false
+                } == true
+        }
         if (fileSystem.metadataOrNull(path)?.symlinkTarget != null) return false
         val size = runCatching { fileSystem.metadata(path).size }.getOrNull() ?: return false
         if (size != entry.byteCount) return false
@@ -340,12 +543,66 @@ class ArtifactManifestStore(
     }
 
     private fun sync(path: Path) {
+        secureRoot?.let {
+            it.syncFile(relativeToRoot(path))
+            return
+        }
         val handle = fileSystem.openReadWrite(path, mustCreate = false, mustExist = true)
         try {
             handle.flush()
         } finally {
             handle.close()
         }
+        durability.syncFile(relativeToRoot(path))
+    }
+
+    private fun durableMove(source: Path, target: Path) {
+        secureRoot?.let {
+            it.atomicMove(relativeToRoot(source), relativeToRoot(target))
+            it.syncDirectory(relativeToRoot(target.parent ?: throw ArtifactDurabilityException()))
+            return
+        }
+        fileSystem.atomicMove(source, target)
+        syncParent(target)
+    }
+
+    private fun durableDelete(path: Path) {
+        secureRoot?.let {
+            if (!it.existsRegularFile(relativeToRoot(path))) return
+            it.delete(relativeToRoot(path))
+            it.syncDirectory(relativeToRoot(path.parent ?: throw ArtifactDurabilityException()))
+            return
+        }
+        if (!fileSystem.exists(path)) return
+        fileSystem.delete(path, mustExist = true)
+        syncParent(path)
+    }
+
+    private fun syncParent(path: Path) {
+        val parent = path.parent ?: throw ArtifactDurabilityException()
+        durability.syncDirectory(relativeToRoot(parent))
+    }
+
+    private fun ensureParent(path: Path) {
+        secureRoot?.let {
+            it.createParentDirectories(relativeToRoot(path))
+            return
+        }
+        fileSystem.createDirectories(path.parent ?: throw ArtifactFileAccessException())
+    }
+
+    private fun openSink(path: Path, mustCreate: Boolean): Sink =
+        secureRoot?.sink(relativeToRoot(path), mustCreate) ?: fileSystem.sink(path, mustCreate)
+
+    private fun exists(path: Path): Boolean =
+        secureRoot?.existsRegularFile(relativeToRoot(path)) ?: fileSystem.exists(path)
+
+    private fun relativeToRoot(path: Path): String {
+        val root = modelRoot.normalized().toString().trimEnd('/')
+        val normalized = path.normalized().toString()
+        if (normalized == root) return "."
+        if (!normalized.startsWith("$root/")) throw ArtifactDurabilityException()
+        return normalized.removePrefix("$root/")
     }
 
     private fun validatedTarget(relativePath: String): Path? {

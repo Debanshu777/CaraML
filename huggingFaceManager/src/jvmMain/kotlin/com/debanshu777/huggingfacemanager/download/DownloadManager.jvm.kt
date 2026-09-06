@@ -5,7 +5,7 @@ import io.ktor.client.plugins.HttpTimeout
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
-import okio.Path.Companion.toPath
+import okio.Path.Companion.toOkioPath
 import java.io.File
 
 actual class DownloadManager actual constructor(
@@ -27,9 +27,9 @@ actual class DownloadManager actual constructor(
     ): Flow<DownloadProgressDTO> {
         val request = validateDownloadArguments(modelId, path, metadata)
         val dirPath = pathProvider.getModelsStorageDirectory(request.modelId)
-        val root = File(dirPath).canonicalFile
-        val file = File(root, request.relativePath).canonicalFile
-        require(isPathWithinRoot(root, file)) { "Invalid model file path" }
+        val root = File(dirPath).toPath().toAbsolutePath().normalize()
+        val file = root.resolve(metadata.destinationRelativePath).normalize()
+        require(file != root && file.startsWith(root)) { "Invalid model file path" }
         return downloadArtifact(
             httpClient = httpClient,
             pathProvider = pathProvider,
@@ -37,14 +37,15 @@ actual class DownloadManager actual constructor(
             modelId = modelId,
             path = path,
             metadata = metadata,
-            modelRoot = root.absolutePath.toPath(normalize = true),
-            target = file.absolutePath.toPath(normalize = true),
-            localPath = file.absolutePath,
+            modelRoot = root.toOkioPath(),
+            target = file.toOkioPath(),
+            localPath = file.toString(),
         ).flowOn(Dispatchers.IO)
     }
-}
 
-private fun isPathWithinRoot(root: File, target: File): Boolean {
-    if (target.path == root.path) return false
-    return target.path.startsWith(root.path + File.separator)
+    actual fun publishBundle(ownerModelId: String, artifacts: List<DownloadMetadataDTO>): Boolean =
+        publishArtifactBundle(pathProvider, ownerModelId, artifacts)
+
+    actual fun validateBundle(ownerModelId: String, artifacts: List<DownloadMetadataDTO>): Boolean =
+        validateArtifactBundle(pathProvider, ownerModelId, artifacts)
 }

@@ -10,6 +10,7 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.nio.file.SecureDirectoryStream
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import okio.Path.Companion.toPath as toOkioPath
@@ -20,10 +21,12 @@ import kotlin.test.assertFails
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import org.junit.Assume.assumeTrue
 
 class DownloadManagerJvmTest {
     @Test
     fun nonSuccessResponseDoesNotReplaceExistingModel() = withTemporaryRoot { root ->
+        assumeSecureArtifactRootProvider(root)
         val original = byteArrayOf(1, 2, 3)
         val finalFile = modelFile(root, "org/model", "weights/model.gguf")
         finalFile.parentFile.mkdirs()
@@ -48,6 +51,7 @@ class DownloadManagerJvmTest {
 
     @Test
     fun truncatedResponseRemovesTemporaryFileAndPreservesExistingModel() = withTemporaryRoot { root ->
+        assumeSecureArtifactRootProvider(root)
         val original = byteArrayOf(4, 5, 6)
         val finalFile = modelFile(root, "org/model", "model.gguf")
         finalFile.parentFile.mkdirs()
@@ -72,7 +76,9 @@ class DownloadManagerJvmTest {
 
     @Test
     fun successfulResponseCommitsExactBytesAndPublishesFinalPath() = withTemporaryRoot { root ->
+        assumeSecureArtifactRootProvider(root)
         val expected = ByteArray(32_768) { index -> (index % 251).toByte() }
+        modelFile(root, "org/model", "weights/model.gguf").parentFile.mkdirs()
 
         withServer { exchange ->
             exchange.respond(status = 200, declaredLength = expected.size.toLong(), body = expected)
@@ -100,8 +106,10 @@ class DownloadManagerJvmTest {
 
     @Test
     fun requestUsesImmutableRevisionAndEncodedRelativePath() = withTemporaryRoot { root ->
+        assumeSecureArtifactRootProvider(root)
         val requestedPath = AtomicReference<String>()
         val expected = byteArrayOf(7)
+        modelFile(root, "org/model", "weights/model file.gguf").parentFile.mkdirs()
         withServer { exchange ->
             requestedPath.set(exchange.requestURI.rawPath)
             exchange.respond(status = 200, declaredLength = 1L, body = expected)
@@ -145,6 +153,7 @@ class DownloadManagerJvmTest {
 
     @Test
     fun concurrentFilesInOneModelRootPublishOneCompleteManifest() = withTemporaryRoot { root ->
+        assumeSecureArtifactRootProvider(root)
         val first = "first".encodeToByteArray()
         val second = "second".encodeToByteArray()
         withServer { exchange ->
@@ -218,6 +227,12 @@ class DownloadManagerJvmTest {
         libraryName = null,
         pipelineTag = null,
     )
+}
+
+private fun assumeSecureArtifactRootProvider(root: File) {
+    val modelRoot = File(root, "models/org/model").apply { mkdirs() }.toPath()
+    val supported = Files.newDirectoryStream(modelRoot).use { it is SecureDirectoryStream<*> }
+    assumeTrue("Filesystem provider does not expose pinned SecureDirectoryStream operations", supported)
 }
 
 private fun ByteArray.sha256Hex(): String = okio.ByteString.of(*this).sha256().hex()

@@ -4,6 +4,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -31,6 +34,7 @@ data class RecommendationPresentation(
     val memoryInterval: String,
     val storageInterval: String,
     val expectedSpeed: String,
+    val confidence: String,
     val selectedPlan: String,
     val fallbackPlan: String,
     val reasons: List<String>,
@@ -49,15 +53,13 @@ fun recommendationPrimaryReasonLabel(reason: AssessmentReason): String =
     reason.name.lowercase().split('_').joinToString(" ").replaceFirstChar { it.uppercase() }
 
 fun recommendationSemantics(recommendation: PersonalizedRecommendation): String {
-    val safetyConfidence = listOf(
-        recommendation.confidence.compatibility,
-        recommendation.confidence.memory,
-        recommendation.confidence.storage,
-    ).minByOrNull(Confidence::ordinal) ?: Confidence.LOW
+    val safetyConfidence = recommendation.confidence?.let {
+        listOf(it.compatibility, it.memory, it.storage).minByOrNull(Confidence::ordinal)
+    }
     val reason = recommendation.reasons.firstOrNull()?.let(::recommendationPrimaryReasonLabel)
         ?: "No reason available"
     return "${recommendationCategoryLabel(recommendation.category)}. " +
-        "${safetyConfidence.name.lowercase().replaceFirstChar { it.uppercase() }} confidence. $reason."
+        "${safetyConfidence?.name?.lowercase()?.replaceFirstChar { it.uppercase() } ?: "Unavailable"} confidence. $reason."
 }
 
 fun recommendationPresentation(
@@ -75,6 +77,10 @@ fun recommendationPresentation(
         } ?: "Memory estimate unavailable",
         storageInterval = assessment?.storageBytes?.displayBytes() ?: "Storage estimate unavailable",
         expectedSpeed = assessment?.performance?.displayLabel() ?: "Speed not verified",
+        confidence = recommendation.confidence?.let { confidence ->
+            listOf(confidence.compatibility, confidence.memory, confidence.storage)
+                .minByOrNull(Confidence::ordinal)?.name?.lowercase()?.replaceFirstChar { it.uppercase() }
+        } ?: "Unavailable",
         selectedPlan = recommendation.selectedPlan.displayLabel(),
         fallbackPlan = recommendation.fallbackPlan.displayLabel(),
         reasons = recommendation.reasons.map(::recommendationPrimaryReasonLabel),
@@ -89,7 +95,11 @@ fun RecommendationDetailsContent(
     modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier = modifier.fillMaxWidth().padding(20.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .widthIn(max = 840.dp)
+            .verticalScroll(rememberScrollState())
+            .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text("Recommendation details", style = MaterialTheme.typography.titleLarge)
@@ -110,6 +120,7 @@ fun RecommendationDetailsContent(
         DetailLine("Memory", presentation.memoryInterval)
         DetailLine("Storage", presentation.storageInterval)
         DetailLine("Expected speed", presentation.expectedSpeed)
+        DetailLine("Confidence", presentation.confidence)
         DetailLine("Selected plan", presentation.selectedPlan)
         DetailLine("Fallback plan", presentation.fallbackPlan)
         Text("Reasons", style = MaterialTheme.typography.titleSmall)

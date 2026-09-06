@@ -773,6 +773,31 @@ class RecommendationPolicyTest {
     }
 
     @Test
+    fun recommendationProjectsTheBestAssessedAlternatePlanAsFallback() {
+        val primaryPlan = task6LlmPlan(keyContext = 4_096)
+        val alternatePlan = task6LlmPlan(keyContext = 2_048)
+        val result = policy.recommend(
+            task6Assessment(
+                plans = listOf(
+                    task6PlanAssessment(
+                        plan = primaryPlan,
+                        metrics = PlanUtilityMetrics(0.9, null, 0.9, 0.9, 0.9),
+                    ),
+                    task6PlanAssessment(
+                        plan = alternatePlan,
+                        metrics = PlanUtilityMetrics(0.1, null, 0.1, 0.1, 0.1),
+                    ),
+                ),
+            ),
+            task6Snapshot(),
+            RecommendationProfile(),
+        )
+
+        assertEquals(primaryPlan, result.selectedPlan)
+        assertEquals(alternatePlan, result.fallbackPlan)
+    }
+
+    @Test
     fun experimentalLikelyFitKeepsExplicitOrderedTightFitWarning() {
         val result = recommend(
             range = task6Range(100, 900, 951),

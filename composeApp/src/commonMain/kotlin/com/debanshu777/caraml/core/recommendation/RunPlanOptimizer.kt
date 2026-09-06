@@ -29,9 +29,12 @@ data class SelectedPlan private constructor(
     val safetyConfidence: Confidence,
     val performanceConfidence: Confidence,
     val candidateIndex: Int,
+    val fallbackPlanAssessment: PlanAssessment?,
 ) {
     val plan: PlanReference?
         get() = planAssessment?.plan
+
+    internal fun withFallback(assessment: PlanAssessment?): SelectedPlan = copy(fallbackPlanAssessment = assessment)
 
     constructor(
         planAssessment: PlanAssessment?,
@@ -44,6 +47,7 @@ data class SelectedPlan private constructor(
         safetyConfidence: Confidence,
         performanceConfidence: Confidence,
         candidateIndex: Int,
+        fallbackPlanAssessment: PlanAssessment? = null,
     ) : this(
         planAssessment,
         fitBand,
@@ -55,6 +59,7 @@ data class SelectedPlan private constructor(
         safetyConfidence,
         performanceConfidence,
         candidateIndex,
+        fallbackPlanAssessment,
     )
 }
 
@@ -101,17 +106,30 @@ class RunPlanOptimizer(
                 assessment.planAssessments.reasons.ifEmpty { listOf(AssessmentReason.MEMORY_BOUNDS_UNKNOWN) },
             )
         }
-        return candidates.minWithOrNull(
+        val ordered = candidates.sortedWith(selectedPlanComparator)
+        val selected = ordered.firstOrNull() ?: return emptySelection(
+            RecommendationCategory.NEEDS_INFORMATION,
+            listOf(AssessmentReason.MEMORY_BOUNDS_UNKNOWN),
+        )
+        val fallback = ordered.drop(1).firstOrNull {
+            it.planAssessment != null && it.category in runnableCategories
+        }?.planAssessment
+        return selected.withFallback(fallback)
+    }
+
+    private companion object {
+        val runnableCategories = setOf(
+            RecommendationCategory.RECOMMENDED,
+            RecommendationCategory.USABLE,
+            RecommendationCategory.RISKY,
+        )
+        val selectedPlanComparator =
             compareBy<SelectedPlan> { RecommendationPolicyV1.categoryRank.getValue(it.category) }
                 .thenByDescending { it.safetyConfidence.ordinal }
                 .thenByDescending { it.performanceConfidence.ordinal }
                 .thenByDescending { it.utility }
                 .thenByDescending { it.worstNormalizedHeadroom }
-                .thenBy { it.candidateIndex },
-        ) ?: emptySelection(
-            RecommendationCategory.NEEDS_INFORMATION,
-            listOf(AssessmentReason.MEMORY_BOUNDS_UNKNOWN),
-        )
+                .thenBy { it.candidateIndex }
     }
 
     internal fun snapshotIsFresh(snapshot: DeviceSnapshot): Boolean {

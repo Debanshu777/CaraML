@@ -8,6 +8,8 @@ data class DownloadMetadataDTO(
     val libraryName: String?,
     val pipelineTag: String?,
     val contextLength: Int? = null,
+    val destinationRelativePath: String = artifact.relativePath,
+    val bundleId: String = requireNotNull(artifactBundleId(listOf(artifact))),
 ) {
     init {
         require(
@@ -15,5 +17,10 @@ data class DownloadMetadataDTO(
                 logicalRole.all { it.isLetterOrDigit() || it in "._-" },
         ) { "Invalid artifact role" }
         require(sizeBytes == null || sizeBytes == artifact.expectedBytes) { "Invalid artifact size" }
+        val destination = runCatching {
+            validateDownloadRequest(artifact.repositoryId, destinationRelativePath).relativePath
+        }.getOrNull()
+        require(destination == destinationRelativePath) { "Invalid artifact destination" }
+        require(bundleId.length == 64 && bundleId.all(::isAsciiHexDigit)) { "Invalid artifact bundle" }
     }
 }

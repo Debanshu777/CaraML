@@ -11,7 +11,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import okio.FileSystem
 import okio.HashingSink
 import okio.Path
 import okio.buffer
@@ -31,27 +30,23 @@ internal fun downloadArtifact(
     val identity = metadata.artifact
 
     ModelRootLocks.withLock(modelRoot.toString()) {
-        val fileSystem = FileSystem.SYSTEM
-        val manifestStore = ArtifactManifestStore(modelRoot, fileSystem)
-        manifestStore.recover()
-        fileSystem.createDirectories(target.parent ?: throw IllegalArgumentException("Invalid model file path"))
-        val temporary = target.siblingPart()
-        require(canonicalParentIsInsideRoot(fileSystem, modelRoot, target)) { "Invalid model file path" }
-        require(fileSystem.metadataOrNull(target)?.symlinkTarget == null) { "Invalid model file path" }
-        require(fileSystem.metadataOrNull(temporary)?.symlinkTarget == null) { "Invalid model file path" }
-        fileSystem.delete(temporary, mustExist = false)
-        val availableBytes = pathProvider.getAvailableStorageBytes()
-        if (availableBytes < identity.expectedBytes) {
-            throw InsufficientStorageException(identity.expectedBytes, availableBytes)
-        }
-        val url = URLBuilder(baseUrl).apply {
-            appendPathSegments(identity.repositoryId.split('/'), encodeSlash = true)
-            appendPathSegments("resolve", identity.immutableRevision)
-            appendPathSegments(identity.relativePath.split('/'), encodeSlash = true)
-            parameters.append("download", "true")
-        }.build()
+        val destination = metadata.destinationRelativePath
+        val expectedTarget = (modelRoot / destination).normalized()
+        require(target.normalized() == expectedTarget) { "Invalid model file path" }
+        val manifestStore = ArtifactManifestStore(modelRoot)
 
         try {
+            manifestStore.recover()
+            val availableBytes = pathProvider.getAvailableStorageBytes()
+            if (availableBytes < identity.expectedBytes) {
+                throw InsufficientStorageException(identity.expectedBytes, availableBytes)
+            }
+            val url = URLBuilder(baseUrl).apply {
+                appendPathSegments(identity.repositoryId.split('/'), encodeSlash = true)
+                appendPathSegments("resolve", identity.immutableRevision)
+                appendPathSegments(identity.relativePath.split('/'), encodeSlash = true)
+                parameters.append("download", "true")
+            }.build()
             httpClient.prepareGet(url).execute { response ->
                 if (response.status.value !in 200..299) throw DownloadHttpException(response.status.value)
                 val responseLength = response.headers["Content-Length"]?.toLongOrNull()?.takeIf { it > 0L }
@@ -62,7 +57,7 @@ internal fun downloadArtifact(
                 val buffer = ByteArray(BUFFER_SIZE)
                 var bytesReceived = 0L
                 val progressTracker = DownloadProgressTracker(identity.expectedBytes)
-                val hashingSink = HashingSink.sha256(fileSystem.sink(temporary, mustCreate = true))
+                val hashingSink = HashingSink.sha256(manifestStore.prepareStaged(destination))
                 val sink = hashingSink.buffer()
                 try {
                     while (true) {
@@ -79,12 +74,7 @@ internal fun downloadArtifact(
                 } finally {
                     sink.close()
                 }
-                val handle = fileSystem.openReadWrite(temporary, mustCreate = false, mustExist = true)
-                try {
-                    handle.flush()
-                } finally {
-                    handle.close()
-                }
+                manifestStore.syncStaged(destination)
                 if (bytesReceived == 0L) throw EmptyDownloadException()
                 if (bytesReceived != identity.expectedBytes) {
                     throw IncompleteDownloadException(bytesReceived, identity.expectedBytes)
@@ -98,9 +88,11 @@ internal fun downloadArtifact(
                     identity = identity,
                     byteCount = bytesReceived,
                     contentSha256 = contentSha256,
+                    bundleId = metadata.bundleId,
+                    localRelativePath = destination,
                 ) ?: throw ArtifactVerificationException()
-                manifestStore.commit(identity.relativePath, entry)
-                check(!fileSystem.exists(modelRoot / ArtifactManifestStore.JOURNAL_FILE_NAME)) {
+                manifestStore.commit(destination, entry)
+                check(!manifestStore.hasPendingTransaction()) {
                     "Artifact transaction did not complete"
                 }
                 emit(
@@ -114,25 +106,25 @@ internal fun downloadArtifact(
                 )
             }
         } catch (error: CancellationException) {
-            recoverOrDiscard(manifestStore, fileSystem, modelRoot, temporary)
+            recoverOrDiscard(manifestStore, destination)
             throw error
         } catch (error: Exception) {
-            recoverOrDiscard(manifestStore, fileSystem, modelRoot, temporary)
+            recoverOrDiscard(manifestStore, destination)
             throw error
+        } finally {
+            manifestStore.close()
         }
     }
 }
 
 private fun recoverOrDiscard(
     store: ArtifactManifestStore,
-    fileSystem: FileSystem,
-    root: Path,
-    temporary: Path,
+    relativePath: String,
 ) {
-    if (fileSystem.exists(root / ArtifactManifestStore.JOURNAL_FILE_NAME)) {
+    if (store.hasPendingTransaction()) {
         runCatching(store::recover)
     } else {
-        fileSystem.delete(temporary, mustExist = false)
+        runCatching { store.discardStaged(relativePath) }
     }
 }
 
@@ -158,10 +150,3 @@ private object ModelRootLocks {
 }
 
 private const val BUFFER_SIZE = 256 * 1024
-private fun Path.siblingPart(): Path = parent!! / "$name.part"
-
-private fun canonicalParentIsInsideRoot(fileSystem: FileSystem, root: Path, target: Path): Boolean {
-    val canonicalRoot = runCatching { fileSystem.canonicalize(root) }.getOrNull() ?: return false
-    val canonicalParent = runCatching { fileSystem.canonicalize(target.parent!!) }.getOrNull() ?: return false
-    return canonicalParent == canonicalRoot || canonicalParent.toString().startsWith("$canonicalRoot/")
-}

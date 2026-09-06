@@ -49,15 +49,31 @@ class RecommendationPresentationTest {
         assertTrue(presentation.assumedWorkload.contains("4,096"))
         assertTrue(presentation.selectedPlan.contains("2,048"))
         assertTrue(presentation.selectedPlan.contains("context reduced", ignoreCase = true))
+        assertEquals("Medium", presentation.confidence)
+    }
+
+    @Test
+    fun missingConfidenceRemainsVisiblyUnavailable() {
+        val recommendation = recommendation(confidence = null)
+
+        assertEquals("Unavailable", recommendationPresentation(recommendation, null, null).confidence)
+        assertTrue(recommendationSemantics(recommendation).contains("Unavailable confidence"))
     }
 }
 
 internal fun recommendation(
     selectedPlan: PlanReference? = null,
+    fallbackPlan: PlanReference? = null,
     reasons: List<AssessmentReason> = listOf(AssessmentReason.MEMORY_FIT_COMFORTABLE),
     profile: RecommendationProfile = RecommendationProfile(
         RiskTolerance.EXPERIMENTAL,
         OptimizationPriority.BALANCED,
+    ),
+    confidence: AssessmentConfidence? = AssessmentConfidence(
+        Confidence.HIGH,
+        Confidence.MEDIUM,
+        Confidence.HIGH,
+        Confidence.LOW,
     ),
 ) = PersonalizedRecommendation(
     assessmentKey = "assessment",
@@ -65,9 +81,10 @@ internal fun recommendation(
     selectedPlan = selectedPlan,
     reasons = reasons,
     profile = profile,
-    confidence = AssessmentConfidence(Confidence.HIGH, Confidence.MEDIUM, Confidence.HIGH, Confidence.LOW),
+    confidence = confidence,
     memoryFit = FitBand.LIKELY,
     storageFit = FitBand.COMFORTABLE,
+    fallbackPlan = fallbackPlan,
 )
 
 internal fun llmWorkload() = LlmWorkloadConfig(

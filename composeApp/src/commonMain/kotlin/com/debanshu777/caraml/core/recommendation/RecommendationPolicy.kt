@@ -32,6 +32,7 @@ class RecommendationPolicy(
             memoryFit = selection.fitBand,
             storageFit = selection.storageFitBand,
             selectedPlanAssessment = selection.planAssessment,
+            fallbackPlan = selection.fallbackPlanAssessment?.plan,
         )
         return PolicyEvaluation(recommendation, selection)
     }

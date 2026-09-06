@@ -27,7 +27,7 @@ actual class DownloadManager actual constructor(
     ): Flow<DownloadProgressDTO> {
         val request = validateDownloadArguments(modelId, path, metadata)
         val dirPath = pathProvider.getModelsStorageDirectory(request.modelId).trimEnd('/')
-        val filePath = "$dirPath/${request.relativePath}"
+        val filePath = "$dirPath/${metadata.destinationRelativePath}"
         require(isPathWithinRoot(dirPath, filePath)) { "Invalid model file path" }
         return downloadArtifact(
             httpClient,
@@ -41,6 +41,12 @@ actual class DownloadManager actual constructor(
             filePath,
         ).flowOn(Dispatchers.Default)
     }
+
+    actual fun publishBundle(ownerModelId: String, artifacts: List<DownloadMetadataDTO>): Boolean =
+        publishArtifactBundle(pathProvider, ownerModelId, artifacts)
+
+    actual fun validateBundle(ownerModelId: String, artifacts: List<DownloadMetadataDTO>): Boolean =
+        validateArtifactBundle(pathProvider, ownerModelId, artifacts)
 }
 
 private fun isPathWithinRoot(root: String, target: String): Boolean {

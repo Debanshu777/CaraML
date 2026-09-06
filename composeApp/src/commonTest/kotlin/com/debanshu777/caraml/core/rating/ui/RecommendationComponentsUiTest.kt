@@ -3,6 +3,7 @@
 package com.debanshu777.caraml.core.rating.ui
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -13,12 +14,20 @@ import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.runComposeUiTest
 import com.debanshu777.caraml.core.recommendation.AssessmentReason
 import com.debanshu777.caraml.core.recommendation.RecommendationProfile
 import com.debanshu777.caraml.core.recommendation.RiskTolerance
 import com.debanshu777.caraml.core.recommendation.llmWorkload
 import com.debanshu777.caraml.core.recommendation.recommendation
+import com.debanshu777.caraml.core.recommendation.LlmRunPlan
+import com.debanshu777.caraml.core.recommendation.KvCacheType
+import com.debanshu777.caraml.core.recommendation.RunPlanCompromise
+import com.debanshu777.caraml.core.platform.BackendKind
+import com.debanshu777.caraml.core.platform.MemoryTopology
 import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.RecommendationProfileDialog
 import com.debanshu777.caraml.features.modelhub.presentation.details.DownloadForLaterConfirmationDialog
@@ -78,9 +87,22 @@ class RecommendationComponentsUiTest {
 
     @Test
     fun experimentalTightFitWarningAndDetailsAreVisible() = runComposeUiTest {
+        val fallback = LlmRunPlan(
+            contextTokens = 1_024,
+            batchSize = 64,
+            microBatchSize = 32,
+            sequenceCount = 1,
+            keyCacheType = KvCacheType.Q8_0,
+            valueCacheType = KvCacheType.Q8_0,
+            backend = BackendKind.CPU,
+            memoryTopology = MemoryTopology.DISCRETE,
+            gpuLayerCount = 0,
+            compromises = listOf(RunPlanCompromise.CONTEXT_REDUCED),
+        )
         val recommendation = recommendation(
             reasons = listOf(AssessmentReason.TIGHT_MEMORY_FIT, AssessmentReason.SPEED_NOT_VERIFIED),
             profile = RecommendationProfile(riskTolerance = RiskTolerance.EXPERIMENTAL),
+            fallbackPlan = fallback,
         )
         val presentation = recommendationPresentation(
             recommendation = recommendation,
@@ -93,14 +115,19 @@ class RecommendationComponentsUiTest {
                     modelId = "org/model",
                     recommendation = recommendation,
                     presentation = presentation,
+                    modifier = Modifier.height(180.dp),
                 )
             }
         }
 
         onNodeWithText("Experimental tight fit", substring = true).assertIsDisplayed()
-        onNodeWithText("model-q4.gguf", substring = true).assertIsDisplayed()
-        onNodeWithText("4,096", substring = true).assertIsDisplayed()
-        onAllNodesWithText("Speed not verified", substring = true)[0].assertIsDisplayed()
+        onNodeWithText("Confidence").performScrollTo().assertIsDisplayed()
+        onNodeWithText("Medium").performScrollTo().assertIsDisplayed()
+        onNodeWithText("Fallback plan").performScrollTo().assertIsDisplayed()
+        onNodeWithText("1,024", substring = true).performScrollTo().assertIsDisplayed()
+        onNodeWithText("model-q4.gguf", substring = true).performScrollTo().assertIsDisplayed()
+        onNodeWithText("4,096", substring = true).performScrollTo().assertIsDisplayed()
+        onAllNodesWithText("Speed not verified", substring = true)[0].performScrollTo().assertIsDisplayed()
     }
 
     @Test

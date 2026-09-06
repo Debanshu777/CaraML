@@ -13,4 +13,8 @@ expect class DownloadManager(
         path: String,
         metadata: DownloadMetadataDTO
     ): Flow<DownloadProgressDTO>
+
+    fun publishBundle(ownerModelId: String, artifacts: List<DownloadMetadataDTO>): Boolean
+
+    fun validateBundle(ownerModelId: String, artifacts: List<DownloadMetadataDTO>): Boolean
 }
