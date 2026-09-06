@@ -364,7 +364,7 @@ class RunPlanGenerator {
         settings: PlanningSettings,
         contextFloor: Int,
     ): Boolean =
-        descriptor.file.sizeBytes in 1..DescriptorLimits.MAX_FILE_BYTES &&
+        descriptor.checkedTotalFileBytes() is CheckedLong.Value &&
             workload.contextTokens in 1..DescriptorLimits.MAX_CONTEXT_TOKENS &&
             workload.minimumContextTokens in 1..workload.contextTokens &&
             contextFloor in workload.minimumContextTokens..workload.contextTokens &&

@@ -82,6 +82,7 @@ data class LlmModelDescriptor private constructor(
     override val repositoryId: String,
     override val revision: String,
     val file: ModelFileIdentity,
+    val files: List<ModelFileIdentity>,
     val architecture: String?,
     val quantization: QuantizationEvidence,
     val parameterCount: Long?,
@@ -109,6 +110,7 @@ data class LlmModelDescriptor private constructor(
         repositoryId = repositoryId,
         revision = revision,
         file = file,
+        files = listOf(file),
         architecture = architecture,
         quantization = quantization,
         parameterCount = parameterCount,
@@ -118,6 +120,56 @@ data class LlmModelDescriptor private constructor(
         requiredEngineFeatures = requiredEngineFeatures.toSet(),
         evidence = evidence.toList(),
     )
+
+    internal constructor(
+        repositoryId: String,
+        revision: String,
+        files: Collection<ModelFileIdentity>,
+        architecture: String?,
+        quantization: QuantizationEvidence,
+        parameterCount: Long?,
+        contextLimit: Int?,
+        transformerShape: TransformerShape?,
+        ggufVersion: Int?,
+        requiredEngineFeatures: Collection<String>,
+        evidence: Collection<Evidence>,
+    ) : this(
+        repositoryId = repositoryId,
+        revision = revision,
+        file = requireNotNull(files.firstOrNull()) { "LLM descriptor requires at least one exact file" },
+        files = files.toList(),
+        architecture = architecture,
+        quantization = quantization,
+        parameterCount = parameterCount,
+        contextLimit = contextLimit,
+        transformerShape = transformerShape,
+        ggufVersion = ggufVersion,
+        requiredEngineFeatures = requiredEngineFeatures.toSet(),
+        evidence = evidence.toList(),
+    )
+}
+
+internal fun LlmModelDescriptor.checkedTotalFileBytes(): CheckedLong {
+    if (files.isEmpty() || files.size > DescriptorLimits.MAX_COMPONENTS) {
+        return CheckedLong.Invalid(AssessmentReason.INVALID_METADATA)
+    }
+    val seen = HashSet<String>(files.size)
+    var total = 0L
+    for (identity in files) {
+        if (identity.repositoryId != repositoryId || identity.revision != revision ||
+            identity.sizeBytes !in 1..DescriptorLimits.MAX_FILE_BYTES || !seen.add(identity.path)
+        ) {
+            return CheckedLong.Invalid(AssessmentReason.INVALID_METADATA)
+        }
+        total = when (val sum = checkedAdd(total, identity.sizeBytes)) {
+            is CheckedLong.Invalid -> return sum
+            is CheckedLong.Value -> sum.value
+        }
+        if (total > DescriptorLimits.MAX_BUNDLE_BYTES) {
+            return CheckedLong.Invalid(AssessmentReason.BUNDLE_SIZE_LIMIT_EXCEEDED)
+        }
+    }
+    return CheckedLong.Value(total)
 }
 
 data class DiffusionComponentDescriptor(

@@ -9,6 +9,12 @@ import com.debanshu777.huggingfacemanager.sdcpp.ComponentRole
 import com.debanshu777.huggingfacemanager.sdcpp.SdCppComponent
 import com.debanshu777.huggingfacemanager.sdcpp.SdCppModelSetup
 
+data class ResolvedDiffusionComponentMetadata(
+    val component: SdCppComponent,
+    val detail: ModelDetailResponse,
+    val file: ModelFileTreeResponse,
+)
+
 class ModelDescriptorFactory {
     fun buildProvisional(model: ListModelsResponse.Model): DescriptorBuildResult {
         val repositoryId = model.id
@@ -32,13 +38,40 @@ class ModelDescriptorFactory {
         detail: ModelDetailResponse,
         file: ModelFileTreeResponse,
         transformerConfig: TransformerConfigResponse?,
+    ): DescriptorBuildResult = buildLlm(detail, listOf(file), transformerConfig)
+
+    fun buildLlm(
+        detail: ModelDetailResponse,
+        files: Collection<ModelFileTreeResponse>,
+        transformerConfig: TransformerConfigResponse?,
     ): DescriptorBuildResult {
         val common = validateCommon(detail) ?: return invalid(commonValidationReason(detail))
-        if (modelFormatForPath(file.path.orEmpty()) != ModelFormat.GGUF) {
+        if (files.isEmpty()) return invalid(AssessmentReason.INVALID_METADATA)
+        if (files.size > DescriptorLimits.MAX_COMPONENTS) {
+            return invalid(AssessmentReason.COMPONENT_LIMIT_EXCEEDED)
+        }
+        val boundedFiles = files.asSequence().take(DescriptorLimits.MAX_COMPONENTS + 1).toList()
+        if (boundedFiles.size != files.size) return invalid(AssessmentReason.COMPONENT_LIMIT_EXCEEDED)
+        if (boundedFiles.any { modelFormatForPath(it.path.orEmpty()) != ModelFormat.GGUF }) {
             return invalid(AssessmentReason.UNSUPPORTED_FORMAT)
         }
-        val identity = buildFileIdentity(common.repositoryId, common.revision, file)
-            ?: return invalid(fileValidationReason(file))
+        val identities = ArrayList<ModelFileIdentity>(boundedFiles.size)
+        val seenPaths = HashSet<String>(boundedFiles.size)
+        var totalBytes = 0L
+        for (file in boundedFiles) {
+            val identity = buildFileIdentity(common.repositoryId, common.revision, file)
+                ?: return invalid(fileValidationReason(file))
+            if (!seenPaths.add(identity.path)) return invalid(AssessmentReason.INVALID_FILE_PATH)
+            totalBytes = when (val sum = checkedAdd(totalBytes, identity.sizeBytes)) {
+                is CheckedLong.Invalid -> return invalid(sum.reason)
+                is CheckedLong.Value -> sum.value
+            }
+            if (totalBytes > DescriptorLimits.MAX_BUNDLE_BYTES) {
+                return invalid(AssessmentReason.BUNDLE_SIZE_LIMIT_EXCEEDED)
+            }
+            identities += identity
+        }
+        identities.sortBy { it.path }
         val parameterCount = detail.gguf?.total ?: detail.safetensors?.total
         if (parameterCount != null && parameterCount !in 1..DescriptorLimits.MAX_PARAMETERS) {
             return invalid(AssessmentReason.PARAMETER_LIMIT_EXCEEDED)
@@ -50,7 +83,14 @@ class ModelDescriptorFactory {
         val architecture = detail.gguf?.architecture ?: detail.config?.modelType
         if (!isSafeArchitecture(architecture)) return invalid(AssessmentReason.INVALID_METADATA)
 
-        val quantization = QuantizationParser.parseFilename(identity.path)
+        val quantizations = identities.flatMapTo(linkedSetOf()) {
+            QuantizationParser.parseFilename(it.path).quantizations
+        }
+        val quantization = when (quantizations.size) {
+            0 -> QuantizationEvidence.Unknown
+            1 -> QuantizationEvidence.Known(quantizations.single())
+            else -> QuantizationEvidence.Mixed(quantizations)
+        }
         if (quantization is QuantizationEvidence.Mixed) {
             return invalid(AssessmentReason.MIXED_QUANTIZATION)
         }
@@ -63,7 +103,7 @@ class ModelDescriptorFactory {
             add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.HIGH, "repository:model-detail"))
             add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.HIGH, "revision:hub-sha"))
             add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.HIGH, "format:file-extension"))
-            addAll(identity.evidence)
+            identities.forEach { addAll(it.evidence) }
             if (parameterCount != null) {
                 add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.MEDIUM, "parameters:hub-metadata"))
             }
@@ -113,7 +153,7 @@ class ModelDescriptorFactory {
             LlmModelDescriptor(
                 repositoryId = common.repositoryId,
                 revision = common.revision,
-                file = identity,
+                files = identities,
                 architecture = architecture,
                 quantization = quantization,
                 parameterCount = parameterCount,
@@ -131,6 +171,7 @@ class ModelDescriptorFactory {
         files: List<ModelFileTreeResponse>,
         setup: SdCppModelSetup,
         mode: DiffusionMode,
+        resolvedExternalComponents: Collection<ResolvedDiffusionComponentMetadata> = emptyList(),
     ): DescriptorBuildResult {
         val common = validateCommon(detail) ?: return invalid(commonValidationReason(detail))
         if (files.isEmpty()) return invalid(AssessmentReason.MISSING_REQUIRED_COMPONENT)
@@ -145,7 +186,26 @@ class ModelDescriptorFactory {
         }
         val setupReason = validateSetup(setup.components)
         if (setupReason != null) return invalid(setupReason)
-        if (setup.components.any { it.repoId != common.repositoryId }) {
+        if (resolvedExternalComponents.size > DescriptorLimits.MAX_COMPONENTS) {
+            return invalid(AssessmentReason.COMPONENT_LIMIT_EXCEEDED)
+        }
+        val boundedResolvedComponents = resolvedExternalComponents.asSequence()
+            .take(DescriptorLimits.MAX_COMPONENTS + 1)
+            .toList()
+        if (boundedResolvedComponents.size != resolvedExternalComponents.size) {
+            return invalid(AssessmentReason.COMPONENT_LIMIT_EXCEEDED)
+        }
+        val resolvedByKey = boundedResolvedComponents.associateBy {
+            RepositoryPath(it.component.repoId, it.component.filePath)
+        }
+        if (resolvedByKey.size != boundedResolvedComponents.size) {
+            return invalid(AssessmentReason.INVALID_METADATA)
+        }
+        val expectedExternalKeys = setup.components.asSequence()
+            .filter { it.repoId != common.repositoryId }
+            .map { RepositoryPath(it.repoId, it.filePath) }
+            .toSet()
+        if (resolvedByKey.keys != expectedExternalKeys) {
             return DescriptorBuildResult.NeedsVariant(
                 repositoryId = common.repositoryId,
                 reasons = listOf(AssessmentReason.MISSING_REQUIRED_COMPONENT),
@@ -164,6 +224,27 @@ class ModelDescriptorFactory {
         for (file in files) {
             val identity = buildFileIdentity(common.repositoryId, common.revision, file)
                 ?: return invalid(fileValidationReason(file))
+            if (!seenFiles.add(RepositoryPath(identity.repositoryId, identity.path))) {
+                return invalid(AssessmentReason.INVALID_FILE_PATH)
+            }
+            if (modelFormatForPath(identity.path) == null) return invalid(AssessmentReason.UNSUPPORTED_FORMAT)
+            bundleBytes = when (val sum = checkedAdd(bundleBytes, identity.sizeBytes)) {
+                is CheckedLong.Value -> sum.value
+                is CheckedLong.Invalid -> return invalid(sum.reason)
+            }
+            if (bundleBytes > DescriptorLimits.MAX_BUNDLE_BYTES) {
+                return invalid(AssessmentReason.BUNDLE_SIZE_LIMIT_EXCEEDED)
+            }
+            identities += identity
+        }
+        for ((key, resolved) in resolvedByKey) {
+            val componentIdentity = validateCommon(resolved.detail)
+                ?: return invalid(commonValidationReason(resolved.detail))
+            if (componentIdentity.repositoryId != key.repositoryId || resolved.file.path != key.path) {
+                return invalid(AssessmentReason.INVALID_METADATA)
+            }
+            val identity = buildFileIdentity(componentIdentity.repositoryId, componentIdentity.revision, resolved.file)
+                ?: return invalid(fileValidationReason(resolved.file))
             if (!seenFiles.add(RepositoryPath(identity.repositoryId, identity.path))) {
                 return invalid(AssessmentReason.INVALID_FILE_PATH)
             }

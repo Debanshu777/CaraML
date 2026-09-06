@@ -22,31 +22,33 @@ class LlmFootprintEstimator {
         plan: LlmRunPlan,
         calibration: MemoryCalibration,
     ): PlanAssessment {
-        val storage = descriptor.file.sizeBytes
-            .takeIf { it in 1..DescriptorLimits.MAX_FILE_BYTES }
-            ?.let(::exactRange)
+        val totalFileBytes = when (val total = descriptor.checkedTotalFileBytes()) {
+            is CheckedLong.Invalid -> return invalidAssessment(plan, null, total.reason)
+            is CheckedLong.Value -> total.value
+        }
+        val storage = exactRange(totalFileBytes)
         val invalidReason = validate(descriptor, plan, calibration)
         if (invalidReason != null) return invalidAssessment(plan, storage, invalidReason)
 
-        val components = when (val calculated = calculateComponents(descriptor, plan)) {
+        val components = when (val calculated = calculateComponents(descriptor, plan, totalFileBytes)) {
             is ComponentResult.Invalid -> return invalidAssessment(plan, storage, calculated.reason)
             is ComponentResult.Value -> calculated
         }
         val poolEstimate = when {
             plan.backend == BackendKind.CPU -> singlePool(
-                weights = descriptor.file.sizeBytes,
+                weights = totalFileBytes,
                 dynamic = components.allDynamic,
                 calibration = calibration,
                 pool = Pool.HOST,
             )
             plan.memoryTopology == MemoryTopology.UNIFIED -> singlePool(
-                weights = descriptor.file.sizeBytes,
+                weights = totalFileBytes,
                 dynamic = components.allDynamic,
                 calibration = calibration,
                 pool = Pool.SHARED,
             )
             plan.memoryTopology == MemoryTopology.DISCRETE -> discretePools(
-                weights = descriptor.file.sizeBytes,
+                weights = totalFileBytes,
                 layerCount = descriptor.transformerShape?.layerCount,
                 gpuLayerCount = plan.gpuLayerCount,
                 runtime = components.runtime,
@@ -72,7 +74,7 @@ class LlmFootprintEstimator {
             gpuMemoryBytes = poolEstimate.gpu,
             sharedMemoryBytes = poolEstimate.shared,
             storageBytes = storage,
-            confidence = confidence(if (lowConfidence) Confidence.LOW else Confidence.MEDIUM, storage != null),
+            confidence = confidence(if (lowConfidence) Confidence.LOW else Confidence.MEDIUM, hasStorage = true),
             evidence = evidence,
         )
     }
@@ -83,7 +85,7 @@ class LlmFootprintEstimator {
         calibration: MemoryCalibration,
     ): AssessmentReason? {
         validateRunPlan(plan)?.let { return it }
-        if (descriptor.file.sizeBytes !in 1..DescriptorLimits.MAX_FILE_BYTES) {
+        if (descriptor.checkedTotalFileBytes() is CheckedLong.Invalid) {
             return AssessmentReason.INVALID_METADATA
         }
         val shapeValues = descriptor.transformerShape?.let {
@@ -126,6 +128,7 @@ class LlmFootprintEstimator {
     private fun calculateComponents(
         descriptor: LlmModelDescriptor,
         plan: LlmRunPlan,
+        totalFileBytes: Long,
     ): ComponentResult {
         val evidence = mutableListOf<Evidence>()
         var lowConfidence = false
@@ -155,12 +158,12 @@ class LlmFootprintEstimator {
                 value.range
             }
         }
-        val runtime = when (val value = percentageRange(descriptor.file.sizeBytes, 5, 10, 20)) {
+        val runtime = when (val value = percentageRange(totalFileBytes, 5, 10, 20)) {
             is RangeResult.Invalid -> return ComponentResult.Invalid(value.reason)
             is RangeResult.Value -> value.range
         }
         val backend = validRange(16L * MIB, 32L * MIB, 64L * MIB)
-        val recurrent = when (val value = recurrentRange(descriptor, plan)) {
+        val recurrent = when (val value = recurrentRange(descriptor, plan, totalFileBytes)) {
             is RangeResult.Invalid -> return ComponentResult.Invalid(value.reason)
             is RangeResult.Value -> {
                 if (value.inferred) {
@@ -265,7 +268,11 @@ class LlmFootprintEstimator {
         return rangeFromChecked(base, likely, high)
     }
 
-    private fun recurrentRange(descriptor: LlmModelDescriptor, plan: LlmRunPlan): RangeResult {
+    private fun recurrentRange(
+        descriptor: LlmModelDescriptor,
+        plan: LlmRunPlan,
+        totalFileBytes: Long,
+    ): RangeResult {
         val hybrid = descriptor.architecture?.lowercase()?.let {
             "mamba" in it || "rwkv" in it || "hybrid" in it
         } == true
@@ -274,8 +281,8 @@ class LlmFootprintEstimator {
         val layers = shape?.layerCount
         val hidden = shape?.hiddenSize
         if (layers == null || hidden == null) {
-            val likely = checkedPercentage(descriptor.file.sizeBytes, 5)
-            val high = checkedPercentage(descriptor.file.sizeBytes, 15)
+            val likely = checkedPercentage(totalFileBytes, 5)
+            val high = checkedPercentage(totalFileBytes, 15)
             return rangeFromChecked(CheckedLong.Value(0L), likely, high, inferred = true)
         }
         val low = checkedProduct(layers.toLong(), hidden.toLong(), plan.sequenceCount.toLong(), 2L)

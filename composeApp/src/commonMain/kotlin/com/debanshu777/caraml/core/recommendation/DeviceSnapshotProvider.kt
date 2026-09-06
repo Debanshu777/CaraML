@@ -45,12 +45,21 @@ class DeviceSnapshotProvider internal constructor(
         captureBlocking()
     }
 
-    private fun captureBlocking(): DeviceSnapshot {
+    /** Refreshes dynamic resource/storage facts without repeating static or native backend probes. */
+    suspend fun refreshResources(previous: DeviceSnapshot): DeviceSnapshot = withContext(probeDispatcher) {
+        captureBlocking(reusedHardwareProfile = previous.hardwareProfile)
+    }
+
+    private fun captureBlocking(reusedHardwareProfile: HardwareProfile? = null): DeviceSnapshot {
         val now = clock()
         val providerEvidence = mutableListOf<Evidence>()
-        val profile = readHardware(providerEvidence)
-        val backends = readBackends(profile.backends, providerEvidence)
-        val resolvedProfile = profile.withBackends(backends)
+        val profile = reusedHardwareProfile ?: readHardware(providerEvidence)
+        val backends = if (reusedHardwareProfile == null) {
+            readBackends(profile.backends, providerEvidence)
+        } else {
+            profile.backends
+        }
+        val resolvedProfile = if (reusedHardwareProfile == null) profile.withBackends(backends) else profile
 
         val rawResources = readResources(now, providerEvidence)
         val normalized = normalizeResources(rawResources, resolvedProfile.memoryTopology, providerEvidence)

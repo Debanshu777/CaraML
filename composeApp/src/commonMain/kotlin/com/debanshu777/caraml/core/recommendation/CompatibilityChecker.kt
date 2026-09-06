@@ -30,6 +30,12 @@ class CompatibilityChecker(
         if (descriptor.format != ModelFormat.GGUF) {
             return incompatible(AssessmentReason.UNSUPPORTED_FORMAT)
         }
+        if (descriptor.files.isEmpty() || descriptor.files.any { modelFormatForPath(it.path) != ModelFormat.GGUF }) {
+            return incompatible(AssessmentReason.UNSUPPORTED_FORMAT)
+        }
+        if (descriptor.checkedTotalFileBytes() is CheckedLong.Invalid) {
+            return incompatible(AssessmentReason.INVALID_METADATA)
+        }
         val version = descriptor.ggufVersion
         if (version == null) {
             return Compatibility.Unknown(

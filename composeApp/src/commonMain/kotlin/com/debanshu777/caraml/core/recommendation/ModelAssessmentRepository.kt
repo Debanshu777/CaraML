@@ -316,7 +316,7 @@ private fun assessmentCacheKey(
     }
     val normalizedDescriptor = inputs.descriptor
     val identities = when (normalizedDescriptor) {
-        is LlmModelDescriptor -> listOf(normalizedDescriptor.file)
+        is LlmModelDescriptor -> normalizedDescriptor.files
         is DiffusionModelDescriptor -> normalizedDescriptor.components.map { it.file }
     }
     val identity = when (normalizedDescriptor) {
@@ -355,14 +355,16 @@ private fun normalizedDescriptor(value: ModelDescriptor): ModelDescriptor? {
     ) return null
     return when (value) {
         is LlmModelDescriptor -> {
-            val file = normalizedFileIdentity(value.file) ?: return null
-            if (file.repositoryId != value.repositoryId || file.revision != value.revision ||
+            if (value.files.isEmpty() || value.files.size > DescriptorLimits.MAX_COMPONENTS) return null
+            val files = value.files.map { normalizedFileIdentity(it) ?: return null }.sortedBy { it.path }
+            if (files.distinctBy { it.path }.size != files.size ||
+                files.any { it.repositoryId != value.repositoryId || it.revision != value.revision } ||
                 value.architecture?.length?.let { it > DescriptorLimits.MAX_METADATA_STRING_LENGTH } == true
             ) return null
-            LlmModelDescriptor(
+            val normalized = LlmModelDescriptor(
                 repositoryId = value.repositoryId,
                 revision = value.revision,
-                file = file,
+                files = files,
                 architecture = value.architecture,
                 quantization = normalizedQuantization(value.quantization) ?: return null,
                 parameterCount = value.parameterCount,
@@ -372,6 +374,8 @@ private fun normalizedDescriptor(value: ModelDescriptor): ModelDescriptor? {
                 requiredEngineFeatures = value.requiredEngineFeatures.sorted(),
                 evidence = emptyList(),
             )
+            if (normalized.checkedTotalFileBytes() is CheckedLong.Invalid) return null
+            normalized
         }
         is DiffusionModelDescriptor -> {
             if (value.components.isEmpty() || value.components.size > DescriptorLimits.MAX_COMPONENTS ||

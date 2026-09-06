@@ -2,6 +2,13 @@ package com.debanshu777.caraml.features.modelhub.presentation.search
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.debanshu777.caraml.core.data.settings.SettingsRepository
+import com.debanshu777.caraml.core.recommendation.DiffusionMode
+import com.debanshu777.caraml.core.recommendation.DiffusionWorkloadConfig
+import com.debanshu777.caraml.core.recommendation.KvCacheSelection
+import com.debanshu777.caraml.core.recommendation.KvCacheType
+import com.debanshu777.caraml.core.recommendation.LlmWorkloadConfig
+import com.debanshu777.caraml.core.recommendation.WorkloadConfig
 import com.debanshu777.caraml.core.storage.component.ComponentRepository
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
@@ -9,6 +16,11 @@ import com.debanshu777.caraml.core.storage.localmodel.ModelType
 import com.debanshu777.caraml.core.platform.DeviceCapabilities
 import com.debanshu777.caraml.core.platform.DeviceHints
 import com.debanshu777.caraml.core.rating.parseSizeHintToBytes
+import com.debanshu777.caraml.features.modelhub.domain.ModelRecommendationService
+import com.debanshu777.caraml.features.modelhub.domain.RecommendationOrdering
+import com.debanshu777.caraml.features.modelhub.domain.RecommendationQuerySession
+import com.debanshu777.caraml.features.modelhub.domain.RecommendedModelUiState
+import com.debanshu777.caraml.features.modelhub.domain.QuerySupersededCancellationException
 import com.debanshu777.huggingfacemanager.HuggingFaceApi
 import com.debanshu777.huggingfacemanager.api.ListModelsParams
 import com.debanshu777.huggingfacemanager.api.SearchModelsParams
@@ -35,11 +47,16 @@ import com.debanshu777.huggingfacemanager.sdcpp.SdCppComponentChecker
 import com.debanshu777.huggingfacemanager.sdcpp.getModelSetup
 import com.debanshu777.huggingfacemanager.sdcpp.ComponentRole
 import com.debanshu777.huggingfacemanager.sdcpp.SdCppComponent
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -108,6 +125,50 @@ private data class InstallProgress(
     val label: String? = null,
 )
 
+private fun defaultRecommendationWorkload(mode: ModelHubBrowseMode): WorkloadConfig = when (mode) {
+    ModelHubBrowseMode.LanguageModels -> LlmWorkloadConfig(
+        userRequestedContextTokens = 4_096,
+        contextTokens = 4_096,
+        minimumContextTokens = 512,
+        promptTokens = 256,
+        generationReserveTokens = 256,
+        batchSize = 256,
+        microBatchSize = 64,
+        sequenceCount = 1,
+        kvCacheSelection = KvCacheSelection.Auto,
+        allowContextFallback = true,
+        allowBatchFallback = true,
+        allowKvCacheFallback = true,
+        allowedKvCacheTypes = KvCacheType.entries,
+        evidence = emptyList(),
+    )
+    ModelHubBrowseMode.DiffusionImage,
+    ModelHubBrowseMode.DiffusionVideo,
+    -> DiffusionWorkloadConfig(
+        mode = if (mode == ModelHubBrowseMode.DiffusionVideo) DiffusionMode.VIDEO else DiffusionMode.IMAGE,
+        width = 1_024,
+        height = if (mode == ModelHubBrowseMode.DiffusionVideo) 576 else 1_024,
+        minimumWidth = 512,
+        minimumHeight = 512,
+        frameCount = if (mode == ModelHubBrowseMode.DiffusionVideo) 16 else 1,
+        minimumFrameCount = 1,
+        batchSize = 1,
+        steps = 20,
+        vaeTiling = false,
+        offloadToCpu = false,
+        keepClipOnCpu = false,
+        keepVaeOnCpu = false,
+        maxVramBytes = null,
+        layerStreaming = false,
+        allowResolutionFallback = true,
+        allowFrameCountFallback = mode == ModelHubBrowseMode.DiffusionVideo,
+        allowVaeTilingFallback = true,
+        allowMaxVramFallback = true,
+        allowLayerStreamingFallback = true,
+        evidence = emptyList(),
+    )
+}
+
 class ModelViewModel(
     private val api: HuggingFaceApi,
     private val localModelRepository: LocalModelRepository,
@@ -115,9 +176,39 @@ class ModelViewModel(
     private val downloadManager: DownloadManager,
     private val storagePathProvider: StoragePathProvider,
     private val deviceCapabilities: DeviceCapabilities,
+    private val recommendationService: ModelRecommendationService,
+    private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
     private val componentChecker = SdCppComponentChecker(storagePathProvider)
+    private val settings = settingsRepository.getSettings()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, com.debanshu777.caraml.core.settings.AppSettings())
+
+    private val _recommendedModels = MutableStateFlow<List<RecommendedModelUiState>>(emptyList())
+    val recommendedModels: StateFlow<List<RecommendedModelUiState>> = _recommendedModels.asStateFlow()
+
+    private val _recommendationOrdering = MutableStateFlow(RecommendationOrdering.SERVER)
+    val recommendationOrdering: StateFlow<RecommendationOrdering> = _recommendationOrdering.asStateFlow()
+
+    private var recommendationSession: RecommendationQuerySession? = null
+    private var recommendationJob: Job? = null
+
+    init {
+        viewModelScope.launch {
+            settings.map { it.recommendationProfile }
+                .distinctUntilChanged()
+                .drop(1)
+                .collectLatest { profile ->
+                    recommendationSession?.let { session ->
+                        try {
+                            recommendationService.rerank(session, profile)
+                        } catch (_: QuerySupersededCancellationException) {
+                            // A new query owns recommendation state now; keep observing profile changes.
+                        }
+                    }
+                }
+        }
+    }
 
     val storageInfo: StateFlow<StorageInfoUiState> =
         localModelRepository.getTotalDownloadedSizeBytes()
@@ -273,6 +364,7 @@ class ModelViewModel(
             ModelHubBrowseMode.LanguageModels -> {
                 if (previous != ModelHubBrowseMode.LanguageModels) {
                     _listResponse.update { null }
+                    clearRecommendations()
                     loadModels()
                 }
             }
@@ -281,14 +373,18 @@ class ModelViewModel(
                 resetSearchStateForCuratedHub()
                 _listError.update { null }
                 _isListLoading.update { false }
-                _listResponse.update { sdCppCatalog.image.toListModelsResponse() }
+                val response = sdCppCatalog.image.toListModelsResponse()
+                _listResponse.update { response }
+                startRecommendations(response.models.orEmpty().filterNotNull(), defaultRecommendationWorkload(mode))
             }
 
             ModelHubBrowseMode.DiffusionVideo -> {
                 resetSearchStateForCuratedHub()
                 _listError.update { null }
                 _isListLoading.update { false }
-                _listResponse.update { sdCppCatalog.video.toVideoListModelsResponse() }
+                val response = sdCppCatalog.video.toVideoListModelsResponse()
+                _listResponse.update { response }
+                startRecommendations(response.models.orEmpty().filterNotNull(), defaultRecommendationWorkload(mode))
             }
         }
     }
@@ -302,6 +398,10 @@ class ModelViewModel(
                 is Result.Success -> {
                     _listResponse.update { result.data }
                     _listError.update { null }
+                    startRecommendations(
+                        result.data.models.orEmpty().filterNotNull(),
+                        defaultRecommendationWorkload(ModelHubBrowseMode.LanguageModels),
+                    )
                 }
                 is Result.Error -> {
                     _listError.update {
@@ -816,6 +916,16 @@ class ModelViewModel(
                 is Result.Success -> {
                     _searchResponse.update { result.data }
                     _searchError.update { null }
+                    startRecommendations(
+                        result.data.models.orEmpty().filterNotNull().map { model ->
+                            ListModelsResponse.Model(
+                                id = model.id,
+                                `private` = model.`private`,
+                            )
+                        },
+                        defaultRecommendationWorkload(ModelHubBrowseMode.LanguageModels),
+                        source = "search",
+                    )
                 }
                 is Result.Error -> {
                     _searchError.update {
@@ -848,6 +958,53 @@ class ModelViewModel(
         _searchQuery.update { "" }
         _searchResponse.update { null }
         _searchError.update { null }
+        _listResponse.value?.models.orEmpty().filterNotNull().let { models ->
+            startRecommendations(models, defaultRecommendationWorkload(_browseMode.value))
+        }
+    }
+
+    fun setRecommendationOrdering(ordering: RecommendationOrdering) {
+        _recommendationOrdering.value = ordering
+        recommendationSession?.let { session ->
+            viewModelScope.launch { recommendationService.setOrdering(session, ordering) }
+        }
+    }
+
+    fun loadMoreRecommendations() {
+        recommendationSession?.let { session ->
+            viewModelScope.launch {
+                recommendationService.evaluateMore(session, settings.value.recommendationProfile)
+            }
+        }
+    }
+
+    private fun startRecommendations(
+        models: List<ListModelsResponse.Model>,
+        workload: WorkloadConfig,
+        source: String = "list",
+    ) {
+        recommendationJob?.cancel()
+        val queryId = "${_browseMode.value.name}:$source"
+        val session = recommendationService.startQuery(queryId, models, workload)
+        recommendationSession = session
+        _recommendedModels.value = session.state.value
+        recommendationJob = viewModelScope.launch {
+            coroutineScope {
+                launch { session.state.collectLatest { _recommendedModels.value = it } }
+                launch {
+                    recommendationService.setOrdering(session, _recommendationOrdering.value)
+                    recommendationService.evaluateInitial(session, settings.value.recommendationProfile)
+                    recommendationService.rerank(session, settings.value.recommendationProfile)
+                }
+            }
+        }
+    }
+
+    private fun clearRecommendations() {
+        recommendationJob?.cancel()
+        recommendationJob = null
+        recommendationSession = null
+        _recommendedModels.value = emptyList()
     }
 
     private fun resetSearchStateForCuratedHub() {

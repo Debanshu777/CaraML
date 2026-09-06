@@ -327,7 +327,10 @@ class SuitabilityEngine(
     }
 
     private fun assessmentKey(descriptor: ModelDescriptor): String = when (descriptor) {
-        is LlmModelDescriptor -> "${descriptor.repositoryId}@${descriptor.revision}:${descriptor.file.path}"
+        is LlmModelDescriptor -> buildString {
+            append(descriptor.repositoryId).append('@').append(descriptor.revision).append(':')
+            descriptor.files.map { it.path }.sorted().joinTo(this, separator = "+")
+        }
         is DiffusionModelDescriptor -> buildString {
             append(descriptor.repositoryId).append('@').append(descriptor.revision).append(':')
             descriptor.components.map { it.file.path }.sorted().joinTo(this, separator = "+")

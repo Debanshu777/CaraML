@@ -304,9 +304,9 @@ class PerformanceEstimator {
         confidence: Confidence,
         evidence: List<Evidence>,
     ): PerformanceEstimate {
-        val bytes = descriptor.file.sizeBytes
+        val bytes = (descriptor.checkedTotalFileBytes() as? CheckedLong.Value)?.value
         val parameters = descriptor.parameterCount
-        if (bytes !in 1..DescriptorLimits.MAX_FILE_BYTES ||
+        if (bytes == null || bytes !in 1..DescriptorLimits.MAX_BUNDLE_BYTES ||
             parameters == null || parameters !in 1..DescriptorLimits.MAX_PARAMETERS
         ) {
             return unknown(AssessmentReason.SPEED_NOT_VERIFIED, "llm-compute-inputs")

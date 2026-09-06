@@ -219,6 +219,7 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 
 <!-- This section is updated at the end of each AI-assisted development session -->
 
+- Added bounded, device-aware model recommendations with immutable Hugging Face metadata, incremental assessment, and profile-local reranking
 - Added persisted Balanced-by-default recommendation profiles with atomic onboarding, rollout-gated Material 3 controls, and rapid-update-safe settings state
 - Added bounded profile-neutral model assessment caching, fresh device-snapshot assembly, and privacy-safe debug shadow comparison with release-safe legacy rollout
 - Added a least-privilege GitHub Actions JVM test gate and weekly Dependabot updates; actions are pinned to immutable release commits

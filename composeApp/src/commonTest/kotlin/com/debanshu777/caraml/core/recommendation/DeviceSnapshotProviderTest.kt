@@ -349,6 +349,51 @@ class DeviceSnapshotProviderTest {
         }
     }
 
+    @Test
+    fun resourceOnlyRefreshDoesNotRepeatHardwareOrBackendCapabilityProbes() = runBlocking {
+        var hardwareReads = 0
+        var backendReads = 0
+        var resourceReads = 0
+        val provider = DeviceSnapshotProvider(
+            hardwareProfileSource = {
+                hardwareReads += 1
+                hardware(MemoryTopology.UNKNOWN)
+            },
+            resourceSnapshotSource = {
+                resourceReads += 1
+                ResourceSnapshot(
+                    additionalAllocatableHostBytes = 4L * GIB,
+                    additionalAllocatableGpuBytes = null,
+                    currentProcessBytes = 128L * MIB,
+                    freeStorageBytes = null,
+                    osPressureReserveHostBytes = 0L,
+                    observedAppFootprintNoiseP95Bytes = 0L,
+                    platformMinimumReserveHostBytes = 512L * MIB,
+                    lowMemory = false,
+                    thermalState = ThermalState.NOMINAL,
+                    powerPolicyState = PowerPolicyState.NORMAL,
+                    capturedAtEpochMs = 1_000L,
+                    evidence = emptyList(),
+                    confidence = ResourcePoolConfidence(host = Confidence.HIGH),
+                )
+            },
+            backendCapabilitySource = {
+                backendReads += 1
+                listOf(cpu())
+            },
+            storageBytesSource = { 8L * GIB },
+            probeDispatcher = ImmediateDispatcher,
+            clock = { 1_000L },
+        )
+        val initial = provider.capture()
+
+        provider.refreshResources(initial)
+
+        assertEquals(1, hardwareReads)
+        assertEquals(1, backendReads)
+        assertEquals(2, resourceReads)
+    }
+
     private fun provider(
         topology: MemoryTopology,
         hostBytes: Long?,
