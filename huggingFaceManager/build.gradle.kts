@@ -62,6 +62,7 @@ kotlin {
         androidMain {
             dependencies {
                 implementation(libs.ktor.client.okhttp)
+                implementation(project(":nativeEngine"))
             }
         }
 
@@ -77,4 +78,18 @@ kotlin {
             }
         }
     }
+}
+
+val artifactFsDesktopPlatform = when {
+    System.getProperty("os.name").lowercase().contains("mac") -> "macos"
+    System.getProperty("os.name").lowercase().contains("linux") -> "linux"
+    System.getProperty("os.name").lowercase().contains("win") -> "windows"
+    else -> throw GradleException("Unsupported desktop platform for secure artifact storage")
+}
+val artifactFsDesktopDir = project(":nativeEngine").layout.buildDirectory
+    .dir("llama-runner-desktop/$artifactFsDesktopPlatform")
+
+tasks.matching { it.name == "jvmTest" }.configureEach {
+    dependsOn(":nativeEngine:compileArtifactFsDesktop")
+    (this as Test).systemProperty("caraml.native.lib.dir", artifactFsDesktopDir.get().asFile.absolutePath)
 }

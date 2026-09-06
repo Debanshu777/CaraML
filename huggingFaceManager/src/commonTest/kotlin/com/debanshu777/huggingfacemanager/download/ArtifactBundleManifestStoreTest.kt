@@ -8,6 +8,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 
 class ArtifactBundleManifestStoreTest {
@@ -68,6 +69,24 @@ class ArtifactBundleManifestStoreTest {
         fixture.bundleStore().recover()
 
         assertNotNull(fixture.bundleStore().readValidated())
+    }
+
+    @Test
+    fun aggregateDigestMustMatchThePersistedDestinationBoundEntries() {
+        val fixture = BundleFixture("digest-tamper")
+        fixture.bundleStore().publish(fixture.installBundle("a".repeat(40), "main", "vae"))
+        val manifestPath = fixture.mainRoot / ArtifactBundleManifestStore.MANIFEST_FILE_NAME
+        val encoded = fixture.fs.read(manifestPath) { readUtf8() }
+        val tampered = encoded.replace(
+            Regex("\"bundleDigest\"\\s*:\\s*\"[0-9a-f]{64}\""),
+            "\"bundleDigest\":\"${"0".repeat(64)}\"",
+        )
+        assertNotEquals(encoded, tampered)
+        fixture.fs.write(manifestPath) {
+            writeUtf8(tampered)
+        }
+
+        assertNull(fixture.bundleStore().readValidated())
     }
 }
 

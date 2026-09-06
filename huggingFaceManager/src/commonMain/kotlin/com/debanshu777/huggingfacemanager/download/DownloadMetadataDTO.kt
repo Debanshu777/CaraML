@@ -1,5 +1,7 @@
 package com.debanshu777.huggingfacemanager.download
 
+import com.debanshu777.huggingfacemanager.model.normalizedDiffusersRelativePath
+
 data class DownloadMetadataDTO(
     val artifact: DownloadArtifactIdentity,
     val logicalRole: String,
@@ -21,6 +23,9 @@ data class DownloadMetadataDTO(
             validateDownloadRequest(artifact.repositoryId, destinationRelativePath).relativePath
         }.getOrNull()
         require(destination == destinationRelativePath) { "Invalid artifact destination" }
+        require(destinationRelativePath == normalizedDiffusersRelativePath(artifact.relativePath)) {
+            "Invalid artifact destination"
+        }
         require(bundleId.length == 64 && bundleId.all(::isAsciiHexDigit)) { "Invalid artifact bundle" }
     }
 }

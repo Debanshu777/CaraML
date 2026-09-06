@@ -8,12 +8,14 @@ import kotlin.io.deleteRecursively
 
 class AndroidStoragePathProvider(private val context: Context) : StoragePathProvider {
     override fun getModelsStorageDirectory(modelId: String): String {
+        val safeModelId = validateModelId(modelId)
         val base = when {
             Environment.getExternalStorageState() == Environment.MEDIA_MOUNTED ->
                 context.getExternalFilesDir(null)
             else -> null
         } ?: context.filesDir
-        return File(base, "models/$modelId").apply { mkdirs() }.absolutePath
+        val modelsRoot = File(base, "models").apply { mkdirs() }
+        return File(modelsRoot, safeModelId).absolutePath
     }
     
     override fun getDatabasePath(): String =

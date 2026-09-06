@@ -9,8 +9,6 @@ import io.ktor.utils.io.readAvailable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import okio.HashingSink
 import okio.Path
 import okio.buffer
@@ -29,7 +27,7 @@ internal fun downloadArtifact(
     val request = validateDownloadArguments(modelId, path, metadata)
     val identity = metadata.artifact
 
-    ModelRootLocks.withLock(modelRoot.toString()) {
+    ArtifactRootLockCoordinator.withRoots(listOf(modelRoot.toString())) {
         val destination = metadata.destinationRelativePath
         val expectedTarget = (modelRoot / destination).normalized()
         require(target.normalized() == expectedTarget) { "Invalid model file path" }
@@ -95,6 +93,7 @@ internal fun downloadArtifact(
                 check(!manifestStore.hasPendingTransaction()) {
                     "Artifact transaction did not complete"
                 }
+                manifestStore.revalidateRoot()
                 emit(
                     DownloadProgressDTO(
                         bytesReceived = bytesReceived,
@@ -125,27 +124,6 @@ private fun recoverOrDiscard(
         runCatching(store::recover)
     } else {
         runCatching { store.discardStaged(relativePath) }
-    }
-}
-
-private object ModelRootLocks {
-    private data class Entry(val mutex: Mutex, var references: Int)
-
-    private val guard = Mutex()
-    private val entries = mutableMapOf<String, Entry>()
-
-    suspend fun <T> withLock(key: String, block: suspend () -> T): T {
-        val entry = guard.withLock {
-            entries.getOrPut(key) { Entry(Mutex(), 0) }.also { it.references++ }
-        }
-        return try {
-            entry.mutex.withLock { block() }
-        } finally {
-            guard.withLock {
-                entry.references--
-                if (entry.references == 0 && entries[key] === entry) entries.remove(key)
-            }
-        }
     }
 }
 

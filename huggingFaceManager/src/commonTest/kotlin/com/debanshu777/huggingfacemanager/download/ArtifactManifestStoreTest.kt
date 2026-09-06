@@ -299,7 +299,7 @@ class ArtifactManifestStoreTest {
     }
 
     @Test
-    fun canonicalBundleDigestIgnoresInputOrderAndLocalRoot() {
+    fun canonicalBundleDigestIgnoresInputOrderButBindsNormalizedDestination() {
         val entries = listOf(
             entry(identity(relativePath = "weights/model.gguf"), "model", "a".repeat(64)),
             entry(
@@ -324,7 +324,7 @@ class ArtifactManifestStoreTest {
         val relocated = assertNotNull(ArtifactManifest.create(listOf(relocatedEntry, entries.last())))
 
         assertEquals(first.bundleDigest, reordered.bundleDigest)
-        assertEquals(first.bundleDigest, relocated.bundleDigest)
+        assertNotEquals(first.bundleDigest, relocated.bundleDigest)
         assertEquals(first.entries, reordered.entries)
         assertNotEquals("/private/models", first.bundleDigest)
     }
@@ -420,6 +420,70 @@ class ArtifactManifestStoreTest {
             assertEquals(old.decodeToString(), fs.read(target) { readUtf8() }, crashPhase.name)
             assertEquals("a".repeat(40), restarted.read()?.entries?.single()?.identity?.immutableRevision)
             assertFalse(fs.exists(root / ArtifactManifestStore.JOURNAL_FILE_NAME))
+        }
+    }
+
+    @Test
+    fun tamperedJournalTupleCannotAuthorizeDeletionOfThePublishedGeneration() {
+        val tamperers: List<(String) -> String> = listOf(
+            { journal -> journal.replace("\"version\":1", "\"version\":2") },
+            { journal -> journal.replace("\"relativePath\":\"model.gguf\"", "\"relativePath\":\"other.gguf\"") },
+            { journal -> journal.replace("\"transactionId\":\"", "\"transactionId\":\"f") },
+            { journal -> journal.replace("\"previousManifestDigest\":\"", "\"previousManifestDigest\":\"f") },
+            { journal -> journal.replace("\"previousTargetSha256\":\"", "\"previousTargetSha256\":\"f") },
+            { journal -> journal.replace("\"phase\":\"PREPARED\"", "\"phase\":\"NOT_A_PHASE\"") },
+            // A PREPARED filesystem cannot truthfully claim terminal cleanup state.
+            { journal -> journal
+                .replace("\"phase\":\"PREPARED\"", "\"phase\":\"NEW_PUBLISHED\"")
+                .replace("\"hadPreviousTarget\":true", "\"hadPreviousTarget\":false")
+                .replace("\"hadPreviousManifest\":true", "\"hadPreviousManifest\":false")
+                .replace("\"step\":\"PREPARED\"", "\"step\":\"OLD_MANIFEST_REMOVED\"") },
+            // The phase/step pair itself is illegal even if the previous-generation flags are true.
+            { journal -> journal.replace("\"step\":\"PREPARED\"", "\"step\":\"NEW_TARGET_PUBLISHED\"") },
+            // A caller-controlled legacy aggregate boolean cannot override concrete old-generation evidence.
+            { journal -> journal
+                .replace("\"phase\":\"PREPARED\"", "\"phase\":\"OLD_PRESERVED\"")
+                .replace("\"hadPreviousTarget\":true,", "")
+                .replace("\"hadPreviousManifest\":true,", "")
+                .replace("\"hadPreviousGeneration\":null", "\"hadPreviousGeneration\":false")
+                .replace("\"step\":\"PREPARED\"", "\"step\":\"OLD_PRESERVED\"") },
+        )
+
+        tamperers.forEachIndexed { index, tamper ->
+            val fs = FakeFileSystem()
+            val root = "/models/org/tampered-$index".toPath()
+            fs.createDirectories(root)
+            val target = root / "model.gguf"
+            val old = "known-valid-old-$index".encodeToByteArray()
+            stageAndCommit(fs, ArtifactManifestStore(root, fs), target, old, revision = "a".repeat(40))
+            val replacement = "new-$index".encodeToByteArray()
+            fs.write(target.siblingPart()) { write(replacement) }
+            val crashing = ArtifactManifestStore(root, fs) { phase ->
+                if (phase == ManifestJournalPhase.PREPARED) throw SimulatedCrash()
+            }
+            assertFailsWith<SimulatedCrash> {
+                crashing.commit(
+                    "model.gguf",
+                    entry(
+                        identity(revision = "b".repeat(40), expectedBytes = replacement.size.toLong()),
+                        "model",
+                        replacement.sha256Hex(),
+                    ),
+                )
+            }
+            val journalPath = root / ArtifactManifestStore.JOURNAL_FILE_NAME
+            val originalJournal = fs.read(journalPath) { readUtf8() }
+            fs.write(journalPath) { writeUtf8(tamper(originalJournal)) }
+
+            repeat(3) { runCatching { ArtifactManifestStore(root, fs).recover() } }
+
+            assertTrue(fs.exists(target), "case $index removed the only published target")
+            assertEquals(old.decodeToString(), fs.read(target) { readUtf8() }, "case $index")
+            assertEquals(
+                "a".repeat(40),
+                ArtifactManifestStore(root, fs).readValidated()?.entries?.single()?.identity?.immutableRevision,
+                "case $index",
+            )
         }
     }
 }

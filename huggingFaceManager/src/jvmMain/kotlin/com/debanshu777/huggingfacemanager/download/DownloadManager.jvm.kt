@@ -43,9 +43,15 @@ actual class DownloadManager actual constructor(
         ).flowOn(Dispatchers.IO)
     }
 
-    actual fun publishBundle(ownerModelId: String, artifacts: List<DownloadMetadataDTO>): Boolean =
+    actual suspend fun publishBundle(ownerModelId: String, artifacts: List<DownloadMetadataDTO>): Boolean =
         publishArtifactBundle(pathProvider, ownerModelId, artifacts)
 
-    actual fun validateBundle(ownerModelId: String, artifacts: List<DownloadMetadataDTO>): Boolean =
+    actual suspend fun validateBundle(ownerModelId: String, artifacts: List<DownloadMetadataDTO>): Boolean =
         validateArtifactBundle(pathProvider, ownerModelId, artifacts)
+
+    actual suspend fun validatedBundle(ownerModelId: String): ArtifactManifest? =
+        readValidatedArtifactBundle(pathProvider, ownerModelId)
+
+    actual suspend fun validatedArtifacts(modelId: String): ArtifactManifest? =
+        readValidatedArtifactManifest(pathProvider, modelId)
 }

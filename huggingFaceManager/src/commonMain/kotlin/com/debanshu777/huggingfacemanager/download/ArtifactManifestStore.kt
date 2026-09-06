@@ -150,6 +150,7 @@ private fun canonicalBundleDigest(entries: List<ArtifactManifestEntry>): String 
         buffer.writeLengthPrefixed(entry.identity.repositoryId)
         buffer.writeLengthPrefixed(entry.identity.immutableRevision)
         buffer.writeLengthPrefixed(entry.identity.relativePath)
+        buffer.writeLengthPrefixed(entry.localRelativePath)
         buffer.writeLengthPrefixed(entry.identity.remoteObjectId.orEmpty())
         buffer.writeLong(entry.identity.expectedBytes)
         buffer.writeLong(entry.byteCount)
@@ -173,6 +174,8 @@ private data class ArtifactCommitJournal(
     val hadPreviousGeneration: Boolean? = null,
     val hadPreviousTarget: Boolean? = null,
     val hadPreviousManifest: Boolean? = null,
+    val previousManifestDigest: String? = null,
+    val previousTargetSha256: String? = null,
     val step: ManifestJournalStep? = null,
 )
 
@@ -234,6 +237,8 @@ class ArtifactManifestStore(
 
     internal fun hasPendingTransaction(): Boolean = exists(journalPath)
 
+    internal fun revalidateRoot() = secureRoot?.revalidate()
+
     internal fun close() = secureRoot?.close()
 
     fun commit(relativePath: String, entry: ArtifactManifestEntry) {
@@ -268,6 +273,10 @@ class ArtifactManifestStore(
             transactionId = nextManifest.bundleDigest,
             hadPreviousTarget = targetExists,
             hadPreviousManifest = manifestExists,
+            previousManifestDigest = previousManifest?.bundleDigest,
+            previousTargetSha256 = previousManifest?.entries
+                ?.singleOrNull { it.localRelativePath == relativePath }
+                ?.contentSha256,
             step = ManifestJournalStep.PREPARED,
         )
         writeJournal(journal)
@@ -296,34 +305,92 @@ class ArtifactManifestStore(
 
     private fun normalizedJournal(journal: ArtifactCommitJournal, target: Path): ArtifactCommitJournal? {
         val manifest = readManifest(manifestPartPath) ?: readManifest(manifestPath) ?: return null
-        val transactionId = journal.transactionId ?: manifest.bundleDigest
+        val transactionId = journal.transactionId ?: return null
         if (transactionId.length != 64 || !transactionId.all(::isAsciiHexDigit) ||
             manifest.bundleDigest != transactionId
         ) return null
-        val previousTarget = target.sibling(PREVIOUS_SUFFIX)
-        val hadPreviousTarget = journal.hadPreviousTarget ?: journal.hadPreviousGeneration ?: when (journal.phase) {
-            ManifestJournalPhase.PREPARED ->
-                exists(previousTarget) || exists(target)
-            ManifestJournalPhase.OLD_PRESERVED, ManifestJournalPhase.NEW_PUBLISHED ->
-                exists(previousTarget)
-        }
-        val hadPreviousManifest = journal.hadPreviousManifest ?: journal.hadPreviousGeneration ?: when (journal.phase) {
-            ManifestJournalPhase.PREPARED ->
-                exists(manifestPreviousPath) || exists(manifestPath)
-            ManifestJournalPhase.OLD_PRESERVED, ManifestJournalPhase.NEW_PUBLISHED ->
-                exists(manifestPreviousPath)
-        }
-        return journal.copy(
+        val hadPreviousTarget = journal.hadPreviousTarget ?: return null
+        val hadPreviousManifest = journal.hadPreviousManifest ?: return null
+        val step = journal.step ?: return null
+        if (!legalJournalState(journal.phase, step)) return null
+        if (hadPreviousTarget != (journal.previousTargetSha256 != null) ||
+            hadPreviousManifest != (journal.previousManifestDigest != null)
+        ) return null
+        if (journal.previousTargetSha256?.let(::isSha256) == false ||
+            journal.previousManifestDigest?.let(::isSha256) == false
+        ) return null
+        val normalized = journal.copy(
             transactionId = transactionId,
             hadPreviousTarget = hadPreviousTarget,
             hadPreviousManifest = hadPreviousManifest,
-            step = journal.step ?: when (journal.phase) {
-                ManifestJournalPhase.PREPARED -> ManifestJournalStep.PREPARED
-                ManifestJournalPhase.OLD_PRESERVED -> ManifestJournalStep.OLD_PRESERVED
-                ManifestJournalPhase.NEW_PUBLISHED -> ManifestJournalStep.NEW_PUBLISHED
-            },
+            step = step,
+        )
+        if (!filesystemMatchesJournalEvidence(normalized, target)) return null
+        return normalized
+    }
+
+    private fun legalJournalState(phase: ManifestJournalPhase, step: ManifestJournalStep): Boolean = when (phase) {
+        ManifestJournalPhase.PREPARED -> step in setOf(
+            ManifestJournalStep.PREPARED,
+            ManifestJournalStep.OLD_TARGET_PRESERVED,
+            ManifestJournalStep.OLD_MANIFEST_PRESERVED,
+        )
+        ManifestJournalPhase.OLD_PRESERVED -> step in setOf(
+            ManifestJournalStep.OLD_PRESERVED,
+            ManifestJournalStep.NEW_TARGET_PUBLISHED,
+            ManifestJournalStep.NEW_MANIFEST_PUBLISHED,
+        )
+        ManifestJournalPhase.NEW_PUBLISHED -> step in setOf(
+            ManifestJournalStep.NEW_PUBLISHED,
+            ManifestJournalStep.OLD_TARGET_REMOVED,
+            ManifestJournalStep.OLD_MANIFEST_REMOVED,
         )
     }
+
+    private fun filesystemMatchesJournalEvidence(journal: ArtifactCommitJournal, target: Path): Boolean {
+        val oldIsValid = previousGenerationIsRecoverable(journal, target)
+        return when (journal.phase) {
+            ManifestJournalPhase.PREPARED -> oldIsValid
+            ManifestJournalPhase.OLD_PRESERVED -> oldIsValid
+            ManifestJournalPhase.NEW_PUBLISHED -> publishedNewGenerationIsValid(journal, target) ||
+                journal.hadPreviousManifest == true && oldIsValid ||
+                journal.hadPreviousManifest == false && readManifest(manifestPath)?.bundleDigest == journal.transactionId
+        }
+    }
+
+    private fun publishedNewGenerationIsValid(journal: ArtifactCommitJournal, target: Path): Boolean {
+        val manifest = readManifest(manifestPath) ?: return false
+        return manifest.bundleDigest == journal.transactionId && validateManifest(manifestPath)
+    }
+
+    private fun previousGenerationIsRecoverable(journal: ArtifactCommitJournal, target: Path): Boolean {
+        if (journal.hadPreviousManifest != true) {
+            if (journal.hadPreviousTarget == true || exists(manifestPreviousPath) || exists(target.sibling(PREVIOUS_SUFFIX))) {
+                return false
+            }
+            return when (journal.phase) {
+                ManifestJournalPhase.PREPARED -> !exists(manifestPath) && !exists(target)
+                ManifestJournalPhase.OLD_PRESERVED -> !exists(manifestPreviousPath)
+                ManifestJournalPhase.NEW_PUBLISHED -> true
+            }
+        }
+        val manifestPathToCheck = listOf(manifestPreviousPath, manifestPath).singleOrNull { path ->
+            readManifest(path)?.bundleDigest == journal.previousManifestDigest
+        } ?: return false
+        val oldManifest = readManifest(manifestPathToCheck) ?: return false
+        if (journal.hadPreviousTarget != true) {
+            return oldManifest.entries.none { it.localRelativePath == journal.relativePath }
+        }
+        val oldEntry = oldManifest.entries.singleOrNull { it.localRelativePath == journal.relativePath }
+            ?: return false
+        if (oldEntry.contentSha256 != journal.previousTargetSha256) return false
+        val oldTarget = listOf(target.sibling(PREVIOUS_SUFFIX), target).singleOrNull { path ->
+            exists(path) && validateFile(path, oldEntry)
+        } ?: return false
+        return validateManifest(manifestPathToCheck, target to oldTarget)
+    }
+
+    private fun isSha256(value: String): Boolean = value.length == 64 && value.all(::isAsciiHexDigit)
 
     private fun continueTransaction(initial: ArtifactCommitJournal, target: Path) {
         var journal = initial

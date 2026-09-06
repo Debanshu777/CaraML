@@ -4,213 +4,225 @@ import okio.Buffer
 import okio.HashingSource
 import okio.Path
 import okio.Sink
-import okio.source
-import okio.sink
-import java.nio.channels.Channels
-import java.nio.channels.FileChannel
-import java.nio.channels.SeekableByteChannel
-import java.nio.file.Files
-import java.nio.file.LinkOption
-import java.nio.file.OpenOption
-import java.nio.file.SecureDirectoryStream
-import java.nio.file.StandardOpenOption
-import java.nio.file.attribute.BasicFileAttributes
-import java.nio.file.attribute.BasicFileAttributeView
-import kotlin.io.path.Path as NioPath
+import okio.Source
+import okio.Timeout
+import java.io.File
 
-internal actual class SecureArtifactRoot actual constructor(modelRoot: Path) {
-    private val rootPath = modelRoot.toNioPath()
-    private val rootIdentity: Any
-    private val root: SecureDirectoryStream<java.nio.file.Path>
+internal actual class SecureArtifactRoot private constructor(private var handle: Long) {
+    actual constructor(modelRoot: Path) : this(openExisting(modelRoot))
 
-    init {
-        try {
-            root = openSecureRoot(rootPath)
-            rootIdentity = root.getFileAttributeView(
-                NioPath("."),
-                BasicFileAttributeView::class.java,
-                LinkOption.NOFOLLOW_LINKS,
-            )?.readAttributes()?.fileKey() ?: throw ArtifactFileAccessException()
-            verifyRootIdentity()
-        } catch (error: ArtifactFileAccessException) {
-            throw error
-        } catch (_: Exception) {
-            throw ArtifactFileAccessException()
+    actual companion object {
+        actual fun create(modelsRoot: Path, modelId: String): SecureArtifactRoot {
+            val validatedModelId = validateModelId(modelId)
+            val absoluteRoot = normalizedAbsolute(modelsRoot)
+            return SecureArtifactRoot(
+                NativeArtifactFs.openRoot(absoluteRoot, validatedModelId, true)
+                    .takeIf { it != 0L } ?: throw ArtifactFileAccessException(),
+            )
+        }
+
+        private fun openExisting(modelRoot: Path): Long {
+            val absolute = normalizedAbsolute(modelRoot)
+            val modelName = absolute.substringAfterLast('/')
+            val ownerPath = absolute.substringBeforeLast('/', missingDelimiterValue = "")
+            val ownerName = ownerPath.substringAfterLast('/')
+            val modelsRoot = ownerPath.substringBeforeLast('/', missingDelimiterValue = "")
+            val modelId = runCatching { validateModelId("$ownerName/$modelName") }.getOrNull()
+                ?: throw ArtifactFileAccessException()
+            return NativeArtifactFs.openRoot(modelsRoot, modelId, true)
+                .takeIf { it != 0L } ?: throw ArtifactFileAccessException()
+        }
+
+        private fun normalizedAbsolute(path: Path): String {
+            val value = File(path.toString()).toPath().toAbsolutePath().normalize().toString().replace('\\', '/')
+            val isWindowsAbsolute = value.length >= 3 && value[1] == ':' && value[2] == '/'
+            if ((!value.startsWith('/') && !isWindowsAbsolute) || value.length > 4096) {
+                throw ArtifactFileAccessException()
+            }
+            return value.trimEnd('/')
         }
     }
 
     actual fun createParentDirectories(relativePath: String) {
-        protect { withSecureParent(relativePath) { _, _ -> Unit } }
+        checkedRelative(relativePath)
+        requireNative(NativeArtifactFs.createParents(activeHandle(), relativePath))
     }
 
-    actual fun sink(relativePath: String, mustCreate: Boolean): Sink = protect {
-        val options = linkedSetOf<OpenOption>(StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS)
-        if (mustCreate) options += StandardOpenOption.CREATE_NEW
-        else options += listOf(StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)
-        Channels.newOutputStream(openChannel(relativePath, options)).sink()
+    actual fun sink(relativePath: String, mustCreate: Boolean): Sink {
+        checkedRelative(relativePath)
+        val descriptor = NativeArtifactFs.openFile(activeHandle(), relativePath, if (mustCreate) 1 else 2)
+        if (descriptor < 0L) throw ArtifactFileAccessException()
+        return NativeDescriptorSink(activeHandle(), descriptor)
     }
 
-    actual fun existsRegularFile(relativePath: String): Boolean = try {
-        withChannel(relativePath, setOf(StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)) { true }
-    } catch (_: ArtifactFileAccessException) {
-        false
+    actual fun existsRegularFile(relativePath: String): Boolean = size(relativePath) != null
+
+    actual fun size(relativePath: String): Long? {
+        checkedRelative(relativePath)
+        return NativeArtifactFs.size(activeHandle(), relativePath).takeIf { it >= 0L }
     }
 
-    actual fun size(relativePath: String): Long? = try {
-        withChannel(relativePath, setOf(StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)) { it.size() }
-    } catch (_: ArtifactFileAccessException) {
-        null
-    }
-
-    actual fun readBounded(relativePath: String, maxBytes: Int): ByteArray? = try {
-        withChannel(relativePath, setOf(StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)) { channel ->
-            val source = Channels.newInputStream(channel).source()
-            val sink = Buffer()
-            val limit = maxBytes.toLong() + 1L
-            while (sink.size < limit) {
-                val read = source.read(sink, minOf(8_192L, limit - sink.size))
-                if (read == -1L) break
+    actual fun readBounded(relativePath: String, maxBytes: Int): ByteArray? {
+        if (maxBytes <= 0 || maxBytes > ArtifactManifestStore.MAX_MANIFEST_BYTES) return null
+        return runCatching {
+            openSource(relativePath).use { source ->
+                val buffer = Buffer()
+                val limit = maxBytes.toLong() + 1L
+                while (buffer.size < limit) {
+                    val read = source.read(buffer, minOf(8_192L, limit - buffer.size))
+                    if (read == -1L) break
+                }
+                buffer.readByteArray().takeIf { it.size in 1..maxBytes }
             }
-            sink.readByteArray().takeIf { it.size in 1..maxBytes }
-        }
-    } catch (_: ArtifactFileAccessException) {
-        null
+        }.getOrNull()
     }
 
-    actual fun sha256(relativePath: String, expectedBytes: Long): String? = try {
-        withChannel(relativePath, setOf(StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)) { channel ->
-            if (channel.size() != expectedBytes) return@withChannel null
-            val hashing = HashingSource.sha256(Channels.newInputStream(channel).source())
-            val source = hashing
-            val sink = Buffer()
-            var total = 0L
-            while (total <= expectedBytes) {
-                val read = source.read(sink, minOf(256L * 1024L, expectedBytes + 1L - total))
-                if (read == -1L) break
-                total += read
-                sink.clear()
+    actual fun sha256(relativePath: String, expectedBytes: Long): String? {
+        if (expectedBytes <= 0L || size(relativePath) != expectedBytes) return null
+        return runCatching {
+            val hashing = HashingSource.sha256(openSource(relativePath))
+            hashing.use { source ->
+                val buffer = Buffer()
+                var total = 0L
+                while (total <= expectedBytes) {
+                    val count = source.read(buffer, minOf(256L * 1024L, expectedBytes + 1L - total))
+                    if (count == -1L) break
+                    total += count
+                    buffer.clear()
+                }
+                if (total == expectedBytes) hashing.hash.hex() else null
             }
-            if (total == expectedBytes) hashing.hash.hex() else null
-        }
-    } catch (_: ArtifactFileAccessException) {
-        null
+        }.getOrNull()
     }
 
-    actual fun atomicMove(sourceRelativePath: String, targetRelativePath: String) = protect {
-        withSecureParent(sourceRelativePath) { sourceParent, sourceName ->
-            withSecureParent(targetRelativePath) { targetParent, targetName ->
-                sourceParent.move(sourceName, targetParent, targetName)
-            }
-        }
+    actual fun atomicMove(sourceRelativePath: String, targetRelativePath: String) {
+        checkedRelative(sourceRelativePath)
+        checkedRelative(targetRelativePath)
+        requireNative(NativeArtifactFs.move(activeHandle(), sourceRelativePath, targetRelativePath))
     }
 
     actual fun delete(relativePath: String) {
-        try {
-            protect {
-                withSecureParent(relativePath) { parent, name -> parent.deleteFile(name) }
-            }
-        } catch (_: ArtifactFileAccessException) {
-            if (existsRegularFile(relativePath)) throw ArtifactFileAccessException()
-        }
+        checkedRelative(relativePath)
+        requireNative(NativeArtifactFs.delete(activeHandle(), relativePath))
     }
 
-    actual fun syncFile(relativePath: String) = protect {
-        withChannel(relativePath, setOf(StandardOpenOption.READ, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS)) {
-            (it as? FileChannel)?.force(true) ?: throw ArtifactFileAccessException()
-        }
+    actual fun syncFile(relativePath: String) {
+        checkedRelative(relativePath)
+        requireNative(NativeArtifactFs.syncFile(activeHandle(), relativePath))
     }
 
-    actual fun syncDirectory(relativePath: String) = protect {
-        val syncChannel: (SeekableByteChannel) -> Unit = { channel ->
-            (channel as? FileChannel)?.force(true) ?: throw ArtifactFileAccessException()
-        }
-        if (relativePath == ".") {
-            root.newByteChannel(
-                NioPath("."),
-                setOf(StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS),
-            ).use(syncChannel)
-        } else {
-            withSecureParent(relativePath) { parent, name ->
-                parent.newByteChannel(
-                    name,
-                    setOf(StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS),
-                ).use(syncChannel)
-            }
-        }
+    actual fun syncDirectory(relativePath: String) {
+        if (relativePath != ".") checkedRelative(relativePath)
+        requireNative(NativeArtifactFs.syncDirectory(activeHandle(), relativePath))
+    }
+
+    actual fun revalidate() {
+        if (!NativeArtifactFs.revalidate(activeHandle())) throw ArtifactFileAccessException()
     }
 
     actual fun close() {
-        runCatching { root.close() }
+        val current = handle
+        handle = 0L
+        if (current != 0L) NativeArtifactFs.closeRoot(current)
     }
 
-    private fun <T> withChannel(
-        relativePath: String,
-        options: Set<OpenOption>,
-        block: (SeekableByteChannel) -> T,
-    ): T = protect {
-        openChannel(relativePath, options).use(block)
+    private fun openSource(relativePath: String): Source {
+        checkedRelative(relativePath)
+        val descriptor = NativeArtifactFs.openFile(activeHandle(), relativePath, 0)
+        if (descriptor < 0L) throw ArtifactFileAccessException()
+        return NativeDescriptorSource(activeHandle(), descriptor)
     }
 
-    private fun openChannel(relativePath: String, options: Set<OpenOption>): SeekableByteChannel {
-        return withSecureParent(relativePath) { parent, name -> parent.newByteChannel(name, options) }
+    private fun activeHandle(): Long = handle.takeIf { it != 0L } ?: throw ArtifactFileAccessException()
+
+    private fun checkedRelative(relativePath: String) {
+        val validated = runCatching { validateDownloadRequest("owner/model", relativePath).relativePath }.getOrNull()
+        if (validated != relativePath || relativePath.length > 4096) throw ArtifactFileAccessException()
     }
 
-    private fun <T> withSecureParent(
-        relativePath: String,
-        block: (SecureDirectoryStream<java.nio.file.Path>, java.nio.file.Path) -> T,
-    ): T {
-        verifyRootIdentity()
-        val segments = validatedSegments(relativePath)
-        var current = root
-        val opened = mutableListOf<SecureDirectoryStream<java.nio.file.Path>>()
-        try {
-            segments.dropLast(1).forEach { segment ->
-                current = current.newDirectoryStream(NioPath(segment), LinkOption.NOFOLLOW_LINKS).also(opened::add)
+    private fun requireNative(value: Boolean) {
+        if (!value || !NativeArtifactFs.revalidate(activeHandle())) throw ArtifactFileAccessException()
+    }
+}
+
+private class NativeDescriptorSink(
+    private val rootHandle: Long,
+    private var descriptor: Long,
+) : Sink {
+    override fun write(source: Buffer, byteCount: Long) {
+        require(byteCount >= 0L && byteCount <= source.size)
+        var remaining = byteCount
+        while (remaining > 0L) {
+            val count = minOf(64L * 1024L, remaining).toInt()
+            val bytes = source.readByteArray(count.toLong())
+            var offset = 0
+            while (offset < count) {
+                val written = NativeArtifactFs.write(descriptor, bytes, offset, count - offset)
+                if (written <= 0) throw ArtifactFileAccessException()
+                offset += written
             }
-            return block(current, NioPath(segments.last()))
-        } finally {
-            opened.asReversed().forEach { runCatching { it.close() } }
-            verifyRootIdentity()
+            remaining -= count
         }
     }
 
-    private fun validatedSegments(relativePath: String): List<String> {
-        val validated = runCatching { validateDownloadRequest("owner/model", relativePath).relativePath }
-            .getOrNull() ?: throw ArtifactFileAccessException()
-        if (validated != relativePath) throw ArtifactFileAccessException()
-        return validated.split('/')
-    }
-
-    private fun verifyRootIdentity() {
-        val current = Files.readAttributes(rootPath, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
-        if (!current.isDirectory || current.isSymbolicLink || current.fileKey() != rootIdentity) {
+    override fun flush() = Unit
+    override fun timeout(): Timeout = Timeout.NONE
+    override fun close() {
+        val current = descriptor
+        descriptor = -1L
+        if (current >= 0L && (!NativeArtifactFs.closeFile(current) || !NativeArtifactFs.revalidate(rootHandle))) {
             throw ArtifactFileAccessException()
         }
     }
+}
 
-    private fun openSecureRoot(path: java.nio.file.Path): SecureDirectoryStream<java.nio.file.Path> {
-        val absolute = path.toAbsolutePath().normalize()
-        val filesystemRoot = absolute.root ?: throw ArtifactFileAccessException()
-        var current: SecureDirectoryStream<java.nio.file.Path>? =
-            Files.newDirectoryStream(filesystemRoot) as? SecureDirectoryStream<java.nio.file.Path>
-                ?: throw ArtifactFileAccessException()
-        try {
-            absolute.forEach { segment ->
-                val next = requireNotNull(current).newDirectoryStream(segment, LinkOption.NOFOLLOW_LINKS)
-                current.close()
-                current = next
-            }
-            return requireNotNull(current).also { current = null }
-        } finally {
-            current?.let { runCatching { it.close() } }
+private class NativeDescriptorSource(
+    private val rootHandle: Long,
+    private var descriptor: Long,
+) : Source {
+    override fun read(sink: Buffer, byteCount: Long): Long {
+        require(byteCount >= 0L)
+        if (byteCount == 0L) return 0L
+        val bytes = ByteArray(minOf(64L * 1024L, byteCount).toInt())
+        val count = NativeArtifactFs.read(descriptor, bytes, 0, bytes.size)
+        if (count < 0) throw ArtifactFileAccessException()
+        if (count == 0) return -1L
+        sink.write(bytes, 0, count)
+        return count.toLong()
+    }
+
+    override fun timeout(): Timeout = Timeout.NONE
+    override fun close() {
+        val current = descriptor
+        descriptor = -1L
+        if (current >= 0L && (!NativeArtifactFs.closeFile(current) || !NativeArtifactFs.revalidate(rootHandle))) {
+            throw ArtifactFileAccessException()
+        }
+    }
+}
+
+private object NativeArtifactFs {
+    init {
+        val directory = System.getProperty("caraml.native.lib.dir")?.takeIf { it.isNotBlank() }
+        if (directory != null) {
+            val mapped = System.mapLibraryName("artifact_fs")
+            System.load(File(directory, mapped).absolutePath)
+        } else {
+            System.loadLibrary("artifact_fs")
         }
     }
 
-    private inline fun <T> protect(block: () -> T): T = try {
-        block()
-    } catch (error: ArtifactFileAccessException) {
-        throw error
-    } catch (_: Exception) {
-        throw ArtifactFileAccessException()
-    }
+    external fun openRoot(modelsRoot: String, modelId: String, create: Boolean): Long
+    external fun closeRoot(handle: Long)
+    external fun revalidate(handle: Long): Boolean
+    external fun createParents(handle: Long, relativePath: String): Boolean
+    external fun openFile(handle: Long, relativePath: String, mode: Int): Long
+    external fun read(descriptor: Long, output: ByteArray, offset: Int, count: Int): Int
+    external fun write(descriptor: Long, input: ByteArray, offset: Int, count: Int): Int
+    external fun closeFile(descriptor: Long): Boolean
+    external fun size(handle: Long, relativePath: String): Long
+    external fun move(handle: Long, source: String, target: String): Boolean
+    external fun delete(handle: Long, relativePath: String): Boolean
+    external fun syncFile(handle: Long, relativePath: String): Boolean
+    external fun syncDirectory(handle: Long, relativePath: String): Boolean
 }

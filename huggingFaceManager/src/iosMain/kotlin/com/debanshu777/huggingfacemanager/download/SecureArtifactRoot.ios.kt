@@ -42,12 +42,19 @@ import platform.posix.unlinkat
 import platform.posix.write
 
 internal actual class SecureArtifactRoot actual constructor(modelRoot: Path) {
-    private var rootDescriptor: Int = open(
-        modelRoot.toString(),
-        O_RDONLY or O_DIRECTORY or O_NOFOLLOW or O_CLOEXEC,
-    ).also { if (it < 0) throw ArtifactFileAccessException() }
+    private val rootPath = modelRoot.normalized().toString().trimEnd('/')
+    private val pinnedRoot = openPinnedRoot(rootPath)
+    private var rootDescriptor: Int = pinnedRoot.descriptor
+    private val rootDevice: ULong = pinnedRoot.device
+    private val rootInode: ULong = pinnedRoot.inode
+
+    actual companion object {
+        actual fun create(modelsRoot: Path, modelId: String): SecureArtifactRoot =
+            SecureArtifactRoot(modelsRoot / validateModelId(modelId))
+    }
 
     actual fun createParentDirectories(relativePath: String) {
+        verifyRootIdentity()
         val segments = validatedSegments(relativePath).dropLast(1)
         var current = duplicateRoot()
         try {
@@ -62,6 +69,7 @@ internal actual class SecureArtifactRoot actual constructor(modelRoot: Path) {
             }
         } finally {
             close(current)
+            verifyRootIdentity()
         }
     }
 
@@ -166,8 +174,11 @@ internal actual class SecureArtifactRoot actual constructor(modelRoot: Path) {
             if (fsync(descriptor) != 0) throw ArtifactFileAccessException()
         } finally {
             close(descriptor)
+            verifyRootIdentity()
         }
     }
+
+    actual fun revalidate() = verifyRootIdentity()
 
     actual fun close() {
         val descriptor = rootDescriptor
@@ -199,6 +210,7 @@ internal actual class SecureArtifactRoot actual constructor(modelRoot: Path) {
         }
 
     private inline fun <T> withParent(relativePath: String, block: (Int, String) -> T): T {
+        verifyRootIdentity()
         val segments = validatedSegments(relativePath)
         var current = duplicateRoot()
         try {
@@ -211,6 +223,7 @@ internal actual class SecureArtifactRoot actual constructor(modelRoot: Path) {
             return block(current, segments.last())
         } finally {
             close(current)
+            verifyRootIdentity()
         }
     }
 
@@ -228,11 +241,71 @@ internal actual class SecureArtifactRoot actual constructor(modelRoot: Path) {
         return validated.split('/')
     }
 
+    private fun verifyRootIdentity() {
+        val reopened = openPinnedRoot(rootPath, create = false)
+        try {
+            if (reopened.device != rootDevice || reopened.inode != rootInode) throw ArtifactFileAccessException()
+        } finally {
+            close(reopened.descriptor)
+        }
+    }
+
     private fun descriptorSizeIfRegular(descriptor: Int): Long? = memScoped {
         val metadata = alloc<stat>()
         if (fstat(descriptor, metadata.ptr) != 0) return@memScoped null
         if (metadata.st_mode.toInt() and S_IFMT != S_IFREG) return@memScoped null
         metadata.st_size
+    }
+}
+
+private data class PinnedRoot(val descriptor: Int, val device: ULong, val inode: ULong)
+
+private fun openPinnedRoot(modelRoot: String, create: Boolean = true): PinnedRoot {
+    if (!modelRoot.startsWith('/') || modelRoot.length > 4096) throw ArtifactFileAccessException()
+    val modelName = modelRoot.substringAfterLast('/')
+    val ownerPath = modelRoot.substringBeforeLast('/', "")
+    val ownerName = ownerPath.substringAfterLast('/')
+    val modelsRoot = ownerPath.substringBeforeLast('/', "")
+    if (runCatching { validateModelId("$ownerName/$modelName") }.getOrNull() == null) {
+        throw ArtifactFileAccessException()
+    }
+    var current = openAbsoluteDirectory(modelsRoot)
+    try {
+        listOf(ownerName, modelName).forEach { segment ->
+            var next = openat(current, segment, O_RDONLY or O_DIRECTORY or O_NOFOLLOW or O_CLOEXEC)
+            if (next < 0 && create && errno == ENOENT) {
+                if (mkdirat(current, segment, 448u) != 0 || fsync(current) != 0) throw ArtifactFileAccessException()
+                next = openat(current, segment, O_RDONLY or O_DIRECTORY or O_NOFOLLOW or O_CLOEXEC)
+            }
+            if (next < 0) throw ArtifactFileAccessException()
+            close(current)
+            current = next
+        }
+        return memScoped {
+            val metadata = alloc<stat>()
+            if (fstat(current, metadata.ptr) != 0) throw ArtifactFileAccessException()
+            PinnedRoot(current, metadata.st_dev.toULong(), metadata.st_ino.toULong()).also { current = -1 }
+        }
+    } finally {
+        if (current >= 0) close(current)
+    }
+}
+
+private fun openAbsoluteDirectory(path: String): Int {
+    if (!path.startsWith('/') || path.length > 4096) throw ArtifactFileAccessException()
+    var current = open("/", O_RDONLY or O_DIRECTORY or O_NOFOLLOW or O_CLOEXEC)
+    if (current < 0) throw ArtifactFileAccessException()
+    try {
+        path.split('/').filter { it.isNotEmpty() }.forEach { segment ->
+            if (segment == "." || segment == "..") throw ArtifactFileAccessException()
+            val next = openat(current, segment, O_RDONLY or O_DIRECTORY or O_NOFOLLOW or O_CLOEXEC)
+            if (next < 0) throw ArtifactFileAccessException()
+            close(current)
+            current = next
+        }
+        return current.also { current = -1 }
+    } finally {
+        if (current >= 0) close(current)
     }
 }
 

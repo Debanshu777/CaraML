@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(llama_runner VERSION 1.0.0 LANGUAGES C CXX)
 
+add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../../artifactFs/cpp" artifact-fs-build)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 

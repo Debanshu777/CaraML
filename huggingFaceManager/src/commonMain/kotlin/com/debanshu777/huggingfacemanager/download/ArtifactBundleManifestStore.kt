@@ -93,6 +93,11 @@ class ArtifactBundleManifestStore(
         manifest.entries.map { it.bundleId }.toSet().size == 1 && manifest.entries.all(artifactValidator)
     }
 
+    internal fun readManifestOnly(): ArtifactManifest? =
+        sequenceOf(manifestPath, partPath, previousPath)
+            .mapNotNull(::readManifest)
+            .firstOrNull { manifest -> manifest.entries.map { it.bundleId }.toSet().size == 1 }
+
     fun close() = secureRoot?.close()
 
     private fun preserveOld() {

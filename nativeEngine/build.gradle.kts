@@ -394,6 +394,18 @@ val compileLlamaRunnerDesktop by tasks.registering(Exec::class) {
     )
 }
 
+val compileArtifactFsDesktop by tasks.registering(Exec::class) {
+    group = "llama-native"
+    description = "Build the bounded secure artifact filesystem JNI library for desktop ($desktopPlatform)"
+    dependsOn(buildLlamaRunnerDesktop)
+    commandLine(
+        desktopCmakePath,
+        "--build", desktopJniBuildDir.absolutePath,
+        "--target", "artifact_fs",
+        "--config", "Release",
+    )
+}
+
 android {
     namespace = "com.debanshu777.nativeengine"
     compileSdk = 36

@@ -10,7 +10,6 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
-import java.nio.file.SecureDirectoryStream
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import okio.Path.Companion.toPath as toOkioPath
@@ -21,12 +20,10 @@ import kotlin.test.assertFails
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
-import org.junit.Assume.assumeTrue
 
 class DownloadManagerJvmTest {
     @Test
     fun nonSuccessResponseDoesNotReplaceExistingModel() = withTemporaryRoot { root ->
-        assumeSecureArtifactRootProvider(root)
         val original = byteArrayOf(1, 2, 3)
         val finalFile = modelFile(root, "org/model", "weights/model.gguf")
         finalFile.parentFile.mkdirs()
@@ -51,7 +48,6 @@ class DownloadManagerJvmTest {
 
     @Test
     fun truncatedResponseRemovesTemporaryFileAndPreservesExistingModel() = withTemporaryRoot { root ->
-        assumeSecureArtifactRootProvider(root)
         val original = byteArrayOf(4, 5, 6)
         val finalFile = modelFile(root, "org/model", "model.gguf")
         finalFile.parentFile.mkdirs()
@@ -76,9 +72,7 @@ class DownloadManagerJvmTest {
 
     @Test
     fun successfulResponseCommitsExactBytesAndPublishesFinalPath() = withTemporaryRoot { root ->
-        assumeSecureArtifactRootProvider(root)
         val expected = ByteArray(32_768) { index -> (index % 251).toByte() }
-        modelFile(root, "org/model", "weights/model.gguf").parentFile.mkdirs()
 
         withServer { exchange ->
             exchange.respond(status = 200, declaredLength = expected.size.toLong(), body = expected)
@@ -101,15 +95,17 @@ class DownloadManagerJvmTest {
             assertEquals(expected.sha256Hex(), events.last().contentSha256)
             val manifest = ArtifactManifestStore(finalFile.parentFile.parentFile.absolutePath.toOkioPath()).read()
             assertEquals(expected.sha256Hex(), manifest?.entries?.single()?.contentSha256)
+            assertEquals(
+                manifest,
+                runBlocking { manager.validatedArtifacts("org/model") },
+            )
         }
     }
 
     @Test
     fun requestUsesImmutableRevisionAndEncodedRelativePath() = withTemporaryRoot { root ->
-        assumeSecureArtifactRootProvider(root)
         val requestedPath = AtomicReference<String>()
         val expected = byteArrayOf(7)
-        modelFile(root, "org/model", "weights/model file.gguf").parentFile.mkdirs()
         withServer { exchange ->
             requestedPath.set(exchange.requestURI.rawPath)
             exchange.respond(status = 200, declaredLength = 1L, body = expected)
@@ -153,7 +149,6 @@ class DownloadManagerJvmTest {
 
     @Test
     fun concurrentFilesInOneModelRootPublishOneCompleteManifest() = withTemporaryRoot { root ->
-        assumeSecureArtifactRootProvider(root)
         val first = "first".encodeToByteArray()
         val second = "second".encodeToByteArray()
         withServer { exchange ->
@@ -183,7 +178,7 @@ class DownloadManagerJvmTest {
 
         val modelRoot = File(root, "models/org/model")
         val manifest = ArtifactManifestStore(modelRoot.absolutePath.toOkioPath()).read()
-        assertEquals(listOf("part-1", "part-2"), manifest?.entries?.map { it.logicalRole })
+        assertEquals(setOf("part-1", "part-2"), manifest?.entries?.map { it.logicalRole }?.toSet())
     }
 
     @Test
@@ -229,12 +224,6 @@ class DownloadManagerJvmTest {
     )
 }
 
-private fun assumeSecureArtifactRootProvider(root: File) {
-    val modelRoot = File(root, "models/org/model").apply { mkdirs() }.toPath()
-    val supported = Files.newDirectoryStream(modelRoot).use { it is SecureDirectoryStream<*> }
-    assumeTrue("Filesystem provider does not expose pinned SecureDirectoryStream operations", supported)
-}
-
 private fun ByteArray.sha256Hex(): String = okio.ByteString.of(*this).sha256().hex()
 
 private class TestServer(
@@ -266,7 +255,7 @@ private fun HttpExchange.respond(status: Int, declaredLength: Long, body: ByteAr
 }
 
 private inline fun <T> withTemporaryRoot(block: (File) -> T): T {
-    val root = Files.createTempDirectory("caraml-download-test").toFile()
+    val root = Files.createTempDirectory("caraml-download-test").toRealPath().toFile()
     return try {
         block(root)
     } finally {
@@ -282,7 +271,8 @@ private class TestStoragePathProvider(
     private val storageResolutions: AtomicInteger? = null,
 ) : StoragePathProvider {
     override fun getModelsStorageDirectory(modelId: String): String =
-        File(root, "models/$modelId").also { storageResolutions?.incrementAndGet() }.apply { mkdirs() }.absolutePath
+        File(File(root, "models").apply { mkdirs() }, modelId)
+            .also { storageResolutions?.incrementAndGet() }.absolutePath
 
     override fun getDatabasePath(): String = File(root, "caraml.db").absolutePath
     override fun fileExists(path: String): Boolean = File(path).exists()

@@ -16,8 +16,10 @@ class JvmStoragePathProvider : StoragePathProvider {
         dir.apply { mkdirs() }
     }
     
-    override fun getModelsStorageDirectory(modelId: String): String =
-        File(appDir, "models/$modelId").apply { mkdirs() }.absolutePath
+    override fun getModelsStorageDirectory(modelId: String): String {
+        val modelsRoot = File(appDir, "models").apply { mkdirs() }
+        return File(modelsRoot, validateModelId(modelId)).absolutePath
+    }
     
     override fun getDatabasePath(): String =
         File(appDir, "databases").apply { mkdirs() }.absolutePath + "/caraml.db"

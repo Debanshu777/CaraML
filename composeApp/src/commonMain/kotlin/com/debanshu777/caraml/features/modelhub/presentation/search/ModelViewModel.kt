@@ -47,6 +47,7 @@ import com.debanshu777.huggingfacemanager.download.DownloadManager
 import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
 import com.debanshu777.huggingfacemanager.download.ArtifactVerificationException
+import com.debanshu777.huggingfacemanager.download.ArtifactManifest
 import com.debanshu777.huggingfacemanager.download.artifactBundleId
 import com.debanshu777.huggingfacemanager.download.IncompleteDownloadException
 import com.debanshu777.huggingfacemanager.download.InsufficientStorageException
@@ -95,6 +96,16 @@ data class GgufFileUiState(
     val progress: Float?,
     val artifact: DownloadArtifactIdentity? = null,
 )
+
+internal fun projectCommittedDiffusionVariants(
+    variants: List<GgufFileUiState>,
+    manifest: ArtifactManifest?,
+): List<GgufFileUiState> {
+    val committed = manifest?.entries?.map { it.identity }?.toSet().orEmpty()
+    return variants.map { file ->
+        file.copy(isDownloaded = file.artifact in committed, progress = null)
+    }
+}
 
 data class StorageInfoUiState(
     val totalDeviceBytes: Long = 0L,
@@ -693,8 +704,6 @@ class ModelViewModel(
                     modelId = modelId,
                     triggeredPath = variantPath,
                     sharedMetadata = sharedMeta,
-                    modelType = modelType,
-                    initialComponentStatus = LocalModelEntity.STATUS_PARTIAL,
                     downloadForLaterConfirmed = downloadForLaterConfirmed,
                 )
                 downloadMissingComponents(modelId, downloadForLaterConfirmed, ownedComponentMetadata)
@@ -702,7 +711,7 @@ class ModelViewModel(
                 if (!downloadManager.publishBundle(modelId, ownedArtifacts) ||
                     !downloadManager.validateBundle(modelId, ownedArtifacts)
                 ) throw ArtifactVerificationException()
-                localModelRepository.updateComponentStatus(modelId, LocalModelEntity.STATUS_READY)
+                persistDiffusionModelRecord(modelId, primaryMetadata, modelType)
                 refreshGgufFilesDownloadState(modelId, isDiffusion = true)
             } catch (e: DownloadAdmissionRejected) {
                 when (e.admission) {
@@ -931,14 +940,15 @@ class ModelViewModel(
 
     private suspend fun refreshGgufFilesDownloadState(modelId: String, isDiffusion: Boolean) {
         val downloaded = localModelRepository.getDownloadedFilenames(modelId)
-        val bundleDownloaded = DIFFUSERS_BUNDLE_DB_FILENAME in downloaded && isDiffusion
+        val committedManifest = if (isDiffusion) {
+            downloadManager.validatedBundle(modelId) ?: downloadManager.validatedArtifacts(modelId)
+        } else {
+            null
+        }
         _ggufFiles.update { list ->
+            if (isDiffusion) return@update projectCommittedDiffusionVariants(list, committedManifest)
             list.map { file ->
-                val marked = when {
-                    bundleDownloaded -> true
-                    else -> file.filename in downloaded || file.path in downloaded
-                }
-                file.copy(isDownloaded = marked, progress = null)
+                file.copy(isDownloaded = file.filename in downloaded || file.path in downloaded, progress = null)
             }
         }
     }
@@ -1000,8 +1010,6 @@ class ModelViewModel(
         modelId: String,
         triggeredPath: String,
         sharedMetadata: DownloadMetadataDTO,
-        modelType: String,
-        initialComponentStatus: String? = null,
         downloadForLaterConfirmed: Boolean = false,
     ): List<DownloadMetadataDTO> {
         val allPending = _ggufFiles.value.filter { !it.isDownloaded && it.path.isNotBlank() }
@@ -1061,48 +1069,36 @@ class ModelViewModel(
             _installBytesCompleted += file.sizeBytes ?: 0L
         }
 
-        val modelRoot = storagePathProvider.getModelsStorageDirectory(modelId)
-        val diffusersOk = isDiffusersModelDirectory(modelRoot, storagePathProvider::fileExists)
-
-        if (diffusersOk) {
-            localModelRepository.deleteAllForModelId(modelId)
-            val totalSize = selected.sumOf { it.sizeBytes ?: 0L }.takeIf { it > 0L }
-            localModelRepository.insert(
-                modelId = modelId,
-                filename = DIFFUSERS_BUNDLE_DB_FILENAME,
-                localPath = modelRoot,
-                sizeBytes = totalSize,
-                author = detail?.author,
-                libraryName = detail?.libraryName,
-                pipelineTag = detail?.pipelineTag,
-                contextLength = null,
-                modelType = modelType,
-                componentStatus = initialComponentStatus,
-                isMainModel = true,
-            )
-        } else {
-            val fallback = ordered.lastOrNull() ?: return emptyList()
-            val relativePath = normalizedDiffusersRelativePath(fallback.path.trim().replace('\\', '/').trimStart('/'))
-            val localPath = "$modelRoot/$relativePath"
-            if (!storagePathProvider.fileExists(localPath)) {
-                throw IllegalStateException()
-            }
-            localModelRepository.deleteAllForModelId(modelId)
-            localModelRepository.insert(
-                modelId = modelId,
-                filename = relativePath.substringAfterLast('/').ifEmpty { relativePath },
-                localPath = localPath,
-                sizeBytes = fallback.sizeBytes,
-                author = detail?.author,
-                libraryName = detail?.libraryName,
-                pipelineTag = detail?.pipelineTag,
-                contextLength = null,
-                modelType = modelType,
-                componentStatus = initialComponentStatus,
-                isMainModel = true,
-            )
-        }
         return orderedMetadata.map { it.second }
+    }
+
+    private suspend fun persistDiffusionModelRecord(
+        modelId: String,
+        primaryMetadata: List<DownloadMetadataDTO>,
+        modelType: String,
+    ) {
+        if (primaryMetadata.isEmpty()) throw ArtifactVerificationException()
+        val modelRoot = storagePathProvider.getModelsStorageDirectory(modelId)
+        val detail = _modelDetail.value
+        val diffusersOk = isDiffusersModelDirectory(modelRoot, storagePathProvider::fileExists)
+        val fallback = primaryMetadata.last()
+        val localRelativePath = fallback.destinationRelativePath
+        val localPath = "$modelRoot/$localRelativePath"
+        if (!diffusersOk && !storagePathProvider.fileExists(localPath)) throw ArtifactVerificationException()
+        localModelRepository.deleteAllForModelId(modelId)
+        localModelRepository.insert(
+            modelId = modelId,
+            filename = if (diffusersOk) DIFFUSERS_BUNDLE_DB_FILENAME else localRelativePath.substringAfterLast('/'),
+            localPath = if (diffusersOk) modelRoot else localPath,
+            sizeBytes = primaryMetadata.sumOf { it.artifact.expectedBytes }.takeIf { it > 0L },
+            author = detail?.author,
+            libraryName = detail?.libraryName,
+            pipelineTag = detail?.pipelineTag,
+            contextLength = null,
+            modelType = modelType,
+            componentStatus = LocalModelEntity.STATUS_READY,
+            isMainModel = true,
+        )
     }
 
     /**
@@ -1502,7 +1498,8 @@ class ModelViewModel(
             author = detail?.author,
             libraryName = "stable-diffusion.cpp",
             pipelineTag = detail?.pipelineTag,
-            contextLength = null
+            contextLength = null,
+            destinationRelativePath = normalizedDiffusersRelativePath(identity.relativePath),
         )
     }
 

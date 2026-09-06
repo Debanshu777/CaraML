@@ -6,6 +6,10 @@ import okio.Sink
 internal class ArtifactFileAccessException : Exception("Artifact storage is unavailable")
 
 internal expect class SecureArtifactRoot(modelRoot: Path) {
+    companion object {
+        fun create(modelsRoot: Path, modelId: String): SecureArtifactRoot
+    }
+
     fun createParentDirectories(relativePath: String)
     fun sink(relativePath: String, mustCreate: Boolean): Sink
     fun existsRegularFile(relativePath: String): Boolean
@@ -16,5 +20,6 @@ internal expect class SecureArtifactRoot(modelRoot: Path) {
     fun delete(relativePath: String)
     fun syncFile(relativePath: String)
     fun syncDirectory(relativePath: String)
+    fun revalidate()
     fun close()
 }

@@ -13,11 +13,13 @@ import platform.Foundation.NSUserDomainMask
 class IosStoragePathProvider : StoragePathProvider {
     @OptIn(ExperimentalForeignApi::class)
     override fun getModelsStorageDirectory(modelId: String): String {
-        val docs = NSFileManager.defaultManager
-            .URLForDirectory(NSDocumentDirectory, NSUserDomainMask, null, false, null)!!.path!!
-        val dir = "$docs/models/$modelId"
-        NSFileManager.defaultManager.createDirectoryAtPath(dir, true, null, null)
-        return dir
+        val safeModelId = validateModelId(modelId)
+        val docsUrl = NSFileManager.defaultManager
+            .URLForDirectory(NSDocumentDirectory, NSUserDomainMask, null, false, null)!!
+        val docs = docsUrl.URLByResolvingSymlinksInPath?.path ?: docsUrl.path!!
+        val modelsRoot = "$docs/models"
+        NSFileManager.defaultManager.createDirectoryAtPath(modelsRoot, true, null, null)
+        return "$modelsRoot/$safeModelId"
     }
     
     @OptIn(ExperimentalForeignApi::class)

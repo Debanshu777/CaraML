@@ -1,8 +1,9 @@
 package com.debanshu777.huggingfacemanager.download
 
+import okio.Path
 import okio.Path.Companion.toPath
 
-internal fun publishArtifactBundle(
+internal suspend fun publishArtifactBundle(
     pathProvider: StoragePathProvider,
     ownerModelId: String,
     artifacts: List<DownloadMetadataDTO>,
@@ -11,7 +12,7 @@ internal fun publishArtifactBundle(
     store.readValidated()?.bundleDigest == ArtifactManifest.create(entries)?.bundleDigest
 }
 
-internal fun validateArtifactBundle(
+internal suspend fun validateArtifactBundle(
     pathProvider: StoragePathProvider,
     ownerModelId: String,
     artifacts: List<DownloadMetadataDTO>,
@@ -20,53 +21,128 @@ internal fun validateArtifactBundle(
     store.readValidated()?.bundleDigest == ArtifactManifest.create(entries)?.bundleDigest
 }
 
-private inline fun withBundleStore(
+internal suspend fun readValidatedArtifactBundle(
+    pathProvider: StoragePathProvider,
+    ownerModelId: String,
+): ArtifactManifest? = try {
+    val ownerId = validateModelId(ownerModelId)
+    val ownerRoot = pathProvider.getModelsStorageDirectory(ownerId).toPath(normalize = true)
+    val candidateStore = ArtifactBundleManifestStore(ownerRoot) { true }
+    val candidate = try {
+        candidateStore.readManifestOnly()
+    } finally {
+        candidateStore.close()
+    } ?: return null
+    val roots = candidate.entries.map { metadataRoot(pathProvider, it.identity.repositoryId) } + ownerRoot
+    val allowedRoots = roots.mapTo(mutableSetOf(), ::rootKey)
+    ArtifactRootLockCoordinator.withRoots(allowedRoots) {
+        val store = bundleStore(pathProvider, ownerRoot, allowedRoots)
+        try {
+            store.recover()
+            if (store.readManifestOnly() == candidate) store.readValidated() else null
+        } finally {
+            store.close()
+        }
+    }
+} catch (_: Exception) {
+    null
+}
+
+internal suspend fun readValidatedArtifactManifest(
+    pathProvider: StoragePathProvider,
+    modelId: String,
+): ArtifactManifest? = try {
+    val root = metadataRoot(pathProvider, validateModelId(modelId))
+    ArtifactRootLockCoordinator.withRoots(listOf(rootKey(root))) {
+        val store = ArtifactManifestStore(root)
+        try {
+            store.recover()
+            store.readValidated()
+        } finally {
+            store.close()
+        }
+    }
+} catch (_: Exception) {
+    null
+}
+
+private suspend fun withBundleStore(
     pathProvider: StoragePathProvider,
     ownerModelId: String,
     artifacts: List<DownloadMetadataDTO>,
     block: (ArtifactBundleManifestStore, List<ArtifactManifestEntry>) -> Boolean,
 ): Boolean = try {
-    validateModelId(ownerModelId)
+    val ownerId = validateModelId(ownerModelId)
     if (artifacts.isEmpty() || artifacts.size > 64 || artifacts.map { it.bundleId }.toSet().size != 1) return false
-    val entries = artifacts.map { metadata ->
-        val root = pathProvider.getModelsStorageDirectory(metadata.artifact.repositoryId).toPath(normalize = true)
-        val artifactStore = ArtifactManifestStore(root)
+    val ownerRoot = metadataRoot(pathProvider, ownerId)
+    val previous = readOwnerManifest(ownerRoot)
+    val roots = artifacts.map { metadataRoot(pathProvider, it.artifact.repositoryId) } +
+        previous?.entries.orEmpty().map { metadataRoot(pathProvider, it.identity.repositoryId) } +
+        ownerRoot
+    val allowedRoots = roots.mapTo(mutableSetOf(), ::rootKey)
+    ArtifactRootLockCoordinator.withRoots(allowedRoots) {
+        val entries = artifacts.map { metadata ->
+            val artifactStore = ArtifactManifestStore(metadataRoot(pathProvider, metadata.artifact.repositoryId))
+            try {
+                val installed = artifactStore.readValidated()?.entries?.singleOrNull { entry ->
+                    entry.logicalRole == metadata.logicalRole && entry.identity == metadata.artifact &&
+                        entry.localRelativePath == metadata.destinationRelativePath
+                } ?: return@withRoots false
+                ArtifactManifestEntry.create(
+                    logicalRole = installed.logicalRole,
+                    identity = installed.identity,
+                    byteCount = installed.byteCount,
+                    contentSha256 = installed.contentSha256,
+                    bundleId = metadata.bundleId,
+                    localRelativePath = installed.localRelativePath,
+                ) ?: return@withRoots false
+            } finally {
+                artifactStore.close()
+            }
+        }
+        val store = bundleStore(pathProvider, ownerRoot, allowedRoots)
         try {
-            val installed = artifactStore.readValidated()?.entries?.singleOrNull { entry ->
-                entry.logicalRole == metadata.logicalRole &&
-                    entry.identity == metadata.artifact && entry.localRelativePath == metadata.destinationRelativePath
-            } ?: return false
-            ArtifactManifestEntry.create(
-                logicalRole = installed.logicalRole,
-                identity = installed.identity,
-                byteCount = installed.byteCount,
-                contentSha256 = installed.contentSha256,
-                bundleId = metadata.bundleId,
-                localRelativePath = installed.localRelativePath,
-            ) ?: return false
+            store.recover()
+            if (store.readManifestOnly() != previous) return@withRoots false
+            block(store, entries)
         } finally {
-            artifactStore.close()
+            store.close()
         }
     }
-    val ownerRoot = pathProvider.getModelsStorageDirectory(ownerModelId).toPath(normalize = true)
-    val store = ArtifactBundleManifestStore(ownerRoot) { entry ->
-        val root = pathProvider.getModelsStorageDirectory(entry.identity.repositoryId).toPath(normalize = true)
-        val artifactStore = ArtifactManifestStore(root)
+} catch (_: Exception) {
+    false
+}
+
+private fun readOwnerManifest(ownerRoot: Path): ArtifactManifest? {
+    val store = ArtifactBundleManifestStore(ownerRoot) { true }
+    return try {
+        store.readManifestOnly()
+    } finally {
+        store.close()
+    }
+}
+
+private fun bundleStore(
+    pathProvider: StoragePathProvider,
+    ownerRoot: Path,
+    allowedRoots: Set<String>,
+): ArtifactBundleManifestStore =
+    ArtifactBundleManifestStore(ownerRoot) { entry ->
+        val artifactRoot = metadataRoot(pathProvider, entry.identity.repositoryId)
+        if (rootKey(artifactRoot) !in allowedRoots) return@ArtifactBundleManifestStore false
+        val store = ArtifactManifestStore(artifactRoot)
         try {
-            artifactStore.readValidated()?.entries?.any { installed ->
+            store.readValidated()?.entries?.any { installed ->
                 installed.logicalRole == entry.logicalRole && installed.identity == entry.identity &&
                     installed.localRelativePath == entry.localRelativePath &&
                     installed.byteCount == entry.byteCount && installed.contentSha256 == entry.contentSha256
             } == true
         } finally {
-            artifactStore.close()
+            store.close()
         }
     }
-    try {
-        block(store, entries)
-    } finally {
-        store.close()
-    }
-} catch (_: Exception) {
-    false
-}
+
+private fun metadataRoot(pathProvider: StoragePathProvider, modelId: String): Path =
+    pathProvider.getModelsStorageDirectory(validateModelId(modelId)).toPath(normalize = true)
+
+private fun rootKey(path: Path): String = path.toString().trim().replace('\\', '/').trimEnd('/').lowercase()
