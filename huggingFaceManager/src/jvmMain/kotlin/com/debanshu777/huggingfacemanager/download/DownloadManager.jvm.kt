@@ -1,16 +1,12 @@
 package com.debanshu777.huggingfacemanager.download
 
 import com.debanshu777.huggingfacemanager.createPlatformHttpClient
-import io.ktor.client.request.prepareGet
-import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.plugins.HttpTimeout
-import io.ktor.utils.io.readAvailable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flowOn
+import okio.Path.Companion.toPath
 import java.io.File
-import java.io.FileOutputStream
 
 actual class DownloadManager actual constructor(
     private val pathProvider: StoragePathProvider,
@@ -28,58 +24,27 @@ actual class DownloadManager actual constructor(
         modelId: String,
         path: String,
         metadata: DownloadMetadataDTO
-    ): Flow<DownloadProgressDTO> = channelFlow {
-        val relativePath = path.trim().replace('\\', '/').trimStart('/')
-        val dirPath = pathProvider.getModelsStorageDirectory(modelId)
-        val file = File(dirPath, relativePath)
-        file.parentFile?.mkdirs()
-
-        val requiredBytes = metadata.sizeBytes
-        if (requiredBytes != null && requiredBytes > 0L) {
-            val availableBytes = pathProvider.getAvailableStorageBytes()
-            if (availableBytes < requiredBytes) {
-                throw InsufficientStorageException(requiredBytes, availableBytes)
-            }
-        }
-
-        val url = "$baseUrl/$modelId/resolve/main/$path?download=true"
-
-        try {
-            httpClient.prepareGet(url).execute { response ->
-                val contentLength = response.headers["Content-Length"]?.toLongOrNull()
-                val channel = response.bodyAsChannel()
-                val buffer = ByteArray(8192)
-                var bytesReceived = 0L
-
-                FileOutputStream(file).use { output ->
-                    while (true) {
-                        val n = channel.readAvailable(buffer)
-                        if (n <= 0) break
-                        output.write(buffer, 0, n)
-                        bytesReceived += n
-                        val pct = if (contentLength != null && contentLength > 0)
-                            (bytesReceived.toFloat() / contentLength * 100f).coerceIn(0f, 100f)
-                        else -1f
-                        send(DownloadProgressDTO(bytesReceived, contentLength, pct))
-                    }
-                }
-                if (contentLength != null && bytesReceived != contentLength) {
-                    throw IncompleteDownloadException(bytesReceived, contentLength)
-                }
-                // Emit final progress with localPath set
-                send(
-                    DownloadProgressDTO(
-                        bytesReceived = bytesReceived,
-                        contentLength = contentLength,
-                        percentage = 100f,
-                        localPath = file.absolutePath
-                    )
-                )
-            }
-        } catch (e: Exception) {
-            file.delete()
-            throw e
-        }
+    ): Flow<DownloadProgressDTO> {
+        val request = validateDownloadArguments(modelId, path, metadata)
+        val dirPath = pathProvider.getModelsStorageDirectory(request.modelId)
+        val root = File(dirPath).canonicalFile
+        val file = File(root, request.relativePath).canonicalFile
+        require(isPathWithinRoot(root, file)) { "Invalid model file path" }
+        return downloadArtifact(
+            httpClient = httpClient,
+            pathProvider = pathProvider,
+            baseUrl = baseUrl,
+            modelId = modelId,
+            path = path,
+            metadata = metadata,
+            modelRoot = root.absolutePath.toPath(normalize = true),
+            target = file.absolutePath.toPath(normalize = true),
+            localPath = file.absolutePath,
+        ).flowOn(Dispatchers.IO)
     }
-        .flowOn(Dispatchers.IO)
+}
+
+private fun isPathWithinRoot(root: File, target: File): Boolean {
+    if (target.path == root.path) return false
+    return target.path.startsWith(root.path + File.separator)
 }

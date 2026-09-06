@@ -21,16 +21,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.debanshu777.caraml.core.platform.DeviceHints
-import com.debanshu777.caraml.core.rating.ModelSuitabilityCalculator
-import com.debanshu777.caraml.core.rating.SdArchitectureClassifier
-import com.debanshu777.caraml.core.rating.SuitabilityResult
-import com.debanshu777.caraml.core.rating.parseSizeHintToBytes
-import com.debanshu777.caraml.core.rating.ui.SuitabilityChip
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
+import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 import com.debanshu777.huggingfacemanager.model.ModelDetailResponse
 import com.debanshu777.caraml.features.modelhub.presentation.search.GgufFileUiState
 import com.debanshu777.caraml.features.modelhub.presentation.search.InstallBundleUiState
+import com.debanshu777.caraml.features.modelhub.domain.RecommendedModelUiState
+import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
+import com.debanshu777.caraml.core.recommendation.DiffusionModelDescriptor
+import com.debanshu777.caraml.core.recommendation.LlmModelDescriptor
+import com.debanshu777.caraml.core.recommendation.ModelDescriptor
+import com.debanshu777.caraml.core.recommendation.ModelFileIdentity
+import com.debanshu777.caraml.core.rating.ui.RecommendationStatusChip
 import com.debanshu777.huggingfacemanager.sdcpp.getModelSetup
 
 @Composable
@@ -46,14 +48,18 @@ fun ModelDetailContent(
     onVariantSelected: (String) -> Unit = {},
     onSmartInstall: () -> Unit = {},
     showInstallBundle: Boolean = false,
-    deviceHints: DeviceHints? = null,
-    onRatingInfoClick: ((modelId: String, result: SuitabilityResult) -> Unit)? = null,
+    recommendationState: RecommendedModelUiState? = null,
+    onRecommendationInfoClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     if (model == null) return
 
     val modelId = model.modelId ?: model.id ?: ""
     val modelSetup = if (modelId.isNotBlank()) getModelSetup(modelId) else null
+    val recommendedVariant = recommendedVariantPath(
+        recommendationState?.selectedDescriptor,
+        installBundleState.variants,
+    )
 
     Column(
         modifier = modifier
@@ -121,44 +127,13 @@ fun ModelDetailContent(
             }
         }
 
-        // Overall device-fit chip
-        if (deviceHints != null) {
-            val isDiffusion = model.pipelineTag == "text-to-image" ||
-                              model.pipelineTag == "text-to-video"
-            val overallResult = if (isDiffusion) {
-                val allTags = buildList {
-                    model.tags?.filterNotNull()?.let { addAll(it) }
-                    model.cardData?.tags?.filterNotNull()?.let { addAll(it) }
-                }
-                val arch = SdArchitectureClassifier.classify(
-                    tags = allTags,
-                    modelId = model.modelId ?: model.id ?: "",
-                )
-                val totalComponentBytes = installBundleState.components
-                    .filter { it.required }
-                    .mapNotNull { it.sizeHint?.let { h -> parseSizeHintToBytes(h) } }
-                    .takeIf { it.isNotEmpty() }
-                    ?.sum()
-                ModelSuitabilityCalculator.rateDiffusion(
-                    hints = deviceHints,
-                    architecture = arch,
-                    totalComponentBytes = totalComponentBytes,
-                )
-            } else {
-                ModelSuitabilityCalculator.rateLlm(
-                    hints = deviceHints,
-                    numParameters = model.safetensors?.total ?: model.gguf?.total,
-                    contextLength = model.gguf?.contextLength,
-                    architecture = model.gguf?.architecture,
-                    pipelineTag = model.pipelineTag,
-                )
-            }
-            SuitabilityChip(
-                rating = overallResult.rating,
-                onInfoClick = onRatingInfoClick?.let { cb ->
-                    { cb(model.modelId ?: model.id ?: "Unknown", overallResult) }
-                },
-            )
+        RecommendationStatusChip(
+            state = recommendationState?.descriptorState ?: DescriptorState.NEEDS_INFORMATION,
+            recommendation = recommendationState?.personalizedResult,
+            onInfoClick = onRecommendationInfoClick,
+        )
+        recommendationState?.selectedVariantName?.let {
+            Text("Selected variant: $it", style = MaterialTheme.typography.labelMedium)
         }
 
         // Info card
@@ -231,10 +206,9 @@ fun ModelDetailContent(
                 onVariantSelected = onVariantSelected,
                 onInstall = onSmartInstall,
                 modifier = Modifier.fillMaxWidth(),
-                deviceHints = null,
-                numParameters = null,
-                contextLength = null,
-                architecture = null,
+                recommendedVariantPath = recommendedVariant,
+                installEnabled = recommendedVariant != null &&
+                    installBundleState.selectedVariantPath == recommendedVariant,
             )
         } else {
             // ── Language model: per-file GGUF list ──
@@ -246,17 +220,6 @@ fun ModelDetailContent(
             )
             if (ggufFiles.isNotEmpty()) {
                 ggufFiles.forEach { item ->
-                    val fileRating = deviceHints?.let { hints ->
-                        ModelSuitabilityCalculator.rateLlm(
-                            hints = hints,
-                            numParameters = model.safetensors?.total ?: model.gguf?.total,
-                            sizeBytes = item.sizeBytes,
-                            quantTag = ModelSuitabilityCalculator.parseQuantTag(item.filename),
-                            contextLength = model.gguf?.contextLength,
-                            architecture = model.gguf?.architecture,
-                            pipelineTag = model.pipelineTag,
-                        ).rating
-                    }
                     GgufFileListItem(
                         filename = item.path.ifEmpty { item.filename },
                         sizeBytes = item.sizeBytes,
@@ -264,11 +227,14 @@ fun ModelDetailContent(
                         progress = item.progress,
                         isDownloading = isDownloading,
                         onDownloadClick = {
+                            val artifact = item.artifact ?: return@GgufFileListItem
                             onDownloadClick(
                                 model.modelId ?: model.id ?: "",
                                 item.path,
                                 DownloadMetadataDTO(
-                                    sizeBytes = item.sizeBytes,
+                                    artifact = artifact,
+                                    logicalRole = "model",
+                                    sizeBytes = artifact.expectedBytes,
                                     author = model.author,
                                     libraryName = model.libraryName,
                                     pipelineTag = model.pipelineTag,
@@ -277,7 +243,9 @@ fun ModelDetailContent(
                             )
                         },
                         modifier = Modifier.padding(vertical = 4.dp),
-                        rating = fileRating,
+                        downloadEnabled = item.artifact?.let { artifact ->
+                            artifactMatches(recommendationState?.selectedDescriptor, artifact)
+                        } == true,
                     )
                 }
             } else {
@@ -289,6 +257,46 @@ fun ModelDetailContent(
             }
         }
     }
+}
+
+private fun descriptorFiles(descriptor: ModelDescriptor?): List<ModelFileIdentity> = when (descriptor) {
+    is LlmModelDescriptor -> descriptor.files
+    is DiffusionModelDescriptor -> descriptor.components
+        .filter { it.required || it.isPrimary }
+        .map { it.file }
+    null -> emptyList()
+}
+
+private fun artifactMatches(
+    descriptor: ModelDescriptor?,
+    artifact: DownloadArtifactIdentity,
+): Boolean = descriptorFiles(descriptor).singleOrNull { file ->
+    val remoteObjectId = file.lfsOid?.let { "sha256:$it" } ?: file.xetHash ?: file.gitOid
+    file.repositoryId == artifact.repositoryId &&
+        file.revision.lowercase() == artifact.immutableRevision &&
+        file.path == artifact.relativePath &&
+        file.sizeBytes == artifact.expectedBytes &&
+        remoteObjectId?.lowercase() == artifact.remoteObjectId
+} != null
+
+private fun recommendedVariantPath(
+    descriptor: ModelDescriptor?,
+    variants: List<GgufFileUiState>,
+): String? {
+    val primary = when (descriptor) {
+        is LlmModelDescriptor -> descriptor.file
+        is DiffusionModelDescriptor -> descriptor.components.singleOrNull { it.isPrimary }?.file
+        null -> null
+    } ?: return null
+    return variants.singleOrNull { variant ->
+        val artifact = variant.artifact ?: return@singleOrNull false
+        val remoteObjectId = primary.lfsOid?.let { "sha256:$it" } ?: primary.xetHash ?: primary.gitOid
+        primary.repositoryId == artifact.repositoryId &&
+            primary.revision.lowercase() == artifact.immutableRevision &&
+            primary.path == artifact.relativePath &&
+            primary.sizeBytes == artifact.expectedBytes &&
+            remoteObjectId?.lowercase() == artifact.remoteObjectId
+    }?.path
 }
 
 @Composable

@@ -23,6 +23,15 @@ class RecommendationPolicy(
             selectedPlan = selection.plan,
             reasons = selection.reasons.ifEmpty { listOf(AssessmentReason.MEMORY_BOUNDS_UNKNOWN) },
             profile = profile,
+            confidence = AssessmentConfidence(
+                compatibility = assessment.confidence.compatibility,
+                memory = selection.safetyConfidence,
+                storage = selection.safetyConfidence,
+                performance = selection.performanceConfidence,
+            ),
+            memoryFit = selection.fitBand,
+            storageFit = selection.storageFitBand,
+            selectedPlanAssessment = selection.planAssessment,
         )
         return PolicyEvaluation(recommendation, selection)
     }

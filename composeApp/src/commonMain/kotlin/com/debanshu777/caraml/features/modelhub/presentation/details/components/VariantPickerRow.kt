@@ -20,9 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.debanshu777.caraml.core.platform.DeviceHints
 import com.debanshu777.caraml.core.rating.ModelSuitabilityCalculator
-import com.debanshu777.caraml.core.rating.ui.SuitabilityDot
 import com.debanshu777.caraml.core.rating.ui.formatBytesHuman
 import com.debanshu777.caraml.features.modelhub.presentation.search.GgufFileUiState
 
@@ -37,9 +35,8 @@ private fun quantizationLabel(filename: String): String {
 /**
  * Horizontal scrollable chip row for selecting a model quantization variant.
  *
- * When [deviceHints], [numParameters], and [architecture] are provided we render
- * a per-variant suitability dot next to the size — the calculation is accurate
- * here because each variant has a known on-disk size.
+ * The recommendation marker is projected from the assessed exact descriptor;
+ * this UI never recomputes policy from partial file metadata.
  */
 @Composable
 fun VariantPickerRow(
@@ -47,10 +44,7 @@ fun VariantPickerRow(
     selectedVariantPath: String?,
     onVariantSelected: (String) -> Unit,
     modifier: Modifier = Modifier,
-    deviceHints: DeviceHints? = null,
-    numParameters: Long? = null,
-    contextLength: Int? = null,
-    architecture: String? = null,
+    recommendedVariantPath: String? = null,
 ) {
     if (variants.isEmpty()) return
 
@@ -61,16 +55,6 @@ fun VariantPickerRow(
         items(variants) { variant ->
             val isSelected = variant.path == selectedVariantPath
             val label = quantizationLabel(variant.filename)
-            val rating = deviceHints?.let { hints ->
-                ModelSuitabilityCalculator.rateLlm(
-                    hints = hints,
-                    numParameters = numParameters,
-                    sizeBytes = variant.sizeBytes,
-                    quantTag = ModelSuitabilityCalculator.parseQuantTag(variant.filename),
-                    contextLength = contextLength,
-                    architecture = architecture,
-                ).rating
-            }
 
             FilterChip(
                 selected = isSelected || variant.isDownloaded,
@@ -99,7 +83,13 @@ fun VariantPickerRow(
                                 )
                             }
                         }
-                        rating?.let { SuitabilityDot(rating = it) }
+                        if (variant.path == recommendedVariantPath) {
+                            Text(
+                                text = "Recommended",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
                     }
                 },
                 border = if (isSelected && !variant.isDownloaded) {

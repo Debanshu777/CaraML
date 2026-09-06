@@ -64,10 +64,8 @@ import com.debanshu777.caraml.core.recommendation.RecommendationProfile
 import com.debanshu777.caraml.core.recommendation.RecommendationRolloutModeSource
 import com.debanshu777.caraml.core.recommendation.RiskTolerance
 import com.debanshu777.caraml.core.recommendation.OptimizationPriority
-import com.debanshu777.caraml.core.rating.SuitabilityRating
-import com.debanshu777.caraml.core.rating.SuitabilityResult
-import com.debanshu777.caraml.core.rating.ui.SuitabilityChip
-import com.debanshu777.caraml.core.rating.ui.SuitabilityInfoSheet
+import com.debanshu777.caraml.core.rating.ui.RecommendationDetailsSheet
+import com.debanshu777.caraml.core.rating.ui.recommendationPresentation
 import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.DownloadedModelsViewModel
@@ -78,6 +76,7 @@ import com.debanshu777.caraml.features.modelhub.presentation.search.components.R
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchBar
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchModelListItem
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SortFilterChips
+import com.debanshu777.caraml.features.modelhub.domain.RecommendedModelUiState
 import com.debanshu777.caraml.features.settings.presentation.RecommendationProfileSection
 import com.debanshu777.caraml.features.settings.presentation.SettingsViewModel
 import com.debanshu777.caraml.features.settings.presentation.label
@@ -113,9 +112,7 @@ fun SearchScreen(
     val recommendationProfileState = persistedProfileState.copy(profile = effectiveProfile)
     var profileEditorVisible by remember { mutableStateOf(false) }
 
-    // Shared bottom sheet — opened from any rating chip in the list.
-    var ratingSheetModelId by remember { mutableStateOf<String?>(null) }
-    var ratingSheetResult by remember { mutableStateOf<SuitabilityResult?>(null) }
+    var recommendationSheetState by remember { mutableStateOf<RecommendedModelUiState?>(null) }
 
     val drawerController = LocalDrawerController.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -151,11 +148,7 @@ fun SearchScreen(
                 0 -> SearchTabContent(
                     viewModel = modelViewModel,
                     onNavigateToDetails = onNavigateToDetails,
-                    deviceHints = storageInfo.deviceHints,
-                    onRatingInfoClick = { id, result ->
-                        ratingSheetModelId = id
-                        ratingSheetResult = result
-                    },
+                    onRecommendationInfoClick = { recommendationSheetState = it },
                     recommendationProfileState = recommendationProfileState,
                     onOpenProfileEditor = { profileEditorVisible = true },
                     modifier = Modifier.fillMaxSize()
@@ -172,17 +165,18 @@ fun SearchScreen(
         }
     }
 
-    val sheetResult = ratingSheetResult
-    val sheetModelId = ratingSheetModelId
-    if (sheetResult != null && sheetModelId != null) {
-        SuitabilityInfoSheet(
-            modelId = sheetModelId,
-            result = sheetResult,
-            deviceHints = storageInfo.deviceHints,
-            onDismiss = {
-                ratingSheetResult = null
-                ratingSheetModelId = null
-            },
+    val sheetState = recommendationSheetState
+    val sheetRecommendation = sheetState?.personalizedResult
+    if (sheetState != null && sheetRecommendation != null) {
+        RecommendationDetailsSheet(
+            modelId = sheetState.repositoryId ?: sheetState.stableModelId,
+            recommendation = sheetRecommendation,
+            presentation = recommendationPresentation(
+                sheetRecommendation,
+                sheetState.selectedVariantName,
+                sheetState.workload,
+            ),
+            onDismiss = { recommendationSheetState = null },
         )
     }
 
@@ -214,8 +208,7 @@ fun SearchScreen(
 private fun SearchTabContent(
     viewModel: ModelViewModel,
     onNavigateToDetails: (modelId: String, hubBrowseMode: ModelHubBrowseMode) -> Unit,
-    deviceHints: DeviceHints?,
-    onRatingInfoClick: (modelId: String, result: SuitabilityResult) -> Unit,
+    onRecommendationInfoClick: (RecommendedModelUiState) -> Unit,
     recommendationProfileState: RecommendationProfileUiState,
     onOpenProfileEditor: () -> Unit,
     modifier: Modifier = Modifier,
@@ -230,6 +223,8 @@ private fun SearchTabContent(
     val listResponse by viewModel.listResponse.collectAsState()
     val isListLoading by viewModel.isListLoading.collectAsState()
     val listError by viewModel.listError.collectAsState()
+    val modelOrdering by viewModel.modelOrdering.collectAsState()
+    val recommendedModels by viewModel.recommendedModels.collectAsState()
 
     val isLlmHub = browseMode == ModelHubBrowseMode.LanguageModels
     val isSearchMode = isLlmHub && (searchQuery.isNotEmpty() || searchResponse != null)
@@ -317,10 +312,15 @@ private fun SearchTabContent(
             }
         } else if (isLlmHub) {
             SortFilterChips(
+                ordering = modelOrdering,
                 sort = listParams.sort,
                 minParams = listParams.minParams,
                 maxParams = listParams.maxParams,
-                onSortChange = { viewModel.updateParams(sort = it) },
+                onSortChange = {
+                    viewModel.updateParams(sort = it)
+                    viewModel.setModelOrdering(ModelOrdering.Server(it))
+                },
+                onOrderingChange = viewModel::setModelOrdering,
                 onMinParamsChange = { viewModel.updateParams(minParams = it) },
                 onMaxParamsChange = { viewModel.updateParams(maxParams = it) }
             )
@@ -355,8 +355,15 @@ private fun SearchTabContent(
                                 items = searchResponse?.models?.filterNotNull() ?: emptyList(),
                                 key = { it.id ?: it.hashCode().toString() }
                             ) { model ->
+                                val recommendationState = recommendedModels.firstOrNull {
+                                    it.repositoryId == model.id
+                                }
                                 SearchModelListItem(
                                     model = model,
+                                    recommendationState = recommendationState,
+                                    onRecommendationInfoClick = recommendationState
+                                        ?.takeIf { it.personalizedResult != null }
+                                        ?.let { state -> { onRecommendationInfoClick(state) } },
                                     onClick = {
                                         model.id?.let { id ->
                                             onNavigateToDetails(id, browseMode)
@@ -391,9 +398,14 @@ private fun SearchTabContent(
                             modifier = Modifier.fillMaxSize()
                         ) {
                             items(
-                                items = listResponse?.models?.filterNotNull() ?: emptyList(),
+                                items = if (modelOrdering is ModelOrdering.Personalized) {
+                                    recommendedModels.map { it.sourceModel }
+                                } else listResponse?.models?.filterNotNull() ?: emptyList(),
                                 key = { it.id ?: it.hashCode().toString() }
                             ) { model ->
+                                val recommendationState = recommendedModels.firstOrNull {
+                                    it.repositoryId == model.id
+                                }
                                 ModelListItem(
                                     model = model,
                                     onClick = {
@@ -401,8 +413,10 @@ private fun SearchTabContent(
                                             onNavigateToDetails(id, browseMode)
                                         }
                                     },
-                                    deviceHints = deviceHints,
-                                    onRatingInfoClick = onRatingInfoClick,
+                                    recommendationState = recommendationState,
+                                    onRecommendationInfoClick = recommendationState
+                                        ?.takeIf { it.personalizedResult != null }
+                                        ?.let { state -> { onRecommendationInfoClick(state) } },
                                 )
                             }
                         }
@@ -565,25 +579,14 @@ private fun DeviceInfoSection(
 
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = "Model fit rating",
+                        text = "Personalized recommendations",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Spacer(modifier = Modifier.height(6.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        SuitabilityChip(rating = SuitabilityRating.BEST)
-                        SuitabilityChip(rating = SuitabilityRating.GOOD)
-                        SuitabilityChip(rating = SuitabilityRating.AVERAGE)
-                        SuitabilityChip(rating = SuitabilityRating.POOR)
-                    }
-                    Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Estimated as weights + KV cache + ~20% overhead vs RAM budget. " +
-                            "Tap any chip in the list for details.",
+                        text = "Compatibility, current memory and storage, workload, and expected speed are checked together. " +
+                            "Open a model's recommendation for the evidence and fallback plan.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

@@ -12,12 +12,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.debanshu777.huggingfacemanager.model.SearchModelsResponse
+import com.debanshu777.caraml.features.modelhub.domain.RecommendedModelUiState
+import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
+import com.debanshu777.caraml.core.rating.ui.RecommendationStatusChip
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 
 @Composable
 fun SearchModelListItem(
     model: SearchModelsResponse.Model?,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    recommendationState: RecommendedModelUiState? = null,
+    onRecommendationInfoClick: (() -> Unit)? = null,
 ) {
     if (model == null) return
     Surface(
@@ -35,6 +42,17 @@ fun SearchModelListItem(
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
+            Spacer(Modifier.height(8.dp))
+            RecommendationStatusChip(
+                recommendationState?.descriptorState ?: DescriptorState.NEEDS_INFORMATION,
+                recommendationState?.personalizedResult,
+                onInfoClick = onRecommendationInfoClick,
+            )
+            recommendationState?.let { state ->
+                state.selectedVariantName?.let {
+                    Text("Selected variant: $it", style = MaterialTheme.typography.labelSmall)
+                }
+            }
             Text(
                 text = buildString {
                     append("Trending weight: ${model.trendingWeight ?: 0}")

@@ -78,6 +78,10 @@ enum class AssessmentReason {
     ASSESSMENT_GRAPH_INVALID,
     DEVICE_CAPABILITIES_CHANGED,
     COLLECTION_LIMIT_EXCEEDED,
+    INSUFFICIENT_STORAGE,
+    DOWNLOAD_FOR_LATER,
+    NO_RUN_PLAN,
+    INCOMPATIBLE_MODEL,
 }
 
 data class Evidence(
@@ -334,6 +338,11 @@ data class PersonalizedRecommendation private constructor(
     val selectedPlan: PlanReference?,
     val reasons: List<AssessmentReason>,
     val profile: RecommendationProfile,
+    val confidence: AssessmentConfidence,
+    val memoryFit: FitBand?,
+    val storageFit: FitBand?,
+    val selectedPlanAssessment: PlanAssessment?,
+    val fallbackPlan: PlanReference?,
 ) {
     constructor(
         assessmentKey: String,
@@ -341,11 +350,26 @@ data class PersonalizedRecommendation private constructor(
         selectedPlan: PlanReference?,
         reasons: Collection<AssessmentReason>,
         profile: RecommendationProfile,
+        confidence: AssessmentConfidence = AssessmentConfidence(
+            compatibility = Confidence.LOW,
+            memory = Confidence.LOW,
+            storage = Confidence.LOW,
+            performance = Confidence.LOW,
+        ),
+        memoryFit: FitBand? = null,
+        storageFit: FitBand? = null,
+        selectedPlanAssessment: PlanAssessment? = null,
+        fallbackPlan: PlanReference? = null,
     ) : this(
         assessmentKey = assessmentKey,
         category = category,
         selectedPlan = selectedPlan,
         reasons = reasons.toList(),
         profile = profile,
+        confidence = confidence,
+        memoryFit = memoryFit,
+        storageFit = storageFit,
+        selectedPlanAssessment = selectedPlanAssessment,
+        fallbackPlan = fallbackPlan,
     )
 }

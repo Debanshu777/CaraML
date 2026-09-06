@@ -214,11 +214,30 @@ class ModelRecommendationService internal constructor(
                     )
                     rerankedEvaluations[sourceIndex] = refreshed
                     val candidate = session.candidates.getOrNull(sourceIndex) ?: continue
-                    rerankedStates[sourceIndex] = assessedState(candidate, refreshed, snapshot, profile)
+                    rerankedStates[sourceIndex] = assessedState(candidate, refreshed, snapshot, profile, session.workload)
                 }
             }
             session.replaceReranked(rerankedEvaluations, rerankedStates)
         }
+    }
+
+    suspend fun refreshForAdmission(
+        session: RecommendationQuerySession,
+        state: RecommendedModelUiState,
+        profile: RecommendationProfile,
+    ): RecommendedModelUiState? = session.runEvaluation {
+        val (previous, evaluations) = session.recordsSnapshot()
+        val oldSnapshot = previous ?: return@runEvaluation null
+        val evaluation = evaluations[state.sourceIndex] ?: return@runEvaluation null
+        val refreshedSnapshot = withContext(evaluationDispatcher) {
+            snapshotSource.refreshResources(oldSnapshot)
+        }
+        session.replaceSnapshot(refreshedSnapshot)
+        val refreshed = RepositoryEvaluation(
+            evaluation.variants.map { it.copy(assessment = variantEvaluator.rebuild(it.assessment, refreshedSnapshot)) },
+        )
+        val candidate = session.candidates.getOrNull(state.sourceIndex) ?: return@runEvaluation null
+        assessedState(candidate, refreshed, refreshedSnapshot, profile, session.workload)
     }
 
     private suspend fun enrichAndEmit(
@@ -292,7 +311,7 @@ class ModelRecommendationService internal constructor(
                         session.recordEvaluation(
                             candidate.sourceIndex,
                             evaluation,
-                            assessedState(candidate, evaluation, snapshot, profile),
+                            assessedState(candidate, evaluation, snapshot, profile, session.workload),
                         )
                     }
                 }
@@ -309,6 +328,7 @@ class ModelRecommendationService internal constructor(
         evaluation: RepositoryEvaluation,
         snapshot: DeviceSnapshot,
         profile: RecommendationProfile,
+        workload: WorkloadConfig,
     ): RecommendedModelUiState {
         val selected = evaluation.variants.minWithOrNull(
             Comparator { left, right ->
@@ -350,6 +370,8 @@ class ModelRecommendationService internal constructor(
             stableModelId = selected.stableIdentity,
             sourceIndex = candidate.sourceIndex,
             sortKey = sortKey,
+            selectedDescriptor = selected.variant.descriptor,
+            workload = workload,
         )
     }
 

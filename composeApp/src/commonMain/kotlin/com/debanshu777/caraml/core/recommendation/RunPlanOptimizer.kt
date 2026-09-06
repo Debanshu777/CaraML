@@ -21,6 +21,7 @@ data class PlanUtilityMetrics(
 data class SelectedPlan private constructor(
     val planAssessment: PlanAssessment?,
     val fitBand: FitBand?,
+    val storageFitBand: FitBand?,
     val category: RecommendationCategory,
     val reasons: List<AssessmentReason>,
     val utility: Double,
@@ -35,6 +36,7 @@ data class SelectedPlan private constructor(
     constructor(
         planAssessment: PlanAssessment?,
         fitBand: FitBand?,
+        storageFitBand: FitBand? = null,
         category: RecommendationCategory,
         reasons: Collection<AssessmentReason>,
         utility: Double,
@@ -45,6 +47,7 @@ data class SelectedPlan private constructor(
     ) : this(
         planAssessment,
         fitBand,
+        storageFitBand,
         category,
         reasons.toList(),
         utility.takeIf { it.isFinite() } ?: 0.0,
@@ -415,6 +418,7 @@ class RunPlanOptimizer(
         return SelectedPlan(
             planAssessment = planAssessment,
             fitBand = memoryBand,
+            storageFitBand = storageBand,
             category = category,
             reasons = reasons.distinct(),
             utility = preferenceUtility(
@@ -631,6 +635,7 @@ class RunPlanOptimizer(
     ) = SelectedPlan(
         plan,
         null,
+        null,
         RecommendationCategory.NEEDS_INFORMATION,
         listOf(reason),
         0.0,
@@ -644,6 +649,7 @@ class RunPlanOptimizer(
         category: RecommendationCategory,
         reasons: Collection<AssessmentReason>,
     ) = SelectedPlan(
+        null,
         null,
         null,
         category,

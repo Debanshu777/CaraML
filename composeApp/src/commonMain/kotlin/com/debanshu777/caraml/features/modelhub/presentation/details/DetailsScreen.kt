@@ -26,8 +26,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import com.debanshu777.caraml.core.rating.SuitabilityResult
-import com.debanshu777.caraml.core.rating.ui.SuitabilityInfoSheet
+import com.debanshu777.caraml.core.rating.ui.RecommendationDetailsSheet
+import com.debanshu777.caraml.core.rating.ui.recommendationPresentation
 import com.debanshu777.caraml.features.modelhub.presentation.details.components.ModelDetailContent
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelViewModel
@@ -47,11 +47,12 @@ fun DetailsScreen(
     val ggufFiles by viewModel.ggufFiles.collectAsState()
     val isDownloading by viewModel.isDownloading.collectAsState()
     val downloadError by viewModel.downloadError.collectAsState()
+    val showDownloadForLaterConfirmation by viewModel.showDownloadForLaterConfirmation.collectAsState()
     val installBundleState by viewModel.installBundleState.collectAsState()
-    val storageInfo by viewModel.storageInfo.collectAsState()
+    val recommendations by viewModel.recommendedModels.collectAsState()
+    val recommendationState = recommendations.firstOrNull { it.repositoryId == modelId }
     val snackbarHostState = remember { SnackbarHostState() }
-    var ratingSheetModelId by remember { mutableStateOf<String?>(null) }
-    var ratingSheetResult by remember { mutableStateOf<SuitabilityResult?>(null) }
+    var recommendationSheetVisible by remember { mutableStateOf(false) }
 
     val isDiffusion = hubBrowseMode == ModelHubBrowseMode.DiffusionImage ||
         hubBrowseMode == ModelHubBrowseMode.DiffusionVideo
@@ -117,10 +118,6 @@ fun DetailsScreen(
                                 "Weight files" to
                                     "No weight files found (.gguf, .safetensors, .ckpt, .pth)"
                         }
-                        val ratingCallback: ((String, SuitabilityResult) -> Unit)? = { id, result ->
-                            ratingSheetModelId = id
-                            ratingSheetResult = result
-                        }
                         ModelDetailContent(
                             model = detail,
                             ggufFiles = ggufFiles,
@@ -134,8 +131,8 @@ fun DetailsScreen(
                             onVariantSelected = { path -> viewModel.selectVariant(path) },
                             onSmartInstall = { viewModel.smartInstall(modelId) },
                             showInstallBundle = isDiffusion,
-                            deviceHints = storageInfo.deviceHints,
-                            onRatingInfoClick = ratingCallback,
+                            recommendationState = recommendationState,
+                            onRecommendationInfoClick = { recommendationSheetVisible = true },
                             modifier = Modifier.fillMaxSize()
                         )
                     }
@@ -144,17 +141,24 @@ fun DetailsScreen(
         }
     }
 
-    val sheetResult = ratingSheetResult
-    val sheetModelId = ratingSheetModelId
-    if (sheetResult != null && sheetModelId != null) {
-        SuitabilityInfoSheet(
-            modelId = sheetModelId,
-            result = sheetResult,
-            deviceHints = storageInfo.deviceHints,
-            onDismiss = {
-                ratingSheetResult = null
-                ratingSheetModelId = null
-            },
+    val personalized = recommendationState?.personalizedResult
+    if (recommendationSheetVisible && personalized != null) {
+        RecommendationDetailsSheet(
+            modelId = modelId,
+            recommendation = personalized,
+            presentation = recommendationPresentation(
+                personalized,
+                recommendationState.selectedVariantName,
+                recommendationState.workload,
+            ),
+            onDismiss = { recommendationSheetVisible = false },
+        )
+    }
+
+    if (showDownloadForLaterConfirmation) {
+        DownloadForLaterConfirmationDialog(
+            onConfirm = viewModel::confirmDownloadForLater,
+            onDismiss = viewModel::dismissDownloadForLater,
         )
     }
 }

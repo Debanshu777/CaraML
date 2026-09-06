@@ -5,6 +5,7 @@ import com.debanshu777.caraml.core.recommendation.ModelAssessment
 import com.debanshu777.caraml.core.recommendation.PersonalizedRecommendation
 import com.debanshu777.caraml.core.recommendation.RecommendationSortKey
 import com.debanshu777.caraml.core.recommendation.WorkloadConfig
+import com.debanshu777.caraml.core.recommendation.ModelDescriptor
 import com.debanshu777.huggingfacemanager.model.ListModelsResponse
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -40,6 +41,8 @@ data class RecommendedModelUiState(
     val selectedVariantName: String?,
     val stableModelId: String,
     val sourceIndex: Int,
+    val selectedDescriptor: ModelDescriptor? = null,
+    val workload: WorkloadConfig? = null,
     internal val sortKey: RecommendationSortKey? = null,
 )
 

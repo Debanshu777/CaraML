@@ -23,7 +23,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.debanshu777.caraml.core.platform.DeviceHints
 import com.debanshu777.caraml.features.modelhub.presentation.search.InstallBundleUiState
 import com.debanshu777.caraml.features.modelhub.presentation.search.SetupComponentUiState
 
@@ -58,10 +57,8 @@ fun InstallBundleCard(
     onVariantSelected: (path: String) -> Unit,
     onInstall: () -> Unit,
     modifier: Modifier = Modifier,
-    deviceHints: DeviceHints? = null,
-    numParameters: Long? = null,
-    contextLength: Int? = null,
-    architecture: String? = null,
+    recommendedVariantPath: String? = null,
+    installEnabled: Boolean = true,
 ) {
     Surface(
         shape = MaterialTheme.shapes.medium,
@@ -100,10 +97,7 @@ fun InstallBundleCard(
                     variants = state.variants,
                     selectedVariantPath = state.selectedVariantPath,
                     onVariantSelected = onVariantSelected,
-                    deviceHints = deviceHints,
-                    numParameters = numParameters,
-                    contextLength = contextLength,
-                    architecture = architecture,
+                    recommendedVariantPath = recommendedVariantPath,
                 )
             } else if (state.variants.any { it.isDownloaded }) {
                 // All downloaded — show a subtle confirmation
@@ -165,7 +159,7 @@ fun InstallBundleCard(
             // Smart Install button
             Button(
                 onClick = onInstall,
-                enabled = !state.isInstalling && !state.isReady,
+                enabled = installEnabled && !state.isInstalling && !state.isReady,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 when {
@@ -186,6 +180,13 @@ fun InstallBundleCard(
                         Text("  Install")
                     }
                 }
+            }
+            if (!installEnabled && !state.isReady && !state.isInstalling) {
+                Text(
+                    text = "Select the recommended assessed variant to continue.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
 
             // Progress area — shown while installing

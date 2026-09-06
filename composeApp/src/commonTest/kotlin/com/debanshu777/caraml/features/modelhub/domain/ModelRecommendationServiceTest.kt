@@ -87,6 +87,8 @@ class ModelRecommendationServiceTest {
         service.evaluateInitial(session, RecommendationProfile())
 
         assertEquals(48, metadata.requestCount)
+        assertTrue(session.state.value.take(48).all { it.selectedDescriptor != null })
+        assertTrue(session.state.value.take(48).all { it.workload == session.workload })
         assertTrue(metadata.maxConcurrent <= 4)
         assertEquals(
             session.state.value.take(48).sortedBy { it.stableModelId },

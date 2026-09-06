@@ -18,13 +18,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.debanshu777.huggingfacemanager.model.ModelSort
 import com.debanshu777.huggingfacemanager.model.ParameterRange
+import com.debanshu777.caraml.features.modelhub.presentation.search.ModelOrdering
 
 @Composable
 fun SortFilterChips(
+    ordering: ModelOrdering,
     sort: ModelSort,
     minParams: ParameterRange,
     maxParams: ParameterRange,
     onSortChange: (ModelSort) -> Unit,
+    onOrderingChange: (ModelOrdering) -> Unit,
     onMinParamsChange: (ParameterRange) -> Unit,
     onMaxParamsChange: (ParameterRange) -> Unit,
     modifier: Modifier = Modifier
@@ -35,6 +38,12 @@ fun SortFilterChips(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        SortDropdown(
+            label = if (ordering is ModelOrdering.Personalized) "Recommended for me" else "Server order",
+            options = listOf(ModelOrdering.Personalized, ModelOrdering.Server(sort)),
+            selected = ordering,
+            onSelect = onOrderingChange,
+        )
         SortDropdown(
             label = sort.displayName,
             options = ModelSort.entries.filter { it != ModelSort.SIMILAR },
@@ -77,6 +86,8 @@ private fun <T> SortDropdown(
         ) {
             options.forEach { option ->
                 val displayName = when (option) {
+                    ModelOrdering.Personalized -> "Recommended for me"
+                    is ModelOrdering.Server -> "Server: ${option.value.displayName}"
                     is ModelSort -> option.displayName
                     is ParameterRange -> option.displayName
                     else -> option.toString()

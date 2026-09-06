@@ -101,6 +101,7 @@ kotlin {
         commonTest.dependencies {
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutinesTest)
+            implementation(libs.compose.ui.test)
         }
         jvmTest.dependencies {
             implementation(project.dependencies.platform(libs.ktor))

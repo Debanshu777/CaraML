@@ -126,6 +126,7 @@ when (val result = api.searchModels(params)) {
 
 <!-- Updated at end of each Claude Code session -->
 
+- Downloads require pinned artifact identities, stream SHA-256 into sibling `.part` files, and publish bounded v1 manifests through a restart-recoverable journal transaction
 - `nota-ai/bk-sdm-tiny` registry now sets `prediction=0` (EPS) — skips `is_using_v_parameterization_for_sd2()` probe; `offloadToCpu` reverted (moot since Vulkan is now disabled for diffusion at build level via `SD_VULKAN=OFF`)
 - `nota-ai/bk-sdm-tiny` registry entry now sets `prediction=0` (EPS) — prevents `is_using_v_parameterization_for_sd2()` probe from running a test UNet forward pass; SD1.x is always EPS, never V-pred
 - `SdCppRecommendedParams` gained `seed: Long?` (registry-pinned seed for deterministic / debug generation)

@@ -16,6 +16,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.debanshu777.caraml.core.recommendation.RecommendationProfile
 import com.debanshu777.caraml.features.settings.presentation.RecommendationProfileSection
 
@@ -35,7 +37,14 @@ fun RecommendationProfileDialog(
         },
         title = { Text("Personalize model recommendations") },
         text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+            Column(
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .semantics {
+                        contentDescription = "Selected risk: ${draft.riskTolerance.name.displayName()}. " +
+                            "Selected priority: ${draft.optimizationPriority.name.displayName()}."
+                    },
+            ) {
                 RecommendationProfileSection(
                     profile = draft,
                     onRiskToleranceChange = { draft = draft.copy(riskTolerance = it) },
@@ -73,3 +82,5 @@ fun RecommendationProfileDialog(
         },
     )
 }
+
+private fun String.displayName(): String = lowercase().replace('_', ' ').replaceFirstChar { it.uppercase() }
