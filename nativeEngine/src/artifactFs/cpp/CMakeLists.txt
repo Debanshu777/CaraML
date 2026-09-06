@@ -35,6 +35,12 @@ set_target_properties(artifact_fs PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
 )
+foreach(_artifact_fs_config DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
+    set_target_properties(artifact_fs PROPERTIES
+        "LIBRARY_OUTPUT_DIRECTORY_${_artifact_fs_config}" "${CMAKE_BINARY_DIR}"
+        "RUNTIME_OUTPUT_DIRECTORY_${_artifact_fs_config}" "${CMAKE_BINARY_DIR}"
+    )
+endforeach()
 
 if(MSVC)
     target_compile_options(artifact_fs PRIVATE /W4 /WX)

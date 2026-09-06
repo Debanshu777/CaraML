@@ -1,7 +1,9 @@
 package com.debanshu777.caraml.core.domain
 
+import com.debanshu777.caraml.core.data.inference.isCompleteDiffusionInstallation
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
+import com.debanshu777.caraml.core.storage.localmodel.ModelType
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import com.debanshu777.huggingfacemanager.download.DownloadManager
 import com.debanshu777.huggingfacemanager.sdcpp.getModelSetup
@@ -25,18 +27,10 @@ class ModelReadinessReconciler(
         for (model in models) {
             val setup = getModelSetup(model.modelId)
             val expectedStatus = when {
-                setup == null -> LocalModelEntity.STATUS_READY        // unknown → assume ready (single-file)
-                downloadManager.validatedBundle(model.modelId)?.let { manifest ->
-                    manifest.entries.count {
-                        it.logicalRole == "model" && it.identity.repositoryId == model.modelId
-                    } == 1 && setup.components.filter { it.required }.all { component ->
-                        manifest.entries.singleOrNull { entry ->
-                            entry.logicalRole == component.role.name.lowercase() &&
-                                entry.identity.repositoryId == component.repoId &&
-                                entry.identity.relativePath == component.filePath
-                        } != null
-                    }
-                } == true -> LocalModelEntity.STATUS_READY
+                model.modelType == ModelType.TEXT -> LocalModelEntity.STATUS_READY
+                downloadManager.validatedBundle(model.modelId)
+                    ?.isCompleteDiffusionInstallation(model.modelId, setup) == true ->
+                    LocalModelEntity.STATUS_READY
                 else -> LocalModelEntity.STATUS_PARTIAL
             }
             if (model.componentStatus != expectedStatus) {

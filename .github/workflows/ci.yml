@@ -68,5 +68,8 @@ jobs:
         with:
           cache-provider: basic
 
+      - name: Compile and assert the native filesystem runtime
+        run: ./gradlew :nativeEngine:verifyArtifactFsDesktopLibrary --stacktrace
+
       - name: Verify packaged native filesystem and recovery
         run: ./gradlew :composeApp:packageDistributionForCurrentOS :composeApp:artifactFsInstalledImageSmoke :huggingFaceManager:jvmTest --stacktrace

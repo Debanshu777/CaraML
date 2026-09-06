@@ -11,25 +11,39 @@ object CaramlNativeLayout {
 val minIos = "17.2"
 
 fun Project.findTool(name: String): String {
-    findProperty("${name.uppercase()}_PATH")?.toString()?.let { path ->
-        val f = file(path)
-        if (f.exists() && f.canExecute()) return f.absolutePath
+    require(name.matches(Regex("[A-Za-z0-9._-]+"))) { "Invalid tool name" }
+    val windows = System.getProperty("os.name").contains("win", ignoreCase = true)
+    fun validatedExecutable(rawPath: String): String? {
+        val trimmed = rawPath.trim().removeSurrounding("\"")
+        val candidate = File(trimmed)
+        if (!candidate.isAbsolute || !candidate.isFile) return null
+        if (windows && !candidate.name.endsWith(".exe", ignoreCase = true)) return null
+        if (!windows && !candidate.canExecute()) return null
+        return candidate.canonicalFile.absolutePath
     }
-    System.getenv("${name.uppercase()}_PATH")?.let { path ->
-        val f = file(path)
-        if (f.exists() && f.canExecute()) return f.absolutePath
-    }
-    val candidates = listOf(
-        "/opt/homebrew/bin/$name",
-        "/usr/local/bin/$name",
-        "/usr/bin/$name"
+
+    val variable = name.uppercase()
+    val explicitCandidates = listOfNotNull(
+        findProperty("${variable}_PATH")?.toString(),
+        System.getenv(variable),
+        System.getenv("${variable}_PATH"),
     )
-    for (p in candidates) {
-        val f = file(p)
-        if (f.exists() && f.canExecute()) return f.absolutePath
-    }
+    explicitCandidates.firstNotNullOfOrNull(::validatedExecutable)?.let { return it }
+
+    val executableNames = if (windows) listOf("$name.exe") else listOf(name)
+    System.getenv("PATH").orEmpty().split(File.pathSeparatorChar).asSequence()
+        .map(String::trim)
+        .filter(String::isNotEmpty)
+        .map { it.removeSurrounding("\"") }
+        .map(::File)
+        .filter { it.isAbsolute && it.isDirectory }
+        .flatMap { directory -> executableNames.asSequence().map(directory::resolve) }
+        .mapNotNull { validatedExecutable(it.absolutePath) }
+        .firstOrNull()
+        ?.let { return it }
+
     throw GradleException(
-        "Cannot find required tool '$name'. Install it or set ${name.uppercase()}_PATH=/full/path/to/$name"
+        "Cannot find required tool '$name'. Install it, add it to PATH, or set ${variable}_PATH to an absolute executable path."
     )
 }
 
@@ -404,6 +418,29 @@ val compileArtifactFsDesktop by tasks.registering(Exec::class) {
         "--target", "artifact_fs",
         "--config", "Release",
     )
+}
+
+val artifactFsDesktopLibraryName = when (desktopPlatform) {
+    "macos" -> "libartifact_fs.dylib"
+    "linux" -> "libartifact_fs.so"
+    "windows" -> "artifact_fs.dll"
+    else -> throw GradleException("Unsupported desktop platform: $desktopPlatform")
+}
+val artifactFsDesktopLibrary = layout.buildDirectory.file(
+    "${CaramlNativeLayout.DESKTOP_SUBDIR}/$desktopPlatform/$artifactFsDesktopLibraryName",
+)
+
+val verifyArtifactFsDesktopLibrary by tasks.registering {
+    group = "verification"
+    description = "Build and assert the configuration-independent artifact_fs desktop runtime path"
+    dependsOn(compileArtifactFsDesktop)
+    inputs.file(artifactFsDesktopLibrary)
+    doLast {
+        val runtime = artifactFsDesktopLibrary.get().asFile
+        if (!runtime.isFile || runtime.length() <= 0L) {
+            throw GradleException("artifact_fs desktop runtime was not produced at the stable packaging path")
+        }
+    }
 }
 
 android {

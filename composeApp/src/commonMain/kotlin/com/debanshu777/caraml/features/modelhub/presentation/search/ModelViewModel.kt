@@ -3,6 +3,7 @@ package com.debanshu777.caraml.features.modelhub.presentation.search
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.debanshu777.caraml.core.data.settings.SettingsRepository
+import com.debanshu777.caraml.core.data.inference.NATIVE_DIFFUSERS_CONSUMED_PATHS
 import com.debanshu777.caraml.core.recommendation.DiffusionMode
 import com.debanshu777.caraml.core.recommendation.DiffusionWorkloadConfig
 import com.debanshu777.caraml.core.recommendation.KvCacheSelection
@@ -48,6 +49,7 @@ import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
 import com.debanshu777.huggingfacemanager.download.ArtifactVerificationException
 import com.debanshu777.huggingfacemanager.download.ArtifactManifest
+import com.debanshu777.huggingfacemanager.download.ArtifactManifestEntry
 import com.debanshu777.huggingfacemanager.download.artifactBundleId
 import com.debanshu777.huggingfacemanager.download.IncompleteDownloadException
 import com.debanshu777.huggingfacemanager.download.InsufficientStorageException
@@ -55,7 +57,6 @@ import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import com.debanshu777.huggingfacemanager.model.DIFFUSERS_BUNDLE_DB_FILENAME
 import com.debanshu777.huggingfacemanager.model.ModelDetailResponse
 import com.debanshu777.huggingfacemanager.model.ModelFileWeightFilter
-import com.debanshu777.huggingfacemanager.model.isDiffusersModelDirectory
 import com.debanshu777.huggingfacemanager.model.normalizedDiffusersRelativePath
 import com.debanshu777.huggingfacemanager.model.ModelSort
 import com.debanshu777.huggingfacemanager.model.ParameterRange
@@ -115,6 +116,110 @@ internal fun ArtifactManifest.matchesExactBundle(metadata: List<DownloadMetadata
                 installed.localRelativePath == expected.destinationRelativePath
         } != null
     }
+
+private val diffusionDirectoryRoleByPath = mapOf(
+    "unet/diffusion_pytorch_model.safetensors" to "model",
+    "vae/diffusion_pytorch_model.safetensors" to "diffusers-vae",
+    "text_encoder/model.safetensors" to "diffusers-clip-l",
+    "text_encoder_2/model.safetensors" to "diffusers-clip-g",
+)
+
+internal fun buildDeterministicDiffusionBundleMetadata(
+    selected: List<GgufFileUiState>,
+    componentMetadata: Collection<DownloadMetadataDTO>,
+    author: String?,
+    libraryName: String?,
+    pipelineTag: String?,
+): List<DownloadMetadataDTO> {
+    if (selected.isEmpty()) return emptyList()
+    val selectedArtifacts = selected.map { file ->
+        val artifact = file.artifact ?: return emptyList()
+        file to artifact
+    }
+    if (selectedArtifacts.map { it.second }.toSet().size != selectedArtifacts.size) return emptyList()
+
+    val selectedDestinations = selectedArtifacts.associate { (file, _) ->
+        file to normalizedDiffusersRelativePath(file.path)
+    }
+    val directoryBundle = selectedArtifacts.size > 1 ||
+        selectedDestinations.values.any { it in NATIVE_DIFFUSERS_CONSUMED_PATHS }
+    val primary = if (directoryBundle) {
+        if (selectedDestinations.values.toSet() != NATIVE_DIFFUSERS_CONSUMED_PATHS) return emptyList()
+        selectedArtifacts.singleOrNull { (file) ->
+            selectedDestinations.getValue(file) == "unet/diffusion_pytorch_model.safetensors"
+        } ?: return emptyList()
+    } else {
+        selectedArtifacts.single()
+    }
+
+    val componentByIdentity = componentMetadata.associateBy { it.artifact }
+    if (componentByIdentity.size != componentMetadata.size) return emptyList()
+    val identities = (selectedArtifacts.map { it.second } + componentMetadata.map { it.artifact }).distinct()
+    val bundleId = artifactBundleId(identities) ?: return emptyList()
+    val selectedMetadata = selectedArtifacts.map { (file, artifact) ->
+        val destination = selectedDestinations.getValue(file)
+        val component = componentByIdentity[artifact]
+        val role = when {
+            artifact == primary.second -> "model"
+            component != null -> component.logicalRole
+            else -> diffusionDirectoryRoleByPath[destination] ?: return emptyList()
+        }
+        DownloadMetadataDTO(
+            artifact = artifact,
+            logicalRole = role,
+            sizeBytes = artifact.expectedBytes,
+            author = author,
+            libraryName = libraryName,
+            pipelineTag = pipelineTag,
+            contextLength = null,
+            destinationRelativePath = destination,
+            bundleId = bundleId,
+        )
+    }
+    val selectedIdentities = selectedMetadata.mapTo(mutableSetOf()) { it.artifact }
+    val externalComponents = componentMetadata
+        .filterNot { it.artifact in selectedIdentities }
+        .map { it.copy(bundleId = bundleId) }
+    return (selectedMetadata + externalComponents).sortedWith(
+        compareBy<DownloadMetadataDTO>(
+            { if (it.logicalRole == "model") 0 else 1 },
+            { it.logicalRole },
+            { it.artifact.repositoryId },
+            { it.artifact.relativePath },
+            { it.destinationRelativePath },
+        ),
+    )
+}
+
+internal data class InterruptedDiffusionBundleRecovery(
+    val metadata: List<DownloadMetadataDTO>,
+    val installedMetadata: List<DownloadMetadataDTO>,
+)
+
+private fun ArtifactManifestEntry.matchesExact(metadata: DownloadMetadataDTO): Boolean =
+    logicalRole == metadata.logicalRole && identity == metadata.artifact &&
+        bundleId == metadata.bundleId && localRelativePath == metadata.destinationRelativePath
+
+internal fun recoverInterruptedDiffusionBundle(
+    candidates: List<List<DownloadMetadataDTO>>,
+    installedEntries: List<ArtifactManifestEntry>,
+): InterruptedDiffusionBundleRecovery? {
+    val recoveries = candidates.asSequence()
+        .filter { it.isNotEmpty() && it.map(DownloadMetadataDTO::bundleId).toSet().size == 1 }
+        .distinctBy { it.first().bundleId }
+        .map { metadata ->
+            InterruptedDiffusionBundleRecovery(
+                metadata = metadata,
+                installedMetadata = metadata.filter { expected ->
+                    installedEntries.any { it.matchesExact(expected) }
+                },
+            )
+        }
+        .filter { it.installedMetadata.isNotEmpty() }
+        .toList()
+    val bestCount = recoveries.maxOfOrNull { it.installedMetadata.size } ?: return null
+    return recoveries.filter { it.installedMetadata.size == bestCount }.singleOrNull()
+}
 
 data class StorageInfoUiState(
     val totalDeviceBytes: Long = 0L,
@@ -1001,13 +1106,13 @@ class ModelViewModel(
             return pending.filter { it.path == triggeredPath }
         }
         val wantFp16 = triggeredPath.contains(".fp16.", ignoreCase = true)
-        val subdirFiles = pending.filter { it.path.contains('/') }
-        val byDir = subdirFiles.groupBy { it.path.substringBeforeLast('/') }
-        return byDir.flatMap { (_, filesInDir) ->
-            val matching = filesInDir.filter {
-                it.path.contains(".fp16.", ignoreCase = true) == wantFp16
+        return NATIVE_DIFFUSERS_CONSUMED_PATHS.sorted().mapNotNull { destination ->
+            val candidates = pending.filter {
+                normalizedDiffusersRelativePath(it.path) == destination
             }
-            matching.ifEmpty { filesInDir }
+            candidates.singleOrNull {
+                it.path.contains(".fp16.", ignoreCase = true) == wantFp16
+            } ?: candidates.singleOrNull()
         }
     }
 
@@ -1071,16 +1176,18 @@ class ModelViewModel(
         if (primaryMetadata.isEmpty()) throw ArtifactVerificationException()
         val modelRoot = storagePathProvider.getModelsStorageDirectory(modelId)
         val detail = _modelDetail.value
-        val diffusersOk = isDiffusersModelDirectory(modelRoot, storagePathProvider::fileExists)
-        val fallback = primaryMetadata.last()
-        val localRelativePath = fallback.destinationRelativePath
+        val localPaths = primaryMetadata.mapTo(mutableSetOf()) { it.destinationRelativePath }
+        val directoryBundle = localPaths.containsAll(NATIVE_DIFFUSERS_CONSUMED_PATHS)
+        val primary = primaryMetadata.singleOrNull { it.logicalRole == "model" }
+            ?: throw ArtifactVerificationException()
+        val localRelativePath = primary.destinationRelativePath
         val localPath = "$modelRoot/$localRelativePath"
-        if (!diffusersOk && !storagePathProvider.fileExists(localPath)) throw ArtifactVerificationException()
+        if (!directoryBundle && !storagePathProvider.fileExists(localPath)) throw ArtifactVerificationException()
         localModelRepository.deleteAllForModelId(modelId)
         localModelRepository.insert(
             modelId = modelId,
-            filename = if (diffusersOk) DIFFUSERS_BUNDLE_DB_FILENAME else localRelativePath.substringAfterLast('/'),
-            localPath = if (diffusersOk) modelRoot else localPath,
+            filename = if (directoryBundle) DIFFUSERS_BUNDLE_DB_FILENAME else localRelativePath.substringAfterLast('/'),
+            localPath = if (directoryBundle) modelRoot else localPath,
             sizeBytes = primaryMetadata.sumOf { it.artifact.expectedBytes }.takeIf { it > 0L },
             author = detail?.author,
             libraryName = detail?.libraryName,
@@ -1112,10 +1219,14 @@ class ModelViewModel(
         for (component in allRequired) {
             allMetadata[component] = preparedMetadata[component] ?: createMetadataForComponent(component)
         }
+        val installedByRepository = allMetadata.values
+            .map { it.artifact.repositoryId }
+            .distinct()
+            .associateWith { downloadManager.validatedArtifacts(it)?.entries.orEmpty() }
         val missingComponents = allRequired.filter { component ->
-            _setupComponents.value.singleOrNull {
-                it.repoId == component.repoId && it.filePath == component.filePath
-            }?.isDownloaded != true
+            val metadata = requireNotNull(allMetadata[component])
+            installedByRepository[metadata.artifact.repositoryId].orEmpty()
+                .none { it.matchesExact(metadata) }
         }
 
         for (component in missingComponents) {
@@ -1359,9 +1470,33 @@ class ModelViewModel(
     private suspend fun loadSetupComponentsForModel(modelId: String) {
         val setup = getModelSetup(modelId) ?: return
         val metadata = LinkedHashMap<SdCppComponent, DownloadMetadataDTO>()
-        for (component in setup.components.filter { it.required }) {
-            runCatching { createMetadataForComponent(component) }
-                .getOrNull()
+        val requiredComponents = setup.components.filter { it.required }
+        val installedByRepository = requiredComponents
+            .map(SdCppComponent::repoId)
+            .distinct()
+            .associateWith { downloadManager.validatedArtifacts(it)?.entries.orEmpty() }
+        for (component in requiredComponents) {
+            val destination = normalizedDiffusersRelativePath(component.filePath)
+            val installed = installedByRepository[component.repoId].orEmpty().singleOrNull { entry ->
+                entry.logicalRole == component.role.name.lowercase() &&
+                    entry.identity.repositoryId == component.repoId &&
+                    entry.identity.relativePath == component.filePath &&
+                    entry.localRelativePath == destination
+            }
+            val installedMetadata = installed?.let { entry ->
+                DownloadMetadataDTO(
+                    artifact = entry.identity,
+                    logicalRole = entry.logicalRole,
+                    sizeBytes = entry.identity.expectedBytes,
+                    author = _modelDetail.value?.author,
+                    libraryName = "stable-diffusion.cpp",
+                    pipelineTag = _modelDetail.value?.pipelineTag,
+                    contextLength = null,
+                    destinationRelativePath = entry.localRelativePath,
+                    bundleId = entry.bundleId,
+                )
+            }
+            (installedMetadata ?: runCatching { createMetadataForComponent(component) }.getOrNull())
                 ?.let { metadata[component] = it }
         }
         exactSetupComponentMetadata = metadata
@@ -1394,60 +1529,53 @@ class ModelViewModel(
         val individuallyInstalled = artifactManifests.values
             .filterNotNull()
             .flatMap { it.entries }
-
+        if (!metadataComplete) {
+            _ggufFiles.update { files -> files.map { it.copy(isDownloaded = false, progress = null) } }
+            _setupComponents.update { components ->
+                components.map { it.copy(isDownloaded = false, progress = null) }
+            }
+            return
+        }
+        val candidates = _ggufFiles.value.asSequence()
+            .mapNotNull { it.path.takeIf(String::isNotBlank) }
+            .mapNotNull { createExactBundleMetadata(it, exactSetupComponentMetadata) }
+            .distinctBy { it.first().bundleId }
+            .toList()
+        val aggregate = downloadManager.validatedBundle(modelId)
+        val aggregateMetadata = aggregate?.let { manifest ->
+            candidates.singleOrNull(manifest::matchesExactBundle)
+        }
+        val recovery = if (aggregateMetadata == null) {
+            recoverInterruptedDiffusionBundle(candidates, individuallyInstalled)
+        } else {
+            InterruptedDiffusionBundleRecovery(aggregateMetadata, aggregateMetadata)
+        }
+        if (recovery == null) {
+            _ggufFiles.update { files -> files.map { it.copy(isDownloaded = false, progress = null) } }
+            _setupComponents.update { components ->
+                components.map { it.copy(isDownloaded = false, progress = null) }
+            }
+            return
+        }
+        val installedMetadata = recovery.installedMetadata.toSet()
         _ggufFiles.update { files ->
             files.map { file ->
-                val destination = file.artifact?.relativePath?.let(::normalizedDiffusersRelativePath)
-                file.copy(
-                    isDownloaded = file.artifact != null && individuallyInstalled.any { entry ->
-                        entry.identity == file.artifact && entry.localRelativePath == destination
-                    },
-                    progress = null,
-                )
+                val expected = recovery.metadata.singleOrNull { it.artifact == file.artifact }
+                file.copy(isDownloaded = expected in installedMetadata, progress = null)
             }
-        }
-        _setupComponents.update { components ->
-            components.map { componentState ->
-                val metadata = exactSetupComponentMetadata.entries
-                    .singleOrNull { (component) ->
-                        component.repoId == componentState.repoId && component.filePath == componentState.filePath
-                    }
-                    ?.value
-                componentState.copy(
-                    isDownloaded = metadata != null && individuallyInstalled.any { entry ->
-                        entry.identity == metadata.artifact &&
-                            entry.logicalRole == metadata.logicalRole &&
-                            entry.localRelativePath == metadata.destinationRelativePath
-                    },
-                    progress = null,
-                )
-            }
-        }
-
-        if (!metadataComplete) return
-        val aggregate = downloadManager.validatedBundle(modelId) ?: return
-        val installed = _ggufFiles.value.asSequence()
-            .mapNotNull { it.path.takeIf(String::isNotBlank) }
-            .mapNotNull { triggered ->
-                createExactBundleMetadata(triggered, exactSetupComponentMetadata)
-                    ?.takeIf(aggregate::matchesExactBundle)
-                    ?.let { triggered to it }
-            }
-            .firstOrNull() ?: return
-        val installedIdentities = installed.second.map { it.artifact }.toSet()
-        _ggufFiles.update { files ->
-            files.map { it.copy(isDownloaded = it.artifact in installedIdentities, progress = null) }
         }
         _setupComponents.update { components ->
             components.map { state ->
-                val identity = exactSetupComponentMetadata.entries.singleOrNull { (component) ->
+                val expected = exactSetupComponentMetadata.entries.singleOrNull { (component) ->
                     component.repoId == state.repoId && component.filePath == state.filePath
-                }?.value?.artifact
-                state.copy(isDownloaded = identity in installedIdentities, progress = null)
+                }?.value?.let { source ->
+                    recovery.metadata.singleOrNull { it.artifact == source.artifact }
+                }
+                state.copy(isDownloaded = expected in installedMetadata, progress = null)
             }
         }
-        _selectedVariantPath.value = installed.first
-        _validatedBundleReady.value = true
+        _selectedVariantPath.value = recovery.metadata.single { it.logicalRole == "model" }.artifact.relativePath
+        _validatedBundleReady.value = aggregateMetadata != null
     }
 
     private fun createExactBundleMetadata(
@@ -1459,25 +1587,14 @@ class ModelViewModel(
             triggeredPath,
         )
         if (selected.isEmpty() || selected.none { it.path == triggeredPath }) return null
-        val primaryIdentities = selected.map { it.artifact ?: return null }
-        val identities = primaryIdentities + componentMetadata.values.map { it.artifact }
-        val bundleId = artifactBundleId(identities) ?: return null
         val detail = _modelDetail.value
-        val ordered = listOf(selected.first { it.path == triggeredPath }) + selected.filter { it.path != triggeredPath }
-        val primaryMetadata = ordered.mapIndexed { index, file ->
-            DownloadMetadataDTO(
-                artifact = requireNotNull(file.artifact),
-                logicalRole = if (index == 0) "model" else "component-${file.path.hashCode().toUInt()}",
-                sizeBytes = file.artifact.expectedBytes,
-                author = detail?.author,
-                libraryName = detail?.libraryName,
-                pipelineTag = detail?.pipelineTag,
-                contextLength = null,
-                destinationRelativePath = normalizedDiffusersRelativePath(file.path),
-                bundleId = bundleId,
-            )
-        }
-        return primaryMetadata + componentMetadata.values.map { it.copy(bundleId = bundleId) }
+        return buildDeterministicDiffusionBundleMetadata(
+            selected = selected,
+            componentMetadata = componentMetadata.values,
+            author = detail?.author,
+            libraryName = detail?.libraryName,
+            pipelineTag = detail?.pipelineTag,
+        ).takeIf(List<DownloadMetadataDTO>::isNotEmpty)
     }
 
     /** Legacy: download only components (called explicitly from settings/fix flow). */

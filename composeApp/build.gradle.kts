@@ -135,7 +135,7 @@ val artifactFsLibraryName = when (desktopPlatform) {
 }
 val artifactFsAppResourcesRoot = layout.buildDirectory.dir("generated/artifactFsAppResources")
 val stageArtifactFsAppResources by tasks.registering(Sync::class) {
-    dependsOn(":nativeEngine:compileArtifactFsDesktop")
+    dependsOn(":nativeEngine:verifyArtifactFsDesktopLibrary")
     from(project(":nativeEngine").layout.buildDirectory.file("llama-runner-desktop/$desktopPlatform/$artifactFsLibraryName"))
     into(artifactFsAppResourcesRoot.map { it.dir("common") })
 }
@@ -165,7 +165,7 @@ tasks.matching { it.name == "prepareAppResources" }.configureEach {
 }
 
 tasks.matching { it.name == "jvmTest" }.configureEach {
-    dependsOn(":nativeEngine:compileArtifactFsDesktop")
+    dependsOn(":nativeEngine:verifyArtifactFsDesktopLibrary")
     (this as Test).systemProperty("caraml.native.lib.dir", nativeDir)
 }
 

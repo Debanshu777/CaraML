@@ -32,6 +32,7 @@ import com.debanshu777.caraml.core.storage.component.ModelComponentLinkEntity
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelDao
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
+import com.debanshu777.caraml.core.storage.localmodel.ModelType
 import com.debanshu777.caraml.core.domain.ModelReadinessReconciler
 import com.debanshu777.caraml.features.modelhub.domain.ModelMetadataSource
 import com.debanshu777.caraml.features.modelhub.domain.ModelRecommendationService
@@ -49,6 +50,7 @@ import com.debanshu777.huggingfacemanager.download.ArtifactManifestStore
 import com.debanshu777.huggingfacemanager.download.ArtifactBundleManifestStore
 import com.debanshu777.huggingfacemanager.download.artifactBundleId
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
+import com.debanshu777.huggingfacemanager.model.DIFFUSERS_BUNDLE_DB_FILENAME
 import com.debanshu777.huggingfacemanager.repository.HuggingFaceRepository
 import com.debanshu777.huggingfacemanager.usecase.GetModelConfigUseCase
 import com.debanshu777.huggingfacemanager.usecase.GetModelDetailUseCase
@@ -148,16 +150,24 @@ class ModelViewModelRecommendationTest {
         val primarySha = primaryBytes.sha256()
         val componentSha = componentBytes.sha256()
         val requestDispatcher = dispatcher
+        var detailRequests = 0
+        var treeRequests = 0
         val engine = object : MockEngine(MockEngineConfig().apply {
             reuseHandlers = true
             addHandler { request ->
                 when {
-                    request.url.encodedPath.contains("/tree/") -> respondJson(
-                        """[{"path":"$primaryPath","type":"file","size":4,"lfs":{"oid":"$primarySha","size":4}},{"path":"$componentPath","type":"file","size":4,"lfs":{"oid":"$componentSha","size":4}}]""",
-                    )
-                    request.url.encodedPath.endsWith("/stabilityai/sd-turbo") -> respondJson(
-                        """{"id":"stabilityai/sd-turbo","modelId":"stabilityai/sd-turbo","sha":"$revision","private":false}""",
-                    )
+                    request.url.encodedPath.contains("/tree/") -> {
+                        treeRequests += 1
+                        respondJson(
+                            """[{"path":"$componentPath","type":"file","size":4,"lfs":{"oid":"$componentSha","size":4}},{"path":"$primaryPath","type":"file","size":4,"lfs":{"oid":"$primarySha","size":4}}]""",
+                        )
+                    }
+                    request.url.encodedPath.endsWith("/stabilityai/sd-turbo") -> {
+                        detailRequests += 1
+                        respondJson(
+                            """{"id":"stabilityai/sd-turbo","modelId":"stabilityai/sd-turbo","sha":"$revision","private":false}""",
+                        )
+                    }
                     else -> error("Unexpected request")
                 }
             }
@@ -188,6 +198,8 @@ class ModelViewModelRecommendationTest {
             )
             assertTrue(installed.ggufFiles.value.single { it.path == primaryPath }.isDownloaded)
             assertTrue(installed.setupComponents.value.single { it.filePath == componentPath }.isDownloaded)
+            assertEquals(2, detailRequests)
+            assertEquals(1, treeRequests)
 
             File(
                 storage.getModelsStorageDirectory("stabilityai/sd-turbo"),
@@ -200,6 +212,8 @@ class ModelViewModelRecommendationTest {
             assertFalse(interrupted.installBundleState.value.isReady)
             assertTrue(interrupted.ggufFiles.value.single { it.path == primaryPath }.isDownloaded)
             assertTrue(interrupted.setupComponents.value.single { it.filePath == componentPath }.isDownloaded)
+            assertEquals(4, detailRequests, "restart must not refetch metadata for a valid component")
+            assertEquals(2, treeRequests, "restart must not refetch the valid component tree")
 
             writeVerifiedBundle(
                 storage = storage,
@@ -220,6 +234,8 @@ class ModelViewModelRecommendationTest {
             assertFalse(corrupted.installBundleState.value.isReady)
             assertTrue(corrupted.ggufFiles.value.none { it.isDownloaded })
             assertTrue(corrupted.setupComponents.value.none { it.isDownloaded })
+            assertEquals(7, detailRequests, "corrupt component metadata must be refreshed")
+            assertEquals(4, treeRequests, "corrupt component metadata must be refreshed")
         } finally {
             client.close()
             trusted.deleteRecursively()
@@ -248,6 +264,89 @@ class ModelViewModelRecommendationTest {
             ModelReadinessReconciler(LocalModelRepository(dao), storage).reconcile()
 
             assertEquals(LocalModelEntity.STATUS_PARTIAL, dao.updatedStatuses[model.modelId])
+        } finally {
+            trusted.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun unknownDiffusionSetupWithoutAggregateIsPartial() = runTest {
+        val trusted = Files.createTempDirectory("caraml-unknown-ready-missing-").toRealPath().toFile()
+        val storage = FakeStoragePathProvider(trusted, realFileAccess = true)
+        val model = unknownDiffusionModel(storage, ModelType.IMAGE)
+        val dao = FakeLocalModelDao(mainModels = listOf(model))
+        try {
+            ModelReadinessReconciler(LocalModelRepository(dao), storage).reconcile()
+
+            assertEquals(LocalModelEntity.STATUS_PARTIAL, dao.updatedStatuses[model.modelId])
+        } finally {
+            trusted.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun unknownDiffusionSetupWithCorruptAggregateIsPartial() = runTest {
+        val trusted = Files.createTempDirectory("caraml-unknown-ready-corrupt-").toRealPath().toFile()
+        val storage = FakeStoragePathProvider(trusted, realFileAccess = true)
+        val model = unknownDiffusionModel(storage, ModelType.VIDEO)
+        val bytes = "valid".encodeToByteArray()
+        try {
+            writeVerifiedBundle(
+                storage = storage,
+                repositoryId = model.modelId,
+                revision = "a".repeat(40),
+                files = listOf(Triple("checkpoint.safetensors", "model", bytes)),
+            )
+            File(storage.getModelsStorageDirectory(model.modelId), "checkpoint.safetensors")
+                .writeBytes("evil!".encodeToByteArray())
+            val dao = FakeLocalModelDao(mainModels = listOf(model))
+
+            ModelReadinessReconciler(LocalModelRepository(dao), storage).reconcile()
+
+            assertEquals(LocalModelEntity.STATUS_PARTIAL, dao.updatedStatuses[model.modelId])
+        } finally {
+            trusted.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun unknownDiffusionSetupWithOneValidatedOwnerPrimaryIsReady() = runTest {
+        val trusted = Files.createTempDirectory("caraml-unknown-ready-valid-").toRealPath().toFile()
+        val storage = FakeStoragePathProvider(trusted, realFileAccess = true)
+        val model = unknownDiffusionModel(storage, ModelType.IMAGE).copy(
+            componentStatus = LocalModelEntity.STATUS_PARTIAL,
+        )
+        try {
+            writeVerifiedBundle(
+                storage = storage,
+                repositoryId = model.modelId,
+                revision = "a".repeat(40),
+                files = listOf(
+                    Triple("checkpoint.safetensors", "model", "valid".encodeToByteArray()),
+                ),
+            )
+            val dao = FakeLocalModelDao(mainModels = listOf(model))
+
+            ModelReadinessReconciler(LocalModelRepository(dao), storage).reconcile()
+
+            assertEquals(LocalModelEntity.STATUS_READY, dao.updatedStatuses[model.modelId])
+        } finally {
+            trusted.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun onlyExplicitStoredLanguageTypeUsesLegacyReadinessBypass() = runTest {
+        val trusted = Files.createTempDirectory("caraml-language-ready-").toRealPath().toFile()
+        val storage = FakeStoragePathProvider(trusted, realFileAccess = true)
+        val model = unknownDiffusionModel(storage, ModelType.TEXT).copy(
+            componentStatus = LocalModelEntity.STATUS_PARTIAL,
+        )
+        val dao = FakeLocalModelDao(mainModels = listOf(model))
+        try {
+            ModelReadinessReconciler(LocalModelRepository(dao), storage).reconcile()
+
+            assertEquals(LocalModelEntity.STATUS_READY, dao.updatedStatuses[model.modelId])
         } finally {
             trusted.deleteRecursively()
         }
@@ -364,6 +463,22 @@ class ModelViewModelRecommendationTest {
         )
     }
 }
+
+private fun unknownDiffusionModel(
+    storage: StoragePathProvider,
+    modelType: String,
+): LocalModelEntity = LocalModelEntity(
+    modelId = "org/unknown-diffusion",
+    filename = DIFFUSERS_BUNDLE_DB_FILENAME,
+    localPath = storage.getModelsStorageDirectory("org/unknown-diffusion"),
+    sizeBytes = 5L,
+    downloadedAt = 0L,
+    author = null,
+    libraryName = null,
+    pipelineTag = "text-to-image",
+    modelType = modelType,
+    componentStatus = LocalModelEntity.STATUS_READY,
+)
 
 private fun MockRequestHandleScope.respondJson(value: String) = respond(
     content = value,

@@ -14,7 +14,6 @@ import com.debanshu777.caraml.core.data.settings.SettingsRepository
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import com.debanshu777.huggingfacemanager.download.DownloadManager
 import com.debanshu777.huggingfacemanager.download.ArtifactManifest
-import com.debanshu777.huggingfacemanager.model.isDiffusersModelDirectory
 import com.debanshu777.huggingfacemanager.sdcpp.SdCppRecommendedParams
 import com.debanshu777.huggingfacemanager.sdcpp.getModelSetup
 import com.debanshu777.huggingfacemanager.sdcpp.ComponentRole
@@ -68,16 +67,26 @@ class DiffusionInferenceRepository(
                 ?: return@withContext ModelLoadResult.Error(
                     "The installed model could not be verified. Open the model page to repair it.",
                 )
-            if (!aggregateContainsRequiredCatalogComponents(model.modelId, aggregate)) {
+            val modelSetup = getModelSetup(model.modelId)
+            if (!aggregate.isCompleteDiffusionInstallation(model.modelId, modelSetup)) {
                 return@withContext ModelLoadResult.Error(
                     "The installed model is incomplete. Open the model page to repair it.",
                 )
             }
-            val modelPath = resolveModelPath(model.modelId, aggregate)
-            if (modelPath.isBlank()) {
-                return@withContext ModelLoadResult.Error("Model path is invalid")
+            val modelRoot = storagePathProvider.getModelsStorageDirectory(model.modelId).trimEnd('/', '\\')
+            val loadTarget = aggregate.verifiedDiffusionLoadTarget(model.modelId)
+                ?: return@withContext ModelLoadResult.Error(
+                    "The installed model is incomplete. Open the model page to repair it.",
+                )
+            val modelPath = when (loadTarget) {
+                VerifiedDiffusionLoadTarget.Directory -> modelRoot
+                is VerifiedDiffusionLoadTarget.File -> "$modelRoot/${loadTarget.relativePath}"
             }
-            if (!canLoadDiffusionModelAt(modelPath)) {
+            val targetReadable = when (loadTarget) {
+                VerifiedDiffusionLoadTarget.Directory -> storagePathProvider.isDirectoryReadable(modelPath)
+                is VerifiedDiffusionLoadTarget.File -> storagePathProvider.isModelFileReadable(modelPath)
+            }
+            if (!targetReadable) {
                 return@withContext ModelLoadResult.Error(
                     "Model file not found or not readable. It may have been moved or deleted.",
                 )
@@ -230,43 +239,6 @@ class DiffusionInferenceRepository(
     /** Returns recommended inference parameters for the given model, or null for unknown/simple models. */
     fun getRecommendedParams(model: LocalModelEntity): SdCppRecommendedParams? =
         getModelSetup(model.modelId)?.recommendedParams
-
-    private fun resolveModelPath(modelId: String, aggregate: ArtifactManifest): String {
-        val dir = storagePathProvider.getModelsStorageDirectory(modelId).trimEnd('/', '\\')
-        if (isDiffusersModelDirectory(dir, storagePathProvider::fileExists) &&
-            storagePathProvider.isDirectoryReadable(dir)
-        ) return dir
-        val primary = aggregate.entries.singleOrNull {
-            it.logicalRole == "model" && it.identity.repositoryId == modelId
-        } ?: return ""
-        return "$dir/${primary.localRelativePath}"
-    }
-
-    private fun aggregateContainsRequiredCatalogComponents(
-        modelId: String,
-        aggregate: ArtifactManifest,
-    ): Boolean {
-        if (aggregate.entries.count {
-                it.logicalRole == "model" && it.identity.repositoryId == modelId
-            } != 1
-        ) return false
-        val setup = getModelSetup(modelId) ?: return true
-        return setup.components.filter { it.required }.all { component ->
-            aggregate.entries.singleOrNull { entry ->
-                entry.logicalRole == component.role.name.lowercase() &&
-                    entry.identity.repositoryId == component.repoId &&
-                    entry.identity.relativePath == component.filePath
-            } != null
-        }
-    }
-
-    private fun canLoadDiffusionModelAt(path: String): Boolean {
-        if (!storagePathProvider.fileExists(path)) return false
-        if (isDiffusersModelDirectory(path, storagePathProvider::fileExists)) {
-            return storagePathProvider.isDirectoryReadable(path)
-        }
-        return storagePathProvider.isModelFileReadable(path)
-    }
 
     private suspend fun buildDiffusionModelConfig(
         model: LocalModelEntity,
