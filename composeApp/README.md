@@ -182,6 +182,7 @@ Run: `./gradlew :composeApp:jvmTest`
 
 <!-- Updated at end of each AI-assisted development session -->
 
+- Recommendation profiles now persist atomically, default safely to Balanced, and appear through accessible Material 3 controls only in SHADOW/V2 rollout modes
 - Model assessment now reuses bounded profile-neutral plan estimates with cancellation-safe single-flight coordination, fresh snapshot assembly, and privacy-safe staged rollout comparison
 - `SuitabilityResult` now carries `warnings: List<String>`; `ModelSuitabilityCalculator.rateLlm` emits runnability warnings for IQ-quant CPU-only and hybrid-SSM models; `SuitabilityInfoSheet` renders a "Runnability" section with warning icon when present
 - `LlamaInferenceRepository`: hybrid-SSM arch Vulkan denylist (`DENYLIST_HYBRID_SSM_VULKAN=true`) skips doomed GPU attempt on first load; combines with runtime `gpuIncompatible` self-learning set

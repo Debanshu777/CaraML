@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -35,10 +36,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.drawer.LocalDrawerController
+import com.debanshu777.caraml.core.recommendation.RecommendationRolloutModeSource
 import com.debanshu777.caraml.core.settings.KvQuantPreset
 import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.theme.ThemeViewModel
+import com.debanshu777.caraml.features.modelhub.presentation.search.profileUiState
 import org.koin.compose.viewmodel.koinViewModel
+import org.koin.compose.koinInject
 import kotlin.math.round
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -47,8 +51,18 @@ fun SettingsScreen(
     viewModel: SettingsViewModel,
     modifier: Modifier = Modifier,
     themeViewModel: ThemeViewModel = koinViewModel(),
+    rolloutModeSource: RecommendationRolloutModeSource = koinInject(),
 ) {
     val settings by viewModel.settings.collectAsState()
+    val settingsLoaded by viewModel.settingsLoaded.collectAsState()
+    val profile by viewModel.effectiveRecommendationProfile.collectAsState()
+    val profileSaving by viewModel.isRecommendationProfileSaving.collectAsState()
+    val profileError by viewModel.recommendationProfileError.collectAsState()
+    val profileUiState = profileUiState(
+        settings = settings,
+        rolloutMode = rolloutModeSource.current(),
+        settingsLoaded = settingsLoaded,
+    )
     val drawerController = LocalDrawerController.current
 
     Scaffold(
@@ -73,6 +87,32 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.l)
         ) {
             AppearanceSection(viewModel = themeViewModel)
+
+            if (profileUiState.isAvailable) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.large,
+                ) {
+                    Column(
+                        modifier = Modifier.padding(LocalSpacing.current.l),
+                        verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.s),
+                    ) {
+                        RecommendationProfileSection(
+                            profile = profile,
+                            onRiskToleranceChange = viewModel::updateRiskTolerance,
+                            onOptimizationPriorityChange = viewModel::updateOptimizationPriority,
+                            enabled = !profileSaving,
+                        )
+                        if (profileError != null) {
+                            Text(
+                                text = profileError.orEmpty(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
+                }
+            }
 
             OutlinedTextField(
                 value = settings.systemPrompt,
@@ -189,6 +229,7 @@ private fun KvCacheSection(
                         onClick = { onSelect(preset) },
                         label = { Text(preset.chipLabel()) },
                         colors = FilterChipDefaults.filterChipColors(),
+                        modifier = Modifier.heightIn(min = 48.dp),
                     )
                 }
             }
@@ -214,4 +255,3 @@ private fun KvQuantPreset.description(): String = when (this) {
     KvQuantPreset.Q8_Q8   -> "Q8/Q8 — balanced precision and memory. Good for most devices."
     KvQuantPreset.F16_F16 -> "F16/F16 — highest quality. Requires the most memory; best for high-RAM devices."
 }
-

@@ -1,5 +1,9 @@
 package com.debanshu777.caraml.core.settings
 
+import com.debanshu777.caraml.core.recommendation.OptimizationPriority
+import com.debanshu777.caraml.core.recommendation.RecommendationProfile
+import com.debanshu777.caraml.core.recommendation.RiskTolerance
+
 /**
  * KV-cache quantization preset for LLM inference.
  *
@@ -21,7 +25,16 @@ data class AppSettings(
     val benchmarkMode: Boolean = false,
     val kvQuantPreset: KvQuantPreset = KvQuantPreset.AUTO,
     val useGpu: Boolean = true,
+    val riskTolerance: RiskTolerance = RiskTolerance.BALANCED,
+    val optimizationPriority: OptimizationPriority = OptimizationPriority.BALANCED,
+    val modelProfileOnboardingComplete: Boolean = false,
 ) {
+    val recommendationProfile: RecommendationProfile
+        get() = RecommendationProfile(
+            riskTolerance = riskTolerance,
+            optimizationPriority = optimizationPriority,
+        )
+
     companion object {
         const val DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant."
         const val DEFAULT_TEMPERATURE = 0.3f

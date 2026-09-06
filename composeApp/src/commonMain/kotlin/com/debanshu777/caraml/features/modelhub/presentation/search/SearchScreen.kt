@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -51,9 +52,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.drawer.LocalDrawerController
 import com.debanshu777.caraml.core.platform.DeviceHints
+import com.debanshu777.caraml.core.recommendation.RecommendationProfile
+import com.debanshu777.caraml.core.recommendation.RecommendationRolloutModeSource
+import com.debanshu777.caraml.core.recommendation.RiskTolerance
+import com.debanshu777.caraml.core.recommendation.OptimizationPriority
 import com.debanshu777.caraml.core.rating.SuitabilityRating
 import com.debanshu777.caraml.core.rating.SuitabilityResult
 import com.debanshu777.caraml.core.rating.ui.SuitabilityChip
@@ -64,10 +71,16 @@ import com.debanshu777.caraml.features.modelhub.presentation.downloaded.Download
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.ReadinessFilter
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.components.LocalModelListItem
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelListItem
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.RecommendationProfileDialog
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchBar
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchModelListItem
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SortFilterChips
+import com.debanshu777.caraml.features.settings.presentation.RecommendationProfileSection
+import com.debanshu777.caraml.features.settings.presentation.SettingsViewModel
+import com.debanshu777.caraml.features.settings.presentation.label
 import kotlinx.coroutines.launch
+import org.koin.compose.koinInject
+import org.koin.compose.viewmodel.koinViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,12 +89,26 @@ fun SearchScreen(
     downloadedModelsViewModel: DownloadedModelsViewModel,
     onNavigateToDetails: (modelId: String, hubBrowseMode: ModelHubBrowseMode) -> Unit,
     onSelectModelAndGoBack: (LocalModelEntity) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    settingsViewModel: SettingsViewModel = koinViewModel(),
+    rolloutModeSource: RecommendationRolloutModeSource = koinInject(),
 ) {
     var selectedTabIndex by remember { mutableStateOf(0) }
     val tabs = listOf("Search", "Downloaded")
 
     val storageInfo by modelViewModel.storageInfo.collectAsState()
+    val settings by settingsViewModel.settings.collectAsState()
+    val settingsLoaded by settingsViewModel.settingsLoaded.collectAsState()
+    val effectiveProfile by settingsViewModel.effectiveRecommendationProfile.collectAsState()
+    val profileSaving by settingsViewModel.isRecommendationProfileSaving.collectAsState()
+    val profileError by settingsViewModel.recommendationProfileError.collectAsState()
+    val persistedProfileState = profileUiState(
+        settings = settings,
+        rolloutMode = rolloutModeSource.current(),
+        settingsLoaded = settingsLoaded,
+    )
+    val recommendationProfileState = persistedProfileState.copy(profile = effectiveProfile)
+    var profileControlsExpanded by remember { mutableStateOf(false) }
 
     // Shared bottom sheet — opened from any rating chip in the list.
     var ratingSheetModelId by remember { mutableStateOf<String?>(null) }
@@ -126,6 +153,15 @@ fun SearchScreen(
                         ratingSheetModelId = id
                         ratingSheetResult = result
                     },
+                    recommendationProfileState = recommendationProfileState,
+                    profileControlsExpanded = profileControlsExpanded,
+                    profileSaving = profileSaving,
+                    profileError = profileError,
+                    onToggleProfileControls = {
+                        profileControlsExpanded = !profileControlsExpanded
+                    },
+                    onRiskToleranceChange = settingsViewModel::updateRiskTolerance,
+                    onOptimizationPriorityChange = settingsViewModel::updateOptimizationPriority,
                     modifier = Modifier.fillMaxSize()
                 )
 
@@ -153,6 +189,18 @@ fun SearchScreen(
             },
         )
     }
+
+    if (recommendationProfileState.showDialog) {
+        RecommendationProfileDialog(
+            initial = recommendationProfileState.profile,
+            onContinue = settingsViewModel::completeModelProfileOnboarding,
+            onDismissWithBalanced = {
+                settingsViewModel.completeModelProfileOnboarding(RecommendationProfile())
+            },
+            submitting = profileSaving,
+            errorMessage = profileError,
+        )
+    }
 }
 
 @Composable
@@ -161,7 +209,14 @@ private fun SearchTabContent(
     onNavigateToDetails: (modelId: String, hubBrowseMode: ModelHubBrowseMode) -> Unit,
     deviceHints: DeviceHints?,
     onRatingInfoClick: (modelId: String, result: SuitabilityResult) -> Unit,
-    modifier: Modifier = Modifier
+    recommendationProfileState: RecommendationProfileUiState,
+    profileControlsExpanded: Boolean,
+    profileSaving: Boolean,
+    profileError: String?,
+    onToggleProfileControls: () -> Unit,
+    onRiskToleranceChange: (RiskTolerance) -> Unit,
+    onOptimizationPriorityChange: (OptimizationPriority) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val browseMode by viewModel.browseMode.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
@@ -178,6 +233,42 @@ private fun SearchTabContent(
     val isSearchMode = isLlmHub && (searchQuery.isNotEmpty() || searchResponse != null)
 
     Column(modifier = modifier) {
+        if (recommendationProfileState.isAvailable) {
+            RecommendationProfileAction(
+                profile = recommendationProfileState.profile,
+                expanded = profileControlsExpanded,
+                onClick = onToggleProfileControls,
+            )
+            if (profileControlsExpanded) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = LocalSpacing.current.l),
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                ) {
+                    Column(
+                        modifier = Modifier.padding(LocalSpacing.current.l),
+                        verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.s),
+                    ) {
+                        RecommendationProfileSection(
+                            profile = recommendationProfileState.profile,
+                            onRiskToleranceChange = onRiskToleranceChange,
+                            onOptimizationPriorityChange = onOptimizationPriorityChange,
+                            enabled = !profileSaving,
+                        )
+                        if (profileError != null) {
+                            Text(
+                                text = profileError,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         val chipScroll = rememberScrollState()
         Row(
             modifier = Modifier
@@ -346,6 +437,30 @@ private fun SearchTabContent(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun RecommendationProfileAction(
+    profile: RecommendationProfile,
+    expanded: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val risk = profile.riskTolerance.label()
+    val priority = profile.optimizationPriority.label()
+    FilledTonalButton(
+        onClick = onClick,
+        modifier = modifier
+            .padding(horizontal = LocalSpacing.current.l, vertical = LocalSpacing.current.s)
+            .heightIn(min = 48.dp)
+            .semantics {
+                contentDescription = "Recommendation profile. Selected risk: $risk. " +
+                    "Selected priority: $priority. " +
+                    if (expanded) "Collapse profile controls." else "Expand profile controls."
+            },
+    ) {
+        Text("Profile: $risk · $priority")
     }
 }
 
