@@ -71,15 +71,15 @@ class ModelAssessmentRepository internal constructor(
         snapshot: DeviceSnapshot,
         workload: WorkloadConfig,
     ): ModelAssessment {
-        val key = withContext(assessmentDispatcher) {
-            cacheKey(descriptor, snapshot.hardwareProfile, workload)
+        val preparation = withContext(assessmentDispatcher) {
+            prepareAssessment(descriptor, snapshot.hardwareProfile, workload)
         }
-        val plans = if (key == null) {
-            withContext(assessmentDispatcher) {
-                assessmentComputer(descriptor, snapshot.hardwareProfile, workload)
+        val plans = when (preparation) {
+            is AssessmentPreparation.Cancelled -> throw preparation.exception
+            is AssessmentPreparation.Unavailable -> {
+                return unavailableAssessment(snapshot, preparation.reason)
             }
-        } else {
-            assessedPlans(key, descriptor, snapshot.hardwareProfile, workload)
+            is AssessmentPreparation.Ready -> assessedPlans(preparation.key)
         }
         // Only immutable plan estimates are cached. Dynamic budgets and evidence are always rebuilt.
         return suitabilityEngine.assemble(plans, snapshot)
@@ -110,44 +110,46 @@ class ModelAssessmentRepository internal constructor(
         cancelled.forEach { it.cancel(AssessmentInvalidatedCancellationException()) }
     }
 
-    private fun cacheKey(
+    private fun prepareAssessment(
         descriptor: ModelDescriptor,
         hardware: HardwareProfile,
         workload: WorkloadConfig,
-    ): AssessmentCacheKey? {
+    ): AssessmentPreparation {
+        val inputs = try {
+            normalizedAssessmentInputs(descriptor, workload, hardware)
+        } catch (cancelled: CancellationException) {
+            return AssessmentPreparation.Cancelled(cancelled)
+        } catch (_: Exception) {
+            null
+        } ?: return AssessmentPreparation.Unavailable(AssessmentReason.INVALID_METADATA)
+
         val state = try {
             CalibrationState(
                 engineVersion = calibrationSource.engineVersion() ?: UNKNOWN_ENGINE_VERSION,
                 revision = calibrationSource.revision(),
             )
         } catch (cancelled: CancellationException) {
-            throw cancelled
+            return AssessmentPreparation.Cancelled(cancelled)
         } catch (_: Exception) {
-            return null
+            return AssessmentPreparation.Unavailable(AssessmentReason.INVALID_PERFORMANCE_EVIDENCE)
         }
-        return assessmentCacheKey(
-            descriptor = descriptor,
-            workload = workload,
-            hardware = hardware,
+        val key = assessmentCacheKey(
+            inputs = inputs,
             engineVersion = state.engineVersion,
             estimatorVersion = estimatorVersion,
             calibrationRevision = state.revision,
-        )
+        ) ?: return AssessmentPreparation.Unavailable(AssessmentReason.INVALID_PERFORMANCE_EVIDENCE)
+        return AssessmentPreparation.Ready(key)
     }
 
-    private suspend fun assessedPlans(
-        key: AssessmentCacheKey,
-        descriptor: ModelDescriptor,
-        hardware: HardwareProfile,
-        workload: WorkloadConfig,
-    ): AssessedPlans {
+    private suspend fun assessedPlans(key: AssessmentCacheKey): AssessedPlans {
         val acquired = acquire(key)
         acquired.cached?.let { return it }
         val deferred = requireNotNull(acquired.deferred)
         try {
             return when (val result = deferred.await()) {
                 is AssessmentComputation.Success -> {
-                    if (!deferred.isCancelled && cacheKey(descriptor, hardware, workload) == key) {
+                    if (!deferred.isCancelled && calibrationIsCurrent(key)) {
                         putCompletedIfCurrent(key, deferred, result.value)
                     }
                     result.value
@@ -157,6 +159,41 @@ class ModelAssessmentRepository internal constructor(
         } finally {
             release(key, deferred)
         }
+    }
+
+    private fun calibrationIsCurrent(key: AssessmentCacheKey): Boolean {
+        val current = try {
+            CalibrationState(
+                engineVersion = calibrationSource.engineVersion() ?: UNKNOWN_ENGINE_VERSION,
+                revision = calibrationSource.revision(),
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            return false
+        }
+        return validEngineVersion(current.engineVersion) &&
+            current.engineVersion == key.engineVersion &&
+            current.revision == key.calibrationRevision
+    }
+
+    private fun unavailableAssessment(
+        snapshot: DeviceSnapshot,
+        reason: AssessmentReason,
+    ): ModelAssessment {
+        val evidence = listOf(Evidence(reason, Confidence.LOW))
+        val compatibility = Compatibility.Unknown(listOf(reason), evidence)
+        return suitabilityEngine.assemble(
+            AssessedPlans(
+                values = emptyList(),
+                assessmentKey = UNAVAILABLE_ASSESSMENT_KEY,
+                compatibility = compatibility,
+                memoryTopology = snapshot.hardwareProfile.memoryTopology,
+                reasons = listOf(reason),
+                evidence = evidence,
+            ),
+            snapshot,
+        )
     }
 
     private fun acquire(key: AssessmentCacheKey): AcquiredAssessment {
@@ -252,6 +289,7 @@ class ModelAssessmentRepository internal constructor(
         const val MAX_IN_FLIGHT_ENTRIES: Int = 128
         private const val MAX_ESTIMATOR_VERSION: Int = 1_000_000
         private const val UNKNOWN_ENGINE_VERSION: String = "engine-unavailable"
+        private const val UNAVAILABLE_ASSESSMENT_KEY: String = "assessment-unavailable"
     }
 }
 
@@ -263,12 +301,20 @@ internal fun assessmentCacheKey(
     estimatorVersion: Int,
     calibrationRevision: Long,
 ): AssessmentCacheKey? {
+    val inputs = normalizedAssessmentInputs(descriptor, workload, hardware) ?: return null
+    return assessmentCacheKey(inputs, engineVersion, estimatorVersion, calibrationRevision)
+}
+
+private fun assessmentCacheKey(
+    inputs: NormalizedAssessmentInputs,
+    engineVersion: String,
+    estimatorVersion: Int,
+    calibrationRevision: Long,
+): AssessmentCacheKey? {
     if (!validEngineVersion(engineVersion) || estimatorVersion !in 1..1_000_000 || calibrationRevision < 0) {
         return null
     }
-    val normalizedDescriptor = normalizedDescriptor(descriptor) ?: return null
-    val normalizedWorkload = normalizedWorkload(workload) ?: return null
-    val fingerprint = hardwareFingerprint(hardware) ?: return null
+    val normalizedDescriptor = inputs.descriptor
     val identities = when (normalizedDescriptor) {
         is LlmModelDescriptor -> listOf(normalizedDescriptor.file)
         is DiffusionModelDescriptor -> normalizedDescriptor.components.map { it.file }
@@ -280,14 +326,25 @@ internal fun assessmentCacheKey(
     }
     return AssessmentCacheKey(
         identity = identity,
-        workload = normalizedWorkload,
-        hardwareFingerprint = fingerprint,
+        workload = inputs.workload,
+        hardwareFingerprint = inputs.hardwareFingerprint,
         engineVersion = engineVersion,
         estimatorVersion = estimatorVersion,
         calibrationRevision = calibrationRevision,
         descriptor = normalizedDescriptor,
         componentIdentities = identities,
     )
+}
+
+private fun normalizedAssessmentInputs(
+    descriptor: ModelDescriptor,
+    workload: WorkloadConfig,
+    hardware: HardwareProfile,
+): NormalizedAssessmentInputs? {
+    val normalizedDescriptor = normalizedDescriptor(descriptor) ?: return null
+    val normalizedWorkload = normalizedWorkload(workload) ?: return null
+    val normalizedHardware = hardwareFingerprint(hardware) ?: return null
+    return NormalizedAssessmentInputs(normalizedDescriptor, normalizedWorkload, normalizedHardware)
 }
 
 private fun normalizedDescriptor(value: ModelDescriptor): ModelDescriptor? {
@@ -528,6 +585,18 @@ private data class FileIdentityFingerprint(
 )
 
 private data class CalibrationState(val engineVersion: String, val revision: Long)
+private data class NormalizedAssessmentInputs(
+    val descriptor: ModelDescriptor,
+    val workload: WorkloadConfig,
+    val hardwareFingerprint: HardwareFingerprint,
+)
+
+private sealed interface AssessmentPreparation {
+    data class Ready(val key: AssessmentCacheKey) : AssessmentPreparation
+    data class Unavailable(val reason: AssessmentReason) : AssessmentPreparation
+    data class Cancelled(val exception: CancellationException) : AssessmentPreparation
+}
+
 private data class RepositoryState(
     val inFlight: Map<AssessmentCacheKey, RefCountedAssessment> = emptyMap(),
     val completed: Map<AssessmentCacheKey, AssessedPlans> = emptyMap(),

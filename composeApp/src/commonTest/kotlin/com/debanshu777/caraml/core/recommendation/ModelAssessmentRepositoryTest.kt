@@ -47,6 +47,21 @@ class ModelAssessmentRepositoryTest {
     }
 
     @Test
+    fun noCalibrationSourceStillUsesStableSentinelForSingleFlightAndCaching() = runTest {
+        var invocations = 0
+        val repository = repository(calibrationSource = NoCalibrationSource) { _, _, _ ->
+            invocations += 1
+            task7Plans()
+        }
+
+        val first = repository.assess(task7Descriptor(), task6Snapshot(), task6LlmWorkload())
+        val second = repository.assess(task7Descriptor(), task6Snapshot(), task6LlmWorkload())
+
+        assertEquals(1, invocations)
+        assertSame(first.planAssessments, second.planAssessments)
+    }
+
+    @Test
     fun profileChangeDoesNotRecalculateObjectiveAssessment() = runTest {
         var invocations = 0
         val repository = repository { _, _, _ ->
@@ -157,6 +172,75 @@ class ModelAssessmentRepositoryTest {
                 descriptor.file.toString(),
             )
         }
+    }
+
+    @Test
+    fun oversizedDirectDiffusionDescriptorNeverReachesAssessmentComputer() = runTest {
+        var invocations = 0
+        val repository = repository { _, _, _ ->
+            invocations += 1
+            task7Plans()
+        }
+        val snapshot = task6Snapshot(hostBudget = 4_096, storageBudget = 8_192)
+
+        val assessment = repository.assess(
+            task7OversizedDiffusionDescriptor(),
+            snapshot,
+            task6DiffusionWorkload(),
+        )
+
+        assertEquals(0, invocations)
+        assertEquals("assessment-unavailable", assessment.assessmentKey)
+        assertEquals(listOf(AssessmentReason.INVALID_METADATA), assessment.planAssessments.reasons)
+        assertEquals(4_096, assessment.baseHostBudgetBytes)
+        assertEquals(8_192, assessment.baseStorageBudgetBytes)
+    }
+
+    @Test
+    fun concurrentCalibrationFailuresNeverCreateUnboundedUncachedAssessmentWork() = runTest {
+        var invocations = 0
+        val repository = repository(calibrationSource = FailingTask7CalibrationSource) { _, _, _ ->
+            invocations += 1
+            task7Plans()
+        }
+
+        val assessments = List(ModelAssessmentRepository.MAX_IN_FLIGHT_ENTRIES * 2) {
+            async { repository.assess(task7Descriptor(), task6Snapshot(), task6LlmWorkload()) }
+        }.awaitAll()
+
+        assertEquals(0, invocations)
+        assertTrue(assessments.all { it.assessmentKey == "assessment-unavailable" })
+        assertTrue(
+            assessments.all {
+                it.planAssessments.reasons == listOf(AssessmentReason.INVALID_PERFORMANCE_EVIDENCE)
+            },
+        )
+    }
+
+    @Test
+    fun calibrationCancellationIsRethrownByIdentityBeforeAssessmentWork() = runTest {
+        val expected = CancellationException("calibration-cancelled")
+        var invocations = 0
+        val calibration = object : CalibrationSource {
+            override fun engineVersion(): String = throw expected
+            override fun backendProfileFor(backend: com.debanshu777.caraml.core.platform.BackendKind): BackendPerformanceProfile? = null
+            override fun correctionFor(key: CalibrationKey): CalibrationCorrection? = null
+            override fun revision(): Long = 1
+        }
+        val repository = repository(calibrationSource = calibration) { _, _, _ ->
+            invocations += 1
+            task7Plans()
+        }
+
+        val actual = try {
+            repository.assess(task7Descriptor(), task6Snapshot(), task6LlmWorkload())
+            fail("expected cancellation")
+        } catch (cancelled: CancellationException) {
+            cancelled
+        }
+
+        assertSame(expected, actual)
+        assertEquals(0, invocations)
     }
 
     @Test
@@ -355,6 +439,34 @@ class ModelAssessmentRepositoryTest {
         assertEquals(2, invocations)
     }
 
+    @Test
+    fun calibrationChangeDuringFlightCannotPublishOldRevisionUnderNewRevision() = runTest {
+        val calibration = MutableTask7CalibrationSource()
+        val firstGate = CompletableDeferred<Unit>()
+        var invocations = 0
+        val repository = repository(calibrationSource = calibration) { _, _, _ ->
+            val invocation = ++invocations
+            if (invocation == 1) firstGate.await()
+            task7Plans(assessmentKey = "calculation-$invocation")
+        }
+        val descriptor = task7Descriptor()
+        val first = async { repository.assess(descriptor, task6Snapshot(), task6LlmWorkload()) }
+        runCurrent()
+
+        calibration.revision = 2
+        val newRevision = async { repository.assess(descriptor, task6Snapshot(), task6LlmWorkload()) }
+        runCurrent()
+        assertEquals("calculation-2", newRevision.await().assessmentKey)
+
+        firstGate.complete(Unit)
+        assertEquals("calculation-1", first.await().assessmentKey)
+        assertEquals(
+            "calculation-2",
+            repository.assess(descriptor, task6Snapshot(), task6LlmWorkload()).assessmentKey,
+        )
+        assertEquals(2, invocations)
+    }
+
     private fun TestScope.repository(
         calibrationSource: CalibrationSource = FixedTask7CalibrationSource(),
         assessmentComputer: suspend (ModelDescriptor, HardwareProfile, WorkloadConfig) -> AssessedPlans,
@@ -380,12 +492,65 @@ private class FixedTask7CalibrationSource : CalibrationSource {
     override fun revision(): Long = 1
 }
 
-private fun task7Plans() = AssessedPlans(
+private data object FailingTask7CalibrationSource : CalibrationSource {
+    override fun engineVersion(): String = throw IllegalStateException("private-calibration-payload")
+    override fun backendProfileFor(backend: com.debanshu777.caraml.core.platform.BackendKind): BackendPerformanceProfile? = null
+    override fun correctionFor(key: CalibrationKey): CalibrationCorrection? = null
+    override fun revision(): Long = 1
+}
+
+private class MutableTask7CalibrationSource : CalibrationSource {
+    var revision: Long = 1
+
+    override fun engineVersion(): String = "runner-1.0.0"
+    override fun backendProfileFor(backend: com.debanshu777.caraml.core.platform.BackendKind): BackendPerformanceProfile? = null
+    override fun correctionFor(key: CalibrationKey): CalibrationCorrection? = null
+    override fun revision(): Long = revision
+}
+
+private fun task7Plans(
+    assessmentKey: String = "owner/model@0123456789abcdef0123456789abcdef01234567:model.gguf",
+) = AssessedPlans(
     values = emptyList(),
-    assessmentKey = "owner/model@0123456789abcdef0123456789abcdef01234567:model.gguf",
+    assessmentKey = assessmentKey,
     compatibility = Compatibility.Unknown(listOf(AssessmentReason.ENGINE_SUPPORT_UNKNOWN)),
     memoryTopology = MemoryTopology.UNKNOWN,
 )
+
+private fun task7OversizedDiffusionDescriptor(): DiffusionModelDescriptor {
+    val repositoryId = "owner/diffusion"
+    val revision = "0123456789abcdef0123456789abcdef01234567"
+    return DiffusionModelDescriptor(
+        repositoryId = repositoryId,
+        revision = revision,
+        components = List(DescriptorLimits.MAX_COMPONENTS + 1) { index ->
+            DiffusionComponentDescriptor(
+                file = ModelFileIdentity(
+                    repositoryId = repositoryId,
+                    revision = revision,
+                    path = "component-$index.safetensors",
+                    sizeBytes = 1,
+                    gitOid = null,
+                    lfsOid = "sha256:$index",
+                    xetHash = null,
+                    evidence = emptyList(),
+                ),
+                role = null,
+                required = true,
+                isPrimary = index == 0,
+            )
+        },
+        mode = DiffusionMode.IMAGE,
+        family = "SDXL",
+        architecture = null,
+        width = 512,
+        height = 512,
+        quantizationDistribution = emptySet(),
+        requiredComponentsPresent = true,
+        requiredEngineFeatures = emptySet(),
+        evidence = emptyList(),
+    )
+}
 
 private fun task7Descriptor(
     path: String = "model.gguf",

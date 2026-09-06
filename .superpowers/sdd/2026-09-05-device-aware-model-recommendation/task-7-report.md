@@ -93,3 +93,67 @@ The Task 7 files and only Task 7 hunks in overlapping files were staged. In part
 - Production capability and calibration sources deliberately remain conservative placeholders; Task 11 replaces the capability binding and a later task supplies accepted calibration data.
 - Release remains `LEGACY` until Task 15 explicitly promotes the rollout.
 - `SHADOW` performs both computations by design and should remain debug-only until its performance and parity gates pass.
+
+## Fix Round 1 — Cache Containment and Observational Shadowing
+
+### Review Findings Verified
+
+- The clean Task 7 commit was not self-contained: its common tests import `kotlinx.coroutines.test`, while `HEAD:composeApp/build.gradle.kts` contained only `libs.kotlin.test` in `commonTest`. This round owns and commits the exact `implementation(libs.kotlinx.coroutinesTest)` dependency hunk.
+- A null cache key previously ran `assessmentComputer` directly on the caller's original descriptor. Malformed or oversized descriptors and calibration-source failures could therefore bypass both normalization and the maximum-128 in-flight registry (CWE-400).
+- In `SHADOW`, ordinary v2 or recorder failures previously escaped after legacy had succeeded, changing observable legacy behavior.
+- The default shadow recorder used `AppLogger.d`, but the production logger defaults to `INFO`; the real debug Koin path therefore discarded every default shadow record.
+
+### TDD Evidence
+
+The focused regressions were added before the production fixes. The RED command was:
+
+```text
+./gradlew :composeApp:jvmTest --tests '*ModelAssessmentRepositoryTest*' --tests '*LegacySuitabilityAdapterTest*'
+```
+
+Result: `BUILD FAILED` with 29 tests run and five expected failures. The failures proved that an oversized direct diffusion descriptor reached assessment work, concurrent calibration failures created uncached work, ordinary v2 and recorder exceptions escaped `SHADOW`, and the real debug Koin/default-recorder path emitted no record at the normal `INFO` threshold. The calibration-change, cancellation-identity, and fatal-`Error` characterizations already passed.
+
+After the minimal fixes and the final cancellation regression, the exact focused command completed `BUILD SUCCESSFUL` (31 tests: 19 repository, 11 common adapter, and 1 JVM integration test; zero failures). The complete recommendation-package gate also completed `BUILD SUCCESSFUL`:
+
+```text
+./gradlew :composeApp:jvmTest --tests 'com.debanshu777.caraml.core.recommendation.*'
+```
+
+The required platform gate completed `BUILD SUCCESSFUL` (130 actionable tasks):
+
+```text
+./gradlew :composeApp:compileKotlinIosSimulatorArm64 :androidApp:assembleDebug
+```
+
+Only the existing non-fatal native OpenSSL/OpenGL notices and expect/actual beta warnings were observed.
+
+### Fix Decisions
+
+- Descriptor, workload, and static hardware normalization now succeeds before calibration is consulted. Any invalid direct input returns a fresh, structured unknown assessment without invoking compatibility or estimation work.
+- Ordinary calibration-source failure or an invalid calibration state also returns a fresh structured unknown assessment; it cannot create uncapped work. `NoCalibrationSource` retains its stable validated sentinel and still benefits from single-flight/LRU caching.
+- Valid assessment work has one path: the bounded maximum-128 single-flight registry, using only normalized immutable inputs retained by the cache key. Cancellation is rethrown by identity before work begins.
+- Before publishing a completed value, the repository verifies that engine version and calibration revision are still current. An older in-flight completion cannot replace or be served as the new revision's result.
+- `SHADOW` catches only ordinary `Exception` from v2 calculation or recording after legacy succeeds. It returns legacy unchanged, rethrows `CancellationException` by identity, leaves fatal `Error` unsuppressed, and does not log exception messages or payloads.
+- The private default recorder writes the already bounded privacy-safe record directly to the platform debug sink. This bypasses the general logger's `INFO` threshold only inside an explicitly selected `SHADOW` execution; release mode remains fail-safe `LEGACY`.
+- A JVM integration test resolves the real adapter from the debug Koin configuration, holds `AppLogger` at `INFO`, captures the platform record, and verifies that repository IDs, paths, and metadata detail are absent.
+
+### Fix Round 1 Files
+
+- `composeApp/build.gradle.kts` (`commonTest` coroutines-test dependency hunk only)
+- `composeApp/src/commonMain/kotlin/com/debanshu777/caraml/core/recommendation/ModelAssessmentRepository.kt`
+- `composeApp/src/commonMain/kotlin/com/debanshu777/caraml/core/recommendation/LegacySuitabilityAdapter.kt`
+- `composeApp/src/commonTest/kotlin/com/debanshu777/caraml/core/recommendation/ModelAssessmentRepositoryTest.kt`
+- `composeApp/src/commonTest/kotlin/com/debanshu777/caraml/core/recommendation/LegacySuitabilityAdapterTest.kt`
+- `composeApp/src/jvmTest/kotlin/com/debanshu777/caraml/core/recommendation/LegacySuitabilityAdapterTestJvm.kt`
+- `.superpowers/sdd/2026-09-05-device-aware-model-recommendation/task-7-report.md`
+
+### Dependency and Staging Audit
+
+- `git show HEAD:composeApp/build.gradle.kts` confirmed that the clean base omitted `libs.kotlinx.coroutinesTest`; `git show :composeApp/build.gradle.kts` confirmed that the staged version includes it in `commonTest`.
+- The seven Fix Round 1 paths/hunks above were staged interactively. The complete cached diff contains no `AppModule.kt`, GeneratedMediaStore change, runtime-containment work, or other unrelated dirty file.
+- `git diff --cached --check` completed with no whitespace errors. All unrelated user work remains unstaged.
+
+### Deferred Review Minors
+
+- Backend selection priority is intentionally unchanged in this round.
+- Stable-digest padding behavior is intentionally unchanged in this round.

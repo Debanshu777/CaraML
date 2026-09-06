@@ -1,7 +1,9 @@
 package com.debanshu777.caraml.core.recommendation
 
-import com.debanshu777.caraml.core.platform.AppLogger
+import com.debanshu777.caraml.core.platform.LogLevel
+import com.debanshu777.caraml.core.platform.platformLog
 import com.debanshu777.caraml.core.rating.SuitabilityRating
+import kotlinx.coroutines.CancellationException
 
 @ConsistentCopyVisibility
 data class ShadowComparisonRecord private constructor(
@@ -37,7 +39,7 @@ fun interface ShadowComparisonRecorder {
 
 class LegacySuitabilityAdapter(
     private val modeSource: RecommendationRolloutModeSource = DefaultRecommendationRolloutModeSource(),
-    private val recorder: ShadowComparisonRecorder = AppLoggerShadowComparisonRecorder,
+    private val recorder: ShadowComparisonRecorder = PlatformShadowComparisonRecorder,
 ) {
     fun toLegacyRating(recommendation: PersonalizedRecommendation): SuitabilityRating = when (recommendation.category) {
         RecommendationCategory.RECOMMENDED -> SuitabilityRating.BEST
@@ -59,27 +61,36 @@ class LegacySuitabilityAdapter(
         RecommendationRolloutMode.V2 -> toLegacyRating(v2())
         RecommendationRolloutMode.SHADOW -> {
             val legacyResult = legacy()
-            val v2Result = v2()
-            recorder.record(
-                ShadowComparisonRecord.create(
-                    identityDigest = identity.stableContentDigest(),
-                    legacy = legacyResult,
-                    v2 = v2Result.category,
-                    reasons = v2Result.reasons,
-                    estimatorVersion = estimatorVersion,
-                ),
-            )
+            try {
+                val v2Result = v2()
+                recorder.record(
+                    ShadowComparisonRecord.create(
+                        identityDigest = identity.stableContentDigest(),
+                        legacy = legacyResult,
+                        v2 = v2Result.category,
+                        reasons = v2Result.reasons,
+                        estimatorVersion = estimatorVersion,
+                    ),
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // Shadow comparison is observational; legacy output remains authoritative.
+            }
             legacyResult
         }
     }
 }
 
-private data object AppLoggerShadowComparisonRecorder : ShadowComparisonRecorder {
+private data object PlatformShadowComparisonRecorder : ShadowComparisonRecorder {
     override fun record(value: ShadowComparisonRecord) {
-        AppLogger.d(TAG) {
-            "shadow id=${value.identityDigest} old=${value.legacy.name} new=${value.v2.name} " +
-                "reasons=${value.reasons.joinToString(",") { it.name }} estimator=${value.estimatorVersion}"
-        }
+        platformLog(
+            level = LogLevel.DEBUG,
+            tag = TAG,
+            message = "shadow id=${value.identityDigest} old=${value.legacy.name} new=${value.v2.name} " +
+                "reasons=${value.reasons.joinToString(",") { it.name }} estimator=${value.estimatorVersion}",
+            throwable = null,
+        )
     }
 
     private const val TAG = "ModelRecommendation"

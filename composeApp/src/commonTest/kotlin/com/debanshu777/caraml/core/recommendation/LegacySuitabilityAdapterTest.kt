@@ -5,6 +5,8 @@ import com.debanshu777.caraml.core.rating.SuitabilityRating
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertSame
+import kotlin.test.assertTrue
 import org.koin.dsl.koinApplication
 
 class LegacySuitabilityAdapterTest {
@@ -151,6 +153,103 @@ class LegacySuitabilityAdapterTest {
         )
 
         assertEquals("unavailable", records.single().identityDigest)
+    }
+
+    @Test
+    fun shadowV2OrdinaryFailureCannotChangeLegacyResult() {
+        var recorderCalls = 0
+        val adapter = LegacySuitabilityAdapter(
+            modeSource = RecommendationRolloutModeSource { RecommendationRolloutMode.SHADOW },
+            recorder = ShadowComparisonRecorder { recorderCalls += 1 },
+        )
+
+        val result = adapter.rating(
+            identity = task7AdapterIdentity(),
+            legacy = { SuitabilityRating.GOOD },
+            v2 = { throw IllegalStateException("private-v2-payload") },
+            estimatorVersion = 1,
+        )
+
+        assertEquals(SuitabilityRating.GOOD, result)
+        assertEquals(0, recorderCalls)
+    }
+
+    @Test
+    fun shadowRecorderOrdinaryFailureCannotChangeLegacyResult() {
+        val adapter = LegacySuitabilityAdapter(
+            modeSource = RecommendationRolloutModeSource { RecommendationRolloutMode.SHADOW },
+            recorder = ShadowComparisonRecorder { throw IllegalStateException("private-recorder-payload") },
+        )
+
+        val result = adapter.rating(
+            identity = task7AdapterIdentity(),
+            legacy = { SuitabilityRating.AVERAGE },
+            v2 = { task7Recommendation(RecommendationCategory.USABLE) },
+            estimatorVersion = 1,
+        )
+
+        assertEquals(SuitabilityRating.AVERAGE, result)
+    }
+
+    @Test
+    fun shadowCancellationIsRethrownByIdentityFromCalculationAndRecorder() {
+        val calculationCancellation = kotlinx.coroutines.CancellationException("calculation-cancelled")
+        val calculationAdapter = LegacySuitabilityAdapter(
+            modeSource = RecommendationRolloutModeSource { RecommendationRolloutMode.SHADOW },
+        )
+        val calculationActual = try {
+            calculationAdapter.rating(
+                identity = task7AdapterIdentity(),
+                legacy = { SuitabilityRating.GOOD },
+                v2 = { throw calculationCancellation },
+                estimatorVersion = 1,
+            )
+            error("expected calculation cancellation")
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            cancelled
+        }
+        assertSame(calculationCancellation, calculationActual)
+
+        val recorderCancellation = kotlinx.coroutines.CancellationException("recorder-cancelled")
+        val recorderAdapter = LegacySuitabilityAdapter(
+            modeSource = RecommendationRolloutModeSource { RecommendationRolloutMode.SHADOW },
+            recorder = ShadowComparisonRecorder { throw recorderCancellation },
+        )
+        val recorderActual = try {
+            recorderAdapter.rating(
+                identity = task7AdapterIdentity(),
+                legacy = { SuitabilityRating.GOOD },
+                v2 = { task7Recommendation(RecommendationCategory.USABLE) },
+                estimatorVersion = 1,
+            )
+            error("expected recorder cancellation")
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            cancelled
+        }
+        assertSame(recorderCancellation, recorderActual)
+    }
+
+    @Test
+    fun shadowFatalErrorIsNotSuppressed() {
+        val fatal = AssertionError("fatal")
+        val adapter = LegacySuitabilityAdapter(
+            modeSource = RecommendationRolloutModeSource { RecommendationRolloutMode.SHADOW },
+        )
+
+        val actual = try {
+            adapter.rating(
+                identity = task7AdapterIdentity(),
+                legacy = { SuitabilityRating.GOOD },
+                v2 = { throw fatal },
+                estimatorVersion = 1,
+            )
+            error("expected fatal error")
+        } catch (error: AssertionError) {
+            error
+        }
+
+        assertSame(fatal, actual)
+        assertTrue(actual.message == "fatal")
     }
 }
 
