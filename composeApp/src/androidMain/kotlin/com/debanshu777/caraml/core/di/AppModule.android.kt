@@ -1,6 +1,7 @@
 package com.debanshu777.caraml.core.di
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import com.debanshu777.caraml.core.storage.AppDatabase
 import com.debanshu777.caraml.core.storage.getDatabaseBuilder
 import com.debanshu777.caraml.core.storage.getRoomDatabase
@@ -19,4 +20,9 @@ actual val platformHuggingFaceModule: Module = module {
         val builder = getDatabaseBuilder(KoinPlatform.getKoin().get<Context>(), dbPath)
         getRoomDatabase(builder)
     }
+}
+
+internal actual fun platformIsDebugBuild(): Boolean {
+    val applicationInfo = KoinPlatform.getKoin().get<Context>().applicationInfo
+    return applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
 }

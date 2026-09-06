@@ -1,3 +1,4 @@
+import org.gradle.api.tasks.JavaExec
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
@@ -140,6 +141,10 @@ compose.desktop {
 
 tasks.matching { it.name == "run" || it.name.endsWith("Run") }.configureEach {
     dependsOn(":nativeEngine:compileLlamaRunnerDesktop")
+}
+
+tasks.withType<JavaExec>().matching { it.name == "run" }.configureEach {
+    systemProperty("caraml.recommendation.debugBuild", "true")
 }
 
 dependencies {

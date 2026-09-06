@@ -219,6 +219,7 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 
 <!-- This section is updated at the end of each AI-assisted development session -->
 
+- Added bounded profile-neutral model assessment caching, fresh device-snapshot assembly, and privacy-safe debug shadow comparison with release-safe legacy rollout
 - Added a least-privilege GitHub Actions JVM test gate and weekly Dependabot updates; actions are pinned to immutable release commits
 - Removed the obsolete Obsidian MCP config and persisted Graphify's `libraries/` exclusion
 - Consolidated shared Claude Code and Codex project guidance into `AGENTS.md`; `CLAUDE.md` is now a thin import wrapper containing only Claude-specific model policy

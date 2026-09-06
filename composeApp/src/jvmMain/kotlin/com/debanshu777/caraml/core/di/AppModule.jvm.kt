@@ -17,3 +17,8 @@ actual val platformHuggingFaceModule = module {
         getRoomDatabase(builder)
     }
 }
+
+internal actual fun platformIsDebugBuild(): Boolean =
+    System.getProperty(RECOMMENDATION_DEBUG_PROPERTY)?.toBooleanStrictOrNull() == true
+
+private const val RECOMMENDATION_DEBUG_PROPERTY = "caraml.recommendation.debugBuild"

@@ -3,6 +3,17 @@ package com.debanshu777.caraml.core.di
 import com.debanshu777.caraml.core.data.inference.DiffusionInferenceRepository
 import com.debanshu777.caraml.core.data.inference.InferenceRepository
 import com.debanshu777.caraml.core.data.inference.LlamaInferenceRepository
+import com.debanshu777.caraml.core.recommendation.CalibrationSource
+import com.debanshu777.caraml.core.recommendation.CompatibilityChecker
+import com.debanshu777.caraml.core.recommendation.DefaultRecommendationRolloutModeSource
+import com.debanshu777.caraml.core.recommendation.EngineCapabilitySource
+import com.debanshu777.caraml.core.recommendation.LegacySuitabilityAdapter
+import com.debanshu777.caraml.core.recommendation.ModelAssessmentRepository
+import com.debanshu777.caraml.core.recommendation.NoCalibrationSource
+import com.debanshu777.caraml.core.recommendation.RecommendationPolicy
+import com.debanshu777.caraml.core.recommendation.RecommendationRolloutModeSource
+import com.debanshu777.caraml.core.recommendation.SuitabilityEngine
+import com.debanshu777.caraml.core.recommendation.UnknownEngineCapabilitySource
 import com.debanshu777.diffusionrunner.DiffusionRunner
 import com.debanshu777.caraml.core.platform.DeviceCapabilities
 import com.debanshu777.caraml.core.storage.AppDatabase
@@ -31,6 +42,7 @@ import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module
 
 expect val platformHuggingFaceModule: Module
+internal expect fun platformIsDebugBuild(): Boolean
 
 val appModule = module {
     includes(platformHuggingFaceModule)
@@ -49,6 +61,16 @@ val appModule = module {
     single<ThemeRepository> { DefaultThemeRepository(get()) }
 
     single { DeviceCapabilities() }
+    single<EngineCapabilitySource> { UnknownEngineCapabilitySource }
+    single<CalibrationSource> { NoCalibrationSource }
+    single { CompatibilityChecker(get()) }
+    single { SuitabilityEngine(get(), get()) }
+    single { RecommendationPolicy() }
+    single { ModelAssessmentRepository(get(), get(), get()) }
+    single<RecommendationRolloutModeSource> {
+        DefaultRecommendationRolloutModeSource(isDebugBuild = platformIsDebugBuild())
+    }
+    single { LegacySuitabilityAdapter(get()) }
 
     single { LlamaRunner() }
     single { DiffusionRunner() }
