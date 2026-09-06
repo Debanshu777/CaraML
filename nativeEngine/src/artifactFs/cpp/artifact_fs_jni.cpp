@@ -35,15 +35,42 @@ struct RootHandle {
     }
 };
 
-bool from_java(JNIEnv* env, jstring input, std::string* output) {
+bool is_strict_utf8(const std::string& value) {
+    for (std::size_t index = 0; index < value.size();) {
+        const auto first = static_cast<unsigned char>(value[index]);
+        if (first == 0) return false;
+        if (first <= 0x7f) { ++index; continue; }
+        auto continuation = [&](std::size_t offset) {
+            return index + offset < value.size() &&
+                (static_cast<unsigned char>(value[index + offset]) & 0xc0) == 0x80;
+        };
+        if (first >= 0xc2 && first <= 0xdf && continuation(1)) { index += 2; continue; }
+        if (first == 0xe0 && continuation(1) && continuation(2) &&
+            static_cast<unsigned char>(value[index + 1]) >= 0xa0) { index += 3; continue; }
+        if (((first >= 0xe1 && first <= 0xec) || (first >= 0xee && first <= 0xef)) &&
+            continuation(1) && continuation(2)) { index += 3; continue; }
+        if (first == 0xed && continuation(1) && continuation(2) &&
+            static_cast<unsigned char>(value[index + 1]) <= 0x9f) { index += 3; continue; }
+        if (first == 0xf0 && continuation(1) && continuation(2) && continuation(3) &&
+            static_cast<unsigned char>(value[index + 1]) >= 0x90) { index += 4; continue; }
+        if (first >= 0xf1 && first <= 0xf3 && continuation(1) && continuation(2) && continuation(3)) {
+            index += 4;
+            continue;
+        }
+        if (first == 0xf4 && continuation(1) && continuation(2) && continuation(3) &&
+            static_cast<unsigned char>(value[index + 1]) <= 0x8f) { index += 4; continue; }
+        return false;
+    }
+    return !value.empty();
+}
+
+bool from_java(JNIEnv* env, jbyteArray input, std::string* output) {
     if (input == nullptr || output == nullptr) return false;
-    const jsize byte_count = env->GetStringUTFLength(input);
+    const jsize byte_count = env->GetArrayLength(input);
     if (byte_count <= 0 || static_cast<std::size_t>(byte_count) > kMaxPathBytes) return false;
-    const char* chars = env->GetStringUTFChars(input, nullptr);
-    if (chars == nullptr) return false;
-    output->assign(chars, static_cast<std::size_t>(byte_count));
-    env->ReleaseStringUTFChars(input, chars);
-    return output->find('\0') == std::string::npos;
+    output->resize(static_cast<std::size_t>(byte_count));
+    env->GetByteArrayRegion(input, 0, byte_count, reinterpret_cast<jbyte*>(output->data()));
+    return !env->ExceptionCheck() && is_strict_utf8(*output);
 }
 
 bool split_relative(const std::string& path, std::vector<std::string>* segments, bool allow_dot = false) {
@@ -90,13 +117,20 @@ int duplicate_descriptor(int descriptor) {
 #endif
 }
 
-int open_absolute_directory(const std::string& path) {
+int open_absolute_directory(const std::string& path, bool create = false) {
     std::vector<std::string> segments;
     if (!split_absolute(path, &segments)) return -1;
     int current = open("/", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
     if (current < 0) return -1;
     for (const std::string& segment : segments) {
-        const int next = openat(current, segment.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+        int next = openat(current, segment.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+        if (next < 0 && create && errno == ENOENT) {
+            if (mkdirat(current, segment.c_str(), 0700) != 0 || fsync(current) != 0) {
+                close(current);
+                return -1;
+            }
+            next = openat(current, segment.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+        }
         close(current);
         if (next < 0) return -1;
         current = next;
@@ -151,10 +185,17 @@ int open_file(const RootHandle* root, const std::string& relative, int flags, mo
     int parent = -1;
     std::string name;
     if (!open_parent(root, relative, &parent, &name)) return -1;
+    const int safe_flags = flags | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC;
     const int descriptor = (flags & O_CREAT) != 0
-        ? openat(parent, name.c_str(), flags | O_NOFOLLOW | O_CLOEXEC, mode)
-        : openat(parent, name.c_str(), flags | O_NOFOLLOW | O_CLOEXEC);
+        ? openat(parent, name.c_str(), safe_flags, mode)
+        : openat(parent, name.c_str(), safe_flags);
     close(parent);
+    if (descriptor < 0) return -1;
+    struct stat metadata {};
+    if (fstat(descriptor, &metadata) != 0 || !S_ISREG(metadata.st_mode)) {
+        close(descriptor);
+        return -1;
+    }
     return descriptor;
 }
 
@@ -178,14 +219,14 @@ bool sync_file_descriptor(int descriptor) {
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_openRoot(
-    JNIEnv* env, jobject, jstring models_root_value, jstring model_id_value, jboolean create) {
+    JNIEnv* env, jobject, jbyteArray models_root_value, jbyteArray model_id_value, jboolean create) {
     std::string models_root;
     std::string model_id;
     std::vector<std::string> model_segments;
     if (!from_java(env, models_root_value, &models_root) || !from_java(env, model_id_value, &model_id) ||
         !split_relative(model_id, &model_segments) || model_segments.size() != 2 ||
         !valid_model_segment(model_segments[0]) || !valid_model_segment(model_segments[1])) return 0;
-    const int models = open_absolute_directory(models_root);
+    const int models = open_absolute_directory(models_root, create == JNI_TRUE);
     if (models < 0) return 0;
     const int descriptor = walk_directory(models, model_segments, create == JNI_TRUE);
     close(models);
@@ -217,7 +258,7 @@ Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_revalidate(JNI
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_createParents(
-    JNIEnv* env, jobject, jlong value, jstring relative_value) {
+    JNIEnv* env, jobject, jlong value, jbyteArray relative_value) {
     RootHandle* root = as_root(value);
     std::string relative;
     std::vector<std::string> segments;
@@ -231,7 +272,7 @@ Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_createParents(
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_openFile(
-    JNIEnv* env, jobject, jlong value, jstring relative_value, jint mode) {
+    JNIEnv* env, jobject, jlong value, jbyteArray relative_value, jint mode) {
     RootHandle* root = as_root(value);
     std::string relative;
     if (!from_java(env, relative_value, &relative)) return -1;
@@ -273,7 +314,7 @@ Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_closeFile(
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_size(
-    JNIEnv* env, jobject, jlong value, jstring relative_value) {
+    JNIEnv* env, jobject, jlong value, jbyteArray relative_value) {
     std::string relative;
     if (!from_java(env, relative_value, &relative)) return -1;
     const int descriptor = open_file(as_root(value), relative, O_RDONLY);
@@ -286,7 +327,7 @@ Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_size(
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_move(
-    JNIEnv* env, jobject, jlong value, jstring source_value, jstring target_value) {
+    JNIEnv* env, jobject, jlong value, jbyteArray source_value, jbyteArray target_value) {
     RootHandle* root = as_root(value);
     std::string source;
     std::string target;
@@ -308,7 +349,7 @@ Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_move(
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_delete(
-    JNIEnv* env, jobject, jlong value, jstring relative_value) {
+    JNIEnv* env, jobject, jlong value, jbyteArray relative_value) {
     RootHandle* root = as_root(value);
     std::string relative;
     int parent = -1;
@@ -321,7 +362,7 @@ Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_delete(
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_syncFile(
-    JNIEnv* env, jobject, jlong value, jstring relative_value) {
+    JNIEnv* env, jobject, jlong value, jbyteArray relative_value) {
     RootHandle* root = as_root(value);
     std::string relative;
     if (!from_java(env, relative_value, &relative)) return JNI_FALSE;
@@ -334,7 +375,7 @@ Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_syncFile(
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_syncDirectory(
-    JNIEnv* env, jobject, jlong value, jstring relative_value) {
+    JNIEnv* env, jobject, jlong value, jbyteArray relative_value) {
     RootHandle* root = as_root(value);
     std::string relative;
     std::vector<std::string> segments;

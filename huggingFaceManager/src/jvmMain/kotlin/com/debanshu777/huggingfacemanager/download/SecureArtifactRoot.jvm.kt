@@ -16,7 +16,7 @@ internal actual class SecureArtifactRoot private constructor(private var handle:
             val validatedModelId = validateModelId(modelId)
             val absoluteRoot = normalizedAbsolute(modelsRoot)
             return SecureArtifactRoot(
-                NativeArtifactFs.openRoot(absoluteRoot, validatedModelId, true)
+                NativeArtifactFs.openRoot(absoluteRoot.nativeUtf8(), validatedModelId.nativeUtf8(), true)
                     .takeIf { it != 0L } ?: throw ArtifactFileAccessException(),
             )
         }
@@ -29,7 +29,7 @@ internal actual class SecureArtifactRoot private constructor(private var handle:
             val modelsRoot = ownerPath.substringBeforeLast('/', missingDelimiterValue = "")
             val modelId = runCatching { validateModelId("$ownerName/$modelName") }.getOrNull()
                 ?: throw ArtifactFileAccessException()
-            return NativeArtifactFs.openRoot(modelsRoot, modelId, true)
+            return NativeArtifactFs.openRoot(modelsRoot.nativeUtf8(), modelId.nativeUtf8(), true)
                 .takeIf { it != 0L } ?: throw ArtifactFileAccessException()
         }
 
@@ -45,12 +45,12 @@ internal actual class SecureArtifactRoot private constructor(private var handle:
 
     actual fun createParentDirectories(relativePath: String) {
         checkedRelative(relativePath)
-        requireNative(NativeArtifactFs.createParents(activeHandle(), relativePath))
+        requireNative(NativeArtifactFs.createParents(activeHandle(), relativePath.nativeUtf8()))
     }
 
     actual fun sink(relativePath: String, mustCreate: Boolean): Sink {
         checkedRelative(relativePath)
-        val descriptor = NativeArtifactFs.openFile(activeHandle(), relativePath, if (mustCreate) 1 else 2)
+        val descriptor = NativeArtifactFs.openFile(activeHandle(), relativePath.nativeUtf8(), if (mustCreate) 1 else 2)
         if (descriptor < 0L) throw ArtifactFileAccessException()
         return NativeDescriptorSink(activeHandle(), descriptor)
     }
@@ -59,7 +59,7 @@ internal actual class SecureArtifactRoot private constructor(private var handle:
 
     actual fun size(relativePath: String): Long? {
         checkedRelative(relativePath)
-        return NativeArtifactFs.size(activeHandle(), relativePath).takeIf { it >= 0L }
+        return NativeArtifactFs.size(activeHandle(), relativePath.nativeUtf8()).takeIf { it >= 0L }
     }
 
     actual fun readBounded(relativePath: String, maxBytes: Int): ByteArray? {
@@ -98,22 +98,24 @@ internal actual class SecureArtifactRoot private constructor(private var handle:
     actual fun atomicMove(sourceRelativePath: String, targetRelativePath: String) {
         checkedRelative(sourceRelativePath)
         checkedRelative(targetRelativePath)
-        requireNative(NativeArtifactFs.move(activeHandle(), sourceRelativePath, targetRelativePath))
+        requireNative(
+            NativeArtifactFs.move(activeHandle(), sourceRelativePath.nativeUtf8(), targetRelativePath.nativeUtf8()),
+        )
     }
 
     actual fun delete(relativePath: String) {
         checkedRelative(relativePath)
-        requireNative(NativeArtifactFs.delete(activeHandle(), relativePath))
+        requireNative(NativeArtifactFs.delete(activeHandle(), relativePath.nativeUtf8()))
     }
 
     actual fun syncFile(relativePath: String) {
         checkedRelative(relativePath)
-        requireNative(NativeArtifactFs.syncFile(activeHandle(), relativePath))
+        requireNative(NativeArtifactFs.syncFile(activeHandle(), relativePath.nativeUtf8()))
     }
 
     actual fun syncDirectory(relativePath: String) {
         if (relativePath != ".") checkedRelative(relativePath)
-        requireNative(NativeArtifactFs.syncDirectory(activeHandle(), relativePath))
+        requireNative(NativeArtifactFs.syncDirectory(activeHandle(), relativePath.nativeUtf8()))
     }
 
     actual fun revalidate() {
@@ -128,7 +130,7 @@ internal actual class SecureArtifactRoot private constructor(private var handle:
 
     private fun openSource(relativePath: String): Source {
         checkedRelative(relativePath)
-        val descriptor = NativeArtifactFs.openFile(activeHandle(), relativePath, 0)
+        val descriptor = NativeArtifactFs.openFile(activeHandle(), relativePath.nativeUtf8(), 0)
         if (descriptor < 0L) throw ArtifactFileAccessException()
         return NativeDescriptorSource(activeHandle(), descriptor)
     }
@@ -203,26 +205,49 @@ private class NativeDescriptorSource(
 
 private object NativeArtifactFs {
     init {
+        val mapped = System.mapLibraryName("artifact_fs")
+        val packaged = System.getProperty("compose.application.resources.dir")
+            ?.takeIf { it.isNotBlank() }
+            ?.let { File(it, mapped) }
         val directory = System.getProperty("caraml.native.lib.dir")?.takeIf { it.isNotBlank() }
-        if (directory != null) {
-            val mapped = System.mapLibraryName("artifact_fs")
-            System.load(File(directory, mapped).absolutePath)
-        } else {
-            System.loadLibrary("artifact_fs")
+        when {
+            packaged?.isFile == true -> System.load(packaged.absolutePath)
+            directory != null -> System.load(File(directory, mapped).absolutePath)
+            else -> System.loadLibrary("artifact_fs")
         }
     }
 
-    external fun openRoot(modelsRoot: String, modelId: String, create: Boolean): Long
+    external fun openRoot(modelsRoot: ByteArray, modelId: ByteArray, create: Boolean): Long
     external fun closeRoot(handle: Long)
     external fun revalidate(handle: Long): Boolean
-    external fun createParents(handle: Long, relativePath: String): Boolean
-    external fun openFile(handle: Long, relativePath: String, mode: Int): Long
+    external fun createParents(handle: Long, relativePath: ByteArray): Boolean
+    external fun openFile(handle: Long, relativePath: ByteArray, mode: Int): Long
     external fun read(descriptor: Long, output: ByteArray, offset: Int, count: Int): Int
     external fun write(descriptor: Long, input: ByteArray, offset: Int, count: Int): Int
     external fun closeFile(descriptor: Long): Boolean
-    external fun size(handle: Long, relativePath: String): Long
-    external fun move(handle: Long, source: String, target: String): Boolean
-    external fun delete(handle: Long, relativePath: String): Boolean
-    external fun syncFile(handle: Long, relativePath: String): Boolean
-    external fun syncDirectory(handle: Long, relativePath: String): Boolean
+    external fun size(handle: Long, relativePath: ByteArray): Long
+    external fun move(handle: Long, source: ByteArray, target: ByteArray): Boolean
+    external fun delete(handle: Long, relativePath: ByteArray): Boolean
+    external fun syncFile(handle: Long, relativePath: ByteArray): Boolean
+    external fun syncDirectory(handle: Long, relativePath: ByteArray): Boolean
+}
+
+private fun String.nativeUtf8(): ByteArray {
+    if (isEmpty() || '\u0000' in this || !hasWellFormedUtf16()) throw ArtifactFileAccessException()
+    return encodeToByteArray().takeIf { it.size <= 4_096 } ?: throw ArtifactFileAccessException()
+}
+
+private fun String.hasWellFormedUtf16(): Boolean {
+    var index = 0
+    while (index < length) {
+        when {
+            this[index].isHighSurrogate() -> {
+                if (index + 1 >= length || !this[index + 1].isLowSurrogate()) return false
+                index += 2
+            }
+            this[index].isLowSurrogate() -> return false
+            else -> index += 1
+        }
+    }
+    return true
 }

@@ -53,15 +53,24 @@ struct RootHandle {
     ~RootHandle() { if (handle != INVALID_HANDLE_VALUE) CloseHandle(handle); }
 };
 
-bool from_java(JNIEnv* env, jstring input, std::wstring* output) {
+bool from_java(JNIEnv* env, jbyteArray input, std::wstring* output) {
     if (input == nullptr || output == nullptr) return false;
-    const jsize length = env->GetStringLength(input);
+    const jsize length = env->GetArrayLength(input);
     if (length <= 0 || static_cast<std::size_t>(length) > kMaxPathChars) return false;
-    const jchar* chars = env->GetStringChars(input, nullptr);
-    if (chars == nullptr) return false;
-    output->assign(reinterpret_cast<const wchar_t*>(chars), static_cast<std::size_t>(length));
-    env->ReleaseStringChars(input, chars);
-    return output->find(L'\0') == std::wstring::npos;
+    std::string bytes(static_cast<std::size_t>(length), '\0');
+    env->GetByteArrayRegion(input, 0, length, reinterpret_cast<jbyte*>(bytes.data()));
+    if (env->ExceptionCheck() || bytes.find('\0') != std::string::npos) return false;
+    const int wide_length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, bytes.data(), length, nullptr, 0);
+    if (wide_length <= 0 || static_cast<std::size_t>(wide_length) > kMaxPathChars) return false;
+    output->resize(static_cast<std::size_t>(wide_length));
+    return MultiByteToWideChar(
+        CP_UTF8,
+        MB_ERR_INVALID_CHARS,
+        bytes.data(),
+        length,
+        output->data(),
+        wide_length
+    ) == wide_length;
 }
 
 bool split_relative(
@@ -107,7 +116,7 @@ bool rejects_reparse(HANDLE handle, bool require_directory) {
     if (!GetFileInformationByHandleEx(handle, FileAttributeTagInfo, &tag, sizeof(tag))) return false;
     if ((tag.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) return false;
     const bool directory = (tag.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
-    return require_directory ? directory : !directory;
+    return require_directory ? directory : !directory && GetFileType(handle) == FILE_TYPE_DISK;
 }
 
 HANDLE open_child(
@@ -171,7 +180,7 @@ bool flush_directory_handle(HANDLE handle) {
     return result;
 }
 
-HANDLE open_absolute_directory(const std::wstring& input) {
+HANDLE open_absolute_directory(const std::wstring& input, bool create = false) {
     if (input.size() < 3 || input.size() > kMaxPathChars || input[1] != L':' ||
         (input[2] != L'/' && input[2] != L'\\')) return INVALID_HANDLE_VALUE;
     std::wstring root = L"\\\\?\\" + input.substr(0, 2) + L"\\";
@@ -191,6 +200,13 @@ HANDLE open_absolute_directory(const std::wstring& input) {
     }
     for (const auto& segment : segments) {
         HANDLE next = open_child(current, segment, FILE_READ_ATTRIBUTES | FILE_TRAVERSE, FILE_OPEN, true);
+        if (next == INVALID_HANDLE_VALUE && create) {
+            next = open_child(current, segment, FILE_READ_ATTRIBUTES | FILE_TRAVERSE, FILE_CREATE, true);
+            if (next != INVALID_HANDLE_VALUE && !flush_directory_handle(current)) {
+                CloseHandle(next);
+                next = INVALID_HANDLE_VALUE;
+            }
+        }
         CloseHandle(current);
         if (next == INVALID_HANDLE_VALUE) return INVALID_HANDLE_VALUE;
         current = next;
@@ -267,14 +283,14 @@ HANDLE as_file(jlong value) { return reinterpret_cast<HANDLE>(static_cast<intptr
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_openRoot(
-    JNIEnv* env, jobject, jstring models_value, jstring model_value, jboolean create) {
+    JNIEnv* env, jobject, jbyteArray models_value, jbyteArray model_value, jboolean create) {
     std::wstring models;
     std::wstring model;
     std::vector<std::wstring> segments;
     if (!from_java(env, models_value, &models) || !from_java(env, model_value, &model) ||
         !split_relative(model, &segments) || segments.size() != 2 ||
         !valid_model_segment(segments[0]) || !valid_model_segment(segments[1])) return 0;
-    HANDLE models_handle = open_absolute_directory(models);
+    HANDLE models_handle = open_absolute_directory(models, create == JNI_TRUE);
     if (models_handle == INVALID_HANDLE_VALUE) return 0;
     HANDLE root_handle = walk(models_handle, segments, create == JNI_TRUE);
     CloseHandle(models_handle);
@@ -299,7 +315,7 @@ Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_revalidate(JNI
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_createParents(
-    JNIEnv* env, jobject, jlong value, jstring path_value) {
+    JNIEnv* env, jobject, jlong value, jbyteArray path_value) {
     RootHandle* root = as_root(value);
     std::wstring path;
     std::vector<std::wstring> segments;
@@ -313,7 +329,7 @@ Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_createParents(
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_openFile(
-    JNIEnv* env, jobject, jlong value, jstring path_value, jint mode) {
+    JNIEnv* env, jobject, jlong value, jbyteArray path_value, jint mode) {
     std::wstring path;
     if (!from_java(env, path_value, &path)) return -1;
     ACCESS_MASK access = FILE_GENERIC_READ;
@@ -357,7 +373,7 @@ Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_closeFile(JNIE
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_size(
-    JNIEnv* env, jobject, jlong value, jstring path_value) {
+    JNIEnv* env, jobject, jlong value, jbyteArray path_value) {
     RootHandle* root = as_root(value);
     std::wstring path;
     if (!from_java(env, path_value, &path)) return -1;
@@ -370,7 +386,7 @@ Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_size(
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_move(
-    JNIEnv* env, jobject, jlong value, jstring source_value, jstring target_value) {
+    JNIEnv* env, jobject, jlong value, jbyteArray source_value, jbyteArray target_value) {
     RootHandle* root = as_root(value);
     std::wstring source;
     std::wstring target;
@@ -402,7 +418,7 @@ Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_move(
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_delete(
-    JNIEnv* env, jobject, jlong value, jstring path_value) {
+    JNIEnv* env, jobject, jlong value, jbyteArray path_value) {
     RootHandle* root = as_root(value);
     std::wstring path;
     if (!from_java(env, path_value, &path)) return JNI_FALSE;
@@ -416,7 +432,7 @@ Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_delete(
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_syncFile(
-    JNIEnv* env, jobject, jlong value, jstring path_value) {
+    JNIEnv* env, jobject, jlong value, jbyteArray path_value) {
     RootHandle* root = as_root(value);
     std::wstring path;
     if (!from_java(env, path_value, &path)) return JNI_FALSE;
@@ -428,7 +444,7 @@ Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_syncFile(
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_syncDirectory(
-    JNIEnv* env, jobject, jlong value, jstring path_value) {
+    JNIEnv* env, jobject, jlong value, jbyteArray path_value) {
     RootHandle* root = as_root(value);
     std::wstring path;
     std::vector<std::wstring> segments;

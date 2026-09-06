@@ -182,7 +182,7 @@ Run: `./gradlew :composeApp:jvmTest`
 
 <!-- Updated at end of each AI-assisted development session -->
 
-- Model Hub uses accessible personalized recommendation details, exact selected variants, explicit Download-for-later confirmation, and marks diffusion variants installed only from a restart-validated owning manifest
+- Model Hub uses accessible personalized recommendation details and derives diffusion load, detail, repair, and READY state only from exact catalog identities in restart-validated artifact and owning-bundle manifests
 - Model Hub now incrementally ranks bounded immutable variants for this device, preserves server order on demand, and reranks cached assessments for profile changes
 - Recommendation profiles now persist atomically, default safely to Balanced, and appear through accessible Material 3 controls only in SHADOW/V2 rollout modes
 - Model assessment now reuses bounded profile-neutral plan estimates with cancellation-safe single-flight coordination, fresh snapshot assembly, and privacy-safe staged rollout comparison

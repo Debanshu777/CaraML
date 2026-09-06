@@ -12,13 +12,14 @@ import com.debanshu777.diffusionrunner.generateVideo
 import com.debanshu777.caraml.core.platform.PlatformPaths
 import com.debanshu777.caraml.core.data.settings.SettingsRepository
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
-import com.debanshu777.huggingfacemanager.model.DIFFUSERS_BUNDLE_DB_FILENAME
+import com.debanshu777.huggingfacemanager.download.DownloadManager
+import com.debanshu777.huggingfacemanager.download.ArtifactManifest
 import com.debanshu777.huggingfacemanager.model.isDiffusersModelDirectory
 import com.debanshu777.huggingfacemanager.sdcpp.SdCppRecommendedParams
 import com.debanshu777.huggingfacemanager.sdcpp.getModelSetup
-import com.debanshu777.huggingfacemanager.sdcpp.SdCppComponentChecker
 import com.debanshu777.huggingfacemanager.sdcpp.ComponentRole
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,7 +39,7 @@ class DiffusionInferenceRepository(
     private val deviceCapabilities: DeviceCapabilities,
     private val settingsRepository: SettingsRepository,
 ) {
-    private val componentChecker = SdCppComponentChecker(storagePathProvider)
+    private val downloadManager = DownloadManager(storagePathProvider)
     private var lastLoadedArchStr: String? = null
 
     /**
@@ -63,7 +64,16 @@ class DiffusionInferenceRepository(
 
     suspend fun loadModel(model: LocalModelEntity): ModelLoadResult = withContext(Dispatchers.Default) {
         try {
-            val modelPath = resolveModelPath(model)
+            val aggregate = downloadManager.validatedBundle(model.modelId)
+                ?: return@withContext ModelLoadResult.Error(
+                    "The installed model could not be verified. Open the model page to repair it.",
+                )
+            if (!aggregateContainsRequiredCatalogComponents(model.modelId, aggregate)) {
+                return@withContext ModelLoadResult.Error(
+                    "The installed model is incomplete. Open the model page to repair it.",
+                )
+            }
+            val modelPath = resolveModelPath(model.modelId, aggregate)
             if (modelPath.isBlank()) {
                 return@withContext ModelLoadResult.Error("Model path is invalid")
             }
@@ -79,25 +89,10 @@ class DiffusionInferenceRepository(
                 )
             }
 
-            // Component presence check: verify all required auxiliary files are on disk before
-            // attempting to load. Missing components (e.g. text_encoder_2 for SDXL) cause
-            // stable-diffusion.cpp to misidentify the architecture and crash with SIGABRT.
-            val setup = getModelSetup(model.modelId)
-            if (setup != null && !setup.selfContained) {
-                val missing = componentChecker.getMissingComponents(setup)
-                if (missing.isNotEmpty()) {
-                    val labels = missing.joinToString(", ") { it.role.displayLabel }
-                    return@withContext ModelLoadResult.Error(
-                        "Missing required components: $labels. " +
-                        "Open the model page to download them."
-                    )
-                }
-            }
-
             // Pre-flight memory check: sum of main model + all components vs device RAM.
             // Native loader will OOM-kill the process silently if weights don't fit, so we
             // refuse upfront with a clear error rather than crashing.
-            preflightMemoryCheck(model, modelPath)?.let { error ->
+            preflightMemoryCheck(aggregate)?.let { error ->
                 return@withContext error
             }
 
@@ -105,7 +100,7 @@ class DiffusionInferenceRepository(
             runner.initialize(nativeLibDir)
 
             // Build full config with resolved component paths
-            val config = buildDiffusionModelConfig(model, modelPath)
+            val config = buildDiffusionModelConfig(model, modelPath, aggregate)
             val loaded = runner.loadModel(config)
             if (!loaded) {
                 return@withContext ModelLoadResult.Error(
@@ -116,8 +111,10 @@ class DiffusionInferenceRepository(
             lastLoadedArchStr = runner.getDiffusionModelMetadata(modelPath)?.architecture
             AppLogger.i(TAG) { "loadModel: success" }
             ModelLoadResult.Success(contextSize = 0)
-        } catch (e: Exception) {
-            AppLogger.e(TAG, "loadModel: failed", e)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            AppLogger.e(TAG, "loadModel: failed")
             ModelLoadResult.Error("An error occurred while loading the model.")
         }
     }
@@ -129,17 +126,10 @@ class DiffusionInferenceRepository(
      * This guards against silent OOM kills (the Android low-memory killer terminates the
      * process without throwing a Kotlin exception).
      */
-    private fun preflightMemoryCheck(
-        model: LocalModelEntity,
-        modelPath: String,
-    ): ModelLoadResult.Error? {
-        val mainSize = storagePathProvider.getFileSize(modelPath)
-        val componentSize = getModelSetup(model.modelId)?.let { setup ->
-            if (setup.selfContained) 0L
-            else componentChecker.resolveComponentsByRole(setup).values
-                .sumOf { storagePathProvider.getFileSize(it) }
-        } ?: 0L
-        val totalBytes = mainSize + componentSize
+    private fun preflightMemoryCheck(aggregate: ArtifactManifest): ModelLoadResult.Error? {
+        val totalBytes = aggregate.entries.fold(0L) { total, entry ->
+            if (total > Long.MAX_VALUE - entry.byteCount) Long.MAX_VALUE else total + entry.byteCount
+        }
         if (totalBytes <= 0L) return null
 
         val budgetBytes = deviceCapabilities.getDeviceHints().memoryBudgetMB * 1024L * 1024L
@@ -241,30 +231,33 @@ class DiffusionInferenceRepository(
     fun getRecommendedParams(model: LocalModelEntity): SdCppRecommendedParams? =
         getModelSetup(model.modelId)?.recommendedParams
 
-    private fun resolveModelPath(model: LocalModelEntity): String {
-        val dir = storagePathProvider.getModelsStorageDirectory(model.modelId)
-        val relative = model.filename.trim().replace('\\', '/').trimStart('/')
+    private fun resolveModelPath(modelId: String, aggregate: ArtifactManifest): String {
+        val dir = storagePathProvider.getModelsStorageDirectory(modelId).trimEnd('/', '\\')
+        if (isDiffusersModelDirectory(dir, storagePathProvider::fileExists) &&
+            storagePathProvider.isDirectoryReadable(dir)
+        ) return dir
+        val primary = aggregate.entries.singleOrNull {
+            it.logicalRole == "model" && it.identity.repositoryId == modelId
+        } ?: return ""
+        return "$dir/${primary.localRelativePath}"
+    }
 
-        val candidates = buildList {
-            if (model.localPath.isNotBlank()) add(model.localPath)
-            if (model.filename == DIFFUSERS_BUNDLE_DB_FILENAME) {
-                add(dir)
-            }
-            if (relative.isNotBlank()) add("$dir/$relative")
+    private fun aggregateContainsRequiredCatalogComponents(
+        modelId: String,
+        aggregate: ArtifactManifest,
+    ): Boolean {
+        if (aggregate.entries.count {
+                it.logicalRole == "model" && it.identity.repositoryId == modelId
+            } != 1
+        ) return false
+        val setup = getModelSetup(modelId) ?: return true
+        return setup.components.filter { it.required }.all { component ->
+            aggregate.entries.singleOrNull { entry ->
+                entry.logicalRole == component.role.name.lowercase() &&
+                    entry.identity.repositoryId == component.repoId &&
+                    entry.identity.relativePath == component.filePath
+            } != null
         }
-
-        for (path in candidates.distinct()) {
-            if (!storagePathProvider.fileExists(path)) continue
-            if (isDiffusersModelDirectory(path, storagePathProvider::fileExists) &&
-                storagePathProvider.isDirectoryReadable(path)
-            ) {
-                return path
-            }
-            if (storagePathProvider.isModelFileReadable(path)) {
-                return path
-            }
-        }
-        return candidates.firstOrNull { it.isNotBlank() } ?: ""
     }
 
     private fun canLoadDiffusionModelAt(path: String): Boolean {
@@ -275,9 +268,13 @@ class DiffusionInferenceRepository(
         return storagePathProvider.isModelFileReadable(path)
     }
 
-    private suspend fun buildDiffusionModelConfig(model: LocalModelEntity, modelPath: String): DiffusionModelConfig {
+    private suspend fun buildDiffusionModelConfig(
+        model: LocalModelEntity,
+        modelPath: String,
+        aggregate: ArtifactManifest,
+    ): DiffusionModelConfig {
         val modelSetup = getModelSetup(model.modelId)
-        val tightMemory = shouldFreeParamsImmediately(model, modelPath)
+        val tightMemory = shouldFreeParamsImmediately(aggregate)
         val taesdPath = resolveOptionalTaesdPath()
         val hints = deviceCapabilities.getDeviceHints()
         val settings = settingsRepository.getSettings().first()
@@ -298,7 +295,16 @@ class DiffusionInferenceRepository(
         }
 
         // Resolve all component paths by role
-        val componentPaths = componentChecker.resolveComponentsByRole(modelSetup)
+        val componentPaths = modelSetup.components.associate { component ->
+            val entry = aggregate.entries.singleOrNull {
+                it.logicalRole == component.role.name.lowercase() &&
+                    it.identity.repositoryId == component.repoId &&
+                    it.identity.relativePath == component.filePath
+            }
+            component.role to (entry?.let {
+                "${storagePathProvider.getModelsStorageDirectory(it.identity.repositoryId).trimEnd('/', '\\')}/${it.localRelativePath}"
+            } ?: "")
+        }
         val params = modelSetup.recommendedParams
 
         return DiffusionModelConfig(
@@ -319,13 +325,12 @@ class DiffusionInferenceRepository(
             vaeTiling = shouldEnableVaeTiling(params),
         ).also { config ->
             AppLogger.d(TAG) {
-                "Built DiffusionModelConfig for ${model.modelId}:\n" +
-                "  modelPath: $modelPath\n" +
-                "  vaePath: ${config.vaePath}\n" +
-                "  llmPath: ${config.llmPath}\n" +
-                "  clipLPath: ${config.clipLPath}\n" +
-                "  clipGPath: ${config.clipGPath}\n" +
-                "  t5xxlPath: ${config.t5xxlPath}\n" +
+                "Built DiffusionModelConfig:\n" +
+                "  hasVae: ${config.vaePath.isNotBlank()}\n" +
+                "  hasLlm: ${config.llmPath.isNotBlank()}\n" +
+                "  hasClipL: ${config.clipLPath.isNotBlank()}\n" +
+                "  hasClipG: ${config.clipGPath.isNotBlank()}\n" +
+                "  hasT5xxl: ${config.t5xxlPath.isNotBlank()}\n" +
                 "  offloadToCpu: ${config.offloadToCpu}\n" +
                 "  keepClipOnCpu: ${config.keepClipOnCpu}\n" +
                 "  keepVaeOnCpu: ${config.keepVaeOnCpu}\n" +
@@ -333,7 +338,7 @@ class DiffusionInferenceRepository(
                 "  freeParamsImmediately: ${config.freeParamsImmediately}\n" +
                 "  flowShift: ${config.flowShift}\n" +
                 "  prediction: ${config.prediction}\n" +
-                "  taesdPath: ${config.taesdPath}\n" +
+                "  hasTaesd: ${config.taesdPath.isNotBlank()}\n" +
                 "  vaeTiling: ${config.vaeTiling}"
             }
         }
@@ -343,17 +348,14 @@ class DiffusionInferenceRepository(
      * Auto-resolves a TAESD (tiny autoencoder) path if the "madebyollin/taesd" model has been
      * downloaded. Returns empty string when not available — the field is optional in the runner.
      */
-    private fun resolveOptionalTaesdPath(): String {
-        val taesdSetup = getModelSetup("madebyollin/taesd") ?: return ""
-        // TAESD is self-contained: its model file sits directly under its storage dir.
-        // The main model file has no fixed filename in the registry, so probe the dir for
-        // any .safetensors file (TAESD is typically a single small safetensors file).
-        val dir = storagePathProvider.getModelsStorageDirectory("madebyollin/taesd")
-        val candidates = listOf(
-            "$dir/taesd_decoder.safetensors",
-            "$dir/diffusion_pytorch_model.safetensors",
-        )
-        return candidates.firstOrNull { storagePathProvider.fileExists(it) } ?: ""
+    private suspend fun resolveOptionalTaesdPath(): String {
+        val repositoryId = "madebyollin/taesd"
+        val aggregate = downloadManager.validatedBundle(repositoryId) ?: return ""
+        val entry = aggregate.entries.singleOrNull {
+            it.logicalRole == "model" && it.identity.repositoryId == repositoryId
+        } ?: return ""
+        val root = storagePathProvider.getModelsStorageDirectory(repositoryId).trimEnd('/', '\\')
+        return "$root/${entry.localRelativePath}"
     }
 
     /**
@@ -370,14 +372,10 @@ class DiffusionInferenceRepository(
      * Frees weights after each generation when device memory is tight (weights >= 65% of
      * budget). Cuts steady-state RAM in half at the cost of re-loading on the next gen.
      */
-    private fun shouldFreeParamsImmediately(model: LocalModelEntity, modelPath: String): Boolean {
-        val mainSize = storagePathProvider.getFileSize(modelPath)
-        val componentSize = getModelSetup(model.modelId)?.let { setup ->
-            if (setup.selfContained) 0L
-            else componentChecker.resolveComponentsByRole(setup).values
-                .sumOf { storagePathProvider.getFileSize(it) }
-        } ?: 0L
-        val totalBytes = mainSize + componentSize
+    private fun shouldFreeParamsImmediately(aggregate: ArtifactManifest): Boolean {
+        val totalBytes = aggregate.entries.fold(0L) { total, entry ->
+            if (total > Long.MAX_VALUE - entry.byteCount) Long.MAX_VALUE else total + entry.byteCount
+        }
         val budgetBytes = deviceCapabilities.getDeviceHints().memoryBudgetMB * 1024L * 1024L
         if (totalBytes <= 0L || budgetBytes <= 0L) return false
         return totalBytes.toDouble() / budgetBytes.toDouble() >= 0.65

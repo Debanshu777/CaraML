@@ -15,6 +15,7 @@ enum class ManifestJournalPhase {
     PREPARED,
     OLD_PRESERVED,
     NEW_PUBLISHED,
+    ROLLING_BACK,
 }
 
 private enum class ManifestJournalStep {
@@ -27,6 +28,12 @@ private enum class ManifestJournalStep {
     NEW_PUBLISHED,
     OLD_TARGET_REMOVED,
     OLD_MANIFEST_REMOVED,
+    ROLLBACK_STARTED,
+    RESTORING_TARGET,
+    TARGET_RESTORED,
+    RESTORING_MANIFEST,
+    MANIFEST_RESTORED,
+    ROLLBACK_VALIDATED,
 }
 
 class ArtifactVerificationException : Exception("Downloaded artifact could not be verified")
@@ -296,7 +303,9 @@ class ArtifactManifestStore(
             return
         }
         val journal = normalizedJournal(decoded, target) ?: return
-        if (newGenerationIsRecoverable(journal, target)) {
+        if (journal.phase == ManifestJournalPhase.ROLLING_BACK) {
+            restorePreviousGeneration(journal, target)
+        } else if (newGenerationIsRecoverable(journal, target)) {
             continueTransaction(journal, target)
         } else {
             restorePreviousGeneration(journal, target)
@@ -304,11 +313,8 @@ class ArtifactManifestStore(
     }
 
     private fun normalizedJournal(journal: ArtifactCommitJournal, target: Path): ArtifactCommitJournal? {
-        val manifest = readManifest(manifestPartPath) ?: readManifest(manifestPath) ?: return null
         val transactionId = journal.transactionId ?: return null
-        if (transactionId.length != 64 || !transactionId.all(::isAsciiHexDigit) ||
-            manifest.bundleDigest != transactionId
-        ) return null
+        if (transactionId.length != 64 || !transactionId.all(::isAsciiHexDigit)) return null
         val hadPreviousTarget = journal.hadPreviousTarget ?: return null
         val hadPreviousManifest = journal.hadPreviousManifest ?: return null
         val step = journal.step ?: return null
@@ -325,6 +331,10 @@ class ArtifactManifestStore(
             hadPreviousManifest = hadPreviousManifest,
             step = step,
         )
+        if (journal.phase != ManifestJournalPhase.ROLLING_BACK) {
+            val manifest = readManifest(manifestPartPath) ?: readManifest(manifestPath) ?: return null
+            if (manifest.bundleDigest != transactionId) return null
+        }
         if (!filesystemMatchesJournalEvidence(normalized, target)) return null
         return normalized
     }
@@ -345,6 +355,14 @@ class ArtifactManifestStore(
             ManifestJournalStep.OLD_TARGET_REMOVED,
             ManifestJournalStep.OLD_MANIFEST_REMOVED,
         )
+        ManifestJournalPhase.ROLLING_BACK -> step in setOf(
+            ManifestJournalStep.ROLLBACK_STARTED,
+            ManifestJournalStep.RESTORING_TARGET,
+            ManifestJournalStep.TARGET_RESTORED,
+            ManifestJournalStep.RESTORING_MANIFEST,
+            ManifestJournalStep.MANIFEST_RESTORED,
+            ManifestJournalStep.ROLLBACK_VALIDATED,
+        )
     }
 
     private fun filesystemMatchesJournalEvidence(journal: ArtifactCommitJournal, target: Path): Boolean {
@@ -355,6 +373,7 @@ class ArtifactManifestStore(
             ManifestJournalPhase.NEW_PUBLISHED -> publishedNewGenerationIsValid(journal, target) ||
                 journal.hadPreviousManifest == true && oldIsValid ||
                 journal.hadPreviousManifest == false && readManifest(manifestPath)?.bundleDigest == journal.transactionId
+            ManifestJournalPhase.ROLLING_BACK -> oldIsValid
         }
     }
 
@@ -372,6 +391,7 @@ class ArtifactManifestStore(
                 ManifestJournalPhase.PREPARED -> !exists(manifestPath) && !exists(target)
                 ManifestJournalPhase.OLD_PRESERVED -> !exists(manifestPreviousPath)
                 ManifestJournalPhase.NEW_PUBLISHED -> true
+                ManifestJournalPhase.ROLLING_BACK -> true
             }
         }
         val manifestPathToCheck = listOf(manifestPreviousPath, manifestPath).singleOrNull { path ->
@@ -504,29 +524,76 @@ class ArtifactManifestStore(
     }
 
     private fun restorePreviousGeneration(journal: ArtifactCommitJournal, target: Path) {
-        val previousTarget = target.sibling(PREVIOUS_SUFFIX)
-        if (journal.hadPreviousTarget == true) {
-            if (exists(previousTarget)) {
-                durableDelete(target)
-                durableMove(previousTarget, target)
-            } else if (!exists(target)) {
-                throw ArtifactVerificationException()
-            }
+        var rollback = if (journal.phase == ManifestJournalPhase.ROLLING_BACK) {
+            journal
         } else {
-            durableDelete(target)
+            journal.advance(ManifestJournalPhase.ROLLING_BACK, ManifestJournalStep.ROLLBACK_STARTED)
         }
-        if (journal.hadPreviousManifest == true) {
-            if (exists(manifestPreviousPath)) {
-                durableDelete(manifestPath)
-                durableMove(manifestPreviousPath, manifestPath)
-            } else if (!exists(manifestPath)) {
-                throw ArtifactVerificationException()
-            }
-        } else {
-            durableDelete(manifestPath)
+        if (rollback.step == ManifestJournalStep.ROLLBACK_STARTED) {
+            rollback = rollback.advance(ManifestJournalPhase.ROLLING_BACK, ManifestJournalStep.RESTORING_TARGET)
         }
+        if (rollback.step == ManifestJournalStep.RESTORING_TARGET) {
+            restoreTargetExactlyOnce(rollback, target)
+            rollback = rollback.advance(ManifestJournalPhase.ROLLING_BACK, ManifestJournalStep.TARGET_RESTORED)
+        }
+        if (rollback.step == ManifestJournalStep.TARGET_RESTORED) {
+            rollback = rollback.advance(ManifestJournalPhase.ROLLING_BACK, ManifestJournalStep.RESTORING_MANIFEST)
+        }
+        if (rollback.step == ManifestJournalStep.RESTORING_MANIFEST) {
+            restoreManifestExactlyOnce(rollback)
+            rollback = rollback.advance(ManifestJournalPhase.ROLLING_BACK, ManifestJournalStep.MANIFEST_RESTORED)
+        }
+        if (rollback.step == ManifestJournalStep.MANIFEST_RESTORED) {
+            validateRestoredGeneration(rollback, target)
+            rollback = rollback.advance(ManifestJournalPhase.ROLLING_BACK, ManifestJournalStep.ROLLBACK_VALIDATED)
+        }
+        if (rollback.step != ManifestJournalStep.ROLLBACK_VALIDATED) throw ArtifactVerificationException()
         discardPreparedGeneration(target)
-        if (journal.hadPreviousManifest == true && !validateManifest(manifestPath)) {
+    }
+
+    private fun restoreTargetExactlyOnce(journal: ArtifactCommitJournal, target: Path) {
+        val previousTarget = target.sibling(PREVIOUS_SUFFIX)
+        if (journal.hadPreviousTarget != true) {
+            durableDelete(target)
+            return
+        }
+        if (exists(previousTarget)) {
+            durableDelete(target)
+            durableMove(previousTarget, target)
+        } else if (!targetMatchesPreviousEvidence(journal, target)) {
+            throw ArtifactVerificationException()
+        }
+    }
+
+    private fun restoreManifestExactlyOnce(journal: ArtifactCommitJournal) {
+        if (journal.hadPreviousManifest != true) {
+            durableDelete(manifestPath)
+            return
+        }
+        if (exists(manifestPreviousPath)) {
+            durableDelete(manifestPath)
+            durableMove(manifestPreviousPath, manifestPath)
+        } else if (readManifest(manifestPath)?.bundleDigest != journal.previousManifestDigest) {
+            throw ArtifactVerificationException()
+        }
+    }
+
+    private fun targetMatchesPreviousEvidence(journal: ArtifactCommitJournal, target: Path): Boolean {
+        val manifest = listOf(manifestPreviousPath, manifestPath)
+            .mapNotNull(::readManifest)
+            .singleOrNull { it.bundleDigest == journal.previousManifestDigest }
+            ?: return false
+        val entry = manifest.entries.singleOrNull { it.localRelativePath == journal.relativePath }
+            ?: return false
+        return entry.contentSha256 == journal.previousTargetSha256 && validateFile(target, entry)
+    }
+
+    private fun validateRestoredGeneration(journal: ArtifactCommitJournal, target: Path) {
+        if (journal.hadPreviousManifest == true) {
+            if (readManifest(manifestPath)?.bundleDigest != journal.previousManifestDigest ||
+                !validateManifest(manifestPath)
+            ) throw ArtifactVerificationException()
+        } else if (exists(manifestPath) || exists(target)) {
             throw ArtifactVerificationException()
         }
     }

@@ -22,6 +22,7 @@ import platform.posix.O_CREAT
 import platform.posix.O_DIRECTORY
 import platform.posix.O_EXCL
 import platform.posix.O_NOFOLLOW
+import platform.posix.O_NONBLOCK
 import platform.posix.O_RDONLY
 import platform.posix.O_TRUNC
 import platform.posix.O_WRONLY
@@ -204,8 +205,17 @@ internal actual class SecureArtifactRoot actual constructor(modelRoot: Path) {
 
     private fun openFile(relativePath: String, flags: Int, createMode: UInt = 0u): Int =
         withParent(relativePath) { parent, name ->
-            val descriptor = if (flags and O_CREAT != 0) openat(parent, name, flags, createMode) else openat(parent, name, flags)
+            val safeFlags = flags or O_NONBLOCK or O_NOFOLLOW or O_CLOEXEC
+            val descriptor = if (flags and O_CREAT != 0) {
+                openat(parent, name, safeFlags, createMode)
+            } else {
+                openat(parent, name, safeFlags)
+            }
             if (descriptor < 0) throw ArtifactFileAccessException()
+            if (descriptorSizeIfRegular(descriptor) == null) {
+                close(descriptor)
+                throw ArtifactFileAccessException()
+            }
             descriptor
         }
 
@@ -269,7 +279,7 @@ private fun openPinnedRoot(modelRoot: String, create: Boolean = true): PinnedRoo
     if (runCatching { validateModelId("$ownerName/$modelName") }.getOrNull() == null) {
         throw ArtifactFileAccessException()
     }
-    var current = openAbsoluteDirectory(modelsRoot)
+    var current = openAbsoluteDirectory(modelsRoot, create)
     try {
         listOf(ownerName, modelName).forEach { segment ->
             var next = openat(current, segment, O_RDONLY or O_DIRECTORY or O_NOFOLLOW or O_CLOEXEC)
@@ -291,14 +301,20 @@ private fun openPinnedRoot(modelRoot: String, create: Boolean = true): PinnedRoo
     }
 }
 
-private fun openAbsoluteDirectory(path: String): Int {
+private fun openAbsoluteDirectory(path: String, create: Boolean = false): Int {
     if (!path.startsWith('/') || path.length > 4096) throw ArtifactFileAccessException()
     var current = open("/", O_RDONLY or O_DIRECTORY or O_NOFOLLOW or O_CLOEXEC)
     if (current < 0) throw ArtifactFileAccessException()
     try {
         path.split('/').filter { it.isNotEmpty() }.forEach { segment ->
             if (segment == "." || segment == "..") throw ArtifactFileAccessException()
-            val next = openat(current, segment, O_RDONLY or O_DIRECTORY or O_NOFOLLOW or O_CLOEXEC)
+            var next = openat(current, segment, O_RDONLY or O_DIRECTORY or O_NOFOLLOW or O_CLOEXEC)
+            if (next < 0 && create && errno == ENOENT) {
+                if (mkdirat(current, segment, 448u) != 0 || fsync(current) != 0) {
+                    throw ArtifactFileAccessException()
+                }
+                next = openat(current, segment, O_RDONLY or O_DIRECTORY or O_NOFOLLOW or O_CLOEXEC)
+            }
             if (next < 0) throw ArtifactFileAccessException()
             close(current)
             current = next

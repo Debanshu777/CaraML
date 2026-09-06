@@ -14,7 +14,7 @@ class AndroidStoragePathProvider(private val context: Context) : StoragePathProv
                 context.getExternalFilesDir(null)
             else -> null
         } ?: context.filesDir
-        val modelsRoot = File(base, "models").apply { mkdirs() }
+        val modelsRoot = File(base, "models")
         return File(modelsRoot, safeModelId).absolutePath
     }
     

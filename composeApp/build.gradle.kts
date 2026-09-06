@@ -1,4 +1,6 @@
 import org.gradle.api.tasks.JavaExec
+import org.gradle.api.tasks.Sync
+import org.gradle.api.tasks.testing.Test
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
@@ -125,6 +127,18 @@ val desktopPlatform = when {
 // Desktop JNI output: keep in sync with CaramlNativeLayout.DESKTOP_SUBDIR in nativeEngine/build.gradle.kts
 val nativeDir =
     project(":nativeEngine").layout.buildDirectory.dir("llama-runner-desktop/$desktopPlatform").get().asFile.absolutePath
+val artifactFsLibraryName = when (desktopPlatform) {
+    "macos" -> "libartifact_fs.dylib"
+    "linux" -> "libartifact_fs.so"
+    "windows" -> "artifact_fs.dll"
+    else -> throw GradleException("Unsupported desktop platform for secure artifact storage")
+}
+val artifactFsAppResourcesRoot = layout.buildDirectory.dir("generated/artifactFsAppResources")
+val stageArtifactFsAppResources by tasks.registering(Sync::class) {
+    dependsOn(":nativeEngine:compileArtifactFsDesktop")
+    from(project(":nativeEngine").layout.buildDirectory.file("llama-runner-desktop/$desktopPlatform/$artifactFsLibraryName"))
+    into(artifactFsAppResourcesRoot.map { it.dir("common") })
+}
 
 compose.desktop {
     application {
@@ -135,14 +149,41 @@ compose.desktop {
         // must be injected via the Compose DSL here to actually take effect.
         jvmArgs += listOf(
             "-Djava.library.path=$nativeDir",
-            "-Dcaraml.native.lib.dir=$nativeDir",
         )
 
         nativeDistributions {
+            appResourcesRootDir.set(artifactFsAppResourcesRoot)
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "com.debanshu777.caraml"
             packageVersion = "1.0.0"
         }
+    }
+}
+
+tasks.matching { it.name == "prepareAppResources" }.configureEach {
+    dependsOn(stageArtifactFsAppResources)
+}
+
+tasks.matching { it.name == "jvmTest" }.configureEach {
+    dependsOn(":nativeEngine:compileArtifactFsDesktop")
+    (this as Test).systemProperty("caraml.native.lib.dir", nativeDir)
+}
+
+tasks.register<JavaExec>("artifactFsInstalledImageSmoke") {
+    group = "verification"
+    description = "Loads and exercises artifact_fs from the generated desktop application image"
+    dependsOn("createDistributable")
+    mainClass.set("com.debanshu777.huggingfacemanager.download.ArtifactFsInstalledImageSmoke")
+    doFirst {
+        val imageRoot = layout.buildDirectory.dir("compose/binaries/main/app").get().asFile
+        val resources = imageRoot.walkTopDown().singleOrNull { directory ->
+            directory.isDirectory && directory.name == "resources" &&
+                directory.resolve(artifactFsLibraryName).isFile
+        } ?: throw GradleException("artifact_fs is missing from the desktop application image")
+        val appDirectory = resources.parentFile
+            ?: throw GradleException("Invalid desktop application image")
+        classpath = files(fileTree(appDirectory) { include("*.jar") })
+        systemProperty("compose.application.resources.dir", resources.absolutePath)
     }
 }
 

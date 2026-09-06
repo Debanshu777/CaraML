@@ -127,6 +127,49 @@ class DownloadManagerJvmTest {
     }
 
     @Test
+    fun unicodeArtifactDownloadsWithStandardUtf8AndIsJavaVisibleAfterManifestValidation() =
+        withTemporaryRoot { root ->
+            val path = "weights/模型-😀.gguf"
+            val expected = "unicode-download".encodeToByteArray()
+            withServer { exchange ->
+                exchange.respond(status = 200, declaredLength = expected.size.toLong(), body = expected)
+            }.use { server ->
+                val manager = DownloadManager(TestStoragePathProvider(root), server.baseUrl)
+                runBlocking {
+                    manager.download(
+                        "org/model",
+                        path,
+                        metadata(path, expected.size.toLong(), expected.sha256Hex()),
+                    ).toList()
+                }
+
+                val finalFile = modelFile(root, "org/model", path)
+                assertTrue(finalFile.isFile)
+                assertContentEquals(expected, finalFile.readBytes())
+                assertEquals(
+                    path,
+                    runBlocking {
+                        manager.validatedArtifacts("org/model")?.entries?.single()?.identity?.relativePath
+                    },
+                )
+            }
+        }
+
+    @Test
+    fun malformedSurrogateIdentityIsRejected() {
+        assertEquals(
+            null,
+            DownloadArtifactIdentity.create(
+                repositoryId = "org/model",
+                immutableRevision = "a".repeat(40),
+                relativePath = "bad-\uD800.gguf",
+                remoteObjectId = null,
+                expectedBytes = 1L,
+            ),
+        )
+    }
+
+    @Test
     fun mismatchedLegacyArgumentsFailBeforeNetworkAccess() = withTemporaryRoot { root ->
         val requests = AtomicInteger()
         val storageResolutions = AtomicInteger()

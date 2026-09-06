@@ -87,6 +87,30 @@ class ArtifactManifestStoreTest {
     }
 
     @Test
+    fun everyRollbackMutationCanCrashAndRepeatedRecoveryRestoresTheValidatedOldGeneration() {
+        val mutationCount = successfulRollbackMutationCount()
+        assertTrue(mutationCount > 0)
+
+        repeat(mutationCount) { crashIndex ->
+            val fs = FakeFileSystem()
+            val root = "/models/org/rollback-$crashIndex".toPath()
+            val target = prepareInvalidPublishedReplacement(fs, root)
+            val faulting = CountingMutationFileSystem(fs, crashIndex)
+
+            runCatching { ArtifactManifestStore(root, faulting).recover() }
+            repeat(3) { runCatching { ArtifactManifestStore(root, fs).recover() } }
+
+            val restored = assertNotNull(
+                ArtifactManifestStore(root, fs).readValidated(),
+                "rollback mutation $crashIndex",
+            )
+            assertEquals("a".repeat(40), restored.entries.single().identity.immutableRevision)
+            assertEquals("old-generation", fs.read(target) { readUtf8() })
+            assertFalse(fs.exists(root / ArtifactManifestStore.JOURNAL_FILE_NAME))
+        }
+    }
+
+    @Test
     fun commitOrdersDurableFileAndDirectoryBarriersBeforeTerminalReturn() {
         val fs = FakeFileSystem()
         val root = "/models/org/durable".toPath()
@@ -355,7 +379,7 @@ class ArtifactManifestStoreTest {
 
     @Test
     fun restartAfterEveryJournalPhaseFinishesTheValidNewGeneration() {
-        ManifestJournalPhase.entries.forEach { crashPhase ->
+        ManifestJournalPhase.entries.filterNot { it == ManifestJournalPhase.ROLLING_BACK }.forEach { crashPhase ->
             val fs = FakeFileSystem()
             val root = "/models/org/model-${crashPhase.name}".toPath()
             fs.createDirectories(root)
@@ -389,7 +413,7 @@ class ArtifactManifestStoreTest {
 
     @Test
     fun restartAfterEveryJournalPhaseRestoresOldWhenNewGenerationIsInvalid() {
-        ManifestJournalPhase.entries.forEach { crashPhase ->
+        ManifestJournalPhase.entries.filterNot { it == ManifestJournalPhase.ROLLING_BACK }.forEach { crashPhase ->
             val fs = FakeFileSystem()
             val root = "/models/org/restore-${crashPhase.name}".toPath()
             fs.createDirectories(root)
@@ -582,6 +606,44 @@ private fun successfulReplacementMutationCount(): Int {
         ),
     )
     return counting.count
+}
+
+private fun successfulRollbackMutationCount(): Int {
+    val fs = FakeFileSystem()
+    val root = "/models/org/rollback-count".toPath()
+    prepareInvalidPublishedReplacement(fs, root)
+    val counting = CountingMutationFileSystem(fs, crashIndex = null)
+    ArtifactManifestStore(root, counting).recover()
+    return counting.count
+}
+
+private fun prepareInvalidPublishedReplacement(fs: FakeFileSystem, root: Path): Path {
+    fs.createDirectories(root)
+    val target = root / "model.gguf"
+    stageAndCommit(
+        fs,
+        ArtifactManifestStore(root, fs),
+        target,
+        "old-generation".encodeToByteArray(),
+        "a".repeat(40),
+    )
+    val replacement = "new-generation".encodeToByteArray()
+    fs.write(target.siblingPart()) { write(replacement) }
+    val crashing = ArtifactManifestStore(root, fs) { phase ->
+        if (phase == ManifestJournalPhase.NEW_PUBLISHED) throw SimulatedCrash()
+    }
+    assertFailsWith<SimulatedCrash> {
+        crashing.commit(
+            "model.gguf",
+            entry(
+                identity(revision = "b".repeat(40), expectedBytes = replacement.size.toLong()),
+                "model",
+                replacement.sha256Hex(),
+            ),
+        )
+    }
+    fs.write(target) { writeUtf8("invalid-new-generation") }
+    return target
 }
 
 private fun withStore(block: (FakeFileSystem, Path, ArtifactManifestStore) -> Unit) {

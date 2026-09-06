@@ -61,6 +61,7 @@ private fun isSafeRepositorySegment(segment: String): Boolean {
 private fun validateRelativeModelPath(path: String): String {
     require(path.isNotEmpty() && path == path.trim()) { "Invalid model file path" }
     require(path.length <= MAX_RELATIVE_PATH_LENGTH) { "Invalid model file path" }
+    require(path.hasWellFormedUtf16()) { "Invalid model file path" }
     require(!path.startsWith('/') && !path.startsWith('\\') && '\\' !in path) {
         "Invalid model file path"
     }
@@ -76,6 +77,22 @@ private fun isSafePathSegment(segment: String): Boolean {
     return segment.none { char ->
         char.code < 32 || char.code == 127 || char in ":*?\"<>|"
     }
+}
+
+private fun String.hasWellFormedUtf16(): Boolean {
+    var index = 0
+    while (index < length) {
+        val current = this[index]
+        when {
+            current.isHighSurrogate() -> {
+                if (index + 1 >= length || !this[index + 1].isLowSurrogate()) return false
+                index += 2
+            }
+            current.isLowSurrogate() -> return false
+            else -> index += 1
+        }
+    }
+    return true
 }
 
 internal class DownloadProgressTracker(

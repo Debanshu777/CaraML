@@ -64,7 +64,6 @@ import com.debanshu777.huggingfacemanager.model.SearchModelsResponse
 import com.debanshu777.huggingfacemanager.sdcpp.loadSdCppCuratedCatalog
 import com.debanshu777.huggingfacemanager.sdcpp.toListModelsResponse
 import com.debanshu777.huggingfacemanager.sdcpp.toVideoListModelsResponse
-import com.debanshu777.huggingfacemanager.sdcpp.SdCppComponentChecker
 import com.debanshu777.huggingfacemanager.sdcpp.getModelSetup
 import com.debanshu777.huggingfacemanager.sdcpp.ComponentRole
 import com.debanshu777.huggingfacemanager.sdcpp.SdCppComponent
@@ -106,6 +105,16 @@ internal fun projectCommittedDiffusionVariants(
         file.copy(isDownloaded = file.artifact in committed, progress = null)
     }
 }
+
+internal fun ArtifactManifest.matchesExactBundle(metadata: List<DownloadMetadataDTO>): Boolean =
+    entries.size == metadata.size && metadata.isNotEmpty() && metadata.all { expected ->
+        entries.singleOrNull { installed ->
+            installed.logicalRole == expected.logicalRole &&
+                installed.identity == expected.artifact &&
+                installed.bundleId == expected.bundleId &&
+                installed.localRelativePath == expected.destinationRelativePath
+        } != null
+    }
 
 data class StorageInfoUiState(
     val totalDeviceBytes: Long = 0L,
@@ -227,7 +236,6 @@ class ModelViewModel(
     private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
-    private val componentChecker = SdCppComponentChecker(storagePathProvider)
     private val downloadAdmissionPolicy = DownloadAdmissionPolicy()
     private val downloadStorageEstimator = DownloadStorageEstimator()
     private val settings = settingsRepository.getSettings()
@@ -341,6 +349,8 @@ class ModelViewModel(
 
     private val _setupComponents = MutableStateFlow<List<SetupComponentUiState>>(emptyList())
     val setupComponents: StateFlow<List<SetupComponentUiState>> = _setupComponents.asStateFlow()
+    private var exactSetupComponentMetadata: Map<SdCppComponent, DownloadMetadataDTO> = emptyMap()
+    private val _validatedBundleReady = MutableStateFlow(false)
 
     private val _isDownloadingSetupComponents = MutableStateFlow(false)
     val isDownloadingSetupComponents: StateFlow<Boolean> = _isDownloadingSetupComponents.asStateFlow()
@@ -397,6 +407,8 @@ class ModelViewModel(
             isReady = isReady,
             isSelfContained = isSelfContained,
         )
+    }.combine(_validatedBundleReady) { bundle, validatedBundleReady ->
+        bundle.copy(isReady = bundle.isReady && validatedBundleReady)
     }.combine(_installProgress) { bundle, progress ->
         bundle.copy(
             overallProgress = progress.fraction,
@@ -528,18 +540,15 @@ class ModelViewModel(
             _detailError.update { null }
             _modelDetail.update { null }
             _ggufFiles.update { emptyList() }
+            _setupComponents.update { emptyList() }
+            exactSetupComponentMetadata = emptyMap()
+            _validatedBundleReady.update { false }
             _selectedVariantPath.update { null }
 
             when (val detailResult = api.getModelDetail(modelId)) {
                 is Result.Success -> {
                     _modelDetail.update { detailResult.data }
                     _detailError.update { null }
-
-                    // Load setup components for diffusion models
-                    if (hubBrowseMode == ModelHubBrowseMode.DiffusionImage ||
-                        hubBrowseMode == ModelHubBrowseMode.DiffusionVideo) {
-                        loadSetupComponentsForModel(modelId)
-                    }
 
                     val weightFilter = when (hubBrowseMode) {
                         ModelHubBrowseMode.LanguageModels -> ModelFileWeightFilter.GgufOnly
@@ -550,9 +559,6 @@ class ModelViewModel(
                     when (val treeResult = api.getModelFileTree(modelId, weightFilter)) {
                         is Result.Success -> {
                             val downloaded = localModelRepository.getDownloadedFilenames(modelId)
-                            val bundleDownloaded =
-                                DIFFUSERS_BUNDLE_DB_FILENAME in downloaded &&
-                                    hubBrowseMode != ModelHubBrowseMode.LanguageModels
                             _ggufFiles.update {
                                 treeResult.data.map { item ->
                                     val rel = item.path ?: ""
@@ -560,7 +566,7 @@ class ModelViewModel(
                                     val isDownloaded = when (hubBrowseMode) {
                                         ModelHubBrowseMode.DiffusionImage,
                                         ModelHubBrowseMode.DiffusionVideo,
-                                        -> bundleDownloaded || rel in downloaded || fn in downloaded
+                                        -> false
                                         ModelHubBrowseMode.LanguageModels ->
                                             fn in downloaded || rel in downloaded
                                     }
@@ -584,8 +590,8 @@ class ModelViewModel(
                             }
                             // Auto-select the first undownloaded variant for diffusion models
                             if (hubBrowseMode != ModelHubBrowseMode.LanguageModels) {
-                                val firstPending = _ggufFiles.value.firstOrNull { !it.isDownloaded }
-                                _selectedVariantPath.update { firstPending?.path }
+                                _selectedVariantPath.update { _ggufFiles.value.firstOrNull()?.path }
+                                loadSetupComponentsForModel(modelId)
                             }
                         }
                         is Result.Error -> {
@@ -645,46 +651,48 @@ class ModelViewModel(
             try {
                 val variantPath = requestedVariantPath
                     ?: _selectedVariantPath.value
-                    ?: _ggufFiles.value.firstOrNull { !it.isDownloaded }?.path
+                    ?: _ggufFiles.value.firstOrNull()?.path
                     ?: return@launch
 
-                // Compute total bytes so the progress bar has a denominator
-                val allPending = _ggufFiles.value.filter { !it.isDownloaded && it.path.isNotBlank() }
-                val selectedFiles = selectDiffusionFilesToDownload(allPending, variantPath)
                 val setup = getModelSetup(modelId)
-                val missingComps = if (setup != null && !setup.selfContained)
-                    componentChecker.getMissingComponents(setup) else emptyList()
                 val allRequiredComponents = setup?.components?.filter { it.required }.orEmpty()
                 val componentMetadata = mutableMapOf<SdCppComponent, DownloadMetadataDTO>()
                 for (component in allRequiredComponents) {
-                    componentMetadata[component] = createMetadataForComponent(component)
+                    componentMetadata[component] = exactSetupComponentMetadata[component]
+                        ?: createMetadataForComponent(component)
                 }
-                val bundleId = artifactBundleId(
-                    selectedFiles.map { it.artifact ?: throw ArtifactVerificationException() } +
-                        componentMetadata.values.map { it.artifact },
-                ) ?: throw ArtifactVerificationException()
+                val ownedArtifacts = createExactBundleMetadata(variantPath, componentMetadata)
+                    ?: throw ArtifactVerificationException()
+                val selectedPaths = selectDiffusionFilesToDownload(
+                    _ggufFiles.value.filter { it.path.isNotBlank() },
+                    variantPath,
+                ).mapTo(mutableSetOf()) { it.path }
+                val primaryMetadata = ownedArtifacts.filter { metadata ->
+                    metadata.artifact.repositoryId == modelId && metadata.artifact.relativePath in selectedPaths
+                }
                 val ownedComponentMetadata = componentMetadata.mapValues { (_, metadata) ->
-                    metadata.copy(bundleId = bundleId)
+                    ownedArtifacts.single { it.artifact == metadata.artifact }
                 }
-                _installBytesTotal = selectedFiles.sumOf { it.sizeBytes ?: 0L } +
-                    missingComps.sumOf { it.sizeHint?.let { h -> parseSizeHint(h) } ?: 0L }
+                val missingPrimaryIdentities = _ggufFiles.value
+                    .filter { it.path in selectedPaths && !it.isDownloaded }
+                    .mapTo(mutableSetOf()) { it.artifact }
+                val missingComponentIdentities = _setupComponents.value
+                    .filter { it.required && !it.isDownloaded }
+                    .mapNotNullTo(mutableSetOf()) { state ->
+                        ownedComponentMetadata.entries.singleOrNull { (component) ->
+                            component.repoId == state.repoId && component.filePath == state.filePath
+                        }?.value?.artifact
+                    }
+                _installBytesTotal = ownedArtifacts
+                    .filter { it.artifact in missingPrimaryIdentities || it.artifact in missingComponentIdentities }
+                    .sumOf { it.artifact.expectedBytes }
                 _installBytesCompleted = 0L
                 _installProgress.update { InstallProgress(bytesTotal = _installBytesTotal) }
 
-                val selectedArtifact = _ggufFiles.value.find { it.path == variantPath }?.artifact
+                val selectedMetadata = primaryMetadata.singleOrNull { it.artifact.relativePath == variantPath }
                     ?: throw IllegalStateException("Exact artifact identity is unavailable")
-                val sharedMeta = DownloadMetadataDTO(
-                    artifact = selectedArtifact,
-                    logicalRole = "model",
-                    sizeBytes = selectedArtifact.expectedBytes,
-                    author = _modelDetail.value?.author,
-                    libraryName = _modelDetail.value?.libraryName,
-                    pipelineTag = _modelDetail.value?.pipelineTag,
-                    contextLength = null,
-                    bundleId = bundleId,
-                )
 
-                when (val admission = refreshDownloadAdmission(modelId, sharedMeta)) {
+                when (val admission = refreshDownloadAdmission(modelId, selectedMetadata)) {
                     DownloadAdmission.Allowed -> Unit
                     is DownloadAdmission.ConfirmationRequired -> {
                         if (!downloadForLaterConfirmed) {
@@ -700,19 +708,18 @@ class ModelViewModel(
                     }
                 }
 
-                val primaryMetadata = downloadDiffusionBundle(
+                downloadDiffusionBundle(
                     modelId = modelId,
                     triggeredPath = variantPath,
-                    sharedMetadata = sharedMeta,
+                    ownedMetadata = primaryMetadata,
                     downloadForLaterConfirmed = downloadForLaterConfirmed,
                 )
                 downloadMissingComponents(modelId, downloadForLaterConfirmed, ownedComponentMetadata)
-                val ownedArtifacts = primaryMetadata + ownedComponentMetadata.values
                 if (!downloadManager.publishBundle(modelId, ownedArtifacts) ||
                     !downloadManager.validateBundle(modelId, ownedArtifacts)
                 ) throw ArtifactVerificationException()
                 persistDiffusionModelRecord(modelId, primaryMetadata, modelType)
-                refreshGgufFilesDownloadState(modelId, isDiffusion = true)
+                refreshVerifiedDiffusionInstallation(modelId)
             } catch (e: DownloadAdmissionRejected) {
                 when (e.admission) {
                     is DownloadAdmission.ConfirmationRequired -> _selectedVariantPath.value?.let { variantPath ->
@@ -939,14 +946,12 @@ class ModelViewModel(
         }
 
     private suspend fun refreshGgufFilesDownloadState(modelId: String, isDiffusion: Boolean) {
-        val downloaded = localModelRepository.getDownloadedFilenames(modelId)
-        val committedManifest = if (isDiffusion) {
-            downloadManager.validatedBundle(modelId) ?: downloadManager.validatedArtifacts(modelId)
-        } else {
-            null
+        if (isDiffusion) {
+            refreshVerifiedDiffusionInstallation(modelId)
+            return
         }
+        val downloaded = localModelRepository.getDownloadedFilenames(modelId)
         _ggufFiles.update { list ->
-            if (isDiffusion) return@update projectCommittedDiffusionVariants(list, committedManifest)
             list.map { file ->
                 file.copy(isDownloaded = file.filename in downloaded || file.path in downloaded, progress = null)
             }
@@ -1009,16 +1014,14 @@ class ModelViewModel(
     private suspend fun downloadDiffusionBundle(
         modelId: String,
         triggeredPath: String,
-        sharedMetadata: DownloadMetadataDTO,
+        ownedMetadata: List<DownloadMetadataDTO>,
         downloadForLaterConfirmed: Boolean = false,
     ): List<DownloadMetadataDTO> {
-        val allPending = _ggufFiles.value.filter { !it.isDownloaded && it.path.isNotBlank() }
-        if (allPending.isEmpty()) return emptyList()
-
-        val selected = selectDiffusionFilesToDownload(allPending, triggeredPath)
+        val allFiles = _ggufFiles.value.filter { it.path.isNotBlank() }
+        val selected = selectDiffusionFilesToDownload(allFiles, triggeredPath)
         if (selected.isEmpty()) return emptyList()
-
-        val totalRequired = selected.sumOf { it.sizeBytes ?: 0L }
+        val pending = selected.filter { !it.isDownloaded }
+        val totalRequired = pending.sumOf { it.sizeBytes ?: 0L }
         if (totalRequired > 0L) {
             val available = storagePathProvider.getAvailableStorageBytes()
             if (available < totalRequired) {
@@ -1026,27 +1029,15 @@ class ModelViewModel(
             }
         }
 
-        val detail = _modelDetail.value
-        fun metaFor(file: GgufFileUiState): DownloadMetadataDTO = DownloadMetadataDTO(
-            artifact = file.artifact ?: throw IllegalStateException("Exact artifact identity is unavailable"),
-            logicalRole = if (file.path == triggeredPath) "model" else "component-${file.path.hashCode().toUInt()}",
-            sizeBytes = file.artifact.expectedBytes,
-            author = detail?.author ?: sharedMetadata.author,
-            libraryName = detail?.libraryName ?: sharedMetadata.libraryName,
-            pipelineTag = detail?.pipelineTag ?: sharedMetadata.pipelineTag,
-            contextLength = sharedMetadata.contextLength,
-            destinationRelativePath = normalizedDiffusersRelativePath(file.path),
-            bundleId = sharedMetadata.bundleId,
-        )
-
-        val ordered = if (selected.any { it.path == triggeredPath }) {
-            listOf(selected.first { it.path == triggeredPath }) +
-                selected.filter { it.path != triggeredPath }
+        val ordered = if (pending.any { it.path == triggeredPath }) {
+            listOf(pending.first { it.path == triggeredPath }) + pending.filter { it.path != triggeredPath }
         } else {
-            selected
+            pending
         }
 
-        val orderedMetadata = ordered.map { it to metaFor(it) }
+        val orderedMetadata = ordered.map { file ->
+            file to ownedMetadata.single { it.artifact == file.artifact }
+        }
         for ((file, meta) in orderedMetadata) {
             refreshDownloadAdmission(modelId, meta).requireForComponent(downloadForLaterConfirmed)
             val bytesBeforeThisFile = _installBytesCompleted
@@ -1069,7 +1060,7 @@ class ModelViewModel(
             _installBytesCompleted += file.sizeBytes ?: 0L
         }
 
-        return orderedMetadata.map { it.second }
+        return ownedMetadata
     }
 
     private suspend fun persistDiffusionModelRecord(
@@ -1116,14 +1107,19 @@ class ModelViewModel(
             return emptyList()
         }
 
-        val missingComponents = componentChecker.getMissingComponents(setup)
-        if (missingComponents.isEmpty()) {
-            return emptyList()
+        val allRequired = setup.components.filter { it.required }
+        val allMetadata = LinkedHashMap<SdCppComponent, DownloadMetadataDTO>()
+        for (component in allRequired) {
+            allMetadata[component] = preparedMetadata[component] ?: createMetadataForComponent(component)
+        }
+        val missingComponents = allRequired.filter { component ->
+            _setupComponents.value.singleOrNull {
+                it.repoId == component.repoId && it.filePath == component.filePath
+            }?.isDownloaded != true
         }
 
-        val downloaded = mutableListOf<DownloadMetadataDTO>()
         for (component in missingComponents) {
-            val meta = preparedMetadata[component] ?: createMetadataForComponent(component)
+            val meta = requireNotNull(allMetadata[component])
             refreshDownloadAdmission(modelId, meta).requireForComponent(downloadForLaterConfirmed)
             val bytesBeforeThisComponent = _installBytesCompleted
             val componentLabel = component.filePath.substringAfterLast('/')
@@ -1163,9 +1159,8 @@ class ModelViewModel(
                 }
             }
             _installBytesCompleted += component.sizeHint?.let { parseSizeHint(it) } ?: 0L
-            downloaded += meta
         }
-        return downloaded
+        return allMetadata.values.toList()
     }
 
     fun clearDownloadError() {
@@ -1363,30 +1358,126 @@ class ModelViewModel(
 
     private suspend fun loadSetupComponentsForModel(modelId: String) {
         val setup = getModelSetup(modelId) ?: return
-        val componentsStatus = componentChecker.getComponentsStatus(setup)
-        val linkedComponents = componentRepository.getComponentsForModel(modelId)
-
+        val metadata = LinkedHashMap<SdCppComponent, DownloadMetadataDTO>()
+        for (component in setup.components.filter { it.required }) {
+            runCatching { createMetadataForComponent(component) }
+                .getOrNull()
+                ?.let { metadata[component] = it }
+        }
+        exactSetupComponentMetadata = metadata
         _setupComponents.update {
-            componentsStatus.map { (component, isDownloaded) ->
-                // sharedFrom: component is on disk but was NOT downloaded specifically for this model
-                val sharedFrom = if (isDownloaded) {
-                    val linkedToThis = linkedComponents.any {
-                        it.repoId == component.repoId && it.filePath == component.filePath
-                    }
-                    if (!linkedToThis) "another model" else null
-                } else null
+            setup.components.map { component ->
                 SetupComponentUiState(
                     role = component.role,
                     repoId = component.repoId,
                     filePath = component.filePath,
                     sizeHint = component.sizeHint,
-                    isDownloaded = isDownloaded,
+                    isDownloaded = false,
                     progress = null,
                     required = component.required,
-                    sharedFrom = sharedFrom,
+                    sharedFrom = null,
                 )
             }
         }
+        refreshVerifiedDiffusionInstallation(modelId)
+    }
+
+    private suspend fun refreshVerifiedDiffusionInstallation(modelId: String) {
+        _validatedBundleReady.value = false
+        val requiredComponents = getModelSetup(modelId)?.components?.filter { it.required }.orEmpty()
+        val metadataComplete = requiredComponents.all { it in exactSetupComponentMetadata }
+        val repositoryIds = buildSet {
+            add(modelId)
+            exactSetupComponentMetadata.values.forEach { add(it.artifact.repositoryId) }
+        }
+        val artifactManifests = repositoryIds.associateWith { downloadManager.validatedArtifacts(it) }
+        val individuallyInstalled = artifactManifests.values
+            .filterNotNull()
+            .flatMap { it.entries }
+
+        _ggufFiles.update { files ->
+            files.map { file ->
+                val destination = file.artifact?.relativePath?.let(::normalizedDiffusersRelativePath)
+                file.copy(
+                    isDownloaded = file.artifact != null && individuallyInstalled.any { entry ->
+                        entry.identity == file.artifact && entry.localRelativePath == destination
+                    },
+                    progress = null,
+                )
+            }
+        }
+        _setupComponents.update { components ->
+            components.map { componentState ->
+                val metadata = exactSetupComponentMetadata.entries
+                    .singleOrNull { (component) ->
+                        component.repoId == componentState.repoId && component.filePath == componentState.filePath
+                    }
+                    ?.value
+                componentState.copy(
+                    isDownloaded = metadata != null && individuallyInstalled.any { entry ->
+                        entry.identity == metadata.artifact &&
+                            entry.logicalRole == metadata.logicalRole &&
+                            entry.localRelativePath == metadata.destinationRelativePath
+                    },
+                    progress = null,
+                )
+            }
+        }
+
+        if (!metadataComplete) return
+        val aggregate = downloadManager.validatedBundle(modelId) ?: return
+        val installed = _ggufFiles.value.asSequence()
+            .mapNotNull { it.path.takeIf(String::isNotBlank) }
+            .mapNotNull { triggered ->
+                createExactBundleMetadata(triggered, exactSetupComponentMetadata)
+                    ?.takeIf(aggregate::matchesExactBundle)
+                    ?.let { triggered to it }
+            }
+            .firstOrNull() ?: return
+        val installedIdentities = installed.second.map { it.artifact }.toSet()
+        _ggufFiles.update { files ->
+            files.map { it.copy(isDownloaded = it.artifact in installedIdentities, progress = null) }
+        }
+        _setupComponents.update { components ->
+            components.map { state ->
+                val identity = exactSetupComponentMetadata.entries.singleOrNull { (component) ->
+                    component.repoId == state.repoId && component.filePath == state.filePath
+                }?.value?.artifact
+                state.copy(isDownloaded = identity in installedIdentities, progress = null)
+            }
+        }
+        _selectedVariantPath.value = installed.first
+        _validatedBundleReady.value = true
+    }
+
+    private fun createExactBundleMetadata(
+        triggeredPath: String,
+        componentMetadata: Map<SdCppComponent, DownloadMetadataDTO>,
+    ): List<DownloadMetadataDTO>? {
+        val selected = selectDiffusionFilesToDownload(
+            _ggufFiles.value.filter { it.path.isNotBlank() },
+            triggeredPath,
+        )
+        if (selected.isEmpty() || selected.none { it.path == triggeredPath }) return null
+        val primaryIdentities = selected.map { it.artifact ?: return null }
+        val identities = primaryIdentities + componentMetadata.values.map { it.artifact }
+        val bundleId = artifactBundleId(identities) ?: return null
+        val detail = _modelDetail.value
+        val ordered = listOf(selected.first { it.path == triggeredPath }) + selected.filter { it.path != triggeredPath }
+        val primaryMetadata = ordered.mapIndexed { index, file ->
+            DownloadMetadataDTO(
+                artifact = requireNotNull(file.artifact),
+                logicalRole = if (index == 0) "model" else "component-${file.path.hashCode().toUInt()}",
+                sizeBytes = file.artifact.expectedBytes,
+                author = detail?.author,
+                libraryName = detail?.libraryName,
+                pipelineTag = detail?.pipelineTag,
+                contextLength = null,
+                destinationRelativePath = normalizedDiffusersRelativePath(file.path),
+                bundleId = bundleId,
+            )
+        }
+        return primaryMetadata + componentMetadata.values.map { it.copy(bundleId = bundleId) }
     }
 
     /** Legacy: download only components (called explicitly from settings/fix flow). */
@@ -1407,37 +1498,39 @@ class ModelViewModel(
                 val allComponents = setup.components.filter { it.required }
                 val componentMetadata = mutableMapOf<SdCppComponent, DownloadMetadataDTO>()
                 for (component in allComponents) {
-                    componentMetadata[component] = createMetadataForComponent(component)
+                    componentMetadata[component] = exactSetupComponentMetadata[component]
+                        ?: createMetadataForComponent(component)
                 }
-                val primaryFiles = _ggufFiles.value.filter { it.isDownloaded && it.artifact != null }
-                if (primaryFiles.isEmpty()) throw ArtifactVerificationException()
-                val bundleId = artifactBundleId(
-                    primaryFiles.map { requireNotNull(it.artifact) } + componentMetadata.values.map { it.artifact },
-                ) ?: throw ArtifactVerificationException()
-                val ownedComponents = componentMetadata.mapValues { (_, metadata) -> metadata.copy(bundleId = bundleId) }
+                val selectedPath = _selectedVariantPath.value ?: _ggufFiles.value.firstOrNull()?.path
+                    ?: throw ArtifactVerificationException()
+                val ownedArtifacts = createExactBundleMetadata(selectedPath, componentMetadata)
+                    ?: throw ArtifactVerificationException()
+                val selectedPaths = selectDiffusionFilesToDownload(
+                    _ggufFiles.value.filter { it.path.isNotBlank() },
+                    selectedPath,
+                ).mapTo(mutableSetOf()) { it.path }
+                val primaryMetadata = ownedArtifacts.filter {
+                    it.artifact.repositoryId == modelId && it.artifact.relativePath in selectedPaths
+                }
+                val ownedComponents = componentMetadata.mapValues { (_, metadata) ->
+                    ownedArtifacts.single { it.artifact == metadata.artifact }
+                }
+                downloadDiffusionBundle(
+                    modelId = modelId,
+                    triggeredPath = selectedPath,
+                    ownedMetadata = primaryMetadata,
+                    downloadForLaterConfirmed = downloadForLaterConfirmed,
+                )
                 downloadMissingComponents(
                     modelId,
                     downloadForLaterConfirmed = downloadForLaterConfirmed,
                     preparedMetadata = ownedComponents,
                 )
-                val detail = _modelDetail.value
-                val primaryMetadata = primaryFiles.mapIndexed { index, file ->
-                    DownloadMetadataDTO(
-                        artifact = requireNotNull(file.artifact),
-                        logicalRole = if (index == 0) "model" else "component-${file.path.hashCode().toUInt()}",
-                        sizeBytes = file.artifact.expectedBytes,
-                        author = detail?.author,
-                        libraryName = detail?.libraryName,
-                        pipelineTag = detail?.pipelineTag,
-                        destinationRelativePath = normalizedDiffusersRelativePath(file.path),
-                        bundleId = bundleId,
-                    )
-                }
-                val ownedArtifacts = primaryMetadata + ownedComponents.values
                 if (!downloadManager.publishBundle(modelId, ownedArtifacts) ||
                     !downloadManager.validateBundle(modelId, ownedArtifacts)
                 ) throw ArtifactVerificationException()
-                localModelRepository.updateComponentStatus(modelId, LocalModelEntity.STATUS_READY)
+                persistDiffusionModelRecord(modelId, primaryMetadata, modelTypeForCurrentBrowseMode())
+                refreshVerifiedDiffusionInstallation(modelId)
             } catch (error: DownloadAdmissionRejected) {
                 if (error.admission is DownloadAdmission.ConfirmationRequired && !downloadForLaterConfirmed) {
                     requestDownloadForLaterConfirmation(PendingDownloadForLater.Repair(modelId))

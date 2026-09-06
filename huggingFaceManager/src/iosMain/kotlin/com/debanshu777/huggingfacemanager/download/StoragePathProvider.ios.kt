@@ -18,7 +18,6 @@ class IosStoragePathProvider : StoragePathProvider {
             .URLForDirectory(NSDocumentDirectory, NSUserDomainMask, null, false, null)!!
         val docs = docsUrl.URLByResolvingSymlinksInPath?.path ?: docsUrl.path!!
         val modelsRoot = "$docs/models"
-        NSFileManager.defaultManager.createDirectoryAtPath(modelsRoot, true, null, null)
         return "$modelsRoot/$safeModelId"
     }
     

@@ -32,6 +32,7 @@ import com.debanshu777.caraml.core.storage.component.ModelComponentLinkEntity
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelDao
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
+import com.debanshu777.caraml.core.domain.ModelReadinessReconciler
 import com.debanshu777.caraml.features.modelhub.domain.ModelMetadataSource
 import com.debanshu777.caraml.features.modelhub.domain.ModelRecommendationService
 import com.debanshu777.caraml.features.modelhub.domain.RecommendationSnapshotSource
@@ -41,6 +42,12 @@ import com.debanshu777.caraml.features.modelhub.domain.RepositoryVariantSet
 import com.debanshu777.huggingfacemanager.HuggingFaceApi
 import com.debanshu777.huggingfacemanager.api.RemoteHuggingFaceApiService
 import com.debanshu777.huggingfacemanager.download.DownloadManager
+import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
+import com.debanshu777.huggingfacemanager.download.ArtifactManifest
+import com.debanshu777.huggingfacemanager.download.ArtifactManifestEntry
+import com.debanshu777.huggingfacemanager.download.ArtifactManifestStore
+import com.debanshu777.huggingfacemanager.download.ArtifactBundleManifestStore
+import com.debanshu777.huggingfacemanager.download.artifactBundleId
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import com.debanshu777.huggingfacemanager.repository.HuggingFaceRepository
 import com.debanshu777.huggingfacemanager.usecase.GetModelConfigUseCase
@@ -65,6 +72,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -72,6 +80,10 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
+import java.io.File
+import java.nio.file.Files
+import java.security.MessageDigest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -79,6 +91,168 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ModelViewModelRecommendationTest {
+    @Test
+    fun diffusionDetailIgnoresStaleRoomBundleSentinelWithoutValidatedManifestEvidence() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val revision = "a".repeat(40)
+        val requestDispatcher = dispatcher
+        val engine = object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler { request ->
+                when {
+                    request.url.encodedPath.endsWith("/tree/$revision") -> respondJson(
+                        """[{"path":"model.fp16.safetensors","type":"file","size":4,"lfs":{"oid":"${"b".repeat(64)}","size":4}},{"path":"model.safetensors","type":"file","size":4,"lfs":{"oid":"${"c".repeat(64)}","size":4}}]""",
+                    )
+                    request.url.encodedPath.endsWith("/segmind/tiny-sd") -> respondJson(
+                        """{"id":"segmind/tiny-sd","modelId":"segmind/tiny-sd","sha":"$revision","private":false}""",
+                    )
+                    else -> error("Unexpected request ${request.url}")
+                }
+            }
+        }) {
+            override val dispatcher: CoroutineDispatcher = requestDispatcher
+        }
+        val client = HttpClient(engine)
+        try {
+            val viewModel = viewModel(
+                client,
+                dispatcher,
+                localModelDao = FakeLocalModelDao(listOf("__diffusers_bundle__")),
+            )
+
+            viewModel.loadDetail("segmind/tiny-sd", ModelHubBrowseMode.DiffusionImage)
+            advanceUntilIdle()
+
+            assertTrue(
+                viewModel.ggufFiles.value.isNotEmpty(),
+                "detail=${viewModel.modelDetail.value?.modelId} error=${viewModel.detailError.value}",
+            )
+            assertTrue(viewModel.ggufFiles.value.none { it.isDownloaded })
+            assertFalse(viewModel.installBundleState.value.isReady)
+        } finally {
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun diffusionDetailRequiresValidatedAggregateAndEveryExactComponent() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val revision = "a".repeat(40)
+        val primaryPath = "model.safetensors"
+        val componentPath = "text_encoder_2/model.safetensors"
+        val primaryBytes = "main".encodeToByteArray()
+        val componentBytes = "clip".encodeToByteArray()
+        val primarySha = primaryBytes.sha256()
+        val componentSha = componentBytes.sha256()
+        val requestDispatcher = dispatcher
+        val engine = object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler { request ->
+                when {
+                    request.url.encodedPath.contains("/tree/") -> respondJson(
+                        """[{"path":"$primaryPath","type":"file","size":4,"lfs":{"oid":"$primarySha","size":4}},{"path":"$componentPath","type":"file","size":4,"lfs":{"oid":"$componentSha","size":4}}]""",
+                    )
+                    request.url.encodedPath.endsWith("/stabilityai/sd-turbo") -> respondJson(
+                        """{"id":"stabilityai/sd-turbo","modelId":"stabilityai/sd-turbo","sha":"$revision","private":false}""",
+                    )
+                    else -> error("Unexpected request")
+                }
+            }
+        }) {
+            override val dispatcher: CoroutineDispatcher = requestDispatcher
+        }
+        val client = HttpClient(engine)
+        val trusted = Files.createTempDirectory("caraml-vm-manifest-").toRealPath().toFile()
+        val storage = FakeStoragePathProvider(trusted, realFileAccess = true)
+        try {
+            writeVerifiedBundle(
+                storage = storage,
+                repositoryId = "stabilityai/sd-turbo",
+                revision = revision,
+                files = listOf(
+                    Triple(primaryPath, "model", primaryBytes),
+                    Triple(componentPath, "clip_g", componentBytes),
+                ),
+            )
+            val installed = viewModel(client, dispatcher, storagePathProvider = storage)
+            backgroundScope.launch { installed.installBundleState.collect {} }
+            installed.loadDetail("stabilityai/sd-turbo", ModelHubBrowseMode.DiffusionImage)
+            advanceUntilIdle()
+
+            assertTrue(
+                installed.installBundleState.value.isReady,
+                "files=${installed.ggufFiles.value} components=${installed.setupComponents.value}",
+            )
+            assertTrue(installed.ggufFiles.value.single { it.path == primaryPath }.isDownloaded)
+            assertTrue(installed.setupComponents.value.single { it.filePath == componentPath }.isDownloaded)
+
+            File(
+                storage.getModelsStorageDirectory("stabilityai/sd-turbo"),
+                ArtifactBundleManifestStore.MANIFEST_FILE_NAME,
+            ).delete()
+            val interrupted = viewModel(client, dispatcher, storagePathProvider = storage)
+            backgroundScope.launch { interrupted.installBundleState.collect {} }
+            interrupted.loadDetail("stabilityai/sd-turbo", ModelHubBrowseMode.DiffusionImage)
+            advanceUntilIdle()
+            assertFalse(interrupted.installBundleState.value.isReady)
+            assertTrue(interrupted.ggufFiles.value.single { it.path == primaryPath }.isDownloaded)
+            assertTrue(interrupted.setupComponents.value.single { it.filePath == componentPath }.isDownloaded)
+
+            writeVerifiedBundle(
+                storage = storage,
+                repositoryId = "stabilityai/sd-turbo",
+                revision = revision,
+                files = listOf(
+                    Triple(primaryPath, "model", primaryBytes),
+                    Triple(componentPath, "clip_g", componentBytes),
+                ),
+            )
+            File(storage.getModelsStorageDirectory("stabilityai/sd-turbo"), componentPath)
+                .writeBytes("evil".encodeToByteArray())
+            val corrupted = viewModel(client, dispatcher, storagePathProvider = storage)
+            backgroundScope.launch { corrupted.installBundleState.collect {} }
+            corrupted.loadDetail("stabilityai/sd-turbo", ModelHubBrowseMode.DiffusionImage)
+            advanceUntilIdle()
+
+            assertFalse(corrupted.installBundleState.value.isReady)
+            assertTrue(corrupted.ggufFiles.value.none { it.isDownloaded })
+            assertTrue(corrupted.setupComponents.value.none { it.isDownloaded })
+        } finally {
+            client.close()
+            trusted.deleteRecursively()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun readinessReconciliationDemotesAStaleReadyRoomRowWithoutAggregateEvidence() = runTest {
+        val trusted = Files.createTempDirectory("caraml-ready-reconcile-").toRealPath().toFile()
+        val storage = FakeStoragePathProvider(trusted, realFileAccess = true)
+        val model = LocalModelEntity(
+            modelId = "segmind/tiny-sd",
+            filename = "__diffusers_bundle__",
+            localPath = storage.getModelsStorageDirectory("segmind/tiny-sd"),
+            sizeBytes = Long.MAX_VALUE,
+            downloadedAt = 0L,
+            author = null,
+            libraryName = null,
+            pipelineTag = "text-to-image",
+            modelType = "image",
+            componentStatus = LocalModelEntity.STATUS_READY,
+        )
+        val dao = FakeLocalModelDao(mainModels = listOf(model))
+        try {
+            ModelReadinessReconciler(LocalModelRepository(dao), storage).reconcile()
+
+            assertEquals(LocalModelEntity.STATUS_PARTIAL, dao.updatedStatuses[model.modelId])
+        } finally {
+            trusted.deleteRecursively()
+        }
+    }
+
     @Test
     fun laterSearchIntentWinsWhenEarlierResponseCompletesLast() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -172,14 +346,18 @@ class ModelViewModelRecommendationTest {
         }
     }
 
-    private fun viewModel(client: HttpClient, dispatcher: CoroutineDispatcher): ModelViewModel {
-        val storage = FakeStoragePathProvider()
+    private fun viewModel(
+        client: HttpClient,
+        dispatcher: CoroutineDispatcher,
+        localModelDao: LocalModelDao = FakeLocalModelDao(),
+        storagePathProvider: StoragePathProvider = FakeStoragePathProvider(),
+    ): ModelViewModel {
         return ModelViewModel(
             api = huggingFaceApi(client),
-            localModelRepository = LocalModelRepository(FakeLocalModelDao()),
+            localModelRepository = LocalModelRepository(localModelDao),
             componentRepository = ComponentRepository(FakeDownloadedComponentDao()),
-            downloadManager = DownloadManager(storage),
-            storagePathProvider = storage,
+            downloadManager = DownloadManager(storagePathProvider),
+            storagePathProvider = storagePathProvider,
             deviceCapabilities = DeviceCapabilities(),
             recommendationService = recommendationService(dispatcher),
             settingsRepository = FakeSettingsRepository(),
@@ -198,6 +376,50 @@ private fun searchResponse(query: String, repositoryId: String): String =
 
 private fun listResponse(repositoryId: String): String =
     """{"models":[{"id":"$repositoryId","private":false}],"numItemsPerPage":1,"numTotalItems":1,"pageIndex":0}"""
+
+private fun writeVerifiedBundle(
+    storage: StoragePathProvider,
+    repositoryId: String,
+    revision: String,
+    files: List<Triple<String, String, ByteArray>>,
+) {
+    val identities = files.map { (path, _, bytes) ->
+        requireNotNull(
+            DownloadArtifactIdentity.create(
+                repositoryId = repositoryId,
+                immutableRevision = revision,
+                relativePath = path,
+                remoteObjectId = "sha256:${bytes.sha256()}",
+                expectedBytes = bytes.size.toLong(),
+            ),
+        )
+    }
+    val bundleId = requireNotNull(artifactBundleId(identities))
+    val root = File(storage.getModelsStorageDirectory(repositoryId)).apply { mkdirs() }
+    val entries = files.zip(identities).map { (fixture, identity) ->
+        val (path, role, bytes) = fixture
+        File(root, path).apply {
+            parentFile?.mkdirs()
+            writeBytes(bytes)
+        }
+        requireNotNull(
+            ArtifactManifestEntry.create(
+                logicalRole = role,
+                identity = identity,
+                byteCount = bytes.size.toLong(),
+                contentSha256 = bytes.sha256(),
+                bundleId = bundleId,
+                localRelativePath = path,
+            ),
+        )
+    }
+    val encoded = Json { encodeDefaults = true }.encodeToString(requireNotNull(ArtifactManifest.create(entries)))
+    File(root, ArtifactManifestStore.MANIFEST_FILE_NAME).writeText(encoded)
+    File(root, ArtifactBundleManifestStore.MANIFEST_FILE_NAME).writeText(encoded)
+}
+
+private fun ByteArray.sha256(): String =
+    MessageDigest.getInstance("SHA-256").digest(this).joinToString("") { "%02x".format(it) }
 
 private fun huggingFaceApi(client: HttpClient): HuggingFaceApi {
     val repository = HuggingFaceRepository(
@@ -357,21 +579,28 @@ private class FakeSettingsRepository : SettingsRepository {
     override suspend fun completeModelProfileOnboarding(profile: RecommendationProfile) = Unit
 }
 
-private class FakeStoragePathProvider : StoragePathProvider {
-    override fun getModelsStorageDirectory(modelId: String): String = "/tmp/caraml-test/$modelId"
+private class FakeStoragePathProvider(
+    private val baseDirectory: File = File("/tmp/caraml-test"),
+    private val realFileAccess: Boolean = false,
+) : StoragePathProvider {
+    override fun getModelsStorageDirectory(modelId: String): String = File(baseDirectory, modelId).path
     override fun getDatabasePath(): String = "/tmp/caraml-test.db"
-    override fun fileExists(path: String): Boolean = false
+    override fun fileExists(path: String): Boolean = realFileAccess && File(path).isFile
     override fun getAvailableStorageBytes(): Long = 1_000_000L
     override fun getTotalStorageBytes(): Long = 2_000_000L
-    override fun isModelFileReadable(path: String): Boolean = false
-    override fun isDirectoryReadable(path: String): Boolean = false
-    override fun getFileSize(path: String): Long = 0L
+    override fun isModelFileReadable(path: String): Boolean = realFileAccess && File(path).isFile && File(path).canRead()
+    override fun isDirectoryReadable(path: String): Boolean = realFileAccess && File(path).isDirectory && File(path).canRead()
+    override fun getFileSize(path: String): Long = if (realFileAccess) File(path).length() else 0L
     override fun renameFile(from: String, to: String): Boolean = false
     override fun deleteDownloadedModelContent(modelId: String, localPath: String): Boolean = false
 }
 
-private class FakeLocalModelDao : LocalModelDao {
-    override suspend fun getFilenamesByModelId(modelId: String): List<String> = emptyList()
+private class FakeLocalModelDao(
+    private val filenames: List<String> = emptyList(),
+    private val mainModels: List<LocalModelEntity> = emptyList(),
+) : LocalModelDao {
+    val updatedStatuses = mutableMapOf<String, String>()
+    override suspend fun getFilenamesByModelId(modelId: String): List<String> = filenames
     override suspend fun deleteByModelIdAndFilename(modelId: String, filename: String) = Unit
     override suspend fun deleteAllForModelId(modelId: String) = Unit
     override suspend fun insert(entity: LocalModelEntity) = Unit
@@ -379,8 +608,10 @@ private class FakeLocalModelDao : LocalModelDao {
     override fun getDownloadedFilesByType(modelType: String): Flow<List<LocalModelEntity>> = flowOf(emptyList())
     override suspend fun incrementUsageCount(modelId: String, filename: String) = Unit
     override fun getTotalDownloadedSizeBytes(): Flow<Long> = flowOf(0L)
-    override suspend fun updateComponentStatus(modelId: String, status: String) = Unit
-    override suspend fun getMainModels(): List<LocalModelEntity> = emptyList()
+    override suspend fun updateComponentStatus(modelId: String, status: String) {
+        updatedStatuses[modelId] = status
+    }
+    override suspend fun getMainModels(): List<LocalModelEntity> = mainModels
     override suspend fun updateArch(modelId: String, arch: String) = Unit
     override suspend fun demoteMmprojFilesFromMain() = Unit
 }

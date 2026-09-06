@@ -13,11 +13,11 @@ class JvmStoragePathProvider : StoragePathProvider {
                 File(System.getenv("APPDATA") ?: home, "CaraML")
             else -> File(home, ".config/CaraML")
         }
-        dir.apply { mkdirs() }
+        dir
     }
     
     override fun getModelsStorageDirectory(modelId: String): String {
-        val modelsRoot = File(appDir, "models").apply { mkdirs() }
+        val modelsRoot = File(appDir, "models")
         return File(modelsRoot, validateModelId(modelId)).absolutePath
     }
     
@@ -26,9 +26,13 @@ class JvmStoragePathProvider : StoragePathProvider {
     
     override fun fileExists(path: String): Boolean = File(path).exists()
 
-    override fun getAvailableStorageBytes(): Long = appDir.usableSpace
+    override fun getAvailableStorageBytes(): Long = existingStorageParent().usableSpace
 
-    override fun getTotalStorageBytes(): Long = appDir.totalSpace
+    override fun getTotalStorageBytes(): Long = existingStorageParent().totalSpace
+
+    private fun existingStorageParent(): File = generateSequence(appDir) { it.parentFile }
+        .firstOrNull(File::exists)
+        ?: throw ArtifactFileAccessException()
 
     override fun isModelFileReadable(path: String): Boolean {
         val file = File(path)
