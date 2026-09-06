@@ -97,9 +97,9 @@ class DiffusionFootprintEstimator {
         for (component in descriptor.components) {
             val file = component.file
             if (
-                file.repositoryId != descriptor.repositoryId || file.revision != descriptor.revision ||
-                file.path.isBlank() || file.path.length > DescriptorLimits.MAX_RELATIVE_PATH_LENGTH ||
-                file.sizeBytes !in 1..DescriptorLimits.MAX_FILE_BYTES ||
+                !file.hasValidExactIdentity() ||
+                (component.isPrimary &&
+                    (file.repositoryId != descriptor.repositoryId || file.revision != descriptor.revision)) ||
                 !seen.add("${file.repositoryId}:${file.revision}:${file.path}")
             ) {
                 return DiffusionWeightsResult.Invalid(AssessmentReason.INVALID_METADATA, null)

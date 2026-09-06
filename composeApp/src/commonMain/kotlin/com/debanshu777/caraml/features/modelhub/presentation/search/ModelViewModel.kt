@@ -192,6 +192,9 @@ class ModelViewModel(
 
     private var recommendationSession: RecommendationQuerySession? = null
     private var recommendationJob: Job? = null
+    private var listRequestJob: Job? = null
+    private var searchRequestJob: Job? = null
+    @Volatile private var activeModelRequestOwner: Any = Any()
 
     init {
         viewModelScope.launch {
@@ -359,12 +362,12 @@ class ModelViewModel(
 
     fun setBrowseMode(mode: ModelHubBrowseMode) {
         val previous = _browseMode.value
+        if (previous != mode) invalidateModelRequests()
         _browseMode.value = mode
         when (mode) {
             ModelHubBrowseMode.LanguageModels -> {
                 if (previous != ModelHubBrowseMode.LanguageModels) {
                     _listResponse.update { null }
-                    clearRecommendations()
                     loadModels()
                 }
             }
@@ -391,11 +394,16 @@ class ModelViewModel(
 
     fun loadModels() {
         if (_browseMode.value != ModelHubBrowseMode.LanguageModels) return
-        viewModelScope.launch {
+        val params = _listParams.value
+        val owner = beginModelRequest()
+        listRequestJob = viewModelScope.launch {
             _isListLoading.update { true }
             _listError.update { null }
-            when (val result = api.listModels(_listParams.value)) {
+            when (val result = api.listModels(params)) {
                 is Result.Success -> {
+                    if (!ownsModelRequest(owner) || _browseMode.value != ModelHubBrowseMode.LanguageModels) {
+                        return@launch
+                    }
                     _listResponse.update { result.data }
                     _listError.update { null }
                     startRecommendations(
@@ -404,6 +412,9 @@ class ModelViewModel(
                     )
                 }
                 is Result.Error -> {
+                    if (!ownsModelRequest(owner) || _browseMode.value != ModelHubBrowseMode.LanguageModels) {
+                        return@launch
+                    }
                     _listError.update {
                         when (result.error) {
                             DataError.Network.NoInternet ->
@@ -426,7 +437,7 @@ class ModelViewModel(
                     }
                 }
             }
-            _isListLoading.update { false }
+            if (ownsModelRequest(owner)) _isListLoading.update { false }
         }
     }
 
@@ -909,11 +920,13 @@ class ModelViewModel(
             _searchError.update { "Please enter a search query" }
             return
         }
-        viewModelScope.launch {
+        val owner = beginModelRequest()
+        searchRequestJob = viewModelScope.launch {
             _isSearchLoading.update { true }
             _searchError.update { null }
             when (val result = api.searchModels(SearchModelsParams(query = query))) {
                 is Result.Success -> {
+                    if (!ownsSearchRequest(owner, query)) return@launch
                     _searchResponse.update { result.data }
                     _searchError.update { null }
                     startRecommendations(
@@ -928,6 +941,7 @@ class ModelViewModel(
                     )
                 }
                 is Result.Error -> {
+                    if (!ownsSearchRequest(owner, query)) return@launch
                     _searchError.update {
                         when (result.error) {
                             DataError.Network.NoInternet ->
@@ -950,11 +964,12 @@ class ModelViewModel(
                     }
                 }
             }
-            _isSearchLoading.update { false }
+            if (ownsModelRequest(owner)) _isSearchLoading.update { false }
         }
     }
 
     fun clearSearch() {
+        invalidateModelRequests()
         _searchQuery.update { "" }
         _searchResponse.update { null }
         _searchError.update { null }
@@ -984,6 +999,7 @@ class ModelViewModel(
         source: String = "list",
     ) {
         recommendationJob?.cancel()
+        recommendationSession?.cancel()
         val queryId = "${_browseMode.value.name}:$source"
         val session = recommendationService.startQuery(queryId, models, workload)
         recommendationSession = session
@@ -1002,16 +1018,60 @@ class ModelViewModel(
 
     private fun clearRecommendations() {
         recommendationJob?.cancel()
+        recommendationSession?.cancel()
         recommendationJob = null
         recommendationSession = null
         _recommendedModels.value = emptyList()
     }
+
+    private fun beginModelRequest(): Any {
+        val owner = Any()
+        activeModelRequestOwner = owner
+        listRequestJob?.cancel()
+        searchRequestJob?.cancel()
+        listRequestJob = null
+        searchRequestJob = null
+        _isListLoading.value = false
+        _isSearchLoading.value = false
+        clearRecommendations()
+        return owner
+    }
+
+    private fun invalidateModelRequests() {
+        activeModelRequestOwner = Any()
+        listRequestJob?.cancel()
+        searchRequestJob?.cancel()
+        listRequestJob = null
+        searchRequestJob = null
+        _isListLoading.value = false
+        _isSearchLoading.value = false
+        clearRecommendations()
+    }
+
+    private fun ownsModelRequest(owner: Any): Boolean = activeModelRequestOwner === owner
+
+    private fun ownsSearchRequest(owner: Any, query: String): Boolean =
+        ownsModelRequest(owner) &&
+            _browseMode.value == ModelHubBrowseMode.LanguageModels &&
+            _searchQuery.value == query
 
     private fun resetSearchStateForCuratedHub() {
         _searchQuery.update { "" }
         _searchResponse.update { null }
         _searchError.update { null }
         _isSearchLoading.update { false }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        listRequestJob?.cancel()
+        searchRequestJob?.cancel()
+        recommendationJob?.cancel()
+        recommendationSession?.cancel()
+        listRequestJob = null
+        searchRequestJob = null
+        recommendationJob = null
+        recommendationSession = null
     }
 
     fun clearSearchError() {

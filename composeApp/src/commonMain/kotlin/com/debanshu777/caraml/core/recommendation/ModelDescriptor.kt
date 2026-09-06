@@ -61,6 +61,55 @@ data class ModelFileIdentity private constructor(
     )
 }
 
+internal fun ModelFileIdentity.hasValidExactIdentity(): Boolean {
+    val objectIdentities = listOf(gitOid, lfsOid, xetHash)
+    if (!isValidDescriptorRepositoryId(repositoryId) ||
+        revision.length !in 40..64 || !revision.all(::isAsciiHexDigit) ||
+        !isValidDescriptorRelativePath(path) ||
+        sizeBytes !in 1..DescriptorLimits.MAX_FILE_BYTES ||
+        objectIdentities.none { it != null } ||
+        objectIdentities.any { value ->
+            value != null && (value.isEmpty() || value.length > DescriptorLimits.MAX_METADATA_STRING_LENGTH ||
+                value.any { it.code < 32 || it.code == 127 })
+        } || evidence.size > DescriptorLimits.MAX_METADATA_COLLECTION_SIZE ||
+        evidence.any { it.detail?.let { detail ->
+            detail.length > DescriptorLimits.MAX_METADATA_STRING_LENGTH || detail.any { it.isISOControl() }
+        } == true }
+    ) {
+        return false
+    }
+    return true
+}
+
+private fun isValidDescriptorRepositoryId(value: String): Boolean {
+    if (value.isEmpty() || value != value.trim() || value.length > DescriptorLimits.MAX_MODEL_ID_LENGTH || '\\' in value) {
+        return false
+    }
+    val segments = value.split('/')
+    return segments.size in 1..2 && segments.all { segment ->
+        segment.isNotEmpty() && segment.length <= DescriptorLimits.MAX_REPOSITORY_SEGMENT_LENGTH &&
+            segment != "." && segment != ".." && ".." !in segment && "--" !in segment &&
+            segment.first() !in ".-" && segment.last() !in ".-" &&
+            segment.all { it.isLetterOrDigit() || it == '_' || it == '-' || it == '.' }
+    }
+}
+
+private fun isValidDescriptorRelativePath(value: String): Boolean {
+    if (value.isEmpty() || value != value.trim() || value.length > DescriptorLimits.MAX_RELATIVE_PATH_LENGTH ||
+        value.startsWith('/') || value.startsWith('\\') || '\\' in value
+    ) {
+        return false
+    }
+    return value.split('/').all { segment ->
+        segment.isNotEmpty() && segment != "." && segment != ".." &&
+            segment.length <= DescriptorLimits.MAX_PATH_SEGMENT_LENGTH &&
+            segment.none { it.code < 32 || it.code == 127 || it in ":*?\"<>|" }
+    }
+}
+
+private fun isAsciiHexDigit(value: Char): Boolean =
+    value in '0'..'9' || value in 'a'..'f' || value in 'A'..'F'
+
 data class TransformerShape(
     val layerCount: Int?,
     val kvHeadCount: Int?,

@@ -1,6 +1,7 @@
 package com.debanshu777.caraml.core.recommendation
 
 import com.debanshu777.caraml.core.platform.BackendKind
+import com.debanshu777.huggingfacemanager.sdcpp.ComponentRole
 
 private val CONTEXT_BUCKETS = listOf(16_384, 8_192, 4_096, 2_048, 1_024, 512)
 private val BATCH_BUCKETS = listOf(512, 256, 128)
@@ -294,14 +295,17 @@ class RunPlanGenerator {
             return false
         }
         val seen = mutableSetOf<String>()
+        val seenAuxiliaryRoles = mutableSetOf<ComponentRole>()
         var bundleBytes = 0L
         for (component in descriptor.components) {
             val file = component.file
+            val auxiliaryRole = component.role.takeUnless { component.isPrimary }
             if (
-                file.repositoryId != descriptor.repositoryId || file.revision != descriptor.revision ||
-                file.path.isBlank() || file.path.length > DescriptorLimits.MAX_RELATIVE_PATH_LENGTH ||
-                file.sizeBytes !in 1..DescriptorLimits.MAX_FILE_BYTES ||
+                !file.hasValidExactIdentity() ||
+                (component.isPrimary &&
+                    (file.repositoryId != descriptor.repositoryId || file.revision != descriptor.revision)) ||
                 (!component.isPrimary && component.role == null) ||
+                (auxiliaryRole != null && !seenAuxiliaryRoles.add(auxiliaryRole)) ||
                 !seen.add("${file.repositoryId}:${file.revision}:${file.path}")
             ) {
                 return false

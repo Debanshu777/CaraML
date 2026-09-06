@@ -7,9 +7,9 @@ import com.debanshu777.caraml.core.recommendation.RecommendationSortKey
 import com.debanshu777.caraml.core.recommendation.WorkloadConfig
 import com.debanshu777.huggingfacemanager.model.ListModelsResponse
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.DisposableHandle
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,7 +17,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 
 enum class DescriptorState {
     PENDING,
@@ -152,19 +151,20 @@ class RecommendationQuerySession internal constructor(
     internal suspend fun <T> runEvaluation(block: suspend () -> T): T {
         return evaluationMutex.withLock {
             lifecycle.ensureActive()
-            val callerJob = currentCoroutineContext()[Job]
-            val evaluationJob = SupervisorJob(lifecycle)
-            val callerHandle: DisposableHandle? = callerJob?.invokeOnCompletion { cause ->
-                if (cause is CancellationException) evaluationJob.cancel(cause)
-            }
-            try {
-                withContext(evaluationJob) {
+            coroutineScope {
+                val evaluationJob = checkNotNull(currentCoroutineContext()[Job])
+                val lifecycleHandle = lifecycle.invokeOnCompletion { cause ->
+                    if (cause != null) {
+                        evaluationJob.cancel(cause as? CancellationException ?: QuerySupersededCancellationException())
+                    }
+                }
+                try {
+                    lifecycle.ensureActive()
                     currentCoroutineContext().ensureActive()
                     block()
+                } finally {
+                    lifecycleHandle.dispose()
                 }
-            } finally {
-                callerHandle?.dispose()
-                evaluationJob.cancel()
             }
         }
     }

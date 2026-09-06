@@ -102,6 +102,11 @@ kotlin {
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutinesTest)
         }
+        jvmTest.dependencies {
+            implementation(project.dependencies.platform(libs.ktor))
+            implementation("io.ktor:ktor-client-mock")
+            implementation(libs.ktor.serialization.kotlinx.json)
+        }
         jvmMain.dependencies {
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutinesSwing)

@@ -1,6 +1,9 @@
 package com.debanshu777.caraml.features.modelhub.domain
 
 import com.debanshu777.caraml.core.platform.DeviceSnapshot
+import com.debanshu777.caraml.core.platform.BackendCapability
+import com.debanshu777.caraml.core.platform.BackendKind
+import com.debanshu777.caraml.core.platform.BackendStatus
 import com.debanshu777.caraml.core.platform.HardwareProfile
 import com.debanshu777.caraml.core.platform.MemoryTopology
 import com.debanshu777.caraml.core.platform.PowerPolicyState
@@ -11,20 +14,26 @@ import com.debanshu777.caraml.core.recommendation.AssessedPlans
 import com.debanshu777.caraml.core.recommendation.AssessmentConfidence
 import com.debanshu777.caraml.core.recommendation.AssessmentReason
 import com.debanshu777.caraml.core.recommendation.Compatibility
+import com.debanshu777.caraml.core.recommendation.CompatibilityChecker
 import com.debanshu777.caraml.core.recommendation.Confidence
 import com.debanshu777.caraml.core.recommendation.DescriptorBuildResult
 import com.debanshu777.caraml.core.recommendation.DiffusionMode
+import com.debanshu777.caraml.core.recommendation.DiffusionWorkloadConfig
+import com.debanshu777.caraml.core.recommendation.EngineCapabilitySource
 import com.debanshu777.caraml.core.recommendation.LlmModelDescriptor
 import com.debanshu777.caraml.core.recommendation.LlmWorkloadConfig
 import com.debanshu777.caraml.core.recommendation.ModelAssessment
 import com.debanshu777.caraml.core.recommendation.ModelDescriptor
 import com.debanshu777.caraml.core.recommendation.ModelDescriptorFactory
 import com.debanshu777.caraml.core.recommendation.ModelFileIdentity
+import com.debanshu777.caraml.core.recommendation.NoCalibrationSource
 import com.debanshu777.caraml.core.recommendation.PersonalizedRecommendation
 import com.debanshu777.caraml.core.recommendation.QuantizationEvidence
 import com.debanshu777.caraml.core.recommendation.RecommendationCategory
 import com.debanshu777.caraml.core.recommendation.RecommendationProfile
 import com.debanshu777.caraml.core.recommendation.RecommendationSortKey
+import com.debanshu777.caraml.core.recommendation.SuitabilityEngine
+import com.debanshu777.caraml.core.recommendation.SupportEvidence
 import com.debanshu777.caraml.core.recommendation.WorkloadConfig
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 import com.debanshu777.huggingfacemanager.api.error.DataError
@@ -40,6 +49,7 @@ import com.debanshu777.huggingfacemanager.sdcpp.SdCppModelSetup
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -190,6 +200,101 @@ class ModelRecommendationServiceTest {
 
         assertTrue(evaluation.isCompleted)
         assertIs<QuerySupersededCancellationException>(observed)
+    }
+
+    @Test
+    fun cancellingEvaluationCallerStopsSuspendedMetadataWithoutStoppingSessionFirst() = runTest {
+        val metadataStarted = CompletableDeferred<Unit>()
+        val metadataCancelled = CompletableDeferred<Unit>()
+        val metadata = object : ModelMetadataSource {
+            override suspend fun describeVariants(
+                repositoryId: String,
+                mode: ModelHubBrowseMode,
+            ): RepositoryVariantSet {
+                metadataStarted.complete(Unit)
+                try {
+                    awaitCancellation()
+                } finally {
+                    metadataCancelled.complete(Unit)
+                }
+            }
+        }
+        val service = ModelRecommendationService(
+            metadataSource = metadata,
+            snapshotSource = FakeSnapshotSource(snapshot(1_000L)),
+            variantEvaluator = FakeVariantEvaluator(),
+            evaluationDispatcher = StandardTestDispatcher(testScheduler),
+            clock = { 1_000L },
+        )
+        val session = service.startQuery("caller-cancellation", models(1), workload())
+        val evaluation = launch { service.evaluateInitial(session, RecommendationProfile()) }
+        metadataStarted.await()
+
+        val cancellationFinished = CompletableDeferred<Unit>()
+        val canceller = launch {
+            evaluation.cancelAndJoin()
+            cancellationFinished.complete(Unit)
+        }
+        runCurrent()
+        val stoppedBeforeSessionCancellation = cancellationFinished.isCompleted
+        val metadataStoppedBeforeSessionCancellation = metadataCancelled.isCompleted
+
+        session.cancel()
+        advanceUntilIdle()
+        canceller.join()
+
+        assertTrue(stoppedBeforeSessionCancellation)
+        assertTrue(metadataStoppedBeforeSessionCancellation)
+        assertEquals(DescriptorState.CHECKING, session.state.value.single().descriptorState)
+    }
+
+    @Test
+    fun cancellingProfileRerankStopsStaleRefreshWithoutPublishingOrRebuilding() = runTest {
+        val refreshStarted = CompletableDeferred<Unit>()
+        val refreshCancelled = CompletableDeferred<Unit>()
+        val snapshots = object : RecommendationSnapshotSource {
+            override suspend fun captureInitial(): DeviceSnapshot = snapshot(capturedAt = 1_000L)
+
+            override suspend fun refreshResources(previous: DeviceSnapshot): DeviceSnapshot {
+                refreshStarted.complete(Unit)
+                try {
+                    awaitCancellation()
+                } finally {
+                    refreshCancelled.complete(Unit)
+                }
+            }
+        }
+        val evaluator = FakeVariantEvaluator()
+        val service = ModelRecommendationService(
+            metadataSource = CountingMetadataSource(),
+            snapshotSource = snapshots,
+            variantEvaluator = evaluator,
+            evaluationDispatcher = StandardTestDispatcher(testScheduler),
+            clock = { 31_001L },
+        )
+        val session = service.startQuery("rerank-cancellation", models(1), workload())
+        service.evaluateInitial(session, RecommendationProfile())
+        val stateBeforeRerank = session.state.value
+        val rerank = launch { service.rerank(session, RecommendationProfile()) }
+        refreshStarted.await()
+
+        val cancellationFinished = CompletableDeferred<Unit>()
+        val canceller = launch {
+            rerank.cancelAndJoin()
+            cancellationFinished.complete(Unit)
+        }
+        runCurrent()
+        val stoppedBeforeSessionCancellation = cancellationFinished.isCompleted
+        val refreshStoppedBeforeSessionCancellation = refreshCancelled.isCompleted
+
+        session.cancel()
+        advanceUntilIdle()
+        canceller.join()
+
+        assertTrue(stoppedBeforeSessionCancellation)
+        assertTrue(refreshStoppedBeforeSessionCancellation)
+        assertEquals(0, evaluator.rebuildCount)
+        assertEquals(stateBeforeRerank, session.state.value)
     }
 
     @Test
@@ -491,6 +596,38 @@ class ModelRecommendationServiceTest {
     }
 
     @Test
+    fun crossRepositoryDiffusionFromAdapterProducesRunnablePlansAndExactBundleEstimate() = runTest {
+        val repositoryId = "runwayml/stable-diffusion-v1-5"
+        val componentRepository = "org/components"
+        val modelSha = "c".repeat(40)
+        val componentSha = "d".repeat(40)
+        val component = SdCppComponent(ComponentRole.VAE, componentRepository, "vae.safetensors")
+        val setup = SdCppModelSetup("Stable Diffusion 1.x", "Explicit setup", listOf(component))
+        val gateway = FakeMetadataGateway().apply {
+            details[repositoryId] = detail(repositoryId, modelSha)
+            details[componentRepository] = detail(componentRepository, componentSha)
+            trees[repositoryId] = listOf(file("model-Q5_K_M.gguf", 200L, "model-oid"))
+            trees[componentRepository] = listOf(file("vae.safetensors", 50L, "component-oid"))
+        }
+        val descriptor = assertIs<com.debanshu777.caraml.core.recommendation.DiffusionModelDescriptor>(
+            assertIs<RepositoryVariantSet.Ready>(
+                HuggingFaceModelMetadataSource(gateway, ModelDescriptorFactory()) { setup }
+                    .describeVariants(repositoryId, ModelHubBrowseMode.DiffusionImage),
+            ).variants.single().descriptor,
+        )
+        val engine = SuitabilityEngine(
+            CompatibilityChecker(EngineCapabilitySource { SupportEvidence.Supported }),
+            NoCalibrationSource,
+        )
+
+        val assessed = engine.assessPlans(descriptor, diffusionHardware(), diffusionWorkload())
+
+        assertEquals(Compatibility.Compatible, assessed.compatibility)
+        assertTrue(assessed.values.isNotEmpty())
+        assertTrue(assessed.values.all { it.storageBytes?.highBytes == 250L })
+    }
+
+    @Test
     fun missingPinnedComponentOrAmbiguousSetupNeverSynthesizesDiffusionBundle() = runTest {
         val repositoryId = "org/diffusion"
         val componentRepository = "org/components"
@@ -743,6 +880,49 @@ private fun snapshot(capturedAt: Long): DeviceSnapshot {
         budgetConfidence = ResourcePoolConfidence(host = Confidence.HIGH, storage = Confidence.HIGH),
     )
 }
+
+private fun diffusionHardware() = HardwareProfile(
+    cpuArchitecture = "arm64",
+    logicalCoreCount = 8,
+    performanceCoreCount = 4,
+    instructionSets = emptySet(),
+    backends = listOf(
+        BackendCapability(
+            kind = BackendKind.CPU,
+            status = BackendStatus.AVAILABLE,
+            additionalAllocatableBytes = null,
+            availabilityConfidence = Confidence.HIGH,
+            headroomConfidence = null,
+            evidence = emptyList(),
+        ),
+    ),
+    memoryTopology = MemoryTopology.UNKNOWN,
+    evidence = emptyList(),
+)
+
+private fun diffusionWorkload() = DiffusionWorkloadConfig(
+    mode = DiffusionMode.IMAGE,
+    width = 512,
+    height = 512,
+    minimumWidth = 512,
+    minimumHeight = 512,
+    frameCount = 1,
+    minimumFrameCount = 1,
+    batchSize = 1,
+    steps = 20,
+    vaeTiling = false,
+    offloadToCpu = true,
+    keepClipOnCpu = false,
+    keepVaeOnCpu = false,
+    maxVramBytes = null,
+    layerStreaming = false,
+    allowResolutionFallback = false,
+    allowFrameCountFallback = false,
+    allowVaeTilingFallback = false,
+    allowMaxVramFallback = false,
+    allowLayerStreamingFallback = false,
+    evidence = emptyList(),
+)
 
 private fun detail(repositoryId: String, sha: String?) = ModelDetailResponse(
     id = repositoryId,
