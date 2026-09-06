@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,6 +26,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
@@ -40,6 +42,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -108,7 +111,7 @@ fun SearchScreen(
         settingsLoaded = settingsLoaded,
     )
     val recommendationProfileState = persistedProfileState.copy(profile = effectiveProfile)
-    var profileControlsExpanded by remember { mutableStateOf(false) }
+    var profileEditorVisible by remember { mutableStateOf(false) }
 
     // Shared bottom sheet — opened from any rating chip in the list.
     var ratingSheetModelId by remember { mutableStateOf<String?>(null) }
@@ -154,14 +157,7 @@ fun SearchScreen(
                         ratingSheetResult = result
                     },
                     recommendationProfileState = recommendationProfileState,
-                    profileControlsExpanded = profileControlsExpanded,
-                    profileSaving = profileSaving,
-                    profileError = profileError,
-                    onToggleProfileControls = {
-                        profileControlsExpanded = !profileControlsExpanded
-                    },
-                    onRiskToleranceChange = settingsViewModel::updateRiskTolerance,
-                    onOptimizationPriorityChange = settingsViewModel::updateOptimizationPriority,
+                    onOpenProfileEditor = { profileEditorVisible = true },
                     modifier = Modifier.fillMaxSize()
                 )
 
@@ -190,6 +186,17 @@ fun SearchScreen(
         )
     }
 
+    if (profileEditorVisible && recommendationProfileState.isAvailable) {
+        RecommendationProfileEditorSheet(
+            profile = recommendationProfileState.profile,
+            saving = profileSaving,
+            errorMessage = profileError,
+            onDismiss = { profileEditorVisible = false },
+            onRiskToleranceChange = settingsViewModel::updateRiskTolerance,
+            onOptimizationPriorityChange = settingsViewModel::updateOptimizationPriority,
+        )
+    }
+
     if (recommendationProfileState.showDialog) {
         RecommendationProfileDialog(
             initial = recommendationProfileState.profile,
@@ -210,12 +217,7 @@ private fun SearchTabContent(
     deviceHints: DeviceHints?,
     onRatingInfoClick: (modelId: String, result: SuitabilityResult) -> Unit,
     recommendationProfileState: RecommendationProfileUiState,
-    profileControlsExpanded: Boolean,
-    profileSaving: Boolean,
-    profileError: String?,
-    onToggleProfileControls: () -> Unit,
-    onRiskToleranceChange: (RiskTolerance) -> Unit,
-    onOptimizationPriorityChange: (OptimizationPriority) -> Unit,
+    onOpenProfileEditor: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val browseMode by viewModel.browseMode.collectAsState()
@@ -236,37 +238,8 @@ private fun SearchTabContent(
         if (recommendationProfileState.isAvailable) {
             RecommendationProfileAction(
                 profile = recommendationProfileState.profile,
-                expanded = profileControlsExpanded,
-                onClick = onToggleProfileControls,
+                onClick = onOpenProfileEditor,
             )
-            if (profileControlsExpanded) {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = LocalSpacing.current.l),
-                    shape = MaterialTheme.shapes.large,
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                ) {
-                    Column(
-                        modifier = Modifier.padding(LocalSpacing.current.l),
-                        verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.s),
-                    ) {
-                        RecommendationProfileSection(
-                            profile = recommendationProfileState.profile,
-                            onRiskToleranceChange = onRiskToleranceChange,
-                            onOptimizationPriorityChange = onOptimizationPriorityChange,
-                            enabled = !profileSaving,
-                        )
-                        if (profileError != null) {
-                            Text(
-                                text = profileError,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error,
-                            )
-                        }
-                    }
-                }
-            }
         }
 
         val chipScroll = rememberScrollState()
@@ -443,7 +416,6 @@ private fun SearchTabContent(
 @Composable
 private fun RecommendationProfileAction(
     profile: RecommendationProfile,
-    expanded: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -456,11 +428,52 @@ private fun RecommendationProfileAction(
             .heightIn(min = 48.dp)
             .semantics {
                 contentDescription = "Recommendation profile. Selected risk: $risk. " +
-                    "Selected priority: $priority. " +
-                    if (expanded) "Collapse profile controls." else "Expand profile controls."
+                    "Selected priority: $priority. Open profile controls."
             },
     ) {
         Text("Profile: $risk · $priority")
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RecommendationProfileEditorSheet(
+    profile: RecommendationProfile,
+    saving: Boolean,
+    errorMessage: String?,
+    onDismiss: () -> Unit,
+    onRiskToleranceChange: (RiskTolerance) -> Unit,
+    onOptimizationPriorityChange: (OptimizationPriority) -> Unit,
+) {
+    val spacing = LocalSpacing.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = spacing.l)
+                .padding(bottom = spacing.xxl),
+            verticalArrangement = Arrangement.spacedBy(spacing.s),
+        ) {
+            RecommendationProfileSection(
+                profile = profile,
+                onRiskToleranceChange = onRiskToleranceChange,
+                onOptimizationPriorityChange = onOptimizationPriorityChange,
+                enabled = !saving,
+            )
+            if (errorMessage != null) {
+                Text(
+                    text = errorMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
     }
 }
 
