@@ -47,6 +47,21 @@ LlamaOperationGate g_operation_gate;
 bool g_backend_initialized = false;
 std::string g_backend_path;
 
+class ScopedSessionEnd {
+public:
+    explicit ScopedSessionEnd(LlamaOperationGate &gate) : gate_(gate) {}
+    ~ScopedSessionEnd() { if (armed_) gate_.end_session(); }
+
+    ScopedSessionEnd(const ScopedSessionEnd &) = delete;
+    ScopedSessionEnd &operator=(const ScopedSessionEnd &) = delete;
+
+    void keep_session() { armed_ = false; }
+
+private:
+    LlamaOperationGate &gate_;
+    bool armed_ = true;
+};
+
 std::atomic<bool> g_cancel_flag{false};
 int g_max_tokens_remaining = 0;
 std::vector<llama_token> g_streaming_tokens;
@@ -340,9 +355,9 @@ static ggml_type quantization_type(const std::string &label) {
     if (label == "Q5_1") return GGML_TYPE_Q5_1;
     if (label == "Q8_0") return GGML_TYPE_Q8_0;
     if (label == "Q2_K") return GGML_TYPE_Q2_K;
-    if (label.rfind("Q3_K", 0) == 0) return GGML_TYPE_Q3_K;
-    if (label.rfind("Q4_K", 0) == 0) return GGML_TYPE_Q4_K;
-    if (label.rfind("Q5_K", 0) == 0) return GGML_TYPE_Q5_K;
+    if (label == "Q3_K_S" || label == "Q3_K_M" || label == "Q3_K_L") return GGML_TYPE_Q3_K;
+    if (label == "Q4_K_S" || label == "Q4_K_M" || label == "Q4_K_L") return GGML_TYPE_Q4_K;
+    if (label == "Q5_K_S" || label == "Q5_K_M" || label == "Q5_K_L") return GGML_TYPE_Q5_K;
     if (label == "Q6_K") return GGML_TYPE_Q6_K;
     if (label == "IQ2_XXS") return GGML_TYPE_IQ2_XXS;
     if (label == "IQ2_XS") return GGML_TYPE_IQ2_XS;
@@ -638,6 +653,43 @@ static void reparse_assistant_buffer(bool is_partial) {
     }
 }
 
+static void unload_model_state() {
+    log_line(LLAMA_LOG_INFO, "unload: Releasing model and context");
+
+    g_chat_templates.reset();
+    g_chat_msgs.clear();
+    g_pending_chat_decode = false;
+
+    if (g_sampler) {
+        common_sampler_free(g_sampler);
+        g_sampler = nullptr;
+    }
+
+    if (g_batch.token) {
+        llama_batch_free(g_batch);
+        g_batch = llama_batch_init(0, 0, 0);
+    }
+
+    if (g_context) {
+        if (g_tp_gen)   { if (g_tp_free_fn) g_tp_free_fn(g_tp_gen);   g_tp_gen   = nullptr; }
+        if (g_tp_batch) { if (g_tp_free_fn) g_tp_free_fn(g_tp_batch); g_tp_batch = nullptr; }
+        llama_free(g_context);
+        g_context = nullptr;
+    }
+
+    if (g_model) {
+        llama_model_free(g_model);
+        g_model = nullptr;
+    }
+
+    g_active_temperature = -1.0f;
+    g_active_grammar.clear();
+    g_actual_gpu_layers = 0;
+    g_kv_token_history.clear();
+    reset_delta_offsets();
+    log_line(LLAMA_LOG_INFO, "unload: Model unloaded");
+}
+
 } // namespace
 
 void llama_runner_core_set_logger(LlamaLogFn fn) {
@@ -841,7 +893,7 @@ bool llama_runner_core_load_model(const char *model_path, const LlamaRunnerConfi
         return false;
     }
 
-    llama_runner_core_unload();
+    unload_model_state();
     g_config = config;
     llama_log_set(sanitized_upstream_log, nullptr);
 
@@ -915,7 +967,7 @@ bool llama_runner_core_load_model(const char *model_path, const LlamaRunnerConfi
     recreate_sampler(g_config.temperature, std::string());
     if (!g_sampler) {
         log_line(LLAMA_LOG_ERROR, "load: Failed to initialize sampler");
-        llama_runner_core_unload();
+        unload_model_state();
         return false;
     }
 
@@ -935,20 +987,23 @@ bool llama_runner_core_load_model(const char *model_path, const LlamaRunnerConfi
 }
 
 std::string llama_runner_core_generate(const char *prompt, int max_tokens, float temperature) {
-    auto operation = g_operation_gate.lock();
     if (!llama_runner_core_start_generate(prompt, max_tokens, temperature, nullptr)) {
         return "";
     }
+    ScopedSessionEnd session(g_operation_gate);
     std::string result;
     while (const char *tok = llama_runner_core_next_token()) {
         result.append(tok);
     }
+    llama_runner_core_finalize_generation();
+    session.keep_session();
     log_line(LLAMA_LOG_INFO, "generate: done output_len=%zu", result.size());
     return result;
 }
 
 bool llama_runner_core_start_generate(const char *prompt, int max_tokens, float temperature, const char *grammar) {
-    auto operation = g_operation_gate.lock();
+    auto operation = g_operation_gate.begin_session();
+    ScopedSessionEnd session(g_operation_gate);
     log_line(LLAMA_LOG_INFO, "start_generate: entry max_tokens=%d grammar=%s",
         max_tokens, grammar ? "yes" : "no");
 
@@ -1016,11 +1071,15 @@ bool llama_runner_core_start_generate(const char *prompt, int max_tokens, float 
 
     g_current_position = static_cast<llama_pos>(g_streaming_tokens.size());
     g_max_tokens_remaining = max_tokens;
+    session.keep_session();
     return true;
 }
 
 const char *llama_runner_core_next_token() {
-    auto operation = g_operation_gate.lock();
+    auto operation = g_operation_gate.lock_session();
+    if (!operation.has_value()) {
+        return nullptr;
+    }
     if (g_cancel_flag) {
         log_line(LLAMA_LOG_INFO, "next_token: cancelled");
         g_stop_reason = STOP_CANCELLED;
@@ -1166,7 +1225,11 @@ void llama_runner_core_cancel_generate() {
 }
 
 void llama_runner_core_finalize_generation() {
-    auto operation = g_operation_gate.lock();
+    auto operation = g_operation_gate.lock_session();
+    if (!operation.has_value()) {
+        return;
+    }
+    ScopedSessionEnd session(g_operation_gate);
     // Persist assistant content into templated chat history when generation
     // is ended by caller rather than EOG/cancel/max-token boundary.
     reparse_assistant_buffer(/*is_partial*/ false);
@@ -1242,7 +1305,8 @@ int llama_runner_core_process_system_prompt(const char *system_prompt) {
 }
 
 int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_length) {
-    auto operation = g_operation_gate.lock();
+    auto operation = g_operation_gate.begin_session();
+    ScopedSessionEnd session(g_operation_gate);
     if (!g_model || !g_context || !g_sampler) {
         log_line(LLAMA_LOG_ERROR, "process_user_prompt: Model not loaded");
         return 1;
@@ -1369,6 +1433,7 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
                     g_chat_msgs.push_back(user_msg);
                     g_pending_chat_decode = false;
                     capture_parser_params();
+                    session.keep_session();
                     return 0;
                 }
 
@@ -1421,45 +1486,13 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
     g_chat_msgs.push_back(user_msg);
     g_pending_chat_decode = false;
     capture_parser_params();
+    session.keep_session();
     return 0;
 }
 
 void llama_runner_core_unload() {
     auto operation = g_operation_gate.lock();
-    log_line(LLAMA_LOG_INFO, "unload: Releasing model and context");
-
-    g_chat_templates.reset();
-    g_chat_msgs.clear();
-    g_pending_chat_decode = false;
-
-    if (g_sampler) {
-        common_sampler_free(g_sampler);
-        g_sampler = nullptr;
-    }
-
-    if (g_batch.token) {
-        llama_batch_free(g_batch);
-        g_batch = llama_batch_init(0, 0, 0);
-    }
-
-    if (g_context) {
-        if (g_tp_gen)   { if (g_tp_free_fn) g_tp_free_fn(g_tp_gen);   g_tp_gen   = nullptr; }
-        if (g_tp_batch) { if (g_tp_free_fn) g_tp_free_fn(g_tp_batch); g_tp_batch = nullptr; }
-        llama_free(g_context);
-        g_context = nullptr;
-    }
-
-    if (g_model) {
-        llama_model_free(g_model);
-        g_model = nullptr;
-    }
-
-    g_active_temperature = -1.0f;
-    g_active_grammar.clear();
-    g_actual_gpu_layers = 0;
-    g_kv_token_history.clear();
-    reset_delta_offsets();
-    log_line(LLAMA_LOG_INFO, "unload: Model unloaded");
+    unload_model_state();
 }
 
 void llama_runner_core_shutdown() {
@@ -1474,7 +1507,7 @@ void llama_runner_core_shutdown() {
 }
 
 int llama_runner_core_get_context_used() {
-    auto operation = g_operation_gate.lock();
+    auto operation = g_operation_gate.lock_session_compatible();
     if (!g_context) {
         return 0;
     }
@@ -1482,7 +1515,7 @@ int llama_runner_core_get_context_used() {
 }
 
 int llama_runner_core_get_context_limit() {
-    auto operation = g_operation_gate.lock();
+    auto operation = g_operation_gate.lock_session_compatible();
     if (!g_context) {
         return 0;
     }
@@ -1490,17 +1523,17 @@ int llama_runner_core_get_context_limit() {
 }
 
 int llama_runner_core_get_stop_reason() {
-    auto operation = g_operation_gate.lock();
+    auto operation = g_operation_gate.lock_session_compatible();
     return g_stop_reason;
 }
 
 int llama_runner_core_get_gpu_layers() {
-    auto operation = g_operation_gate.lock();
+    auto operation = g_operation_gate.lock_session_compatible();
     return g_actual_gpu_layers;
 }
 
 const char* llama_runner_core_get_model_architecture() {
-    auto operation = g_operation_gate.lock();
+    auto operation = g_operation_gate.lock_session_compatible();
     if (!g_model) return "";
     static char buf[64];
     buf[0] = '\0';
@@ -1509,12 +1542,12 @@ const char* llama_runner_core_get_model_architecture() {
 }
 
 const char *llama_runner_core_get_reasoning() {
-    auto operation = g_operation_gate.lock();
+    auto operation = g_operation_gate.lock_session_compatible();
     return g_reasoning_accum.c_str();
 }
 
 const char *llama_runner_core_get_content() {
-    auto operation = g_operation_gate.lock();
+    auto operation = g_operation_gate.lock_session_compatible();
     return g_content_accum.c_str();
 }
 
@@ -1523,7 +1556,7 @@ const char *llama_runner_core_get_content() {
 // FULL accumulator prefixed with a 0x01 sentinel so the caller knows to
 // replace, not append. Empty string means no new bytes.
 const char *llama_runner_core_get_reasoning_delta() {
-    auto operation = g_operation_gate.lock();
+    auto operation = g_operation_gate.lock_session_compatible();
     const std::string &acc = g_reasoning_accum;
     if (acc.size() < g_reasoning_emitted) {
         g_reasoning_delta_buf = std::string(1, '\x01') + acc;
@@ -1536,7 +1569,7 @@ const char *llama_runner_core_get_reasoning_delta() {
 }
 
 const char *llama_runner_core_get_content_delta() {
-    auto operation = g_operation_gate.lock();
+    auto operation = g_operation_gate.lock_session_compatible();
     const std::string &acc = g_content_accum;
     if (acc.size() < g_content_emitted) {
         g_content_delta_buf = std::string(1, '\x01') + acc;
@@ -1549,7 +1582,7 @@ const char *llama_runner_core_get_content_delta() {
 }
 
 int llama_runner_core_supports_thinking() {
-    auto operation = g_operation_gate.lock();
+    auto operation = g_operation_gate.lock_session_compatible();
     return g_supports_thinking ? 1 : 0;
 }
 

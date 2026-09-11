@@ -4,7 +4,10 @@ include_guard(GLOBAL)
 get_filename_component(_NE_COMMON "${CMAKE_CURRENT_LIST_DIR}" ABSOLUTE)
 get_filename_component(REPO_ROOT "${_NE_COMMON}/../../.." ABSOLUTE)
 
-set(LLAMA_SRC "${REPO_ROOT}/libraries/llama.cpp")
+if(NOT DEFINED LLAMA_SRC)
+    set(LLAMA_SRC "${REPO_ROOT}/libraries/llama.cpp")
+endif()
+get_filename_component(LLAMA_SRC "${LLAMA_SRC}" ABSOLUTE)
 set(SD_SRC    "${REPO_ROOT}/libraries/stable-diffusion.cpp")
 
 # Fix GGML_MAX_NAME compatibility between llama.cpp and stable-diffusion.cpp

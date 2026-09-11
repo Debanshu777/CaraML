@@ -223,7 +223,7 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 - Added bounded, device-aware model recommendations with immutable Hugging Face metadata, incremental assessment, and profile-local reranking
 - Added persisted Balanced-by-default recommendation profiles with atomic onboarding, rollout-gated Material 3 controls, and rapid-update-safe settings state
 - Added bounded profile-neutral model assessment caching, fresh device-snapshot assembly, and privacy-safe debug shadow comparison with release-safe legacy rollout
-- Hardened side-effect-free llama.cpp preflight with one cancellable-safe native operation gate, trusted backend initialization, device-type-filtered offload evidence, exact FP aliases, and exception-safe transient cleanup
+- Hardened side-effect-free llama.cpp preflight with a thread-independent stream session lease, exact pinned quantization labels, trusted capability evidence, exception-safe transient cleanup, and build-owned patched sources that keep the pinned submodule immutable
 - Added a least-privilege GitHub Actions JVM test gate and weekly Dependabot updates; actions are pinned to immutable release commits
 - Removed the obsolete Obsidian MCP config and persisted Graphify's `libraries/` exclusion
 - Consolidated shared Claude Code and Codex project guidance into `AGENTS.md`; `CLAUDE.md` is now a thin import wrapper containing only Claude-specific model policy

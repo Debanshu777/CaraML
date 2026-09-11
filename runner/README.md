@@ -134,10 +134,10 @@ The native `.so`/`.a`/`.dylib` is built by `:nativeEngine`, not this module. Thi
 
 <!-- Updated at end of each Claude Code session -->
 
-- Bounded llama.cpp preflight now shares one cancellation-safe native operation gate with session work, normalizes exact FP16/FP32 aliases, and releases transient model/context and logger state on every exit
+- Bounded llama.cpp preflight now shares a thread-independent stream session lease across prompt, token, and finalization calls, keeps cancellation lock-free, recognizes only exact pinned quantization labels, and releases transient native state on every exit
 - Added native delta accessors `getReasoningDelta`/`getContentDelta` (with `\x01` resync sentinel); `structuredChunkFlow` now accumulates O(n) deltas in Kotlin instead of copying full native accumulators per token
 - Added native reasoning/content accessors + `supportsThinking`; new `InferenceChunk` + `generateStructuredChunks`; removed `StructuredOutputGrammar`/`StructuredOutputParser`; `processUserPrompt` no longer takes a grammar
 - GPU layer offloading via `NativeRunnerConfig.gpuLayers`
 - KV cache quantization support (`kvCacheType`)
 - Improved chat template handling in core.cpp
-- Patch system integration (applied pre-build by `:nativeEngine`)
+- Numbered llama.cpp patches are applied to a build-owned source copy by `:nativeEngine`; the pinned submodule remains immutable

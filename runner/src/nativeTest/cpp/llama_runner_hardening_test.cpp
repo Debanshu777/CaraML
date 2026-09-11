@@ -6,6 +6,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <future>
+#include <initializer_list>
 #include <mutex>
 #include <stdexcept>
 #include <string>
@@ -41,6 +42,51 @@ void operation_gate_excludes_concurrent_owners() {
         return gate.try_lock().has_value();
     });
     expect(after_release.get() == true, "operation gate remained locked after release");
+}
+
+void streamed_session_excludes_unload_between_tokens() {
+    LlamaOperationGate gate;
+    auto prompt = gate.begin_session();
+    expect(prompt.has_value(), "stream session did not begin");
+    prompt.reset();
+
+    auto first_token = gate.lock_session();
+    expect(first_token.has_value(), "first token did not enter stream session");
+    first_token.reset();
+
+    expect(
+        !gate.try_lock().has_value(),
+        "unload entered between streamed tokens");
+
+    std::promise<void> unload_started;
+    auto unload_started_signal = unload_started.get_future();
+    auto unload = std::async(std::launch::async, [&] {
+        unload_started.set_value();
+        auto operation = gate.lock();
+        return operation.has_value();
+    });
+    unload_started_signal.get();
+    expect(
+        unload.wait_for(std::chrono::milliseconds(100)) == std::future_status::timeout,
+        "unload entered between streamed tokens");
+
+    auto second_token = std::async(std::launch::async, [&] {
+        auto operation = gate.lock_session();
+        return operation.has_value();
+    });
+    expect(
+        second_token.wait_for(std::chrono::milliseconds(100)) == std::future_status::ready &&
+            second_token.get(),
+        "stream session was bound to the prompt thread");
+
+    auto finalize = gate.lock_session();
+    expect(finalize.has_value(), "finalization could not enter stream session");
+    gate.end_session();
+    finalize.reset();
+
+    expect(
+        unload.wait_for(std::chrono::milliseconds(100)) == std::future_status::ready && unload.get(),
+        "unload remained blocked after stream finalization");
 }
 
 void exceptional_context_path_releases_both_handles() {
@@ -133,17 +179,31 @@ void core_gate_blocks_discovery_but_not_atomic_cancellation() {
 }
 
 void unmapped_native_quantization_is_unknown() {
-    const LlamaModelFeatureSupportNative support =
-        llama_runner_core_probe_model_features("llama", "future_quant");
-    expect(
-        support.quantization == LLAMA_FEATURE_UNKNOWN,
-        "unmapped native quantization was treated as unsupported");
+    for (const char *label : {
+            "Q3_K_S", "Q3_K_M", "Q3_K_L",
+            "Q4_K_S", "Q4_K_M", "Q4_K_L",
+            "Q5_K_S", "Q5_K_M", "Q5_K_L"}) {
+        const LlamaModelFeatureSupportNative support =
+            llama_runner_core_probe_model_features("llama", label);
+        expect(
+            support.quantization == LLAMA_FEATURE_SUPPORTED,
+            "exact pinned K-quant label was not supported");
+    }
+
+    for (const char *label : {"Q4_K_FUTURE", "future_quant"}) {
+        const LlamaModelFeatureSupportNative support =
+            llama_runner_core_probe_model_features("llama", label);
+        expect(
+            support.quantization == LLAMA_FEATURE_UNKNOWN,
+            "unmapped native quantization did not remain unknown");
+    }
 }
 
 } // namespace
 
 int main() {
     operation_gate_excludes_concurrent_owners();
+    streamed_session_excludes_unload_between_tokens();
     exceptional_context_path_releases_both_handles();
     repeated_initialization_is_idempotent();
     core_gate_blocks_discovery_but_not_atomic_cancellation();

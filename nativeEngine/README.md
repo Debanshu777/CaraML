@@ -137,7 +137,7 @@ Create a **separate** Gradle module + CMake project. Do not add here unless it m
 <!-- Updated at end of each Claude Code session -->
 
 - Desktop builds now find CMake through validated explicit/PATH executables and place and assert `artifact_fs` at one configuration-independent path before packaging and installed-image smoke tests
-- Desktop native verification now exercises llama operation exclusion, non-blocking cancellation, idempotent backend initialization, conservative unknown quantization, and fault-path model/context cleanup
+- Desktop native verification now covers stream-scoped unload exclusion, cross-thread token calls, lock-free cancellation, exact quantization labels, and transient-handle cleanup
 - Fix: SD Vulkan SIGABRT on Android — `SD_VULKAN` decoupled from `GGML_VULKAN` in Android `CMakeLists.txt`; `SD_VULKAN=OFF` means diffusion_runner is compiled without `SD_USE_VULKAN` so ggml-vulkan is not linked into it; `GGML_VULKAN=ON` is preserved for llama_runner (LLM inference); the `if(SD_VULKAN …)` guard on lines 156-170 now correctly prevents `SD_USE_VULKAN` from being defined when Vulkan is disabled for diffusion
 - The bounded `artifact_fs` JNI target supplies strict UTF-8 POSIX `openat` and Windows no-reparse operations, creates fixed roots durably from a pinned platform parent, and is packaged into Desktop application images and Android APKs
 - Fix: Vulkan-Android image-gen crash — diffusion runner now pins CLIP + VAE to the CPU backend when a Vulkan device is present (works around missing F16 softmax/norm pipelines in ggml-vulkan on Adreno/Mali); diffusion UNet still runs on Vulkan
@@ -145,5 +145,5 @@ Create a **separate** Gradle module + CMake project. Do not add here unless it m
 - `GgmlUnified.cmake` now builds both llama.cpp and stable-diffusion.cpp from single GGML
 - Vulkan autodetect via NDK glslc (Android arm64)
 - GPU acceleration enabled: Vulkan (Android), Metal (iOS/macOS)
-- Patch system: `applyNativePatches` / `revertNativePatches` tasks
+- Numbered llama.cpp patches are applied only to a shared build-owned source copy used by Desktop, Android, and iOS builds
 - `GGML_MAX_NAME` compatibility fix patch for stable-diffusion.cpp
