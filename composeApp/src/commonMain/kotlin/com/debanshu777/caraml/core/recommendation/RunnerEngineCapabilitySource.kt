@@ -3,6 +3,8 @@ package com.debanshu777.caraml.core.recommendation
 import com.debanshu777.runner.LlamaRunner
 import com.debanshu777.runner.NativeFeatureState
 import com.debanshu777.runner.NativeModelFeatureSupport
+import com.debanshu777.caraml.core.platform.PlatformPaths
+import com.debanshu777.caraml.core.platform.discoverWithInitializedRunner
 import kotlinx.coroutines.CancellationException
 
 class RunnerEngineCapabilitySource(
@@ -36,7 +38,11 @@ class RunnerEngineCapabilitySource(
         }
 
         val support = try {
-            runner.probeModelFeatures(architecture, quantization)
+            discoverWithInitializedRunner(
+                trustedNativeLibraryDirectory = PlatformPaths::getNativeLibDir,
+                initialize = runner::initialize,
+                discover = { runner.probeModelFeatures(architecture, quantization) },
+            ) ?: return unknownEvidence("llama-native-init-unavailable")
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Throwable) {

@@ -5,6 +5,7 @@ import com.debanshu777.caraml.core.recommendation.Confidence
 import com.debanshu777.caraml.core.recommendation.Evidence
 import com.debanshu777.runner.LlamaRunner
 import com.debanshu777.runner.NativeBackendCapability
+import com.debanshu777.runner.NativeBackendDeviceType
 import com.debanshu777.runner.NativeBackendKind
 import kotlinx.coroutines.CancellationException
 
@@ -12,11 +13,15 @@ class RunnerBackendCapabilitySource(
     private val runner: LlamaRunner,
 ) : BackendCapabilitySource {
     override fun capabilities(): List<BackendCapability> = try {
-        val nativeCapabilities = runner.backendCapabilities()
+        val nativeCapabilities = discoverWithInitializedRunner(
+            trustedNativeLibraryDirectory = PlatformPaths::getNativeLibDir,
+            initialize = runner::initialize,
+            discover = runner::backendCapabilities,
+        ).orEmpty()
         if (nativeCapabilities.isEmpty()) {
             unknownRegistryCapabilities()
         } else {
-            verifiedRegistryCapabilities(nativeCapabilities)
+            mapRunnerBackendCapabilities(nativeCapabilities)
         }
     } catch (cancellation: CancellationException) {
         throw cancellation
@@ -24,39 +29,8 @@ class RunnerBackendCapabilitySource(
         unknownRegistryCapabilities()
     }
 
-    private fun verifiedRegistryCapabilities(
-        nativeCapabilities: List<NativeBackendCapability>,
-    ): List<BackendCapability> {
-        val grouped = nativeCapabilities.groupBy { it.kind.toBackendKind() }
-        return BackendKind.entries.map { kind ->
-            val devices = grouped[kind].orEmpty()
-            when {
-                kind == BackendKind.CPU && devices.isEmpty() -> availableCpu()
-                devices.isNotEmpty() -> {
-                    val freeBytes = devices.checkedFreeBytesSum()
-                    BackendCapability(
-                        kind = kind,
-                        status = BackendStatus.AVAILABLE,
-                        additionalAllocatableBytes = freeBytes,
-                        availabilityConfidence = Confidence.HIGH,
-                        headroomConfidence = freeBytes?.let { Confidence.HIGH },
-                        evidence = listOf(verifiedEvidence("llama-native-${kind.name.lowercase()}")),
-                    )
-                }
-                else -> BackendCapability(
-                    kind = kind,
-                    status = BackendStatus.UNAVAILABLE,
-                    additionalAllocatableBytes = null,
-                    availabilityConfidence = Confidence.HIGH,
-                    headroomConfidence = null,
-                    evidence = listOf(verifiedEvidence("llama-native-not-registered")),
-                )
-            }
-        }
-    }
-
     private fun unknownRegistryCapabilities(): List<BackendCapability> = buildList {
-        add(availableCpu())
+        add(availableCpuCapability())
         BackendKind.entries.filterNot { it == BackendKind.CPU }.forEach { kind ->
             add(
                 BackendCapability(
@@ -76,22 +50,59 @@ class RunnerBackendCapabilitySource(
             )
         }
     }
-
-    private fun availableCpu() = BackendCapability(
-        kind = BackendKind.CPU,
-        status = BackendStatus.AVAILABLE,
-        additionalAllocatableBytes = null,
-        availabilityConfidence = Confidence.HIGH,
-        headroomConfidence = null,
-        evidence = listOf(verifiedEvidence("llama-native-cpu")),
-    )
-
-    private fun verifiedEvidence(detail: String) = Evidence(
-        reason = AssessmentReason.BACKEND_CAPABILITY_VERIFIED,
-        confidence = Confidence.HIGH,
-        detail = detail,
-    )
 }
+
+internal fun mapRunnerBackendCapabilities(
+    nativeCapabilities: List<NativeBackendCapability>,
+): List<BackendCapability> {
+    val grouped = nativeCapabilities.groupBy { it.kind.toBackendKind() }
+    return BackendKind.entries.map { kind ->
+        val devices = grouped[kind].orEmpty().filter { capability ->
+            when (kind) {
+                BackendKind.CPU -> capability.deviceType == NativeBackendDeviceType.CPU
+                else -> capability.deviceType == NativeBackendDeviceType.DISCRETE_GPU ||
+                    capability.deviceType == NativeBackendDeviceType.INTEGRATED_GPU
+            }
+        }
+        when {
+            kind == BackendKind.CPU && devices.isEmpty() -> availableCpuCapability()
+            devices.isNotEmpty() -> {
+                val freeBytes = devices.checkedFreeBytesSum()
+                BackendCapability(
+                    kind = kind,
+                    status = BackendStatus.AVAILABLE,
+                    additionalAllocatableBytes = freeBytes,
+                    availabilityConfidence = Confidence.HIGH,
+                    headroomConfidence = freeBytes?.let { Confidence.HIGH },
+                    evidence = listOf(verifiedBackendEvidence("llama-native-${kind.name.lowercase()}")),
+                )
+            }
+            else -> BackendCapability(
+                kind = kind,
+                status = BackendStatus.UNAVAILABLE,
+                additionalAllocatableBytes = null,
+                availabilityConfidence = Confidence.HIGH,
+                headroomConfidence = null,
+                evidence = listOf(verifiedBackendEvidence("llama-native-not-registered")),
+            )
+        }
+    }
+}
+
+private fun availableCpuCapability() = BackendCapability(
+    kind = BackendKind.CPU,
+    status = BackendStatus.AVAILABLE,
+    additionalAllocatableBytes = null,
+    availabilityConfidence = Confidence.HIGH,
+    headroomConfidence = null,
+    evidence = listOf(verifiedBackendEvidence("llama-native-cpu")),
+)
+
+private fun verifiedBackendEvidence(detail: String) = Evidence(
+    reason = AssessmentReason.BACKEND_CAPABILITY_VERIFIED,
+    confidence = Confidence.HIGH,
+    detail = detail,
+)
 
 private fun NativeBackendKind.toBackendKind(): BackendKind = when (this) {
     NativeBackendKind.CPU -> BackendKind.CPU

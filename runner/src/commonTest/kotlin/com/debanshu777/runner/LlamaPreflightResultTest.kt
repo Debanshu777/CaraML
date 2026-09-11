@@ -144,6 +144,33 @@ class LlamaPreflightResultTest {
     }
 
     @Test
+    fun floatingPointAliasesAreNormalizedBeforeNativeEntry() {
+        listOf(
+            "FP16" to "F16",
+            "F16" to "F16",
+            "FP32" to "F32",
+            "F32" to "F32",
+        ).forEach { (input, expectedNativeLabel) ->
+            val result = probeNativeModelFeatures("llama", input) { _, quantization ->
+                assertEquals(expectedNativeLabel, quantization)
+                supportedFeaturePayload()
+            }
+
+            assertEquals(NativeFeatureState.SUPPORTED, result.quantization)
+        }
+    }
+
+    @Test
+    fun unmappedQuantizationPassesToNativeAndRemainsUnknown() {
+        val result = probeNativeModelFeatures("llama", "future_quant") { _, quantization ->
+            assertEquals("future_quant", quantization)
+            longArrayOf(0, 2, 123)
+        }
+
+        assertEquals(NativeFeatureState.UNKNOWN, result.quantization)
+    }
+
+    @Test
     fun unknownArchitectureRemainsUnsupportedWithoutThrowing() {
         val result = probeNativeModelFeatures("future_arch", null) { _, _ ->
             longArrayOf(1L, 2L, 42L)

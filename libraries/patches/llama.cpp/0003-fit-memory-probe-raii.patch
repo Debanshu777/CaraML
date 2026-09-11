@@ -1,0 +1,117 @@
+diff --git a/common/fit.cpp b/common/fit.cpp
+index c82d066ad..683c57490 100644
+--- a/common/fit.cpp
++++ b/common/fit.cpp
+@@ -1,6 +1,7 @@
+ #include "fit.h"
+ 
+ #include "log.h"
++#include "scoped-model-context.h"
+ 
+ #include "../src/llama-ext.h"
+ 
+@@ -51,6 +52,10 @@ static std::vector<llama_device_memory_data> common_get_device_memory_data_impl(
+         const ggml_log_level level_eff = level >= ud->min_level ? level : GGML_LOG_LEVEL_DEBUG;
+         ud->original_logger.callback(level_eff, text, ud->original_logger.user_data);
+     }, &ud);
++    caraml::ScopedRestore<ggml_log_callback, void *> restore_logger(
++            ud.original_logger.callback, ud.original_logger.user_data, llama_log_set);
++
++    caraml::ScopedModelContext<llama_model, llama_context> resources(llama_model_free, llama_free);
+ 
+     llama_model_params mparams_copy = *mparams;
+     mparams_copy.no_alloc  = true;
+@@ -58,16 +63,15 @@ static std::vector<llama_device_memory_data> common_get_device_memory_data_impl(
+ 
+     llama_model * model = llama_model_load_from_file(path_model, mparams_copy);
+     if (model == nullptr) {
+-        llama_log_set(ud.original_logger.callback, ud.original_logger.user_data);
+         throw std::runtime_error("failed to load model");
+     }
++    resources.reset_model(model);
+ 
+     llama_context * ctx = llama_init_from_model(model, *cparams);
+     if (ctx == nullptr) {
+-        llama_model_free(model);
+-        llama_log_set(ud.original_logger.callback, ud.original_logger.user_data);
+         throw std::runtime_error("failed to create llama_context from model");
+     }
++    resources.reset_context(ctx);
+ 
+     const size_t nd = llama_model_n_devices(model);
+     std::vector<llama_device_memory_data> ret(nd + 1);
+@@ -142,10 +146,6 @@ static std::vector<llama_device_memory_data> common_get_device_memory_data_impl(
+ 
+     common_memory_breakdown_print(ctx);
+ 
+-    llama_free(ctx);
+-    llama_model_free(model);
+-    llama_log_set(ud.original_logger.callback, ud.original_logger.user_data);
+-
+     return ret;
+ }
+ 
+diff --git a/common/scoped-model-context.h b/common/scoped-model-context.h
+new file mode 100644
+index 000000000..2fd316d00
+--- /dev/null
++++ b/common/scoped-model-context.h
+@@ -0,0 +1,58 @@
++#pragma once
++
++namespace caraml {
++
++template <typename Model, typename Context>
++class ScopedModelContext {
++public:
++    using ModelDeleter = void (*)(Model *);
++    using ContextDeleter = void (*)(Context *);
++
++    ScopedModelContext(ModelDeleter free_model, ContextDeleter free_context)
++        : free_model_(free_model), free_context_(free_context) {}
++
++    ~ScopedModelContext() {
++        reset_context(nullptr);
++        reset_model(nullptr);
++    }
++
++    ScopedModelContext(const ScopedModelContext &) = delete;
++    ScopedModelContext &operator=(const ScopedModelContext &) = delete;
++
++    void reset_model(Model *model) {
++        if (model_) free_model_(model_);
++        model_ = model;
++    }
++
++    void reset_context(Context *context) {
++        if (context_) free_context_(context_);
++        context_ = context;
++    }
++
++private:
++    Model *model_ = nullptr;
++    Context *context_ = nullptr;
++    ModelDeleter free_model_;
++    ContextDeleter free_context_;
++};
++
++template <typename Callback, typename UserData>
++class ScopedRestore {
++public:
++    using Restore = void (*)(Callback, UserData);
++
++    ScopedRestore(Callback callback, UserData user_data, Restore restore)
++        : callback_(callback), user_data_(user_data), restore_(restore) {}
++
++    ~ScopedRestore() { restore_(callback_, user_data_); }
++
++    ScopedRestore(const ScopedRestore &) = delete;
++    ScopedRestore &operator=(const ScopedRestore &) = delete;
++
++private:
++    Callback callback_;
++    UserData user_data_;
++    Restore restore_;
++};
++
++} // namespace caraml

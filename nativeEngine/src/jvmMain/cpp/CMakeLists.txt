@@ -82,6 +82,15 @@ if(CMAKE_BUILD_TYPE MATCHES Release)
     target_compile_options(llama_runner PRIVATE -O3)
 endif()
 
+find_package(Threads REQUIRED)
+add_executable(
+    llama_runner_hardening_test
+    ${LLAMA_RUNNER_CORE_SOURCES}
+    "${CMAKE_CURRENT_LIST_DIR}/../../../../runner/src/nativeTest/cpp/llama_runner_hardening_test.cpp"
+)
+target_include_directories(llama_runner_hardening_test PRIVATE ${LLAMA_RUNNER_INCLUDE_DIRS})
+target_link_libraries(llama_runner_hardening_test PRIVATE llama llama-common Threads::Threads)
+
 # --- diffusion_runner (stable-diffusion.cpp wrapper) ---
 include("${CMAKE_CURRENT_LIST_DIR}/../../../../diffusionRunner/src/commonCpp/DiffusionRunnerCommon.cmake")
 

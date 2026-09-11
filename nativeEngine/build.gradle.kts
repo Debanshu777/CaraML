@@ -408,6 +408,30 @@ val compileLlamaRunnerDesktop by tasks.registering(Exec::class) {
     )
 }
 
+val compileLlamaRunnerHardeningTestDesktop by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Build deterministic native ownership and cleanup regressions"
+    dependsOn(buildLlamaRunnerDesktop)
+    commandLine(
+        desktopCmakePath,
+        "--build", desktopJniBuildDir.absolutePath,
+        "--target", "llama_runner_hardening_test",
+        "--config", "Release",
+    )
+}
+
+val nativeHardeningTestBinary = desktopJniBuildDir.resolve(
+    if (desktopPlatform == "windows") "Release/llama_runner_hardening_test.exe"
+    else "llama_runner_hardening_test",
+)
+
+val testLlamaRunnerNativeDesktop by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Run deterministic native ownership and cleanup regressions"
+    dependsOn(compileLlamaRunnerHardeningTestDesktop)
+    commandLine(nativeHardeningTestBinary.absolutePath)
+}
+
 val compileArtifactFsDesktop by tasks.registering(Exec::class) {
     group = "llama-native"
     description = "Build the bounded secure artifact filesystem JNI library for desktop ($desktopPlatform)"

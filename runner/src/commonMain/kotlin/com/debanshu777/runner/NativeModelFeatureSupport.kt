@@ -44,7 +44,12 @@ internal fun probeNativeModelFeatures(
         return NativeModelFeatureSupport.unknown(NativeFeatureProbeReason.INVALID_LABEL)
     }
     return try {
-        decodeNativeModelFeatureSupport(nativeProbe(architecture, quantization))
+        val nativeQuantization = when (quantization) {
+            "FP16" -> "F16"
+            "FP32" -> "F32"
+            else -> quantization
+        }
+        decodeNativeModelFeatureSupport(nativeProbe(architecture, nativeQuantization))
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (_: Throwable) {

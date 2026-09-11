@@ -25,6 +25,7 @@
 #include "llama.h"
 #include "llama-arch.h"
 #include "llama-model.h"
+#include "llama_operation_gate.h"
 #include "sampling.h"
 
 namespace {
@@ -42,7 +43,9 @@ LlamaLogFn g_logger = nullptr;
 float g_active_temperature = -1.0f;
 std::string g_active_grammar;
 int g_actual_gpu_layers = 0;
-std::mutex g_fit_mutex;
+LlamaOperationGate g_operation_gate;
+bool g_backend_initialized = false;
+std::string g_backend_path;
 
 std::atomic<bool> g_cancel_flag{false};
 int g_max_tokens_remaining = 0;
@@ -638,10 +641,23 @@ static void reparse_assistant_buffer(bool is_partial) {
 } // namespace
 
 void llama_runner_core_set_logger(LlamaLogFn fn) {
+    auto operation = g_operation_gate.lock();
     g_logger = fn;
 }
 
 void llama_runner_core_init(const char *backend_path) {
+    auto operation = g_operation_gate.lock();
+    if (backend_path && !is_bounded_c_string(backend_path, 4096)) {
+        log_line(LLAMA_LOG_ERROR, "init: Invalid backend directory");
+        return;
+    }
+    if (g_backend_initialized) {
+        const std::string requested_path = backend_path ? backend_path : "";
+        if (requested_path != g_backend_path) {
+            log_line(LLAMA_LOG_WARN, "init: Backend directory change rejected");
+        }
+        return;
+    }
     if (backend_path && std::strlen(backend_path) > 0) {
         log_line(LLAMA_LOG_INFO, "init: Loading backends from configured directory");
         ggml_backend_load_all_from_path(backend_path);
@@ -650,19 +666,25 @@ void llama_runner_core_init(const char *backend_path) {
     }
     llama_backend_init();
     llama_log_set(sanitized_upstream_log, nullptr);
+    g_backend_path = backend_path ? backend_path : "";
+    g_backend_initialized = true;
     log_line(LLAMA_LOG_INFO, "init: Backend initialized");
 }
 
 LlamaPreflightResultNative llama_runner_core_preflight(
     const char *model_path,
     const LlamaRunnerConfig &config) {
+    auto operation = g_operation_gate.lock();
     LlamaPreflightResultNative result;
     if (!is_bounded_c_string(model_path, 4096) || !is_valid_config(config)) {
         result.status = LLAMA_PREFLIGHT_INVALID;
         return result;
     }
 
-    std::lock_guard<std::mutex> lock(g_fit_mutex);
+    if (!g_backend_initialized) {
+        result.status = LLAMA_PREFLIGHT_UNAVAILABLE;
+        return result;
+    }
     ScopedLlamaLoggerOverride suppress(discard_upstream_log);
     try {
         FitPlan plan = resolve_fit_plan(model_path, config);
@@ -730,10 +752,12 @@ LlamaPreflightResultNative llama_runner_core_preflight(
 
 LlamaBackendCapabilitiesNative llama_runner_core_backend_capabilities() {
     LlamaBackendCapabilitiesNative result;
-    std::lock_guard<std::mutex> lock(g_fit_mutex);
+    auto operation = g_operation_gate.lock();
+    if (!g_backend_initialized) {
+        return result;
+    }
     ScopedLlamaLoggerOverride suppress(discard_upstream_log);
     try {
-        llama_backend_init();
         const size_t count = ggml_backend_dev_count();
         if (count == 0 || count > static_cast<size_t>(LLAMA_BACKEND_MAX_DEVICES)) {
             return result;
@@ -766,6 +790,7 @@ LlamaBackendCapabilitiesNative llama_runner_core_backend_capabilities() {
 LlamaModelFeatureSupportNative llama_runner_core_probe_model_features(
     const char *architecture,
     const char *quantization) {
+    auto operation = g_operation_gate.lock();
     LlamaModelFeatureSupportNative result;
     result.engine_build = std::max(0, llama_build_number());
     if (!is_safe_feature_label(architecture, 64) ||
@@ -773,7 +798,9 @@ LlamaModelFeatureSupportNative llama_runner_core_probe_model_features(
         return result;
     }
 
-    std::lock_guard<std::mutex> lock(g_fit_mutex);
+    if (!g_backend_initialized) {
+        return result;
+    }
     ScopedLlamaLoggerOverride suppress(discard_upstream_log);
     try {
         const llm_arch arch = llm_arch_from_string(architecture);
@@ -795,15 +822,21 @@ LlamaModelFeatureSupportNative llama_runner_core_probe_model_features(
         result.quantization = LLAMA_FEATURE_UNKNOWN;
     } else {
         const ggml_type type = quantization_type(quantization);
-        result.quantization = type >= 0 && type < GGML_TYPE_COUNT && ggml_type_name(type) != nullptr
-            ? LLAMA_FEATURE_SUPPORTED : LLAMA_FEATURE_UNSUPPORTED;
+        if (type == GGML_TYPE_COUNT) {
+            result.quantization = LLAMA_FEATURE_UNKNOWN;
+        } else {
+            result.quantization = type >= 0 && type < GGML_TYPE_COUNT && ggml_type_name(type) != nullptr
+                ? LLAMA_FEATURE_SUPPORTED : LLAMA_FEATURE_UNSUPPORTED;
+        }
     }
     return result;
 }
 
 bool llama_runner_core_load_model(const char *model_path, const LlamaRunnerConfig &config) {
+    auto operation = g_operation_gate.lock();
     log_line(LLAMA_LOG_INFO, "load: model path supplied=%d", model_path ? 1 : 0);
-    if (!is_bounded_c_string(model_path, 4096) || !is_valid_config(config)) {
+    if (!g_backend_initialized ||
+        !is_bounded_c_string(model_path, 4096) || !is_valid_config(config)) {
         log_line(LLAMA_LOG_ERROR, "load: invalid model path or configuration");
         return false;
     }
@@ -814,7 +847,6 @@ bool llama_runner_core_load_model(const char *model_path, const LlamaRunnerConfi
 
     auto t0 = std::chrono::steady_clock::now();
     {
-        std::lock_guard<std::mutex> fit_lock(g_fit_mutex);
         ScopedLlamaLoggerOverride suppress(discard_upstream_log);
         FitPlan plan = resolve_fit_plan(model_path, g_config);
         if (plan.status != COMMON_PARAMS_FIT_STATUS_SUCCESS) {
@@ -903,6 +935,7 @@ bool llama_runner_core_load_model(const char *model_path, const LlamaRunnerConfi
 }
 
 std::string llama_runner_core_generate(const char *prompt, int max_tokens, float temperature) {
+    auto operation = g_operation_gate.lock();
     if (!llama_runner_core_start_generate(prompt, max_tokens, temperature, nullptr)) {
         return "";
     }
@@ -915,6 +948,7 @@ std::string llama_runner_core_generate(const char *prompt, int max_tokens, float
 }
 
 bool llama_runner_core_start_generate(const char *prompt, int max_tokens, float temperature, const char *grammar) {
+    auto operation = g_operation_gate.lock();
     log_line(LLAMA_LOG_INFO, "start_generate: entry max_tokens=%d grammar=%s",
         max_tokens, grammar ? "yes" : "no");
 
@@ -986,6 +1020,7 @@ bool llama_runner_core_start_generate(const char *prompt, int max_tokens, float 
 }
 
 const char *llama_runner_core_next_token() {
+    auto operation = g_operation_gate.lock();
     if (g_cancel_flag) {
         log_line(LLAMA_LOG_INFO, "next_token: cancelled");
         g_stop_reason = STOP_CANCELLED;
@@ -1131,6 +1166,7 @@ void llama_runner_core_cancel_generate() {
 }
 
 void llama_runner_core_finalize_generation() {
+    auto operation = g_operation_gate.lock();
     // Persist assistant content into templated chat history when generation
     // is ended by caller rather than EOG/cancel/max-token boundary.
     reparse_assistant_buffer(/*is_partial*/ false);
@@ -1139,6 +1175,7 @@ void llama_runner_core_finalize_generation() {
 }
 
 int llama_runner_core_process_system_prompt(const char *system_prompt) {
+    auto operation = g_operation_gate.lock();
     if (!g_model || !g_context || !g_sampler) {
         log_line(LLAMA_LOG_ERROR, "process_system_prompt: Model not loaded");
         return 1;
@@ -1205,6 +1242,7 @@ int llama_runner_core_process_system_prompt(const char *system_prompt) {
 }
 
 int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_length) {
+    auto operation = g_operation_gate.lock();
     if (!g_model || !g_context || !g_sampler) {
         log_line(LLAMA_LOG_ERROR, "process_user_prompt: Model not loaded");
         return 1;
@@ -1387,6 +1425,7 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
 }
 
 void llama_runner_core_unload() {
+    auto operation = g_operation_gate.lock();
     log_line(LLAMA_LOG_INFO, "unload: Releasing model and context");
 
     g_chat_templates.reset();
@@ -1424,11 +1463,18 @@ void llama_runner_core_unload() {
 }
 
 void llama_runner_core_shutdown() {
+    auto operation = g_operation_gate.lock();
+    if (!g_backend_initialized) {
+        return;
+    }
     log_line(LLAMA_LOG_INFO, "shutdown: Freeing backend");
     llama_backend_free();
+    g_backend_path.clear();
+    g_backend_initialized = false;
 }
 
 int llama_runner_core_get_context_used() {
+    auto operation = g_operation_gate.lock();
     if (!g_context) {
         return 0;
     }
@@ -1436,6 +1482,7 @@ int llama_runner_core_get_context_used() {
 }
 
 int llama_runner_core_get_context_limit() {
+    auto operation = g_operation_gate.lock();
     if (!g_context) {
         return 0;
     }
@@ -1443,14 +1490,17 @@ int llama_runner_core_get_context_limit() {
 }
 
 int llama_runner_core_get_stop_reason() {
+    auto operation = g_operation_gate.lock();
     return g_stop_reason;
 }
 
 int llama_runner_core_get_gpu_layers() {
+    auto operation = g_operation_gate.lock();
     return g_actual_gpu_layers;
 }
 
 const char* llama_runner_core_get_model_architecture() {
+    auto operation = g_operation_gate.lock();
     if (!g_model) return "";
     static char buf[64];
     buf[0] = '\0';
@@ -1459,10 +1509,12 @@ const char* llama_runner_core_get_model_architecture() {
 }
 
 const char *llama_runner_core_get_reasoning() {
+    auto operation = g_operation_gate.lock();
     return g_reasoning_accum.c_str();
 }
 
 const char *llama_runner_core_get_content() {
+    auto operation = g_operation_gate.lock();
     return g_content_accum.c_str();
 }
 
@@ -1471,6 +1523,7 @@ const char *llama_runner_core_get_content() {
 // FULL accumulator prefixed with a 0x01 sentinel so the caller knows to
 // replace, not append. Empty string means no new bytes.
 const char *llama_runner_core_get_reasoning_delta() {
+    auto operation = g_operation_gate.lock();
     const std::string &acc = g_reasoning_accum;
     if (acc.size() < g_reasoning_emitted) {
         g_reasoning_delta_buf = std::string(1, '\x01') + acc;
@@ -1483,6 +1536,7 @@ const char *llama_runner_core_get_reasoning_delta() {
 }
 
 const char *llama_runner_core_get_content_delta() {
+    auto operation = g_operation_gate.lock();
     const std::string &acc = g_content_accum;
     if (acc.size() < g_content_emitted) {
         g_content_delta_buf = std::string(1, '\x01') + acc;
@@ -1495,10 +1549,12 @@ const char *llama_runner_core_get_content_delta() {
 }
 
 int llama_runner_core_supports_thinking() {
+    auto operation = g_operation_gate.lock();
     return g_supports_thinking ? 1 : 0;
 }
 
 void llama_runner_core_clear_context() {
+    auto operation = g_operation_gate.lock();
     if (!g_context) {
         log_line(LLAMA_LOG_WARN, "clear_context: No context to clear");
         return;

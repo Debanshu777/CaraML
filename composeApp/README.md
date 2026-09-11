@@ -186,7 +186,7 @@ Run: `./gradlew :composeApp:jvmTest`
 - Model Hub now incrementally ranks bounded immutable variants for this device, preserves server order on demand, and reranks cached assessments for profile changes
 - Recommendation profiles now persist atomically, default safely to Balanced, and appear through accessible Material 3 controls only in SHADOW/V2 rollout modes
 - Model assessment now reuses bounded profile-neutral plan estimates with cancellation-safe single-flight coordination, fresh snapshot assembly, and privacy-safe staged rollout comparison
-- Model compatibility and backend availability now use bounded facts from the pinned llama.cpp engine, failing closed to Unknown when native probing is unavailable
+- Model compatibility and backend availability now initialize the pinned llama.cpp engine from the trusted platform library directory, exclude non-GPU devices from offload evidence, and fail closed to Unknown
 - `SuitabilityResult` now carries `warnings: List<String>`; `ModelSuitabilityCalculator.rateLlm` emits runnability warnings for IQ-quant CPU-only and hybrid-SSM models; `SuitabilityInfoSheet` renders a "Runnability" section with warning icon when present
 - `LlamaInferenceRepository`: hybrid-SSM arch Vulkan denylist (`DENYLIST_HYBRID_SSM_VULKAN=true`) skips doomed GPU attempt on first load; combines with runtime `gpuIncompatible` self-learning set
 - `generateResponse` emits `InferenceChunk`; removed `ReasoningModelClassifier` and structured-output prompt suffixes

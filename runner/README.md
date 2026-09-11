@@ -134,7 +134,7 @@ The native `.so`/`.a`/`.dylib` is built by `:nativeEngine`, not this module. Thi
 
 <!-- Updated at end of each Claude Code session -->
 
-- Added bounded, side-effect-free llama.cpp memory preflight with per-pool projections, backend registry facts, and pinned-engine architecture/quantization probes on every platform
+- Bounded llama.cpp preflight now shares one cancellation-safe native operation gate with session work, normalizes exact FP16/FP32 aliases, and releases transient model/context and logger state on every exit
 - Added native delta accessors `getReasoningDelta`/`getContentDelta` (with `\x01` resync sentinel); `structuredChunkFlow` now accumulates O(n) deltas in Kotlin instead of copying full native accumulators per token
 - Added native reasoning/content accessors + `supportsThinking`; new `InferenceChunk` + `generateStructuredChunks`; removed `StructuredOutputGrammar`/`StructuredOutputParser`; `processUserPrompt` no longer takes a grammar
 - GPU layer offloading via `NativeRunnerConfig.gpuLayers`
