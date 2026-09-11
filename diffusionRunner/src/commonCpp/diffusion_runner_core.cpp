@@ -2,11 +2,20 @@
 #include "stable-diffusion.h"
 #include "model.h"
 #include "model_loader.h"
+#include "core/backend_fit.h"
+#include "core/ggml_graph_cut.h"
 #include "ggml.h"
+#include "ggml-backend.h"
 #ifdef SD_USE_VULKAN
 #include "ggml-vulkan.h"
 #endif
 #include <memory>
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <limits>
+#include <map>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <mutex>
@@ -23,21 +32,60 @@
 
 struct SdHandle {
     sd_ctx_t *ctx = nullptr;
+    std::mutex operation_mutex;
+    std::mutex cancellation_mutex;
+    bool closing = false;
     float flow_shift = 0.0f;
     bool flow_shift_is_set = false;
     bool vae_tiling = false;
 };
 
 // Global state
-static std::unordered_map<int64_t, std::unique_ptr<SdHandle>> g_handles;
+static std::unordered_map<int64_t, std::shared_ptr<SdHandle>> g_handles;
 static std::mutex g_handles_mutex;
+// All stable-diffusion.cpp operations that can touch global callbacks, backend
+// registries, model loaders, or contexts share one process-wide gate. Cancellation
+// intentionally bypasses this gate and signals the upstream atomic cancel mode.
+static std::mutex g_operation_mutex;
 static int64_t g_next_handle = 1;
 static DiffusionLogFn g_log_fn = nullptr;
+static bool g_backend_initialized = false;
+static std::string g_backend_path;
 
 // Step-progress tracking (updated by the C callback on the generation thread;
 // read from the Kotlin polling coroutine on a different thread — atomics are sufficient).
 static std::atomic<int> g_progress_step(0);
 static std::atomic<int> g_progress_total(0);
+
+static std::shared_ptr<SdHandle> lookup_handle(int64_t handle_id) {
+    std::lock_guard<std::mutex> lock(g_handles_mutex);
+    auto it = g_handles.find(handle_id);
+    return it == g_handles.end() ? nullptr : it->second;
+}
+
+static bool signal_cancellation(const std::shared_ptr<SdHandle> &handle, sd_cancel_mode_t mode) {
+    if (!handle) return false;
+    std::lock_guard<std::mutex> lock(handle->cancellation_mutex);
+    if (!handle->ctx || handle->closing) return false;
+    sd_cancel_generation(handle->ctx, mode);
+    return true;
+}
+
+static void free_images(sd_image_t *images, int count) {
+    if (!images) return;
+    for (int i = 0; i < count; ++i) {
+        free(images[i].data);
+    }
+    free(images);
+}
+
+struct SdImagesOwner {
+    SdImagesOwner(sd_image_t *owned_images, int owned_count)
+        : images(owned_images), count(owned_count > 0 ? owned_count : 0) {}
+    ~SdImagesOwner() { free_images(images, count); }
+    sd_image_t *images;
+    int count;
+};
 
 static void step_progress_callback(int step, int steps, float /*time*/, void* /*data*/) {
     g_progress_step.store(step,  std::memory_order_relaxed);
@@ -61,8 +109,8 @@ static void png_write_callback(void *context, void *data, int size) {
 }
 
 // Stable diffusion log callback
-static void sd_log_callback(sd_log_level_t level, const char *text, void *data) {
-    if (!g_log_fn) return;
+static void sd_log_callback(sd_log_level_t level, const char * /*text*/, void * /*data*/) {
+    if (!g_log_fn || level < SD_LOG_WARN) return;
 
     DiffusionLogLevel log_level;
     switch (level) {
@@ -83,14 +131,14 @@ static void sd_log_callback(sd_log_level_t level, const char *text, void *data) 
             break;
     }
 
-    g_log_fn(log_level, text);
+    g_log_fn(log_level, "native engine diagnostic suppressed");
 }
 
 // ggml-level log callback. Vulkan backend errors (GGML_ABORT messages, "fatal error",
 // pipeline lookup failures) come through here, NOT through sd.cpp's logger. Without this
 // hook those messages disappear into stderr and we only see SIGABRT in logcat.
-static void dr_ggml_log_callback(ggml_log_level level, const char *text, void * /*user_data*/) {
-    if (!g_log_fn || !text) return;
+static void dr_ggml_log_callback(ggml_log_level level, const char * /*text*/, void * /*user_data*/) {
+    if (!g_log_fn || level < GGML_LOG_LEVEL_WARN) return;
     DiffusionLogLevel log_level;
     switch (level) {
         case GGML_LOG_LEVEL_DEBUG: log_level = DIFFUSION_LOG_DEBUG; break;
@@ -100,11 +148,27 @@ static void dr_ggml_log_callback(ggml_log_level level, const char *text, void * 
         case GGML_LOG_LEVEL_CONT:  log_level = DIFFUSION_LOG_DEBUG; break;
         default:                   log_level = DIFFUSION_LOG_INFO;  break;
     }
-    // Prefix so we can distinguish ggml lines from sd lines in logcat.
-    char buf[1024];
-    snprintf(buf, sizeof(buf), "[ggml] %s", text);
-    g_log_fn(log_level, buf);
+    g_log_fn(log_level, "native backend diagnostic suppressed");
 }
+
+static void discard_sd_log(sd_log_level_t, const char *, void *) {}
+static void discard_ggml_log(ggml_log_level, const char *, void *) {}
+
+class ScopedNativeLogSuppression {
+public:
+    ScopedNativeLogSuppression() {
+        sd_set_log_callback(discard_sd_log, nullptr);
+        ggml_log_set(discard_ggml_log, nullptr);
+    }
+
+    ~ScopedNativeLogSuppression() {
+        sd_set_log_callback(sd_log_callback, nullptr);
+        ggml_log_set(dr_ggml_log_callback, nullptr);
+    }
+
+    ScopedNativeLogSuppression(const ScopedNativeLogSuppression &) = delete;
+    ScopedNativeLogSuppression &operator=(const ScopedNativeLogSuppression &) = delete;
+};
 
 // Small helper for one-shot formatted log lines from this file.
 static void dr_logf(DiffusionLogLevel level, const char *fmt, ...) {
@@ -118,37 +182,430 @@ static void dr_logf(DiffusionLogLevel level, const char *fmt, ...) {
 }
 
 void diffusion_runner_core_set_logger(DiffusionLogFn fn) {
+    std::lock_guard<std::mutex> operation_lock(g_operation_mutex);
     g_log_fn = fn;
     sd_set_log_callback(sd_log_callback, nullptr);
     ggml_log_set(dr_ggml_log_callback, nullptr);
 }
 
 void diffusion_runner_core_init(const char *backend_path) {
-    // Initialize any backend-specific paths if needed
-    // For now, just ensure logger is set up
-    if (g_log_fn) {
-        sd_set_log_callback(sd_log_callback, nullptr);
+    std::lock_guard<std::mutex> operation_lock(g_operation_mutex);
+    if (!backend_path || strnlen(backend_path, 4097) > 4096) {
+        dr_logf(DIFFUSION_LOG_ERROR, "init: invalid backend directory");
+        return;
+    }
+    const std::string requested_path(backend_path);
+    if (g_backend_initialized) {
+        if (requested_path != g_backend_path) {
+            dr_logf(DIFFUSION_LOG_WARN, "init: backend directory change rejected");
+        }
+        return;
+    }
+    if (!requested_path.empty()) {
+        ggml_backend_load_all_from_path(requested_path.c_str());
+    }
+    sd_set_log_callback(sd_log_callback, nullptr);
+    ggml_log_set(dr_ggml_log_callback, nullptr);
+    g_backend_path = requested_path;
+    g_backend_initialized = true;
+    dr_logf(DIFFUSION_LOG_INFO, "init: backend registry initialized");
+}
+
+static bool bounded_string(const char *value, size_t max_bytes, bool allow_empty) {
+    if (!value) return false;
+    const size_t length = strnlen(value, max_bytes + 1);
+    return length <= max_bytes && (allow_empty || length > 0);
+}
+
+static bool valid_sd_weight_type(int value) {
+    switch (value) {
+        case -1:
+        case SD_TYPE_F32:
+        case SD_TYPE_F16:
+        case SD_TYPE_Q4_0:
+        case SD_TYPE_Q4_1:
+        case SD_TYPE_Q5_0:
+        case SD_TYPE_Q5_1:
+        case SD_TYPE_Q8_0:
+        case SD_TYPE_Q8_1:
+        case SD_TYPE_Q2_K:
+        case SD_TYPE_Q3_K:
+        case SD_TYPE_Q4_K:
+        case SD_TYPE_Q5_K:
+        case SD_TYPE_Q6_K:
+        case SD_TYPE_Q8_K:
+        case SD_TYPE_IQ2_XXS:
+        case SD_TYPE_IQ2_XS:
+        case SD_TYPE_IQ3_XXS:
+        case SD_TYPE_IQ1_S:
+        case SD_TYPE_IQ4_NL:
+        case SD_TYPE_IQ3_S:
+        case SD_TYPE_IQ2_S:
+        case SD_TYPE_IQ4_XS:
+        case SD_TYPE_I8:
+        case SD_TYPE_I16:
+        case SD_TYPE_I32:
+        case SD_TYPE_I64:
+        case SD_TYPE_F64:
+        case SD_TYPE_IQ1_M:
+        case SD_TYPE_BF16:
+        case SD_TYPE_TQ1_0:
+        case SD_TYPE_TQ2_0:
+        case SD_TYPE_MXFP4:
+        case SD_TYPE_NVFP4:
+        case SD_TYPE_Q1_0:
+            return true;
+        default:
+            return false;
     }
 }
 
+static bool valid_model_config_native(const DiffusionModelConfig &config) {
+    const std::array<const char *, 7> paths = {
+        config.model_path, config.vae_path, config.llm_path, config.clip_l_path,
+        config.clip_g_path, config.t5xxl_path, config.taesd_path,
+    };
+    if (!bounded_string(paths[0], 4096, false)) return false;
+    for (size_t index = 1; index < paths.size(); ++index) {
+        if (!bounded_string(paths[index], 4096, true)) return false;
+    }
+    return bounded_string(config.max_vram, 256, true) &&
+        (config.n_threads == -1 || (config.n_threads >= 1 && config.n_threads <= 1024)) &&
+        valid_sd_weight_type(config.wtype) &&
+        config.prediction >= -1 && config.prediction < PREDICTION_COUNT &&
+        (!config.flow_shift_is_set || (std::isfinite(config.flow_shift) &&
+            config.flow_shift >= -1000.0f && config.flow_shift <= 1000.0f));
+}
+
+static std::string lower_ascii(const char *value) {
+    std::string result = value ? value : "";
+    std::transform(result.begin(), result.end(), result.begin(), [](unsigned char byte) {
+        return byte >= 'A' && byte <= 'Z'
+            ? static_cast<char>(byte - 'A' + 'a')
+            : static_cast<char>(byte);
+    });
+    return result;
+}
+
+static int diffusion_backend_kind(ggml_backend_dev_t device) {
+    const ggml_backend_reg_t registry = device ? ggml_backend_dev_backend_reg(device) : nullptr;
+    const std::string name = lower_ascii(registry ? ggml_backend_reg_name(registry) : nullptr);
+    if (name == "cpu") return DIFFUSION_BACKEND_CPU;
+    if (name == "cuda" || name == "rocm" || name == "hip") return DIFFUSION_BACKEND_CUDA;
+    if (name == "metal") return DIFFUSION_BACKEND_METAL;
+    if (name == "vulkan") return DIFFUSION_BACKEND_VULKAN;
+    if (name == "opencl") return DIFFUSION_BACKEND_OPENCL;
+    if (name == "sycl") return DIFFUSION_BACKEND_SYCL;
+    return DIFFUSION_BACKEND_OTHER;
+}
+
+static int diffusion_backend_device_type(ggml_backend_dev_t device) {
+    if (!device) return DIFFUSION_BACKEND_DEVICE_META;
+    switch (ggml_backend_dev_type(device)) {
+        case GGML_BACKEND_DEVICE_TYPE_CPU: return DIFFUSION_BACKEND_DEVICE_CPU;
+        case GGML_BACKEND_DEVICE_TYPE_GPU: return DIFFUSION_BACKEND_DEVICE_DISCRETE_GPU;
+        case GGML_BACKEND_DEVICE_TYPE_IGPU: return DIFFUSION_BACKEND_DEVICE_INTEGRATED_GPU;
+        case GGML_BACKEND_DEVICE_TYPE_ACCEL: return DIFFUSION_BACKEND_DEVICE_ACCELERATOR;
+        case GGML_BACKEND_DEVICE_TYPE_META: return DIFFUSION_BACKEND_DEVICE_META;
+    }
+    return DIFFUSION_BACKEND_DEVICE_META;
+}
+
+static bool checked_size_to_i64(size_t value, int64_t &destination) {
+    if (value > static_cast<size_t>(std::numeric_limits<int64_t>::max())) return false;
+    destination = static_cast<int64_t>(value);
+    return true;
+}
+
+static int architecture_code(SDVersion version) {
+    if (sd_version_is_sd1(version)) return DIFFUSION_ARCH_SD1;
+    if (sd_version_is_sd2(version)) return DIFFUSION_ARCH_SD2;
+    if (sd_version_is_sdxl(version)) return DIFFUSION_ARCH_SDXL;
+    if (sd_version_is_sd3(version)) return DIFFUSION_ARCH_SD3;
+    if (sd_version_is_flux(version) || sd_version_is_flux2(version)) return DIFFUSION_ARCH_FLUX;
+    if (sd_version_is_wan(version)) return DIFFUSION_ARCH_WAN;
+    switch (version) {
+        case VERSION_SVD:
+        case VERSION_LINGBOT_VIDEO:
+        case VERSION_HUNYUAN_VIDEO:
+        case VERSION_LTXAV:
+            return DIFFUSION_ARCH_OTHER_VIDEO;
+        case VERSION_COUNT:
+            return DIFFUSION_ARCH_UNKNOWN;
+        default:
+            return DIFFUSION_ARCH_OTHER_IMAGE;
+    }
+}
+
+static int quantization_code(ggml_type type) {
+    switch (type) {
+        case GGML_TYPE_F32: return DIFFUSION_QUANT_F32;
+        case GGML_TYPE_F16: return DIFFUSION_QUANT_F16;
+        case GGML_TYPE_BF16: return DIFFUSION_QUANT_BF16;
+        case GGML_TYPE_Q4_0: return DIFFUSION_QUANT_Q4_0;
+        case GGML_TYPE_Q4_1: return DIFFUSION_QUANT_Q4_1;
+        case GGML_TYPE_Q5_0: return DIFFUSION_QUANT_Q5_0;
+        case GGML_TYPE_Q5_1: return DIFFUSION_QUANT_Q5_1;
+        case GGML_TYPE_Q8_0: return DIFFUSION_QUANT_Q8_0;
+        case GGML_TYPE_Q2_K: return DIFFUSION_QUANT_Q2_K;
+        case GGML_TYPE_Q3_K: return DIFFUSION_QUANT_Q3_K;
+        case GGML_TYPE_Q4_K: return DIFFUSION_QUANT_Q4_K;
+        case GGML_TYPE_Q5_K: return DIFFUSION_QUANT_Q5_K;
+        case GGML_TYPE_Q6_K: return DIFFUSION_QUANT_Q6_K;
+        case GGML_TYPE_COUNT: return DIFFUSION_QUANT_UNKNOWN;
+        default: return DIFFUSION_QUANT_OTHER;
+    }
+}
+
+static int dominant_quantization_code(ModelLoader &loader) {
+    const auto stats = loader.get_wtype_stat();
+    if (stats.empty()) return DIFFUSION_QUANT_UNKNOWN;
+    uint32_t largest = 0;
+    ggml_type dominant = GGML_TYPE_COUNT;
+    bool tie = false;
+    for (const auto &[type, count] : stats) {
+        if (count > largest) {
+            largest = count;
+            dominant = type;
+            tie = false;
+        } else if (count == largest && type != dominant) {
+            tie = true;
+        }
+    }
+    return tie ? DIFFUSION_QUANT_MIXED : quantization_code(dominant);
+}
+
+struct DeclaredComponent {
+    int role;
+    const char *path;
+    const char *prefix;
+    const char *module;
+};
+
+static bool has_split_components(const DiffusionModelConfig &config) {
+    return config.vae_path[0] != '\0' || config.llm_path[0] != '\0' ||
+        config.clip_l_path[0] != '\0' || config.clip_g_path[0] != '\0' ||
+        config.t5xxl_path[0] != '\0';
+}
+
+static std::vector<DeclaredComponent> declared_components(const DiffusionModelConfig &config) {
+    std::vector<DeclaredComponent> components;
+    const bool split = has_split_components(config);
+    components.push_back({
+        split ? DIFFUSION_COMPONENT_DIFFUSION_MODEL : DIFFUSION_COMPONENT_MODEL_BUNDLE,
+        config.model_path,
+        split ? "model.diffusion_model." : "",
+        split ? "diffusion" : "",
+    });
+    if (config.vae_path[0] != '\0') components.push_back({DIFFUSION_COMPONENT_VAE, config.vae_path, "vae.", "vae"});
+    if (config.llm_path[0] != '\0') components.push_back({DIFFUSION_COMPONENT_LLM, config.llm_path, "text_encoders.llm.", "te"});
+    if (config.clip_l_path[0] != '\0') components.push_back({DIFFUSION_COMPONENT_CLIP_L, config.clip_l_path, "clip_l.", "te"});
+    if (config.clip_g_path[0] != '\0') components.push_back({DIFFUSION_COMPONENT_CLIP_G, config.clip_g_path, "clip_g.", "te"});
+    if (config.t5xxl_path[0] != '\0') components.push_back({DIFFUSION_COMPONENT_T5XXL, config.t5xxl_path, "text_encoders.t5xxl.transformer.", "te"});
+    if (config.taesd_path[0] != '\0') components.push_back({DIFFUSION_COMPONENT_TAESD, config.taesd_path, "tae.", "vae"});
+    return components;
+}
+
+static bool initialize_combined_loader(
+        const std::vector<DeclaredComponent> &components,
+        ModelLoader &loader) {
+    for (const DeclaredComponent &component : components) {
+        if (!loader.init_from_file(component.path, component.prefix)) return false;
+    }
+    loader.convert_tensors_name();
+    return true;
+}
+
+static std::string assignment_value(const std::string &spec, const std::string &module) {
+    std::string default_value;
+    std::string exact_value;
+    size_t start = 0;
+    while (start <= spec.size()) {
+        const size_t end = spec.find(',', start);
+        const std::string token = spec.substr(start, end == std::string::npos ? std::string::npos : end - start);
+        const size_t equals = token.find('=');
+        if (equals == std::string::npos) {
+            if (!token.empty()) default_value = token;
+        } else {
+            const std::string key = lower_ascii(token.substr(0, equals).c_str());
+            const std::string value = token.substr(equals + 1);
+            if (key == "*" || key == "all" || key == "default") default_value = value;
+            if (key == module) exact_value = value;
+        }
+        if (end == std::string::npos) break;
+        start = end + 1;
+    }
+    return exact_value.empty() ? default_value : exact_value;
+}
+
+static void append_assignment(std::string &spec, const char *module, const char *value) {
+    if (!spec.empty()) spec += ',';
+    spec += module;
+    spec += '=';
+    spec += value;
+}
+
+struct ResolvedModelPlan {
+    std::string runtime_spec;
+    std::string params_spec;
+    sd::ggml_graph_cut::MaxVramAssignment budgets;
+    bool valid = false;
+};
+
+static bool registry_has_vulkan_gpu() {
+    const size_t count = ggml_backend_dev_count();
+    for (size_t index = 0; index < count; ++index) {
+        ggml_backend_dev_t device = ggml_backend_dev_get(index);
+        if (device && diffusion_backend_kind(device) == DIFFUSION_BACKEND_VULKAN &&
+            (ggml_backend_dev_type(device) == GGML_BACKEND_DEVICE_TYPE_GPU ||
+                ggml_backend_dev_type(device) == GGML_BACKEND_DEVICE_TYPE_IGPU)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static ResolvedModelPlan resolve_model_plan(
+        const DiffusionModelConfig &config,
+        ModelLoader *initialized_loader) {
+    ResolvedModelPlan plan;
+    plan.budgets.reset(0.0f);
+    std::string ignored_error;
+    if (!plan.budgets.parse(config.max_vram, &ignored_error) ||
+        !plan.budgets.canonicalize_backend_keys(&ignored_error)) {
+        return plan;
+    }
+
+    if (config.auto_fit) {
+        if (!initialized_loader) return plan;
+        const ggml_type override_type = config.wtype >= 0
+            ? static_cast<ggml_type>(config.wtype)
+            : GGML_TYPE_COUNT;
+        if (!sd::backend_fit::derive_backend_specs(
+                *initialized_loader,
+                override_type,
+                plan.budgets,
+                plan.runtime_spec,
+                plan.params_spec)) {
+            return plan;
+        }
+    }
+
+    const bool force_clip_cpu = config.keep_clip_on_cpu || registry_has_vulkan_gpu();
+    const bool force_vae_cpu = config.keep_vae_on_cpu || registry_has_vulkan_gpu();
+    if (force_clip_cpu) append_assignment(plan.runtime_spec, "te", "cpu");
+    if (force_vae_cpu) append_assignment(plan.runtime_spec, "vae", "cpu");
+    if (config.offload_to_cpu) {
+        plan.params_spec = "*=cpu,diffusion=cpu,te=cpu,vae=cpu";
+    }
+    plan.valid = true;
+    return plan;
+}
+
+static int64_t backend_mask_for_assignment(const std::string &value) {
+    if (value.empty() || lower_ascii(value.c_str()) == "cpu") return 0;
+    int64_t mask = 0;
+    size_t start = 0;
+    while (start <= value.size()) {
+        const size_t end = value.find('&', start);
+        const std::string requested = lower_ascii(value.substr(start, end == std::string::npos ? std::string::npos : end - start).c_str());
+        bool matched = false;
+        const size_t count = std::min(ggml_backend_dev_count(), static_cast<size_t>(DIFFUSION_PREFLIGHT_MAX_BACKENDS));
+        for (size_t index = 0; index < count; ++index) {
+            ggml_backend_dev_t device = ggml_backend_dev_get(index);
+            if (device && requested == lower_ascii(ggml_backend_dev_name(device))) {
+                mask |= int64_t{1} << index;
+                matched = true;
+                break;
+            }
+        }
+        if (!matched) return 0;
+        if (end == std::string::npos) break;
+        start = end + 1;
+    }
+    return mask;
+}
+
+static int runtime_placement_for(const std::string &value, int64_t backend_mask) {
+    if (value.empty()) return DIFFUSION_RUNTIME_DEFAULT;
+    if (lower_ascii(value.c_str()) == "cpu") return DIFFUSION_RUNTIME_CPU;
+    return (backend_mask & (backend_mask - 1)) == 0
+        ? DIFFUSION_RUNTIME_GPU
+        : DIFFUSION_RUNTIME_SPLIT_GPU;
+}
+
+static int parameter_placement_for(const std::string &value) {
+    const std::string normalized = lower_ascii(value.c_str());
+    if (normalized == "cpu") return DIFFUSION_PARAMS_CPU;
+    if (normalized == "disk") return DIFFUSION_PARAMS_DISK;
+    return DIFFUSION_PARAMS_DEFAULT;
+}
+
+static int64_t device_budget_bytes(
+        ggml_backend_dev_t device,
+        const sd::ggml_graph_cut::MaxVramAssignment &budgets,
+        bool budget_active,
+        int64_t free_bytes) {
+    if (!budget_active || !device ||
+        (ggml_backend_dev_type(device) != GGML_BACKEND_DEVICE_TYPE_GPU &&
+            ggml_backend_dev_type(device) != GGML_BACKEND_DEVICE_TYPE_IGPU)) {
+        return 0;
+    }
+    float gib = budgets.default_gib;
+    const auto it = budgets.backend_gib.find(lower_ascii(ggml_backend_dev_name(device)));
+    if (it != budgets.backend_gib.end()) gib = it->second;
+    constexpr double GIB = 1024.0 * 1024.0 * 1024.0;
+    constexpr int64_t MARGIN = 512LL * 1024LL * 1024LL;
+    if (gib > 0.0f) {
+        return std::min<int64_t>(static_cast<int64_t>(gib * GIB), free_bytes);
+    }
+    if (gib < 0.0f) {
+        return std::max<int64_t>(free_bytes + static_cast<int64_t>(gib * GIB), 0);
+    }
+    return std::max<int64_t>(free_bytes - MARGIN, 0);
+}
+
 int64_t diffusion_runner_core_load_model(const DiffusionModelConfig &config) {
+    std::lock_guard<std::mutex> operation_lock(g_operation_mutex);
+    if (!g_backend_initialized || !valid_model_config_native(config)) {
+        dr_logf(DIFFUSION_LOG_ERROR, "load_model: invalid state or configuration");
+        return 0;
+    }
     dr_logf(DIFFUSION_LOG_INFO,
-            "load_model: ENTER model_path='%s' vae='%s' clip_l='%s' clip_g='%s' t5xxl='%s' llm='%s' "
-            "taesd='%s' offload=%d keep_clip_cpu=%d keep_vae_cpu=%d flash_attn=%d mmap=%d "
+            "load_model: ENTER model=%d vae=%d clip_l=%d clip_g=%d t5xxl=%d llm=%d "
+            "taesd=%d offload=%d keep_clip_cpu=%d keep_vae_cpu=%d flash_attn=%d mmap=%d "
             "conv_direct=%d free_immediate=%d wtype=%d prediction=%d flow_shift=%.4f set=%d "
             "vae_tiling=%d n_threads=%d",
-            config.model_path ? config.model_path : "(null)",
-            config.vae_path ? config.vae_path : "",
-            config.clip_l_path ? config.clip_l_path : "",
-            config.clip_g_path ? config.clip_g_path : "",
-            config.t5xxl_path ? config.t5xxl_path : "",
-            config.llm_path ? config.llm_path : "",
-            config.taesd_path ? config.taesd_path : "",
+            config.model_path && config.model_path[0] != '\0',
+            config.vae_path && config.vae_path[0] != '\0',
+            config.clip_l_path && config.clip_l_path[0] != '\0',
+            config.clip_g_path && config.clip_g_path[0] != '\0',
+            config.t5xxl_path && config.t5xxl_path[0] != '\0',
+            config.llm_path && config.llm_path[0] != '\0',
+            config.taesd_path && config.taesd_path[0] != '\0',
             (int)config.offload_to_cpu, (int)config.keep_clip_on_cpu, (int)config.keep_vae_on_cpu,
             (int)config.diffusion_flash_attn, (int)config.enable_mmap,
             (int)config.diffusion_conv_direct, (int)config.free_params_immediately,
             config.wtype, config.prediction, config.flow_shift, (int)config.flow_shift_is_set,
             (int)config.vae_tiling, config.n_threads);
+
+    ScopedNativeLogSuppression suppress_upstream_diagnostics;
+    ModelLoader fit_loader;
+    if (config.auto_fit) {
+        const auto components = declared_components(config);
+        if (!initialize_combined_loader(components, fit_loader) ||
+            fit_loader.get_sd_version() == VERSION_COUNT) {
+            dr_logf(DIFFUSION_LOG_ERROR, "load_model: auto-fit metadata unavailable");
+            return 0;
+        }
+    }
+    ResolvedModelPlan resolved_plan = resolve_model_plan(
+        config,
+        config.auto_fit ? &fit_loader : nullptr);
+    if (!resolved_plan.valid) {
+        dr_logf(DIFFUSION_LOG_ERROR, "load_model: backend placement could not be resolved");
+        return 0;
+    }
 
 #ifdef SD_USE_VULKAN
     {
@@ -199,30 +656,21 @@ int64_t diffusion_runner_core_load_model(const DiffusionModelConfig &config) {
     // (see libraries/stable-diffusion.cpp/docs/backend.md, "Compatibility flags"). free_params_immediately
     // has no direct successor; params_backend=disk covers "reload+release" but that's a heavier
     // behavior change than "free after first use" so it is intentionally not auto-mapped here.
-    std::string backend_assignment;
-    std::string params_backend_assignment;
+    std::string backend_assignment = resolved_plan.runtime_spec;
+    std::string params_backend_assignment = resolved_plan.params_spec;
     // ggml-vulkan on Android (Adreno/Mali) lacks F16 softmax/norm pipeline variants
     // used by the CLIP transformer and VAE decoder. Submitting those graphs to the
     // Vulkan backend triggers GGML_ABORT inside ggml_vk_op_get_pipeline.
     // Mirror stable-diffusion.cpp's documented workaround: pin CLIP + VAE to the CPU
     // backend whenever a Vulkan device is present. The heavy UNet stays on Vulkan.
     // Caller opt-in (config flag = true) is preserved via OR.
-    bool keep_clip_on_cpu = config.keep_clip_on_cpu;
-    bool keep_vae_on_cpu  = config.keep_vae_on_cpu;
-#ifdef SD_USE_VULKAN
-    if (ggml_backend_vk_get_device_count() > 0) {
-        keep_clip_on_cpu = true;
-        keep_vae_on_cpu  = true;
-        dr_logf(DIFFUSION_LOG_INFO,
-                "load_model: vulkan present → FORCING keep_clip_on_cpu=true, keep_vae_on_cpu=true");
-    }
-#endif
-    if (keep_clip_on_cpu) backend_assignment += "te=cpu,";
-    if (keep_vae_on_cpu)  backend_assignment += "vae=cpu,";
-    if (!backend_assignment.empty()) backend_assignment.pop_back();
-    if (config.offload_to_cpu) params_backend_assignment = "*=cpu";
     if (!backend_assignment.empty()) params.backend = backend_assignment.c_str();
     if (!params_backend_assignment.empty()) params.params_backend = params_backend_assignment.c_str();
+    params.max_vram = config.max_vram[0] == '\0' ? nullptr : config.max_vram;
+    params.stream_layers = config.stream_layers;
+    // Auto-fit was resolved above from the same loader assumptions; passing false
+    // prevents new_sd_ctx from recomputing a different placement against changing memory.
+    params.auto_fit = false;
 
     params.diffusion_flash_attn = config.diffusion_flash_attn;
     params.enable_mmap = config.enable_mmap;
@@ -272,7 +720,7 @@ int64_t diffusion_runner_core_load_model(const DiffusionModelConfig &config) {
     dr_logf(DIFFUSION_LOG_INFO, "load_model: new_sd_ctx OK");
 
     // Create handle
-    auto handle = std::make_unique<SdHandle>();
+    auto handle = std::make_shared<SdHandle>();
     handle->ctx = ctx;
     handle->flow_shift = config.flow_shift;
     handle->flow_shift_is_set = config.flow_shift_is_set;
@@ -280,7 +728,7 @@ int64_t diffusion_runner_core_load_model(const DiffusionModelConfig &config) {
 
     std::lock_guard<std::mutex> lock(g_handles_mutex);
     int64_t handle_id = g_next_handle++;
-    g_handles[handle_id] = std::move(handle);
+    g_handles[handle_id] = handle;
 
     dr_logf(DIFFUSION_LOG_INFO, "load_model: handle_id=%lld", (long long)handle_id);
     return handle_id;
@@ -298,15 +746,22 @@ PngResult diffusion_runner_core_txt2img(int64_t handle_id, const ImageGenConfig 
             config.prompt ? strlen(config.prompt) : 0,
             config.negative_prompt ? strlen(config.negative_prompt) : 0);
 
-    // Find handle
-    std::lock_guard<std::mutex> lock(g_handles_mutex);
-    auto it = g_handles.find(handle_id);
-    if (it == g_handles.end() || !it->second || !it->second->ctx) {
+    auto handle = lookup_handle(handle_id);
+    if (!handle) {
         dr_logf(DIFFUSION_LOG_ERROR, "txt2img: invalid handle %lld", (long long)handle_id);
         return result;
     }
 
-    sd_ctx_t *ctx = it->second->ctx;
+    std::lock_guard<std::mutex> global_operation_lock(g_operation_mutex);
+    std::lock_guard<std::mutex> operation_lock(handle->operation_mutex);
+    sd_ctx_t *ctx = nullptr;
+    {
+        std::lock_guard<std::mutex> cancel_lock(handle->cancellation_mutex);
+        ctx = handle->ctx;
+        if (ctx && !handle->closing) sd_cancel_generation(ctx, SD_CANCEL_RESET);
+        else ctx = nullptr;
+    }
+    if (!ctx) return result;
 
     // Set up generation parameters
     sd_img_gen_params_t gen_params = {};
@@ -327,14 +782,14 @@ PngResult diffusion_runner_core_txt2img(int64_t handle_id, const ImageGenConfig 
     sample_params.sample_method = static_cast<sample_method_t>(config.sample_method);
     if (config.flow_shift_is_set) {
         sample_params.flow_shift = config.flow_shift;
-    } else if (it->second->flow_shift_is_set) {
-        sample_params.flow_shift = it->second->flow_shift;
+    } else if (handle->flow_shift_is_set) {
+        sample_params.flow_shift = handle->flow_shift;
     }
 
     gen_params.sample_params = sample_params;
 
     // VAE tiling: enable when requested at gen-time or inherited from model config.
-    if (config.vae_tiling || it->second->vae_tiling) {
+    if (config.vae_tiling || handle->vae_tiling) {
         gen_params.vae_tiling_params.enabled = true;
         // tile_size_x/y = 0 → library auto-picks via first_stage_model->get_tile_sizes()
     }
@@ -366,6 +821,7 @@ PngResult diffusion_runner_core_txt2img(int64_t handle_id, const ImageGenConfig 
     sd_image_t *images = nullptr;
     int num_images_out = 0;
     bool gen_ok = generate_image(ctx, &gen_params, &images, &num_images_out);
+    SdImagesOwner images_owner(images, num_images_out);
     if (!gen_ok || !images || num_images_out <= 0 || !images[0].data) {
         dr_logf(DIFFUSION_LOG_ERROR, "txt2img: generate_image returned NULL or empty (success path failed quietly)");
         return result;
@@ -381,11 +837,6 @@ PngResult diffusion_runner_core_txt2img(int64_t handle_id, const ImageGenConfig 
             images[0].width * images[0].channel);
 
     // Free the original image data
-    if (images[0].data) {
-        free(images[0].data);
-    }
-    free(images);
-
     if (success && !png_ctx.data.empty()) {
         // Allocate result data
         result.data = static_cast<uint8_t *>(malloc(png_ctx.data.size()));
@@ -401,14 +852,21 @@ PngResult diffusion_runner_core_txt2img(int64_t handle_id, const ImageGenConfig 
 std::vector<PngResult> diffusion_runner_core_video_gen(int64_t handle_id, const VideoGenConfig &config) {
     std::vector<PngResult> results;
 
-    // Find handle
-    std::lock_guard<std::mutex> lock(g_handles_mutex);
-    auto it = g_handles.find(handle_id);
-    if (it == g_handles.end() || !it->second || !it->second->ctx) {
+    auto handle = lookup_handle(handle_id);
+    if (!handle) {
         return results;
     }
 
-    sd_ctx_t *ctx = it->second->ctx;
+    std::lock_guard<std::mutex> global_operation_lock(g_operation_mutex);
+    std::lock_guard<std::mutex> operation_lock(handle->operation_mutex);
+    sd_ctx_t *ctx = nullptr;
+    {
+        std::lock_guard<std::mutex> cancel_lock(handle->cancellation_mutex);
+        ctx = handle->ctx;
+        if (ctx && !handle->closing) sd_cancel_generation(ctx, SD_CANCEL_RESET);
+        else ctx = nullptr;
+    }
+    if (!ctx) return results;
 
     // Set up generation parameters
     sd_vid_gen_params_t gen_params = {};
@@ -429,14 +887,14 @@ std::vector<PngResult> diffusion_runner_core_video_gen(int64_t handle_id, const 
     sample_params.sample_method = static_cast<sample_method_t>(config.sample_method);
     if (config.flow_shift_is_set) {
         sample_params.flow_shift = config.flow_shift;
-    } else if (it->second->flow_shift_is_set) {
-        sample_params.flow_shift = it->second->flow_shift;
+    } else if (handle->flow_shift_is_set) {
+        sample_params.flow_shift = handle->flow_shift;
     }
 
     gen_params.sample_params = sample_params;
 
     // VAE tiling: enable when requested at gen-time or inherited from model config.
-    if (config.vae_tiling || it->second->vae_tiling) {
+    if (config.vae_tiling || handle->vae_tiling) {
         gen_params.vae_tiling_params.enabled = true;
     }
 
@@ -465,6 +923,7 @@ std::vector<PngResult> diffusion_runner_core_video_gen(int64_t handle_id, const 
     sd_image_t *images = nullptr;
     sd_audio_t *audio_out = nullptr;
     bool gen_ok = generate_video(ctx, &gen_params, &images, &num_frames_out, &audio_out);
+    SdImagesOwner images_owner(images, num_frames_out);
     if (audio_out) {
         free_sd_audio(audio_out);
     }
@@ -496,26 +955,257 @@ std::vector<PngResult> diffusion_runner_core_video_gen(int64_t handle_id, const 
         results.push_back(result);
     }
 
-    // Free the original images
-    for (int i = 0; i < num_frames_out; i++) {
-        if (images[i].data) {
-            free(images[i].data);
-        }
-    }
-    free(images);
-
     return results;
 }
 
+bool diffusion_runner_core_cancel_generation(int64_t handle_id) {
+    return signal_cancellation(lookup_handle(handle_id), SD_CANCEL_ALL);
+}
+
 void diffusion_runner_core_release(int64_t handle_id) {
-    std::lock_guard<std::mutex> lock(g_handles_mutex);
-    auto it = g_handles.find(handle_id);
-    if (it != g_handles.end()) {
-        if (it->second && it->second->ctx) {
-            free_sd_ctx(it->second->ctx);
-        }
+    std::shared_ptr<SdHandle> handle;
+    {
+        std::lock_guard<std::mutex> lock(g_handles_mutex);
+        auto it = g_handles.find(handle_id);
+        if (it == g_handles.end()) return;
+        handle = it->second;
         g_handles.erase(it);
     }
+
+    // Wake a potentially long operation, then wait until it no longer uses the context.
+    {
+        std::lock_guard<std::mutex> cancel_lock(handle->cancellation_mutex);
+        handle->closing = true;
+        if (handle->ctx) sd_cancel_generation(handle->ctx, SD_CANCEL_ALL);
+    }
+    std::lock_guard<std::mutex> global_operation_lock(g_operation_mutex);
+    std::lock_guard<std::mutex> operation_lock(handle->operation_mutex);
+    sd_ctx_t *ctx = nullptr;
+    {
+        std::lock_guard<std::mutex> cancel_lock(handle->cancellation_mutex);
+        ctx = handle->ctx;
+        handle->ctx = nullptr;
+    }
+    if (ctx) free_sd_ctx(ctx);
+}
+
+DiffusionBackendCapabilitiesNative diffusion_runner_core_backend_capabilities() {
+    DiffusionBackendCapabilitiesNative result;
+    std::lock_guard<std::mutex> operation_lock(g_operation_mutex);
+    if (!g_backend_initialized) return result;
+    ScopedNativeLogSuppression suppress_upstream_diagnostics;
+    try {
+        const size_t count = ggml_backend_dev_count();
+        if (count == 0 || count > static_cast<size_t>(DIFFUSION_BACKEND_MAX_DEVICES)) {
+            return result;
+        }
+        for (size_t index = 0; index < count; ++index) {
+            ggml_backend_dev_t device = ggml_backend_dev_get(index);
+            if (!device) return DiffusionBackendCapabilitiesNative{};
+            ggml_backend_dev_props properties{};
+            ggml_backend_dev_get_props(device, &properties);
+            DiffusionBackendCapabilityNative &destination = result.devices[index];
+            destination.kind = diffusion_backend_kind(device);
+            destination.device_type = diffusion_backend_device_type(device);
+            if (properties.memory_total > 0) {
+                if (!checked_size_to_i64(properties.memory_free, destination.free_bytes) ||
+                    !checked_size_to_i64(properties.memory_total, destination.total_bytes) ||
+                    destination.free_bytes > destination.total_bytes) {
+                    return DiffusionBackendCapabilitiesNative{};
+                }
+            }
+        }
+        result.count = static_cast<int>(count);
+    } catch (...) {
+        result.count = -1;
+    }
+    return result;
+}
+
+DiffusionPreflightResultNative diffusion_runner_core_preflight(const DiffusionModelConfig &config) {
+    DiffusionPreflightResultNative result;
+    std::lock_guard<std::mutex> operation_lock(g_operation_mutex);
+    if (!g_backend_initialized || !valid_model_config_native(config)) {
+        result.status = DIFFUSION_PREFLIGHT_INVALID;
+        return result;
+    }
+    ScopedNativeLogSuppression suppress_upstream_diagnostics;
+    try {
+        const std::vector<DeclaredComponent> components = declared_components(config);
+        if (components.empty() || components.size() > DIFFUSION_PREFLIGHT_MAX_COMPONENTS) {
+            result.status = DIFFUSION_PREFLIGHT_INVALID;
+            return result;
+        }
+
+        ModelLoader combined_loader;
+        if (!initialize_combined_loader(components, combined_loader)) {
+            result.status = DIFFUSION_PREFLIGHT_INVALID;
+            return result;
+        }
+        const SDVersion version = combined_loader.get_sd_version();
+        if (version == VERSION_COUNT) {
+            result.status = DIFFUSION_PREFLIGHT_INVALID;
+            return result;
+        }
+
+        ResolvedModelPlan resolved_plan = resolve_model_plan(config, &combined_loader);
+        if (!resolved_plan.valid) {
+            result.status = DIFFUSION_PREFLIGHT_INVALID;
+            return result;
+        }
+
+        const size_t backend_count = ggml_backend_dev_count();
+        if (backend_count == 0 || backend_count > DIFFUSION_PREFLIGHT_MAX_BACKENDS) {
+            result.status = DIFFUSION_PREFLIGHT_UNAVAILABLE;
+            return result;
+        }
+        const bool budget_active = config.auto_fit ||
+            (config.max_vram[0] != '\0' && std::strcmp(config.max_vram, "0") != 0);
+        for (size_t index = 0; index < backend_count; ++index) {
+            ggml_backend_dev_t device = ggml_backend_dev_get(index);
+            if (!device) {
+                result.status = DIFFUSION_PREFLIGHT_UNAVAILABLE;
+                return result;
+            }
+            ggml_backend_dev_props properties{};
+            ggml_backend_dev_get_props(device, &properties);
+            DiffusionPreflightBackendNative &destination = result.backends[index];
+            destination.kind = diffusion_backend_kind(device);
+            destination.device_type = diffusion_backend_device_type(device);
+            destination.ordinal = static_cast<int>(index);
+            if (properties.memory_total > 0) {
+                if (!checked_size_to_i64(properties.memory_free, destination.free_bytes) ||
+                    !checked_size_to_i64(properties.memory_total, destination.total_bytes) ||
+                    destination.free_bytes > destination.total_bytes) {
+                    result.status = DIFFUSION_PREFLIGHT_INVALID;
+                    return result;
+                }
+            }
+            destination.budget_bytes = device_budget_bytes(
+                device,
+                resolved_plan.budgets,
+                budget_active,
+                destination.free_bytes);
+            if (destination.budget_bytes < 0 || destination.budget_bytes > destination.free_bytes) {
+                result.status = DIFFUSION_PREFLIGHT_INVALID;
+                return result;
+            }
+        }
+
+        const ggml_type override_type = config.wtype >= 0
+            ? static_cast<ggml_type>(config.wtype)
+            : GGML_TYPE_COUNT;
+        int64_t declared_mask = 0;
+        for (size_t index = 0; index < components.size(); ++index) {
+            const DeclaredComponent &source = components[index];
+            ModelLoader component_loader;
+            if (!component_loader.init_from_file(source.path, source.prefix)) {
+                result.status = DIFFUSION_PREFLIGHT_INVALID;
+                return result;
+            }
+            component_loader.convert_tensors_name();
+            const int64_t parameter_bytes = component_loader.get_params_mem_size(nullptr, override_type);
+            if (parameter_bytes < 0) {
+                result.status = DIFFUSION_PREFLIGHT_INVALID;
+                return result;
+            }
+
+            DiffusionPreflightComponentNative &destination = result.components[index];
+            destination.role = source.role;
+            destination.ordinal = static_cast<int>(index);
+            destination.parameter_bytes = parameter_bytes;
+            declared_mask |= int64_t{1} << source.role;
+
+            if (source.module[0] != '\0') {
+                const std::string runtime_value = assignment_value(
+                    resolved_plan.runtime_spec,
+                    source.module);
+                destination.runtime_backend_mask = backend_mask_for_assignment(runtime_value);
+                destination.runtime_placement = runtime_placement_for(
+                    runtime_value,
+                    destination.runtime_backend_mask);
+                destination.parameter_placement = parameter_placement_for(
+                    assignment_value(resolved_plan.params_spec, source.module));
+            }
+        }
+
+        result.status = DIFFUSION_PREFLIGHT_FIT;
+        result.architecture = architecture_code(version);
+        result.quantization = dominant_quantization_code(combined_loader);
+        result.memory_confidence = 1;
+        result.stream_layers = config.stream_layers;
+        result.declared_component_mask = declared_mask;
+        result.component_count = static_cast<int>(components.size());
+        result.backend_count = static_cast<int>(backend_count);
+    } catch (const std::bad_alloc &) {
+        result = DiffusionPreflightResultNative{};
+        result.status = DIFFUSION_PREFLIGHT_UNAVAILABLE;
+    } catch (...) {
+        result = DiffusionPreflightResultNative{};
+        result.status = DIFFUSION_PREFLIGHT_INVALID;
+    }
+    return result;
+}
+
+static bool safe_feature_label(const char *value, size_t max_bytes) {
+    if (!bounded_string(value, max_bytes, false)) return false;
+    for (size_t index = 0; value[index] != '\0'; ++index) {
+        const unsigned char byte = static_cast<unsigned char>(value[index]);
+        if (byte < 0x20 || byte > 0x7e) return false;
+    }
+    return true;
+}
+
+static bool supported_quantization_label(const std::string &label) {
+    static constexpr std::array<const char *, 34> labels = {
+        "F32", "F16", "BF16", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q8_0",
+        "Q8_1", "Q2_K", "Q3_K", "Q4_K", "Q5_K", "Q6_K", "Q8_K",
+        "IQ2_XXS", "IQ2_XS", "IQ3_XXS", "IQ1_S", "IQ4_NL", "IQ3_S",
+        "IQ2_S", "IQ4_XS", "IQ1_M", "TQ1_0", "TQ2_0", "MXFP4", "NVFP4",
+        "I8", "I16", "I32", "I64", "F64", "Q1_0",
+    };
+    return std::find_if(labels.begin(), labels.end(), [&](const char *candidate) {
+        return label == candidate;
+    }) != labels.end();
+}
+
+DiffusionModelFeatureSupportNative diffusion_runner_core_probe_model_features(
+        const char *architecture,
+        const char *quantization,
+        int mode) {
+    DiffusionModelFeatureSupportNative result;
+    std::lock_guard<std::mutex> operation_lock(g_operation_mutex);
+    if (!g_backend_initialized || !safe_feature_label(architecture, 64) ||
+        (quantization && !safe_feature_label(quantization, 32)) ||
+        (mode != 0 && mode != 1)) {
+        return result;
+    }
+
+    const std::string arch(architecture);
+    const bool image_arch = arch == "SD1" || arch == "SDXL" || arch == "SD3" || arch == "FLUX";
+    const bool video_arch = arch == "WAN_SMALL" || arch == "WAN_LARGE";
+    result.architecture = (image_arch || video_arch)
+        ? DIFFUSION_FEATURE_SUPPORTED
+        : DIFFUSION_FEATURE_UNSUPPORTED;
+    if (image_arch || video_arch) {
+        result.mode = ((mode == 0 && image_arch) || (mode == 1 && video_arch))
+            ? DIFFUSION_FEATURE_SUPPORTED
+            : DIFFUSION_FEATURE_UNSUPPORTED;
+    }
+    if (quantization) {
+        result.quantization = supported_quantization_label(quantization)
+            ? DIFFUSION_FEATURE_SUPPORTED
+            : DIFFUSION_FEATURE_UNKNOWN;
+    }
+    return result;
+}
+
+std::string diffusion_runner_core_engine_version() {
+    std::lock_guard<std::mutex> operation_lock(g_operation_mutex);
+    if (!g_backend_initialized) return {};
+    const char *version = sd_version();
+    if (!version || !safe_feature_label(version, 72)) return {};
+    return std::string("stable-diffusion.cpp-") + version;
 }
 
 /** Maps SDVersion enum to a compact family string for the Kotlin layer. */
@@ -561,13 +1251,16 @@ DiffusionMetadataResult diffusion_runner_core_get_metadata(const char* model_pat
     result.architecture[0] = '\0';
     result.dominant_quant[0] = '\0';
 
-    if (!model_path || model_path[0] == '\0') return result;
+    std::lock_guard<std::mutex> operation_lock(g_operation_mutex);
+    if (!g_backend_initialized || !bounded_string(model_path, 4096, false)) return result;
 
+    ScopedNativeLogSuppression suppress_upstream_diagnostics;
     try {
         ModelLoader loader;
         if (!loader.init_from_file(std::string(model_path))) {
             return result;
         }
+        loader.convert_tensors_name();
 
         // Architecture
         SDVersion version = loader.get_sd_version();

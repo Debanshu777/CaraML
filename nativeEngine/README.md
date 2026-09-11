@@ -136,6 +136,7 @@ Create a **separate** Gradle module + CMake project. Do not add here unless it m
 
 <!-- Updated at end of each Claude Code session -->
 
+- Stable-diffusion native builds now expose bounded metadata-only preflight and use the same pinned backend-fit resolver for preflight and actual context creation
 - Desktop builds now find CMake through validated explicit/PATH executables and place and assert `artifact_fs` at one configuration-independent path before packaging and installed-image smoke tests
 - Desktop native verification now covers stream-scoped unload exclusion, cross-thread token calls, lock-free cancellation, exact quantization labels, and transient-handle cleanup
 - Fix: SD Vulkan SIGABRT on Android — `SD_VULKAN` decoupled from `GGML_VULKAN` in Android `CMakeLists.txt`; `SD_VULKAN=OFF` means diffusion_runner is compiled without `SD_USE_VULKAN` so ggml-vulkan is not linked into it; `GGML_VULKAN=ON` is preserved for llama_runner (LLM inference); the `if(SD_VULKAN …)` guard on lines 156-170 now correctly prevents `SD_USE_VULKAN` from being defined when Vulkan is disabled for diffusion

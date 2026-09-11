@@ -24,4 +24,13 @@ data class DiffusionModelConfig(
     val taesdPath: String = "",
     /** Enable VAE tiling for large images (>512×512) to avoid OOM during decode. */
     val vaeTiling: Boolean = false,
+    /**
+     * stable-diffusion.cpp graph-cut budget: `-1`, decimal GiB, or comma-separated
+     * backend assignments such as `cuda0=6,vulkan0=2`.
+     */
+    val maxVram: String = "",
+    /** Stream diffusion layers from the parameter backend within [maxVram]. */
+    val streamLayers: Boolean = false,
+    /** Ask the pinned native engine to derive component backend placement from model metadata. */
+    val autoFit: Boolean = false,
 )

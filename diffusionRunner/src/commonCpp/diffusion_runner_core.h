@@ -38,6 +38,10 @@ struct DiffusionModelConfig {
     const char *taesd_path = "";
     /** Enable VAE tiling for large-image decoding to avoid OOM. Only the enabled flag is needed; lib auto-sizes. */
     bool vae_tiling = false;
+    /** Bounded max-VRAM budget grammar consumed by the pinned native engine. */
+    const char *max_vram = "";
+    bool stream_layers = false;
+    bool auto_fit = false;
 };
 
 struct ImageGenConfig {
@@ -90,6 +94,9 @@ PngResult diffusion_runner_core_txt2img(int64_t handle, const ImageGenConfig &co
 
 std::vector<PngResult> diffusion_runner_core_video_gen(int64_t handle, const VideoGenConfig &config);
 
+/** Signals the active generation for [handle] to stop as soon as possible. */
+bool diffusion_runner_core_cancel_generation(int64_t handle);
+
 void diffusion_runner_core_release(int64_t handle);
 
 /** Returns the current step (0-based) and total steps for the ongoing generation. */
@@ -112,3 +119,150 @@ struct DiffusionMetadataResult {
  * @return DiffusionMetadataResult; check result.success before reading fields.
  */
 DiffusionMetadataResult diffusion_runner_core_get_metadata(const char* model_path);
+
+constexpr int DIFFUSION_PREFLIGHT_MAX_COMPONENTS = 8;
+constexpr int DIFFUSION_PREFLIGHT_MAX_BACKENDS = 16;
+constexpr int DIFFUSION_BACKEND_MAX_DEVICES = 16;
+
+enum DiffusionPreflightStatusNative {
+    DIFFUSION_PREFLIGHT_FIT = 0,
+    DIFFUSION_PREFLIGHT_NO_FIT = 1,
+    DIFFUSION_PREFLIGHT_INVALID = 2,
+    DIFFUSION_PREFLIGHT_UNAVAILABLE = 3,
+};
+
+enum DiffusionArchitectureNative {
+    DIFFUSION_ARCH_UNKNOWN = 0,
+    DIFFUSION_ARCH_SD1 = 1,
+    DIFFUSION_ARCH_SD2 = 2,
+    DIFFUSION_ARCH_SDXL = 3,
+    DIFFUSION_ARCH_SD3 = 4,
+    DIFFUSION_ARCH_FLUX = 5,
+    DIFFUSION_ARCH_WAN = 6,
+    DIFFUSION_ARCH_OTHER_IMAGE = 7,
+    DIFFUSION_ARCH_OTHER_VIDEO = 8,
+};
+
+enum DiffusionQuantizationNative {
+    DIFFUSION_QUANT_UNKNOWN = 0,
+    DIFFUSION_QUANT_MIXED = 1,
+    DIFFUSION_QUANT_F32 = 2,
+    DIFFUSION_QUANT_F16 = 3,
+    DIFFUSION_QUANT_BF16 = 4,
+    DIFFUSION_QUANT_Q4_0 = 5,
+    DIFFUSION_QUANT_Q4_1 = 6,
+    DIFFUSION_QUANT_Q5_0 = 7,
+    DIFFUSION_QUANT_Q5_1 = 8,
+    DIFFUSION_QUANT_Q8_0 = 9,
+    DIFFUSION_QUANT_Q2_K = 10,
+    DIFFUSION_QUANT_Q3_K = 11,
+    DIFFUSION_QUANT_Q4_K = 12,
+    DIFFUSION_QUANT_Q5_K = 13,
+    DIFFUSION_QUANT_Q6_K = 14,
+    DIFFUSION_QUANT_OTHER = 15,
+};
+
+enum DiffusionComponentRoleNative {
+    DIFFUSION_COMPONENT_MODEL_BUNDLE = 0,
+    DIFFUSION_COMPONENT_DIFFUSION_MODEL = 1,
+    DIFFUSION_COMPONENT_VAE = 2,
+    DIFFUSION_COMPONENT_LLM = 3,
+    DIFFUSION_COMPONENT_CLIP_L = 4,
+    DIFFUSION_COMPONENT_CLIP_G = 5,
+    DIFFUSION_COMPONENT_T5XXL = 6,
+    DIFFUSION_COMPONENT_TAESD = 7,
+};
+
+enum DiffusionRuntimePlacementNative {
+    DIFFUSION_RUNTIME_DEFAULT = 0,
+    DIFFUSION_RUNTIME_CPU = 1,
+    DIFFUSION_RUNTIME_GPU = 2,
+    DIFFUSION_RUNTIME_SPLIT_GPU = 3,
+};
+
+enum DiffusionParameterPlacementNative {
+    DIFFUSION_PARAMS_DEFAULT = 0,
+    DIFFUSION_PARAMS_CPU = 1,
+    DIFFUSION_PARAMS_DISK = 2,
+};
+
+enum DiffusionBackendKindNative {
+    DIFFUSION_BACKEND_CPU = 0,
+    DIFFUSION_BACKEND_CUDA = 1,
+    DIFFUSION_BACKEND_METAL = 2,
+    DIFFUSION_BACKEND_VULKAN = 3,
+    DIFFUSION_BACKEND_OPENCL = 4,
+    DIFFUSION_BACKEND_SYCL = 5,
+    DIFFUSION_BACKEND_OTHER = 6,
+};
+
+enum DiffusionBackendDeviceTypeNative {
+    DIFFUSION_BACKEND_DEVICE_CPU = 0,
+    DIFFUSION_BACKEND_DEVICE_DISCRETE_GPU = 1,
+    DIFFUSION_BACKEND_DEVICE_INTEGRATED_GPU = 2,
+    DIFFUSION_BACKEND_DEVICE_ACCELERATOR = 3,
+    DIFFUSION_BACKEND_DEVICE_META = 4,
+};
+
+struct DiffusionPreflightComponentNative {
+    int role = DIFFUSION_COMPONENT_MODEL_BUNDLE;
+    int ordinal = 0;
+    int64_t parameter_bytes = 0;
+    int runtime_placement = DIFFUSION_RUNTIME_DEFAULT;
+    int64_t runtime_backend_mask = 0;
+    int parameter_placement = DIFFUSION_PARAMS_DEFAULT;
+};
+
+struct DiffusionPreflightBackendNative {
+    int kind = DIFFUSION_BACKEND_OTHER;
+    int device_type = DIFFUSION_BACKEND_DEVICE_META;
+    int ordinal = 0;
+    int64_t budget_bytes = 0;
+    int64_t free_bytes = 0;
+    int64_t total_bytes = 0;
+};
+
+struct DiffusionPreflightResultNative {
+    int status = DIFFUSION_PREFLIGHT_UNAVAILABLE;
+    int architecture = DIFFUSION_ARCH_UNKNOWN;
+    int quantization = DIFFUSION_QUANT_UNKNOWN;
+    int memory_confidence = 0;
+    bool stream_layers = false;
+    int64_t declared_component_mask = 0;
+    int component_count = 0;
+    int backend_count = 0;
+    DiffusionPreflightComponentNative components[DIFFUSION_PREFLIGHT_MAX_COMPONENTS]{};
+    DiffusionPreflightBackendNative backends[DIFFUSION_PREFLIGHT_MAX_BACKENDS]{};
+};
+
+struct DiffusionBackendCapabilityNative {
+    int kind = DIFFUSION_BACKEND_OTHER;
+    int device_type = DIFFUSION_BACKEND_DEVICE_META;
+    int64_t free_bytes = -1;
+    int64_t total_bytes = -1;
+};
+
+struct DiffusionBackendCapabilitiesNative {
+    int count = -1;
+    DiffusionBackendCapabilityNative devices[DIFFUSION_BACKEND_MAX_DEVICES]{};
+};
+
+enum DiffusionFeatureStateNative {
+    DIFFUSION_FEATURE_SUPPORTED = 0,
+    DIFFUSION_FEATURE_UNSUPPORTED = 1,
+    DIFFUSION_FEATURE_UNKNOWN = 2,
+};
+
+struct DiffusionModelFeatureSupportNative {
+    int architecture = DIFFUSION_FEATURE_UNKNOWN;
+    int quantization = DIFFUSION_FEATURE_UNKNOWN;
+    int mode = DIFFUSION_FEATURE_UNKNOWN;
+};
+
+DiffusionPreflightResultNative diffusion_runner_core_preflight(const DiffusionModelConfig &config);
+DiffusionBackendCapabilitiesNative diffusion_runner_core_backend_capabilities();
+DiffusionModelFeatureSupportNative diffusion_runner_core_probe_model_features(
+    const char *architecture,
+    const char *quantization,
+    int mode);
+std::string diffusion_runner_core_engine_version();

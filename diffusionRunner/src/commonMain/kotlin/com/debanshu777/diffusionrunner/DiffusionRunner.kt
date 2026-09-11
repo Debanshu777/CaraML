@@ -3,6 +3,13 @@ package com.debanshu777.diffusionrunner
 expect class DiffusionRunner() {
     fun initialize(nativeLibDir: String)
     fun loadModel(config: DiffusionModelConfig): Boolean
+    fun preflightModel(config: DiffusionModelConfig): DiffusionPreflightResult
+    fun backendCapabilities(): List<DiffusionBackendCapability>
+    fun probeModelFeatures(
+        architecture: String,
+        quantization: String?,
+        mode: DiffusionGenerationMode,
+    ): DiffusionModelFeatureSupport
     fun txt2Img(params: ImageGenParams): ByteArray?
     fun videoGen(params: VideoGenParams): List<ByteArray>?
     fun release()

@@ -1,21 +1,65 @@
 package com.debanshu777.diffusionrunner
 
 actual class DiffusionRunner {
+    @Volatile
     private var handle: Long = 0L
-
-    init {
+    private val nativeAvailable: Boolean = try {
         System.loadLibrary("diffusion_runner")
+        true
+    } catch (_: LinkageError) {
+        false
+    } catch (_: SecurityException) {
+        false
+    }
+
+    private fun requireNativeRuntime() {
+        if (!nativeAvailable) throw NativeRuntimeUnavailableException()
     }
 
     actual fun initialize(nativeLibDir: String) {
+        requireNativeRuntime()
         nativeInit(nativeLibDir)
     }
 
     actual fun loadModel(config: DiffusionModelConfig): Boolean {
+        requireNativeRuntime()
         validateModelConfig(config)
         handle = nativeLoadModel(config)
         return handle != 0L
     }
+
+    actual fun preflightModel(config: DiffusionModelConfig): DiffusionPreflightResult =
+        runDiffusionPreflight(config) {
+            requireNativeRuntime()
+            nativePreflightModel(it)
+        }
+
+    actual fun backendCapabilities(): List<DiffusionBackendCapability> {
+        if (!nativeAvailable) return emptyList()
+        return try {
+            decodeDiffusionBackendCapabilities(nativeBackendCapabilities())
+        } catch (_: Throwable) {
+            emptyList()
+        }
+    }
+
+    actual fun probeModelFeatures(
+        architecture: String,
+        quantization: String?,
+        mode: DiffusionGenerationMode,
+    ): DiffusionModelFeatureSupport = probeDiffusionModelFeatures(
+        architecture = architecture,
+        quantization = quantization,
+        mode = mode,
+        nativeProbe = { arch, quant, nativeMode ->
+            requireNativeRuntime()
+            nativeProbeModelFeatures(arch, quant, nativeMode)
+        },
+        nativeVersion = {
+            requireNativeRuntime()
+            nativeEngineVersion()
+        },
+    )
 
     actual fun txt2Img(params: ImageGenParams): ByteArray? {
         if (handle == 0L) return null
@@ -54,13 +98,21 @@ actual class DiffusionRunner {
     actual fun getDiffusionModelMetadata(modelPath: String): DiffusionModelMetadata? {
         return try {
             nativeGetDiffusionModelMetadata(modelPath)
-        } catch (e: UnsatisfiedLinkError) {
+        } catch (_: LinkageError) {
             null
         }
     }
 
     private external fun nativeInit(libDir: String)
     private external fun nativeLoadModel(config: DiffusionModelConfig): Long
+    private external fun nativePreflightModel(config: DiffusionModelConfig): LongArray?
+    private external fun nativeBackendCapabilities(): LongArray?
+    private external fun nativeProbeModelFeatures(
+        architecture: String,
+        quantization: String?,
+        mode: Int,
+    ): LongArray?
+    private external fun nativeEngineVersion(): String?
     private external fun nativeTxt2Img(
         handle: Long, prompt: String, negative: String,
         width: Int, height: Int, steps: Int,

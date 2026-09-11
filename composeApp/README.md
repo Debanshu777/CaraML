@@ -182,6 +182,7 @@ Run: `./gradlew :composeApp:jvmTest`
 
 <!-- Updated at end of each AI-assisted development session -->
 
+- Native capability evidence now routes by model kind and advertises GPU offload only when exact named compute backends are available to both llama.cpp and stable-diffusion.cpp
 - Model Hub now loads and repairs diffusion installs from deterministic exact bundle identities, fails unknown image/video readiness closed, and ignores stale directory leftovers outside the aggregate manifest
 - Model Hub now incrementally ranks bounded immutable variants for this device, preserves server order on demand, and reranks cached assessments for profile changes
 - Recommendation profiles now persist atomically, default safely to Balanced, and appear through accessible Material 3 controls only in SHADOW/V2 rollout modes

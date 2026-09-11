@@ -70,8 +70,8 @@ val appModule = module {
     single<ThemeRepository> { DefaultThemeRepository(get()) }
 
     single { DeviceCapabilities() }
-    single<BackendCapabilitySource> { RunnerBackendCapabilitySource(get()) }
-    single<EngineCapabilitySource> { RunnerEngineCapabilitySource(get()) }
+    single<BackendCapabilitySource> { RunnerBackendCapabilitySource(get(), get()) }
+    single<EngineCapabilitySource> { RunnerEngineCapabilitySource(get(), get()) }
     single<CalibrationSource> { NoCalibrationSource }
     single { CompatibilityChecker(get()) }
     single { SuitabilityEngine(get(), get()) }
