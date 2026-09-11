@@ -178,11 +178,11 @@ void core_gate_blocks_discovery_but_not_atomic_cancellation() {
     llama_runner_core_set_logger(nullptr);
 }
 
-void unmapped_native_quantization_is_unknown() {
+void pinned_native_quantization_labels_are_exact() {
     for (const char *label : {
-            "Q3_K_S", "Q3_K_M", "Q3_K_L",
-            "Q4_K_S", "Q4_K_M", "Q4_K_L",
-            "Q5_K_S", "Q5_K_M", "Q5_K_L"}) {
+            "Q3_K", "Q3_K_S", "Q3_K_M", "Q3_K_L",
+            "Q4_K", "Q4_K_S", "Q4_K_M",
+            "Q5_K", "Q5_K_S", "Q5_K_M"}) {
         const LlamaModelFeatureSupportNative support =
             llama_runner_core_probe_model_features("llama", label);
         expect(
@@ -190,7 +190,8 @@ void unmapped_native_quantization_is_unknown() {
             "exact pinned K-quant label was not supported");
     }
 
-    for (const char *label : {"Q4_K_FUTURE", "future_quant"}) {
+    for (const char *label : {
+            "Q4_K_L", "Q5_K_L", "Q4_K_FUTURE", "future_quant"}) {
         const LlamaModelFeatureSupportNative support =
             llama_runner_core_probe_model_features("llama", label);
         expect(
@@ -207,7 +208,7 @@ int main() {
     exceptional_context_path_releases_both_handles();
     repeated_initialization_is_idempotent();
     core_gate_blocks_discovery_but_not_atomic_cancellation();
-    unmapped_native_quantization_is_unknown();
+    pinned_native_quantization_labels_are_exact();
     llama_runner_core_shutdown();
     return 0;
 }

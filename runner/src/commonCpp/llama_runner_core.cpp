@@ -355,9 +355,9 @@ static ggml_type quantization_type(const std::string &label) {
     if (label == "Q5_1") return GGML_TYPE_Q5_1;
     if (label == "Q8_0") return GGML_TYPE_Q8_0;
     if (label == "Q2_K") return GGML_TYPE_Q2_K;
-    if (label == "Q3_K_S" || label == "Q3_K_M" || label == "Q3_K_L") return GGML_TYPE_Q3_K;
-    if (label == "Q4_K_S" || label == "Q4_K_M" || label == "Q4_K_L") return GGML_TYPE_Q4_K;
-    if (label == "Q5_K_S" || label == "Q5_K_M" || label == "Q5_K_L") return GGML_TYPE_Q5_K;
+    if (label == "Q3_K" || label == "Q3_K_S" || label == "Q3_K_M" || label == "Q3_K_L") return GGML_TYPE_Q3_K;
+    if (label == "Q4_K" || label == "Q4_K_S" || label == "Q4_K_M") return GGML_TYPE_Q4_K;
+    if (label == "Q5_K" || label == "Q5_K_S" || label == "Q5_K_M") return GGML_TYPE_Q5_K;
     if (label == "Q6_K") return GGML_TYPE_Q6_K;
     if (label == "IQ2_XXS") return GGML_TYPE_IQ2_XXS;
     if (label == "IQ2_XS") return GGML_TYPE_IQ2_XS;
