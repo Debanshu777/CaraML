@@ -1,6 +1,7 @@
 package com.debanshu777.runner
 
 import com.debanshu777.runner.cpp.LlamaRunnerConfigFFI
+import com.debanshu777.runner.cpp.llama_runner_backend_capabilities
 import com.debanshu777.runner.cpp.llama_runner_cancel_generate
 import com.debanshu777.runner.cpp.llama_runner_clear_context
 import com.debanshu777.runner.cpp.llama_runner_finalize_generation
@@ -12,6 +13,8 @@ import com.debanshu777.runner.cpp.llama_runner_get_stop_reason
 import com.debanshu777.runner.cpp.llama_runner_init
 import com.debanshu777.runner.cpp.llama_runner_load_model_v2
 import com.debanshu777.runner.cpp.llama_runner_next_token
+import com.debanshu777.runner.cpp.llama_runner_preflight_model
+import com.debanshu777.runner.cpp.llama_runner_probe_model_features
 import com.debanshu777.runner.cpp.llama_runner_process_system_prompt
 import com.debanshu777.runner.cpp.llama_runner_get_content
 import com.debanshu777.runner.cpp.llama_runner_get_content_delta
@@ -22,8 +25,14 @@ import com.debanshu777.runner.cpp.llama_runner_shutdown
 import com.debanshu777.runner.cpp.llama_runner_supports_thinking
 import com.debanshu777.runner.cpp.llama_runner_unload_model
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.CValue
+import kotlinx.cinterop.cstr
 import kotlinx.cinterop.cValue
+import kotlinx.cinterop.get
+import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.toKString
+import kotlinx.cinterop.useContents
+import kotlinx.coroutines.CancellationException
 import platform.posix.free
 
 actual class LlamaRunner {
@@ -38,23 +47,80 @@ actual class LlamaRunner {
         config: NativeRunnerConfig,
     ): Boolean {
         validateLoadModelArgs(modelPath)
-        val ffiConfig = cValue<LlamaRunnerConfigFFI> {
-            n_ctx = config.nCtx
-            n_ctx_min = config.nCtxMin
-            n_threads = config.nThreads
-            n_threads_batch = config.nThreadsBatch
-            n_batch = config.nBatch
-            n_ubatch = config.nUbatch
-            flash_attn = config.flashAttn
-            offload_kqv = if (config.offloadKqv) 1 else 0
-            type_k = config.typeK
-            type_v = config.typeV
-            n_gpu_layers = config.nGpuLayers
-            use_mmap = if (config.useMmap) 1 else 0
-            temperature = config.temperature
-            auto_fit = if (config.autoFit) 1 else 0
+        return withFfiConfig(config) { ffiConfig ->
+            llama_runner_load_model_v2(modelPath, ffiConfig) != 0
         }
-        return llama_runner_load_model_v2(modelPath, ffiConfig) != 0
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    actual fun preflightModel(
+        modelPath: String,
+        config: NativeRunnerConfig,
+    ): LlamaPreflightResult = runLlamaPreflight(modelPath, config) { validatedPath, validatedConfig ->
+        withFfiConfig(validatedConfig) { ffiConfig ->
+            llama_runner_preflight_model(validatedPath, ffiConfig).useContents {
+                if (pool_count !in 0..LLAMA_PREFLIGHT_MAX_POOLS) {
+                    return@useContents null
+                }
+                LongArray(LLAMA_PREFLIGHT_HEADER_FIELDS + pool_count * LLAMA_PREFLIGHT_POOL_FIELDS).also { payload ->
+                    payload[0] = status.toLong()
+                    payload[1] = n_ctx.toLong()
+                    payload[2] = n_gpu_layers.toLong()
+                    payload[3] = pool_count.toLong()
+                    repeat(pool_count) { index ->
+                        val offset = LLAMA_PREFLIGHT_HEADER_FIELDS + index * LLAMA_PREFLIGHT_POOL_FIELDS
+                        val pool = pools[index]
+                        payload[offset] = pool.kind.toLong()
+                        payload[offset + 1] = pool.ordinal.toLong()
+                        payload[offset + 2] = pool.model_bytes
+                        payload[offset + 3] = pool.context_bytes
+                        payload[offset + 4] = pool.compute_bytes
+                        payload[offset + 5] = pool.free_bytes
+                        payload[offset + 6] = pool.total_bytes
+                    }
+                }
+            }
+        }
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    actual fun backendCapabilities(): List<NativeBackendCapability> = try {
+        decodeNativeBackendCapabilities(
+            llama_runner_backend_capabilities().useContents {
+                if (count !in 0..NATIVE_BACKEND_MAX_DEVICES) {
+                    return@useContents null
+                }
+                LongArray(NATIVE_BACKEND_HEADER_FIELDS + count * NATIVE_BACKEND_DEVICE_FIELDS).also { payload ->
+                    payload[0] = count.toLong()
+                    repeat(count) { index ->
+                        val offset = NATIVE_BACKEND_HEADER_FIELDS + index * NATIVE_BACKEND_DEVICE_FIELDS
+                        val device = devices[index]
+                        payload[offset] = device.kind.toLong()
+                        payload[offset + 1] = device.device_type.toLong()
+                        payload[offset + 2] = device.free_bytes
+                        payload[offset + 3] = device.total_bytes
+                    }
+                }
+            },
+        )
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Throwable) {
+        emptyList()
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    actual fun probeModelFeatures(
+        architecture: String,
+        quantization: String?,
+    ): NativeModelFeatureSupport = probeNativeModelFeatures(architecture, quantization) { validatedArchitecture, validatedQuantization ->
+        llama_runner_probe_model_features(validatedArchitecture, validatedQuantization).useContents {
+            longArrayOf(
+                this.architecture.toLong(),
+                this.quantization.toLong(),
+                engine_build.toLong(),
+            )
+        }
     }
 
     @OptIn(ExperimentalForeignApi::class)
@@ -152,4 +218,34 @@ actual class LlamaRunner {
     actual fun getModelArchitecture(): String? {
         return llama_runner_get_model_architecture()?.toKString()?.takeIf { it.isNotEmpty() }
     }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+private inline fun <T> withFfiConfig(
+    config: NativeRunnerConfig,
+    action: (CValue<LlamaRunnerConfigFFI>) -> T,
+): T = memScoped {
+    val cpuMask = config.cpuMask.cstr.ptr
+    val cpuMaskBatch = config.cpuMaskBatch.cstr.ptr
+    action(
+        cValue {
+            n_ctx = config.nCtx
+            n_ctx_min = config.nCtxMin
+            n_threads = config.nThreads
+            n_threads_batch = config.nThreadsBatch
+            n_batch = config.nBatch
+            n_ubatch = config.nUbatch
+            flash_attn = config.flashAttn
+            offload_kqv = if (config.offloadKqv) 1 else 0
+            type_k = config.typeK
+            type_v = config.typeV
+            n_gpu_layers = config.nGpuLayers
+            use_mmap = if (config.useMmap) 1 else 0
+            use_mlock = if (config.useMlock) 1 else 0
+            temperature = config.temperature
+            auto_fit = if (config.autoFit) 1 else 0
+            cpu_mask = cpuMask
+            cpu_mask_batch = cpuMaskBatch
+        },
+    )
 }

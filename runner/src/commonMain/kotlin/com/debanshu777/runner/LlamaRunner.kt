@@ -8,6 +8,18 @@ expect class LlamaRunner() {
         config: NativeRunnerConfig,
     ): Boolean
 
+    fun preflightModel(
+        modelPath: String,
+        config: NativeRunnerConfig,
+    ): LlamaPreflightResult
+
+    fun backendCapabilities(): List<NativeBackendCapability>
+
+    fun probeModelFeatures(
+        architecture: String,
+        quantization: String?,
+    ): NativeModelFeatureSupport
+
     fun nextToken(): String?
 
     fun cancelGenerate()

@@ -14,11 +14,12 @@ import com.debanshu777.caraml.core.recommendation.ModelDescriptorFactory
 import com.debanshu777.caraml.core.recommendation.NoCalibrationSource
 import com.debanshu777.caraml.core.recommendation.RecommendationPolicy
 import com.debanshu777.caraml.core.recommendation.RecommendationRolloutModeSource
+import com.debanshu777.caraml.core.recommendation.RunnerEngineCapabilitySource
 import com.debanshu777.caraml.core.recommendation.SuitabilityEngine
-import com.debanshu777.caraml.core.recommendation.UnknownEngineCapabilitySource
 import com.debanshu777.diffusionrunner.DiffusionRunner
 import com.debanshu777.caraml.core.platform.BackendCapabilitySource
 import com.debanshu777.caraml.core.platform.DeviceCapabilities
+import com.debanshu777.caraml.core.platform.RunnerBackendCapabilitySource
 import com.debanshu777.caraml.core.storage.AppDatabase
 import com.debanshu777.caraml.core.storage.component.ComponentRepository
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
@@ -69,8 +70,8 @@ val appModule = module {
     single<ThemeRepository> { DefaultThemeRepository(get()) }
 
     single { DeviceCapabilities() }
-    single<BackendCapabilitySource> { BackendCapabilitySource { emptyList() } }
-    single<EngineCapabilitySource> { UnknownEngineCapabilitySource }
+    single<BackendCapabilitySource> { RunnerBackendCapabilitySource(get()) }
+    single<EngineCapabilitySource> { RunnerEngineCapabilitySource(get()) }
     single<CalibrationSource> { NoCalibrationSource }
     single { CompatibilityChecker(get()) }
     single { SuitabilityEngine(get(), get()) }
