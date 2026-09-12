@@ -26,7 +26,6 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -49,7 +48,10 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.LocalSpacing
+import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
+import com.debanshu777.caraml.core.ui.components.CaraMLPane
 import com.debanshu777.caraml.core.ui.graphics.decodePngToImageBitmap
+import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.features.chat.data.ChatMessage
 import com.debanshu777.caraml.features.chat.data.MessageRole
 import com.debanshu777.caraml.features.chat.presentation.components.providers.ChatMessagePreviewProvider
@@ -84,16 +86,7 @@ fun MessageBubble(
 ) {
     val isUser = message.role == MessageRole.User
     val alignment = if (isUser) Alignment.End else Alignment.Start
-    val backgroundColor = if (isUser) {
-        MaterialTheme.colorScheme.primaryContainer
-    } else {
-        Color.Transparent
-    }
-    val textColor = if (isUser) {
-        MaterialTheme.colorScheme.onPrimaryContainer
-    } else {
-        MaterialTheme.colorScheme.onSecondaryContainer
-    }
+    val textColor = MaterialTheme.colorScheme.onSurface
 
     // For assistant messages: prefer the live streamingThinking (only set on the
     // streaming bubble); otherwise fall back to the persisted value. Output is
@@ -123,27 +116,26 @@ fun MessageBubble(
 
         if (isUser) {
             if (message.text.isNotEmpty()) {
-                Text(
-                    modifier = Modifier
-                        .clip(MaterialTheme.shapes.medium)
-                        .background(backgroundColor)
-                        .padding(LocalSpacing.current.m),
-                    text = message.text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = textColor,
-                )
+                CaraMLPane(
+                    level = AuroraSurfaceLevel.Pane,
+                    shape = MaterialTheme.shapes.medium,
+                ) {
+                    Text(
+                        modifier = Modifier.padding(LocalSpacing.current.m),
+                        text = message.text,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = textColor,
+                    )
+                }
             }
         } else if (output.isNotEmpty()) {
             val outputModifier = Modifier
                 .fillMaxWidth()
-                .clip(MaterialTheme.shapes.medium)
-                .background(backgroundColor)
-                .padding(if (backgroundColor == Color.Transparent) 0.dp else LocalSpacing.current.m)
             if (isStreaming) {
                 Text(
                     text = output,
                     modifier = outputModifier,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyLarge,
                     color = textColor,
                 )
             } else {
@@ -172,35 +164,17 @@ fun MessageBubble(
                                 else "Preparing model…  (${elapsed}s)"
             }
 
-            Column(
+            GenerationActivity(
+                label = statusText,
+                progress = if (isSampling) {
+                    imageGenStep.toFloat() / imageGenTotalSteps
+                } else {
+                    null
+                },
                 modifier = Modifier
                     .padding(top = LocalSpacing.current.s)
-                    .clip(MaterialTheme.shapes.medium)
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-                    .padding(horizontal = LocalSpacing.current.l, vertical = LocalSpacing.current.m),
-                verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.s)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.m)
-                ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp
-                    )
-                    Text(
-                        text = statusText,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = textColor
-                    )
-                }
-                if (isSampling) {
-                    LinearProgressIndicator(
-                        progress = { imageGenStep.toFloat() / imageGenTotalSteps },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            }
+                    .fillMaxWidth(),
+            )
         }
 
         if (!isUser && (message.imagePath != null || message.imageBytes?.isNotEmpty() == true)) {
@@ -336,6 +310,7 @@ private fun ThoughtsDisclosure(
     outputIsEmpty: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    val motion = LocalAuroraMotionPolicy.current
     var override by remember { mutableStateOf<Boolean?>(null) }
     val autoExpanded = isStreaming || outputIsEmpty
     val expanded = override ?: autoExpanded
@@ -385,8 +360,18 @@ private fun ThoughtsDisclosure(
 
         AnimatedVisibility(
             visible = expanded && thinking.isNotEmpty(),
-            enter = expandVertically(animationSpec = tween(180)) + fadeIn(animationSpec = tween(180)),
-            exit = shrinkVertically(animationSpec = tween(140)) + fadeOut(animationSpec = tween(140)),
+            enter = if (motion.spatialTransitionsEnabled) {
+                expandVertically(animationSpec = tween(motion.peerTransitionMillis)) +
+                    fadeIn(animationSpec = tween(motion.opacityDurationMillis))
+            } else {
+                fadeIn(animationSpec = tween(motion.opacityDurationMillis))
+            },
+            exit = if (motion.spatialTransitionsEnabled) {
+                shrinkVertically(animationSpec = tween(motion.exitMillis)) +
+                    fadeOut(animationSpec = tween(motion.exitMillis))
+            } else {
+                fadeOut(animationSpec = tween(motion.opacityDurationMillis))
+            },
         ) {
             Text(
                 text = thinking,

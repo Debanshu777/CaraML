@@ -1,5 +1,11 @@
 package com.debanshu777.caraml.features.chat.presentation.components
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
@@ -11,15 +17,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Surface
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalDensity
+import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.features.chat.data.ChatMessage
 import com.debanshu777.caraml.features.chat.presentation.StreamingState
 import com.debanshu777.caraml.features.chat.presentation.components.providers.ChatMessageListPreviewProvider
@@ -72,44 +79,86 @@ fun ChatMessageList(
     loadMedia: suspend (String) -> ByteArray? = { null },
     modifier: Modifier = Modifier
 ) {
-    if (messages.isEmpty()) {
-        Box(
-            modifier = modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "Send a message to get started",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    } else {
-        LazyColumn(
-            modifier = modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            state = listState,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
+    val initialMessageIds = remember { messages.mapTo(mutableSetOf()) { it.id } }
+    val motion = LocalAuroraMotionPolicy.current
+    val insertionOffset = with(LocalDensity.current) { 8.dp.roundToPx() }
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        state = listState,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
             items(
                 items = messages,
                 key = { it.id }
             ) { message ->
-                if (message.id == streamingMessageId && streamingState != null) {
-                    StreamingMessageBubble(
-                        message = message,
-                        streamingState = streamingState,
-                        loadMedia = loadMedia,
-                    )
-                } else {
-                    MessageBubble(message, loadMedia = loadMedia)
+                val inserted = message.id !in initialMessageIds
+                Box(
+                    modifier = if (inserted) {
+                        Modifier.animateItem(
+                            fadeInSpec = tween(motion.opacityDurationMillis),
+                            placementSpec = null,
+                            fadeOutSpec = null,
+                        )
+                    } else {
+                        Modifier
+                    },
+                ) {
+                    if (inserted) {
+                        val visibility = remember(message.id) {
+                            MutableTransitionState(false).apply { targetState = true }
+                        }
+                        AnimatedVisibility(
+                            visibleState = visibility,
+                            enter = if (motion.spatialTransitionsEnabled) {
+                                slideInVertically(
+                                    animationSpec = tween(motion.peerTransitionMillis),
+                                    initialOffsetY = { insertionOffset },
+                                )
+                            } else {
+                                EnterTransition.None
+                            },
+                            exit = ExitTransition.None,
+                        ) {
+                            ChatMessageListItem(
+                                message = message,
+                                streamingMessageId = streamingMessageId,
+                                streamingState = streamingState,
+                                loadMedia = loadMedia,
+                            )
+                        }
+                    } else {
+                        ChatMessageListItem(
+                            message = message,
+                            streamingMessageId = streamingMessageId,
+                            streamingState = streamingState,
+                            loadMedia = loadMedia,
+                        )
+                    }
                 }
             }
             item{
                 Spacer(modifier = Modifier.height(150.dp))
             }
-        }
+    }
+}
+
+@Composable
+private fun ChatMessageListItem(
+    message: ChatMessage,
+    streamingMessageId: String?,
+    streamingState: StreamingState?,
+    loadMedia: suspend (String) -> ByteArray?,
+) {
+    if (message.id == streamingMessageId && streamingState != null) {
+        StreamingMessageBubble(
+            message = message,
+            streamingState = streamingState,
+            loadMedia = loadMedia,
+        )
+    } else {
+        MessageBubble(message, loadMedia = loadMedia)
     }
 }

@@ -2,11 +2,13 @@ package com.debanshu777.caraml.features.chat.presentation.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -14,10 +16,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
+import com.debanshu777.caraml.core.ui.components.CaraMLEmptyState
+import com.debanshu777.caraml.core.ui.components.CaraMLPane
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
 import com.debanshu777.caraml.features.chat.presentation.components.providers.ErrorMessagePreviewProvider
 
@@ -84,29 +88,16 @@ fun NoCompatibleModelsScreen(
             "No video models downloaded" to "Download a diffusion checkpoint that supports video"
     }
     Box(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(16.dp),
+        modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleLarge,
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
-            Button(onClick = onDownloadModelClick) {
-                Text("Browse models")
-            }
-        }
+        CaraMLEmptyState(
+            icon = Icons.Default.AutoAwesome,
+            title = title,
+            supportingText = subtitle,
+            actionLabel = "Browse models",
+            onAction = onDownloadModelClick,
+        )
     }
 }
 
@@ -116,28 +107,16 @@ fun NoModelsScreen(
     modifier: Modifier = Modifier
 ) {
     Box(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        contentAlignment = Alignment.Center
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Text(
-                text = "No models downloaded yet",
-                style = MaterialTheme.typography.titleLarge
-            )
-            Text(
-                text = "Download a model to start chatting",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Button(onClick = onDownloadModelClick) {
-                Text("Download Model")
-            }
-        }
+        CaraMLEmptyState(
+            icon = Icons.Default.Download,
+            title = "No models downloaded yet",
+            supportingText = "Download a model to start chatting",
+            actionLabel = "Download Model",
+            onAction = onDownloadModelClick,
+        )
     }
 }
 
@@ -146,17 +125,18 @@ fun ModelLoadingScreen(
     modifier: Modifier = Modifier
 ) {
     Box(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        contentAlignment = Alignment.Center
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
     ) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            CircularProgressIndicator()
-            Text("Loading model...")
+        CaraMLPane(level = AuroraSurfaceLevel.Pane) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CircularProgressIndicator()
+                Text("Loading model...")
+            }
         }
     }
 }
@@ -168,24 +148,15 @@ fun ModelErrorScreen(
     modifier: Modifier = Modifier
 ) {
     Box(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        contentAlignment = Alignment.Center
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Text(
-                text = errorMessage,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodyMedium,
-                textAlign = TextAlign.Center
-            )
-            Button(onClick = onTryAnotherModelClick) {
-                Text("Try Another Model")
-            }
-        }
+        CaraMLEmptyState(
+            icon = Icons.Default.Error,
+            title = "Unable to load model",
+            supportingText = errorMessage,
+            actionLabel = "Try Another Model",
+            onAction = onTryAnotherModelClick,
+        )
     }
 }

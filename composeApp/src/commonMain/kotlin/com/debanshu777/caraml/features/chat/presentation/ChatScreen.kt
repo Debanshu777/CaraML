@@ -1,6 +1,7 @@
 package com.debanshu777.caraml.features.chat.presentation
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -15,10 +16,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -27,10 +28,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -41,6 +44,11 @@ import com.debanshu777.caraml.core.drawer.LocalDrawerController
 import com.debanshu777.caraml.core.drawer.LocalGenerationModeController
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.theme.LocalSpacing
+import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
+import com.debanshu777.caraml.core.ui.components.CaraMLEmptyState
+import com.debanshu777.caraml.core.ui.components.CaraMLPane
+import com.debanshu777.caraml.core.ui.layout.AppContentKind
+import com.debanshu777.caraml.core.ui.layout.ResponsiveContentPane
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
 import com.debanshu777.caraml.features.chat.presentation.components.providers.ChatMessageListPreviewProvider
 import com.debanshu777.caraml.features.chat.presentation.components.providers.LiveGenerationStatsPreviewProvider
@@ -57,6 +65,27 @@ import com.debanshu777.caraml.features.chat.presentation.components.ModelSelecto
 import com.debanshu777.caraml.features.chat.presentation.components.NoCompatibleModelsScreen
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 import com.debanshu777.caraml.features.chat.presentation.components.NoModelsScreen
+
+@Immutable
+data class ChatEmptyStateCopy(
+    val title: String,
+    val supportingText: String,
+)
+
+internal fun emptyStateCopy(mode: GenerationMode): ChatEmptyStateCopy = when (mode) {
+    GenerationMode.Text -> ChatEmptyStateCopy(
+        title = "Think locally. Stay private.",
+        supportingText = "Ask anything — your prompt and model stay on this device.",
+    )
+    GenerationMode.Image -> ChatEmptyStateCopy(
+        title = "Create without the cloud.",
+        supportingText = "Describe a scene and generate it entirely on this device.",
+    )
+    GenerationMode.Video -> ChatEmptyStateCopy(
+        title = "Set ideas in motion.",
+        supportingText = "Describe a short sequence for local video generation.",
+    )
+}
 
 @Composable
 fun ChatScreen(
@@ -175,72 +204,89 @@ fun ChatScreenContent(
             }
         }
     ) { paddingValues ->
-        when (uiState) {
-            is ChatUiState.NoModels -> {
-                NoModelsScreen(
-                    onDownloadModelClick = onNavigateToSearch,
-                    Modifier.padding(paddingValues)
-                )
-            }
+        ResponsiveContentPane(
+            kind = AppContentKind.Chat,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = paddingValues.calculateTopPadding()),
+        ) {
+            when (uiState) {
+                is ChatUiState.NoModels -> {
+                    NoModelsScreen(
+                        onDownloadModelClick = onNavigateToSearch,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
 
-            is ChatUiState.NoModelsForMode -> {
-                NoCompatibleModelsScreen(
-                    mode = uiState.mode,
-                    onDownloadModelClick = onNavigateToSearch,
-                    modifier = Modifier.padding(paddingValues)
-                )
-            }
+                is ChatUiState.NoModelsForMode -> {
+                    NoCompatibleModelsScreen(
+                        mode = uiState.mode,
+                        onDownloadModelClick = onNavigateToSearch,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
 
-            is ChatUiState.ModelLoading -> {
-                ModelLoadingScreen(Modifier.padding(paddingValues))
-            }
+                is ChatUiState.ModelLoading -> {
+                    ModelLoadingScreen(Modifier.fillMaxSize())
+                }
 
-            is ChatUiState.ModelError -> {
-                ModelErrorScreen(
-                    errorMessage = uiState.message,
-                    onTryAnotherModelClick = onNavigateToSearch,
-                    Modifier.padding(paddingValues)
-                )
-            }
+                is ChatUiState.ModelError -> {
+                    ModelErrorScreen(
+                        errorMessage = uiState.message,
+                        onTryAnotherModelClick = onNavigateToSearch,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
 
-            is ChatUiState.MissingComponents -> {
-                MissingComponentsScreen(
-                    missingComponentLabels = uiState.missingComponentLabels,
-                    modelName = uiState.modelName,
-                    onGoToModelHubClick = onNavigateToSearch,
-                    onFixComponentsClick = {
-                        onNavigateToModelDetail(
-                            uiState.modelId,
-                            ModelHubBrowseMode.DiffusionImage,
+                is ChatUiState.MissingComponents -> {
+                    MissingComponentsScreen(
+                        missingComponentLabels = uiState.missingComponentLabels,
+                        modelName = uiState.modelName,
+                        onGoToModelHubClick = onNavigateToSearch,
+                        onFixComponentsClick = {
+                            onNavigateToModelDetail(
+                                uiState.modelId,
+                                ModelHubBrowseMode.DiffusionImage,
+                            )
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+
+                is ChatUiState.LoadActionRequired -> {
+                    LoadActionRequiredScreen(
+                        action = uiState.action,
+                        onConfirmLoad = onConfirmLoad,
+                        onAcceptAlternative = onAcceptAlternative,
+                        onRetryLoad = onRetryLoad,
+                        onCancelLoad = onCancelLoad,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+
+                is ChatUiState.Ready -> {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        ChatMessageList(
+                            messages = uiState.messages,
+                            listState = listState,
+                            streamingMessageId = streamingState.streamingMessageId,
+                            streamingState = streamingState,
+                            loadMedia = loadMedia,
+                            modifier = Modifier.fillMaxSize(),
                         )
-                    },
-                    modifier = Modifier.padding(paddingValues)
-                )
-            }
-
-            is ChatUiState.LoadActionRequired -> {
-                LoadActionRequiredScreen(
-                    action = uiState.action,
-                    onConfirmLoad = onConfirmLoad,
-                    onAcceptAlternative = onAcceptAlternative,
-                    onRetryLoad = onRetryLoad,
-                    onCancelLoad = onCancelLoad,
-                    modifier = Modifier.padding(paddingValues),
-                )
-            }
-
-            is ChatUiState.Ready -> {
-                ChatMessageList(
-                    messages = uiState.messages,
-                    listState = listState,
-                    streamingMessageId = streamingState.streamingMessageId,
-                    streamingState = streamingState,
-                    loadMedia = loadMedia,
-                    modifier = Modifier.fillMaxSize()
-                        .padding(
-                            top = paddingValues.calculateTopPadding(),
-                        )
-                )
+                        if (uiState.messages.isEmpty()) {
+                            val copy = emptyStateCopy(uiState.generationMode)
+                            CaraMLEmptyState(
+                                icon = Icons.Default.AutoAwesome,
+                                title = copy.title,
+                                supportingText = copy.supportingText,
+                                modifier = Modifier
+                                    .align(Alignment.Center)
+                                    .padding(bottom = paddingValues.calculateBottomPadding()),
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -272,7 +318,10 @@ private fun LoadActionRequiredScreen(
         modifier = modifier.fillMaxSize().padding(LocalSpacing.current.xl),
         verticalArrangement = Arrangement.Center,
     ) {
-        Card(modifier = Modifier.fillMaxWidth()) {
+        CaraMLPane(
+            modifier = Modifier.fillMaxWidth(),
+            level = AuroraSurfaceLevel.Pane,
+        ) {
             Column(modifier = Modifier.padding(LocalSpacing.current.l)) {
                 Text(title, style = MaterialTheme.typography.titleLarge)
                 Spacer(Modifier.height(LocalSpacing.current.s))
@@ -351,8 +400,9 @@ private fun MissingComponentsScreen(
 
         Spacer(modifier = Modifier.height(LocalSpacing.current.l))
 
-        Card(
-            modifier = Modifier.fillMaxWidth()
+        CaraMLPane(
+            modifier = Modifier.fillMaxWidth(),
+            level = AuroraSurfaceLevel.Pane,
         ) {
             Column(
                 modifier = Modifier.padding(LocalSpacing.current.l),

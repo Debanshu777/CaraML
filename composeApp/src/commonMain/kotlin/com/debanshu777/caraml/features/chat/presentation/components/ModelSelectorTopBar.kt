@@ -1,18 +1,13 @@
 package com.debanshu777.caraml.features.chat.presentation.components
 
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
+import com.debanshu777.caraml.core.ui.components.CaraMLTopBar
+import com.debanshu777.caraml.core.ui.components.TopBarNavigation
 
 @Preview
 @Composable
@@ -24,25 +19,16 @@ private fun ModelSelectorTopBarPreview() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ModelSelectorTopBar(
     title: String = "Assistant",
     modifier: Modifier = Modifier,
     onMenuClick: () -> Unit = {},
 ) {
-    TopAppBar(
+    CaraMLTopBar(
+        title = title,
+        navigation = TopBarNavigation.Menu,
+        onNavigationClick = onMenuClick,
         modifier = modifier,
-        navigationIcon = {
-            IconButton(onClick = onMenuClick) {
-                Icon(Icons.Default.Menu, contentDescription = "Open menu")
-            }
-        },
-        title = {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleLarge
-            )
-        }
     )
 }

@@ -1,8 +1,12 @@
 package com.debanshu777.caraml.features.chat.presentation.components
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -11,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -34,13 +37,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.LocalSpacing
+import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
+import com.debanshu777.caraml.core.theme.auroraColors
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
+import com.debanshu777.caraml.core.ui.components.CaraMLPane
+import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
 import com.debanshu777.caraml.features.chat.presentation.components.providers.LiveGenerationStatsPreviewProvider
 import com.debanshu777.caraml.features.chat.presentation.components.providers.LocalModelPreviewProvider
@@ -209,7 +218,15 @@ fun ChatInputBar(
 ) {
     var inputText by remember { mutableStateOf("") }
     var showModelSheet by remember { mutableStateOf(false) }
+    var isFocused by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState()
+    val motion = LocalAuroraMotionPolicy.current
+    val activeHaloColors = MaterialTheme.auroraColors.activeHalo
+    val activeHalo = remember(activeHaloColors) {
+        Brush.horizontalGradient(activeHaloColors)
+    }
+    val showActiveHalo = isFocused || isGenerating
+    val composerShape = MaterialTheme.shapes.large
 
     val placeholderText = when (generationMode) {
         GenerationMode.Text -> "How can I help you today?"
@@ -217,17 +234,32 @@ fun ChatInputBar(
         GenerationMode.Video -> "Describe a video"
     }
 
-    Surface(
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(start = LocalSpacing.current.l, end = LocalSpacing.current.l, bottom = LocalSpacing.current.l),
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        tonalElevation = 0.dp
+            .padding(
+                start = LocalSpacing.current.l,
+                end = LocalSpacing.current.l,
+                bottom = LocalSpacing.current.l,
+            )
+            .then(
+                if (showActiveHalo) {
+                    Modifier.background(activeHalo, composerShape)
+                } else {
+                    Modifier
+                },
+            )
+            .padding(2.dp),
     ) {
-        Column {
+        CaraMLPane(
+            modifier = Modifier.fillMaxWidth(),
+            level = if (isFocused) AuroraSurfaceLevel.Floating else AuroraSurfaceLevel.Pane,
+            shape = composerShape,
+        ) {
             TextField(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onFocusChanged { isFocused = it.isFocused },
                 value = inputText,
                 onValueChange = { inputText = it },
                 placeholder = { Text(placeholderText) },
@@ -288,29 +320,37 @@ fun ChatInputBar(
                     )
                 }
 
-                if (isGenerating) {
-                    FilledIconButton(
-                        onClick = onCancelGeneration
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Stop,
-                            contentDescription = "Stop generating"
-                        )
-                    }
-                } else {
-                    FilledIconButton(
-                        onClick = {
-                            if (inputText.isNotBlank()) {
-                                onSendMessage(inputText)
-                                inputText = ""
-                            }
-                        },
-                        enabled = inputText.isNotBlank()
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Default.Send,
-                            contentDescription = "Send message"
-                        )
+                Crossfade(
+                    targetState = isGenerating,
+                    animationSpec = tween(durationMillis = motion.opacityDurationMillis),
+                    label = "composer generation action",
+                ) { generating ->
+                    if (generating) {
+                        FilledIconButton(
+                            onClick = onCancelGeneration,
+                            modifier = Modifier.size(48.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Stop,
+                                contentDescription = "Stop generation",
+                            )
+                        }
+                    } else {
+                        FilledIconButton(
+                            onClick = {
+                                if (inputText.isNotBlank()) {
+                                    onSendMessage(inputText)
+                                    inputText = ""
+                                }
+                            },
+                            modifier = Modifier.size(48.dp),
+                            enabled = inputText.isNotBlank(),
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Default.Send,
+                                contentDescription = "Send message",
+                            )
+                        }
                     }
                 }
             }
