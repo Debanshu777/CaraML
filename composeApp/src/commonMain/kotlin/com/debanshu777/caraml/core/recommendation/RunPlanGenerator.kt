@@ -81,7 +81,7 @@ class RunPlanGenerator {
                 gpuLayerCount = if (settings.backend == BackendKind.CPU) 0 else settings.gpuLayerCount,
                 compromises = compromises,
             )
-            if (validateRunPlan(candidate) == null) candidates += candidate
+            if (validateRunPlanForEstimation(candidate) == null) candidates += candidate
         }
 
         val endpoint = CandidateIndex(contexts.lastIndex, kvPairs.lastIndex, batches.lastIndex)
@@ -153,7 +153,7 @@ class RunPlanGenerator {
                 memoryTopology = settings.memoryTopology,
                 compromises = compromises,
             )
-            if (validateRunPlan(candidate) == null) candidates += candidate
+            if (validateRunPlanForEstimation(candidate) == null) candidates += candidate
         }
 
         add()

@@ -230,6 +230,18 @@ class LlmRunPlanGeneratorTest {
     }
 
     @Test
+    fun multiSequenceWorkloadProducesAnalyticalCandidates() {
+        val plans = generator.llmCandidates(
+            descriptor(),
+            workload(sequenceCount = 2),
+            settings(),
+        )
+
+        assertTrue(plans.isNotEmpty())
+        assertTrue(plans.all { it.sequenceCount == 2 })
+    }
+
+    @Test
     fun gpuLayerPlacementRejectsNegativeAndPreservesValidBoundaryCases() {
         val workload = workload(kv = explicitF16())
 
@@ -268,6 +280,7 @@ class LlmRunPlanGeneratorTest {
         microBatch: Int = 256,
         promptTokens: Int = 256,
         generationReserveTokens: Int = 256,
+        sequenceCount: Int = 1,
         settings: PlanningSettings = settings(),
     ): LlmWorkloadConfig {
         val result = factory.llm(
@@ -278,7 +291,7 @@ class LlmRunPlanGeneratorTest {
                 generationReserveTokens = generationReserveTokens,
                 batchSize = batch,
                 microBatchSize = microBatch,
-                sequenceCount = 1,
+                sequenceCount = sequenceCount,
                 kvCacheSelection = kv,
             ),
             descriptor(maxContext = 131_072),

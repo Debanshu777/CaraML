@@ -234,7 +234,7 @@ class PerformanceEstimator {
         hardware: HardwareProfile,
         calibration: CalibrationSource,
     ): PerformanceEstimate {
-        if (validateRunPlan(plan) != null) {
+        if (validateRunPlanForEstimation(plan) != null) {
             return unknown(AssessmentReason.INVALID_PERFORMANCE_EVIDENCE, "run-plan")
         }
         val backend = hardware.backends.firstOrNull { it.kind == plan.backend }

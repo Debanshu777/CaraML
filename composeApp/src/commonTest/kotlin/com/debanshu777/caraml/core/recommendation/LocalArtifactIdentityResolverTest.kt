@@ -120,6 +120,78 @@ class LocalArtifactIdentityResolverTest {
     }
 
     @Test
+    fun completeDirectoryManifestRejectsDifferentContainedRoomDirectory() = runTest {
+        withRoot { storage, root ->
+            val modelRoot = root / "owner/model"
+            val files = listOf(
+                Triple("model", "unet/diffusion_pytorch_model.safetensors", "unet"),
+                Triple("diffusers-vae", "vae/diffusion_pytorch_model.safetensors", "vae"),
+                Triple("diffusers-clip-l", "text_encoder/model.safetensors", "clip-l"),
+                Triple("diffusers-clip-g", "text_encoder_2/model.safetensors", "clip-g"),
+            )
+            val entries = files.map { (role, relativePath, contents) ->
+                val bytes = contents.encodeToByteArray()
+                write(modelRoot / relativePath, bytes)
+                manifestEntry(role, "owner/model", "a".repeat(40), relativePath, bytes)
+            }
+            val differentContainedDirectory = modelRoot / "stale-row-target"
+            FileSystem.SYSTEM.createDirectories(differentContainedDirectory)
+
+            val rejected = assertIs<ArtifactIdentityResolution.Rejected>(
+                resolver(storage, manifest(*entries.toTypedArray())).resolve(
+                    model(
+                        path = differentContainedDirectory.toString(),
+                        size = 0L,
+                        filename = DIFFUSERS_BUNDLE_DB_FILENAME,
+                    ),
+                    emptyList(),
+                ),
+            )
+
+            assertEquals(ArtifactIdentityRejection.INCOMPLETE_DIRECTORY, rejected.reason)
+        }
+    }
+
+    @Test
+    fun completeDirectoryManifestRejectsNativeComponentOutsideItsRootRelativeLocation() = runTest {
+        withRoot { storage, root ->
+            val modelRoot = root / "owner/model"
+            val files = listOf(
+                Triple("model", "unet/diffusion_pytorch_model.safetensors", "unet"),
+                Triple("diffusers-vae", "vae/diffusion_pytorch_model.safetensors", "vae"),
+                Triple("diffusers-clip-l", "text_encoder/model.safetensors", "clip-l"),
+                Triple("diffusers-clip-g", "text_encoder_2/model.safetensors", "clip-g"),
+            )
+            val entries = files.map { (role, relativePath, contents) ->
+                val bytes = contents.encodeToByteArray()
+                write(modelRoot / relativePath, bytes)
+                manifestEntry(role, "owner/model", "a".repeat(40), relativePath, bytes)
+            }
+            val misplacedVae = write(
+                modelRoot / "alternate/vae/diffusion_pytorch_model.safetensors",
+                "vae".encodeToByteArray(),
+            )
+
+            val rejected = assertIs<ArtifactIdentityResolution.Rejected>(
+                resolver(storage, manifest(*entries.toTypedArray())).resolve(
+                    model(modelRoot.toString(), 0L, DIFFUSERS_BUNDLE_DB_FILENAME),
+                    listOf(
+                        component(
+                            repo = "owner/model",
+                            relative = "vae/diffusion_pytorch_model.safetensors",
+                            role = "diffusers-vae",
+                            path = misplacedVae,
+                            size = 3L,
+                        ),
+                    ),
+                ),
+            )
+
+            assertEquals(ArtifactIdentityRejection.INCOMPLETE_DIRECTORY, rejected.reason)
+        }
+    }
+
+    @Test
     fun legacyDirectoryWithoutCompleteManifestIsRejectedBeforeAnyPrimaryCanBeLoaded() = runTest {
         withRoot { storage, root ->
             val modelRoot = root / "owner/model"

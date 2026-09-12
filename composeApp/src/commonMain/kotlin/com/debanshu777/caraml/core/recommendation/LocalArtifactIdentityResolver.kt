@@ -229,12 +229,26 @@ class LocalArtifactIdentityResolver(
         if (checkedResolvedArtifactBytes(manifest.entries.map(ArtifactManifestEntry::byteCount)) == null) {
             return ArtifactIdentityResolution.Rejected(ArtifactIdentityRejection.ARTIFACT_TOO_LARGE)
         }
+        val directoryRoot = when (manifest.verifiedDiffusionLoadTarget(model.modelId)) {
+            VerifiedDiffusionLoadTarget.Directory -> verifiedDirectoryRoot(model, manifest)
+                ?: return ArtifactIdentityResolution.Rejected(ArtifactIdentityRejection.INCOMPLETE_DIRECTORY)
+            else -> null
+        }
         val byRemoteIdentity = inputs.associateBy { it.repositoryId to it.repositoryRelativePath }
         val resolved = ArrayList<VerifiedComponent>(manifest.entries.size)
         for (entry in manifest.entries) {
             val supplied = byRemoteIdentity[entry.identity.repositoryId to entry.identity.relativePath]
-            val localPath = supplied?.localPath ?: localPathFor(entry)
-            val owner = supplied?.storageOwner ?: entry.identity.repositoryId
+            val nativePath = directoryRoot
+                ?.takeIf {
+                    entry.identity.repositoryId == model.modelId &&
+                        entry.localRelativePath in NATIVE_DIFFUSERS_CONSUMED_PATHS
+                }
+                ?.let { root -> localPathUnder(root, entry.localRelativePath) }
+            if (nativePath != null && supplied != null && !sameNormalizedPath(supplied.localPath, nativePath)) {
+                return ArtifactIdentityResolution.Rejected(ArtifactIdentityRejection.INCOMPLETE_DIRECTORY)
+            }
+            val localPath = nativePath ?: supplied?.localPath ?: localPathFor(entry)
+            val owner = if (nativePath != null) model.modelId else supplied?.storageOwner ?: entry.identity.repositoryId
             val verified = verifyFile(owner, localPath, entry.byteCount, entry.contentSha256)
                 ?: return ArtifactIdentityResolution.Rejected(ArtifactIdentityRejection.STALE_MANIFEST)
             resolved += VerifiedComponent(
@@ -486,6 +500,24 @@ class LocalArtifactIdentityResolver(
         components: List<VerifiedComponent>,
         manifest: ArtifactManifest?,
     ): VerifiedArtifactLoadTarget? {
+        if (manifest?.verifiedDiffusionLoadTarget(model.modelId) is VerifiedDiffusionLoadTarget.Directory) {
+            val root = verifiedDirectoryRoot(model, manifest) ?: return null
+            val requiredPaths = NATIVE_DIFFUSERS_CONSUMED_PATHS.sorted()
+            if (!requiredPaths.all { relativePath ->
+                    val expectedPath = localPathUnder(root, relativePath) ?: return@all false
+                    components.singleOrNull {
+                        it.repositoryId == model.modelId &&
+                            it.localRelativePath == relativePath &&
+                            sameNormalizedPath(it.localPath, expectedPath)
+                    } != null
+                }
+            ) return null
+            return VerifiedArtifactLoadTarget.Directory(
+                path = root,
+                storageOwner = model.modelId,
+                nativeConsumedRelativePaths = requiredPaths,
+            )
+        }
         val modelSnapshot = storagePathProvider.inspectDownloadedArtifact(model.modelId, model.localPath) ?: return null
         if (modelSnapshot.kind == StoredArtifactKind.REGULAR_FILE) {
             if (manifest != null &&
@@ -501,21 +533,7 @@ class LocalArtifactIdentityResolver(
                 localRelativePath = primary.localRelativePath,
             )
         }
-        val hubManifest = manifest ?: return null
-        if (!hubManifest.isCompleteDiffusionInstallation(model.modelId, getModelSetup(model.modelId)) ||
-            hubManifest.verifiedDiffusionLoadTarget(model.modelId) !is VerifiedDiffusionLoadTarget.Directory
-        ) return null
-        val requiredPaths = NATIVE_DIFFUSERS_CONSUMED_PATHS.sorted()
-        val coveredPaths = components.asSequence()
-            .filter { it.repositoryId == model.modelId }
-            .map(VerifiedComponent::localRelativePath)
-            .toSet()
-        if (!coveredPaths.containsAll(requiredPaths)) return null
-        return VerifiedArtifactLoadTarget.Directory(
-            path = model.localPath,
-            storageOwner = model.modelId,
-            nativeConsumedRelativePaths = requiredPaths,
-        )
+        return null
     }
 
     private fun ResolvedLocalArtifact.hasValidLoadTarget(): Boolean = when (val target = loadTarget) {
@@ -526,15 +544,51 @@ class LocalArtifactIdentityResolver(
                 it.localPath == target.path
         } != null
         is VerifiedArtifactLoadTarget.Directory -> {
-            val root = storagePathProvider.inspectDownloadedArtifact(target.storageOwner, target.path)
-            root?.kind == StoredArtifactKind.DIRECTORY &&
+            val trustedRoot = normalizedModelRoot(target.storageOwner)
+            trustedRoot != null && sameNormalizedPath(target.path, trustedRoot) &&
+                storagePathProvider.inspectDownloadedArtifact(target.storageOwner, trustedRoot)?.kind ==
+                StoredArtifactKind.DIRECTORY &&
                 target.nativeConsumedRelativePaths == NATIVE_DIFFUSERS_CONSUMED_PATHS.sorted() &&
-                components.asSequence()
-                    .filter { it.repositoryId == target.storageOwner }
-                    .map(ResolvedArtifactComponent::localRelativePath)
-                    .toSet()
-                    .containsAll(target.nativeConsumedRelativePaths)
+                target.nativeConsumedRelativePaths.all { relativePath ->
+                    val expectedPath = localPathUnder(trustedRoot, relativePath) ?: return@all false
+                    components.singleOrNull {
+                        it.repositoryId == target.storageOwner &&
+                            it.localRelativePath == relativePath &&
+                            sameNormalizedPath(it.localPath, expectedPath)
+                    } != null
+                }
         }
+    }
+
+    private fun verifiedDirectoryRoot(model: LocalModelEntity, manifest: ArtifactManifest): String? {
+        if (!manifest.isCompleteDiffusionInstallation(model.modelId, getModelSetup(model.modelId))) return null
+        val root = normalizedModelRoot(model.modelId) ?: return null
+        if (!sameNormalizedPath(model.localPath, root)) return null
+        return root.takeIf {
+            storagePathProvider.inspectDownloadedArtifact(model.modelId, it)?.kind == StoredArtifactKind.DIRECTORY
+        }
+    }
+
+    private fun normalizedModelRoot(modelId: String): String? = try {
+        storagePathProvider.getModelsStorageDirectory(modelId)
+            .takeIf { it.isNotBlank() && '\u0000' !in it }
+            ?.toPath(normalize = true)
+            ?.toString()
+    } catch (_: Exception) {
+        null
+    }
+
+    private fun localPathUnder(root: String, relativePath: String): String? = try {
+        if (!isValidRelativePath(relativePath)) return null
+        (root.toPath(normalize = true) / relativePath).normalized().toString()
+    } catch (_: Exception) {
+        null
+    }
+
+    private fun sameNormalizedPath(left: String, right: String): Boolean = try {
+        left.toPath(normalize = true) == right.toPath(normalize = true)
+    } catch (_: Exception) {
+        false
     }
 
     private fun digestComponents(components: List<VerifiedComponent>, includeRevision: Boolean): String {

@@ -195,7 +195,7 @@ class RunPlanOptimizer(
             ) {
                 return AssessmentReason.DEVICE_CAPABILITIES_CHANGED
             }
-            if (validateRunPlan(plan) != null || !memoryPoolShapeIsCoherent(plan, candidate)) {
+            if (validateRunPlanForEstimation(plan) != null || !memoryPoolShapeIsCoherent(plan, candidate)) {
                 return AssessmentReason.ASSESSMENT_GRAPH_INVALID
             }
             if (!performanceMatchesPlan(plan, candidate.performance) ||

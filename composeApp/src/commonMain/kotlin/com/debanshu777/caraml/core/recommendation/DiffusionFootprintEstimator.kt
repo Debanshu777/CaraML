@@ -166,7 +166,7 @@ class DiffusionFootprintEstimator {
         descriptor: DiffusionModelDescriptor,
         plan: DiffusionRunPlan,
     ): AssessmentReason? {
-        validateRunPlan(plan)?.let { return it }
+        validateRunPlanForEstimation(plan)?.let { return it }
         if (descriptor.mode != plan.mode) {
             return AssessmentReason.INVALID_WORKLOAD
         }

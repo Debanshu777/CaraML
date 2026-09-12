@@ -57,6 +57,53 @@ class SuitabilityEngineTest {
     }
 
     @Test
+    fun multiSequenceWorkloadIsAssessedAndSelectableWithoutBecomingExecutable() {
+        val engine = engine(SupportEvidence.Supported)
+        val hardware = task6Hardware()
+        val baseWorkload = task6LlmWorkload()
+        val assessed = engine.assessPlans(
+            descriptor = task6LlmDescriptor(),
+            hardwareProfile = hardware,
+            workload = LlmWorkloadConfig(
+                userRequestedContextTokens = baseWorkload.userRequestedContextTokens,
+                contextTokens = baseWorkload.contextTokens,
+                minimumContextTokens = baseWorkload.minimumContextTokens,
+                promptTokens = baseWorkload.promptTokens,
+                generationReserveTokens = baseWorkload.generationReserveTokens,
+                batchSize = baseWorkload.batchSize,
+                microBatchSize = baseWorkload.microBatchSize,
+                sequenceCount = 2,
+                kvCacheSelection = baseWorkload.kvCacheSelection,
+                allowContextFallback = baseWorkload.allowContextFallback,
+                allowBatchFallback = baseWorkload.allowBatchFallback,
+                allowKvCacheFallback = baseWorkload.allowKvCacheFallback,
+                allowedKvCacheTypes = baseWorkload.allowedKvCacheTypes,
+                evidence = baseWorkload.evidence,
+            ),
+        )
+
+        assertTrue(assessed.values.isNotEmpty())
+        assertTrue(assessed.values.all { (it.plan as LlmRunPlan).sequenceCount == 2 })
+        assertTrue(assessed.values.all {
+            val performance = assertIs<PerformanceEstimate.Unknown>(it.performance)
+            performance.reason == AssessmentReason.SPEED_NOT_VERIFIED
+        })
+
+        val snapshot = task6Snapshot(
+            hostBudget = 20_000_000_000L,
+            storageBudget = 20_000_000_000L,
+        )
+        val selected = RunPlanOptimizer().select(
+            engine.assemble(assessed, snapshot),
+            snapshot,
+            RecommendationProfile(),
+        )
+
+        assertEquals(2, assertIs<LlmRunPlan>(selected.plan).sequenceCount)
+        assertTrue(selected.category != RecommendationCategory.NEEDS_INFORMATION)
+    }
+
+    @Test
     fun assemblyUsesCurrentResourceFactsAndNeverStoresAUserProfile() {
         val engine = engine(SupportEvidence.Supported)
         val assessed = engine.assessPlans(task6LlmDescriptor(), task6Hardware(), task6LlmWorkload())

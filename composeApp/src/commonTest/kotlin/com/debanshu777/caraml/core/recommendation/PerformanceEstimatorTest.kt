@@ -184,6 +184,33 @@ class PerformanceEstimatorTest {
     }
 
     @Test
+    fun multiSequencePlanIsEstimatedAnalytically() {
+        val base = task6LlmPlan()
+        val result = estimator.estimate(
+            descriptor = task6LlmDescriptor(),
+            plan = LlmRunPlan(
+                contextTokens = base.contextTokens,
+                batchSize = base.batchSize,
+                microBatchSize = base.microBatchSize,
+                sequenceCount = 2,
+                keyCacheType = base.keyCacheType,
+                valueCacheType = base.valueCacheType,
+                backend = base.backend,
+                memoryTopology = base.memoryTopology,
+                gpuLayerCount = base.gpuLayerCount,
+                useMmap = base.useMmap,
+                compromises = base.compromises,
+            ),
+            hardware = task6Hardware(),
+            calibration = FixedCalibrationSource(
+                profile = BackendPerformanceProfile(GIB.toDouble(), 1.0e12, Confidence.HIGH),
+            ),
+        )
+
+        assertIs<PerformanceEstimate.Llm>(result)
+    }
+
+    @Test
     fun missingOrInvalidEngineVersionPreventsCalibrationLookup() {
         val profile = BackendPerformanceProfile(GIB.toDouble(), 1.0e12, Confidence.HIGH)
         val missing = estimator.estimate(
