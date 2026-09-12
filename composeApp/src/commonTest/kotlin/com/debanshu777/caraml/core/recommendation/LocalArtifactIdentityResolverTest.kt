@@ -9,6 +9,7 @@ import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import com.debanshu777.huggingfacemanager.download.StoredArtifactKind
 import com.debanshu777.huggingfacemanager.download.StoredArtifactSnapshot
 import com.debanshu777.huggingfacemanager.model.DIFFUSERS_BUNDLE_DB_FILENAME
+import com.debanshu777.huggingfacemanager.sdcpp.ComponentRole
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -159,6 +160,75 @@ class LocalArtifactIdentityResolverTest {
                 listOf(RepositoryCommit("other/vae", "b".repeat(40)), RepositoryCommit("owner/model", "a".repeat(40))),
                 assertIs<RevisionIdentity.HubCommit>(verified.artifact.revisionIdentity).commits,
             )
+        }
+    }
+
+    @Test
+    fun loadRequestRejectsDiffusionComponentsWhoseVerifiedRolesWereSwapped() = runTest {
+        withRoot { storage, root ->
+            val revision = "a".repeat(40)
+            val primaryBytes = "primary".encodeToByteArray()
+            val vaeBytes = "vae".encodeToByteArray()
+            val clipBytes = "clip".encodeToByteArray()
+            val primaryPath = write(root / "owner/model/model.safetensors", primaryBytes)
+            val vaePath = write(root / "other/vae/vae.safetensors", vaeBytes)
+            val clipPath = write(root / "other/clip/clip.safetensors", clipBytes)
+            val primaryIdentity = downloadIdentity("owner/model", revision, "model.safetensors", primaryBytes.size.toLong())
+            val vaeIdentity = downloadIdentity("other/vae", "b".repeat(40), "vae.safetensors", vaeBytes.size.toLong())
+            val clipIdentity = downloadIdentity("other/clip", "c".repeat(40), "clip.safetensors", clipBytes.size.toLong())
+            val manifest = checkNotNull(
+                ArtifactManifest.create(
+                    listOf(
+                        checkNotNull(ArtifactManifestEntry.create("model", primaryIdentity, primaryBytes.size.toLong(), primaryBytes.sha256())),
+                        checkNotNull(ArtifactManifestEntry.create("clip_l", vaeIdentity, vaeBytes.size.toLong(), vaeBytes.sha256())),
+                        checkNotNull(ArtifactManifestEntry.create("vae", clipIdentity, clipBytes.size.toLong(), clipBytes.sha256())),
+                    ),
+                ),
+            )
+            val descriptor = DiffusionModelDescriptor(
+                repositoryId = "owner/model",
+                revision = revision,
+                components = listOf(
+                    diffusionComponent(primaryIdentity, primaryBytes.sha256(), null, isPrimary = true),
+                    diffusionComponent(vaeIdentity, vaeBytes.sha256(), ComponentRole.VAE),
+                    diffusionComponent(clipIdentity, clipBytes.sha256(), ComponentRole.CLIP_L),
+                ),
+                mode = DiffusionMode.IMAGE,
+                family = "SDXL",
+                quantizationDistribution = emptySet(),
+                requiredComponentsPresent = true,
+                requiredEngineFeatures = emptySet(),
+                evidence = emptyList(),
+            )
+            val plan = task6DiffusionPlan()
+            val planAssessment = task6PlanAssessment(plan = plan)
+            val assessment = task6Assessment(
+                plans = listOf(planAssessment),
+                assessmentKey = "diffusion-role-binding",
+            )
+            val recommendation = PersonalizedRecommendation(
+                assessmentKey = assessment.assessmentKey,
+                category = RecommendationCategory.RECOMMENDED,
+                selectedPlan = plan,
+                reasons = emptyList(),
+                profile = RecommendationProfile(),
+                selectedPlanAssessment = planAssessment,
+            )
+
+            val rejected = assertIs<LoadRequestResolution.Rejected>(
+                resolver(storage, manifest).createLoadRequest(
+                    model(primaryPath, primaryBytes.size.toLong(), "model.safetensors"),
+                    listOf(
+                        component("other/vae", "vae.safetensors", "vae", vaePath, vaeBytes.size.toLong()),
+                        component("other/clip", "clip.safetensors", "clip_l", clipPath, clipBytes.size.toLong(), id = 2),
+                    ),
+                    descriptor,
+                    assessment,
+                    recommendation,
+                ),
+            )
+
+            assertEquals(ArtifactIdentityRejection.STALE_MANIFEST, rejected.reason)
         }
     }
 
@@ -537,6 +607,27 @@ class LocalArtifactIdentityResolverTest {
         ggufVersion = 3,
         requiredEngineFeatures = emptyList(),
         evidence = emptyList(),
+    )
+
+    private fun diffusionComponent(
+        identity: DownloadArtifactIdentity,
+        digest: String,
+        role: ComponentRole?,
+        isPrimary: Boolean = false,
+    ) = DiffusionComponentDescriptor(
+        file = ModelFileIdentity(
+            repositoryId = identity.repositoryId,
+            revision = identity.immutableRevision,
+            path = identity.relativePath,
+            sizeBytes = identity.expectedBytes,
+            gitOid = null,
+            lfsOid = "sha256:$digest",
+            xetHash = null,
+            evidence = emptyList(),
+        ),
+        role = role,
+        required = true,
+        isPrimary = isPrimary,
     )
 
     private fun model(path: String, size: Long, filename: String = "model.gguf") = LocalModelEntity(

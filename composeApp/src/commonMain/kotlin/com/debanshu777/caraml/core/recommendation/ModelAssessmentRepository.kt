@@ -85,6 +85,39 @@ class ModelAssessmentRepository internal constructor(
         return suitabilityEngine.assemble(plans, snapshot)
     }
 
+    /** Recomputes calibration-sensitive estimates while reusing prior immutable compatibility evidence. */
+    internal suspend fun reassess(
+        descriptor: ModelDescriptor,
+        previous: ModelAssessment,
+        snapshot: DeviceSnapshot,
+        workload: WorkloadConfig,
+    ): ModelAssessment {
+        if (
+            previous.assessmentKey != previous.planAssessments.assessmentKey ||
+            previous.compatibility != previous.planAssessments.compatibility
+        ) {
+            return unavailableAssessment(snapshot, AssessmentReason.INVALID_METADATA)
+        }
+        val preparation = withContext(assessmentDispatcher) {
+            prepareAssessment(descriptor, snapshot.hardwareProfile, workload)
+        }
+        val plans = when (preparation) {
+            is AssessmentPreparation.Cancelled -> throw preparation.exception
+            is AssessmentPreparation.Unavailable -> {
+                return unavailableAssessment(snapshot, preparation.reason)
+            }
+            is AssessmentPreparation.Ready -> assessedPlans(preparation.key) { key ->
+                suitabilityEngine.reassessPlans(
+                    descriptor = requireNotNull(key.descriptor),
+                    hardwareProfile = key.hardwareFingerprint.toHardwareProfile(),
+                    workload = key.workload,
+                    previous = previous.planAssessments,
+                )
+            }
+        }
+        return suitabilityEngine.assemble(plans, snapshot)
+    }
+
     fun personalize(
         assessment: ModelAssessment,
         snapshot: DeviceSnapshot,
@@ -142,8 +175,17 @@ class ModelAssessmentRepository internal constructor(
         return AssessmentPreparation.Ready(key)
     }
 
-    private suspend fun assessedPlans(key: AssessmentCacheKey): AssessedPlans {
-        val acquired = acquire(key)
+    private suspend fun assessedPlans(
+        key: AssessmentCacheKey,
+        computer: suspend (AssessmentCacheKey) -> AssessedPlans = { assessmentKey ->
+            assessmentComputer(
+                requireNotNull(assessmentKey.descriptor),
+                assessmentKey.hardwareFingerprint.toHardwareProfile(),
+                assessmentKey.workload,
+            )
+        },
+    ): AssessedPlans {
+        val acquired = acquire(key, computer)
         acquired.cached?.let { return it }
         val deferred = requireNotNull(acquired.deferred)
         try {
@@ -196,7 +238,10 @@ class ModelAssessmentRepository internal constructor(
         )
     }
 
-    private fun acquire(key: AssessmentCacheKey): AcquiredAssessment {
+    private fun acquire(
+        key: AssessmentCacheKey,
+        computer: suspend (AssessmentCacheKey) -> AssessedPlans,
+    ): AcquiredAssessment {
         while (true) {
             val current = repositoryState.load()
             current.completed[key]?.let { cached ->
@@ -223,11 +268,7 @@ class ModelAssessmentRepository internal constructor(
             val deferred = workScope.async(start = CoroutineStart.LAZY) {
                 try {
                     AssessmentComputation.Success(
-                        assessmentComputer(
-                            requireNotNull(key.descriptor),
-                            key.hardwareFingerprint.toHardwareProfile(),
-                            key.workload,
-                        ),
+                        computer(key),
                     )
                 } catch (failure: Throwable) {
                     AssessmentComputation.Failure(failure)

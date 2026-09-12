@@ -52,6 +52,13 @@ internal interface RecommendationVariantEvaluator {
         workload: WorkloadConfig,
     ): ModelAssessment
 
+    suspend fun reassess(
+        descriptor: ModelDescriptor,
+        previous: ModelAssessment,
+        snapshot: DeviceSnapshot,
+        workload: WorkloadConfig,
+    ): ModelAssessment
+
     fun rebuild(assessment: ModelAssessment, snapshot: DeviceSnapshot): ModelAssessment
 
     fun personalize(
@@ -79,6 +86,13 @@ private class CachedRecommendationVariantEvaluator(
         snapshot: DeviceSnapshot,
         workload: WorkloadConfig,
     ): ModelAssessment = repository.assess(descriptor, snapshot, workload)
+
+    override suspend fun reassess(
+        descriptor: ModelDescriptor,
+        previous: ModelAssessment,
+        snapshot: DeviceSnapshot,
+        workload: WorkloadConfig,
+    ): ModelAssessment = repository.reassess(descriptor, previous, snapshot, workload)
 
     override fun rebuild(assessment: ModelAssessment, snapshot: DeviceSnapshot): ModelAssessment =
         suitabilityEngine.assemble(assessment.planAssessments, snapshot)
@@ -233,8 +247,9 @@ class ModelRecommendationService internal constructor(
                     val reassessed = RepositoryEvaluation(
                         variants = evaluation.variants.map { variant ->
                             variant.copy(
-                                assessment = variantEvaluator.assess(
+                                assessment = variantEvaluator.reassess(
                                     variant.variant.descriptor,
+                                    variant.assessment,
                                     snapshot,
                                     session.workload,
                                 ),

@@ -1,6 +1,7 @@
 package com.debanshu777.caraml.core.recommendation
 
 import com.debanshu777.runner.BackendCalibrationResult
+import com.debanshu777.runner.BackendCalibrationReservation
 import com.debanshu777.runner.NativeBackendKind
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -34,7 +35,10 @@ class LlamaBackendCalibrationProbeIsolationTest {
                 }
             },
             cancelBackendCalibration = { cancelledTokens += it },
-            reserveBackendCalibration = { reservedTokens += it; true },
+            reserveBackendCalibration = {
+                reservedTokens += it
+                BackendCalibrationReservation.ACCEPTED
+            },
             abandonBackendCalibration = { abandonedTokens += it },
         )
 

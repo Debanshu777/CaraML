@@ -96,6 +96,14 @@ enum LlamaCalibrationStatusNative {
     LLAMA_CALIBRATION_INVALID = 3,
     LLAMA_CALIBRATION_UNAVAILABLE = 4,
     LLAMA_CALIBRATION_FAILED = 5,
+    LLAMA_CALIBRATION_QUARANTINED = 6,
+};
+
+enum LlamaCalibrationReservationNative {
+    LLAMA_CALIBRATION_RESERVATION_ACCEPTED = 0,
+    LLAMA_CALIBRATION_RESERVATION_BUSY = 1,
+    LLAMA_CALIBRATION_RESERVATION_QUARANTINED = 2,
+    LLAMA_CALIBRATION_RESERVATION_INVALID = 3,
 };
 
 struct LlamaCalibrationWindowNative {
@@ -171,7 +179,7 @@ LlamaCalibrationResultNative llama_runner_core_calibrate_backend(
     int backend,
     int duration_millis,
     int64_t buffer_bytes);
-bool llama_runner_core_reserve_calibration(int64_t probe_token);
+int llama_runner_core_reserve_calibration(int64_t probe_token);
 void llama_runner_core_cancel_calibration(int64_t probe_token);
 void llama_runner_core_abandon_calibration(int64_t probe_token);
 LlamaModelFeatureSupportNative llama_runner_core_probe_model_features(

@@ -467,6 +467,38 @@ class ModelAssessmentRepositoryTest {
         assertEquals(2, invocations)
     }
 
+    @Test
+    fun calibrationReassessmentReusesImmutableNativeCompatibilityEvidence() = runTest {
+        val calibration = MutableTask7CalibrationSource()
+        var nativeCapabilityCalls = 0
+        val suitabilityEngine = SuitabilityEngine(
+            compatibilityChecker = CompatibilityChecker(
+                EngineCapabilitySource {
+                    nativeCapabilityCalls += 1
+                    SupportEvidence.Supported
+                },
+            ),
+            calibrationSource = calibration,
+        )
+        val repository = ModelAssessmentRepository(
+            suitabilityEngine = suitabilityEngine,
+            recommendationPolicy = RecommendationPolicy(),
+            calibrationSource = calibration,
+            assessmentDispatcher = StandardTestDispatcher(testScheduler),
+        )
+        val descriptor = task7Descriptor()
+        val snapshot = task6Snapshot()
+        val workload = task6LlmWorkload()
+        val initial = repository.assess(descriptor, snapshot, workload)
+        calibration.revision = 2
+
+        val recalibrated = repository.reassess(descriptor, initial, snapshot, workload)
+
+        assertEquals(1, nativeCapabilityCalls)
+        assertEquals(initial.compatibility, recalibrated.compatibility)
+        assertNotSame(initial.planAssessments, recalibrated.planAssessments)
+    }
+
     private fun TestScope.repository(
         calibrationSource: CalibrationSource = FixedTask7CalibrationSource(),
         assessmentComputer: suspend (ModelDescriptor, HardwareProfile, WorkloadConfig) -> AssessedPlans,

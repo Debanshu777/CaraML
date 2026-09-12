@@ -56,4 +56,16 @@ class BackendCalibrationResultTest {
         assertEquals(false, isValidBackendCalibrationRequest(1L, 500, (64L shl 20) + 1))
         assertEquals(true, isValidBackendCalibrationRequest(1L, 3_000, 64L shl 20))
     }
+
+    @Test
+    fun reservationAndResultExposeQuarantineWithoutCollapsingItIntoUnavailable() {
+        assertEquals(
+            BackendCalibrationReservation.QUARANTINED,
+            decodeBackendCalibrationReservation(2),
+        )
+        assertEquals(
+            BackendCalibrationResult.Quarantined,
+            decodeBackendCalibrationResult(longArrayOf(6, 0, 0)),
+        )
+    }
 }

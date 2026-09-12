@@ -313,12 +313,12 @@ Java_com_debanshu777_runner_LlamaRunner_nativeCancelBackendCalibration(
     });
 }
 
-extern "C" JNIEXPORT jboolean JNICALL
+extern "C" JNIEXPORT jint JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeReserveBackendCalibration(
     JNIEnv *, jobject, jlong probeToken) {
-    return jni_guard<jboolean>("nativeReserveBackendCalibration failed", JNI_FALSE, [probeToken]() {
-        return llama_runner_core_reserve_calibration(static_cast<int64_t>(probeToken))
-            ? JNI_TRUE : JNI_FALSE;
+    return jni_guard<jint>("nativeReserveBackendCalibration failed", -1, [probeToken]() {
+        return static_cast<jint>(
+            llama_runner_core_reserve_calibration(static_cast<int64_t>(probeToken)));
     });
 }
 

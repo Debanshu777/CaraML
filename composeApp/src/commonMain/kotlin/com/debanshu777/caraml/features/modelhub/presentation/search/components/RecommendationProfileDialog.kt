@@ -106,7 +106,9 @@ fun QuickCalibrationDialog(
                         result == CalibrationRunResult.RequiresConfirmation ->
                             "Power status could not be verified. Running now may use more battery. Continue only if that is okay."
                         result is CalibrationRunResult.Deferred -> result.message()
-                        result == CalibrationRunResult.TimedOut -> "Calibration timed out safely. No partial result was saved."
+                        result == CalibrationRunResult.TimedOut -> "Calibration timed out. No partial result was saved."
+                        result == CalibrationRunResult.Quarantined ->
+                            "Calibration stopped responding. Native work may still be running. Restart CaraML before loading models or calibrating again."
                         result == CalibrationRunResult.Cancelled -> "Calibration was cancelled. No partial result was saved."
                         result is CalibrationRunResult.Completed -> "Calibration completed. New recommendations use the local measurements immediately."
                         result == CalibrationRunResult.Failed -> "Calibration could not finish. You can retry or skip it."
@@ -122,7 +124,7 @@ fun QuickCalibrationDialog(
                 } else {
                     onRun
                 },
-                enabled = !state.running,
+                enabled = !state.running && result != CalibrationRunResult.Quarantined,
                 modifier = Modifier.heightIn(min = 48.dp),
             ) {
                 Text(
@@ -139,7 +141,14 @@ fun QuickCalibrationDialog(
                 onClick = if (state.running) onCancel else onSkip,
                 modifier = Modifier.heightIn(min = 48.dp),
             ) {
-                Text(if (state.running) "Cancel" else if (result is CalibrationRunResult.Completed) "Close" else "Skip")
+                Text(
+                    when {
+                        state.running -> "Cancel"
+                        result is CalibrationRunResult.Completed ||
+                            result == CalibrationRunResult.Quarantined -> "Close"
+                        else -> "Skip"
+                    },
+                )
             }
         },
     )

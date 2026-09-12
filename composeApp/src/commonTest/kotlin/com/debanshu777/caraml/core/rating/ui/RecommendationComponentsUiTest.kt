@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
@@ -19,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.runComposeUiTest
 import com.debanshu777.caraml.core.recommendation.AssessmentReason
+import com.debanshu777.caraml.core.recommendation.CalibrationRunResult
 import com.debanshu777.caraml.core.recommendation.RecommendationProfile
 import com.debanshu777.caraml.core.recommendation.RiskTolerance
 import com.debanshu777.caraml.core.recommendation.llmWorkload
@@ -30,6 +32,8 @@ import com.debanshu777.caraml.core.platform.BackendKind
 import com.debanshu777.caraml.core.platform.MemoryTopology
 import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.RecommendationProfileDialog
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.QuickCalibrationDialog
+import com.debanshu777.caraml.features.modelhub.presentation.search.QuickCalibrationUiState
 import com.debanshu777.caraml.features.modelhub.presentation.details.DownloadForLaterConfirmationDialog
 import kotlin.test.assertTrue
 import kotlin.test.Test
@@ -145,5 +149,24 @@ class RecommendationComponentsUiTest {
         onNodeWithText("Download for later").assertIsDisplayed()
         onNodeWithText("Download anyway").performClick()
         runOnIdle { assertTrue(confirmed) }
+    }
+
+    @Test
+    fun quarantinedCalibrationExplainsRestartAndDisablesRetry() = runComposeUiTest {
+        setContent {
+            MaterialTheme {
+                QuickCalibrationDialog(
+                    state = QuickCalibrationUiState(result = CalibrationRunResult.Quarantined),
+                    onRun = {},
+                    onRunWithUnknownPower = {},
+                    onCancel = {},
+                    onSkip = {},
+                )
+            }
+        }
+
+        onNodeWithText("Native work may still be running", substring = true).assertIsDisplayed()
+        onNodeWithText("Restart CaraML", substring = true).assertIsDisplayed()
+        onNodeWithText("Run calibration").assertIsNotEnabled()
     }
 }

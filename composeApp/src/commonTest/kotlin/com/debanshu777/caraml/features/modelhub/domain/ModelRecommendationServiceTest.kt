@@ -430,7 +430,7 @@ class ModelRecommendationServiceTest {
     }
 
     @Test
-    fun calibrationRevisionReassessesCachedDescriptorsWithoutMetadataOrSnapshotWork() = runTest {
+    fun calibrationRevisionReassessesCachedDescriptorsWithoutMetadataSnapshotOrNativeAssessmentWork() = runTest {
         val metadata = CountingMetadataSource()
         val evaluator = FakeVariantEvaluator()
         val snapshots = FakeSnapshotSource(snapshot(capturedAt = 10_000L))
@@ -452,7 +452,8 @@ class ModelRecommendationServiceTest {
         assertEquals(metadataAfterInitial, metadata.requestCount)
         assertEquals(initialSnapshots, snapshots.initialCount)
         assertEquals(0, snapshots.refreshCount)
-        assertEquals(assessmentsAfterInitial + 3, evaluator.assessmentCount)
+        assertEquals(assessmentsAfterInitial, evaluator.assessmentCount)
+        assertEquals(3, evaluator.reassessmentCount)
     }
 
     @Test
@@ -727,6 +728,7 @@ private class FakeVariantEvaluator(
     private val category: (ModelDescriptor) -> RecommendationCategory = { RecommendationCategory.RECOMMENDED },
 ) : RecommendationVariantEvaluator {
     var assessmentCount: Int = 0
+    var reassessmentCount: Int = 0
     var rebuildCount: Int = 0
 
     override suspend fun assess(
@@ -741,6 +743,16 @@ private class FakeVariantEvaluator(
     override fun rebuild(assessment: ModelAssessment, snapshot: DeviceSnapshot): ModelAssessment {
         rebuildCount += 1
         return assessment
+    }
+
+    override suspend fun reassess(
+        descriptor: ModelDescriptor,
+        previous: ModelAssessment,
+        snapshot: DeviceSnapshot,
+        workload: WorkloadConfig,
+    ): ModelAssessment {
+        reassessmentCount += 1
+        return assessment(descriptor.stablePath())
     }
 
     override fun personalize(

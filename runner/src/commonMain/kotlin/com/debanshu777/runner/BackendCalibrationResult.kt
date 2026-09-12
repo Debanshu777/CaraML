@@ -7,6 +7,15 @@ enum class BackendCalibrationStatus {
     INVALID,
     UNAVAILABLE,
     FAILED,
+    QUARANTINED,
+}
+
+enum class BackendCalibrationReservation {
+    ACCEPTED,
+    BUSY,
+    QUARANTINED,
+    INVALID,
+    UNAVAILABLE,
 }
 
 data class BackendCalibrationWindow(
@@ -31,6 +40,7 @@ sealed interface BackendCalibrationResult {
     data object Invalid : BackendCalibrationResult
     data object Unavailable : BackendCalibrationResult
     data object Failed : BackendCalibrationResult
+    data object Quarantined : BackendCalibrationResult
 }
 
 internal fun decodeBackendCalibrationResult(payload: LongArray?): BackendCalibrationResult {
@@ -44,6 +54,7 @@ internal fun decodeBackendCalibrationResult(payload: LongArray?): BackendCalibra
             BackendCalibrationStatus.INVALID -> BackendCalibrationResult.Invalid
             BackendCalibrationStatus.UNAVAILABLE -> BackendCalibrationResult.Unavailable
             BackendCalibrationStatus.FAILED -> BackendCalibrationResult.Failed
+            BackendCalibrationStatus.QUARANTINED -> BackendCalibrationResult.Quarantined
             BackendCalibrationStatus.COMPLETE -> error("handled above")
         }
     }
@@ -68,6 +79,14 @@ internal fun decodeBackendCalibrationResult(payload: LongArray?): BackendCalibra
         windows.count { it.metric == BackendCalibrationMetric.COMPUTE } < MIN_WINDOWS_PER_METRIC
     ) return BackendCalibrationResult.Unavailable
     return BackendCalibrationResult.Complete(backend, windows)
+}
+
+internal fun decodeBackendCalibrationReservation(value: Int): BackendCalibrationReservation = when (value) {
+    0 -> BackendCalibrationReservation.ACCEPTED
+    1 -> BackendCalibrationReservation.BUSY
+    2 -> BackendCalibrationReservation.QUARANTINED
+    3 -> BackendCalibrationReservation.INVALID
+    else -> BackendCalibrationReservation.UNAVAILABLE
 }
 
 internal fun isValidBackendCalibrationRequest(probeToken: Long, durationMillis: Int, bufferBytes: Long): Boolean =

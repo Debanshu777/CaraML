@@ -83,11 +83,11 @@ class QuickCalibrationRunnerTest {
     }
 
     @Test
-    fun timeoutAbandonsOnlyTheOwnedProbeTokenAndReturnsPromptly() = runTest {
+    fun timeoutCancelsAStoppedCooperativeProbeWithoutAbandoningIt() = runTest {
         val dao = CapturingDao()
         val repository = CalibrationRepository(dao, ENGINE, now = { NOW }).also { it.initialize() }
         val settings = FakeSettingsRepository()
-        val probe = HangingProbe()
+        val probe = CooperativeTimeoutProbe()
         val runner = QuickCalibrationRunner(
             snapshotSource = { snapshot() },
             probe = probe,
@@ -100,9 +100,38 @@ class QuickCalibrationRunnerTest {
         )
 
         assertEquals(CalibrationRunResult.TimedOut, runner.runQuickCalibration())
-        assertTrue(probe.cancelledTokens.isEmpty())
-        assertEquals(listOf(41L), probe.abandonedTokens)
+        assertEquals(listOf(41L), probe.cancelledTokens)
+        assertTrue(probe.abandonedTokens.isEmpty())
         assertFalse(settings.offerComplete)
+    }
+
+    @Test
+    fun stuckNativeProbeIsQuarantinedOnlyAfterTheCancellationGraceExpires() = runTest {
+        val dao = CapturingDao()
+        val repository = CalibrationRepository(dao, ENGINE, now = { NOW }).also { it.initialize() }
+        val settings = FakeSettingsRepository()
+        val probe = StuckNativeProbe()
+        val runner = QuickCalibrationRunner(
+            snapshotSource = { snapshot() },
+            probe = probe,
+            repository = repository,
+            settingsRepository = settings,
+            engineVersion = ENGINE,
+            clock = { NOW },
+            timeoutMillis = 100L,
+            cancellationGraceMillis = 50L,
+            probeTokenSource = { 42L },
+        )
+
+        assertEquals(CalibrationRunResult.Quarantined, runner.runQuickCalibration())
+        assertEquals(listOf(42L), probe.cancelledTokens)
+        assertEquals(listOf(42L), probe.abandonedTokens)
+        assertEquals(NativeCalibrationState.QUARANTINED, runner.nativeCalibrationState())
+        assertFalse(settings.offerComplete)
+
+        assertEquals(CalibrationRunResult.Quarantined, runner.runQuickCalibration())
+        assertEquals(listOf(42L), probe.cancelledTokens)
+        assertEquals(listOf(42L), probe.abandonedTokens)
     }
 
     private suspend fun fixture(
@@ -190,7 +219,31 @@ class QuickCalibrationRunnerTest {
         override fun cancel(probeToken: Long) = Unit
     }
 
-    private class HangingProbe : BackendCalibrationProbe {
+    private class CooperativeTimeoutProbe : BackendCalibrationProbe {
+        val cancelledTokens = mutableListOf<Long>()
+        val abandonedTokens = mutableListOf<Long>()
+
+        override suspend fun run(
+            probeToken: Long,
+            backend: NativeBackendKind,
+            durationMillis: Int,
+            bufferBytes: Long,
+        ): BackendCalibrationResult = try {
+            awaitCancellation()
+        } finally {
+            cancel(probeToken)
+        }
+
+        override fun cancel(probeToken: Long) {
+            if (probeToken !in cancelledTokens) cancelledTokens += probeToken
+        }
+
+        override fun abandon(probeToken: Long) {
+            abandonedTokens += probeToken
+        }
+    }
+
+    private class StuckNativeProbe : BackendCalibrationProbe {
         val cancelledTokens = mutableListOf<Long>()
         val abandonedTokens = mutableListOf<Long>()
 
@@ -208,6 +261,8 @@ class QuickCalibrationRunnerTest {
         override fun abandon(probeToken: Long) {
             abandonedTokens += probeToken
         }
+
+        override fun isRunning(probeToken: Long): Boolean = true
     }
 
     private class FakeSettingsRepository : SettingsRepository {

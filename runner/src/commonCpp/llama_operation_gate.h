@@ -101,6 +101,19 @@ public:
         return std::optional<Lease>(Lease(this));
     }
 
+    template <typename Cancelled>
+    [[nodiscard]] std::optional<Lease> begin_session_interruptible(Cancelled cancelled) {
+        std::unique_lock<std::mutex> state_lock(state_mutex_);
+        while (session_active_ || operation_active_) {
+            if (cancelled()) return std::nullopt;
+            state_changed_.wait(state_lock);
+        }
+        if (cancelled()) return std::nullopt;
+        session_active_ = true;
+        operation_active_ = true;
+        return std::optional<Lease>(Lease(this));
+    }
+
     [[nodiscard]] std::optional<Lease> lock_session() {
         std::unique_lock<std::mutex> state_lock(state_mutex_);
         state_changed_.wait(state_lock, [this] {
@@ -113,9 +126,33 @@ public:
         return std::optional<Lease>(Lease(this));
     }
 
+    template <typename Cancelled>
+    [[nodiscard]] std::optional<Lease> lock_session_interruptible(Cancelled cancelled) {
+        std::unique_lock<std::mutex> state_lock(state_mutex_);
+        while (session_active_ && operation_active_) {
+            if (cancelled()) return std::nullopt;
+            state_changed_.wait(state_lock);
+        }
+        if (cancelled() || !session_active_) return std::nullopt;
+        operation_active_ = true;
+        return std::optional<Lease>(Lease(this));
+    }
+
     [[nodiscard]] std::optional<Lease> lock_session_compatible() {
         std::unique_lock<std::mutex> state_lock(state_mutex_);
         state_changed_.wait(state_lock, [this] { return !operation_active_; });
+        operation_active_ = true;
+        return std::optional<Lease>(Lease(this));
+    }
+
+    template <typename Cancelled>
+    [[nodiscard]] std::optional<Lease> lock_session_compatible_interruptible(Cancelled cancelled) {
+        std::unique_lock<std::mutex> state_lock(state_mutex_);
+        while (operation_active_) {
+            if (cancelled()) return std::nullopt;
+            state_changed_.wait(state_lock);
+        }
+        if (cancelled()) return std::nullopt;
         operation_active_ = true;
         return std::optional<Lease>(Lease(this));
     }

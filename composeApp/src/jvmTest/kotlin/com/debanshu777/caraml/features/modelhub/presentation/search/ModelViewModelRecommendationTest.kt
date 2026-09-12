@@ -456,6 +456,7 @@ class ModelViewModelRecommendationTest {
         Dispatchers.setMain(dispatcher)
         var requests = 0
         var assessments = 0
+        var reassessments = 0
         val requestDispatcher = dispatcher
         val engine = object : MockEngine(MockEngineConfig().apply {
             reuseHandlers = true
@@ -472,7 +473,11 @@ class ModelViewModelRecommendationTest {
             val viewModel = viewModel(
                 client = client,
                 dispatcher = dispatcher,
-                recommendationService = recommendationService(dispatcher) { assessments++ },
+                recommendationService = recommendationService(
+                    dispatcher = dispatcher,
+                    onAssess = { assessments++ },
+                    onReassess = { reassessments++ },
+                ),
                 calibrationSource = calibration,
             )
             viewModel.updateSearchQuery("calibration")
@@ -484,7 +489,8 @@ class ModelViewModelRecommendationTest {
             calibration.revisions.value = 1L
             advanceUntilIdle()
 
-            assertEquals(2, assessments)
+            assertEquals(1, assessments)
+            assertEquals(1, reassessments)
             assertEquals(requestsAfterInitial, requests)
         } finally {
             client.close()
@@ -604,6 +610,7 @@ private fun huggingFaceApi(client: HttpClient): HuggingFaceApi {
 private fun recommendationService(
     dispatcher: CoroutineDispatcher,
     onAssess: () -> Unit = {},
+    onReassess: () -> Unit = {},
 ) = ModelRecommendationService(
     metadataSource = ModelMetadataSource { repositoryId, _ ->
         val identity = ModelFileIdentity(
@@ -650,6 +657,13 @@ private fun recommendationService(
             .also { onAssess() }
 
         override fun rebuild(assessment: ModelAssessment, snapshot: DeviceSnapshot): ModelAssessment = assessment
+
+        override suspend fun reassess(
+            descriptor: ModelDescriptor,
+            previous: ModelAssessment,
+            snapshot: DeviceSnapshot,
+            workload: WorkloadConfig,
+        ): ModelAssessment = previous.also { onReassess() }
 
         override fun personalize(
             descriptor: ModelDescriptor,

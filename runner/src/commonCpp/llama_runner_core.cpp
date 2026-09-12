@@ -72,6 +72,10 @@ std::atomic<int64_t> g_calibration_state{0};
 // later blocking model operations instead of allowing them to wait behind it.
 std::atomic<bool> g_native_operations_poisoned{false};
 
+static bool native_operations_poisoned() {
+    return g_native_operations_poisoned.load(std::memory_order_acquire);
+}
+
 class ScopedCalibrationProbe {
 public:
     explicit ScopedCalibrationProbe(int64_t token) : token_(token) {}
@@ -749,14 +753,13 @@ static void unload_model_state() {
 } // namespace
 
 void llama_runner_core_set_logger(LlamaLogFn fn) {
-    auto operation = g_operation_gate.lock();
+    auto operation = g_operation_gate.lock_interruptible(native_operations_poisoned);
+    if (!operation) return;
     g_logger = fn;
 }
 
 void llama_runner_core_init(const char *backend_path) {
-    auto operation = g_operation_gate.lock_interruptible([] {
-        return g_native_operations_poisoned.load(std::memory_order_acquire);
-    });
+    auto operation = g_operation_gate.lock_interruptible(native_operations_poisoned);
     if (!operation) return;
     if (backend_path && !is_bounded_c_string(backend_path, 4096)) {
         log_line(LLAMA_LOG_ERROR, "init: Invalid backend directory");
@@ -786,9 +789,7 @@ LlamaPreflightResultNative llama_runner_core_preflight(
     const char *model_path,
     const LlamaRunnerConfig &config) {
     LlamaPreflightResultNative result;
-    auto operation = g_operation_gate.lock_interruptible([] {
-        return g_native_operations_poisoned.load(std::memory_order_acquire);
-    });
+    auto operation = g_operation_gate.lock_interruptible(native_operations_poisoned);
     if (!operation) {
         result.status = LLAMA_PREFLIGHT_UNAVAILABLE;
         return result;
@@ -869,7 +870,8 @@ LlamaPreflightResultNative llama_runner_core_preflight(
 
 LlamaBackendCapabilitiesNative llama_runner_core_backend_capabilities() {
     LlamaBackendCapabilitiesNative result;
-    auto operation = g_operation_gate.lock();
+    auto operation = g_operation_gate.lock_interruptible(native_operations_poisoned);
+    if (!operation) return result;
     if (!g_backend_initialized) {
         return result;
     }
@@ -928,6 +930,10 @@ LlamaCalibrationResultNative llama_runner_core_calibrate_backend(
     }
 
     int64_t state = g_calibration_state.load(std::memory_order_acquire);
+    if (native_operations_poisoned() && state != -probe_token) {
+        result.status = LLAMA_CALIBRATION_QUARANTINED;
+        return result;
+    }
     if (state == 0) {
         int64_t expected_idle = 0;
         if (g_calibration_state.compare_exchange_strong(
@@ -1129,14 +1135,27 @@ LlamaCalibrationResultNative llama_runner_core_calibrate_backend(
     }
 }
 
-bool llama_runner_core_reserve_calibration(int64_t probe_token) {
-    if (probe_token <= 0) return false;
+int llama_runner_core_reserve_calibration(int64_t probe_token) {
+    if (probe_token <= 0) return LLAMA_CALIBRATION_RESERVATION_INVALID;
+    if (native_operations_poisoned()) return LLAMA_CALIBRATION_RESERVATION_QUARANTINED;
     int64_t expected_idle = 0;
-    return g_calibration_state.compare_exchange_strong(
+    if (!g_calibration_state.compare_exchange_strong(
         expected_idle,
         probe_token,
         std::memory_order_acq_rel,
-        std::memory_order_acquire);
+        std::memory_order_acquire)) {
+        return LLAMA_CALIBRATION_RESERVATION_BUSY;
+    }
+    if (native_operations_poisoned()) {
+        int64_t expected_token = probe_token;
+        g_calibration_state.compare_exchange_strong(
+            expected_token,
+            0,
+            std::memory_order_acq_rel,
+            std::memory_order_acquire);
+        return LLAMA_CALIBRATION_RESERVATION_QUARANTINED;
+    }
+    return LLAMA_CALIBRATION_RESERVATION_ACCEPTED;
 }
 
 void llama_runner_core_cancel_calibration(int64_t probe_token) {
@@ -1168,8 +1187,9 @@ void llama_runner_core_abandon_calibration(int64_t probe_token) {
 LlamaModelFeatureSupportNative llama_runner_core_probe_model_features(
     const char *architecture,
     const char *quantization) {
-    auto operation = g_operation_gate.lock();
     LlamaModelFeatureSupportNative result;
+    auto operation = g_operation_gate.lock_interruptible(native_operations_poisoned);
+    if (!operation) return result;
     result.engine_build = std::max(0, llama_build_number());
     if (!is_safe_feature_label(architecture, 64) ||
         (quantization != nullptr && !is_safe_feature_label(quantization, 32))) {
@@ -1211,9 +1231,7 @@ LlamaModelFeatureSupportNative llama_runner_core_probe_model_features(
 }
 
 bool llama_runner_core_load_model(const char *model_path, const LlamaRunnerConfig &config) {
-    auto operation = g_operation_gate.lock_interruptible([] {
-        return g_native_operations_poisoned.load(std::memory_order_acquire);
-    });
+    auto operation = g_operation_gate.lock_interruptible(native_operations_poisoned);
     if (!operation) return false;
     log_line(LLAMA_LOG_INFO, "load: model path supplied=%d", model_path ? 1 : 0);
     if (!g_backend_initialized ||
@@ -1331,7 +1349,8 @@ std::string llama_runner_core_generate(const char *prompt, int max_tokens, float
 }
 
 bool llama_runner_core_start_generate(const char *prompt, int max_tokens, float temperature, const char *grammar) {
-    auto operation = g_operation_gate.begin_session();
+    auto operation = g_operation_gate.begin_session_interruptible(native_operations_poisoned);
+    if (!operation) return false;
     ScopedSessionEnd session(g_operation_gate);
     log_line(LLAMA_LOG_INFO, "start_generate: entry max_tokens=%d grammar=%s",
         max_tokens, grammar ? "yes" : "no");
@@ -1405,7 +1424,7 @@ bool llama_runner_core_start_generate(const char *prompt, int max_tokens, float 
 }
 
 const char *llama_runner_core_next_token() {
-    auto operation = g_operation_gate.lock_session();
+    auto operation = g_operation_gate.lock_session_interruptible(native_operations_poisoned);
     if (!operation.has_value()) {
         return nullptr;
     }
@@ -1554,7 +1573,7 @@ void llama_runner_core_cancel_generate() {
 }
 
 void llama_runner_core_finalize_generation() {
-    auto operation = g_operation_gate.lock_session();
+    auto operation = g_operation_gate.lock_session_interruptible(native_operations_poisoned);
     if (!operation.has_value()) {
         return;
     }
@@ -1567,7 +1586,8 @@ void llama_runner_core_finalize_generation() {
 }
 
 int llama_runner_core_process_system_prompt(const char *system_prompt) {
-    auto operation = g_operation_gate.lock();
+    auto operation = g_operation_gate.lock_interruptible(native_operations_poisoned);
+    if (!operation) return 1;
     if (!g_model || !g_context || !g_sampler) {
         log_line(LLAMA_LOG_ERROR, "process_system_prompt: Model not loaded");
         return 1;
@@ -1634,7 +1654,8 @@ int llama_runner_core_process_system_prompt(const char *system_prompt) {
 }
 
 int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_length) {
-    auto operation = g_operation_gate.begin_session();
+    auto operation = g_operation_gate.begin_session_interruptible(native_operations_poisoned);
+    if (!operation) return 1;
     ScopedSessionEnd session(g_operation_gate);
     if (!g_model || !g_context || !g_sampler) {
         log_line(LLAMA_LOG_ERROR, "process_user_prompt: Model not loaded");
@@ -1820,12 +1841,14 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
 }
 
 void llama_runner_core_unload() {
-    auto operation = g_operation_gate.lock();
+    auto operation = g_operation_gate.lock_interruptible(native_operations_poisoned);
+    if (!operation) return;
     unload_model_state();
 }
 
 void llama_runner_core_shutdown() {
-    auto operation = g_operation_gate.lock();
+    auto operation = g_operation_gate.lock_interruptible(native_operations_poisoned);
+    if (!operation) return;
     if (!g_backend_initialized) {
         return;
     }
@@ -1836,7 +1859,8 @@ void llama_runner_core_shutdown() {
 }
 
 int llama_runner_core_get_context_used() {
-    auto operation = g_operation_gate.lock_session_compatible();
+    auto operation = g_operation_gate.lock_session_compatible_interruptible(native_operations_poisoned);
+    if (!operation) return 0;
     if (!g_context) {
         return 0;
     }
@@ -1844,7 +1868,8 @@ int llama_runner_core_get_context_used() {
 }
 
 int llama_runner_core_get_context_limit() {
-    auto operation = g_operation_gate.lock_session_compatible();
+    auto operation = g_operation_gate.lock_session_compatible_interruptible(native_operations_poisoned);
+    if (!operation) return 0;
     if (!g_context) {
         return 0;
     }
@@ -1852,17 +1877,20 @@ int llama_runner_core_get_context_limit() {
 }
 
 int llama_runner_core_get_stop_reason() {
-    auto operation = g_operation_gate.lock_session_compatible();
+    auto operation = g_operation_gate.lock_session_compatible_interruptible(native_operations_poisoned);
+    if (!operation) return STOP_ERROR;
     return g_stop_reason;
 }
 
 int llama_runner_core_get_gpu_layers() {
-    auto operation = g_operation_gate.lock_session_compatible();
+    auto operation = g_operation_gate.lock_session_compatible_interruptible(native_operations_poisoned);
+    if (!operation) return 0;
     return g_actual_gpu_layers;
 }
 
 const char* llama_runner_core_get_model_architecture() {
-    auto operation = g_operation_gate.lock_session_compatible();
+    auto operation = g_operation_gate.lock_session_compatible_interruptible(native_operations_poisoned);
+    if (!operation) return "";
     if (!g_model) return "";
     static char buf[64];
     buf[0] = '\0';
@@ -1871,12 +1899,14 @@ const char* llama_runner_core_get_model_architecture() {
 }
 
 const char *llama_runner_core_get_reasoning() {
-    auto operation = g_operation_gate.lock_session_compatible();
+    auto operation = g_operation_gate.lock_session_compatible_interruptible(native_operations_poisoned);
+    if (!operation) return "";
     return g_reasoning_accum.c_str();
 }
 
 const char *llama_runner_core_get_content() {
-    auto operation = g_operation_gate.lock_session_compatible();
+    auto operation = g_operation_gate.lock_session_compatible_interruptible(native_operations_poisoned);
+    if (!operation) return "";
     return g_content_accum.c_str();
 }
 
@@ -1885,7 +1915,8 @@ const char *llama_runner_core_get_content() {
 // FULL accumulator prefixed with a 0x01 sentinel so the caller knows to
 // replace, not append. Empty string means no new bytes.
 const char *llama_runner_core_get_reasoning_delta() {
-    auto operation = g_operation_gate.lock_session_compatible();
+    auto operation = g_operation_gate.lock_session_compatible_interruptible(native_operations_poisoned);
+    if (!operation) return "";
     const std::string &acc = g_reasoning_accum;
     if (acc.size() < g_reasoning_emitted) {
         g_reasoning_delta_buf = std::string(1, '\x01') + acc;
@@ -1898,7 +1929,8 @@ const char *llama_runner_core_get_reasoning_delta() {
 }
 
 const char *llama_runner_core_get_content_delta() {
-    auto operation = g_operation_gate.lock_session_compatible();
+    auto operation = g_operation_gate.lock_session_compatible_interruptible(native_operations_poisoned);
+    if (!operation) return "";
     const std::string &acc = g_content_accum;
     if (acc.size() < g_content_emitted) {
         g_content_delta_buf = std::string(1, '\x01') + acc;
@@ -1911,12 +1943,14 @@ const char *llama_runner_core_get_content_delta() {
 }
 
 int llama_runner_core_supports_thinking() {
-    auto operation = g_operation_gate.lock_session_compatible();
+    auto operation = g_operation_gate.lock_session_compatible_interruptible(native_operations_poisoned);
+    if (!operation) return 0;
     return g_supports_thinking ? 1 : 0;
 }
 
 void llama_runner_core_clear_context() {
-    auto operation = g_operation_gate.lock();
+    auto operation = g_operation_gate.lock_interruptible(native_operations_poisoned);
+    if (!operation) return;
     if (!g_context) {
         log_line(LLAMA_LOG_WARN, "clear_context: No context to clear");
         return;

@@ -9,18 +9,23 @@ import com.debanshu777.caraml.core.platform.ThermalState
 import com.debanshu777.caraml.core.recommendation.storage.RecommendationObservationEntity
 import com.debanshu777.runner.BackendCalibrationResult
 import com.debanshu777.runner.BackendCalibrationMetric
+import com.debanshu777.runner.BackendCalibrationReservation
 import com.debanshu777.runner.LlamaRunner
 import com.debanshu777.runner.NativeBackendKind
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.concurrent.atomics.AtomicBoolean
 import kotlin.concurrent.atomics.AtomicLong
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
@@ -39,6 +44,12 @@ sealed interface CalibrationRunResult {
     data object TimedOut : CalibrationRunResult
     data object Cancelled : CalibrationRunResult
     data object Failed : CalibrationRunResult
+    data object Quarantined : CalibrationRunResult
+}
+
+enum class NativeCalibrationState {
+    AVAILABLE,
+    QUARANTINED,
 }
 
 interface BackendCalibrationProbe {
@@ -52,6 +63,8 @@ interface BackendCalibrationProbe {
     fun cancel(probeToken: Long)
 
     fun abandon(probeToken: Long) = cancel(probeToken)
+
+    fun isRunning(probeToken: Long): Boolean = false
 }
 
 private val backendCalibrationAdmission = Mutex()
@@ -61,7 +74,9 @@ class LlamaBackendCalibrationProbe internal constructor(
     private val dispatcher: CoroutineDispatcher,
     private val calibrateBackend: (Long, NativeBackendKind, Int, Long) -> BackendCalibrationResult,
     private val cancelBackendCalibration: (Long) -> Unit,
-    private val reserveBackendCalibration: (Long) -> Boolean = { true },
+    private val reserveBackendCalibration: (Long) -> BackendCalibrationReservation = {
+        BackendCalibrationReservation.ACCEPTED
+    },
     private val abandonBackendCalibration: (Long) -> Unit = cancelBackendCalibration,
 ) : BackendCalibrationProbe {
     constructor(
@@ -92,8 +107,14 @@ class LlamaBackendCalibrationProbe internal constructor(
                     return@withLock BackendCalibrationResult.Unavailable
                 }
                 try {
-                    if (!reserveBackendCalibration(probeToken)) {
-                        return@withLock BackendCalibrationResult.Unavailable
+                    when (reserveBackendCalibration(probeToken)) {
+                        BackendCalibrationReservation.ACCEPTED -> Unit
+                        BackendCalibrationReservation.QUARANTINED ->
+                            return@withLock BackendCalibrationResult.Quarantined
+                        BackendCalibrationReservation.BUSY,
+                        BackendCalibrationReservation.INVALID,
+                        BackendCalibrationReservation.UNAVAILABLE,
+                        -> return@withLock BackendCalibrationResult.Unavailable
                     }
                     if (activeState.load() == -probeToken) {
                         cancelBackendCalibration(probeToken)
@@ -130,6 +151,9 @@ class LlamaBackendCalibrationProbe internal constructor(
         if (ownsProbe) abandonBackendCalibration(probeToken)
     }
 
+    override fun isRunning(probeToken: Long): Boolean = probeToken > 0L &&
+        activeState.load().let { it == probeToken || it == -probeToken }
+
     private companion object {
         const val NO_ACTIVE_PROBE = 0L
     }
@@ -144,9 +168,19 @@ class QuickCalibrationRunner(
     private val engineVersion: String,
     private val clock: () -> Long,
     private val timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
+    private val cancellationGraceMillis: Long = DEFAULT_CANCELLATION_GRACE_MILLIS,
     private val probeTokenSource: () -> Long = ::nextCalibrationProbeToken,
 ) {
+    private val nativeQuarantined = AtomicBoolean(false)
+
+    init {
+        require(timeoutMillis in 1..MAX_TIMEOUT_MILLIS)
+        require(cancellationGraceMillis in 1..MAX_CANCELLATION_GRACE_MILLIS)
+    }
+
     suspend fun runQuickCalibration(allowUnknownPower: Boolean = false): CalibrationRunResult {
+        if (nativeQuarantined.load()) return CalibrationRunResult.Quarantined
+
         val snapshot = try {
             snapshotSource()
         } catch (cancelled: CancellationException) {
@@ -181,11 +215,15 @@ class QuickCalibrationRunner(
             withTimeoutOrNull(timeoutMillis) {
                 probe.run(probeToken, nativeBackend, TARGET_DURATION_MILLIS, bufferBytes)
             } ?: run {
-                probe.abandon(probeToken)
-                return CalibrationRunResult.TimedOut
+                return if (cancelAndAwaitProbe(probeToken)) {
+                    CalibrationRunResult.TimedOut
+                } else {
+                    quarantineProbe(probeToken)
+                    CalibrationRunResult.Quarantined
+                }
             }
         } catch (cancelled: CancellationException) {
-            probe.abandon(probeToken)
+            if (!cancelAndAwaitProbe(probeToken)) quarantineProbe(probeToken)
             throw cancelled
         } catch (_: Exception) {
             return CalibrationRunResult.Failed
@@ -197,6 +235,10 @@ class QuickCalibrationRunner(
                 result = nativeResult,
             )
             BackendCalibrationResult.Cancelled -> CalibrationRunResult.Cancelled
+            BackendCalibrationResult.Quarantined -> {
+                nativeQuarantined.store(true)
+                CalibrationRunResult.Quarantined
+            }
             BackendCalibrationResult.Deferred ->
                 CalibrationRunResult.Deferred(CalibrationDeferralReason.BACKEND_UNAVAILABLE)
             BackendCalibrationResult.Invalid,
@@ -208,6 +250,40 @@ class QuickCalibrationRunner(
 
     suspend fun skipQuickCalibration() {
         settingsRepository.completeRecommendationCalibrationOffer()
+    }
+
+    fun nativeCalibrationState(): NativeCalibrationState = if (nativeQuarantined.load()) {
+        NativeCalibrationState.QUARANTINED
+    } else {
+        NativeCalibrationState.AVAILABLE
+    }
+
+    private fun quarantineProbe(probeToken: Long) {
+        nativeQuarantined.store(true)
+        try {
+            probe.abandon(probeToken)
+        } catch (_: Exception) {
+            // The process remains quarantined even if the native cleanup signal fails.
+        }
+    }
+
+    private suspend fun cancelAndAwaitProbe(probeToken: Long): Boolean = withContext(NonCancellable) {
+        try {
+            probe.cancel(probeToken)
+        } catch (_: Exception) {
+            return@withContext false
+        }
+        withTimeoutOrNull(cancellationGraceMillis) {
+            while (try {
+                    probe.isRunning(probeToken)
+                } catch (_: Exception) {
+                    true
+                }
+            ) {
+                delay(CANCELLATION_POLL_MILLIS)
+            }
+            true
+        } ?: false
     }
 
     private suspend fun persistComplete(
@@ -298,6 +374,10 @@ class QuickCalibrationRunner(
     private companion object {
         const val TARGET_DURATION_MILLIS = 3_000
         const val DEFAULT_TIMEOUT_MILLIS = 4_000L
+        const val DEFAULT_CANCELLATION_GRACE_MILLIS = 250L
+        const val CANCELLATION_POLL_MILLIS = 10L
+        const val MAX_TIMEOUT_MILLIS = 60_000L
+        const val MAX_CANCELLATION_GRACE_MILLIS = 5_000L
         const val MIN_BUFFER_BYTES = 4L shl 20
         const val MAX_BUFFER_BYTES = 64L shl 20
         const val MIN_WINDOWS_PER_METRIC = 5

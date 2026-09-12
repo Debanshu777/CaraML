@@ -174,8 +174,8 @@ void llama_runner_cancel_backend_calibration(int64_t probe_token) {
 }
 
 int llama_runner_reserve_backend_calibration(int64_t probe_token) {
-    return ffi_guard<int>("reserve_backend_calibration", 0, [probe_token]() {
-        return llama_runner_core_reserve_calibration(probe_token) ? 1 : 0;
+    return ffi_guard<int>("reserve_backend_calibration", -1, [probe_token]() {
+        return llama_runner_core_reserve_calibration(probe_token);
     });
 }
 

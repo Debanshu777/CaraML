@@ -26,6 +26,48 @@ class SuitabilityEngine(
         workload: WorkloadConfig,
     ): AssessedPlans {
         val compatibility = compatibilityChecker.check(descriptor, hardwareProfile)
+        return assessPlansWithCompatibility(descriptor, hardwareProfile, workload, compatibility)
+    }
+
+    fun reassessPlans(
+        descriptor: ModelDescriptor,
+        hardwareProfile: HardwareProfile,
+        workload: WorkloadConfig,
+        previous: AssessedPlans,
+    ): AssessedPlans {
+        val key = assessmentKey(descriptor)
+        if (previous.assessmentKey != key || previous.memoryTopology != hardwareProfile.memoryTopology) {
+            val evidence = listOf(Evidence(AssessmentReason.INVALID_METADATA, Confidence.LOW))
+            return AssessedPlans(
+                values = emptyList(),
+                assessmentKey = key,
+                compatibility = Compatibility.Unknown(listOf(AssessmentReason.INVALID_METADATA), evidence),
+                memoryTopology = hardwareProfile.memoryTopology,
+                reasons = listOf(AssessmentReason.INVALID_METADATA),
+                evidence = evidence,
+            )
+        }
+        val cachedPlans = previous.values.map { it.plan as? RunPlan ?: return invalidPlans(
+            key,
+            previous.compatibility,
+            hardwareProfile.memoryTopology,
+        ) }
+        return assessPlansWithCompatibility(
+            descriptor,
+            hardwareProfile,
+            workload,
+            previous.compatibility,
+            cachedPlans,
+        )
+    }
+
+    private fun assessPlansWithCompatibility(
+        descriptor: ModelDescriptor,
+        hardwareProfile: HardwareProfile,
+        workload: WorkloadConfig,
+        compatibility: Compatibility,
+        cachedPlans: List<RunPlan>? = null,
+    ): AssessedPlans {
         val key = assessmentKey(descriptor)
         if (compatibility != Compatibility.Compatible) {
             return AssessedPlans(
@@ -38,14 +80,16 @@ class SuitabilityEngine(
             )
         }
 
-        val settings = planningSettings(descriptor, hardwareProfile, workload)
-            ?: return invalidPlans(key, compatibility, hardwareProfile.memoryTopology)
-        val candidates: List<RunPlan> = when {
-            descriptor is LlmModelDescriptor && workload is LlmWorkloadConfig ->
-                runPlanGenerator.llmCandidates(descriptor, workload, settings)
-            descriptor is DiffusionModelDescriptor && workload is DiffusionWorkloadConfig ->
-                runPlanGenerator.diffusionCandidates(descriptor, workload, settings)
-            else -> emptyList()
+        val candidates: List<RunPlan> = cachedPlans ?: run {
+            val settings = planningSettings(descriptor, hardwareProfile, workload)
+                ?: return invalidPlans(key, compatibility, hardwareProfile.memoryTopology)
+            when {
+                descriptor is LlmModelDescriptor && workload is LlmWorkloadConfig ->
+                    runPlanGenerator.llmCandidates(descriptor, workload, settings)
+                descriptor is DiffusionModelDescriptor && workload is DiffusionWorkloadConfig ->
+                    runPlanGenerator.diffusionCandidates(descriptor, workload, settings)
+                else -> emptyList()
+            }
         }
         if (candidates.isEmpty()) {
             return invalidPlans(key, compatibility, hardwareProfile.memoryTopology)

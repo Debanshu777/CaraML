@@ -167,8 +167,12 @@ actual class LlamaRunner {
     }
 
     @OptIn(ExperimentalForeignApi::class)
-    actual fun reserveBackendCalibration(probeToken: Long): Boolean =
-        probeToken > 0L && llama_runner_reserve_backend_calibration(probeToken) != 0
+    actual fun reserveBackendCalibration(probeToken: Long): BackendCalibrationReservation =
+        if (probeToken > 0L) {
+            decodeBackendCalibrationReservation(llama_runner_reserve_backend_calibration(probeToken))
+        } else {
+            BackendCalibrationReservation.INVALID
+        }
 
     @OptIn(ExperimentalForeignApi::class)
     actual fun abandonBackendCalibration(probeToken: Long) {

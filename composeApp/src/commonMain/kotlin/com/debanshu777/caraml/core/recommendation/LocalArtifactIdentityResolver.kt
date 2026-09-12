@@ -236,20 +236,39 @@ class LocalArtifactIdentityResolver(
     private fun descriptorMatchesResolvedArtifact(
         descriptor: ModelDescriptor,
         artifact: ResolvedLocalArtifact,
-    ): Boolean {
-        val expected = when (descriptor) {
-            is LlmModelDescriptor -> descriptor.files
-            is DiffusionModelDescriptor -> descriptor.components.map(DiffusionComponentDescriptor::file)
+    ): Boolean = when (descriptor) {
+        is LlmModelDescriptor -> {
+            if (descriptor.files.isEmpty() || descriptor.files.size != artifact.components.size) return false
+            val unmatched = artifact.components.map(ResolvedArtifactComponent::identity).toMutableList()
+            descriptor.files.all { identity ->
+                val index = unmatched.indexOfFirst { resolved -> identity.matchesExactResolvedIdentity(resolved) }
+                if (index < 0) false else {
+                    unmatched.removeAt(index)
+                    true
+                }
+            } && unmatched.isEmpty()
         }
-        if (expected.isEmpty() || expected.size != artifact.components.size) return false
-        val unmatched = artifact.components.map(ResolvedArtifactComponent::identity).toMutableList()
-        return expected.all { identity ->
-            val index = unmatched.indexOfFirst { resolved -> identity.matchesExactResolvedIdentity(resolved) }
-            if (index < 0) false else {
-                unmatched.removeAt(index)
-                true
-            }
-        } && unmatched.isEmpty()
+        is DiffusionModelDescriptor -> {
+            if (descriptor.components.isEmpty() || descriptor.components.size != artifact.components.size ||
+                descriptor.components.count(DiffusionComponentDescriptor::isPrimary) != 1
+            ) return false
+            val unmatched = artifact.components.toMutableList()
+            descriptor.components.all { expected ->
+                val expectedRole = when {
+                    expected.isPrimary -> "model"
+                    expected.role != null -> expected.role.name.lowercase()
+                    else -> return false
+                }
+                val index = unmatched.indexOfFirst { resolved ->
+                    resolved.logicalRole == expectedRole &&
+                        expected.file.matchesExactResolvedIdentity(resolved.identity)
+                }
+                if (index < 0) false else {
+                    unmatched.removeAt(index)
+                    true
+                }
+            } && unmatched.isEmpty()
+        }
     }
 
     private fun ModelFileIdentity.matchesExactResolvedIdentity(other: ModelFileIdentity): Boolean =

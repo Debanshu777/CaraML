@@ -229,7 +229,7 @@ void calibration_cancellation_is_atomic_and_nonblocking() {
 
 void reserved_calibration_latches_cancel_before_native_entry() {
     expect(
-        llama_runner_core_reserve_calibration(4),
+        llama_runner_core_reserve_calibration(4) == LLAMA_CALIBRATION_RESERVATION_ACCEPTED,
         "calibration token could not be reserved before JNI entry");
     llama_runner_core_cancel_calibration(4);
 
@@ -260,7 +260,7 @@ void interruptible_operation_waiter_fails_closed_after_poison() {
 
 void abandoned_calibration_quarantines_later_model_operations() {
     expect(
-        llama_runner_core_reserve_calibration(5),
+        llama_runner_core_reserve_calibration(5) == LLAMA_CALIBRATION_RESERVATION_ACCEPTED,
         "calibration token could not be reserved for quarantine test");
     llama_runner_core_abandon_calibration(5);
     auto preflight = std::async(std::launch::async, [] {
@@ -276,6 +276,36 @@ void abandoned_calibration_quarantines_later_model_operations() {
     const auto cancelled = llama_runner_core_calibrate_backend(
         5, LLAMA_BACKEND_CPU, 500, 4LL * 1024LL * 1024LL);
     expect(cancelled.status == LLAMA_CALIBRATION_CANCELLED, "abandoned probe token was not cancelled");
+
+    expect(
+        llama_runner_core_reserve_calibration(6) == LLAMA_CALIBRATION_RESERVATION_QUARANTINED,
+        "poisoned runtime accepted another calibration reservation");
+
+    auto discovery = std::async(std::launch::async, [] {
+        return llama_runner_core_backend_capabilities();
+    });
+    expect(
+        discovery.wait_for(std::chrono::milliseconds(100)) == std::future_status::ready &&
+            discovery.get().count == -1,
+        "backend discovery blocked behind a quarantined native operation");
+
+    auto feature_probe = std::async(std::launch::async, [] {
+        return llama_runner_core_probe_model_features("llama", "Q4_K_M");
+    });
+    expect(
+        feature_probe.wait_for(std::chrono::milliseconds(100)) == std::future_status::ready &&
+            feature_probe.get().architecture == LLAMA_FEATURE_UNKNOWN,
+        "feature discovery blocked behind a quarantined native operation");
+
+    auto unload = std::async(std::launch::async, [] { llama_runner_core_unload(); });
+    expect(
+        unload.wait_for(std::chrono::milliseconds(100)) == std::future_status::ready,
+        "unload blocked behind a quarantined native operation");
+
+    auto shutdown = std::async(std::launch::async, [] { llama_runner_core_shutdown(); });
+    expect(
+        shutdown.wait_for(std::chrono::milliseconds(100)) == std::future_status::ready,
+        "shutdown blocked behind a quarantined native operation");
 }
 
 } // namespace

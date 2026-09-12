@@ -1508,7 +1508,9 @@ class ModelViewModel(
                 )
             } catch (cancelled: CancellationException) {
                 _quickCalibration.value = QuickCalibrationUiState(
-                    result = CalibrationRunResult.Cancelled,
+                    result = if (calibration.nativeCalibrationState() ==
+                        com.debanshu777.caraml.core.recommendation.NativeCalibrationState.QUARANTINED
+                    ) CalibrationRunResult.Quarantined else CalibrationRunResult.Cancelled,
                 )
                 throw cancelled
             }
