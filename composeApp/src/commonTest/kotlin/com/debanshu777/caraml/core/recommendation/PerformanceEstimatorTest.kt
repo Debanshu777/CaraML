@@ -64,6 +64,7 @@ class PerformanceEstimatorTest {
         val llm = assertIs<PerformanceEstimate.Llm>(estimate)
         assertEquals(0.5, llm.decodeTokensPerSecond.low, 0.000_001)
         assertEquals(0.8, llm.decodeTokensPerSecond.likely, 0.000_001)
+        assertEquals(1.0, llm.rawAnalyticalDecodeTokensPerSecond, 0.000_001)
         assertEquals(1.0, llm.decodeTokensPerSecond.high, 0.000_001)
         assertEquals(Confidence.MEDIUM, llm.decodeTokensPerSecond.confidence)
         assertTrue(llm.decodeTokensPerSecond.evidence.any { it.reason == AssessmentReason.PERFORMANCE_ESTIMATED })
@@ -123,6 +124,7 @@ class PerformanceEstimatorTest {
 
         val image = assertIs<PerformanceEstimate.DiffusionImage>(estimate)
         assertTrue(image.totalTimeSeconds.likely > image.secondsPerStep.likely)
+        assertEquals(image.rawAnalyticalSecondsPerStep * 40.0, image.rawAnalyticalTotalTimeSeconds, 0.000_001)
         assertEquals(
             image.totalTimeSeconds.likely / 4.0,
             image.referenceTotalTimeSeconds.likely,

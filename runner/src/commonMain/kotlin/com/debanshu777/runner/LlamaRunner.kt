@@ -16,12 +16,13 @@ expect class LlamaRunner() {
     fun backendCapabilities(): List<NativeBackendCapability>
 
     fun calibrateBackend(
+        probeToken: Long,
         backend: NativeBackendKind,
         durationMillis: Int,
         bufferBytes: Long,
     ): BackendCalibrationResult
 
-    fun cancelBackendCalibration()
+    fun cancelBackendCalibration(probeToken: Long)
 
     fun probeModelFeatures(
         architecture: String,

@@ -31,6 +31,7 @@ data class MeasuredResult<T>(
     val value: T,
     val completedUnits: Int,
     val outcome: ObservationOutcome,
+    val performanceElapsedNanoseconds: Long? = null,
 )
 
 class InferenceObservationRecorder(
@@ -89,6 +90,7 @@ class InferenceObservationRecorder(
                 prediction = prediction,
                 measured = measured,
                 elapsedNanos = ended - started,
+                performanceElapsedNanos = measured.performanceElapsedNanoseconds ?: (ended - started),
                 baseline = baseline,
                 peakBytes = measuredPeak,
             )
@@ -107,31 +109,34 @@ class InferenceObservationRecorder(
         prediction: ObservationPrediction,
         measured: MeasuredResult<T>,
         elapsedNanos: Long,
+        performanceElapsedNanos: Long,
         baseline: ReliableMemoryReading?,
         peakBytes: Long?,
     ): List<RecommendationObservationEntity> {
         if (measured.completedUnits !in 1..MAX_COMPLETED_UNITS ||
-            elapsedNanos !in 1..MAX_MEASUREMENT_NANOS
+            elapsedNanos !in 1..MAX_MEASUREMENT_NANOS ||
+            performanceElapsedNanos !in 1..MAX_MEASUREMENT_NANOS
         ) return emptyList()
         val capturedAt = wallClockMillis()
         if (capturedAt < 0L) return emptyList()
         return buildList {
             val predictedPerformance = prediction.performance
-            val observedPerformance = when (prediction.performanceMeasurement) {
-                PerformanceMeasurement.RATE ->
-                    measured.completedUnits.toDouble() * NANOS_PER_SECOND / elapsedNanos.toDouble()
-                PerformanceMeasurement.DURATION_PER_UNIT ->
-                    elapsedNanos.toDouble() / NANOS_PER_SECOND / measured.completedUnits.toDouble()
+            val observedDurationPerUnit =
+                performanceElapsedNanos.toDouble() / NANOS_PER_SECOND / measured.completedUnits.toDouble()
+            val predictedDurationPerUnit = when (prediction.performanceMeasurement) {
+                PerformanceMeasurement.RATE -> prediction.performance?.let { 1.0 / it }
+                PerformanceMeasurement.DURATION_PER_UNIT -> prediction.performance
             }
-            if (predictedPerformance.isValidMetric() && observedPerformance.isValidMetric()) {
-                val validPredictedPerformance = requireNotNull(predictedPerformance)
+            if (predictedPerformance.isValidMetric() && predictedDurationPerUnit.isValidMetric() &&
+                observedDurationPerUnit.isValidMetric()
+            ) {
                 add(
                     RecommendationObservationEntity.from(
                         key = key.copy(metricKind = MetricKind.PERFORMANCE, memoryPool = null),
-                        predictedValue = validPredictedPerformance,
-                        observedValue = observedPerformance,
+                        predictedValue = requireNotNull(predictedDurationPerUnit),
+                        observedValue = observedDurationPerUnit,
                         completedUnits = measured.completedUnits.toLong(),
-                        elapsedNanoseconds = elapsedNanos,
+                        elapsedNanoseconds = performanceElapsedNanos,
                         outcome = measured.outcome,
                         capturedAtEpochMs = capturedAt,
                     ),

@@ -14,6 +14,8 @@ import com.debanshu777.caraml.core.recommendation.DiffusionModelDescriptor
 import com.debanshu777.caraml.core.recommendation.ModelDescriptor
 import com.debanshu777.caraml.core.recommendation.ModelFileIdentity
 import com.debanshu777.caraml.core.recommendation.CalibrationRunResult
+import com.debanshu777.caraml.core.recommendation.CalibrationSource
+import com.debanshu777.caraml.core.recommendation.NoCalibrationSource
 import com.debanshu777.caraml.core.recommendation.QuickCalibrationRunner
 import com.debanshu777.caraml.core.recommendation.WorkloadConfig
 import com.debanshu777.caraml.core.storage.component.ComponentRepository
@@ -347,6 +349,7 @@ class ModelViewModel(
     private val recommendationService: ModelRecommendationService,
     private val settingsRepository: SettingsRepository,
     private val quickCalibrationRunner: QuickCalibrationRunner? = null,
+    private val calibrationSource: CalibrationSource = NoCalibrationSource,
 ) : ViewModel() {
 
     private val downloadAdmissionPolicy = DownloadAdmissionPolicy()
@@ -384,6 +387,23 @@ class ModelViewModel(
                             recommendationService.rerank(session, profile)
                         } catch (_: QuerySupersededCancellationException) {
                             // A new query owns recommendation state now; keep observing profile changes.
+                        }
+                    }
+                }
+        }
+        viewModelScope.launch {
+            calibrationSource.revisionUpdates()
+                .distinctUntilChanged()
+                .drop(1)
+                .collectLatest {
+                    recommendationSession?.let { session ->
+                        try {
+                            recommendationService.reassessCached(
+                                session,
+                                settings.value.recommendationProfile,
+                            )
+                        } catch (_: QuerySupersededCancellationException) {
+                            // A newer query owns recommendation state.
                         }
                     }
                 }

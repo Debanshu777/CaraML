@@ -430,6 +430,32 @@ class ModelRecommendationServiceTest {
     }
 
     @Test
+    fun calibrationRevisionReassessesCachedDescriptorsWithoutMetadataOrSnapshotWork() = runTest {
+        val metadata = CountingMetadataSource()
+        val evaluator = FakeVariantEvaluator()
+        val snapshots = FakeSnapshotSource(snapshot(capturedAt = 10_000L))
+        val service = ModelRecommendationService(
+            metadataSource = metadata,
+            snapshotSource = snapshots,
+            variantEvaluator = evaluator,
+            evaluationDispatcher = StandardTestDispatcher(testScheduler),
+            clock = { 10_000L },
+        )
+        val session = service.startQuery("calibration", models(3), workload())
+        service.evaluateInitial(session, RecommendationProfile())
+        val metadataAfterInitial = metadata.requestCount
+        val initialSnapshots = snapshots.initialCount
+        val assessmentsAfterInitial = evaluator.assessmentCount
+
+        service.reassessCached(session, RecommendationProfile())
+
+        assertEquals(metadataAfterInitial, metadata.requestCount)
+        assertEquals(initialSnapshots, snapshots.initialCount)
+        assertEquals(0, snapshots.refreshCount)
+        assertEquals(assessmentsAfterInitial + 3, evaluator.assessmentCount)
+    }
+
+    @Test
     fun evaluatesEveryVariantAndNamesTheHighestPolicyCandidate() = runTest {
         val metadata = object : ModelMetadataSource {
             override suspend fun describeVariants(

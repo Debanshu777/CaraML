@@ -29,7 +29,7 @@ import com.debanshu777.caraml.core.platform.BackendCapabilitySource
 import com.debanshu777.caraml.core.platform.DeviceCapabilities
 import com.debanshu777.caraml.core.platform.RunnerBackendCapabilitySource
 import com.debanshu777.caraml.core.storage.AppDatabase
-import com.debanshu777.caraml.core.recommendation.storage.RecommendationDatabase
+import com.debanshu777.caraml.core.recommendation.storage.RecommendationDatabaseOwner
 import com.debanshu777.caraml.core.storage.component.ComponentRepository
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
 import com.debanshu777.caraml.core.data.settings.DefaultSettingsRepository
@@ -71,8 +71,6 @@ val appModule = module {
 
     single { get<AppDatabase>().localModelDao() }
     single { get<AppDatabase>().downloadedComponentDao() }
-    single { get<RecommendationDatabase>().observationDao() }
-
     single { LocalModelRepository(get()) }
     single { ComponentRepository(get()) }
     single { DownloadManager(get()) }
@@ -97,9 +95,10 @@ val appModule = module {
     single { RecommendationCalibrationScope(CoroutineScope(SupervisorJob() + Dispatchers.Default)) }
     single {
         CalibrationRepository(
-            dao = get(),
+            dao = get<RecommendationDatabaseOwner>().observationDao(),
             currentEngineVersion = NATIVE_LOAD_ENGINE_VERSION,
             now = { Clock.System.now().toEpochMilliseconds() },
+            recoverDao = { get<RecommendationDatabaseOwner>().recoverObservationDao() },
         ).also { repository ->
             get<RecommendationCalibrationScope>().scope.launch { repository.initialize() }
         }
@@ -244,6 +243,7 @@ val appModule = module {
             recommendationService = get(),
             settingsRepository = get(),
             quickCalibrationRunner = get(),
+            calibrationSource = get(),
         )
     }
     viewModel {

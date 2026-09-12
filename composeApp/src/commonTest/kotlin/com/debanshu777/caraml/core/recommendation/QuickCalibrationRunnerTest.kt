@@ -14,11 +14,13 @@ import com.debanshu777.caraml.core.recommendation.storage.RecommendationObservat
 import com.debanshu777.caraml.core.recommendation.storage.RecommendationObservationEntity
 import com.debanshu777.caraml.core.settings.AppSettings
 import com.debanshu777.runner.BackendCalibrationResult
+import com.debanshu777.runner.BackendCalibrationMetric
 import com.debanshu777.runner.BackendCalibrationWindow
 import com.debanshu777.runner.NativeBackendKind
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.awaitCancellation
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -78,6 +80,28 @@ class QuickCalibrationRunnerTest {
         assertTrue(fixture.settings.offerComplete)
         assertEquals(0, fixture.probe.calls)
         assertTrue(fixture.dao.rows.isEmpty())
+    }
+
+    @Test
+    fun timeoutCancelsOnlyTheOwnedProbeTokenAndReturnsPromptly() = runTest {
+        val dao = CapturingDao()
+        val repository = CalibrationRepository(dao, ENGINE, now = { NOW }).also { it.initialize() }
+        val settings = FakeSettingsRepository()
+        val probe = HangingProbe()
+        val runner = QuickCalibrationRunner(
+            snapshotSource = { snapshot() },
+            probe = probe,
+            repository = repository,
+            settingsRepository = settings,
+            engineVersion = ENGINE,
+            clock = { NOW },
+            timeoutMillis = 100L,
+            probeTokenSource = { 41L },
+        )
+
+        assertEquals(CalibrationRunResult.TimedOut, runner.runQuickCalibration())
+        assertEquals(listOf(41L), probe.cancelledTokens)
+        assertFalse(settings.offerComplete)
     }
 
     private suspend fun fixture(
@@ -153,6 +177,7 @@ class QuickCalibrationRunnerTest {
     ) : BackendCalibrationProbe {
         var calls = 0
         override suspend fun run(
+            probeToken: Long,
             backend: NativeBackendKind,
             durationMillis: Int,
             bufferBytes: Long,
@@ -161,7 +186,22 @@ class QuickCalibrationRunnerTest {
             return result
         }
 
-        override fun cancel() = Unit
+        override fun cancel(probeToken: Long) = Unit
+    }
+
+    private class HangingProbe : BackendCalibrationProbe {
+        val cancelledTokens = mutableListOf<Long>()
+
+        override suspend fun run(
+            probeToken: Long,
+            backend: NativeBackendKind,
+            durationMillis: Int,
+            bufferBytes: Long,
+        ): BackendCalibrationResult = awaitCancellation()
+
+        override fun cancel(probeToken: Long) {
+            cancelledTokens += probeToken
+        }
     }
 
     private class FakeSettingsRepository : SettingsRepository {
@@ -184,6 +224,7 @@ class QuickCalibrationRunnerTest {
         }
         override suspend fun allSamples() = rows.toList()
         override suspend fun deleteOlderThan(cutoffEpochMs: Long) { rows.removeAll { it.capturedAtEpochMs < cutoffEpochMs } }
+        override suspend fun deleteNewerThan(cutoffEpochMs: Long) { rows.removeAll { it.capturedAtEpochMs > cutoffEpochMs } }
         override suspend fun retainNewest(limit: Int) { while (rows.size > limit) rows.removeAt(0) }
         override suspend fun count() = rows.size
         override suspend fun countOlderThan(cutoffEpochMs: Long) = rows.count { it.capturedAtEpochMs < cutoffEpochMs }
@@ -207,8 +248,14 @@ class QuickCalibrationRunnerTest {
             backend = NativeBackendKind.CPU,
             windows = List(5) { index ->
                 BackendCalibrationWindow(
-                    bytesMoved = 8_000_000_000L + index,
-                    operations = 4_000_000_000L + index,
+                    metric = BackendCalibrationMetric.MEMORY_BANDWIDTH,
+                    completedUnits = 8_000_000_000L + index,
+                    elapsedNanoseconds = 1_000_000L,
+                )
+            } + List(5) { index ->
+                BackendCalibrationWindow(
+                    metric = BackendCalibrationMetric.COMPUTE,
+                    completedUnits = 4_000_000_000L + index,
                     elapsedNanoseconds = 1_000_000L,
                 )
             },

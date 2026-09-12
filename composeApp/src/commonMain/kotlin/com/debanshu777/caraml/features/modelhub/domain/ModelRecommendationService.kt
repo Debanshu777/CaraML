@@ -221,6 +221,41 @@ class ModelRecommendationService internal constructor(
         }
     }
 
+    /** Re-runs local assessment for already-cached descriptors after calibration changes. */
+    suspend fun reassessCached(session: RecommendationQuerySession, profile: RecommendationProfile) {
+        session.runEvaluation {
+            val (snapshot, storedEvaluations) = session.recordsSnapshot()
+            if (snapshot == null || storedEvaluations.isEmpty()) return@runEvaluation
+            val reassessedEvaluations = linkedMapOf<Int, RepositoryEvaluation>()
+            val reassessedStates = linkedMapOf<Int, RecommendedModelUiState>()
+            withContext(evaluationDispatcher) {
+                for ((sourceIndex, evaluation) in storedEvaluations.entries.sortedBy { it.key }) {
+                    val reassessed = RepositoryEvaluation(
+                        variants = evaluation.variants.map { variant ->
+                            variant.copy(
+                                assessment = variantEvaluator.assess(
+                                    variant.variant.descriptor,
+                                    snapshot,
+                                    session.workload,
+                                ),
+                            )
+                        },
+                    )
+                    reassessedEvaluations[sourceIndex] = reassessed
+                    val candidate = session.candidates.getOrNull(sourceIndex) ?: continue
+                    reassessedStates[sourceIndex] = assessedState(
+                        candidate,
+                        reassessed,
+                        snapshot,
+                        profile,
+                        session.workload,
+                    )
+                }
+            }
+            session.replaceReranked(reassessedEvaluations, reassessedStates)
+        }
+    }
+
     suspend fun refreshForAdmission(
         session: RecommendationQuerySession,
         state: RecommendedModelUiState,

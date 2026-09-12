@@ -84,6 +84,36 @@ class InferenceObservationRecorderTest {
         assertEquals(0.5, dao.rows.single().observedValue, 0.000_001)
     }
 
+    @Test
+    fun rateMeasurementPersistsDurationFactorAgainstRawAnalyticalRate() = runTest {
+        val dao = CapturingDao()
+        val repository = CalibrationRepository(dao, ENGINE, now = { NOW }).also { it.initialize() }
+        val recorder = InferenceObservationRecorder(
+            repository = repository,
+            processMemory = { null },
+            monotonicNanos = sequenceClock(0L, 9_000_000_000L),
+            wallClockMillis = { NOW },
+            sampleDelay = {},
+        )
+
+        recorder.measureGeneration(
+            key = performanceKey(),
+            prediction = ObservationPrediction(performance = 8.0, hostMemoryBytes = null),
+        ) {
+            MeasuredResult(
+                value = Unit,
+                completedUnits = 4,
+                outcome = ObservationOutcome.SUCCESS,
+                performanceElapsedNanoseconds = 1_000_000_000L,
+            )
+        }
+
+        val row = dao.rows.single()
+        assertEquals(0.125, row.predictedValue, 0.000_001)
+        assertEquals(0.25, row.observedValue, 0.000_001)
+        assertEquals(1_000_000_000L, row.elapsedNanoseconds)
+    }
+
     private fun performanceKey() = CalibrationKey(
         backend = BackendKind.CPU,
         architectureFamily = "llama",
@@ -102,6 +132,7 @@ class InferenceObservationRecorderTest {
         override suspend fun insertAll(samples: List<RecommendationObservationEntity>) { rows += samples }
         override suspend fun allSamples() = rows.toList()
         override suspend fun deleteOlderThan(cutoffEpochMs: Long) { rows.removeAll { it.capturedAtEpochMs < cutoffEpochMs } }
+        override suspend fun deleteNewerThan(cutoffEpochMs: Long) { rows.removeAll { it.capturedAtEpochMs > cutoffEpochMs } }
         override suspend fun retainNewest(limit: Int) { while (rows.size > limit) rows.removeAt(0) }
         override suspend fun count() = rows.size
         override suspend fun countOlderThan(cutoffEpochMs: Long) = rows.count { it.capturedAtEpochMs < cutoffEpochMs }

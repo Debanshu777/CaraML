@@ -54,6 +54,7 @@ interface CalibrationSource {
     fun backendProfileFor(backend: BackendKind): BackendPerformanceProfile?
     fun correctionFor(key: CalibrationKey): CalibrationCorrection?
     fun revision(): Long
+    fun revisionUpdates(): kotlinx.coroutines.flow.Flow<Long> = kotlinx.coroutines.flow.flowOf(revision())
 }
 
 data object NoCalibrationSource : CalibrationSource {
@@ -122,6 +123,7 @@ sealed interface PerformanceEstimate {
         val decodeTokensPerSecond: PerformanceRange,
         val timeToFirstTokenSeconds: PerformanceRange,
         val loadTimeSeconds: PerformanceRange,
+        val rawAnalyticalDecodeTokensPerSecond: Double,
         override val evidence: List<Evidence>,
         internal val collectionLimitExceeded: Boolean,
     ) : PerformanceEstimate {
@@ -131,11 +133,13 @@ sealed interface PerformanceEstimate {
             timeToFirstTokenSeconds: PerformanceRange,
             loadTimeSeconds: PerformanceRange,
             evidence: Collection<Evidence>,
+            rawAnalyticalDecodeTokensPerSecond: Double = decodeTokensPerSecond.likely,
         ) : this(
             promptTokensPerSecond,
             decodeTokensPerSecond,
             timeToFirstTokenSeconds,
             loadTimeSeconds,
+            rawAnalyticalDecodeTokensPerSecond,
             boundedCollectionSnapshot(evidence, RecommendationPolicyV1.MAX_EVIDENCE_ENTRIES),
         )
 
@@ -144,12 +148,14 @@ sealed interface PerformanceEstimate {
             decodeTokensPerSecond: PerformanceRange,
             timeToFirstTokenSeconds: PerformanceRange,
             loadTimeSeconds: PerformanceRange,
+            rawAnalyticalDecodeTokensPerSecond: Double,
             evidence: BoundedCollectionSnapshot<Evidence>,
         ) : this(
             promptTokensPerSecond,
             decodeTokensPerSecond,
             timeToFirstTokenSeconds,
             loadTimeSeconds,
+            rawAnalyticalDecodeTokensPerSecond,
             evidence.values,
             evidence.limitExceeded,
         )
@@ -160,6 +166,8 @@ sealed interface PerformanceEstimate {
         val secondsPerStep: PerformanceRange,
         val totalTimeSeconds: PerformanceRange,
         val referenceTotalTimeSeconds: PerformanceRange,
+        val rawAnalyticalSecondsPerStep: Double,
+        val rawAnalyticalTotalTimeSeconds: Double,
         override val evidence: List<Evidence>,
         internal val collectionLimitExceeded: Boolean,
     ) : PerformanceEstimate {
@@ -168,10 +176,14 @@ sealed interface PerformanceEstimate {
             totalTimeSeconds: PerformanceRange,
             referenceTotalTimeSeconds: PerformanceRange,
             evidence: Collection<Evidence>,
+            rawAnalyticalSecondsPerStep: Double = secondsPerStep.likely,
+            rawAnalyticalTotalTimeSeconds: Double = totalTimeSeconds.likely,
         ) : this(
             secondsPerStep,
             totalTimeSeconds,
             referenceTotalTimeSeconds,
+            rawAnalyticalSecondsPerStep,
+            rawAnalyticalTotalTimeSeconds,
             boundedCollectionSnapshot(evidence, RecommendationPolicyV1.MAX_EVIDENCE_ENTRIES),
         )
 
@@ -179,11 +191,15 @@ sealed interface PerformanceEstimate {
             secondsPerStep: PerformanceRange,
             totalTimeSeconds: PerformanceRange,
             referenceTotalTimeSeconds: PerformanceRange,
+            rawAnalyticalSecondsPerStep: Double,
+            rawAnalyticalTotalTimeSeconds: Double,
             evidence: BoundedCollectionSnapshot<Evidence>,
         ) : this(
             secondsPerStep,
             totalTimeSeconds,
             referenceTotalTimeSeconds,
+            rawAnalyticalSecondsPerStep,
+            rawAnalyticalTotalTimeSeconds,
             evidence.values,
             evidence.limitExceeded,
         )
@@ -195,6 +211,8 @@ sealed interface PerformanceEstimate {
         val secondsPerFrame: PerformanceRange,
         val totalTimeSeconds: PerformanceRange,
         val comparableForPolicy: Boolean,
+        val rawAnalyticalSecondsPerStep: Double,
+        val rawAnalyticalTotalTimeSeconds: Double,
         override val evidence: List<Evidence>,
         internal val collectionLimitExceeded: Boolean,
     ) : PerformanceEstimate {
@@ -204,11 +222,15 @@ sealed interface PerformanceEstimate {
             totalTimeSeconds: PerformanceRange,
             comparableForPolicy: Boolean,
             evidence: Collection<Evidence>,
+            rawAnalyticalSecondsPerStep: Double = secondsPerStep.likely,
+            rawAnalyticalTotalTimeSeconds: Double = totalTimeSeconds.likely,
         ) : this(
             secondsPerStep,
             secondsPerFrame,
             totalTimeSeconds,
             comparableForPolicy,
+            rawAnalyticalSecondsPerStep,
+            rawAnalyticalTotalTimeSeconds,
             boundedCollectionSnapshot(evidence, RecommendationPolicyV1.MAX_EVIDENCE_ENTRIES),
         )
 
@@ -217,12 +239,16 @@ sealed interface PerformanceEstimate {
             secondsPerFrame: PerformanceRange,
             totalTimeSeconds: PerformanceRange,
             comparableForPolicy: Boolean,
+            rawAnalyticalSecondsPerStep: Double,
+            rawAnalyticalTotalTimeSeconds: Double,
             evidence: BoundedCollectionSnapshot<Evidence>,
         ) : this(
             secondsPerStep,
             secondsPerFrame,
             totalTimeSeconds,
             comparableForPolicy,
+            rawAnalyticalSecondsPerStep,
+            rawAnalyticalTotalTimeSeconds,
             evidence.values,
             evidence.limitExceeded,
         )
@@ -344,7 +370,18 @@ class PerformanceEstimator {
         )?.takeIf { it.high <= RecommendationPolicyV1.MAX_SERIALIZED_PERFORMANCE_VALUE }
             ?: return unknown(AssessmentReason.ARITHMETIC_OVERFLOW, "llm-ttft")
 
-        return PerformanceEstimate.Llm(promptRate, decodeRate, ttft, loadDuration, evidence)
+        val rawDecodeRate = 1.0 / secondsPerDecode
+        if (!validPositiveFinite(rawDecodeRate)) {
+            return unknown(AssessmentReason.ARITHMETIC_OVERFLOW, "llm-raw-decode-rate")
+        }
+        return PerformanceEstimate.Llm(
+            promptRate,
+            decodeRate,
+            ttft,
+            loadDuration,
+            evidence,
+            rawAnalyticalDecodeTokensPerSecond = rawDecodeRate,
+        )
     }
 
     private fun estimateDiffusion(
@@ -386,6 +423,10 @@ class PerformanceEstimator {
             ?: return unknown(AssessmentReason.ARITHMETIC_OVERFLOW, "diffusion-frame-duration")
         val total = scaleDurationRange(secondsPerFrame, plan.frameCount.toDouble())
             ?: return unknown(AssessmentReason.ARITHMETIC_OVERFLOW, "diffusion-total-duration")
+        val rawTotalTime = baseSecondsPerStep * plan.steps.toDouble() * plan.frameCount.toDouble()
+        if (!validPositiveFinite(rawTotalTime)) {
+            return unknown(AssessmentReason.ARITHMETIC_OVERFLOW, "diffusion-raw-total-duration")
+        }
 
         if (plan.mode == DiffusionMode.VIDEO) {
             return PerformanceEstimate.DiffusionVideo(
@@ -394,6 +435,8 @@ class PerformanceEstimator {
                 total,
                 comparableForPolicy = false,
                 evidence,
+                rawAnalyticalSecondsPerStep = baseSecondsPerStep,
+                rawAnalyticalTotalTimeSeconds = rawTotalTime,
             )
         }
         val normalization = scale * (plan.steps.toDouble() / REFERENCE_STEPS.toDouble())
@@ -402,7 +445,14 @@ class PerformanceEstimator {
         }
         val reference = divideDurationRange(total, normalization)
             ?: return unknown(AssessmentReason.ARITHMETIC_OVERFLOW, "diffusion-reference-duration")
-        return PerformanceEstimate.DiffusionImage(secondsPerStep, total, reference, evidence)
+        return PerformanceEstimate.DiffusionImage(
+            secondsPerStep,
+            total,
+            reference,
+            evidence,
+            rawAnalyticalSecondsPerStep = baseSecondsPerStep,
+            rawAnalyticalTotalTimeSeconds = rawTotalTime,
+        )
     }
 
     private fun calibrationKey(

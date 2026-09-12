@@ -6,6 +6,8 @@ import com.debanshu777.caraml.core.recommendation.storage.RecommendationObservat
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlin.concurrent.Volatile
 import kotlin.math.exp
 import kotlin.math.max
@@ -23,24 +25,48 @@ enum class ObservationOutcome {
 }
 
 class CalibrationRepository(
-    private val dao: RecommendationObservationDao,
+    dao: RecommendationObservationDao,
     private val currentEngineVersion: String,
     private val now: () -> Long,
+    private val recoverDao: suspend () -> RecommendationObservationDao? = { null },
 ) : CalibrationSource {
     private val writeMutex = Mutex()
+    private var dao: RecommendationObservationDao = dao
+    private val revisionUpdates = MutableStateFlow(0L)
 
     @Volatile
     private var snapshot = Snapshot(emptyList(), 0L)
 
     suspend fun initialize() {
         writeMutex.withLock {
+            val currentTime = now().takeIf { it >= 0L } ?: run {
+                publishSnapshot(emptyList(), 0L)
+                return@withLock
+            }
             try {
-                val rows = dao.allSamples().filter(::isValidStoredSample).take(MAX_OBSERVATIONS)
-                snapshot = Snapshot(rows, dao.maximumCapturedAt()?.coerceAtLeast(0L) ?: 0L)
+                publishInitializedRows(initializeRows(dao, currentTime))
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
-                snapshot = Snapshot(emptyList(), 0L)
+                val recovered = try {
+                    recoverDao()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    null
+                }
+                if (recovered == null) {
+                    publishSnapshot(emptyList(), 0L)
+                } else {
+                    dao = recovered
+                    try {
+                        publishInitializedRows(initializeRows(recovered, currentTime))
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        publishSnapshot(emptyList(), 0L)
+                    }
+                }
             }
         }
     }
@@ -134,6 +160,27 @@ class CalibrationRepository(
 
     override fun revision(): Long = snapshot.revision
 
+    override fun revisionUpdates() = revisionUpdates.asStateFlow()
+
+    private suspend fun initializeRows(
+        source: RecommendationObservationDao,
+        currentTime: Long,
+    ): List<RecommendationObservationEntity> {
+        val rows = source.initializeTransaction(
+            oldestEpochMs = retentionCutoff(currentTime),
+            newestEpochMs = futureCutoff(currentTime),
+            limit = MAX_OBSERVATIONS,
+        )
+        check(rows.size <= MAX_OBSERVATIONS && rows.all(::isValidStoredSample)) {
+            "Invalid recommendation cache"
+        }
+        return rows
+    }
+
+    private fun publishInitializedRows(rows: List<RecommendationObservationEntity>) {
+        publishSnapshot(rows, rows.maxOfOrNull { it.capturedAtEpochMs } ?: 0L)
+    }
+
     private fun profileMetric(backend: BackendKind, kind: MetricKind, currentTime: Long): ProfileMetric? {
         val values = snapshot.rows.asSequence()
             .filter {
@@ -156,13 +203,18 @@ class CalibrationRepository(
         val persisted = valid.maxOfOrNull { it.capturedAtEpochMs } ?: 0L
         val advanced = if (old == Long.MAX_VALUE) Long.MAX_VALUE else old + 1L
         val next = max(max(advanced, persisted), commitStamp.coerceAtMost(Long.MAX_VALUE - 1L))
-        snapshot = Snapshot(valid, next)
+        publishSnapshot(valid, next)
+    }
+
+    private fun publishSnapshot(rows: List<RecommendationObservationEntity>, revision: Long) {
+        snapshot = Snapshot(rows, revision)
+        revisionUpdates.value = revision
     }
 
     private fun isValidNewSample(row: RecommendationObservationEntity): Boolean {
         val currentTime = now()
         return row.id == 0L && row.engineVersion == currentEngineVersion &&
-            row.capturedAtEpochMs <= currentTime + MAX_FUTURE_SKEW_MS && isValidStoredSample(row)
+            currentTime >= 0L && row.capturedAtEpochMs <= futureCutoff(currentTime) && isValidStoredSample(row)
     }
 
     private fun isValidStoredSample(row: RecommendationObservationEntity): Boolean {
@@ -233,6 +285,10 @@ class CalibrationRepository(
 
     private fun retentionCutoff(atEpochMs: Long): Long =
         (atEpochMs - RETENTION_MS).coerceAtLeast(0L)
+
+    private fun futureCutoff(atEpochMs: Long): Long =
+        if (atEpochMs > Long.MAX_VALUE - MAX_FUTURE_SKEW_MS) Long.MAX_VALUE
+        else atEpochMs + MAX_FUTURE_SKEW_MS
 
     private fun validStableLabel(value: String): Boolean =
         value.length in 1..MAX_LABEL_LENGTH && STABLE_LABEL.matches(value)

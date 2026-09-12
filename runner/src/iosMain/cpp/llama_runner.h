@@ -63,8 +63,8 @@ struct LlamaBackendCapabilitiesFFI {
 };
 
 struct LlamaCalibrationWindowFFI {
-    int64_t bytes_moved;
-    int64_t operations;
+    int metric;
+    int64_t completed_units;
     int64_t elapsed_nanoseconds;
 };
 
@@ -88,10 +88,11 @@ struct LlamaPreflightResultFFI llama_runner_preflight_model(
     struct LlamaRunnerConfigFFI config);
 struct LlamaBackendCapabilitiesFFI llama_runner_backend_capabilities(void);
 struct LlamaCalibrationResultFFI llama_runner_calibrate_backend(
+    int64_t probe_token,
     int backend,
     int duration_millis,
     int64_t buffer_bytes);
-void llama_runner_cancel_backend_calibration(void);
+void llama_runner_cancel_backend_calibration(int64_t probe_token);
 struct LlamaModelFeatureSupportFFI llama_runner_probe_model_features(
     const char *architecture,
     const char *quantization);

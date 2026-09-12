@@ -271,11 +271,13 @@ extern "C" JNIEXPORT jlongArray JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeCalibrateBackend(
     JNIEnv *env,
     jobject,
+    jlong probeToken,
     jint backend,
     jint durationMillis,
     jlong bufferBytes) {
     return jni_guard<jlongArray>("nativeCalibrateBackend failed", nullptr, [&]() {
         const LlamaCalibrationResultNative native = llama_runner_core_calibrate_backend(
+            static_cast<int64_t>(probeToken),
             static_cast<int>(backend),
             static_cast<int>(durationMillis),
             static_cast<int64_t>(bufferBytes));
@@ -292,8 +294,8 @@ Java_com_debanshu777_runner_LlamaRunner_nativeCalibrateBackend(
         values[2] = static_cast<jlong>(native.window_count);
         for (int index = 0; index < native.window_count; ++index) {
             const size_t offset = header_fields + static_cast<size_t>(index) * window_fields;
-            values[offset] = static_cast<jlong>(native.windows[index].bytes_moved);
-            values[offset + 1] = static_cast<jlong>(native.windows[index].operations);
+            values[offset] = static_cast<jlong>(native.windows[index].metric);
+            values[offset + 1] = static_cast<jlong>(native.windows[index].completed_units);
             values[offset + 2] = static_cast<jlong>(native.windows[index].elapsed_nanoseconds);
         }
         jlongArray result = env->NewLongArray(static_cast<jsize>(field_count));
@@ -304,9 +306,10 @@ Java_com_debanshu777_runner_LlamaRunner_nativeCalibrateBackend(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_debanshu777_runner_LlamaRunner_nativeCancelBackendCalibration(JNIEnv *, jobject) {
-    jni_guard_void("nativeCancelBackendCalibration failed", []() {
-        llama_runner_core_cancel_calibration();
+Java_com_debanshu777_runner_LlamaRunner_nativeCancelBackendCalibration(
+    JNIEnv *, jobject, jlong probeToken) {
+    jni_guard_void("nativeCancelBackendCalibration failed", [probeToken]() {
+        llama_runner_core_cancel_calibration(static_cast<int64_t>(probeToken));
     });
 }
 

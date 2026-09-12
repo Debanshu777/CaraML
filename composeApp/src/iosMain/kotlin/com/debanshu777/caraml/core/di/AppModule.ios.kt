@@ -3,7 +3,7 @@ package com.debanshu777.caraml.core.di
 import com.debanshu777.caraml.core.storage.AppDatabase
 import com.debanshu777.caraml.core.storage.getDatabaseBuilder
 import com.debanshu777.caraml.core.storage.getRoomDatabase
-import com.debanshu777.caraml.core.recommendation.storage.RecommendationDatabase
+import com.debanshu777.caraml.core.recommendation.storage.RecommendationDatabaseOwner
 import com.debanshu777.caraml.core.recommendation.storage.getRecommendationDatabaseBuilder
 import com.debanshu777.caraml.core.recommendation.storage.getRecommendationRoomDatabase
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
@@ -22,9 +22,11 @@ actual val platformHuggingFaceModule = module {
         getRoomDatabase(builder)
     }
 
-    single<RecommendationDatabase> {
+    single {
         val dbPath = get<StoragePathProvider>().getRecommendationDatabasePath()
-        getRecommendationRoomDatabase(getRecommendationDatabaseBuilder(dbPath))
+        RecommendationDatabaseOwner(dbPath) {
+            getRecommendationRoomDatabase(getRecommendationDatabaseBuilder(dbPath))
+        }
     }
 }
 

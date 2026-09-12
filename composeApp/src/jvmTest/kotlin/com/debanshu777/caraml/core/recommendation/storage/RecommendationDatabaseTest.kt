@@ -5,6 +5,7 @@ import com.debanshu777.caraml.core.recommendation.CalibrationKey
 import com.debanshu777.caraml.core.recommendation.MemoryPool
 import com.debanshu777.caraml.core.recommendation.MetricKind
 import com.debanshu777.caraml.core.recommendation.ObservationOutcome
+import com.debanshu777.caraml.core.recommendation.CalibrationRepository
 import com.debanshu777.caraml.core.storage.getDatabaseBuilder
 import com.debanshu777.caraml.core.storage.getRoomDatabase
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
@@ -14,6 +15,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class RecommendationDatabaseTest {
     @Test
@@ -104,5 +106,53 @@ class RecommendationDatabaseTest {
             recommendationDatabase.close()
             appDatabase.close()
         }
+    }
+
+    @Test
+    fun corruptRecommendationCacheIsRecreatedWithoutTouchingPrimaryDatabase() = runTest {
+        val directory = Files.createTempDirectory("caraml-recommendation-corrupt")
+        val appPath = directory.resolve("caraml.db")
+        val recommendationPath = directory.resolve("recommendation_cache.db")
+        val appDatabase = getRoomDatabase(getDatabaseBuilder(appPath.toString()))
+        appDatabase.localModelDao().insert(
+            LocalModelEntity(
+                modelId = "owner/model",
+                filename = "model.gguf",
+                localPath = "/private/model.gguf",
+                sizeBytes = 1L,
+                downloadedAt = 1L,
+                author = null,
+                libraryName = null,
+                pipelineTag = null,
+            ),
+        )
+        Files.writeString(recommendationPath, "not-a-sqlite-database")
+        val owner = RecommendationDatabaseOwner(recommendationPath.toString()) {
+            getRecommendationRoomDatabase(getRecommendationDatabaseBuilder(recommendationPath.toString()))
+        }
+        try {
+            val repository = CalibrationRepository(
+                dao = owner.observationDao(),
+                currentEngineVersion = "native-engine-v1",
+                now = { 10_000L },
+                recoverDao = owner::recoverObservationDao,
+            )
+
+            repository.initialize()
+
+            assertEquals(0, owner.observationDao().count())
+            assertEquals("owner/model", appDatabase.localModelDao().getAllDownloadedFiles().first().single().modelId)
+            assertTrue(Files.exists(appPath))
+        } finally {
+            owner.close()
+            appDatabase.close()
+        }
+    }
+
+    @Test
+    fun recoveryDeletionRejectsEveryPathOutsideTheDedicatedCacheFilename() {
+        assertFalse(isSafeRecommendationDatabasePath("/tmp/caraml.db"))
+        assertFalse(isSafeRecommendationDatabasePath("/tmp/recommendation_cache.db/other"))
+        assertTrue(isSafeRecommendationDatabasePath("/tmp/recommendation_cache.db"))
     }
 }

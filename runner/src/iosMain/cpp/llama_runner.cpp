@@ -138,14 +138,16 @@ struct LlamaBackendCapabilitiesFFI llama_runner_backend_capabilities(void) {
 }
 
 struct LlamaCalibrationResultFFI llama_runner_calibrate_backend(
+    int64_t probe_token,
     int backend,
     int duration_millis,
     int64_t buffer_bytes) {
     return ffi_guard<LlamaCalibrationResultFFI>(
         "calibrate_backend",
         LlamaCalibrationResultFFI{LLAMA_CALIBRATION_UNAVAILABLE, backend, 0, {}},
-        [backend, duration_millis, buffer_bytes]() {
+        [probe_token, backend, duration_millis, buffer_bytes]() {
             const LlamaCalibrationResultNative native = llama_runner_core_calibrate_backend(
+                probe_token,
                 backend,
                 duration_millis,
                 buffer_bytes);
@@ -156,8 +158,8 @@ struct LlamaCalibrationResultFFI llama_runner_calibrate_backend(
             for (int index = 0;
                  index < native.window_count && index < LLAMA_RUNNER_CALIBRATION_MAX_WINDOWS;
                  ++index) {
-                result.windows[index].bytes_moved = native.windows[index].bytes_moved;
-                result.windows[index].operations = native.windows[index].operations;
+                result.windows[index].metric = native.windows[index].metric;
+                result.windows[index].completed_units = native.windows[index].completed_units;
                 result.windows[index].elapsed_nanoseconds =
                     native.windows[index].elapsed_nanoseconds;
             }
@@ -165,9 +167,9 @@ struct LlamaCalibrationResultFFI llama_runner_calibrate_backend(
         });
 }
 
-void llama_runner_cancel_backend_calibration(void) {
-    ffi_guard_void("cancel_backend_calibration", []() {
-        llama_runner_core_cancel_calibration();
+void llama_runner_cancel_backend_calibration(int64_t probe_token) {
+    ffi_guard_void("cancel_backend_calibration", [probe_token]() {
+        llama_runner_core_cancel_calibration(probe_token);
     });
 }
 

@@ -4,20 +4,23 @@ import com.debanshu777.caraml.core.data.settings.SettingsRepository
 import com.debanshu777.caraml.core.platform.BackendKind
 import com.debanshu777.caraml.core.platform.BackendStatus
 import com.debanshu777.caraml.core.platform.DeviceSnapshot
-import com.debanshu777.caraml.core.platform.PlatformPaths
 import com.debanshu777.caraml.core.platform.PowerPolicyState
 import com.debanshu777.caraml.core.platform.ThermalState
 import com.debanshu777.caraml.core.recommendation.storage.RecommendationObservationEntity
 import com.debanshu777.runner.BackendCalibrationResult
+import com.debanshu777.runner.BackendCalibrationMetric
 import com.debanshu777.runner.LlamaRunner
 import com.debanshu777.runner.NativeBackendKind
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.concurrent.atomics.AtomicLong
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 enum class CalibrationDeferralReason {
     THERMAL,
@@ -38,54 +41,55 @@ sealed interface CalibrationRunResult {
 
 interface BackendCalibrationProbe {
     suspend fun run(
+        probeToken: Long,
         backend: NativeBackendKind,
         durationMillis: Int,
         bufferBytes: Long,
     ): BackendCalibrationResult
 
-    fun cancel()
+    fun cancel(probeToken: Long)
 }
+
+private val backendCalibrationAdmission = Mutex()
 
 class LlamaBackendCalibrationProbe(
     private val runner: LlamaRunner,
     private val dispatcher: CoroutineDispatcher,
-    private val nativeLibraryDirectory: () -> String = PlatformPaths::getNativeLibDir,
 ) : BackendCalibrationProbe {
     override suspend fun run(
+        probeToken: Long,
         backend: NativeBackendKind,
         durationMillis: Int,
         bufferBytes: Long,
-    ): BackendCalibrationResult = coroutineScope {
-        val directory = nativeLibraryDirectory()
-        if (directory.isBlank() || directory.encodeToByteArray().size > MAX_NATIVE_DIRECTORY_BYTES || '\u0000' in directory) {
-            return@coroutineScope BackendCalibrationResult.Unavailable
-        }
-        val started = CompletableDeferred<Unit>()
-        val work = async(dispatcher) {
-            runner.initialize(directory)
-            started.complete(Unit)
-            runner.calibrateBackend(backend, durationMillis, bufferBytes)
-        }
+    ): BackendCalibrationResult {
+        if (probeToken <= 0L) return BackendCalibrationResult.Invalid
         try {
-            started.await()
-            work.await()
+            return backendCalibrationAdmission.withLock {
+                coroutineScope {
+                    val work = async(dispatcher) {
+                        runner.calibrateBackend(probeToken, backend, durationMillis, bufferBytes)
+                    }
+                    try {
+                        work.await()
+                    } catch (cancelled: CancellationException) {
+                        runner.cancelBackendCalibration(probeToken)
+                        work.cancelAndJoin()
+                        throw cancelled
+                    }
+                }
+            }
         } catch (cancelled: CancellationException) {
-            runner.cancelBackendCalibration()
-            work.cancelAndJoin()
+            runner.cancelBackendCalibration(probeToken)
             throw cancelled
         } catch (_: Exception) {
-            work.cancel()
-            BackendCalibrationResult.Unavailable
+            return BackendCalibrationResult.Unavailable
         }
     }
 
-    override fun cancel() = runner.cancelBackendCalibration()
-
-    private companion object {
-        const val MAX_NATIVE_DIRECTORY_BYTES = 4_096
-    }
+    override fun cancel(probeToken: Long) = runner.cancelBackendCalibration(probeToken)
 }
 
+@OptIn(ExperimentalAtomicApi::class)
 class QuickCalibrationRunner(
     private val snapshotSource: suspend () -> DeviceSnapshot,
     private val probe: BackendCalibrationProbe,
@@ -94,6 +98,7 @@ class QuickCalibrationRunner(
     private val engineVersion: String,
     private val clock: () -> Long,
     private val timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
+    private val probeTokenSource: () -> Long = ::nextCalibrationProbeToken,
 ) {
     suspend fun runQuickCalibration(allowUnknownPower: Boolean = false): CalibrationRunResult {
         val snapshot = try {
@@ -125,12 +130,16 @@ class QuickCalibrationRunner(
             ?.coerceAtMost(MAX_BUFFER_BYTES)
             ?: return CalibrationRunResult.Deferred(CalibrationDeferralReason.INSUFFICIENT_MEMORY)
         val nativeBackend = backend.toNativeBackend()
+        val probeToken = probeTokenSource().takeIf { it > 0L } ?: return CalibrationRunResult.Failed
         val nativeResult = try {
             withTimeoutOrNull(timeoutMillis) {
-                probe.run(nativeBackend, TARGET_DURATION_MILLIS, bufferBytes)
-            } ?: return CalibrationRunResult.TimedOut
+                probe.run(probeToken, nativeBackend, TARGET_DURATION_MILLIS, bufferBytes)
+            } ?: run {
+                probe.cancel(probeToken)
+                return CalibrationRunResult.TimedOut
+            }
         } catch (cancelled: CancellationException) {
-            probe.cancel()
+            probe.cancel(probeToken)
             throw cancelled
         } catch (_: Exception) {
             return CalibrationRunResult.Failed
@@ -160,18 +169,22 @@ class QuickCalibrationRunner(
         expectedNativeBackend: NativeBackendKind,
         result: BackendCalibrationResult.Complete,
     ): CalibrationRunResult {
-        if (result.backend != expectedNativeBackend || result.windows.size !in MIN_WINDOWS..MAX_WINDOWS) {
+        if (result.backend != expectedNativeBackend || result.windows.size !in MIN_TOTAL_WINDOWS..MAX_WINDOWS ||
+            result.windows.count { it.metric == BackendCalibrationMetric.MEMORY_BANDWIDTH } < MIN_WINDOWS_PER_METRIC ||
+            result.windows.count { it.metric == BackendCalibrationMetric.COMPUTE } < MIN_WINDOWS_PER_METRIC
+        ) {
             return CalibrationRunResult.Failed
         }
         val capturedAt = clock().takeIf { it >= 0L } ?: return CalibrationRunResult.Failed
-        val observations = buildList(result.windows.size * 2) {
+        val observations = buildList(result.windows.size) {
             result.windows.forEach { window ->
-                val bandwidth = rate(window.bytesMoved, window.elapsedNanoseconds)
+                val rate = rate(window.completedUnits, window.elapsedNanoseconds)
                     ?: return CalibrationRunResult.Failed
-                val compute = rate(window.operations, window.elapsedNanoseconds)
-                    ?: return CalibrationRunResult.Failed
-                add(calibrationSample(requestedBackend, MetricKind.BANDWIDTH, bandwidth, window.bytesMoved, window.elapsedNanoseconds, capturedAt))
-                add(calibrationSample(requestedBackend, MetricKind.COMPUTE, compute, window.operations, window.elapsedNanoseconds, capturedAt))
+                val kind = when (window.metric) {
+                    BackendCalibrationMetric.MEMORY_BANDWIDTH -> MetricKind.BANDWIDTH
+                    BackendCalibrationMetric.COMPUTE -> MetricKind.COMPUTE
+                }
+                add(calibrationSample(requestedBackend, kind, rate, window.completedUnits, window.elapsedNanoseconds, capturedAt))
             }
         }
         if (!repository.recordAll(observations)) return CalibrationRunResult.Failed
@@ -241,7 +254,8 @@ class QuickCalibrationRunner(
         const val DEFAULT_TIMEOUT_MILLIS = 4_000L
         const val MIN_BUFFER_BYTES = 4L shl 20
         const val MAX_BUFFER_BYTES = 64L shl 20
-        const val MIN_WINDOWS = 5
+        const val MIN_WINDOWS_PER_METRIC = 5
+        const val MIN_TOTAL_WINDOWS = MIN_WINDOWS_PER_METRIC * 2
         const val MAX_WINDOWS = 16
         const val MIN_RATE = 1.0
         const val MAX_RATE = 1.0e18
@@ -257,3 +271,9 @@ class QuickCalibrationRunner(
         )
     }
 }
+
+@OptIn(ExperimentalAtomicApi::class)
+private val calibrationProbeTokens = AtomicLong(0L)
+
+@OptIn(ExperimentalAtomicApi::class)
+private fun nextCalibrationProbeToken(): Long = calibrationProbeTokens.fetchAndAdd(1L) + 1L

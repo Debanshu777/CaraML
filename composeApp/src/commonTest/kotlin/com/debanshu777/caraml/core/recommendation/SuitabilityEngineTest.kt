@@ -244,6 +244,32 @@ class SuitabilityEngineTest {
         assertTrue(result.selectedPlan is LlmRunPlan)
     }
 
+    @Test
+    fun exactHostPoolCorrectionReachesLlmFootprintWithoutAffectingOtherPools() {
+        val descriptor = task6LlmDescriptor()
+        val hardware = task6Hardware(topology = MemoryTopology.DISCRETE)
+        val workload = task6LlmWorkload()
+        val baseline = engine(SupportEvidence.Supported).assessPlans(descriptor, hardware, workload).values.first()
+        val calibrated = SuitabilityEngine(
+            compatibilityChecker = CompatibilityChecker(EngineCapabilitySource { SupportEvidence.Supported }),
+            calibrationSource = object : CalibrationSource {
+                override fun engineVersion() = "runner-1"
+                override fun backendProfileFor(backend: BackendKind) = null
+                override fun correctionFor(key: CalibrationKey): CalibrationCorrection? =
+                    CalibrationCorrection(2.0, 2.0, Confidence.HIGH).takeIf {
+                        key.metricKind == MetricKind.MEMORY && key.memoryPool == MemoryPool.HOST.stableName
+                    }
+                override fun revision() = 1L
+            },
+        ).assessPlans(descriptor, hardware, workload).values.first()
+
+        assertEquals(
+            requireNotNull(baseline.hostMemoryBytes).likelyBytes * 2L,
+            requireNotNull(calibrated.hostMemoryBytes).likelyBytes,
+        )
+        assertEquals(baseline.gpuMemoryBytes, calibrated.gpuMemoryBytes)
+    }
+
     private fun recommendCpu(
         descriptor: ModelDescriptor,
         workload: WorkloadConfig,

@@ -13,11 +13,16 @@ import com.debanshu777.caraml.core.recommendation.AssessedPlans
 import com.debanshu777.caraml.core.recommendation.AssessmentConfidence
 import com.debanshu777.caraml.core.recommendation.AssessmentReason
 import com.debanshu777.caraml.core.recommendation.Compatibility
+import com.debanshu777.caraml.core.recommendation.CalibrationCorrection
+import com.debanshu777.caraml.core.recommendation.CalibrationKey
+import com.debanshu777.caraml.core.recommendation.CalibrationSource
+import com.debanshu777.caraml.core.recommendation.BackendPerformanceProfile
 import com.debanshu777.caraml.core.recommendation.Confidence
 import com.debanshu777.caraml.core.recommendation.LlmModelDescriptor
 import com.debanshu777.caraml.core.recommendation.ModelAssessment
 import com.debanshu777.caraml.core.recommendation.ModelDescriptor
 import com.debanshu777.caraml.core.recommendation.ModelFileIdentity
+import com.debanshu777.caraml.core.recommendation.NoCalibrationSource
 import com.debanshu777.caraml.core.recommendation.PersonalizedRecommendation
 import com.debanshu777.caraml.core.recommendation.QuantizationEvidence
 import com.debanshu777.caraml.core.recommendation.RecommendationCategory
@@ -445,11 +450,55 @@ class ModelViewModelRecommendationTest {
         }
     }
 
+    @Test
+    fun calibrationRevisionReassessesActiveDescriptorsWithoutAnotherNetworkRequest() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        var requests = 0
+        var assessments = 0
+        val requestDispatcher = dispatcher
+        val engine = object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler { request ->
+                requests++
+                respondJson(searchResponse(request.url.parameters["q"].orEmpty(), "org/calibrated"))
+            }
+        }) {
+            override val dispatcher: CoroutineDispatcher = requestDispatcher
+        }
+        val calibration = MutableCalibrationSource()
+        val client = HttpClient(engine)
+        try {
+            val viewModel = viewModel(
+                client = client,
+                dispatcher = dispatcher,
+                recommendationService = recommendationService(dispatcher) { assessments++ },
+                calibrationSource = calibration,
+            )
+            viewModel.updateSearchQuery("calibration")
+            viewModel.performSearch()
+            advanceUntilIdle()
+            assertEquals(1, assessments)
+            val requestsAfterInitial = requests
+
+            calibration.revisions.value = 1L
+            advanceUntilIdle()
+
+            assertEquals(2, assessments)
+            assertEquals(requestsAfterInitial, requests)
+        } finally {
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
     private fun viewModel(
         client: HttpClient,
         dispatcher: CoroutineDispatcher,
         localModelDao: LocalModelDao = FakeLocalModelDao(),
         storagePathProvider: StoragePathProvider = FakeStoragePathProvider(),
+        recommendationService: ModelRecommendationService = recommendationService(dispatcher),
+        calibrationSource: CalibrationSource = NoCalibrationSource,
     ): ModelViewModel {
         return ModelViewModel(
             api = huggingFaceApi(client),
@@ -458,8 +507,9 @@ class ModelViewModelRecommendationTest {
             downloadManager = DownloadManager(storagePathProvider),
             storagePathProvider = storagePathProvider,
             deviceCapabilities = DeviceCapabilities(),
-            recommendationService = recommendationService(dispatcher),
+            recommendationService = recommendationService,
             settingsRepository = FakeSettingsRepository(),
+            calibrationSource = calibrationSource,
         )
     }
 }
@@ -551,7 +601,10 @@ private fun huggingFaceApi(client: HttpClient): HuggingFaceApi {
     }
 }
 
-private fun recommendationService(dispatcher: CoroutineDispatcher) = ModelRecommendationService(
+private fun recommendationService(
+    dispatcher: CoroutineDispatcher,
+    onAssess: () -> Unit = {},
+) = ModelRecommendationService(
     metadataSource = ModelMetadataSource { repositoryId, _ ->
         val identity = ModelFileIdentity(
             repositoryId = repositoryId,
@@ -594,6 +647,7 @@ private fun recommendationService(dispatcher: CoroutineDispatcher) = ModelRecomm
             snapshot: DeviceSnapshot,
             workload: WorkloadConfig,
         ): ModelAssessment = recommendationAssessment(descriptor.repositoryId)
+            .also { onAssess() }
 
         override fun rebuild(assessment: ModelAssessment, snapshot: DeviceSnapshot): ModelAssessment = assessment
 
@@ -626,6 +680,16 @@ private fun recommendationService(dispatcher: CoroutineDispatcher) = ModelRecomm
     evaluationDispatcher = dispatcher,
     clock = { 1_000L },
 )
+
+private class MutableCalibrationSource : CalibrationSource {
+    val revisions = MutableStateFlow(0L)
+
+    override fun engineVersion(): String? = null
+    override fun backendProfileFor(backend: com.debanshu777.caraml.core.platform.BackendKind): BackendPerformanceProfile? = null
+    override fun correctionFor(key: CalibrationKey): CalibrationCorrection? = null
+    override fun revision(): Long = revisions.value
+    override fun revisionUpdates(): Flow<Long> = revisions
+}
 
 private fun recommendationAssessment(key: String) = ModelAssessment(
     assessmentKey = key,

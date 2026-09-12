@@ -57,6 +57,27 @@ public:
         return std::optional<Lease>(Lease(this));
     }
 
+    template <typename Clock, typename Duration, typename Cancelled>
+    [[nodiscard]] std::optional<Lease> lock_until(
+        const std::chrono::time_point<Clock, Duration> &deadline,
+        Cancelled cancelled) {
+        std::unique_lock<std::mutex> state_lock(state_mutex_);
+        while (session_active_ || operation_active_) {
+            if (cancelled()) return std::nullopt;
+            if (state_changed_.wait_until(state_lock, deadline) == std::cv_status::timeout &&
+                (session_active_ || operation_active_)) {
+                return std::nullopt;
+            }
+        }
+        if (cancelled()) return std::nullopt;
+        operation_active_ = true;
+        return std::optional<Lease>(Lease(this));
+    }
+
+    void notify_waiters() noexcept {
+        state_changed_.notify_all();
+    }
+
     [[nodiscard]] std::optional<Lease> begin_session() {
         std::unique_lock<std::mutex> state_lock(state_mutex_);
         state_changed_.wait(state_lock, [this] {
@@ -116,3 +137,4 @@ private:
     bool operation_active_ = false;
     bool session_active_ = false;
 };
+#include <chrono>

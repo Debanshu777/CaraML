@@ -96,6 +96,70 @@ class CalibrationRepositoryTest {
         assertTrue(repository.revision() > 0L)
     }
 
+    @Test
+    fun initializeTransactionPrunesExpiredAndFutureRowsBeforePublishing() = runTest {
+        val dao = FakeObservationDao()
+        dao.insertAll(
+            listOf(
+                sample(1.1, capturedAt = NOW),
+                sample(3.0, capturedAt = NOW - 91 * DAY),
+                sample(4.0, capturedAt = NOW + 300_001L),
+            ),
+        )
+
+        val repository = CalibrationRepository(dao, ENGINE, now = { NOW })
+        repository.initialize()
+
+        assertEquals(1, dao.count())
+        assertEquals(NOW, dao.maximumCapturedAt())
+    }
+
+    @Test
+    fun initializeRecoversOnceFromDisposableStoreCorruption() = runTest {
+        val corrupt = FakeObservationDao(failReads = true)
+        val recovered = FakeObservationDao().also {
+            repeat(5) { ignored -> it.insertAll(listOf(sample(1.25))) }
+        }
+        var recoveryCalls = 0
+        val repository = CalibrationRepository(
+            dao = corrupt,
+            currentEngineVersion = ENGINE,
+            now = { NOW },
+            recoverDao = {
+                recoveryCalls++
+                recovered
+            },
+        )
+
+        repository.initialize()
+
+        assertEquals(1, recoveryCalls)
+        assertEquals(1.25, repository.correctionFor(memoryKey())?.likely)
+    }
+
+    @Test
+    fun initializeTreatsMalformedStoredRowsAsDisposableCacheCorruption() = runTest {
+        val malformed = FakeObservationDao().also {
+            it.insertAll(listOf(sample(1.0).copy(backend = "unknown-backend")))
+        }
+        val recovered = FakeObservationDao()
+        var recoveryCalls = 0
+        val repository = CalibrationRepository(
+            dao = malformed,
+            currentEngineVersion = ENGINE,
+            now = { NOW },
+            recoverDao = {
+                recoveryCalls++
+                recovered
+            },
+        )
+
+        repository.initialize()
+
+        assertEquals(1, recoveryCalls)
+        assertEquals(0L, repository.revision())
+    }
+
     private fun memoryKey() = CalibrationKey(
         backend = BackendKind.CPU,
         architectureFamily = "llama",
@@ -122,6 +186,7 @@ class CalibrationRepositoryTest {
 
     private class FakeObservationDao(
         private val failWrites: Boolean = false,
+        private val failReads: Boolean = false,
     ) : RecommendationObservationDao {
         private val rows = mutableListOf<RecommendationObservationEntity>()
         private var nextId = 1L
@@ -131,9 +196,15 @@ class CalibrationRepositoryTest {
             rows += samples.map { it.copy(id = nextId++) }
         }
 
-        override suspend fun allSamples(): List<RecommendationObservationEntity> = rows.toList()
+        override suspend fun allSamples(): List<RecommendationObservationEntity> {
+            if (failReads) error("database corrupt")
+            return rows.toList()
+        }
         override suspend fun deleteOlderThan(cutoffEpochMs: Long) {
             rows.removeAll { it.capturedAtEpochMs < cutoffEpochMs }
+        }
+        override suspend fun deleteNewerThan(cutoffEpochMs: Long) {
+            rows.removeAll { it.capturedAtEpochMs > cutoffEpochMs }
         }
         override suspend fun retainNewest(limit: Int) {
             val retained = rows.sortedWith(compareByDescending<RecommendationObservationEntity> { it.capturedAtEpochMs }.thenByDescending { it.id }).take(limit).toSet()

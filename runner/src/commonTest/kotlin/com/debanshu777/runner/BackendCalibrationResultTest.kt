@@ -8,18 +8,25 @@ class BackendCalibrationResultTest {
     @Test
     fun completePayloadRequiresFiveFinitePositiveBoundedWindows() {
         val payload = longArrayOf(
-            0, NativeBackendKind.CPU.ordinal.toLong(), 5,
-            1_000, 2_000, 100,
-            1_000, 2_000, 110,
-            1_000, 2_000, 120,
-            1_000, 2_000, 130,
-            1_000, 2_000, 140,
+            0, NativeBackendKind.CPU.ordinal.toLong(), 10,
+            BackendCalibrationMetric.MEMORY_BANDWIDTH.ordinal.toLong(), 1_000, 100,
+            BackendCalibrationMetric.MEMORY_BANDWIDTH.ordinal.toLong(), 1_000, 110,
+            BackendCalibrationMetric.MEMORY_BANDWIDTH.ordinal.toLong(), 1_000, 120,
+            BackendCalibrationMetric.MEMORY_BANDWIDTH.ordinal.toLong(), 1_000, 130,
+            BackendCalibrationMetric.MEMORY_BANDWIDTH.ordinal.toLong(), 1_000, 140,
+            BackendCalibrationMetric.COMPUTE.ordinal.toLong(), 2_000, 100,
+            BackendCalibrationMetric.COMPUTE.ordinal.toLong(), 2_000, 110,
+            BackendCalibrationMetric.COMPUTE.ordinal.toLong(), 2_000, 120,
+            BackendCalibrationMetric.COMPUTE.ordinal.toLong(), 2_000, 130,
+            BackendCalibrationMetric.COMPUTE.ordinal.toLong(), 2_000, 140,
         )
 
         val result = decodeBackendCalibrationResult(payload)
 
         assertIs<BackendCalibrationResult.Complete>(result)
-        assertEquals(5, result.windows.size)
+        assertEquals(10, result.windows.size)
+        assertEquals(5, result.windows.count { it.metric == BackendCalibrationMetric.MEMORY_BANDWIDTH })
+        assertEquals(5, result.windows.count { it.metric == BackendCalibrationMetric.COMPUTE })
         assertEquals(NativeBackendKind.CPU, result.backend)
     }
 
@@ -42,10 +49,11 @@ class BackendCalibrationResultTest {
 
     @Test
     fun requestBoundsRejectUnboundedDurationAndBuffers() {
-        assertEquals(false, isValidBackendCalibrationRequest(499, 4L shl 20))
-        assertEquals(false, isValidBackendCalibrationRequest(3_001, 4L shl 20))
-        assertEquals(false, isValidBackendCalibrationRequest(500, (4L shl 20) - 1))
-        assertEquals(false, isValidBackendCalibrationRequest(500, (64L shl 20) + 1))
-        assertEquals(true, isValidBackendCalibrationRequest(3_000, 64L shl 20))
+        assertEquals(false, isValidBackendCalibrationRequest(0L, 500, 4L shl 20))
+        assertEquals(false, isValidBackendCalibrationRequest(1L, 499, 4L shl 20))
+        assertEquals(false, isValidBackendCalibrationRequest(1L, 3_001, 4L shl 20))
+        assertEquals(false, isValidBackendCalibrationRequest(1L, 500, (4L shl 20) - 1))
+        assertEquals(false, isValidBackendCalibrationRequest(1L, 500, (64L shl 20) + 1))
+        assertEquals(true, isValidBackendCalibrationRequest(1L, 3_000, 64L shl 20))
     }
 }

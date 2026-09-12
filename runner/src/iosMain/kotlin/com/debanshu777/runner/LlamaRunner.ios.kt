@@ -117,16 +117,18 @@ actual class LlamaRunner {
 
     @OptIn(ExperimentalForeignApi::class)
     actual fun calibrateBackend(
+        probeToken: Long,
         backend: NativeBackendKind,
         durationMillis: Int,
         bufferBytes: Long,
     ): BackendCalibrationResult {
-        if (!isValidBackendCalibrationRequest(durationMillis, bufferBytes)) {
+        if (!isValidBackendCalibrationRequest(probeToken, durationMillis, bufferBytes)) {
             return BackendCalibrationResult.Invalid
         }
         return try {
             decodeBackendCalibrationResult(
                 llama_runner_calibrate_backend(
+                    probeToken,
                     backend.ordinal,
                     durationMillis,
                     bufferBytes,
@@ -143,8 +145,8 @@ actual class LlamaRunner {
                             val offset = LLAMA_CALIBRATION_HEADER_FIELDS +
                                 index * LLAMA_CALIBRATION_WINDOW_FIELDS
                             val window = windows[index]
-                            payload[offset] = window.bytes_moved
-                            payload[offset + 1] = window.operations
+                            payload[offset] = window.metric.toLong()
+                            payload[offset + 1] = window.completed_units
                             payload[offset + 2] = window.elapsed_nanoseconds
                         }
                     }
@@ -158,7 +160,9 @@ actual class LlamaRunner {
     }
 
     @OptIn(ExperimentalForeignApi::class)
-    actual fun cancelBackendCalibration() = llama_runner_cancel_backend_calibration()
+    actual fun cancelBackendCalibration(probeToken: Long) {
+        if (probeToken > 0L) llama_runner_cancel_backend_calibration(probeToken)
+    }
 
     @OptIn(ExperimentalForeignApi::class)
     actual fun probeModelFeatures(

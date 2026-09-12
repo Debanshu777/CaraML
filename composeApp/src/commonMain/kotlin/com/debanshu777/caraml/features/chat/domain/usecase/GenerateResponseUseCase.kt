@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.onEach
 data class GenerationResult(
     val metrics: InferenceMetrics?,
     val stopReason: Int,
+    val nativeDecodeNanoseconds: Long = 0L,
 )
 
 class GenerateResponseUseCase(
@@ -54,6 +55,7 @@ class GenerateResponseUseCase(
                 value = result,
                 completedUnits = completedUnits,
                 outcome = ObservationOutcome.SUCCESS,
+                performanceElapsedNanoseconds = result.nativeDecodeNanoseconds,
             )
         }
     }
@@ -67,6 +69,7 @@ class GenerateResponseUseCase(
         val benchMode = BenchmarkUtils.benchmarkMode
         val detailedTimer = if (benchMode) BenchmarkUtils.DetailedTokenTimer() else null
         var firstToken = true
+        var nativeDecodeNanoseconds = 0L
 
         detailedTimer?.startPrefill()
 
@@ -98,6 +101,9 @@ class GenerateResponseUseCase(
             }
             .flowOn(Dispatchers.IO)
             .collect { chunk ->
+                nativeDecodeNanoseconds = if (
+                    chunk.nativeDecodeNanoseconds > Long.MAX_VALUE - nativeDecodeNanoseconds
+                ) Long.MAX_VALUE else nativeDecodeNanoseconds + chunk.nativeDecodeNanoseconds
                 emit(chunk.reasoning, chunk.content)
             }
 
@@ -125,6 +131,7 @@ class GenerateResponseUseCase(
         return GenerationResult(
             metrics = metrics,
             stopReason = stopReason,
+            nativeDecodeNanoseconds = nativeDecodeNanoseconds,
         )
     }
 }

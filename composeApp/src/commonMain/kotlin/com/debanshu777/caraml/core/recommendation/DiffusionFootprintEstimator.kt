@@ -257,7 +257,9 @@ class DiffusionFootprintEstimator {
             is DiffusionRangeResult.Invalid -> return DiffusionAllocationResult.Invalid(result.reason)
             is DiffusionRangeResult.Value -> result.range
         }
-        val calibrated = when (val result = diffusionCalibrate(total, calibration)) {
+        val calibrated = when (
+            val result = diffusionCalibrate(total, calibration.forDiffusionPool(pool.toMemoryPool()))
+        ) {
             is DiffusionRangeResult.Invalid -> return DiffusionAllocationResult.Invalid(result.reason)
             is DiffusionRangeResult.Value -> result.range
         }
@@ -390,11 +392,15 @@ class DiffusionFootprintEstimator {
             is DiffusionRangeResult.Invalid -> return DiffusionAllocationResult.Invalid(result.reason, evidence)
             is DiffusionRangeResult.Value -> result.range
         }
-        val calibratedHost = when (val result = diffusionCalibrate(host, calibration)) {
+        val calibratedHost = when (
+            val result = diffusionCalibrate(host, calibration.forDiffusionPool(MemoryPool.HOST))
+        ) {
             is DiffusionRangeResult.Invalid -> return DiffusionAllocationResult.Invalid(result.reason, evidence)
             is DiffusionRangeResult.Value -> result.range
         }
-        val calibratedGpu = when (val result = diffusionCalibrate(gpu, calibration)) {
+        val calibratedGpu = when (
+            val result = diffusionCalibrate(gpu, calibration.forDiffusionPool(MemoryPool.DISCRETE_GPU))
+        ) {
             is DiffusionRangeResult.Invalid -> return DiffusionAllocationResult.Invalid(result.reason, evidence)
             is DiffusionRangeResult.Value -> result.range
         }
@@ -539,11 +545,22 @@ private fun diffusionCalibrate(range: EstimateRange, calibration: MemoryCalibrat
         diffusionMultiplyRatio(range.likelyBytes, calibration.likelyNumerator, calibration.likelyDenominator),
         diffusionMultiplyRatio(range.highBytes, calibration.highNumerator, calibration.highDenominator),
     )
+    is MemoryCalibration.ByPool -> DiffusionRangeResult.Invalid(AssessmentReason.INVALID_ESTIMATE_RANGE)
 }
 
 private fun validateDiffusionCalibration(calibration: MemoryCalibration): AssessmentReason? {
     if (calibration == MemoryCalibration.None) return null
+    if (calibration is MemoryCalibration.ByPool) {
+        if (calibration.corrections.size > MemoryPool.entries.size) {
+            return AssessmentReason.INVALID_ESTIMATE_RANGE
+        }
+        return calibration.corrections.values.firstNotNullOfOrNull(::validateDiffusionCorrection)
+    }
     calibration as MemoryCalibration.Correction
+    return validateDiffusionCorrection(calibration)
+}
+
+private fun validateDiffusionCorrection(calibration: MemoryCalibration.Correction): AssessmentReason? {
     if (
         calibration.likelyNumerator <= 0L || calibration.likelyDenominator <= 0L ||
         calibration.highNumerator <= 0L || calibration.highDenominator <= 0L ||
@@ -560,6 +577,17 @@ private fun validateDiffusionCalibration(calibration: MemoryCalibration): Assess
             AssessmentReason.INVALID_ESTIMATE_RANGE
         else -> null
     }
+}
+
+private fun MemoryCalibration.forDiffusionPool(pool: MemoryPool): MemoryCalibration = when (this) {
+    MemoryCalibration.None -> MemoryCalibration.None
+    is MemoryCalibration.Correction -> this
+    is MemoryCalibration.ByPool -> corrections[pool] ?: MemoryCalibration.None
+}
+
+private fun DiffusionPool.toMemoryPool(): MemoryPool = when (this) {
+    DiffusionPool.HOST -> MemoryPool.HOST
+    DiffusionPool.SHARED -> MemoryPool.SHARED
 }
 
 private fun diffusionMultiplyRatio(value: Long, numerator: Long, denominator: Long): CheckedLong {

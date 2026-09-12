@@ -14,6 +14,10 @@ sealed interface MemoryCalibration {
         val highNumerator: Long,
         val highDenominator: Long,
     ) : MemoryCalibration
+
+    data class ByPool(
+        val corrections: Map<MemoryPool, Correction>,
+    ) : MemoryCalibration
 }
 
 class LlmFootprintEstimator {
@@ -103,6 +107,9 @@ class LlmFootprintEstimator {
         return when (calibration) {
             MemoryCalibration.None -> null
             is MemoryCalibration.Correction -> validateCalibration(calibration)
+            is MemoryCalibration.ByPool -> if (calibration.corrections.size > MemoryPool.entries.size) {
+                AssessmentReason.INVALID_ESTIMATE_RANGE
+            } else calibration.corrections.values.firstNotNullOfOrNull(::validateCalibration)
         }
     }
 
@@ -303,7 +310,7 @@ class LlmFootprintEstimator {
             is RangeResult.Invalid -> return PoolResult.Invalid(value.reason)
             is RangeResult.Value -> value.range
         }
-        val calibrated = when (val value = calibrate(total, calibration)) {
+        val calibrated = when (val value = calibrate(total, calibration.forPool(pool.toMemoryPool()))) {
             is RangeResult.Invalid -> return PoolResult.Invalid(value.reason)
             is RangeResult.Value -> value.range
         }
@@ -399,11 +406,11 @@ class LlmFootprintEstimator {
             is RangeResult.Invalid -> return PoolResult.Invalid(value.reason)
             is RangeResult.Value -> value.range
         }
-        val calibratedHost = when (val value = calibrate(host, calibration)) {
+        val calibratedHost = when (val value = calibrate(host, calibration.forPool(MemoryPool.HOST))) {
             is RangeResult.Invalid -> return PoolResult.Invalid(value.reason)
             is RangeResult.Value -> value.range
         }
-        val calibratedGpu = when (val value = calibrate(gpu, calibration)) {
+        val calibratedGpu = when (val value = calibrate(gpu, calibration.forPool(MemoryPool.DISCRETE_GPU))) {
             is RangeResult.Invalid -> return PoolResult.Invalid(value.reason)
             is RangeResult.Value -> value.range
         }
@@ -424,7 +431,19 @@ class LlmFootprintEstimator {
                 multiplyRatioCeil(range.likelyBytes, calibration.likelyNumerator, calibration.likelyDenominator),
                 multiplyRatioCeil(range.highBytes, calibration.highNumerator, calibration.highDenominator),
             )
+            is MemoryCalibration.ByPool -> RangeResult.Invalid(AssessmentReason.INVALID_ESTIMATE_RANGE)
         }
+
+    private fun MemoryCalibration.forPool(pool: MemoryPool): MemoryCalibration = when (this) {
+        MemoryCalibration.None -> MemoryCalibration.None
+        is MemoryCalibration.Correction -> this
+        is MemoryCalibration.ByPool -> corrections[pool] ?: MemoryCalibration.None
+    }
+
+    private fun Pool.toMemoryPool(): MemoryPool = when (this) {
+        Pool.HOST -> MemoryPool.HOST
+        Pool.SHARED -> MemoryPool.SHARED
+    }
 
     private fun invalidAssessment(
         plan: LlmRunPlan,

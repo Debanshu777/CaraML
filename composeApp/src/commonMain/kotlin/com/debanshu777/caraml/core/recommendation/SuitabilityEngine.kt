@@ -9,6 +9,7 @@ import com.debanshu777.caraml.core.platform.ResourceSnapshot
 import com.debanshu777.caraml.core.platform.computeBaseBudget
 import com.debanshu777.caraml.core.platform.computeStorageBudget
 import kotlin.math.exp
+import kotlin.math.ceil
 import kotlin.math.ln
 
 class SuitabilityEngine(
@@ -53,9 +54,9 @@ class SuitabilityEngine(
         val assessments = candidates.map { plan ->
             val footprint = when {
                 descriptor is LlmModelDescriptor && plan is LlmRunPlan ->
-                    llmFootprintEstimator.estimate(descriptor, plan, MemoryCalibration.None)
+                    llmFootprintEstimator.estimate(descriptor, plan, memoryCalibration(descriptor, plan))
                 descriptor is DiffusionModelDescriptor && plan is DiffusionRunPlan ->
-                    diffusionFootprintEstimator.estimate(descriptor, plan, MemoryCalibration.None)
+                    diffusionFootprintEstimator.estimate(descriptor, plan, memoryCalibration(descriptor, plan))
                 else -> invalidPlanAssessment(plan)
             }
             val performance = performanceEstimator.estimate(descriptor, plan, hardwareProfile, calibrationSource)
@@ -355,6 +356,58 @@ class SuitabilityEngine(
         else -> second
     }
 
+    private fun memoryCalibration(descriptor: ModelDescriptor, plan: RunPlan): MemoryCalibration {
+        val engineVersion = calibrationSource.engineVersion() ?: return MemoryCalibration.None
+        val baseKey = CalibrationKey(
+            backend = plan.backend,
+            architectureFamily = when (descriptor) {
+                is LlmModelDescriptor -> descriptor.architecture ?: "unknown"
+                is DiffusionModelDescriptor -> descriptor.architecture?.name ?: descriptor.family
+            }.take(DescriptorLimits.MAX_METADATA_STRING_LENGTH),
+            quantizationFamily = when (descriptor) {
+                is LlmModelDescriptor -> when (val value = descriptor.quantization) {
+                    is QuantizationEvidence.Known -> value.quantization
+                    is QuantizationEvidence.Mixed -> "mixed"
+                    QuantizationEvidence.Unknown -> "unknown"
+                }
+                is DiffusionModelDescriptor -> descriptor.quantizationDistribution.sorted().joinToString("+")
+            }.take(DescriptorLimits.MAX_METADATA_STRING_LENGTH),
+            workloadBucket = when (plan) {
+                is LlmRunPlan -> "ctx-${plan.contextTokens}"
+                is DiffusionRunPlan -> "${plan.mode.name.lowercase()}-${plan.width}x${plan.height}-${plan.steps}"
+            },
+            engineVersion = engineVersion,
+            metricKind = MetricKind.MEMORY,
+        )
+        val pools = when {
+            plan.backend == BackendKind.CPU -> listOf(MemoryPool.HOST)
+            plan.memoryTopology == MemoryTopology.UNIFIED -> listOf(MemoryPool.SHARED)
+            plan.memoryTopology == MemoryTopology.DISCRETE ->
+                listOf(MemoryPool.HOST, MemoryPool.DISCRETE_GPU)
+            else -> emptyList()
+        }
+        val corrections = pools.mapNotNull { pool ->
+            calibrationSource.correctionFor(baseKey.copy(memoryPool = pool.stableName))
+                ?.toMemoryCorrection()
+                ?.let { pool to it }
+        }.toMap()
+        return if (corrections.isEmpty()) MemoryCalibration.None else MemoryCalibration.ByPool(corrections)
+    }
+
+    private fun CalibrationCorrection.toMemoryCorrection(): MemoryCalibration.Correction? {
+        val likelyFactor = maxOf(1.0, likely)
+        val highFactor = maxOf(likelyFactor, high, 1.0)
+        if (!likelyFactor.isFinite() || !highFactor.isFinite() ||
+            likelyFactor > MAX_MEMORY_CORRECTION || highFactor > MAX_MEMORY_CORRECTION
+        ) return null
+        return MemoryCalibration.Correction(
+            likelyNumerator = ceil(likelyFactor * MEMORY_CORRECTION_SCALE).toLong(),
+            likelyDenominator = MEMORY_CORRECTION_SCALE.toLong(),
+            highNumerator = ceil(highFactor * MEMORY_CORRECTION_SCALE).toLong(),
+            highDenominator = MEMORY_CORRECTION_SCALE.toLong(),
+        )
+    }
+
     private fun safeRatio(numerator: Double, denominator: Double): Double? =
         if (numerator.isFinite() && denominator.isFinite() && numerator >= 0.0 && denominator > 0.0) {
             numerator / denominator
@@ -363,4 +416,9 @@ class SuitabilityEngine(
     private data class UtilityAssessment(val metrics: PlanUtilityMetrics, val evidence: List<Evidence>)
     private data class WeightedProxy(val value: Double, val weight: Double, val component: String)
     private data class QualityProxy(val value: Double?, val components: List<String>)
+
+    private companion object {
+        const val MEMORY_CORRECTION_SCALE = 1_000_000.0
+        const val MAX_MEMORY_CORRECTION = Long.MAX_VALUE.toDouble() / MEMORY_CORRECTION_SCALE
+    }
 }

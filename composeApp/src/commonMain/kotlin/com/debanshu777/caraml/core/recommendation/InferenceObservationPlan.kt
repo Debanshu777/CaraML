@@ -38,11 +38,11 @@ fun LoadRequest.toInferenceObservationPlan(
     val predictedPerformance = when {
         phase == InferenceObservationPhase.LOAD -> null
         assessment.performance is PerformanceEstimate.Llm ->
-            assessment.performance.decodeTokensPerSecond.likely
+            assessment.performance.rawAnalyticalDecodeTokensPerSecond
         assessment.performance is PerformanceEstimate.DiffusionImage ->
-            assessment.performance.secondsPerStep.likely
+            assessment.performance.rawAnalyticalSecondsPerStep
         assessment.performance is PerformanceEstimate.DiffusionVideo ->
-            assessment.performance.secondsPerStep.likely
+            assessment.performance.rawAnalyticalSecondsPerStep
         else -> null
     }?.takeIf(::isValidObservationNumber)
     val performanceMeasurement = when (assessment.performance) {

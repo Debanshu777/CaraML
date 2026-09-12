@@ -2,6 +2,7 @@ package com.debanshu777.runner
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlin.time.TimeSource
 
 fun LlamaRunner.generateFlowTokens(): Flow<String> = flow {
     while (true) {
@@ -32,15 +33,30 @@ internal fun structuredChunkFlow(
     nextToken: () -> String?,
     reasoningDelta: () -> String,
     contentDelta: () -> String,
+    monotonicNanos: () -> Long = defaultMonotonicNanos(),
 ): Flow<InferenceChunk> = flow {
     val reasoning = StringBuilder()
     val content = StringBuilder()
     while (true) {
-        nextToken() ?: break
+        val started = monotonicNanos()
+        val token = nextToken()
+        val nativeDecodeNanoseconds = monotonicNanos() - started
+        if (token == null) break
         applyDelta(reasoning, reasoningDelta())
         applyDelta(content, contentDelta())
-        emit(InferenceChunk(reasoning = reasoning.toString(), content = content.toString()))
+        emit(
+            InferenceChunk(
+                reasoning = reasoning.toString(),
+                content = content.toString(),
+                nativeDecodeNanoseconds = nativeDecodeNanoseconds.takeIf { it > 0L } ?: 0L,
+            ),
+        )
     }
+}
+
+private fun defaultMonotonicNanos(): () -> Long {
+    val origin = TimeSource.Monotonic.markNow()
+    return { origin.elapsedNow().inWholeNanoseconds }
 }
 
 private fun applyDelta(acc: StringBuilder, delta: String) {

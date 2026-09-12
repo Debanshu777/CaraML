@@ -4,4 +4,5 @@ package com.debanshu777.runner
 data class InferenceChunk(
     val reasoning: String,
     val content: String,
+    val nativeDecodeNanoseconds: Long = 0L,
 )

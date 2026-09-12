@@ -99,9 +99,14 @@ enum LlamaCalibrationStatusNative {
 };
 
 struct LlamaCalibrationWindowNative {
-    int64_t bytes_moved = 0;
-    int64_t operations = 0;
+    int metric = -1;
+    int64_t completed_units = 0;
     int64_t elapsed_nanoseconds = 0;
+};
+
+enum LlamaCalibrationMetricNative {
+    LLAMA_CALIBRATION_MEMORY_BANDWIDTH = 0,
+    LLAMA_CALIBRATION_COMPUTE = 1,
 };
 
 struct LlamaCalibrationResultNative {
@@ -162,10 +167,11 @@ LlamaPreflightResultNative llama_runner_core_preflight(
     const LlamaRunnerConfig &config);
 LlamaBackendCapabilitiesNative llama_runner_core_backend_capabilities();
 LlamaCalibrationResultNative llama_runner_core_calibrate_backend(
+    int64_t probe_token,
     int backend,
     int duration_millis,
     int64_t buffer_bytes);
-void llama_runner_core_cancel_calibration();
+void llama_runner_core_cancel_calibration(int64_t probe_token);
 LlamaModelFeatureSupportNative llama_runner_core_probe_model_features(
     const char *architecture,
     const char *quantization);

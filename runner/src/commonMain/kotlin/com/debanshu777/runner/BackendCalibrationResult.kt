@@ -10,10 +10,15 @@ enum class BackendCalibrationStatus {
 }
 
 data class BackendCalibrationWindow(
-    val bytesMoved: Long,
-    val operations: Long,
+    val metric: BackendCalibrationMetric,
+    val completedUnits: Long,
     val elapsedNanoseconds: Long,
 )
+
+enum class BackendCalibrationMetric {
+    MEMORY_BANDWIDTH,
+    COMPUTE,
+}
 
 sealed interface BackendCalibrationResult {
     data class Complete(
@@ -50,26 +55,32 @@ internal fun decodeBackendCalibrationResult(payload: LongArray?): BackendCalibra
     val windows = ArrayList<BackendCalibrationWindow>(count)
     repeat(count) { index ->
         val offset = HEADER_FIELDS + index * WINDOW_FIELDS
-        val bytes = payload[offset]
-        val operations = payload[offset + 1]
+        val metric = payload[offset].toIndex(BackendCalibrationMetric.entries.size)
+            ?.let(BackendCalibrationMetric.entries::get) ?: return BackendCalibrationResult.Unavailable
+        val units = payload[offset + 1]
         val elapsed = payload[offset + 2]
-        if (bytes !in 1..MAX_COUNTER || operations !in 1..MAX_COUNTER || elapsed !in 1..MAX_ELAPSED_NANOS) {
+        if (units !in 1..MAX_COUNTER || elapsed !in 1..MAX_ELAPSED_NANOS) {
             return BackendCalibrationResult.Unavailable
         }
-        windows += BackendCalibrationWindow(bytes, operations, elapsed)
+        windows += BackendCalibrationWindow(metric, units, elapsed)
     }
+    if (windows.count { it.metric == BackendCalibrationMetric.MEMORY_BANDWIDTH } < MIN_WINDOWS_PER_METRIC ||
+        windows.count { it.metric == BackendCalibrationMetric.COMPUTE } < MIN_WINDOWS_PER_METRIC
+    ) return BackendCalibrationResult.Unavailable
     return BackendCalibrationResult.Complete(backend, windows)
 }
 
-internal fun isValidBackendCalibrationRequest(durationMillis: Int, bufferBytes: Long): Boolean =
-    durationMillis in MIN_DURATION_MS..MAX_DURATION_MS && bufferBytes in MIN_BUFFER_BYTES..MAX_BUFFER_BYTES
+internal fun isValidBackendCalibrationRequest(probeToken: Long, durationMillis: Int, bufferBytes: Long): Boolean =
+    probeToken > 0L && durationMillis in MIN_DURATION_MS..MAX_DURATION_MS &&
+        bufferBytes in MIN_BUFFER_BYTES..MAX_BUFFER_BYTES
 
 internal const val MIN_DURATION_MS = 500
 internal const val MAX_DURATION_MS = 3_000
 internal const val MIN_BUFFER_BYTES = 4L shl 20
 internal const val MAX_BUFFER_BYTES = 64L shl 20
 internal const val MIN_CALIBRATION_WINDOWS = 5
-private const val MIN_WINDOWS = MIN_CALIBRATION_WINDOWS
+private const val MIN_WINDOWS_PER_METRIC = MIN_CALIBRATION_WINDOWS
+private const val MIN_WINDOWS = MIN_WINDOWS_PER_METRIC * 2
 private const val MAX_WINDOWS = 16
 private const val HEADER_FIELDS = 3
 private const val WINDOW_FIELDS = 3

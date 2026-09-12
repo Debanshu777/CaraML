@@ -17,6 +17,9 @@ interface RecommendationObservationDao {
     @Query("DELETE FROM recommendation_observation WHERE capturedAtEpochMs < :cutoffEpochMs")
     suspend fun deleteOlderThan(cutoffEpochMs: Long)
 
+    @Query("DELETE FROM recommendation_observation WHERE capturedAtEpochMs > :cutoffEpochMs")
+    suspend fun deleteNewerThan(cutoffEpochMs: Long)
+
     @Query(
         """
         DELETE FROM recommendation_observation
@@ -55,6 +58,18 @@ interface RecommendationObservationDao {
     @Transaction
     suspend fun pruneTransaction(cutoffEpochMs: Long, limit: Int): List<RecommendationObservationEntity> {
         deleteOlderThan(cutoffEpochMs)
+        retainNewest(limit)
+        return allSamples()
+    }
+
+    @Transaction
+    suspend fun initializeTransaction(
+        oldestEpochMs: Long,
+        newestEpochMs: Long,
+        limit: Int,
+    ): List<RecommendationObservationEntity> {
+        deleteOlderThan(oldestEpochMs)
+        deleteNewerThan(newestEpochMs)
         retainNewest(limit)
         return allSamples()
     }

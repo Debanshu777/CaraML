@@ -7,6 +7,7 @@ import com.debanshu777.caraml.core.recommendation.DiffusionRunPlan
 import com.debanshu777.caraml.core.recommendation.InferenceObservationPhase
 import com.debanshu777.caraml.core.recommendation.InferenceObservationPlan
 import com.debanshu777.caraml.core.recommendation.InferenceObservationRecorder
+import com.debanshu777.caraml.core.recommendation.diffusionObservationUnits
 import com.debanshu777.caraml.core.recommendation.MeasuredResult
 import com.debanshu777.caraml.core.recommendation.ObservationOutcome
 import com.debanshu777.caraml.core.recommendation.CoordinatedLoadResult
@@ -455,7 +456,11 @@ class DiffusionInferenceRepository(
                 }
             }
             try {
-                val r = observeGeneration(executionParams.steps) {
+                val completedUnits = diffusionObservationUnits(
+                    executionParams.steps,
+                    executionParams.videoFrames,
+                ) ?: return@withContext Result.failure(Exception("The selected video workload is invalid."))
+                val r = observeGeneration(completedUnits) {
                     runner.generateVideo(executionParams)
                 }
                 r.exceptionOrNull()?.let { AppLogger.e(TAG, "generateVideo failed", it) }
