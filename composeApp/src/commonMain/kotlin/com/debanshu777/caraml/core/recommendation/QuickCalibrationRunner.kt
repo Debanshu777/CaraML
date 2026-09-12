@@ -7,6 +7,7 @@ import com.debanshu777.caraml.core.platform.DeviceSnapshot
 import com.debanshu777.caraml.core.platform.PowerPolicyState
 import com.debanshu777.caraml.core.platform.ThermalState
 import com.debanshu777.caraml.core.recommendation.storage.RecommendationObservationEntity
+import com.debanshu777.runner.BackendCalibrationAbandonment
 import com.debanshu777.runner.BackendCalibrationResult
 import com.debanshu777.runner.BackendCalibrationMetric
 import com.debanshu777.runner.BackendCalibrationReservation
@@ -62,7 +63,7 @@ interface BackendCalibrationProbe {
 
     fun cancel(probeToken: Long)
 
-    fun abandon(probeToken: Long) = cancel(probeToken)
+    fun abandon(probeToken: Long): BackendCalibrationAbandonment
 
     fun isRunning(probeToken: Long): Boolean = false
 }
@@ -77,7 +78,7 @@ class LlamaBackendCalibrationProbe internal constructor(
     private val reserveBackendCalibration: (Long) -> BackendCalibrationReservation = {
         BackendCalibrationReservation.ACCEPTED
     },
-    private val abandonBackendCalibration: (Long) -> Unit = cancelBackendCalibration,
+    private val abandonBackendCalibration: (Long) -> BackendCalibrationAbandonment,
 ) : BackendCalibrationProbe {
     constructor(
         runner: LlamaRunner,
@@ -144,11 +145,15 @@ class LlamaBackendCalibrationProbe internal constructor(
         }
     }
 
-    override fun abandon(probeToken: Long) {
-        if (probeToken <= 0L) return
+    override fun abandon(probeToken: Long): BackendCalibrationAbandonment {
+        if (probeToken <= 0L) return BackendCalibrationAbandonment.INVALID
         val ownsProbe = activeState.compareAndSet(probeToken, -probeToken) ||
             activeState.load() == -probeToken
-        if (ownsProbe) abandonBackendCalibration(probeToken)
+        return if (ownsProbe) {
+            abandonBackendCalibration(probeToken)
+        } else {
+            BackendCalibrationAbandonment.NOT_ACTIVE
+        }
     }
 
     override fun isRunning(probeToken: Long): Boolean = probeToken > 0L &&
@@ -218,12 +223,19 @@ class QuickCalibrationRunner(
                 return if (cancelAndAwaitProbe(probeToken)) {
                     CalibrationRunResult.TimedOut
                 } else {
-                    quarantineProbe(probeToken)
-                    CalibrationRunResult.Quarantined
+                    when (quarantineProbe(probeToken)) {
+                        BackendCalibrationAbandonment.QUARANTINED -> CalibrationRunResult.Quarantined
+                        BackendCalibrationAbandonment.NOT_ACTIVE -> CalibrationRunResult.TimedOut
+                        BackendCalibrationAbandonment.INVALID,
+                        BackendCalibrationAbandonment.UNAVAILABLE,
+                        -> CalibrationRunResult.Failed
+                    }
                 }
             }
         } catch (cancelled: CancellationException) {
-            if (!cancelAndAwaitProbe(probeToken)) quarantineProbe(probeToken)
+            if (!cancelAndAwaitProbe(probeToken)) {
+                quarantineProbe(probeToken)
+            }
             throw cancelled
         } catch (_: Exception) {
             return CalibrationRunResult.Failed
@@ -258,13 +270,16 @@ class QuickCalibrationRunner(
         NativeCalibrationState.AVAILABLE
     }
 
-    private fun quarantineProbe(probeToken: Long) {
-        nativeQuarantined.store(true)
-        try {
+    private fun quarantineProbe(probeToken: Long): BackendCalibrationAbandonment {
+        val abandonment = try {
             probe.abandon(probeToken)
         } catch (_: Exception) {
-            // The process remains quarantined even if the native cleanup signal fails.
+            BackendCalibrationAbandonment.UNAVAILABLE
         }
+        if (abandonment == BackendCalibrationAbandonment.QUARANTINED) {
+            nativeQuarantined.store(true)
+        }
+        return abandonment
     }
 
     private suspend fun cancelAndAwaitProbe(probeToken: Long): Boolean = withContext(NonCancellable) {

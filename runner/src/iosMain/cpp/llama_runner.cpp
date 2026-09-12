@@ -179,9 +179,9 @@ int llama_runner_reserve_backend_calibration(int64_t probe_token) {
     });
 }
 
-void llama_runner_abandon_backend_calibration(int64_t probe_token) {
-    ffi_guard_void("abandon_backend_calibration", [probe_token]() {
-        llama_runner_core_abandon_calibration(probe_token);
+int llama_runner_abandon_backend_calibration(int64_t probe_token) {
+    return ffi_guard<int>("abandon_backend_calibration", -1, [probe_token]() {
+        return llama_runner_core_abandon_calibration(probe_token);
     });
 }
 

@@ -18,6 +18,13 @@ enum class BackendCalibrationReservation {
     UNAVAILABLE,
 }
 
+enum class BackendCalibrationAbandonment {
+    QUARANTINED,
+    NOT_ACTIVE,
+    INVALID,
+    UNAVAILABLE,
+}
+
 data class BackendCalibrationWindow(
     val metric: BackendCalibrationMetric,
     val completedUnits: Long,
@@ -87,6 +94,13 @@ internal fun decodeBackendCalibrationReservation(value: Int): BackendCalibration
     2 -> BackendCalibrationReservation.QUARANTINED
     3 -> BackendCalibrationReservation.INVALID
     else -> BackendCalibrationReservation.UNAVAILABLE
+}
+
+internal fun decodeBackendCalibrationAbandonment(value: Int): BackendCalibrationAbandonment = when (value) {
+    0 -> BackendCalibrationAbandonment.QUARANTINED
+    1 -> BackendCalibrationAbandonment.NOT_ACTIVE
+    2 -> BackendCalibrationAbandonment.INVALID
+    else -> BackendCalibrationAbandonment.UNAVAILABLE
 }
 
 internal fun isValidBackendCalibrationRequest(probeToken: Long, durationMillis: Int, bufferBytes: Long): Boolean =

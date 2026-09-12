@@ -82,8 +82,14 @@ actual class LlamaRunner {
         else -> decodeBackendCalibrationReservation(nativeReserveBackendCalibration(probeToken))
     }
 
-    actual fun abandonBackendCalibration(probeToken: Long) {
-        if (nativeAvailable && probeToken > 0L) nativeAbandonBackendCalibration(probeToken)
+    actual fun abandonBackendCalibration(probeToken: Long): BackendCalibrationAbandonment = when {
+        !nativeAvailable -> BackendCalibrationAbandonment.UNAVAILABLE
+        probeToken <= 0L -> BackendCalibrationAbandonment.INVALID
+        else -> try {
+            decodeBackendCalibrationAbandonment(nativeAbandonBackendCalibration(probeToken))
+        } catch (_: Throwable) {
+            BackendCalibrationAbandonment.UNAVAILABLE
+        }
     }
 
     actual fun probeModelFeatures(
@@ -173,7 +179,7 @@ actual class LlamaRunner {
 
     private external fun nativeReserveBackendCalibration(probeToken: Long): Int
 
-    private external fun nativeAbandonBackendCalibration(probeToken: Long)
+    private external fun nativeAbandonBackendCalibration(probeToken: Long): Int
 
     private external fun nativeProbeModelFeatures(
         architecture: String,

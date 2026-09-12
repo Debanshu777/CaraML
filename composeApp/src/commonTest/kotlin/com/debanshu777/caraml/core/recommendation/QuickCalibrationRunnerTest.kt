@@ -13,8 +13,9 @@ import com.debanshu777.caraml.core.platform.ThermalState
 import com.debanshu777.caraml.core.recommendation.storage.RecommendationObservationDao
 import com.debanshu777.caraml.core.recommendation.storage.RecommendationObservationEntity
 import com.debanshu777.caraml.core.settings.AppSettings
-import com.debanshu777.runner.BackendCalibrationResult
+import com.debanshu777.runner.BackendCalibrationAbandonment
 import com.debanshu777.runner.BackendCalibrationMetric
+import com.debanshu777.runner.BackendCalibrationResult
 import com.debanshu777.runner.BackendCalibrationWindow
 import com.debanshu777.runner.NativeBackendKind
 import kotlinx.coroutines.flow.Flow
@@ -134,6 +135,33 @@ class QuickCalibrationRunnerTest {
         assertEquals(listOf(42L), probe.abandonedTokens)
     }
 
+    @Test
+    fun completionAtGraceBoundaryDoesNotFalseQuarantineOrRequireRestart() = runTest {
+        val dao = CapturingDao()
+        val repository = CalibrationRepository(dao, ENGINE, now = { NOW }).also { it.initialize() }
+        val settings = FakeSettingsRepository()
+        val probe = GraceBoundaryCompletionProbe()
+        val runner = QuickCalibrationRunner(
+            snapshotSource = { snapshot() },
+            probe = probe,
+            repository = repository,
+            settingsRepository = settings,
+            engineVersion = ENGINE,
+            clock = { NOW },
+            timeoutMillis = 100L,
+            cancellationGraceMillis = 50L,
+            probeTokenSource = { if (probe.calls == 0) 43L else 44L },
+        )
+
+        assertEquals(CalibrationRunResult.TimedOut, runner.runQuickCalibration())
+        assertEquals(listOf(43L), probe.abandonedTokens)
+        assertEquals(NativeCalibrationState.AVAILABLE, runner.nativeCalibrationState())
+
+        assertIs<CalibrationRunResult.Completed>(runner.runQuickCalibration())
+        assertEquals(2, probe.calls)
+        assertTrue(settings.offerComplete)
+    }
+
     private suspend fun fixture(
         snapshot: DeviceSnapshot,
         result: BackendCalibrationResult = completedResult(),
@@ -217,6 +245,8 @@ class QuickCalibrationRunnerTest {
         }
 
         override fun cancel(probeToken: Long) = Unit
+
+        override fun abandon(probeToken: Long) = BackendCalibrationAbandonment.NOT_ACTIVE
     }
 
     private class CooperativeTimeoutProbe : BackendCalibrationProbe {
@@ -238,8 +268,9 @@ class QuickCalibrationRunnerTest {
             if (probeToken !in cancelledTokens) cancelledTokens += probeToken
         }
 
-        override fun abandon(probeToken: Long) {
+        override fun abandon(probeToken: Long): BackendCalibrationAbandonment {
             abandonedTokens += probeToken
+            return BackendCalibrationAbandonment.NOT_ACTIVE
         }
     }
 
@@ -258,11 +289,37 @@ class QuickCalibrationRunnerTest {
             cancelledTokens += probeToken
         }
 
-        override fun abandon(probeToken: Long) {
+        override fun abandon(probeToken: Long): BackendCalibrationAbandonment {
             abandonedTokens += probeToken
+            return BackendCalibrationAbandonment.QUARANTINED
         }
 
         override fun isRunning(probeToken: Long): Boolean = true
+    }
+
+    private class GraceBoundaryCompletionProbe : BackendCalibrationProbe {
+        var calls = 0
+        val abandonedTokens = mutableListOf<Long>()
+
+        override suspend fun run(
+            probeToken: Long,
+            backend: NativeBackendKind,
+            durationMillis: Int,
+            bufferBytes: Long,
+        ): BackendCalibrationResult {
+            calls++
+            if (calls == 1) awaitCancellation()
+            return completedResult()
+        }
+
+        override fun cancel(probeToken: Long) = Unit
+
+        override fun abandon(probeToken: Long): BackendCalibrationAbandonment {
+            abandonedTokens += probeToken
+            return BackendCalibrationAbandonment.NOT_ACTIVE
+        }
+
+        override fun isRunning(probeToken: Long): Boolean = calls == 1
     }
 
     private class FakeSettingsRepository : SettingsRepository {

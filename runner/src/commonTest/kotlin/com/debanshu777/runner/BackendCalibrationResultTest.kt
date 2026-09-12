@@ -68,4 +68,28 @@ class BackendCalibrationResultTest {
             decodeBackendCalibrationResult(longArrayOf(6, 0, 0)),
         )
     }
+
+    @Test
+    fun abandonmentOutcomeRejectsInvalidAndUnknownNativeValues() {
+        assertEquals(
+            BackendCalibrationAbandonment.QUARANTINED,
+            decodeBackendCalibrationAbandonment(0),
+        )
+        assertEquals(
+            BackendCalibrationAbandonment.NOT_ACTIVE,
+            decodeBackendCalibrationAbandonment(1),
+        )
+        assertEquals(
+            BackendCalibrationAbandonment.INVALID,
+            decodeBackendCalibrationAbandonment(2),
+        )
+        assertEquals(
+            BackendCalibrationAbandonment.UNAVAILABLE,
+            decodeBackendCalibrationAbandonment(-1),
+        )
+        assertEquals(
+            BackendCalibrationAbandonment.UNAVAILABLE,
+            decodeBackendCalibrationAbandonment(Int.MAX_VALUE),
+        )
+    }
 }

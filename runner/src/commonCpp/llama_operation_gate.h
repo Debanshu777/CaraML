@@ -88,7 +88,20 @@ public:
     }
 
     void notify_waiters() noexcept {
-        state_changed_.notify_all();
+        interrupt_waiters([] {});
+    }
+
+    template <typename Interrupt>
+    void interrupt_waiters(Interrupt interrupt) noexcept {
+        try {
+            {
+                std::lock_guard<std::mutex> state_lock(state_mutex_);
+                interrupt();
+            }
+            state_changed_.notify_all();
+        } catch (...) {
+            // std::mutex failures are unrecoverable, but native cancellation must not unwind.
+        }
     }
 
     [[nodiscard]] std::optional<Lease> begin_session() {

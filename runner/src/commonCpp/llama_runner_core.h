@@ -106,6 +106,12 @@ enum LlamaCalibrationReservationNative {
     LLAMA_CALIBRATION_RESERVATION_INVALID = 3,
 };
 
+enum LlamaCalibrationAbandonmentNative {
+    LLAMA_CALIBRATION_ABANDONMENT_QUARANTINED = 0,
+    LLAMA_CALIBRATION_ABANDONMENT_NOT_ACTIVE = 1,
+    LLAMA_CALIBRATION_ABANDONMENT_INVALID = 2,
+};
+
 struct LlamaCalibrationWindowNative {
     int metric = -1;
     int64_t completed_units = 0;
@@ -181,7 +187,7 @@ LlamaCalibrationResultNative llama_runner_core_calibrate_backend(
     int64_t buffer_bytes);
 int llama_runner_core_reserve_calibration(int64_t probe_token);
 void llama_runner_core_cancel_calibration(int64_t probe_token);
-void llama_runner_core_abandon_calibration(int64_t probe_token);
+int llama_runner_core_abandon_calibration(int64_t probe_token);
 LlamaModelFeatureSupportNative llama_runner_core_probe_model_features(
     const char *architecture,
     const char *quantization);

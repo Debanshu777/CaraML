@@ -258,11 +258,98 @@ void interruptible_operation_waiter_fails_closed_after_poison() {
         "poisoned native operation waiter remained blocked");
 }
 
-void abandoned_calibration_quarantines_later_model_operations() {
+void poison_notification_cannot_finish_between_predicate_check_and_wait() {
+    LlamaOperationGate gate;
+    auto owner = gate.lock();
+    std::atomic<bool> poisoned{false};
+    std::mutex predicate_mutex;
+    std::condition_variable predicate_changed;
+    bool predicate_captured = false;
+    bool release_predicate = false;
+
+    auto waiter = std::async(std::launch::async, [&] {
+        bool capture_once = true;
+        return gate.lock_interruptible([&] {
+            const bool captured_poison = poisoned.load(std::memory_order_acquire);
+            if (capture_once) {
+                capture_once = false;
+                std::unique_lock<std::mutex> lock(predicate_mutex);
+                predicate_captured = true;
+                predicate_changed.notify_all();
+                predicate_changed.wait(lock, [&] { return release_predicate; });
+            }
+            return captured_poison;
+        }).has_value();
+    });
+
+    {
+        std::unique_lock<std::mutex> lock(predicate_mutex);
+        predicate_changed.wait(lock, [&] { return predicate_captured; });
+    }
+    std::promise<void> notifier_started;
+    auto notifier_started_signal = notifier_started.get_future();
+    auto notifier = std::async(std::launch::async, [&] {
+        notifier_started.set_value();
+        poisoned.store(true, std::memory_order_release);
+        gate.notify_waiters();
+    });
+    notifier_started_signal.get();
+    const bool notification_finished_while_predicate_held =
+        notifier.wait_for(std::chrono::milliseconds(100)) == std::future_status::ready;
+
+    {
+        std::lock_guard<std::mutex> lock(predicate_mutex);
+        release_predicate = true;
+    }
+    predicate_changed.notify_all();
+    const bool waiter_finished_after_interrupt =
+        waiter.wait_for(std::chrono::milliseconds(200)) == std::future_status::ready;
+
+    owner.reset();
+    notifier.wait();
+    if (!waiter_finished_after_interrupt) {
+        waiter.wait();
+    }
+    const bool waiter_acquired = waiter.get();
+    expect(
+        !notification_finished_while_predicate_held,
+        "poison notification was not serialized with its predicate check");
+    expect(
+        waiter_finished_after_interrupt && !waiter_acquired,
+        "interruptible waiter missed poison notification");
+}
+
+void completed_calibration_cannot_quarantine_a_reused_runtime() {
     expect(
         llama_runner_core_reserve_calibration(5) == LLAMA_CALIBRATION_RESERVATION_ACCEPTED,
+        "calibration token could not be reserved for completion race test");
+    llama_runner_core_cancel_calibration(5);
+    const auto cancelled = llama_runner_core_calibrate_backend(
+        5, LLAMA_BACKEND_CPU, 500, 4LL * 1024LL * 1024LL);
+    expect(cancelled.status == LLAMA_CALIBRATION_CANCELLED, "cooperative calibration did not finish");
+    expect(
+        llama_runner_core_abandon_calibration(5) == LLAMA_CALIBRATION_ABANDONMENT_NOT_ACTIVE,
+        "completed calibration was falsely quarantined");
+
+    expect(
+        llama_runner_core_reserve_calibration(6) == LLAMA_CALIBRATION_RESERVATION_ACCEPTED,
+        "false quarantine prevented a later calibration reservation");
+    llama_runner_core_cancel_calibration(6);
+    const auto cleanup = llama_runner_core_calibrate_backend(
+        6, LLAMA_BACKEND_CPU, 500, 4LL * 1024LL * 1024LL);
+    expect(cleanup.status == LLAMA_CALIBRATION_CANCELLED, "completion race cleanup failed");
+    expect(
+        llama_runner_core_abandon_calibration(0) == LLAMA_CALIBRATION_ABANDONMENT_INVALID,
+        "invalid abandonment token was not rejected");
+}
+
+void abandoned_calibration_quarantines_later_model_operations() {
+    expect(
+        llama_runner_core_reserve_calibration(7) == LLAMA_CALIBRATION_RESERVATION_ACCEPTED,
         "calibration token could not be reserved for quarantine test");
-    llama_runner_core_abandon_calibration(5);
+    expect(
+        llama_runner_core_abandon_calibration(7) == LLAMA_CALIBRATION_ABANDONMENT_QUARANTINED,
+        "active calibration abandonment did not confirm quarantine");
     auto preflight = std::async(std::launch::async, [] {
         return llama_runner_core_preflight(nullptr, LlamaRunnerConfig{});
     });
@@ -274,11 +361,11 @@ void abandoned_calibration_quarantines_later_model_operations() {
         "model preflight did not fail closed after native probe abandonment");
 
     const auto cancelled = llama_runner_core_calibrate_backend(
-        5, LLAMA_BACKEND_CPU, 500, 4LL * 1024LL * 1024LL);
+        7, LLAMA_BACKEND_CPU, 500, 4LL * 1024LL * 1024LL);
     expect(cancelled.status == LLAMA_CALIBRATION_CANCELLED, "abandoned probe token was not cancelled");
 
     expect(
-        llama_runner_core_reserve_calibration(6) == LLAMA_CALIBRATION_RESERVATION_QUARANTINED,
+        llama_runner_core_reserve_calibration(8) == LLAMA_CALIBRATION_RESERVATION_QUARANTINED,
         "poisoned runtime accepted another calibration reservation");
 
     auto discovery = std::async(std::launch::async, [] {
@@ -321,6 +408,8 @@ int main() {
     calibration_cancellation_is_atomic_and_nonblocking();
     reserved_calibration_latches_cancel_before_native_entry();
     interruptible_operation_waiter_fails_closed_after_poison();
+    poison_notification_cannot_finish_between_predicate_check_and_wait();
+    completed_calibration_cannot_quarantine_a_reused_runtime();
     abandoned_calibration_quarantines_later_model_operations();
     llama_runner_core_shutdown();
     return 0;

@@ -175,9 +175,16 @@ actual class LlamaRunner {
         }
 
     @OptIn(ExperimentalForeignApi::class)
-    actual fun abandonBackendCalibration(probeToken: Long) {
-        if (probeToken > 0L) llama_runner_abandon_backend_calibration(probeToken)
-    }
+    actual fun abandonBackendCalibration(probeToken: Long): BackendCalibrationAbandonment =
+        if (probeToken > 0L) {
+            try {
+                decodeBackendCalibrationAbandonment(llama_runner_abandon_backend_calibration(probeToken))
+            } catch (_: Throwable) {
+                BackendCalibrationAbandonment.UNAVAILABLE
+            }
+        } else {
+            BackendCalibrationAbandonment.INVALID
+        }
 
     @OptIn(ExperimentalForeignApi::class)
     actual fun probeModelFeatures(

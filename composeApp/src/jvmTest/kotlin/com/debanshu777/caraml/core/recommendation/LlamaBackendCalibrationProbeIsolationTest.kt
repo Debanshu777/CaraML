@@ -1,7 +1,8 @@
 package com.debanshu777.caraml.core.recommendation
 
-import com.debanshu777.runner.BackendCalibrationResult
+import com.debanshu777.runner.BackendCalibrationAbandonment
 import com.debanshu777.runner.BackendCalibrationReservation
+import com.debanshu777.runner.BackendCalibrationResult
 import com.debanshu777.runner.NativeBackendKind
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -39,7 +40,10 @@ class LlamaBackendCalibrationProbeIsolationTest {
                 reservedTokens += it
                 BackendCalibrationReservation.ACCEPTED
             },
-            abandonBackendCalibration = { abandonedTokens += it },
+            abandonBackendCalibration = {
+                abandonedTokens += it
+                BackendCalibrationAbandonment.QUARANTINED
+            },
         )
 
         try {
@@ -54,8 +58,8 @@ class LlamaBackendCalibrationProbeIsolationTest {
             assertNull(result)
             assertTrue(elapsedMillis < 1_500L, "timeout took $elapsedMillis ms")
             probe.cancel(99L)
-            probe.abandon(99L)
-            probe.abandon(41L)
+            assertEquals(BackendCalibrationAbandonment.NOT_ACTIVE, probe.abandon(99L))
+            assertEquals(BackendCalibrationAbandonment.QUARANTINED, probe.abandon(41L))
             assertEquals(listOf(41L), reservedTokens)
             assertEquals(listOf(41L), cancelledTokens)
             assertEquals(listOf(41L), abandonedTokens)

@@ -1170,18 +1170,24 @@ void llama_runner_core_cancel_calibration(int64_t probe_token) {
     }
 }
 
-void llama_runner_core_abandon_calibration(int64_t probe_token) {
-    if (probe_token <= 0) return;
-    int64_t expected = probe_token;
-    const bool cancelled = g_calibration_state.compare_exchange_strong(
-        expected,
-        -probe_token,
-        std::memory_order_acq_rel,
-        std::memory_order_acquire);
-    if (cancelled || expected == -probe_token) {
-        g_native_operations_poisoned.store(true, std::memory_order_release);
-        g_operation_gate.notify_waiters();
+int llama_runner_core_abandon_calibration(int64_t probe_token) {
+    if (probe_token <= 0) return LLAMA_CALIBRATION_ABANDONMENT_INVALID;
+    int64_t state = g_calibration_state.load(std::memory_order_acquire);
+    while (state == probe_token || state == -probe_token) {
+        // The self-CAS for -probe_token is deliberate: it linearizes this
+        // decision against ScopedCalibrationProbe clearing a completed probe.
+        if (g_calibration_state.compare_exchange_weak(
+                state,
+                -probe_token,
+                std::memory_order_acq_rel,
+                std::memory_order_acquire)) {
+            g_operation_gate.interrupt_waiters([] {
+                g_native_operations_poisoned.store(true, std::memory_order_release);
+            });
+            return LLAMA_CALIBRATION_ABANDONMENT_QUARANTINED;
+        }
     }
+    return LLAMA_CALIBRATION_ABANDONMENT_NOT_ACTIVE;
 }
 
 LlamaModelFeatureSupportNative llama_runner_core_probe_model_features(
