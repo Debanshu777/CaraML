@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Card
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -32,6 +33,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -41,6 +45,7 @@ import com.debanshu777.caraml.core.settings.KvQuantPreset
 import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.theme.ThemeViewModel
 import com.debanshu777.caraml.features.modelhub.presentation.search.profileUiState
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.QuickCalibrationDialog
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.compose.koinInject
 import kotlin.math.round
@@ -58,6 +63,8 @@ fun SettingsScreen(
     val profile by viewModel.effectiveRecommendationProfile.collectAsState()
     val profileSaving by viewModel.isRecommendationProfileSaving.collectAsState()
     val profileError by viewModel.recommendationProfileError.collectAsState()
+    val quickCalibration by viewModel.quickCalibration.collectAsState()
+    var calibrationDialogVisible by remember { mutableStateOf(false) }
     val profileUiState = profileUiState(
         settings = settings,
         rolloutMode = rolloutModeSource.current(),
@@ -110,6 +117,16 @@ fun SettingsScreen(
                                 color = MaterialTheme.colorScheme.error,
                             )
                         }
+                        Text(
+                            text = "Optionally run a 3-second local benchmark to tune device-specific estimates.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Button(
+                            onClick = { calibrationDialogVisible = true },
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        ) {
+                            Text("Run calibration")
+                        }
                     }
                 }
             }
@@ -155,6 +172,19 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.weight(1f, fill = true))
         }
+    }
+
+    if (calibrationDialogVisible) {
+        QuickCalibrationDialog(
+            state = quickCalibration,
+            onRun = { viewModel.runQuickCalibration() },
+            onRunWithUnknownPower = { viewModel.runQuickCalibration(allowUnknownPower = true) },
+            onCancel = viewModel::cancelQuickCalibration,
+            onSkip = {
+                viewModel.skipQuickCalibration()
+                calibrationDialogVisible = false
+            },
+        )
     }
 }
 

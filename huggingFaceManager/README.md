@@ -126,6 +126,7 @@ when (val result = api.searchModels(params)) {
 
 <!-- Updated at end of each Claude Code session -->
 
+- Platform storage providers now expose a sibling `recommendation_cache.db` path so derived calibration evidence remains isolated from the primary app database
 - Storage providers now reject symlinked model roots and require canonical model paths to remain beneath the canonical trusted models parent
 - Downloads require pinned artifact identities and roots, strict UTF-8 descriptor-relative regular-file operations, and idempotent rollback journals; the native backend is exercised from packaged Desktop images and Android APKs
 - `nota-ai/bk-sdm-tiny` registry now sets `prediction=0` (EPS) — skips `is_using_v_parameterization_for_sd2()` probe; `offloadToCpu` reverted (moot since Vulkan is now disabled for diffusion at build level via `SD_VULKAN=OFF`)

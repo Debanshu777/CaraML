@@ -5,6 +5,11 @@ import com.debanshu777.caraml.core.platform.AppLogger
 import com.debanshu777.caraml.core.platform.DeviceCapabilities
 import com.debanshu777.caraml.core.platform.PlatformPaths
 import com.debanshu777.caraml.core.recommendation.DeviceSnapshotProvider
+import com.debanshu777.caraml.core.recommendation.InferenceObservationPhase
+import com.debanshu777.caraml.core.recommendation.InferenceObservationPlan
+import com.debanshu777.caraml.core.recommendation.InferenceObservationRecorder
+import com.debanshu777.caraml.core.recommendation.MeasuredResult
+import com.debanshu777.caraml.core.recommendation.ObservationOutcome
 import com.debanshu777.caraml.core.recommendation.CoordinatedLoadResult
 import com.debanshu777.caraml.core.recommendation.LoadAdmissionController
 import com.debanshu777.caraml.core.recommendation.LoadRecoveryRepository
@@ -21,6 +26,7 @@ import com.debanshu777.caraml.core.recommendation.RecommendationRolloutMode
 import com.debanshu777.caraml.core.recommendation.RecommendationRolloutModeSource
 import com.debanshu777.caraml.core.recommendation.StableLoadFailure
 import com.debanshu777.caraml.core.recommendation.SuitabilityEngine
+import com.debanshu777.caraml.core.recommendation.toInferenceObservationPlan
 import com.debanshu777.caraml.core.recommendation.VerifiedArtifactLoadTarget
 import com.debanshu777.caraml.core.settings.AppSettings
 import com.debanshu777.caraml.core.settings.KvQuantPreset
@@ -62,6 +68,7 @@ class LlamaInferenceRepository(
     private val rolloutModeSource: RecommendationRolloutModeSource = RecommendationRolloutModeSource {
         RecommendationRolloutMode.LEGACY
     },
+    private val observationRecorder: InferenceObservationRecorder? = null,
 ) : InferenceRepository {
 
     companion object {
@@ -141,6 +148,8 @@ class LlamaInferenceRepository(
     /** Cached runtime config string built after each successful model load. */
     @Volatile private var lastRuntimeConfig: String = ""
 
+    @Volatile private var generationObservation: InferenceObservationPlan? = null
+
     override suspend fun loadModel(request: LoadRequest): ModelLoadResult =
         nativeLock.withLock {
             val artifact = request.artifact
@@ -164,6 +173,9 @@ class LlamaInferenceRepository(
             val base = buildRunnerConfig(request.model, settings.temperature, settings, modelPath)
             val exactConfig = runCatching { NativeRunPlanAdapter.toLlamaConfig(plan, base) }
                 .getOrElse { return@withLock ModelLoadResult.Error("The selected model configuration is invalid.") }
+            val loadObservation = request.toInferenceObservationPlan(engineVersion, InferenceObservationPhase.LOAD)
+            val nextGenerationObservation =
+                request.toInferenceObservationPlan(engineVersion, InferenceObservationPhase.GENERATION)
             if (nativeLoaded) {
                 try {
                     runner.unloadModel()
@@ -173,6 +185,7 @@ class LlamaInferenceRepository(
                     return@withLock ModelLoadResult.Error("The previous model could not be released safely.")
                 }
                 nativeLoaded = false
+                generationObservation = null
             }
             try {
                 runner.initialize(nativeLibDir)
@@ -205,9 +218,24 @@ class LlamaInferenceRepository(
                     releasePartialState = {
                         runner.unloadModel()
                         nativeLoaded = false
+                        generationObservation = null
                     },
                     nativeLoad = {
-                        if (!runner.loadModel(modelPath, exactConfig)) {
+                        val loaded = loadObservation?.let { observation ->
+                            observationRecorder?.measureLoad(observation.key, observation.prediction) {
+                                val succeeded = runner.loadModel(modelPath, exactConfig)
+                                MeasuredResult(
+                                    value = succeeded,
+                                    completedUnits = 1,
+                                    outcome = if (succeeded) {
+                                        ObservationOutcome.SUCCESS
+                                    } else {
+                                        ObservationOutcome.ALLOCATION_FAILURE
+                                    },
+                                )
+                            }
+                        } ?: runner.loadModel(modelPath, exactConfig)
+                        if (!loaded) {
                             return@execute NativeLoadOutcome.Failed(
                                 ModelLoadResult.Error("The model could not be loaded with this configuration."),
                                 StableLoadFailure.ALLOCATION,
@@ -221,6 +249,7 @@ class LlamaInferenceRepository(
                                 StableLoadFailure.UNSUPPORTED_CONFIGURATION,
                             )
                         }
+                        generationObservation = nextGenerationObservation
                         val contextSize = runner.getContextLimit()
                         lastRuntimeConfig = BenchmarkUtils.formatRuntimeConfig(
                             threads = exactConfig.nThreads,
@@ -247,6 +276,7 @@ class LlamaInferenceRepository(
                 if (nativeLoaded) {
                     runCatching { runner.unloadModel() }
                     nativeLoaded = false
+                    generationObservation = null
                 }
                 ModelLoadResult.Error("Load admission is temporarily unavailable.")
             }
@@ -609,7 +639,10 @@ class LlamaInferenceRepository(
         if (!nativeLoaded) return@withLock
         runner.unloadModel()
         nativeLoaded = false
+        generationObservation = null
     }
+
+    override fun currentGenerationObservation(): InferenceObservationPlan? = generationObservation
 
     override fun cancelGeneration() {
         AppLogger.i(TAG) { "cancelled" }

@@ -3,6 +3,9 @@ package com.debanshu777.caraml.features.chat.domain.usecase
 import com.debanshu777.caraml.core.data.inference.InferenceRepository
 import com.debanshu777.caraml.core.benchmark.BenchmarkUtils
 import com.debanshu777.caraml.core.platform.AppLogger
+import com.debanshu777.caraml.core.recommendation.InferenceObservationRecorder
+import com.debanshu777.caraml.core.recommendation.MeasuredResult
+import com.debanshu777.caraml.core.recommendation.ObservationOutcome
 import com.debanshu777.caraml.features.chat.data.InferenceMetrics
 import com.debanshu777.caraml.features.chat.data.LiveGenerationStats
 import com.debanshu777.caraml.features.chat.data.TokenTimer
@@ -20,6 +23,7 @@ data class GenerationResult(
 
 class GenerateResponseUseCase(
     private val inferenceRepository: InferenceRepository,
+    private val observationRecorder: InferenceObservationRecorder? = null,
 ) {
     companion object {
         private const val TAG = "Inference"
@@ -35,6 +39,26 @@ class GenerateResponseUseCase(
     }
 
     suspend operator fun invoke(
+        userPrompt: String,
+        onToken: (thinking: String, output: String, liveStats: LiveGenerationStats) -> Unit,
+    ): GenerationResult {
+        val observation = inferenceRepository.currentGenerationObservation()
+        val recorder = observationRecorder
+        if (observation == null || recorder == null) return generate(userPrompt, onToken)
+        return recorder.measureGeneration(observation.key, observation.prediction) {
+            val result = generate(userPrompt, onToken)
+            val completedUnits = result.metrics?.tokenCount
+                ?.takeIf { result.stopReason != StopReason.CANCELLED && result.stopReason != StopReason.ERROR }
+                ?: 0
+            MeasuredResult(
+                value = result,
+                completedUnits = completedUnits,
+                outcome = ObservationOutcome.SUCCESS,
+            )
+        }
+    }
+
+    private suspend fun generate(
         userPrompt: String,
         onToken: (thinking: String, output: String, liveStats: LiveGenerationStats) -> Unit,
     ): GenerationResult {

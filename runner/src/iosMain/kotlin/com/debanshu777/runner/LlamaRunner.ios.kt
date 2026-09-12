@@ -2,6 +2,8 @@ package com.debanshu777.runner
 
 import com.debanshu777.runner.cpp.LlamaRunnerConfigFFI
 import com.debanshu777.runner.cpp.llama_runner_backend_capabilities
+import com.debanshu777.runner.cpp.llama_runner_calibrate_backend
+import com.debanshu777.runner.cpp.llama_runner_cancel_backend_calibration
 import com.debanshu777.runner.cpp.llama_runner_cancel_generate
 import com.debanshu777.runner.cpp.llama_runner_clear_context
 import com.debanshu777.runner.cpp.llama_runner_finalize_generation
@@ -114,6 +116,51 @@ actual class LlamaRunner {
     }
 
     @OptIn(ExperimentalForeignApi::class)
+    actual fun calibrateBackend(
+        backend: NativeBackendKind,
+        durationMillis: Int,
+        bufferBytes: Long,
+    ): BackendCalibrationResult {
+        if (!isValidBackendCalibrationRequest(durationMillis, bufferBytes)) {
+            return BackendCalibrationResult.Invalid
+        }
+        return try {
+            decodeBackendCalibrationResult(
+                llama_runner_calibrate_backend(
+                    backend.ordinal,
+                    durationMillis,
+                    bufferBytes,
+                ).useContents {
+                    if (window_count !in 0..LLAMA_CALIBRATION_MAX_WINDOWS) {
+                        return@useContents null
+                    }
+                    LongArray(LLAMA_CALIBRATION_HEADER_FIELDS +
+                        window_count * LLAMA_CALIBRATION_WINDOW_FIELDS).also { payload ->
+                        payload[0] = status.toLong()
+                        payload[1] = this.backend.toLong()
+                        payload[2] = window_count.toLong()
+                        repeat(window_count) { index ->
+                            val offset = LLAMA_CALIBRATION_HEADER_FIELDS +
+                                index * LLAMA_CALIBRATION_WINDOW_FIELDS
+                            val window = windows[index]
+                            payload[offset] = window.bytes_moved
+                            payload[offset + 1] = window.operations
+                            payload[offset + 2] = window.elapsed_nanoseconds
+                        }
+                    }
+                },
+            )
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            BackendCalibrationResult.Unavailable
+        }
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    actual fun cancelBackendCalibration() = llama_runner_cancel_backend_calibration()
+
+    @OptIn(ExperimentalForeignApi::class)
     actual fun probeModelFeatures(
         architecture: String,
         quantization: String?,
@@ -223,6 +270,10 @@ actual class LlamaRunner {
         return llama_runner_get_model_architecture()?.toKString()?.takeIf { it.isNotEmpty() }
     }
 }
+
+private const val LLAMA_CALIBRATION_MAX_WINDOWS = 16
+private const val LLAMA_CALIBRATION_HEADER_FIELDS = 3
+private const val LLAMA_CALIBRATION_WINDOW_FIELDS = 3
 
 @OptIn(ExperimentalForeignApi::class)
 private inline fun <T> withFfiConfig(

@@ -26,6 +26,15 @@ const val MAX_ARTIFACT_CHANGE_STAMP_LENGTH: Int = 128
 interface StoragePathProvider {
     fun getModelsStorageDirectory(modelId: String): String
     fun getDatabasePath(): String
+    fun getRecommendationDatabasePath(): String {
+        val databasePath = getDatabasePath()
+        val separator = maxOf(databasePath.lastIndexOf('/'), databasePath.lastIndexOf('\\'))
+        return if (separator >= 0) {
+            databasePath.substring(0, separator + 1) + "recommendation_cache.db"
+        } else {
+            "recommendation_cache.db"
+        }
+    }
     fun fileExists(path: String): Boolean
     fun getAvailableStorageBytes(): Long
     fun getTotalStorageBytes(): Long

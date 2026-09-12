@@ -5,6 +5,9 @@ import android.content.pm.ApplicationInfo
 import com.debanshu777.caraml.core.storage.AppDatabase
 import com.debanshu777.caraml.core.storage.getDatabaseBuilder
 import com.debanshu777.caraml.core.storage.getRoomDatabase
+import com.debanshu777.caraml.core.recommendation.storage.RecommendationDatabase
+import com.debanshu777.caraml.core.recommendation.storage.getRecommendationDatabaseBuilder
+import com.debanshu777.caraml.core.recommendation.storage.getRecommendationRoomDatabase
 import com.debanshu777.huggingfacemanager.download.AndroidStoragePathProvider
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import org.koin.core.module.Module
@@ -19,6 +22,12 @@ actual val platformHuggingFaceModule: Module = module {
         val dbPath = pathProvider.getDatabasePath()
         val builder = getDatabaseBuilder(KoinPlatform.getKoin().get<Context>(), dbPath)
         getRoomDatabase(builder)
+    }
+
+    single<RecommendationDatabase> {
+        val context = KoinPlatform.getKoin().get<Context>()
+        val dbPath = get<StoragePathProvider>().getRecommendationDatabasePath()
+        getRecommendationRoomDatabase(getRecommendationDatabaseBuilder(context, dbPath))
     }
 }
 

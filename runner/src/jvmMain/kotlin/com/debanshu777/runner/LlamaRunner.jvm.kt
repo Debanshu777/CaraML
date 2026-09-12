@@ -51,6 +51,30 @@ actual class LlamaRunner {
         emptyList()
     }
 
+    actual fun calibrateBackend(
+        backend: NativeBackendKind,
+        durationMillis: Int,
+        bufferBytes: Long,
+    ): BackendCalibrationResult {
+        if (!isValidBackendCalibrationRequest(durationMillis, bufferBytes)) {
+            return BackendCalibrationResult.Invalid
+        }
+        if (!nativeAvailable) return BackendCalibrationResult.Unavailable
+        return try {
+            decodeBackendCalibrationResult(
+                nativeCalibrateBackend(backend.ordinal, durationMillis, bufferBytes),
+            )
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            BackendCalibrationResult.Unavailable
+        }
+    }
+
+    actual fun cancelBackendCalibration() {
+        if (nativeAvailable) nativeCancelBackendCalibration()
+    }
+
     actual fun probeModelFeatures(
         architecture: String,
         quantization: String?,
@@ -126,6 +150,14 @@ actual class LlamaRunner {
     ): LongArray?
 
     private external fun nativeBackendCapabilities(): LongArray?
+
+    private external fun nativeCalibrateBackend(
+        backend: Int,
+        durationMillis: Int,
+        bufferBytes: Long,
+    ): LongArray?
+
+    private external fun nativeCancelBackendCalibration()
 
     private external fun nativeProbeModelFeatures(
         architecture: String,

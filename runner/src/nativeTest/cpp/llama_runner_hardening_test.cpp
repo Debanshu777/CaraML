@@ -200,6 +200,27 @@ void pinned_native_quantization_labels_are_exact() {
     }
 }
 
+void calibration_rejects_unbounded_requests_without_allocating() {
+    const auto too_short = llama_runner_core_calibrate_backend(
+        LLAMA_BACKEND_CPU, 499, 4LL * 1024LL * 1024LL);
+    expect(too_short.status == LLAMA_CALIBRATION_INVALID, "short calibration was accepted");
+    expect(too_short.window_count == 0, "invalid calibration exposed partial windows");
+
+    const auto too_large = llama_runner_core_calibrate_backend(
+        LLAMA_BACKEND_CPU, 500, 65LL * 1024LL * 1024LL);
+    expect(too_large.status == LLAMA_CALIBRATION_INVALID, "oversized calibration was accepted");
+    expect(too_large.window_count == 0, "oversized calibration exposed partial windows");
+}
+
+void calibration_cancellation_is_atomic_and_nonblocking() {
+    auto cancellation = std::async(std::launch::async, [] {
+        llama_runner_core_cancel_calibration();
+    });
+    expect(
+        cancellation.wait_for(std::chrono::milliseconds(100)) == std::future_status::ready,
+        "calibration cancellation blocked behind operation ownership");
+}
+
 } // namespace
 
 int main() {
@@ -209,6 +230,8 @@ int main() {
     repeated_initialization_is_idempotent();
     core_gate_blocks_discovery_but_not_atomic_cancellation();
     pinned_native_quantization_labels_are_exact();
+    calibration_rejects_unbounded_requests_without_allocating();
+    calibration_cancellation_is_atomic_and_nonblocking();
     llama_runner_core_shutdown();
     return 0;
 }

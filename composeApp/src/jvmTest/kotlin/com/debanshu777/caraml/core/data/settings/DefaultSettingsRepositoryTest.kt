@@ -43,7 +43,24 @@ class DefaultSettingsRepositoryTest {
         val settings = fixture().repository.getSettings().first()
 
         assertFalse(settings.modelProfileOnboardingComplete)
+        assertFalse(settings.recommendationCalibrationOfferComplete)
         assertEquals(RecommendationProfile(), settings.recommendationProfile)
+    }
+
+    @Test
+    fun skippingCalibrationOfferPersistsOneAtomicCompletionFlag() = runTest {
+        val fixture = fixture()
+        fixture.store.edit { preferences ->
+            preferences[stringPreferencesKey("unrelated_setting")] = "keep-me"
+        }
+        fixture.store.updateCount = 0
+
+        fixture.repository.completeRecommendationCalibrationOffer()
+
+        val preferences = fixture.store.data.first()
+        assertEquals(1, fixture.store.updateCount)
+        assertTrue(preferences[booleanPreferencesKey("recommendation_calibration_offer_complete")] == true)
+        assertEquals("keep-me", preferences[stringPreferencesKey("unrelated_setting")])
     }
 
     @Test

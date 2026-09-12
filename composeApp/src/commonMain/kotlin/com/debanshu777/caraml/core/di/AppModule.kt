@@ -3,7 +3,9 @@ package com.debanshu777.caraml.core.di
 import com.debanshu777.caraml.core.data.inference.DiffusionInferenceRepository
 import com.debanshu777.caraml.core.data.inference.InferenceRepository
 import com.debanshu777.caraml.core.data.inference.LlamaInferenceRepository
+import com.debanshu777.caraml.core.recommendation.BackendCalibrationProbe
 import com.debanshu777.caraml.core.recommendation.CalibrationSource
+import com.debanshu777.caraml.core.recommendation.CalibrationRepository
 import com.debanshu777.caraml.core.recommendation.CompatibilityChecker
 import com.debanshu777.caraml.core.recommendation.DefaultRecommendationRolloutModeSource
 import com.debanshu777.caraml.core.recommendation.DeviceSnapshotProvider
@@ -14,7 +16,10 @@ import com.debanshu777.caraml.core.recommendation.LoadSessionCoordinator
 import com.debanshu777.caraml.core.recommendation.LocalArtifactIdentityResolver
 import com.debanshu777.caraml.core.recommendation.ModelAssessmentRepository
 import com.debanshu777.caraml.core.recommendation.ModelDescriptorFactory
-import com.debanshu777.caraml.core.recommendation.NoCalibrationSource
+import com.debanshu777.caraml.core.recommendation.InferenceObservationRecorder
+import com.debanshu777.caraml.core.recommendation.LlamaBackendCalibrationProbe
+import com.debanshu777.caraml.core.recommendation.QuickCalibrationRunner
+import com.debanshu777.caraml.core.recommendation.ReliableMemoryReading
 import com.debanshu777.caraml.core.recommendation.RecommendationPolicy
 import com.debanshu777.caraml.core.recommendation.RecommendationRolloutModeSource
 import com.debanshu777.caraml.core.recommendation.RunnerEngineCapabilitySource
@@ -24,6 +29,7 @@ import com.debanshu777.caraml.core.platform.BackendCapabilitySource
 import com.debanshu777.caraml.core.platform.DeviceCapabilities
 import com.debanshu777.caraml.core.platform.RunnerBackendCapabilitySource
 import com.debanshu777.caraml.core.storage.AppDatabase
+import com.debanshu777.caraml.core.recommendation.storage.RecommendationDatabase
 import com.debanshu777.caraml.core.storage.component.ComponentRepository
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
 import com.debanshu777.caraml.core.data.settings.DefaultSettingsRepository
@@ -47,7 +53,10 @@ import com.debanshu777.caraml.features.settings.presentation.SettingsViewModel
 import com.debanshu777.huggingfacemanager.createHuggingFaceApi
 import com.debanshu777.huggingfacemanager.download.DownloadManager
 import com.debanshu777.runner.LlamaRunner
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import com.debanshu777.huggingfacemanager.download.ArtifactManifest
 import org.koin.core.module.Module
 import org.koin.core.module.dsl.viewModel
@@ -62,6 +71,7 @@ val appModule = module {
 
     single { get<AppDatabase>().localModelDao() }
     single { get<AppDatabase>().downloadedComponentDao() }
+    single { get<RecommendationDatabase>().observationDao() }
 
     single { LocalModelRepository(get()) }
     single { ComponentRepository(get()) }
@@ -84,7 +94,17 @@ val appModule = module {
     single { DeviceCapabilities() }
     single<BackendCapabilitySource> { RunnerBackendCapabilitySource(get(), get()) }
     single<EngineCapabilitySource> { RunnerEngineCapabilitySource(get(), get()) }
-    single<CalibrationSource> { NoCalibrationSource }
+    single { RecommendationCalibrationScope(CoroutineScope(SupervisorJob() + Dispatchers.Default)) }
+    single {
+        CalibrationRepository(
+            dao = get(),
+            currentEngineVersion = NATIVE_LOAD_ENGINE_VERSION,
+            now = { Clock.System.now().toEpochMilliseconds() },
+        ).also { repository ->
+            get<RecommendationCalibrationScope>().scope.launch { repository.initialize() }
+        }
+    }
+    single<CalibrationSource> { get<CalibrationRepository>() }
     single { CompatibilityChecker(get()) }
     single { SuitabilityEngine(get(), get()) }
     single { RecommendationPolicy() }
@@ -116,6 +136,36 @@ val appModule = module {
 
     single { LlamaRunner() }
     single { DiffusionRunner() }
+    single<BackendCalibrationProbe> {
+        LlamaBackendCalibrationProbe(
+            runner = get(),
+            dispatcher = Dispatchers.Default,
+        )
+    }
+    single {
+        QuickCalibrationRunner(
+            snapshotSource = { get<DeviceSnapshotProvider>().capture() },
+            probe = get(),
+            repository = get(),
+            settingsRepository = get(),
+            engineVersion = NATIVE_LOAD_ENGINE_VERSION,
+            clock = { Clock.System.now().toEpochMilliseconds() },
+        )
+    }
+    single {
+        InferenceObservationRecorder(
+            repository = get(),
+            processMemory = {
+                get<DeviceCapabilities>().getResourceSnapshot().let { resources ->
+                    ReliableMemoryReading(
+                        bytes = resources.currentProcessBytes,
+                        reliable = resources.confidence.host ==
+                            com.debanshu777.caraml.core.recommendation.Confidence.HIGH,
+                    )
+                }
+            },
+        )
+    }
     single {
         LocalArtifactIdentityResolver(
             storagePathProvider = get(),
@@ -153,6 +203,7 @@ val appModule = module {
             loadSessionCoordinator = get(),
             engineVersion = NATIVE_LOAD_ENGINE_VERSION,
             rolloutModeSource = get(),
+            observationRecorder = get(),
         )
     }
 
@@ -171,13 +222,14 @@ val appModule = module {
             loadSessionCoordinator = get(),
             engineVersion = NATIVE_LOAD_ENGINE_VERSION,
             rolloutModeSource = get(),
+            observationRecorder = get(),
         )
     }
 
     single { ChatConfig() }
 
     factory { GetAvailableModelsUseCase(get(), get()) }
-    factory { GenerateResponseUseCase(get()) }
+    factory { GenerateResponseUseCase(get(), get()) }
     factory { ManageContextUseCase(get(), get()) }
     factory { TrackModelUsageUseCase(get()) }
 
@@ -191,6 +243,7 @@ val appModule = module {
             deviceCapabilities = get(),
             recommendationService = get(),
             settingsRepository = get(),
+            quickCalibrationRunner = get(),
         )
     }
     viewModel {
@@ -201,7 +254,8 @@ val appModule = module {
     }
     viewModel {
         SettingsViewModel(
-            repository = get()
+            repository = get(),
+            quickCalibrationRunner = get(),
         )
     }
     viewModel {
@@ -224,3 +278,5 @@ val appModule = module {
 }
 
 private const val NATIVE_LOAD_ENGINE_VERSION = "native-engine-v1"
+
+private class RecommendationCalibrationScope(val scope: CoroutineScope)

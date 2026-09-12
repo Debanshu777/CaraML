@@ -21,6 +21,7 @@ enum LlamaStopReason {
 
 constexpr int LLAMA_PREFLIGHT_MAX_POOLS = 17;
 constexpr int LLAMA_BACKEND_MAX_DEVICES = 16;
+constexpr int LLAMA_CALIBRATION_MAX_WINDOWS = 16;
 
 enum LlamaPreflightStatus {
     LLAMA_PREFLIGHT_FIT = 0,
@@ -88,6 +89,28 @@ struct LlamaBackendCapabilitiesNative {
     LlamaBackendCapabilityNative devices[LLAMA_BACKEND_MAX_DEVICES]{};
 };
 
+enum LlamaCalibrationStatusNative {
+    LLAMA_CALIBRATION_COMPLETE = 0,
+    LLAMA_CALIBRATION_CANCELLED = 1,
+    LLAMA_CALIBRATION_DEFERRED = 2,
+    LLAMA_CALIBRATION_INVALID = 3,
+    LLAMA_CALIBRATION_UNAVAILABLE = 4,
+    LLAMA_CALIBRATION_FAILED = 5,
+};
+
+struct LlamaCalibrationWindowNative {
+    int64_t bytes_moved = 0;
+    int64_t operations = 0;
+    int64_t elapsed_nanoseconds = 0;
+};
+
+struct LlamaCalibrationResultNative {
+    int status = LLAMA_CALIBRATION_UNAVAILABLE;
+    int backend = LLAMA_BACKEND_OTHER;
+    int window_count = 0;
+    LlamaCalibrationWindowNative windows[LLAMA_CALIBRATION_MAX_WINDOWS]{};
+};
+
 enum LlamaFeatureStateNative {
     LLAMA_FEATURE_SUPPORTED = 0,
     LLAMA_FEATURE_UNSUPPORTED = 1,
@@ -138,6 +161,11 @@ LlamaPreflightResultNative llama_runner_core_preflight(
     const char *model_path,
     const LlamaRunnerConfig &config);
 LlamaBackendCapabilitiesNative llama_runner_core_backend_capabilities();
+LlamaCalibrationResultNative llama_runner_core_calibrate_backend(
+    int backend,
+    int duration_millis,
+    int64_t buffer_bytes);
+void llama_runner_core_cancel_calibration();
 LlamaModelFeatureSupportNative llama_runner_core_probe_model_features(
     const char *architecture,
     const char *quantization);

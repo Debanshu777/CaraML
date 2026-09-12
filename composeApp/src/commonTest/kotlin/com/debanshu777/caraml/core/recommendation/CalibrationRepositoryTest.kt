@@ -1,0 +1,153 @@
+package com.debanshu777.caraml.core.recommendation
+
+import com.debanshu777.caraml.core.platform.BackendKind
+import com.debanshu777.caraml.core.recommendation.storage.RecommendationObservationDao
+import com.debanshu777.caraml.core.recommendation.storage.RecommendationObservationEntity
+import kotlinx.coroutines.test.runTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+class CalibrationRepositoryTest {
+    @Test
+    fun correctionNeedsFiveSamplesAndHighMemoryNeverFallsBelowOne() = runTest {
+        val dao = FakeObservationDao()
+        val repository = CalibrationRepository(dao, ENGINE, now = { NOW })
+        repository.initialize()
+        repeat(4) { repository.record(sample(observedRatio = 0.8)) }
+        assertNull(repository.correctionFor(memoryKey()))
+
+        repository.record(sample(observedRatio = 0.8))
+
+        val correction = requireNotNull(repository.correctionFor(memoryKey()))
+        assertEquals(0.8, correction.likely, 0.000_001)
+        assertEquals(1.0, correction.high, 0.000_001)
+    }
+
+    @Test
+    fun correctionsUseOnlyTheExactVersionedPoolKey() = runTest {
+        val repository = CalibrationRepository(FakeObservationDao(), ENGINE, now = { NOW })
+        repository.initialize()
+        repeat(5) { repository.record(sample(observedRatio = 1.25)) }
+
+        assertNull(repository.correctionFor(memoryKey().copy(engineVersion = "engine-2")))
+        assertNull(repository.correctionFor(memoryKey().copy(estimatorVersion = 2)))
+        assertNull(repository.correctionFor(memoryKey().copy(memoryPool = MemoryPool.SHARED.stableName)))
+        assertNull(repository.correctionFor(memoryKey().copy(metricKind = MetricKind.PERFORMANCE, memoryPool = null)))
+        assertEquals(1.25, repository.correctionFor(memoryKey())?.likely)
+    }
+
+    @Test
+    fun recentSimilarSamplesDominateExpiredOrDissimilarRows() = runTest {
+        val dao = FakeObservationDao()
+        val repository = CalibrationRepository(dao, ENGINE, now = { NOW })
+        repository.initialize()
+        repeat(5) { dao.insertAll(listOf(sample(observedRatio = 4.0, capturedAt = NOW - 89 * DAY, similarity = 0.05))) }
+        repeat(5) { dao.insertAll(listOf(sample(observedRatio = 1.2, capturedAt = NOW, similarity = 1.0))) }
+        repository.initialize()
+
+        val correction = requireNotNull(repository.correctionFor(memoryKey()))
+
+        assertEquals(1.2, correction.likely, 0.000_001)
+        assertEquals(1.2, correction.high, 0.000_001)
+    }
+
+    @Test
+    fun recordRejectsMalformedExternalValuesWithoutChangingRevision() = runTest {
+        val dao = FakeObservationDao()
+        val repository = CalibrationRepository(dao, ENGINE, now = { NOW })
+        repository.initialize()
+        val before = repository.revision()
+
+        assertEquals(false, repository.record(sample(observedRatio = Double.NaN)))
+        assertEquals(false, repository.record(sample(observedRatio = 1.0).copy(backend = "unknown-backend")))
+
+        assertEquals(0, dao.count())
+        assertEquals(before, repository.revision())
+    }
+
+    @Test
+    fun failedTransactionDoesNotPublishRowsOrAdvanceRevision() = runTest {
+        val dao = FakeObservationDao(failWrites = true)
+        val repository = CalibrationRepository(dao, ENGINE, now = { NOW })
+        repository.initialize()
+
+        val accepted = repository.record(sample(observedRatio = 1.1))
+
+        assertEquals(false, accepted)
+        assertEquals(0L, repository.revision())
+        assertNull(repository.correctionFor(memoryKey()))
+    }
+
+    @Test
+    fun pruningRetainsFiveHundredRecentRowsForNinetyDays() = runTest {
+        val dao = FakeObservationDao()
+        val repository = CalibrationRepository(dao, ENGINE, now = { NOW })
+        repository.initialize()
+        dao.insertAll((0 until 600).map { index ->
+            sample(observedRatio = 1.0, capturedAt = NOW - index * 1_000L)
+        } + sample(observedRatio = 1.0, capturedAt = NOW - 91 * DAY))
+
+        assertTrue(repository.prune(NOW))
+
+        assertEquals(500, dao.count())
+        assertEquals(0, dao.countOlderThan(NOW - 90 * DAY))
+        assertTrue(repository.revision() > 0L)
+    }
+
+    private fun memoryKey() = CalibrationKey(
+        backend = BackendKind.CPU,
+        architectureFamily = "llama",
+        quantizationFamily = "q4_k",
+        workloadBucket = "ctx-4096",
+        engineVersion = ENGINE,
+        estimatorVersion = 1,
+        metricKind = MetricKind.MEMORY,
+        memoryPool = MemoryPool.HOST.stableName,
+    )
+
+    private fun sample(
+        observedRatio: Double,
+        capturedAt: Long = NOW,
+        similarity: Double = 1.0,
+    ) = RecommendationObservationEntity.from(
+        key = memoryKey(),
+        predictedValue = 100.0,
+        observedValue = 100.0 * observedRatio,
+        outcome = ObservationOutcome.SUCCESS,
+        capturedAtEpochMs = capturedAt,
+        similarity = similarity,
+    )
+
+    private class FakeObservationDao(
+        private val failWrites: Boolean = false,
+    ) : RecommendationObservationDao {
+        private val rows = mutableListOf<RecommendationObservationEntity>()
+        private var nextId = 1L
+
+        override suspend fun insertAll(samples: List<RecommendationObservationEntity>) {
+            if (failWrites) error("write failed")
+            rows += samples.map { it.copy(id = nextId++) }
+        }
+
+        override suspend fun allSamples(): List<RecommendationObservationEntity> = rows.toList()
+        override suspend fun deleteOlderThan(cutoffEpochMs: Long) {
+            rows.removeAll { it.capturedAtEpochMs < cutoffEpochMs }
+        }
+        override suspend fun retainNewest(limit: Int) {
+            val retained = rows.sortedWith(compareByDescending<RecommendationObservationEntity> { it.capturedAtEpochMs }.thenByDescending { it.id }).take(limit).toSet()
+            rows.retainAll(retained)
+        }
+        override suspend fun count(): Int = rows.size
+        override suspend fun countOlderThan(cutoffEpochMs: Long): Int = rows.count { it.capturedAtEpochMs < cutoffEpochMs }
+        override suspend fun maximumCapturedAt(): Long? = rows.maxOfOrNull { it.capturedAtEpochMs }
+        override suspend fun clearAll() = rows.clear()
+    }
+
+    private companion object {
+        const val ENGINE = "native-engine-v1"
+        const val NOW = 10_000_000_000L
+        const val DAY = 86_400_000L
+    }
+}

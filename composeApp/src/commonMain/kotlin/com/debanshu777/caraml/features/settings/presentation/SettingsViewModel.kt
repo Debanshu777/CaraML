@@ -8,7 +8,11 @@ import com.debanshu777.caraml.core.data.settings.SettingsRepository
 import com.debanshu777.caraml.core.recommendation.OptimizationPriority
 import com.debanshu777.caraml.core.recommendation.RecommendationProfile
 import com.debanshu777.caraml.core.recommendation.RiskTolerance
+import com.debanshu777.caraml.core.recommendation.CalibrationRunResult
+import com.debanshu777.caraml.core.recommendation.QuickCalibrationRunner
+import com.debanshu777.caraml.features.modelhub.presentation.search.QuickCalibrationUiState
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -22,6 +26,7 @@ import kotlinx.coroutines.sync.withLock
 
 class SettingsViewModel(
     private val repository: SettingsRepository,
+    private val quickCalibrationRunner: QuickCalibrationRunner? = null,
 ) : ViewModel() {
 
     private val queuedProfile = MutableStateFlow<RecommendationProfile?>(null)
@@ -32,6 +37,9 @@ class SettingsViewModel(
     private val _settingsLoaded = MutableStateFlow(false)
     private val _isRecommendationProfileSaving = MutableStateFlow(false)
     private val _recommendationProfileError = MutableStateFlow<String?>(null)
+    private val _quickCalibration = MutableStateFlow(QuickCalibrationUiState())
+    val quickCalibration: StateFlow<QuickCalibrationUiState> = _quickCalibration.asStateFlow()
+    private var calibrationJob: Job? = null
 
     val settings = repository.getSettings()
         .onEach { persisted ->
@@ -135,6 +143,45 @@ class SettingsViewModel(
             } finally {
                 onboardingSubmissionInFlight.value = false
                 _isRecommendationProfileSaving.value = queuedProfile.value != null
+            }
+        }
+    }
+
+    fun runQuickCalibration(allowUnknownPower: Boolean = false) {
+        val calibration = quickCalibrationRunner ?: return
+        if (_quickCalibration.value.running) return
+        _quickCalibration.value = QuickCalibrationUiState(running = true)
+        calibrationJob = viewModelScope.launch {
+            try {
+                _quickCalibration.value = QuickCalibrationUiState(
+                    result = calibration.runQuickCalibration(allowUnknownPower),
+                )
+            } catch (cancelled: CancellationException) {
+                _quickCalibration.value = QuickCalibrationUiState(
+                    result = CalibrationRunResult.Cancelled,
+                )
+                throw cancelled
+            }
+        }
+    }
+
+    fun cancelQuickCalibration() {
+        calibrationJob?.cancel()
+    }
+
+    fun skipQuickCalibration() {
+        val calibration = quickCalibrationRunner ?: return
+        calibrationJob?.cancel()
+        viewModelScope.launch {
+            try {
+                calibration.skipQuickCalibration()
+                _quickCalibration.value = QuickCalibrationUiState()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _quickCalibration.value = QuickCalibrationUiState(
+                    result = CalibrationRunResult.Failed,
+                )
             }
         }
     }

@@ -34,6 +34,9 @@ class JvmStoragePathProvider private constructor(
     
     override fun getDatabasePath(): String =
         File(appDir, "databases").apply { mkdirs() }.absolutePath + "/caraml.db"
+
+    override fun getRecommendationDatabasePath(): String =
+        File(appDir, "databases").apply { mkdirs() }.absolutePath + "/recommendation_cache.db"
     
     override fun fileExists(path: String): Boolean = File(path).exists()
 

@@ -26,6 +26,8 @@ class DefaultSettingsRepository(
     private val optimizationPriorityKey = stringPreferencesKey("model_optimization_priority")
     private val modelProfileOnboardingCompleteKey =
         booleanPreferencesKey("model_profile_onboarding_complete")
+    private val recommendationCalibrationOfferCompleteKey =
+        booleanPreferencesKey("recommendation_calibration_offer_complete")
 
     override fun getSettings(): Flow<AppSettings> =
         dataStore.data.map { prefs ->
@@ -45,6 +47,8 @@ class DefaultSettingsRepository(
                     ?: OptimizationPriority.BALANCED,
                 modelProfileOnboardingComplete =
                     prefs[modelProfileOnboardingCompleteKey] ?: false,
+                recommendationCalibrationOfferComplete =
+                    prefs[recommendationCalibrationOfferCompleteKey] ?: false,
             )
         }
 
@@ -69,6 +73,12 @@ class DefaultSettingsRepository(
             prefs[riskToleranceKey] = profile.riskTolerance.name
             prefs[optimizationPriorityKey] = profile.optimizationPriority.name
             prefs[modelProfileOnboardingCompleteKey] = true
+        }
+    }
+
+    override suspend fun completeRecommendationCalibrationOffer() {
+        dataStore.edit { prefs ->
+            prefs[recommendationCalibrationOfferCompleteKey] = true
         }
     }
 }

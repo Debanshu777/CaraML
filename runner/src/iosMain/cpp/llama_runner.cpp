@@ -11,6 +11,7 @@ namespace {
 
 static_assert(LLAMA_RUNNER_PREFLIGHT_MAX_POOLS == LLAMA_PREFLIGHT_MAX_POOLS);
 static_assert(LLAMA_RUNNER_BACKEND_MAX_DEVICES == LLAMA_BACKEND_MAX_DEVICES);
+static_assert(LLAMA_RUNNER_CALIBRATION_MAX_WINDOWS == LLAMA_CALIBRATION_MAX_WINDOWS);
 
 void ios_log(LlamaLogLevel level, const char *msg) {
     if (level == LLAMA_LOG_ERROR) {
@@ -134,6 +135,40 @@ struct LlamaBackendCapabilitiesFFI llama_runner_backend_capabilities(void) {
             }
             return result;
         });
+}
+
+struct LlamaCalibrationResultFFI llama_runner_calibrate_backend(
+    int backend,
+    int duration_millis,
+    int64_t buffer_bytes) {
+    return ffi_guard<LlamaCalibrationResultFFI>(
+        "calibrate_backend",
+        LlamaCalibrationResultFFI{LLAMA_CALIBRATION_UNAVAILABLE, backend, 0, {}},
+        [backend, duration_millis, buffer_bytes]() {
+            const LlamaCalibrationResultNative native = llama_runner_core_calibrate_backend(
+                backend,
+                duration_millis,
+                buffer_bytes);
+            LlamaCalibrationResultFFI result{};
+            result.status = native.status;
+            result.backend = native.backend;
+            result.window_count = native.window_count;
+            for (int index = 0;
+                 index < native.window_count && index < LLAMA_RUNNER_CALIBRATION_MAX_WINDOWS;
+                 ++index) {
+                result.windows[index].bytes_moved = native.windows[index].bytes_moved;
+                result.windows[index].operations = native.windows[index].operations;
+                result.windows[index].elapsed_nanoseconds =
+                    native.windows[index].elapsed_nanoseconds;
+            }
+            return result;
+        });
+}
+
+void llama_runner_cancel_backend_calibration(void) {
+    ffi_guard_void("cancel_backend_calibration", []() {
+        llama_runner_core_cancel_calibration();
+    });
 }
 
 struct LlamaModelFeatureSupportFFI llama_runner_probe_model_features(

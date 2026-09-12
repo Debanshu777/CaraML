@@ -4,6 +4,11 @@ import com.debanshu777.caraml.core.platform.AppLogger
 import com.debanshu777.caraml.core.platform.DeviceCapabilities
 import com.debanshu777.caraml.core.recommendation.DeviceSnapshotProvider
 import com.debanshu777.caraml.core.recommendation.DiffusionRunPlan
+import com.debanshu777.caraml.core.recommendation.InferenceObservationPhase
+import com.debanshu777.caraml.core.recommendation.InferenceObservationPlan
+import com.debanshu777.caraml.core.recommendation.InferenceObservationRecorder
+import com.debanshu777.caraml.core.recommendation.MeasuredResult
+import com.debanshu777.caraml.core.recommendation.ObservationOutcome
 import com.debanshu777.caraml.core.recommendation.CoordinatedLoadResult
 import com.debanshu777.caraml.core.recommendation.LoadAdmissionController
 import com.debanshu777.caraml.core.recommendation.LoadRecoveryRepository
@@ -21,6 +26,7 @@ import com.debanshu777.caraml.core.recommendation.RecommendationRolloutModeSourc
 import com.debanshu777.caraml.core.recommendation.StableLoadFailure
 import com.debanshu777.caraml.core.recommendation.SuitabilityEngine
 import com.debanshu777.caraml.core.recommendation.VerifiedArtifactLoadTarget
+import com.debanshu777.caraml.core.recommendation.toInferenceObservationPlan
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.diffusionrunner.DiffusionModelConfig
 import com.debanshu777.diffusionrunner.DiffusionPreflightResult
@@ -49,6 +55,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlin.concurrent.Volatile
 
 /**
  * Loads stable-diffusion.cpp models via [DiffusionRunner], resolving all auxiliary components 
@@ -69,11 +76,13 @@ class DiffusionInferenceRepository(
     private val rolloutModeSource: RecommendationRolloutModeSource = RecommendationRolloutModeSource {
         RecommendationRolloutMode.LEGACY
     },
+    private val observationRecorder: InferenceObservationRecorder? = null,
 ) {
     private val downloadManager = DownloadManager(storagePathProvider)
     private val nativeSession = Mutex()
     private var lastLoadedArchStr: String? = null
     private val exactExecutionState = AdmittedDiffusionExecutionState()
+    @Volatile private var generationObservation: InferenceObservationPlan? = null
 
     /**
      * Live diffusion progress.
@@ -117,6 +126,9 @@ class DiffusionInferenceRepository(
             val baseConfig = exactBaseConfig(request.model.modelId, artifact, loadTarget)
             val execution = runCatching { NativeRunPlanAdapter.toDiffusionExecutionConfig(plan, baseConfig) }
                 .getOrElse { return@withContext ModelLoadResult.Error("The selected model configuration is invalid.") }
+            val loadObservation = request.toInferenceObservationPlan(engineVersion, InferenceObservationPhase.LOAD)
+            val nextGenerationObservation =
+                request.toInferenceObservationPlan(engineVersion, InferenceObservationPhase.GENERATION)
             try {
                 runner.release()
             } catch (cancelled: CancellationException) {
@@ -126,6 +138,7 @@ class DiffusionInferenceRepository(
             }
             lastLoadedArchStr = null
             exactExecutionState.clear()
+            generationObservation = null
             try {
                 runner.initialize(nativeLibDir)
             } catch (cancelled: CancellationException) {
@@ -164,9 +177,24 @@ class DiffusionInferenceRepository(
                         runner.release()
                         lastLoadedArchStr = null
                         exactExecutionState.clear()
+                        generationObservation = null
                     },
                     nativeLoad = {
-                        if (!runner.loadModel(execution.model)) {
+                        val loaded = loadObservation?.let { observation ->
+                            observationRecorder?.measureLoad(observation.key, observation.prediction) {
+                                val succeeded = runner.loadModel(execution.model)
+                                MeasuredResult(
+                                    value = succeeded,
+                                    completedUnits = 1,
+                                    outcome = if (succeeded) {
+                                        ObservationOutcome.SUCCESS
+                                    } else {
+                                        ObservationOutcome.ALLOCATION_FAILURE
+                                    },
+                                )
+                            }
+                        } ?: runner.loadModel(execution.model)
+                        if (!loaded) {
                             return@execute NativeLoadOutcome.Failed(
                                 ModelLoadResult.Error("The model could not be loaded with this configuration."),
                                 StableLoadFailure.ALLOCATION,
@@ -174,6 +202,7 @@ class DiffusionInferenceRepository(
                         }
                         lastLoadedArchStr = runner.getDiffusionModelMetadata(modelPath)?.architecture
                         exactExecutionState.publish(execution)
+                        generationObservation = nextGenerationObservation
                         NativeLoadOutcome.Succeeded(ModelLoadResult.Success(contextSize = 0))
                     },
                 )) {
@@ -189,6 +218,7 @@ class DiffusionInferenceRepository(
                 runCatching { runner.release() }
                 lastLoadedArchStr = null
                 exactExecutionState.clear()
+                generationObservation = null
                 ModelLoadResult.Error("An error occurred while loading the model.")
             }
         }
@@ -304,6 +334,7 @@ class DiffusionInferenceRepository(
 
             runner.release()
             exactExecutionState.clear()
+            generationObservation = null
             runner.initialize(nativeLibDir)
 
             // Build full config with resolved component paths
@@ -387,7 +418,9 @@ class DiffusionInferenceRepository(
                 }
             }
             try {
-                val r = runner.generateImage(executionParams)
+                val r = observeGeneration(executionParams.steps) {
+                    runner.generateImage(executionParams)
+                }
                 r.exceptionOrNull()?.let { AppLogger.e(TAG, "generateImage failed", it) }
                 r.fold(
                     onSuccess = { Result.success(it) },
@@ -422,7 +455,9 @@ class DiffusionInferenceRepository(
                 }
             }
             try {
-                val r = runner.generateVideo(executionParams)
+                val r = observeGeneration(executionParams.steps) {
+                    runner.generateVideo(executionParams)
+                }
                 r.exceptionOrNull()?.let { AppLogger.e(TAG, "generateVideo failed", it) }
                 r.fold(
                     onSuccess = { Result.success(it) },
@@ -438,6 +473,24 @@ class DiffusionInferenceRepository(
         runner.release()
         lastLoadedArchStr = null
         exactExecutionState.clear()
+        generationObservation = null
+    }
+
+    private suspend fun <T> observeGeneration(
+        completedUnits: Int,
+        block: suspend () -> Result<T>,
+    ): Result<T> {
+        val observation = generationObservation
+        val recorder = observationRecorder
+        if (observation == null || recorder == null) return block()
+        return recorder.measureGeneration(observation.key, observation.prediction) {
+            val result = block()
+            MeasuredResult(
+                value = result,
+                completedUnits = if (result.isSuccess) completedUnits else 0,
+                outcome = ObservationOutcome.SUCCESS,
+            )
+        }
     }
 
     /** Architecture string reported by the native layer for the currently loaded model. */

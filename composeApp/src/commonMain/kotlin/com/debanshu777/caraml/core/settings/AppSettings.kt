@@ -28,6 +28,7 @@ data class AppSettings(
     val riskTolerance: RiskTolerance = RiskTolerance.BALANCED,
     val optimizationPriority: OptimizationPriority = OptimizationPriority.BALANCED,
     val modelProfileOnboardingComplete: Boolean = false,
+    val recommendationCalibrationOfferComplete: Boolean = false,
 ) {
     val recommendationProfile: RecommendationProfile
         get() = RecommendationProfile(

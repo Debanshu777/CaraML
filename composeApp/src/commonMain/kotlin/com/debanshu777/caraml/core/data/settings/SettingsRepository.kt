@@ -9,4 +9,5 @@ interface SettingsRepository {
     suspend fun updateSettings(settings: AppSettings)
     suspend fun updateRecommendationProfile(profile: RecommendationProfile)
     suspend fun completeModelProfileOnboarding(profile: RecommendationProfile)
+    suspend fun completeRecommendationCalibrationOffer() = Unit
 }

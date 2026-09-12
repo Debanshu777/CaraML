@@ -23,6 +23,7 @@
 #include "fit.h"
 #include "ggml.h"
 #include "ggml-backend.h"
+#include "ggml-cpp.h"
 #include "llama.h"
 #include "llama-arch.h"
 #include "llama-model.h"
@@ -64,6 +65,7 @@ private:
 };
 
 std::atomic<bool> g_cancel_flag{false};
+std::atomic<uint64_t> g_calibration_cancel_generation{0};
 int g_max_tokens_remaining = 0;
 std::vector<llama_token> g_streaming_tokens;
 size_t g_streaming_n_generated = 0;
@@ -872,6 +874,159 @@ LlamaBackendCapabilitiesNative llama_runner_core_backend_capabilities() {
         result.count = -1;
     }
     return result;
+}
+
+LlamaCalibrationResultNative llama_runner_core_calibrate_backend(
+    int requested_backend,
+    int duration_millis,
+    int64_t buffer_bytes) {
+    LlamaCalibrationResultNative result;
+    result.backend = requested_backend;
+    constexpr int64_t min_buffer = 4LL * 1024LL * 1024LL;
+    constexpr int64_t max_buffer = 64LL * 1024LL * 1024LL;
+    if (requested_backend < LLAMA_BACKEND_CPU || requested_backend > LLAMA_BACKEND_OTHER ||
+        duration_millis < 500 || duration_millis > 3000 ||
+        buffer_bytes < min_buffer || buffer_bytes > max_buffer) {
+        result.status = LLAMA_CALIBRATION_INVALID;
+        return result;
+    }
+
+    const uint64_t cancel_generation =
+        g_calibration_cancel_generation.load(std::memory_order_acquire);
+    auto operation = g_operation_gate.lock();
+    if (g_calibration_cancel_generation.load(std::memory_order_acquire) != cancel_generation) {
+        result.status = LLAMA_CALIBRATION_CANCELLED;
+        return result;
+    }
+    if (!g_backend_initialized) {
+        result.status = LLAMA_CALIBRATION_UNAVAILABLE;
+        return result;
+    }
+    ScopedLlamaLoggerOverride suppress(discard_upstream_log);
+    try {
+        ggml_backend_dev_t selected_device = nullptr;
+        const size_t device_count = ggml_backend_dev_count();
+        if (device_count == 0 || device_count > static_cast<size_t>(LLAMA_BACKEND_MAX_DEVICES)) {
+            return result;
+        }
+        for (size_t index = 0; index < device_count; ++index) {
+            ggml_backend_dev_t candidate = ggml_backend_dev_get(index);
+            if (candidate && backend_kind(candidate) == requested_backend &&
+                ggml_backend_dev_type(candidate) != GGML_BACKEND_DEVICE_TYPE_META) {
+                selected_device = candidate;
+                break;
+            }
+        }
+        if (!selected_device) return result;
+
+        ggml_backend_ptr backend(ggml_backend_dev_init(selected_device, nullptr));
+        if (!backend) return result;
+
+        const long double element_budget = static_cast<long double>(buffer_bytes) /
+            (3.0L * static_cast<long double>(sizeof(float)));
+        const int64_t dimension = std::max<int64_t>(64, std::min<int64_t>(512,
+            static_cast<int64_t>(std::sqrt(element_budget))));
+        if (dimension <= 0 || dimension > 512) {
+            result.status = LLAMA_CALIBRATION_INVALID;
+            return result;
+        }
+        constexpr size_t graph_nodes = 16;
+        ggml_init_params params{
+            ggml_tensor_overhead() * 8 + ggml_graph_overhead_custom(graph_nodes, false),
+            nullptr,
+            true,
+        };
+        ggml_context_ptr context(ggml_init(params));
+        if (!context) return result;
+        ggml_tensor *left = ggml_new_tensor_2d(context.get(), GGML_TYPE_F32, dimension, dimension);
+        ggml_tensor *right = ggml_new_tensor_2d(context.get(), GGML_TYPE_F32, dimension, dimension);
+        ggml_tensor *output = ggml_mul_mat(context.get(), left, right);
+        if (!left || !right || !output || !ggml_backend_supports_op(backend.get(), output)) {
+            result.status = LLAMA_CALIBRATION_DEFERRED;
+            return result;
+        }
+        const size_t left_bytes = ggml_nbytes(left);
+        const size_t right_bytes = ggml_nbytes(right);
+        const size_t output_bytes = ggml_nbytes(output);
+        if (left_bytes > static_cast<size_t>(buffer_bytes) ||
+            right_bytes > static_cast<size_t>(buffer_bytes) - left_bytes ||
+            output_bytes > static_cast<size_t>(buffer_bytes) - left_bytes - right_bytes) {
+            result.status = LLAMA_CALIBRATION_DEFERRED;
+            return result;
+        }
+
+        ggml_backend_buffer_ptr allocation(ggml_backend_alloc_ctx_tensors(context.get(), backend.get()));
+        if (!allocation) {
+            result.status = LLAMA_CALIBRATION_DEFERRED;
+            return result;
+        }
+        const size_t element_count = static_cast<size_t>(dimension) * static_cast<size_t>(dimension);
+        std::vector<float> synthetic(element_count, 0.03125f);
+        ggml_backend_tensor_set(left, synthetic.data(), 0, left_bytes);
+        ggml_backend_tensor_set(right, synthetic.data(), 0, right_bytes);
+        ggml_cgraph *graph = ggml_new_graph_custom(context.get(), graph_nodes, false);
+        if (!graph) return result;
+        ggml_build_forward_expand(graph, output);
+
+        if (ggml_backend_graph_compute(backend.get(), graph) != GGML_STATUS_SUCCESS) {
+            result.status = LLAMA_CALIBRATION_FAILED;
+            return result;
+        }
+        const int64_t bytes_per_iteration = static_cast<int64_t>(left_bytes + right_bytes + output_bytes);
+        const long double operations_value = 2.0L * dimension * dimension * dimension;
+        if (bytes_per_iteration <= 0 || operations_value <= 0.0L ||
+            operations_value > static_cast<long double>(std::numeric_limits<int64_t>::max())) {
+            result.status = LLAMA_CALIBRATION_FAILED;
+            return result;
+        }
+        const int64_t operations_per_iteration = static_cast<int64_t>(operations_value);
+        const auto target_per_window = std::chrono::milliseconds(
+            std::max(1, duration_millis / 5));
+
+        for (int window = 0; window < 5; ++window) {
+            const auto start = std::chrono::steady_clock::now();
+            int64_t iterations = 0;
+            do {
+                if (g_calibration_cancel_generation.load(std::memory_order_acquire) != cancel_generation) {
+                    result = LlamaCalibrationResultNative{};
+                    result.status = LLAMA_CALIBRATION_CANCELLED;
+                    result.backend = requested_backend;
+                    return result;
+                }
+                if (ggml_backend_graph_compute(backend.get(), graph) != GGML_STATUS_SUCCESS) {
+                    result.status = LLAMA_CALIBRATION_FAILED;
+                    result.window_count = 0;
+                    return result;
+                }
+                ++iterations;
+            } while (std::chrono::steady_clock::now() - start < target_per_window);
+            const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - start).count();
+            if (iterations <= 0 || elapsed <= 0 ||
+                iterations > std::numeric_limits<int64_t>::max() / bytes_per_iteration ||
+                iterations > std::numeric_limits<int64_t>::max() / operations_per_iteration) {
+                result.status = LLAMA_CALIBRATION_FAILED;
+                result.window_count = 0;
+                return result;
+            }
+            result.windows[window] = LlamaCalibrationWindowNative{
+                bytes_per_iteration * iterations,
+                operations_per_iteration * iterations,
+                elapsed,
+            };
+        }
+        result.status = LLAMA_CALIBRATION_COMPLETE;
+        result.window_count = 5;
+        return result;
+    } catch (...) {
+        result.status = LLAMA_CALIBRATION_FAILED;
+        result.window_count = 0;
+        return result;
+    }
+}
+
+void llama_runner_core_cancel_calibration() {
+    g_calibration_cancel_generation.fetch_add(1, std::memory_order_acq_rel);
 }
 
 LlamaModelFeatureSupportNative llama_runner_core_probe_model_features(

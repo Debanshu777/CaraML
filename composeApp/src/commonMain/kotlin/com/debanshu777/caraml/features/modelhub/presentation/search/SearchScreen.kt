@@ -73,6 +73,7 @@ import com.debanshu777.caraml.features.modelhub.presentation.downloaded.Readines
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.components.LocalModelListItem
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelListItem
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.RecommendationProfileDialog
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.QuickCalibrationDialog
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchBar
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchModelListItem
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SortFilterChips
@@ -104,6 +105,7 @@ fun SearchScreen(
     val effectiveProfile by settingsViewModel.effectiveRecommendationProfile.collectAsState()
     val profileSaving by settingsViewModel.isRecommendationProfileSaving.collectAsState()
     val profileError by settingsViewModel.recommendationProfileError.collectAsState()
+    val quickCalibration by modelViewModel.quickCalibration.collectAsState()
     val persistedProfileState = profileUiState(
         settings = settings,
         rolloutMode = rolloutModeSource.current(),
@@ -200,6 +202,19 @@ fun SearchScreen(
             },
             submitting = profileSaving,
             errorMessage = profileError,
+        )
+    }
+
+    if (recommendationProfileState.isAvailable &&
+        settings.modelProfileOnboardingComplete &&
+        !settings.recommendationCalibrationOfferComplete
+    ) {
+        QuickCalibrationDialog(
+            state = quickCalibration,
+            onRun = { modelViewModel.runQuickCalibration() },
+            onRunWithUnknownPower = { modelViewModel.runQuickCalibration(allowUnknownPower = true) },
+            onCancel = modelViewModel::cancelQuickCalibration,
+            onSkip = modelViewModel::skipQuickCalibration,
         )
     }
 }

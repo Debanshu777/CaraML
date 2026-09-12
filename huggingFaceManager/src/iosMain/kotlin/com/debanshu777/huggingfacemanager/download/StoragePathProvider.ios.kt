@@ -38,6 +38,15 @@ class IosStoragePathProvider : StoragePathProvider {
         NSFileManager.defaultManager.createDirectoryAtPath(dbDir, true, null, null)
         return "$dbDir/caraml.db"
     }
+
+    @OptIn(ExperimentalForeignApi::class)
+    override fun getRecommendationDatabasePath(): String {
+        val docs = NSFileManager.defaultManager
+            .URLForDirectory(NSDocumentDirectory, NSUserDomainMask, null, false, null)!!.path!!
+        val dbDir = "$docs/databases"
+        NSFileManager.defaultManager.createDirectoryAtPath(dbDir, true, null, null)
+        return "$dbDir/recommendation_cache.db"
+    }
     
     @OptIn(ExperimentalForeignApi::class)
     override fun fileExists(path: String): Boolean =

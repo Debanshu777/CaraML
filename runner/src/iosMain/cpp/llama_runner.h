@@ -8,6 +8,7 @@ extern "C" {
 
 #define LLAMA_RUNNER_PREFLIGHT_MAX_POOLS 17
 #define LLAMA_RUNNER_BACKEND_MAX_DEVICES 16
+#define LLAMA_RUNNER_CALIBRATION_MAX_WINDOWS 16
 
 struct LlamaRunnerConfigFFI {
     int n_ctx;
@@ -61,6 +62,19 @@ struct LlamaBackendCapabilitiesFFI {
     struct LlamaBackendCapabilityFFI devices[LLAMA_RUNNER_BACKEND_MAX_DEVICES];
 };
 
+struct LlamaCalibrationWindowFFI {
+    int64_t bytes_moved;
+    int64_t operations;
+    int64_t elapsed_nanoseconds;
+};
+
+struct LlamaCalibrationResultFFI {
+    int status;
+    int backend;
+    int window_count;
+    struct LlamaCalibrationWindowFFI windows[LLAMA_RUNNER_CALIBRATION_MAX_WINDOWS];
+};
+
 struct LlamaModelFeatureSupportFFI {
     int architecture;
     int quantization;
@@ -73,6 +87,11 @@ struct LlamaPreflightResultFFI llama_runner_preflight_model(
     const char *model_path,
     struct LlamaRunnerConfigFFI config);
 struct LlamaBackendCapabilitiesFFI llama_runner_backend_capabilities(void);
+struct LlamaCalibrationResultFFI llama_runner_calibrate_backend(
+    int backend,
+    int duration_millis,
+    int64_t buffer_bytes);
+void llama_runner_cancel_backend_calibration(void);
 struct LlamaModelFeatureSupportFFI llama_runner_probe_model_features(
     const char *architecture,
     const char *quantization);

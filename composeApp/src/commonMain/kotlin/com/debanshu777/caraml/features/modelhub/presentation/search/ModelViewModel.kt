@@ -13,6 +13,8 @@ import com.debanshu777.caraml.core.recommendation.LlmModelDescriptor
 import com.debanshu777.caraml.core.recommendation.DiffusionModelDescriptor
 import com.debanshu777.caraml.core.recommendation.ModelDescriptor
 import com.debanshu777.caraml.core.recommendation.ModelFileIdentity
+import com.debanshu777.caraml.core.recommendation.CalibrationRunResult
+import com.debanshu777.caraml.core.recommendation.QuickCalibrationRunner
 import com.debanshu777.caraml.core.recommendation.WorkloadConfig
 import com.debanshu777.caraml.core.storage.component.ComponentRepository
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
@@ -228,6 +230,11 @@ data class StorageInfoUiState(
     val deviceHints: DeviceHints? = null,
 )
 
+data class QuickCalibrationUiState(
+    val running: Boolean = false,
+    val result: CalibrationRunResult? = null,
+)
+
 data class SetupComponentUiState(
     val role: ComponentRole,
     val repoId: String,
@@ -339,6 +346,7 @@ class ModelViewModel(
     private val deviceCapabilities: DeviceCapabilities,
     private val recommendationService: ModelRecommendationService,
     private val settingsRepository: SettingsRepository,
+    private val quickCalibrationRunner: QuickCalibrationRunner? = null,
 ) : ViewModel() {
 
     private val downloadAdmissionPolicy = DownloadAdmissionPolicy()
@@ -359,7 +367,11 @@ class ModelViewModel(
     private var recommendationJob: Job? = null
     private var listRequestJob: Job? = null
     private var searchRequestJob: Job? = null
+    private var calibrationJob: Job? = null
     @Volatile private var activeModelRequestOwner: Any = Any()
+
+    private val _quickCalibration = MutableStateFlow(QuickCalibrationUiState())
+    val quickCalibration: StateFlow<QuickCalibrationUiState> = _quickCalibration.asStateFlow()
 
     init {
         viewModelScope.launch {
@@ -1456,11 +1468,52 @@ class ModelViewModel(
         listRequestJob?.cancel()
         searchRequestJob?.cancel()
         recommendationJob?.cancel()
+        calibrationJob?.cancel()
         recommendationSession?.cancel()
         listRequestJob = null
         searchRequestJob = null
         recommendationJob = null
+        calibrationJob = null
         recommendationSession = null
+    }
+
+    fun runQuickCalibration(allowUnknownPower: Boolean = false) {
+        val calibration = quickCalibrationRunner ?: return
+        if (calibrationJob?.isActive == true) return
+        _quickCalibration.value = QuickCalibrationUiState(running = true)
+        calibrationJob = viewModelScope.launch {
+            try {
+                _quickCalibration.value = QuickCalibrationUiState(
+                    result = calibration.runQuickCalibration(allowUnknownPower),
+                )
+            } catch (cancelled: CancellationException) {
+                _quickCalibration.value = QuickCalibrationUiState(
+                    result = CalibrationRunResult.Cancelled,
+                )
+                throw cancelled
+            }
+        }
+    }
+
+    fun skipQuickCalibration() {
+        val calibration = quickCalibrationRunner ?: return
+        calibrationJob?.cancel()
+        calibrationJob = viewModelScope.launch {
+            try {
+                calibration.skipQuickCalibration()
+                _quickCalibration.value = QuickCalibrationUiState()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _quickCalibration.value = QuickCalibrationUiState(
+                    result = CalibrationRunResult.Failed,
+                )
+            }
+        }
+    }
+
+    fun cancelQuickCalibration() {
+        calibrationJob?.cancel()
     }
 
     fun clearSearchError() {

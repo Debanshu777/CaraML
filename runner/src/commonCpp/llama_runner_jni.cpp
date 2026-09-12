@@ -268,6 +268,49 @@ Java_com_debanshu777_runner_LlamaRunner_nativeBackendCapabilities(JNIEnv *env, j
 }
 
 extern "C" JNIEXPORT jlongArray JNICALL
+Java_com_debanshu777_runner_LlamaRunner_nativeCalibrateBackend(
+    JNIEnv *env,
+    jobject,
+    jint backend,
+    jint durationMillis,
+    jlong bufferBytes) {
+    return jni_guard<jlongArray>("nativeCalibrateBackend failed", nullptr, [&]() {
+        const LlamaCalibrationResultNative native = llama_runner_core_calibrate_backend(
+            static_cast<int>(backend),
+            static_cast<int>(durationMillis),
+            static_cast<int64_t>(bufferBytes));
+        if (native.window_count < 0 || native.window_count > LLAMA_CALIBRATION_MAX_WINDOWS) {
+            return static_cast<jlongArray>(nullptr);
+        }
+        constexpr size_t header_fields = 3;
+        constexpr size_t window_fields = 3;
+        const size_t field_count = header_fields +
+            static_cast<size_t>(native.window_count) * window_fields;
+        std::array<jlong, header_fields + LLAMA_CALIBRATION_MAX_WINDOWS * window_fields> values{};
+        values[0] = static_cast<jlong>(native.status);
+        values[1] = static_cast<jlong>(native.backend);
+        values[2] = static_cast<jlong>(native.window_count);
+        for (int index = 0; index < native.window_count; ++index) {
+            const size_t offset = header_fields + static_cast<size_t>(index) * window_fields;
+            values[offset] = static_cast<jlong>(native.windows[index].bytes_moved);
+            values[offset + 1] = static_cast<jlong>(native.windows[index].operations);
+            values[offset + 2] = static_cast<jlong>(native.windows[index].elapsed_nanoseconds);
+        }
+        jlongArray result = env->NewLongArray(static_cast<jsize>(field_count));
+        if (!result || env->ExceptionCheck()) return static_cast<jlongArray>(nullptr);
+        env->SetLongArrayRegion(result, 0, static_cast<jsize>(field_count), values.data());
+        return env->ExceptionCheck() ? static_cast<jlongArray>(nullptr) : result;
+    });
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_debanshu777_runner_LlamaRunner_nativeCancelBackendCalibration(JNIEnv *, jobject) {
+    jni_guard_void("nativeCancelBackendCalibration failed", []() {
+        llama_runner_core_cancel_calibration();
+    });
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeProbeModelFeatures(
     JNIEnv *env,
     jobject,

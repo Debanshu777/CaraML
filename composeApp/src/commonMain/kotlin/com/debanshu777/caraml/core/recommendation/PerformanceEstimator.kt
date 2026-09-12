@@ -8,6 +8,8 @@ import kotlin.math.max
 enum class MetricKind {
     PERFORMANCE,
     MEMORY,
+    BANDWIDTH,
+    COMPUTE,
 }
 
 data class CalibrationKey(
