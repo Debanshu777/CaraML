@@ -14,7 +14,7 @@ class SearchScreenLayoutRegressionTest {
         val source = Files.readString(searchScreenSource())
         val searchTab = source
             .substringAfter("private fun SearchTabContent(")
-            .substringBefore("private fun ModelKindFilterRow(")
+            .substringBefore("internal fun <T> LazyListScope.modelHubResultItems(")
 
         assertFalse(
             searchTab.contains("RecommendationProfileSection("),

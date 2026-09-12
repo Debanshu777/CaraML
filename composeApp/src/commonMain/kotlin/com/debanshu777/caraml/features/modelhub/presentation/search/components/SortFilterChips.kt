@@ -2,14 +2,17 @@ package com.debanshu777.caraml.features.modelhub.presentation.search.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -18,6 +21,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -27,9 +31,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.debanshu777.huggingfacemanager.model.ModelSort
 import com.debanshu777.huggingfacemanager.model.ParameterRange
+import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelOrdering
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
 
@@ -45,50 +52,149 @@ fun SortFilterChips(
     onMaxParamsChange: (ParameterRange) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    LazyRow(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        contentPadding = PaddingValues(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        item(key = "ordering") {
-            SortDropdown(
-                label = if (ordering is ModelOrdering.Personalized) "Recommended" else "Server order",
-                options = listOf(ModelOrdering.Personalized, ModelOrdering.Server(sort)),
-                selected = ordering,
-                highlighted = ordering is ModelOrdering.Personalized,
-                onSelect = onOrderingChange,
-            )
-        }
-        item(key = "sort") {
-            SortDropdown(
-                label = "Sort: ${sort.displayName}",
-                options = ModelSort.entries.filter { it != ModelSort.SIMILAR },
-                selected = sort,
-                highlighted = sort != ModelSort.TRENDING,
-                onSelect = onSortChange,
-            )
-        }
-        item(key = "min-params") {
-            SortDropdown(
-                label = "Min: ${minParams.displayName}",
-                options = ParameterRange.entries,
-                selected = minParams,
-                highlighted = minParams != ParameterRange.ZERO,
-                onSelect = onMinParamsChange,
-            )
-        }
-        item(key = "max-params") {
-            SortDropdown(
-                label = "Max: ${maxParams.displayName}",
-                options = ParameterRange.entries,
-                selected = maxParams,
-                highlighted = maxParams != ParameterRange.SIX_B,
-                onSelect = onMaxParamsChange,
+    ResponsiveControlContainer(modifier = modifier) {
+        SortFilterControlItems(
+            ordering = ordering,
+            sort = sort,
+            minParams = minParams,
+            maxParams = maxParams,
+            onSortChange = onSortChange,
+            onOrderingChange = onOrderingChange,
+            onMinParamsChange = onMinParamsChange,
+            onMaxParamsChange = onMaxParamsChange,
+        )
+    }
+}
+
+@Composable
+fun ModelHubBrowseControls(
+    browseMode: ModelHubBrowseMode,
+    onBrowseModeChange: (ModelHubBrowseMode) -> Unit,
+    showSortFilters: Boolean,
+    ordering: ModelOrdering,
+    sort: ModelSort,
+    minParams: ParameterRange,
+    maxParams: ParameterRange,
+    onSortChange: (ModelSort) -> Unit,
+    onOrderingChange: (ModelOrdering) -> Unit,
+    onMinParamsChange: (ParameterRange) -> Unit,
+    onMaxParamsChange: (ParameterRange) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    ResponsiveControlContainer(modifier = modifier) {
+        ModelKindControlItems(
+            browseMode = browseMode,
+            onBrowseModeChange = onBrowseModeChange,
+        )
+        if (showSortFilters) {
+            SortFilterControlItems(
+                ordering = ordering,
+                sort = sort,
+                minParams = minParams,
+                maxParams = maxParams,
+                onSortChange = onSortChange,
+                onOrderingChange = onOrderingChange,
+                onMinParamsChange = onMinParamsChange,
+                onMaxParamsChange = onMaxParamsChange,
             )
         }
     }
+}
+
+@Composable
+private fun ResponsiveControlContainer(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+    ) {
+        if (maxWidth < 600.dp) {
+            FlowRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                content()
+            }
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                content()
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModelKindControlItems(
+    browseMode: ModelHubBrowseMode,
+    onBrowseModeChange: (ModelHubBrowseMode) -> Unit,
+) {
+    val modes = listOf(
+        ModelHubBrowseMode.LanguageModels to "LLM",
+        ModelHubBrowseMode.DiffusionImage to "Image",
+        ModelHubBrowseMode.DiffusionVideo to "Video",
+    )
+    modes.forEach { (mode, label) ->
+        FilterChip(
+            selected = browseMode == mode,
+            onClick = { onBrowseModeChange(mode) },
+            label = { Text(label) },
+            modifier = Modifier.heightIn(min = 48.dp),
+            shape = MaterialTheme.shapes.small,
+        )
+    }
+}
+
+@Composable
+private fun SortFilterControlItems(
+    ordering: ModelOrdering,
+    sort: ModelSort,
+    minParams: ParameterRange,
+    maxParams: ParameterRange,
+    onSortChange: (ModelSort) -> Unit,
+    onOrderingChange: (ModelOrdering) -> Unit,
+    onMinParamsChange: (ParameterRange) -> Unit,
+    onMaxParamsChange: (ParameterRange) -> Unit,
+) {
+    SortDropdown(
+        label = if (ordering is ModelOrdering.Personalized) "Recommended" else "Server order",
+        options = listOf(ModelOrdering.Personalized, ModelOrdering.Server(sort)),
+        selected = ordering,
+        highlighted = ordering is ModelOrdering.Personalized,
+        onSelect = onOrderingChange,
+    )
+    SortDropdown(
+        label = "Sort: ${sort.displayName}",
+        options = ModelSort.entries.filter { it != ModelSort.SIMILAR },
+        selected = sort,
+        highlighted = sort != ModelSort.TRENDING,
+        onSelect = onSortChange,
+    )
+    SortDropdown(
+        label = "Min: ${minParams.displayName}",
+        options = ParameterRange.entries,
+        selected = minParams,
+        highlighted = minParams != ParameterRange.ZERO,
+        onSelect = onMinParamsChange,
+    )
+    SortDropdown(
+        label = "Max: ${maxParams.displayName}",
+        options = ParameterRange.entries,
+        selected = maxParams,
+        highlighted = maxParams != ParameterRange.SIX_B,
+        onSelect = onMaxParamsChange,
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -148,13 +254,17 @@ private fun <T> SortDropdown(
                         else -> option.toString()
                     }
                     Surface(
-                        onClick = {
-                            onSelect(option)
-                            expanded = false
-                        },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 48.dp),
+                            .heightIn(min = 48.dp)
+                            .selectable(
+                                selected = option == selected,
+                                role = Role.RadioButton,
+                                onClick = {
+                                    onSelect(option)
+                                    expanded = false
+                                },
+                            ),
                         shape = MaterialTheme.shapes.small,
                         color = if (option == selected) {
                             MaterialTheme.colorScheme.secondaryContainer
@@ -162,16 +272,26 @@ private fun <T> SortDropdown(
                             MaterialTheme.colorScheme.surfaceContainerHigh
                         },
                     ) {
-                        Text(
-                            text = displayName,
-                            style = MaterialTheme.typography.labelLarge,
-                            color = if (option == selected) {
-                                MaterialTheme.colorScheme.onSecondaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.onSurface
-                            },
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Text(
+                                text = displayName,
+                                style = MaterialTheme.typography.labelLarge,
+                                color = if (option == selected) {
+                                    MaterialTheme.colorScheme.onSecondaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                },
+                                modifier = Modifier.weight(1f),
+                            )
+                            RadioButton(
+                                selected = option == selected,
+                                onClick = null,
+                            )
+                        }
                     }
                 }
             }

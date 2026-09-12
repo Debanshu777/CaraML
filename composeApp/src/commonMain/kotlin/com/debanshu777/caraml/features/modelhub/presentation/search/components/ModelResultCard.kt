@@ -73,6 +73,9 @@ fun ModelResultCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            Box(modifier = Modifier.fillMaxWidth()) {
+                status()
+            }
             Text(
                 text = metadata,
                 style = MaterialTheme.typography.bodySmall,
@@ -80,12 +83,9 @@ fun ModelResultCard(
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(modifier = Modifier.weight(1f)) {
-                    status()
-                }
                 trailing()
             }
         }

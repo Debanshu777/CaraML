@@ -14,6 +14,7 @@ import com.debanshu777.caraml.features.modelhub.presentation.search.components.M
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelResultCard
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class ModelHubAuroraUiTest {
 
@@ -28,6 +29,7 @@ class ModelHubAuroraUiTest {
                     metadata = "Text generation · 1.2 GB",
                     status = { Text("Recommended") },
                     onClick = { opened += 1 },
+                    trailing = { Text("Download") },
                 )
             }
         }
@@ -36,6 +38,21 @@ class ModelHubAuroraUiTest {
         onNodeWithText("org").assertIsDisplayed()
         onNodeWithText("Text generation · 1.2 GB").assertIsDisplayed()
         onNodeWithText("Recommended").assertIsDisplayed()
+        onNodeWithText("Download").assertIsDisplayed()
+        val titleY = onNodeWithText("org/tiny-model", useUnmergedTree = true)
+            .fetchSemanticsNode().positionInRoot.y
+        val authorY = onNodeWithText("org", useUnmergedTree = true)
+            .fetchSemanticsNode().positionInRoot.y
+        val statusY = onNodeWithText("Recommended", useUnmergedTree = true)
+            .fetchSemanticsNode().positionInRoot.y
+        val metadataY = onNodeWithText("Text generation · 1.2 GB", useUnmergedTree = true)
+            .fetchSemanticsNode().positionInRoot.y
+        val actionY = onNodeWithText("Download", useUnmergedTree = true)
+            .fetchSemanticsNode().positionInRoot.y
+        assertTrue(titleY < authorY)
+        assertTrue(authorY < statusY)
+        assertTrue(statusY < metadataY)
+        assertTrue(metadataY < actionY)
         onNodeWithContentDescription("Open model org/tiny-model").performClick()
         runOnIdle { assertEquals(1, opened) }
     }
