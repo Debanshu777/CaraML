@@ -10,8 +10,10 @@ import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
@@ -20,15 +22,17 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
-import kotlin.math.abs
 import kotlin.test.Test
-import kotlin.test.assertTrue
+import kotlin.test.assertEquals
 
 class ModelHubRefreshUiTest {
 
     @Test
-    fun refreshRetainsKeyedRowsWithoutReplayingTheirEntry() = runComposeUiTest {
+    fun refreshKeepsKeyedRowCompositionAndOneShotEntryState() = runComposeUiTest {
         var refreshing by mutableStateOf(false)
+        var compositionInstances = 0
+        var activeCompositions = 0
+        var disposedCompositions = 0
         mainClock.autoAdvance = false
 
         setContent {
@@ -51,6 +55,14 @@ class ModelHubRefreshUiTest {
                             emptyMessage = "No models",
                             motion = motion,
                         ) { model, itemModifier ->
+                            remember(model) { compositionInstances += 1 }
+                            DisposableEffect(model) {
+                                activeCompositions += 1
+                                onDispose {
+                                    activeCompositions -= 1
+                                    disposedCompositions += 1
+                                }
+                            }
                             Box(
                                 modifier = itemModifier
                                     .fillMaxWidth()
@@ -65,26 +77,30 @@ class ModelHubRefreshUiTest {
             }
         }
 
-        mainClock.advanceTimeBy(300)
         mainClock.advanceTimeByFrame()
-        val settledY = onNodeWithText("Retained model").fetchSemanticsNode().positionInRoot.y
+        runOnIdle {
+            assertEquals(1, compositionInstances)
+            assertEquals(1, activeCompositions)
+            assertEquals(0, disposedCompositions)
+        }
 
         runOnIdle { refreshing = true }
         mainClock.advanceTimeByFrame()
+        runOnIdle {
+            assertEquals(1, compositionInstances, "Refresh must not create a new row instance")
+            assertEquals(1, activeCompositions, "The keyed row must remain continuously composed")
+            assertEquals(0, disposedCompositions, "Refresh must not dispose the existing row")
+        }
         onNodeWithText("Retained model").assertIsDisplayed()
         onNodeWithContentDescription("Refreshing model results").assertIsDisplayed()
-        val refreshStartY = onNodeWithText("Retained model").fetchSemanticsNode().positionInRoot.y
-        mainClock.advanceTimeBy(100)
-        val refreshMidY = onNodeWithText("Retained model").fetchSemanticsNode().positionInRoot.y
-
-        assertTrue(abs(settledY - refreshStartY) < 0.1f, "Refresh must retain the keyed row")
-        assertTrue(
-            abs(refreshStartY - refreshMidY) < 0.1f,
-            "A retained row must not replay entry placement during refresh",
-        )
 
         runOnIdle { refreshing = false }
         mainClock.advanceTimeByFrame()
+        runOnIdle {
+            assertEquals(1, compositionInstances, "Completing refresh must not replay row entry")
+            assertEquals(1, activeCompositions)
+            assertEquals(0, disposedCompositions)
+        }
         onNodeWithContentDescription("Refreshing model results").assertDoesNotExist()
         onNodeWithText("Retained model").assertIsDisplayed()
     }
