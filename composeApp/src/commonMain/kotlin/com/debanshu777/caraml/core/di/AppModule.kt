@@ -9,6 +9,8 @@ import com.debanshu777.caraml.core.recommendation.DefaultRecommendationRolloutMo
 import com.debanshu777.caraml.core.recommendation.DeviceSnapshotProvider
 import com.debanshu777.caraml.core.recommendation.EngineCapabilitySource
 import com.debanshu777.caraml.core.recommendation.LegacySuitabilityAdapter
+import com.debanshu777.caraml.core.recommendation.LoadRecoveryRepository
+import com.debanshu777.caraml.core.recommendation.LocalArtifactIdentityResolver
 import com.debanshu777.caraml.core.recommendation.ModelAssessmentRepository
 import com.debanshu777.caraml.core.recommendation.ModelDescriptorFactory
 import com.debanshu777.caraml.core.recommendation.NoCalibrationSource
@@ -45,6 +47,7 @@ import com.debanshu777.huggingfacemanager.createHuggingFaceApi
 import com.debanshu777.huggingfacemanager.download.DownloadManager
 import com.debanshu777.runner.LlamaRunner
 import kotlinx.coroutines.Dispatchers
+import com.debanshu777.huggingfacemanager.download.ArtifactManifest
 import org.koin.core.module.Module
 import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module
@@ -68,6 +71,13 @@ val appModule = module {
     single { createPreferencesDataStore() }
     single<SettingsRepository> { DefaultSettingsRepository(get()) }
     single<ThemeRepository> { DefaultThemeRepository(get()) }
+    single {
+        LoadRecoveryRepository(
+            dataStore = get(),
+            engineVersion = NATIVE_LOAD_ENGINE_VERSION,
+            clock = { Clock.System.now().toEpochMilliseconds() },
+        )
+    }
 
     single { DeviceCapabilities() }
     single<BackendCapabilitySource> { RunnerBackendCapabilitySource(get(), get()) }
@@ -104,6 +114,28 @@ val appModule = module {
 
     single { LlamaRunner() }
     single { DiffusionRunner() }
+    single {
+        LocalArtifactIdentityResolver(
+            storagePathProvider = get(),
+            manifestSource = { ownerModelId ->
+                val downloadManager = get<DownloadManager>()
+                val linked = get<ComponentRepository>().getComponentsForModel(ownerModelId)
+                val primary = downloadManager.validatedBundle(ownerModelId)?.entries.orEmpty()
+                val external = linked.groupBy { it.repoId }.flatMap { (repoId, expected) ->
+                    val installed = downloadManager.validatedArtifacts(repoId)?.entries.orEmpty()
+                    expected.mapNotNull { component ->
+                        installed.singleOrNull {
+                            it.identity.repositoryId == component.repoId &&
+                                it.identity.relativePath == component.filePath &&
+                                it.logicalRole == component.role
+                        }
+                    }
+                }
+                (primary + external).takeIf { it.isNotEmpty() }?.let(ArtifactManifest::create)
+            },
+            hashingDispatcher = Dispatchers.Default,
+        )
+    }
 
     single {
         DiffusionInferenceRepository(
@@ -111,6 +143,12 @@ val appModule = module {
             runner = get(),
             deviceCapabilities = get(),
             settingsRepository = get(),
+            snapshotProvider = get(),
+            suitabilityEngine = get(),
+            recommendationPolicy = get(),
+            loadRecoveryRepository = get(),
+            engineVersion = NATIVE_LOAD_ENGINE_VERSION,
+            rolloutModeSource = get(),
         )
     }
 
@@ -121,6 +159,12 @@ val appModule = module {
             deviceCapabilities = get(),
             settingsRepository = get(),
             localModelRepository = get(),
+            snapshotProvider = get(),
+            suitabilityEngine = get(),
+            recommendationPolicy = get(),
+            loadRecoveryRepository = get(),
+            engineVersion = NATIVE_LOAD_ENGINE_VERSION,
+            rolloutModeSource = get(),
         )
     }
 
@@ -168,6 +212,9 @@ val appModule = module {
             inferenceRepository = get(),
             diffusionRepository = get(),
             storagePathProvider = get(),
+            recommendationRolloutModeSource = get(),
         )
     }
 }
+
+private const val NATIVE_LOAD_ENGINE_VERSION = "native-engine-v1"

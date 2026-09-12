@@ -25,6 +25,8 @@ sealed interface ChatUiState {
         val modelId: String,
     ) : ChatUiState
 
+    data class LoadActionRequired(val action: PendingLoadAction) : ChatUiState
+
     data class Ready(
         val messages: ImmutableList<ChatMessage> = persistentListOf(),
         val contextLimit: Int = 0,

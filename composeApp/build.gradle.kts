@@ -97,6 +97,7 @@ kotlin {
             implementation(libs.navigation3.compose.ui)
             implementation(libs.navigation3.viewmodel)
             implementation(libs.kotlinx.collections.immutable)
+            implementation(libs.kotlinx.serialization.json)
             implementation(libs.materialkolor)
             implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.27.0")
         }

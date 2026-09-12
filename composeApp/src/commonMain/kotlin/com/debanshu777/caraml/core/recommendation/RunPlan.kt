@@ -38,6 +38,7 @@ data class LlmRunPlan private constructor(
     override val backend: BackendKind,
     override val memoryTopology: MemoryTopology,
     val gpuLayerCount: Int?,
+    val useMmap: Boolean,
     override val compromises: List<RunPlanCompromise>,
     internal val collectionLimitExceeded: Boolean,
 ) : RunPlan {
@@ -51,6 +52,7 @@ data class LlmRunPlan private constructor(
         backend: BackendKind,
         memoryTopology: MemoryTopology,
         gpuLayerCount: Int?,
+        useMmap: Boolean = true,
         compromises: Collection<RunPlanCompromise>,
     ) : this(
         contextTokens = contextTokens,
@@ -62,6 +64,7 @@ data class LlmRunPlan private constructor(
         backend = backend,
         memoryTopology = memoryTopology,
         gpuLayerCount = gpuLayerCount,
+        useMmap = useMmap,
         compromises = boundedCollectionSnapshot(compromises, RecommendationPolicyV1.MAX_PLAN_COMPROMISES),
     )
 
@@ -75,6 +78,7 @@ data class LlmRunPlan private constructor(
         backend: BackendKind,
         memoryTopology: MemoryTopology,
         gpuLayerCount: Int?,
+        useMmap: Boolean,
         compromises: BoundedCollectionSnapshot<RunPlanCompromise>,
     ) : this(
         contextTokens = contextTokens,
@@ -86,6 +90,7 @@ data class LlmRunPlan private constructor(
         backend = backend,
         memoryTopology = memoryTopology,
         gpuLayerCount = gpuLayerCount,
+        useMmap = useMmap,
         compromises = compromises.values.distinct(),
         collectionLimitExceeded = compromises.limitExceeded,
     )

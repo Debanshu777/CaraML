@@ -4,6 +4,9 @@ import android.content.Context
 import android.os.Environment
 import android.os.StatFs
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.attribute.BasicFileAttributes
 import kotlin.io.deleteRecursively
 
 class AndroidStoragePathProvider(private val context: Context) : StoragePathProvider {
@@ -40,6 +43,35 @@ class AndroidStoragePathProvider(private val context: Context) : StoragePathProv
         } ?: context.filesDir
         return StatFs(base.absolutePath).totalBytes
     }
+
+    override fun inspectDownloadedArtifact(modelId: String, localPath: String): StoredArtifactSnapshot? =
+        try {
+            if (localPath.isBlank() || '\u0000' in localPath) return null
+            val root = File(getModelsStorageDirectory(modelId)).toPath().toAbsolutePath().normalize()
+            val raw = File(localPath).toPath().toAbsolutePath().normalize()
+            if (raw != root && !raw.startsWith(root)) return null
+            if (Files.isSymbolicLink(raw)) return null
+            val realRoot = root.toRealPath()
+            val realTarget = raw.toRealPath()
+            if (realTarget != realRoot && !realTarget.startsWith(realRoot)) return null
+            val attributes = Files.readAttributes(
+                realTarget,
+                BasicFileAttributes::class.java,
+                LinkOption.NOFOLLOW_LINKS,
+            )
+            val kind = when {
+                attributes.isRegularFile -> StoredArtifactKind.REGULAR_FILE
+                attributes.isDirectory -> StoredArtifactKind.DIRECTORY
+                else -> return null
+            }
+            StoredArtifactSnapshot(
+                kind = kind,
+                byteCount = if (attributes.isRegularFile) attributes.size() else 0L,
+                changeStamp = "${attributes.lastModifiedTime().toMillis()}:${attributes.size()}",
+            )
+        } catch (_: Exception) {
+            null
+        }
 
     override fun isModelFileReadable(path: String): Boolean {
         val file = File(path)

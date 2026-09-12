@@ -24,6 +24,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -86,6 +87,10 @@ fun ChatScreen(
         onSelectModel = viewModel::selectModel,
         onSendMessage = viewModel::sendMessage,
         onCancelGeneration = viewModel::cancelGeneration,
+        onConfirmLoad = viewModel::confirmPendingLoad,
+        onAcceptAlternative = viewModel::acceptSaferPlan,
+        onRetryLoad = viewModel::retryPendingLoad,
+        onCancelLoad = viewModel::cancelPendingLoad,
         onNavigateToSearch = onNavigateToSearch,
         onNavigateToModelDetail = onNavigateToModelDetail,
         contextIndicator = {
@@ -103,6 +108,10 @@ fun ChatScreenContent(
     onSelectModel: (LocalModelEntity) -> Unit,
     onSendMessage: (String) -> Unit,
     onCancelGeneration: () -> Unit,
+    onConfirmLoad: () -> Unit = {},
+    onAcceptAlternative: () -> Unit = {},
+    onRetryLoad: () -> Unit = {},
+    onCancelLoad: () -> Unit = {},
     onNavigateToSearch: () -> Unit,
     onNavigateToModelDetail: (modelId: String, mode: ModelHubBrowseMode) -> Unit = { _, _ -> },
     contextIndicator: @Composable RowScope.() -> Unit = {},
@@ -208,6 +217,17 @@ fun ChatScreenContent(
                 )
             }
 
+            is ChatUiState.LoadActionRequired -> {
+                LoadActionRequiredScreen(
+                    action = uiState.action,
+                    onConfirmLoad = onConfirmLoad,
+                    onAcceptAlternative = onAcceptAlternative,
+                    onRetryLoad = onRetryLoad,
+                    onCancelLoad = onCancelLoad,
+                    modifier = Modifier.padding(paddingValues),
+                )
+            }
+
             is ChatUiState.Ready -> {
                 ChatMessageList(
                     messages = uiState.messages,
@@ -219,6 +239,71 @@ fun ChatScreenContent(
                             top = paddingValues.calculateTopPadding(),
                         )
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LoadActionRequiredScreen(
+    action: PendingLoadAction,
+    onConfirmLoad: () -> Unit,
+    onAcceptAlternative: () -> Unit,
+    onRetryLoad: () -> Unit,
+    onCancelLoad: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val (title, detail) = when (action) {
+        is PendingLoadAction.ConfirmRisk -> "Confirm model load" to
+            "This configuration may put the device under heavy memory pressure."
+        is PendingLoadAction.AcceptAlternative -> "Safer configuration available" to
+            "A lower-resource configuration is available for this device."
+        is PendingLoadAction.RetryQuarantined -> "Previous load may have crashed" to
+            "This exact configuration is paused. Retry it only if you accept the risk."
+    }
+    val compromises = when (action) {
+        is PendingLoadAction.ConfirmRisk -> action.request.plan.compromises
+        is PendingLoadAction.AcceptAlternative -> action.saferPlan.compromises
+        is PendingLoadAction.RetryQuarantined -> action.request.plan.compromises
+    }
+    Column(
+        modifier = modifier.fillMaxSize().padding(LocalSpacing.current.xl),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(LocalSpacing.current.l)) {
+                Text(title, style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(LocalSpacing.current.s))
+                Text(detail, style = MaterialTheme.typography.bodyMedium)
+                if (compromises.isNotEmpty()) {
+                    Spacer(Modifier.height(LocalSpacing.current.m))
+                    Text(
+                        compromises.joinToString(separator = "\n") {
+                            "• ${it.toString().lowercase().replace('_', ' ')}"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Spacer(Modifier.height(LocalSpacing.current.l))
+                Button(
+                    onClick = when (action) {
+                        is PendingLoadAction.ConfirmRisk -> onConfirmLoad
+                        is PendingLoadAction.AcceptAlternative -> onAcceptAlternative
+                        is PendingLoadAction.RetryQuarantined -> onRetryLoad
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        when (action) {
+                            is PendingLoadAction.ConfirmRisk -> "Continue"
+                            is PendingLoadAction.AcceptAlternative -> "Use safer plan"
+                            is PendingLoadAction.RetryQuarantined -> "Retry explicitly"
+                        },
+                    )
+                }
+                OutlinedButton(onClick = onCancelLoad, modifier = Modifier.fillMaxWidth()) {
+                    Text("Cancel")
+                }
             }
         }
     }

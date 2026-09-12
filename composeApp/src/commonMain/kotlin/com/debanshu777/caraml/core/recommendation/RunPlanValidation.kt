@@ -45,7 +45,8 @@ internal fun canonicalRunPlanStableKey(plan: RunPlan): String = when (plan) {
         append(plan.valueCacheType.name).append(':')
         append(plan.backend.name).append(':')
         append(plan.memoryTopology.name).append(':')
-        append(plan.gpuLayerCount?.toString() ?: "auto")
+        append(plan.gpuLayerCount?.toString() ?: "auto").append(':')
+        append(plan.useMmap)
     }
 
     is DiffusionRunPlan -> buildString {

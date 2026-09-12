@@ -126,6 +126,7 @@ when (val result = api.searchModels(params)) {
 
 <!-- Updated at end of each Claude Code session -->
 
+- Storage providers now expose bounded, path-contained regular-file/directory snapshots for content-addressed load identity without leaking canonical paths
 - Downloads require pinned artifact identities and roots, strict UTF-8 descriptor-relative regular-file operations, and idempotent rollback journals; the native backend is exercised from packaged Desktop images and Android APKs
 - `nota-ai/bk-sdm-tiny` registry now sets `prediction=0` (EPS) — skips `is_using_v_parameterization_for_sd2()` probe; `offloadToCpu` reverted (moot since Vulkan is now disabled for diffusion at build level via `SD_VULKAN=OFF`)
 - `nota-ai/bk-sdm-tiny` registry entry now sets `prediction=0` (EPS) — prevents `is_using_v_parameterization_for_sd2()` probe from running a test UNet forward pass; SD1.x is always EPS, never V-pred

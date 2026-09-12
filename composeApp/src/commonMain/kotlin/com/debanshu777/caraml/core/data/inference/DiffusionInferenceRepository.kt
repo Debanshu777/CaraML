@@ -2,8 +2,24 @@ package com.debanshu777.caraml.core.data.inference
 
 import com.debanshu777.caraml.core.platform.AppLogger
 import com.debanshu777.caraml.core.platform.DeviceCapabilities
+import com.debanshu777.caraml.core.recommendation.DeviceSnapshotProvider
+import com.debanshu777.caraml.core.recommendation.DiffusionRunPlan
+import com.debanshu777.caraml.core.recommendation.LoadAdmission
+import com.debanshu777.caraml.core.recommendation.LoadAdmissionController
+import com.debanshu777.caraml.core.recommendation.LoadRecoveryRepository
+import com.debanshu777.caraml.core.recommendation.LoadRequest
+import com.debanshu777.caraml.core.recommendation.NativeLoadPreflight
+import com.debanshu777.caraml.core.recommendation.NativeRunPlanAdapter
+import com.debanshu777.caraml.core.recommendation.PersonalizedRecommendation
+import com.debanshu777.caraml.core.recommendation.RecommendationCategory
+import com.debanshu777.caraml.core.recommendation.RecommendationPolicy
+import com.debanshu777.caraml.core.recommendation.RecommendationRolloutMode
+import com.debanshu777.caraml.core.recommendation.RecommendationRolloutModeSource
+import com.debanshu777.caraml.core.recommendation.StableLoadFailure
+import com.debanshu777.caraml.core.recommendation.SuitabilityEngine
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.diffusionrunner.DiffusionModelConfig
+import com.debanshu777.diffusionrunner.DiffusionPreflightResult
 import com.debanshu777.diffusionrunner.DiffusionRunner
 import com.debanshu777.diffusionrunner.ImageGenParams
 import com.debanshu777.diffusionrunner.VideoGenParams
@@ -20,12 +36,15 @@ import com.debanshu777.huggingfacemanager.sdcpp.ComponentRole
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -37,9 +56,19 @@ class DiffusionInferenceRepository(
     private val runner: DiffusionRunner,
     private val deviceCapabilities: DeviceCapabilities,
     private val settingsRepository: SettingsRepository,
+    private val snapshotProvider: DeviceSnapshotProvider? = null,
+    private val suitabilityEngine: SuitabilityEngine? = null,
+    private val recommendationPolicy: RecommendationPolicy? = null,
+    private val loadRecoveryRepository: LoadRecoveryRepository? = null,
+    private val engineVersion: String = "native-engine-v1",
+    private val rolloutModeSource: RecommendationRolloutModeSource = RecommendationRolloutModeSource {
+        RecommendationRolloutMode.LEGACY
+    },
 ) {
     private val downloadManager = DownloadManager(storagePathProvider)
+    private val nativeSession = Mutex()
     private var lastLoadedArchStr: String? = null
+    private val exactExecutionState = AdmittedDiffusionExecutionState()
 
     /**
      * Live diffusion progress.
@@ -61,7 +90,182 @@ class DiffusionInferenceRepository(
         private const val TAG = "DiffusionInference"
     }
 
+    suspend fun loadModel(request: LoadRequest): ModelLoadResult = nativeSession.withLock {
+        withContext(Dispatchers.Default) {
+            val artifact = request.artifact
+                ?: return@withContext ModelLoadResult.Error("The installed model could not be verified.")
+            if (artifact.identity != request.identity) {
+                return@withContext ModelLoadResult.Error("The installed model identity is invalid.")
+            }
+            val plan = request.plan as? DiffusionRunPlan
+                ?: return@withContext ModelLoadResult.Error("The selected model configuration is invalid.")
+            val recovery = loadRecoveryRepository
+                ?: return@withContext ModelLoadResult.Error("Load recovery is unavailable.")
+            try {
+                recovery.recoverPendingLoad()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                return@withContext ModelLoadResult.Error("Load recovery is unavailable.")
+            }
+            val mainSnapshot = storagePathProvider.inspectDownloadedArtifact(request.model.modelId, request.model.localPath)
+            val modelPath = exactModelPath(request)
+            val readable = if (mainSnapshot?.kind == com.debanshu777.huggingfacemanager.download.StoredArtifactKind.DIRECTORY) {
+                storagePathProvider.isDirectoryReadable(modelPath)
+            } else {
+                storagePathProvider.isModelFileReadable(modelPath)
+            }
+            if (!readable) return@withContext ModelLoadResult.Error("The installed model could not be verified.")
+            val nativeLibDir = PlatformPaths.getNativeLibDir()
+            if (nativeLibDir.isBlank()) {
+                return@withContext ModelLoadResult.Error("Failed to initialize. Please restart the app.")
+            }
+            val baseConfig = exactBaseConfig(request, modelPath)
+            val execution = runCatching { NativeRunPlanAdapter.toDiffusionExecutionConfig(plan, baseConfig) }
+                .getOrElse { return@withContext ModelLoadResult.Error("The selected model configuration is invalid.") }
+            try {
+                runner.release()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                return@withContext ModelLoadResult.Error("The previous model could not be released safely.")
+            }
+            lastLoadedArchStr = null
+            exactExecutionState.clear()
+            try {
+                runner.initialize(nativeLibDir)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                return@withContext ModelLoadResult.Error("Failed to initialize. Please restart the app.")
+            }
+            val controller = admissionController { candidate ->
+                val candidatePlan = candidate.plan as? DiffusionRunPlan
+                    ?: return@admissionController NativeLoadPreflight.Invalid
+                candidate.artifact ?: return@admissionController NativeLoadPreflight.Invalid
+                val candidateBase = exactBaseConfig(candidate, exactModelPath(candidate))
+                val candidateExecution = runCatching {
+                    NativeRunPlanAdapter.toDiffusionExecutionConfig(candidatePlan, candidateBase)
+                }.getOrElse { return@admissionController NativeLoadPreflight.Invalid }
+                when (runner.preflightModel(candidateExecution.model)) {
+                    is DiffusionPreflightResult.Fit -> NativeLoadPreflight.Fit
+                    is DiffusionPreflightResult.NoFit -> NativeLoadPreflight.NoFit
+                    is DiffusionPreflightResult.InvalidModel -> NativeLoadPreflight.Invalid
+                    is DiffusionPreflightResult.Unavailable -> NativeLoadPreflight.Unavailable
+                }
+            } ?: return@withContext ModelLoadResult.Error("Load admission is unavailable.")
+            val admission = try {
+                controller.evaluate(request, request.riskAcknowledgement)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                return@withContext ModelLoadResult.Error("Load admission is temporarily unavailable.")
+            }
+            if (admission !is LoadAdmission.Ready) return@withContext ModelLoadResult.AdmissionRequired(admission)
+
+            val marker = try {
+                recovery.beginLoad(request.identity, request.plan)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                return@withContext ModelLoadResult.Error("Load recovery is unavailable.")
+            }
+            try {
+                if (!runner.loadModel(execution.model)) {
+                    runCatching { runner.release() }
+                    withContext(NonCancellable) {
+                        runCatching { recovery.markLoadFailed(marker, StableLoadFailure.ALLOCATION) }
+                    }
+                    return@withContext ModelLoadResult.Error("The model could not be loaded with this configuration.")
+                }
+                lastLoadedArchStr = runner.getDiffusionModelMetadata(modelPath)?.architecture
+                exactExecutionState.publish(execution)
+                recovery.markLoadSucceeded(marker)
+                ModelLoadResult.Success(contextSize = 0)
+            } catch (cancelled: CancellationException) {
+                runCatching { runner.release() }
+                lastLoadedArchStr = null
+                exactExecutionState.clear()
+                withContext(NonCancellable) { runCatching { recovery.markLoadCancelled(marker) } }
+                throw cancelled
+            } catch (_: Throwable) {
+                runCatching { runner.release() }
+                lastLoadedArchStr = null
+                exactExecutionState.clear()
+                withContext(NonCancellable) {
+                    runCatching { recovery.markLoadFailed(marker, StableLoadFailure.UNKNOWN) }
+                }
+                ModelLoadResult.Error("An error occurred while loading the model.")
+            }
+        }
+    }
+
+    suspend fun allowExplicitRetry(request: LoadRequest) {
+        if (request.artifact?.identity == request.identity) {
+            loadRecoveryRepository?.allowExplicitRetry(request.identity, request.plan, engineVersion)
+        }
+    }
+
+    private fun exactModelPath(request: LoadRequest): String =
+        if (storagePathProvider.inspectDownloadedArtifact(request.model.modelId, request.model.localPath)?.kind ==
+            com.debanshu777.huggingfacemanager.download.StoredArtifactKind.DIRECTORY
+        ) request.model.localPath else requireNotNull(request.artifact).primaryPath
+
+    private suspend fun exactBaseConfig(request: LoadRequest, modelPath: String): DiffusionModelConfig {
+        val artifact = requireNotNull(request.artifact)
+        val paths = artifact.components.associate { it.logicalRole.lowercase() to it.localPath }
+        val setup = getModelSetup(request.model.modelId)
+        val params = setup?.recommendedParams
+        val settings = settingsRepository.getSettings().first()
+        val hints = deviceCapabilities.getDeviceHints()
+        val gpuEnabled = settings.useGpu && hints.gpuBackendAvailable
+        return DiffusionModelConfig(
+            modelPath = modelPath,
+            vaePath = paths["vae"].orEmpty(),
+            llmPath = paths["llm"].orEmpty(),
+            clipLPath = paths["clip_l"].orEmpty(),
+            clipGPath = paths["clip_g"].orEmpty(),
+            t5xxlPath = paths["t5xxl"] ?: paths["umt5xxl"].orEmpty(),
+            diffusionFlashAttn = gpuEnabled,
+            freeParamsImmediately = false,
+            flowShift = params?.flowShift ?: Float.POSITIVE_INFINITY,
+            prediction = params?.prediction ?: -1,
+        )
+    }
+
+    private fun admissionController(
+        nativePreflight: suspend (LoadRequest) -> NativeLoadPreflight,
+    ): LoadAdmissionController? {
+        val snapshots = snapshotProvider ?: return null
+        val engine = suitabilityEngine ?: return null
+        val policy = recommendationPolicy ?: return null
+        val recovery = loadRecoveryRepository ?: return null
+        return LoadAdmissionController(
+            snapshotSource = snapshots::capture,
+            recommendationSource = { candidate, snapshot ->
+                candidate.assessedPlans?.let { plans ->
+                    policy.recommend(engine.assemble(plans, snapshot), snapshot, candidate.profile)
+                } ?: PersonalizedRecommendation(
+                    assessmentKey = candidate.assessmentKey,
+                    category = RecommendationCategory.NEEDS_INFORMATION,
+                    selectedPlan = null,
+                    reasons = emptyList(),
+                    profile = candidate.profile,
+                )
+            },
+            nativePreflight = nativePreflight,
+            recoveryState = recovery,
+            engineVersion = engineVersion,
+            clock = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
+        )
+    }
+
     suspend fun loadModel(model: LocalModelEntity): ModelLoadResult = withContext(Dispatchers.Default) {
+        if (rolloutModeSource.current() != RecommendationRolloutMode.LEGACY) {
+            return@withContext ModelLoadResult.Error(
+                "This installed model needs to be reassessed before it can be loaded safely.",
+            )
+        }
         try {
             val aggregate = downloadManager.validatedBundle(model.modelId)
                 ?: return@withContext ModelLoadResult.Error(
@@ -106,6 +310,7 @@ class DiffusionInferenceRepository(
             }
 
             runner.release()
+            exactExecutionState.clear()
             runner.initialize(nativeLibDir)
 
             // Build full config with resolved component paths
@@ -168,9 +373,13 @@ class DiffusionInferenceRepository(
 
     suspend fun generateImage(params: ImageGenParams): Result<ByteArray> =
         withContext(Dispatchers.Default) {
+            val executionParams = exactExecutionState.applyTo(params)
+            if (executionParams == null) {
+                return@withContext Result.failure(Exception("The selected model configuration does not support images."))
+            }
             val startMs = kotlin.time.TimeSource.Monotonic.markNow()
             _imageGenProgress.value = DiffusionProgress(
-                step = 0, totalSteps = 0, requestedSteps = params.steps, elapsedSeconds = 0,
+                step = 0, totalSteps = 0, requestedSteps = executionParams.steps, elapsedSeconds = 0,
             )
             val pollJob = launch {
                 while (isActive) {
@@ -179,13 +388,13 @@ class DiffusionInferenceRepository(
                     _imageGenProgress.value = DiffusionProgress(
                         step = raw[0],
                         totalSteps = raw[1],
-                        requestedSteps = params.steps,
+                        requestedSteps = executionParams.steps,
                         elapsedSeconds = startMs.elapsedNow().inWholeSeconds.toInt(),
                     )
                 }
             }
             try {
-                val r = runner.generateImage(params)
+                val r = runner.generateImage(executionParams)
                 r.exceptionOrNull()?.let { AppLogger.e(TAG, "generateImage failed", it) }
                 r.fold(
                     onSuccess = { Result.success(it) },
@@ -199,9 +408,13 @@ class DiffusionInferenceRepository(
 
     suspend fun generateVideo(params: VideoGenParams): Result<List<ByteArray>> =
         withContext(Dispatchers.Default) {
+            val executionParams = exactExecutionState.applyTo(params)
+            if (executionParams == null) {
+                return@withContext Result.failure(Exception("The selected model configuration does not support video."))
+            }
             val startMs = kotlin.time.TimeSource.Monotonic.markNow()
             _imageGenProgress.value = DiffusionProgress(
-                step = 0, totalSteps = 0, requestedSteps = params.steps, elapsedSeconds = 0,
+                step = 0, totalSteps = 0, requestedSteps = executionParams.steps, elapsedSeconds = 0,
             )
             val pollJob = launch {
                 while (isActive) {
@@ -210,13 +423,13 @@ class DiffusionInferenceRepository(
                     _imageGenProgress.value = DiffusionProgress(
                         step = raw[0],
                         totalSteps = raw[1],
-                        requestedSteps = params.steps,
+                        requestedSteps = executionParams.steps,
                         elapsedSeconds = startMs.elapsedNow().inWholeSeconds.toInt(),
                     )
                 }
             }
             try {
-                val r = runner.generateVideo(params)
+                val r = runner.generateVideo(executionParams)
                 r.exceptionOrNull()?.let { AppLogger.e(TAG, "generateVideo failed", it) }
                 r.fold(
                     onSuccess = { Result.success(it) },
@@ -231,6 +444,7 @@ class DiffusionInferenceRepository(
     fun release() {
         runner.release()
         lastLoadedArchStr = null
+        exactExecutionState.clear()
     }
 
     /** Architecture string reported by the native layer for the currently loaded model. */

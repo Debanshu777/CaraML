@@ -4,11 +4,17 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.NSDocumentDirectory
 import platform.Foundation.NSDirectoryEnumerator
 import platform.Foundation.NSFileSize
+import platform.Foundation.NSFileModificationDate
+import platform.Foundation.NSFileType
+import platform.Foundation.NSFileTypeDirectory
+import platform.Foundation.NSFileTypeRegular
+import platform.Foundation.NSFileTypeSymbolicLink
 import platform.Foundation.NSFileSystemFreeSize
 import platform.Foundation.NSFileSystemSize
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSNumber
 import platform.Foundation.NSUserDomainMask
+import platform.Foundation.NSURL
 
 class IosStoragePathProvider : StoragePathProvider {
     @OptIn(ExperimentalForeignApi::class)
@@ -53,6 +59,40 @@ class IosStoragePathProvider : StoragePathProvider {
         val total = attributes?.get(NSFileSystemSize) as? NSNumber
         return total?.longLongValue ?: 0L
     }
+
+    @OptIn(ExperimentalForeignApi::class)
+    override fun inspectDownloadedArtifact(modelId: String, localPath: String): StoredArtifactSnapshot? =
+        try {
+            if (localPath.isBlank() || '\u0000' in localPath) return null
+            val rootRaw = NSURL.fileURLWithPath(getModelsStorageDirectory(modelId)).URLByStandardizingPath?.path
+                ?.trimEnd('/') ?: return null
+            val targetRaw = NSURL.fileURLWithPath(localPath).URLByStandardizingPath?.path
+                ?.trimEnd('/') ?: return null
+            if (!isPathWithinModelRoot(rootRaw, targetRaw)) return null
+            val root = standardizedResolvedPath(rootRaw)
+            val target = standardizedResolvedPath(targetRaw)
+            if (root.isEmpty() || target.isEmpty() || !isPathWithinModelRoot(root, target)) return null
+            val attributes = NSFileManager.defaultManager.attributesOfItemAtPath(target, null) ?: return null
+            if (attributes[NSFileType] == NSFileTypeSymbolicLink) return null
+            val kind = when (attributes[NSFileType]) {
+                NSFileTypeRegular -> StoredArtifactKind.REGULAR_FILE
+                NSFileTypeDirectory -> StoredArtifactKind.DIRECTORY
+                else -> return null
+            }
+            val byteCount = if (kind == StoredArtifactKind.REGULAR_FILE) {
+                (attributes[NSFileSize] as? NSNumber)?.longLongValue ?: return null
+            } else {
+                0L
+            }
+            val modified = attributes[NSFileModificationDate]?.toString()?.take(96).orEmpty()
+            StoredArtifactSnapshot(
+                kind = kind,
+                byteCount = byteCount,
+                changeStamp = "${modified.ifBlank { "unknown" }}:$byteCount",
+            )
+        } catch (_: Exception) {
+            null
+        }
 
     @OptIn(ExperimentalForeignApi::class)
     override fun isModelFileReadable(path: String): Boolean {
@@ -107,3 +147,11 @@ private fun isPathWithinModelRoot(root: String, target: String): Boolean {
     if (targetNorm == rootNorm) return true
     return targetNorm.startsWith("$rootNorm/")
 }
+
+private fun standardizedResolvedPath(path: String): String =
+    NSURL.fileURLWithPath(path)
+        .URLByStandardizingPath
+        ?.URLByResolvingSymlinksInPath
+        ?.path
+        ?.trimEnd('/')
+        .orEmpty()

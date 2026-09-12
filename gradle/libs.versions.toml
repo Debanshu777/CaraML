@@ -13,6 +13,7 @@ composeHotReload = "1.1.1"
 composeMultiplatform = "1.11.1"
 kotlin = "2.4.0"
 kotlinx-coroutines = "1.11.0"
+kotlinx-serialization = "1.11.0"
 material3 = "1.10.0-alpha05"
 ktor-bom = "3.5.0"
 compose-icon = "1.7.3"
@@ -76,6 +77,7 @@ navigation3-viewmodel = { module = "org.jetbrains.androidx.lifecycle:lifecycle-v
 #materialkolor
 materialkolor = { module = "com.materialkolor:material-kolor", version.ref = "materialKolor" }
 okio = { module = "com.squareup.okio:okio", version.ref = "okio" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
 okio-fakefilesystem = { module = "com.squareup.okio:okio-fakefilesystem", version.ref = "okio" }
 
 [plugins]

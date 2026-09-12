@@ -6,6 +6,11 @@ import com.debanshu777.caraml.core.data.inference.DiffusionInferenceRepository
 import com.debanshu777.caraml.core.data.inference.InferenceRepository
 import com.debanshu777.caraml.core.data.inference.ModelLoadResult
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
+import com.debanshu777.caraml.core.recommendation.LoadAdmission
+import com.debanshu777.caraml.core.recommendation.LoadRequest
+import com.debanshu777.caraml.core.recommendation.RecommendationRolloutModeSource
+import com.debanshu777.caraml.core.recommendation.RiskAcknowledgement
+import com.debanshu777.caraml.core.recommendation.RunPlan
 import com.debanshu777.caraml.features.chat.data.ChatMessage
 import com.debanshu777.caraml.features.chat.data.LiveGenerationStats
 import com.debanshu777.caraml.features.chat.data.MessageRole
@@ -70,10 +75,18 @@ private sealed class InternalChatState {
         val modelId: String,
     ) : InternalChatState()
 
+    data class LoadActionRequired(val action: PendingLoadAction) : InternalChatState()
+
     data class ReadyCore(
         val contextLimit: Int,
         val isGenerating: Boolean,
     ) : InternalChatState()
+}
+
+sealed interface PendingLoadAction {
+    data class ConfirmRisk(val request: LoadRequest) : PendingLoadAction
+    data class AcceptAlternative(val original: LoadRequest, val saferPlan: RunPlan) : PendingLoadAction
+    data class RetryQuarantined(val request: LoadRequest) : PendingLoadAction
 }
 
 class ChatViewModel(
@@ -84,6 +97,7 @@ class ChatViewModel(
     private val inferenceRepository: InferenceRepository,
     private val diffusionRepository: DiffusionInferenceRepository,
     private val storagePathProvider: StoragePathProvider,
+    private val recommendationRolloutModeSource: RecommendationRolloutModeSource,
 ) : ViewModel() {
 
     private val componentChecker = SdCppComponentChecker(storagePathProvider)
@@ -127,6 +141,7 @@ class ChatViewModel(
                 modelName = internal.modelName,
                 modelId = internal.modelId,
             )
+            is InternalChatState.LoadActionRequired -> ChatUiState.LoadActionRequired(internal.action)
             is InternalChatState.ReadyCore -> ChatUiState.Ready(
                 messages = messages,
                 contextLimit = internal.contextLimit,
@@ -150,7 +165,9 @@ class ChatViewModel(
     val currentDiffusionParams: StateFlow<SdCppRecommendedParams?> = _currentDiffusionParams.asStateFlow()
 
     private var modelLoadJob: Job? = null
+    private var selectedLoadRequest: LoadRequest? = null
     private var generationJob: Job? = null
+    private val pendingLoadActionGate = PendingLoadActionGate()
 
     private val teardownScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -209,6 +226,7 @@ class ChatViewModel(
         if (sel == null || !sel.matchesGenerationMode(mode)) {
             val next = pickRememberedModel(picker, mode) ?: picker.first()
             if (sel?.id != next.id) {
+                selectedLoadRequest = null
                 _internal.value = InternalChatState.ModelLoading
                 _selectedModel.value = next
             }
@@ -275,7 +293,17 @@ class ChatViewModel(
     }
 
     fun selectModel(model: LocalModelEntity) {
+        selectModel(model, null)
+    }
+
+    /** Carries an already assessed exact selection from Model Hub without reconstructing defaults. */
+    fun selectModel(model: LocalModelEntity, loadRequest: LoadRequest?) {
+        val selectionUnchanged = _selectedModel.value?.id == model.id
+        selectedLoadRequest = loadRequest?.takeIf {
+            it.model.id == model.id && it.model.modelId == model.modelId
+        }
         _selectedModel.value = model
+        if (selectionUnchanged) loadModel(model)
         when (_generationMode.value) {
             GenerationMode.Text -> lastTextModelId = model.id
             GenerationMode.Image,
@@ -304,10 +332,21 @@ class ChatViewModel(
             // inside a blocking JNI call races with our unloadModel() → double-free crash.
             previousJob?.join()
 
+            val exactRequest = selectedLoadRequest?.takeIf {
+                it.model.id == model.id &&
+                    it.model.modelId == model.modelId
+            }
             val result: ModelLoadResult = when (mode) {
                 GenerationMode.Text -> {
                     diffusionRepository.release()
-                    inferenceRepository.loadModel(model)
+                    ModelLoadRouter.route(
+                        recommendationRolloutModeSource.current(),
+                        model,
+                        exactRequest,
+                        inferenceRepository::loadModel,
+                        inferenceRepository::loadModel,
+                        expectedMode = mode,
+                    )
                 }
                 GenerationMode.Image,
                 GenerationMode.Video,
@@ -330,7 +369,14 @@ class ChatViewModel(
                         }
                     }
                     
-                    diffusionRepository.loadModel(model)
+                    ModelLoadRouter.route(
+                        recommendationRolloutModeSource.current(),
+                        model,
+                        exactRequest,
+                        diffusionRepository::loadModel,
+                        diffusionRepository::loadModel,
+                        expectedMode = mode,
+                    )
                 }
             }
             when (result) {
@@ -346,8 +392,98 @@ class ChatViewModel(
                 is ModelLoadResult.Error -> {
                     _internal.value = InternalChatState.ModelError(result.message)
                 }
+                is ModelLoadResult.AdmissionRequired -> handleAdmission(result.admission)
             }
         }
+    }
+
+    private fun handleAdmission(admission: LoadAdmission) {
+        pendingLoadActionGate.close()
+        when (admission) {
+            is LoadAdmission.ConfirmationRequired -> {
+                val action = if (admission.explicitRetryRequired) {
+                    PendingLoadAction.RetryQuarantined(admission.request)
+                } else {
+                    PendingLoadAction.ConfirmRisk(admission.request)
+                }
+                pendingLoadActionGate.open()
+                _internal.value = InternalChatState.LoadActionRequired(action)
+            }
+            is LoadAdmission.AlternativeAvailable -> {
+                pendingLoadActionGate.open()
+                _internal.value = InternalChatState.LoadActionRequired(
+                    PendingLoadAction.AcceptAlternative(admission.original, admission.saferPlan),
+                )
+            }
+            is LoadAdmission.TemporarilyUnavailable -> {
+                _internal.value = InternalChatState.ModelError(
+                    "The device is under memory or thermal pressure. Try again after it recovers.",
+                )
+            }
+            is LoadAdmission.Blocked -> {
+                _internal.value = InternalChatState.ModelError(
+                    "This model cannot be loaded safely with the available information.",
+                )
+            }
+            is LoadAdmission.Ready -> resumeExactLoad(admission.request)
+        }
+    }
+
+    fun confirmPendingLoad() {
+        val action = (_internal.value as? InternalChatState.LoadActionRequired)?.action
+            as? PendingLoadAction.ConfirmRisk ?: return
+        if (!pendingLoadActionGate.tryConsume()) return
+        val now = Clock.System.now().toEpochMilliseconds()
+        resumeExactLoad(
+            action.request.copy(
+                riskAcknowledgement = RiskAcknowledgement(
+                    action.request.assessmentKey,
+                    action.request.plan.stableKey,
+                    now,
+                ),
+            ),
+        )
+    }
+
+    fun acceptSaferPlan() {
+        val action = (_internal.value as? InternalChatState.LoadActionRequired)?.action
+            as? PendingLoadAction.AcceptAlternative ?: return
+        if (!pendingLoadActionGate.tryConsume()) return
+        resumeExactLoad(action.original.copy(plan = action.saferPlan, riskAcknowledgement = null))
+    }
+
+    fun retryPendingLoad() {
+        val action = (_internal.value as? InternalChatState.LoadActionRequired)?.action
+            as? PendingLoadAction.RetryQuarantined ?: return
+        if (!pendingLoadActionGate.tryConsume()) return
+        _internal.value = InternalChatState.ModelLoading
+        viewModelScope.launch(Dispatchers.Default) {
+            try {
+                when (action.request.plan) {
+                    is com.debanshu777.caraml.core.recommendation.LlmRunPlan ->
+                        inferenceRepository.allowExplicitRetry(action.request)
+                    is com.debanshu777.caraml.core.recommendation.DiffusionRunPlan ->
+                        diffusionRepository.allowExplicitRetry(action.request)
+                }
+                resumeExactLoad(action.request.copy(riskAcknowledgement = null))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                _internal.value = InternalChatState.ModelError("The model cannot be retried right now.")
+            }
+        }
+    }
+
+    fun cancelPendingLoad() {
+        if (_internal.value !is InternalChatState.LoadActionRequired) return
+        if (!pendingLoadActionGate.tryConsume()) return
+        selectedLoadRequest = null
+        _internal.value = InternalChatState.ModelError("Model loading was cancelled.")
+    }
+
+    private fun resumeExactLoad(request: LoadRequest) {
+        selectedLoadRequest = request
+        loadModel(request.model)
     }
 
     fun sendMessage(text: String) {

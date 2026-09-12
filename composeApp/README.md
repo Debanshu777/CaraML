@@ -182,6 +182,7 @@ Run: `./gradlew :composeApp:jvmTest`
 
 <!-- Updated at end of each AI-assisted development session -->
 
+- Exact model selections now carry their verified artifact and run plan through load admission, user confirmation/safer-plan actions, and durable exact-configuration crash quarantine
 - Legacy or duplicate native device identities now remain low-confidence Unknown evidence unless exact llama/diffusion device-and-type intersection is provable
 - Native capability evidence now routes by model kind and advertises GPU offload only when exact named compute backends are available to both llama.cpp and stable-diffusion.cpp
 - Model Hub now loads and repairs diffusion installs from deterministic exact bundle identities, fails unknown image/video readiness closed, and ignores stale directory leftovers outside the aggregate manifest

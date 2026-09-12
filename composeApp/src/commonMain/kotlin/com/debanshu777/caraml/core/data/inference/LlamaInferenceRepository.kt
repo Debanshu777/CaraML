@@ -4,6 +4,20 @@ import com.debanshu777.caraml.core.benchmark.BenchmarkUtils
 import com.debanshu777.caraml.core.platform.AppLogger
 import com.debanshu777.caraml.core.platform.DeviceCapabilities
 import com.debanshu777.caraml.core.platform.PlatformPaths
+import com.debanshu777.caraml.core.recommendation.DeviceSnapshotProvider
+import com.debanshu777.caraml.core.recommendation.LoadAdmission
+import com.debanshu777.caraml.core.recommendation.LoadAdmissionController
+import com.debanshu777.caraml.core.recommendation.LoadRecoveryRepository
+import com.debanshu777.caraml.core.recommendation.LoadRequest
+import com.debanshu777.caraml.core.recommendation.NativeLoadPreflight
+import com.debanshu777.caraml.core.recommendation.NativeRunPlanAdapter
+import com.debanshu777.caraml.core.recommendation.PersonalizedRecommendation
+import com.debanshu777.caraml.core.recommendation.RecommendationCategory
+import com.debanshu777.caraml.core.recommendation.RecommendationPolicy
+import com.debanshu777.caraml.core.recommendation.RecommendationRolloutMode
+import com.debanshu777.caraml.core.recommendation.RecommendationRolloutModeSource
+import com.debanshu777.caraml.core.recommendation.StableLoadFailure
+import com.debanshu777.caraml.core.recommendation.SuitabilityEngine
 import com.debanshu777.caraml.core.settings.AppSettings
 import com.debanshu777.caraml.core.settings.KvQuantPreset
 import com.debanshu777.caraml.core.data.settings.SettingsRepository
@@ -12,12 +26,14 @@ import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import com.debanshu777.runner.InferenceChunk
 import com.debanshu777.runner.LlamaRunner
+import com.debanshu777.runner.LlamaPreflightResult
 import com.debanshu777.runner.NativeRunnerConfig
 import com.debanshu777.runner.generateFlowTokens
 import com.debanshu777.runner.generateStructuredChunks
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
@@ -33,6 +49,14 @@ class LlamaInferenceRepository(
     private val deviceCapabilities: DeviceCapabilities,
     private val settingsRepository: SettingsRepository,
     private val localModelRepository: LocalModelRepository? = null,
+    private val snapshotProvider: DeviceSnapshotProvider? = null,
+    private val suitabilityEngine: SuitabilityEngine? = null,
+    private val recommendationPolicy: RecommendationPolicy? = null,
+    private val loadRecoveryRepository: LoadRecoveryRepository? = null,
+    private val engineVersion: String = "native-engine-v1",
+    private val rolloutModeSource: RecommendationRolloutModeSource = RecommendationRolloutModeSource {
+        RecommendationRolloutMode.LEGACY
+    },
 ) : InferenceRepository {
 
     companion object {
@@ -112,8 +136,171 @@ class LlamaInferenceRepository(
     /** Cached runtime config string built after each successful model load. */
     @Volatile private var lastRuntimeConfig: String = ""
 
+    override suspend fun loadModel(request: LoadRequest): ModelLoadResult =
+        nativeLock.withLock {
+            val artifact = request.artifact
+                ?: return@withLock ModelLoadResult.Error("The installed model could not be verified.")
+            if (artifact.identity != request.identity) {
+                return@withLock ModelLoadResult.Error("The installed model identity is invalid.")
+            }
+            val plan = request.plan as? com.debanshu777.caraml.core.recommendation.LlmRunPlan
+                ?: return@withLock ModelLoadResult.Error("The selected model configuration is invalid.")
+            val recovery = loadRecoveryRepository
+                ?: return@withLock ModelLoadResult.Error("Load recovery is unavailable.")
+            try {
+                recovery.recoverPendingLoad()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                return@withLock ModelLoadResult.Error("Load recovery is unavailable.")
+            }
+            val modelPath = artifact.primaryPath
+            if (!storagePathProvider.isModelFileReadable(modelPath)) {
+                return@withLock ModelLoadResult.Error("The installed model could not be verified.")
+            }
+            val nativeLibDir = PlatformPaths.getNativeLibDir()
+            if (nativeLibDir.isBlank()) {
+                return@withLock ModelLoadResult.Error("Failed to initialize. Please restart the app.")
+            }
+            val settings = currentSettings()
+            val base = buildRunnerConfig(request.model, settings.temperature, settings, modelPath)
+            val exactConfig = runCatching { NativeRunPlanAdapter.toLlamaConfig(plan, base) }
+                .getOrElse { return@withLock ModelLoadResult.Error("The selected model configuration is invalid.") }
+            if (nativeLoaded) {
+                try {
+                    runner.unloadModel()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Throwable) {
+                    return@withLock ModelLoadResult.Error("The previous model could not be released safely.")
+                }
+                nativeLoaded = false
+            }
+            try {
+                runner.initialize(nativeLibDir)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                return@withLock ModelLoadResult.Error("Failed to initialize. Please restart the app.")
+            }
+            val controller = admissionController { candidate ->
+                val candidatePlan = candidate.plan as? com.debanshu777.caraml.core.recommendation.LlmRunPlan
+                    ?: return@admissionController NativeLoadPreflight.Invalid
+                val candidatePath = candidate.artifact?.primaryPath
+                    ?: return@admissionController NativeLoadPreflight.Invalid
+                val config = runCatching { NativeRunPlanAdapter.toLlamaConfig(candidatePlan, base) }
+                    .getOrElse { return@admissionController NativeLoadPreflight.Invalid }
+                when (runner.preflightModel(candidatePath, config)) {
+                    is LlamaPreflightResult.Fit -> NativeLoadPreflight.Fit
+                    is LlamaPreflightResult.NoFit -> NativeLoadPreflight.NoFit
+                    is LlamaPreflightResult.InvalidModel -> NativeLoadPreflight.Invalid
+                    is LlamaPreflightResult.Unavailable -> NativeLoadPreflight.Unavailable
+                }
+            } ?: return@withLock ModelLoadResult.Error("Load admission is unavailable.")
+            val admission = try {
+                controller.evaluate(request, request.riskAcknowledgement)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                return@withLock ModelLoadResult.Error("Load admission is temporarily unavailable.")
+            }
+            if (admission !is LoadAdmission.Ready) return@withLock ModelLoadResult.AdmissionRequired(admission)
+
+            val marker = try {
+                recovery.beginLoad(request.identity, request.plan)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                return@withLock ModelLoadResult.Error("Load recovery is unavailable.")
+            }
+            try {
+                if (!runner.loadModel(modelPath, exactConfig)) {
+                    runCatching { runner.unloadModel() }
+                    withContext(NonCancellable) {
+                        runCatching { recovery.markLoadFailed(marker, StableLoadFailure.ALLOCATION) }
+                    }
+                    return@withLock ModelLoadResult.Error("The model could not be loaded with this configuration.")
+                }
+                nativeLoaded = true
+                val systemPrompt = settings.systemPrompt.ifBlank { FALLBACK_SYSTEM_PROMPT }
+                if (runner.processSystemPrompt(systemPrompt) != 0) {
+                    runCatching { runner.unloadModel() }
+                    nativeLoaded = false
+                    withContext(NonCancellable) {
+                        runCatching {
+                            recovery.markLoadFailed(marker, StableLoadFailure.UNSUPPORTED_CONFIGURATION)
+                        }
+                    }
+                    return@withLock ModelLoadResult.Error("The model could not initialize a conversation.")
+                }
+                val contextSize = runner.getContextLimit()
+                lastRuntimeConfig = BenchmarkUtils.formatRuntimeConfig(
+                    threads = exactConfig.nThreads,
+                    batchThreads = exactConfig.nThreadsBatch,
+                    batchSize = exactConfig.nBatch,
+                    contextLimit = contextSize,
+                    gpuLayers = runner.getGpuLayers(),
+                    typeK = exactConfig.typeK,
+                    typeV = exactConfig.typeV,
+                    flashAttn = exactConfig.flashAttn,
+                )
+                recovery.markLoadSucceeded(marker)
+                ModelLoadResult.Success(contextSize)
+            } catch (cancelled: CancellationException) {
+                runCatching { runner.unloadModel() }
+                nativeLoaded = false
+                withContext(NonCancellable) { runCatching { recovery.markLoadCancelled(marker) } }
+                throw cancelled
+            } catch (_: Throwable) {
+                runCatching { runner.unloadModel() }
+                nativeLoaded = false
+                withContext(NonCancellable) {
+                    runCatching { recovery.markLoadFailed(marker, StableLoadFailure.UNKNOWN) }
+                }
+                ModelLoadResult.Error("An error occurred while loading the model.")
+            }
+        }
+
+    private fun admissionController(
+        nativePreflight: suspend (LoadRequest) -> NativeLoadPreflight,
+    ): LoadAdmissionController? {
+        val snapshots = snapshotProvider ?: return null
+        val engine = suitabilityEngine ?: return null
+        val policy = recommendationPolicy ?: return null
+        val recovery = loadRecoveryRepository ?: return null
+        return LoadAdmissionController(
+            snapshotSource = snapshots::capture,
+            recommendationSource = { candidate, snapshot ->
+                candidate.assessedPlans?.let { plans ->
+                    policy.recommend(engine.assemble(plans, snapshot), snapshot, candidate.profile)
+                } ?: PersonalizedRecommendation(
+                    assessmentKey = candidate.assessmentKey,
+                    category = RecommendationCategory.NEEDS_INFORMATION,
+                    selectedPlan = null,
+                    reasons = emptyList(),
+                    profile = candidate.profile,
+                )
+            },
+            nativePreflight = nativePreflight,
+            recoveryState = recovery,
+            engineVersion = engineVersion,
+            clock = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
+        )
+    }
+
+    override suspend fun allowExplicitRetry(request: LoadRequest) {
+        if (request.artifact?.identity == request.identity) {
+            loadRecoveryRepository?.allowExplicitRetry(request.identity, request.plan, engineVersion)
+        }
+    }
+
     override suspend fun loadModel(model: LocalModelEntity): ModelLoadResult =
         nativeLock.withLock {
+            if (rolloutModeSource.current() != RecommendationRolloutMode.LEGACY) {
+                return@withLock ModelLoadResult.Error(
+                    "This installed model needs to be reassessed before it can be loaded safely.",
+                )
+            }
             try {
                 val sizeMB = getModelFileSizeMB(model)
                 AppLogger.i(TAG) { "loadModel: modelId=${model.modelId}, sizeMB=$sizeMB" }
