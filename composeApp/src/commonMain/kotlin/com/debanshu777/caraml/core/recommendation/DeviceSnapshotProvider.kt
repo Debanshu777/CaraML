@@ -335,6 +335,7 @@ class DeviceSnapshotProvider internal constructor(
             confidence = ResourcePoolConfidence(
                 host = value.confidence.host.takeIf { host != null },
                 gpu = value.confidence.gpu.takeIf { gpu != null },
+                process = value.confidence.process.takeIf { process != null },
             ),
         ).withCollectionLimitExceeded(value.collectionLimitExceeded)
     }

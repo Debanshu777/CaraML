@@ -22,7 +22,11 @@ expect class LlamaRunner() {
         bufferBytes: Long,
     ): BackendCalibrationResult
 
+    fun reserveBackendCalibration(probeToken: Long): Boolean
+
     fun cancelBackendCalibration(probeToken: Long)
+
+    fun abandonBackendCalibration(probeToken: Long)
 
     fun probeModelFeatures(
         architecture: String,

@@ -227,6 +227,57 @@ void calibration_cancellation_is_atomic_and_nonblocking() {
         "queued cancellation poisoned a later probe with the same token");
 }
 
+void reserved_calibration_latches_cancel_before_native_entry() {
+    expect(
+        llama_runner_core_reserve_calibration(4),
+        "calibration token could not be reserved before JNI entry");
+    llama_runner_core_cancel_calibration(4);
+
+    const auto result = llama_runner_core_calibrate_backend(
+        4, LLAMA_BACKEND_CPU, 500, 4LL * 1024LL * 1024LL);
+    expect(
+        result.status == LLAMA_CALIBRATION_CANCELLED,
+        "cancel before native probe entry was lost");
+}
+
+void interruptible_operation_waiter_fails_closed_after_poison() {
+    LlamaOperationGate gate;
+    auto owner = gate.lock();
+    std::atomic<bool> poisoned{false};
+    auto waiter = std::async(std::launch::async, [&] {
+        return gate.lock_interruptible([&] { return poisoned.load(); }).has_value();
+    });
+    expect(
+        waiter.wait_for(std::chrono::milliseconds(100)) == std::future_status::timeout,
+        "interruptible waiter entered an owned native operation");
+
+    poisoned.store(true);
+    gate.notify_waiters();
+    expect(
+        waiter.wait_for(std::chrono::milliseconds(100)) == std::future_status::ready && !waiter.get(),
+        "poisoned native operation waiter remained blocked");
+}
+
+void abandoned_calibration_quarantines_later_model_operations() {
+    expect(
+        llama_runner_core_reserve_calibration(5),
+        "calibration token could not be reserved for quarantine test");
+    llama_runner_core_abandon_calibration(5);
+    auto preflight = std::async(std::launch::async, [] {
+        return llama_runner_core_preflight(nullptr, LlamaRunnerConfig{});
+    });
+    expect(
+        preflight.wait_for(std::chrono::milliseconds(100)) == std::future_status::ready,
+        "model preflight blocked behind an abandoned native probe");
+    expect(
+        preflight.get().status == LLAMA_PREFLIGHT_UNAVAILABLE,
+        "model preflight did not fail closed after native probe abandonment");
+
+    const auto cancelled = llama_runner_core_calibrate_backend(
+        5, LLAMA_BACKEND_CPU, 500, 4LL * 1024LL * 1024LL);
+    expect(cancelled.status == LLAMA_CALIBRATION_CANCELLED, "abandoned probe token was not cancelled");
+}
+
 } // namespace
 
 int main() {
@@ -238,6 +289,9 @@ int main() {
     pinned_native_quantization_labels_are_exact();
     calibration_rejects_unbounded_requests_without_allocating();
     calibration_cancellation_is_atomic_and_nonblocking();
+    reserved_calibration_latches_cancel_before_native_entry();
+    interruptible_operation_waiter_fails_closed_after_poison();
+    abandoned_calibration_quarantines_later_model_operations();
     llama_runner_core_shutdown();
     return 0;
 }

@@ -158,7 +158,7 @@ val appModule = module {
                 get<DeviceCapabilities>().getResourceSnapshot().let { resources ->
                     ReliableMemoryReading(
                         bytes = resources.currentProcessBytes,
-                        reliable = resources.confidence.host ==
+                        reliable = resources.confidence.process ==
                             com.debanshu777.caraml.core.recommendation.Confidence.HIGH,
                     )
                 }

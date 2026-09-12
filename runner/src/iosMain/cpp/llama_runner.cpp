@@ -173,6 +173,18 @@ void llama_runner_cancel_backend_calibration(int64_t probe_token) {
     });
 }
 
+int llama_runner_reserve_backend_calibration(int64_t probe_token) {
+    return ffi_guard<int>("reserve_backend_calibration", 0, [probe_token]() {
+        return llama_runner_core_reserve_calibration(probe_token) ? 1 : 0;
+    });
+}
+
+void llama_runner_abandon_backend_calibration(int64_t probe_token) {
+    ffi_guard_void("abandon_backend_calibration", [probe_token]() {
+        llama_runner_core_abandon_calibration(probe_token);
+    });
+}
+
 struct LlamaModelFeatureSupportFFI llama_runner_probe_model_features(
     const char *architecture,
     const char *quantization) {

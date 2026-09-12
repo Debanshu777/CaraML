@@ -83,7 +83,7 @@ class QuickCalibrationRunnerTest {
     }
 
     @Test
-    fun timeoutCancelsOnlyTheOwnedProbeTokenAndReturnsPromptly() = runTest {
+    fun timeoutAbandonsOnlyTheOwnedProbeTokenAndReturnsPromptly() = runTest {
         val dao = CapturingDao()
         val repository = CalibrationRepository(dao, ENGINE, now = { NOW }).also { it.initialize() }
         val settings = FakeSettingsRepository()
@@ -100,7 +100,8 @@ class QuickCalibrationRunnerTest {
         )
 
         assertEquals(CalibrationRunResult.TimedOut, runner.runQuickCalibration())
-        assertEquals(listOf(41L), probe.cancelledTokens)
+        assertTrue(probe.cancelledTokens.isEmpty())
+        assertEquals(listOf(41L), probe.abandonedTokens)
         assertFalse(settings.offerComplete)
     }
 
@@ -191,6 +192,7 @@ class QuickCalibrationRunnerTest {
 
     private class HangingProbe : BackendCalibrationProbe {
         val cancelledTokens = mutableListOf<Long>()
+        val abandonedTokens = mutableListOf<Long>()
 
         override suspend fun run(
             probeToken: Long,
@@ -201,6 +203,10 @@ class QuickCalibrationRunnerTest {
 
         override fun cancel(probeToken: Long) {
             cancelledTokens += probeToken
+        }
+
+        override fun abandon(probeToken: Long) {
+            abandonedTokens += probeToken
         }
     }
 

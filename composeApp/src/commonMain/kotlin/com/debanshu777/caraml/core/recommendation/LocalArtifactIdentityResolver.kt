@@ -197,30 +197,75 @@ class LocalArtifactIdentityResolver(
     ): LoadRequestResolution {
         val observationIdentity = ObservationModelIdentity.fromDescriptor(descriptor)
         if (descriptor.repositoryId != model.modelId || observationIdentity == null ||
-            assessment.assessmentKey.isBlank() || assessment.assessmentKey != recommendation.assessmentKey
+            assessment.assessmentKey.isBlank() || assessment.assessmentKey != recommendation.assessmentKey ||
+            assessment.planAssessments.assessmentKey != assessment.assessmentKey
         ) {
             return LoadRequestResolution.Rejected(ArtifactIdentityRejection.INVALID_INPUT)
         }
         val selected = recommendation.selectedPlan as? RunPlan
             ?: return LoadRequestResolution.Rejected(ArtifactIdentityRejection.INVALID_INPUT)
-        if (assessment.planAssessments.values.none { it.plan.stableKey == selected.stableKey }) {
+        val selectedAssessment = assessment.planAssessments.values
+            .filter { it.plan.stableKey == selected.stableKey }
+            .singleOrNull()
+        if (selectedAssessment == null || recommendation.selectedPlanAssessment != selectedAssessment) {
             return LoadRequestResolution.Rejected(ArtifactIdentityRejection.INVALID_INPUT)
         }
         return when (val resolved = resolve(model, components)) {
             is ArtifactIdentityResolution.Rejected -> LoadRequestResolution.Rejected(resolved.reason)
-            is ArtifactIdentityResolution.Verified -> LoadRequestResolution.Ready(
-                LoadRequest(
-                    model = model,
-                    identity = resolved.artifact.identity,
-                    observationIdentity = observationIdentity,
-                    plan = selected,
-                    assessmentKey = assessment.assessmentKey,
-                    artifact = resolved.artifact,
-                    assessedPlans = assessment.planAssessments,
-                    profile = recommendation.profile,
-                ),
-            )
+            is ArtifactIdentityResolution.Verified -> {
+                if (!descriptorMatchesResolvedArtifact(descriptor, resolved.artifact)) {
+                    LoadRequestResolution.Rejected(ArtifactIdentityRejection.STALE_MANIFEST)
+                } else {
+                    LoadRequestResolution.Ready(
+                        LoadRequest(
+                            model = model,
+                            identity = resolved.artifact.identity,
+                            observationIdentity = observationIdentity,
+                            plan = selected,
+                            assessmentKey = assessment.assessmentKey,
+                            artifact = resolved.artifact,
+                            assessedPlans = assessment.planAssessments,
+                            profile = recommendation.profile,
+                        ),
+                    )
+                }
+            }
         }
+    }
+
+    private fun descriptorMatchesResolvedArtifact(
+        descriptor: ModelDescriptor,
+        artifact: ResolvedLocalArtifact,
+    ): Boolean {
+        val expected = when (descriptor) {
+            is LlmModelDescriptor -> descriptor.files
+            is DiffusionModelDescriptor -> descriptor.components.map(DiffusionComponentDescriptor::file)
+        }
+        if (expected.isEmpty() || expected.size != artifact.components.size) return false
+        val unmatched = artifact.components.map(ResolvedArtifactComponent::identity).toMutableList()
+        return expected.all { identity ->
+            val index = unmatched.indexOfFirst { resolved -> identity.matchesExactResolvedIdentity(resolved) }
+            if (index < 0) false else {
+                unmatched.removeAt(index)
+                true
+            }
+        } && unmatched.isEmpty()
+    }
+
+    private fun ModelFileIdentity.matchesExactResolvedIdentity(other: ModelFileIdentity): Boolean =
+        repositoryId == other.repositoryId &&
+            revision.equals(other.revision, ignoreCase = true) &&
+            path == other.path &&
+            sizeBytes == other.sizeBytes &&
+            canonicalObjectIds().intersect(other.canonicalObjectIds()).isNotEmpty()
+
+    private fun ModelFileIdentity.canonicalObjectIds(): Set<String> = buildSet(3) {
+        gitOid?.let { add("git:${it.lowercase()}") }
+        lfsOid?.let {
+            val normalized = it.lowercase().removePrefix("sha256:")
+            add("lfs:sha256:$normalized")
+        }
+        xetHash?.let { add("xet:${it.lowercase()}") }
     }
 
     private suspend fun resolveHubManifest(

@@ -50,6 +50,8 @@ interface BackendCalibrationProbe {
     ): BackendCalibrationResult
 
     fun cancel(probeToken: Long)
+
+    fun abandon(probeToken: Long) = cancel(probeToken)
 }
 
 private val backendCalibrationAdmission = Mutex()
@@ -59,6 +61,8 @@ class LlamaBackendCalibrationProbe internal constructor(
     private val dispatcher: CoroutineDispatcher,
     private val calibrateBackend: (Long, NativeBackendKind, Int, Long) -> BackendCalibrationResult,
     private val cancelBackendCalibration: (Long) -> Unit,
+    private val reserveBackendCalibration: (Long) -> Boolean = { true },
+    private val abandonBackendCalibration: (Long) -> Unit = cancelBackendCalibration,
 ) : BackendCalibrationProbe {
     constructor(
         runner: LlamaRunner,
@@ -67,6 +71,8 @@ class LlamaBackendCalibrationProbe internal constructor(
         dispatcher = dispatcher,
         calibrateBackend = runner::calibrateBackend,
         cancelBackendCalibration = runner::cancelBackendCalibration,
+        reserveBackendCalibration = runner::reserveBackendCalibration,
+        abandonBackendCalibration = runner::abandonBackendCalibration,
     )
 
     private val workerScope = CoroutineScope(SupervisorJob() + dispatcher)
@@ -86,6 +92,12 @@ class LlamaBackendCalibrationProbe internal constructor(
                     return@withLock BackendCalibrationResult.Unavailable
                 }
                 try {
+                    if (!reserveBackendCalibration(probeToken)) {
+                        return@withLock BackendCalibrationResult.Unavailable
+                    }
+                    if (activeState.load() == -probeToken) {
+                        cancelBackendCalibration(probeToken)
+                    }
                     calibrateBackend(probeToken, backend, durationMillis, bufferBytes)
                 } finally {
                     if (!activeState.compareAndSet(probeToken, NO_ACTIVE_PROBE)) {
@@ -109,6 +121,13 @@ class LlamaBackendCalibrationProbe internal constructor(
         if (probeToken > 0L && activeState.compareAndSet(probeToken, -probeToken)) {
             cancelBackendCalibration(probeToken)
         }
+    }
+
+    override fun abandon(probeToken: Long) {
+        if (probeToken <= 0L) return
+        val ownsProbe = activeState.compareAndSet(probeToken, -probeToken) ||
+            activeState.load() == -probeToken
+        if (ownsProbe) abandonBackendCalibration(probeToken)
     }
 
     private companion object {
@@ -162,11 +181,11 @@ class QuickCalibrationRunner(
             withTimeoutOrNull(timeoutMillis) {
                 probe.run(probeToken, nativeBackend, TARGET_DURATION_MILLIS, bufferBytes)
             } ?: run {
-                probe.cancel(probeToken)
+                probe.abandon(probeToken)
                 return CalibrationRunResult.TimedOut
             }
         } catch (cancelled: CancellationException) {
-            probe.cancel(probeToken)
+            probe.abandon(probeToken)
             throw cancelled
         } catch (_: Exception) {
             return CalibrationRunResult.Failed

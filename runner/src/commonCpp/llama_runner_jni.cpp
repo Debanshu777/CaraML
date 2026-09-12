@@ -313,6 +313,23 @@ Java_com_debanshu777_runner_LlamaRunner_nativeCancelBackendCalibration(
     });
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_debanshu777_runner_LlamaRunner_nativeReserveBackendCalibration(
+    JNIEnv *, jobject, jlong probeToken) {
+    return jni_guard<jboolean>("nativeReserveBackendCalibration failed", JNI_FALSE, [probeToken]() {
+        return llama_runner_core_reserve_calibration(static_cast<int64_t>(probeToken))
+            ? JNI_TRUE : JNI_FALSE;
+    });
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_debanshu777_runner_LlamaRunner_nativeAbandonBackendCalibration(
+    JNIEnv *, jobject, jlong probeToken) {
+    jni_guard_void("nativeAbandonBackendCalibration failed", [probeToken]() {
+        llama_runner_core_abandon_calibration(static_cast<int64_t>(probeToken));
+    });
+}
+
 extern "C" JNIEXPORT jlongArray JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeProbeModelFeatures(
     JNIEnv *env,

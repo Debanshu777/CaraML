@@ -266,13 +266,25 @@ class DiffusionFootprintEstimator {
             is DiffusionRangeResult.Invalid -> return DiffusionAllocationResult.Invalid(result.reason)
             is DiffusionRangeResult.Value -> result.range
         }
-        val total = when (val result = diffusionAddRanges(rawLoad, generationActivations)) {
+        val calibratedLoad = when (
+            val result = diffusionCalibrate(
+                rawLoad,
+                calibration.forDiffusionPool(pool.toMemoryPool(), InferenceObservationPhase.LOAD),
+            )
+        ) {
             is DiffusionRangeResult.Invalid -> return DiffusionAllocationResult.Invalid(result.reason)
             is DiffusionRangeResult.Value -> result.range
         }
-        val calibrated = when (
-            val result = diffusionCalibrate(total, calibration.forDiffusionPool(pool.toMemoryPool()))
+        val calibratedGeneration = when (
+            val result = diffusionCalibrate(
+                generationActivations,
+                calibration.forDiffusionPool(pool.toMemoryPool(), InferenceObservationPhase.GENERATION),
+            )
         ) {
+            is DiffusionRangeResult.Invalid -> return DiffusionAllocationResult.Invalid(result.reason)
+            is DiffusionRangeResult.Value -> result.range
+        }
+        val calibrated = when (val result = diffusionAddRanges(calibratedLoad, calibratedGeneration)) {
             is DiffusionRangeResult.Invalid -> return DiffusionAllocationResult.Invalid(result.reason)
             is DiffusionRangeResult.Value -> result.range
         }
@@ -428,23 +440,47 @@ class DiffusionFootprintEstimator {
             is DiffusionRangeResult.Invalid -> return DiffusionAllocationResult.Invalid(result.reason, evidence)
             is DiffusionRangeResult.Value -> result.range
         }
-        val host = when (val result = diffusionAddRanges(rawHostLoad, hostGeneration.range)) {
-            is DiffusionRangeResult.Invalid -> return DiffusionAllocationResult.Invalid(result.reason, evidence)
-            is DiffusionRangeResult.Value -> result.range
-        }
-        val gpu = when (val result = diffusionAddRanges(rawGpuLoad, gpuGeneration.range)) {
-            is DiffusionRangeResult.Invalid -> return DiffusionAllocationResult.Invalid(result.reason, evidence)
-            is DiffusionRangeResult.Value -> result.range
-        }
-        val calibratedHost = when (
-            val result = diffusionCalibrate(host, calibration.forDiffusionPool(MemoryPool.HOST))
+        val calibratedHostLoad = when (
+            val result = diffusionCalibrate(
+                rawHostLoad,
+                calibration.forDiffusionPool(MemoryPool.HOST, InferenceObservationPhase.LOAD),
+            )
         ) {
             is DiffusionRangeResult.Invalid -> return DiffusionAllocationResult.Invalid(result.reason, evidence)
             is DiffusionRangeResult.Value -> result.range
         }
-        val calibratedGpu = when (
-            val result = diffusionCalibrate(gpu, calibration.forDiffusionPool(MemoryPool.DISCRETE_GPU))
+        val calibratedHostGeneration = when (
+            val result = diffusionCalibrate(
+                hostGeneration.range,
+                calibration.forDiffusionPool(MemoryPool.HOST, InferenceObservationPhase.GENERATION),
+            )
         ) {
+            is DiffusionRangeResult.Invalid -> return DiffusionAllocationResult.Invalid(result.reason, evidence)
+            is DiffusionRangeResult.Value -> result.range
+        }
+        val calibratedHost = when (val result = diffusionAddRanges(calibratedHostLoad, calibratedHostGeneration)) {
+            is DiffusionRangeResult.Invalid -> return DiffusionAllocationResult.Invalid(result.reason, evidence)
+            is DiffusionRangeResult.Value -> result.range
+        }
+        val calibratedGpuLoad = when (
+            val result = diffusionCalibrate(
+                rawGpuLoad,
+                calibration.forDiffusionPool(MemoryPool.DISCRETE_GPU, InferenceObservationPhase.LOAD),
+            )
+        ) {
+            is DiffusionRangeResult.Invalid -> return DiffusionAllocationResult.Invalid(result.reason, evidence)
+            is DiffusionRangeResult.Value -> result.range
+        }
+        val calibratedGpuGeneration = when (
+            val result = diffusionCalibrate(
+                gpuGeneration.range,
+                calibration.forDiffusionPool(MemoryPool.DISCRETE_GPU, InferenceObservationPhase.GENERATION),
+            )
+        ) {
+            is DiffusionRangeResult.Invalid -> return DiffusionAllocationResult.Invalid(result.reason, evidence)
+            is DiffusionRangeResult.Value -> result.range
+        }
+        val calibratedGpu = when (val result = diffusionAddRanges(calibratedGpuLoad, calibratedGpuGeneration)) {
             is DiffusionRangeResult.Invalid -> return DiffusionAllocationResult.Invalid(result.reason, evidence)
             is DiffusionRangeResult.Value -> result.range
         }
@@ -603,10 +639,13 @@ private fun diffusionCalibrate(range: EstimateRange, calibration: MemoryCalibrat
 private fun validateDiffusionCalibration(calibration: MemoryCalibration): AssessmentReason? {
     if (calibration == MemoryCalibration.None) return null
     if (calibration is MemoryCalibration.ByPool) {
-        if (calibration.corrections.size > MemoryPool.entries.size) {
+        if (calibration.corrections.size > MemoryPool.entries.size ||
+            calibration.generationCorrections.size > MemoryPool.entries.size
+        ) {
             return AssessmentReason.INVALID_ESTIMATE_RANGE
         }
-        return calibration.corrections.values.firstNotNullOfOrNull(::validateDiffusionCorrection)
+        return (calibration.corrections.values + calibration.generationCorrections.values)
+            .firstNotNullOfOrNull(::validateDiffusionCorrection)
     }
     calibration as MemoryCalibration.Correction
     return validateDiffusionCorrection(calibration)
@@ -631,10 +670,16 @@ private fun validateDiffusionCorrection(calibration: MemoryCalibration.Correctio
     }
 }
 
-private fun MemoryCalibration.forDiffusionPool(pool: MemoryPool): MemoryCalibration = when (this) {
+private fun MemoryCalibration.forDiffusionPool(
+    pool: MemoryPool,
+    phase: InferenceObservationPhase,
+): MemoryCalibration = when (this) {
     MemoryCalibration.None -> MemoryCalibration.None
     is MemoryCalibration.Correction -> this
-    is MemoryCalibration.ByPool -> corrections[pool] ?: MemoryCalibration.None
+    is MemoryCalibration.ByPool -> when (phase) {
+        InferenceObservationPhase.LOAD -> corrections[pool]
+        InferenceObservationPhase.GENERATION -> generationCorrections[pool]
+    } ?: MemoryCalibration.None
 }
 
 private fun DiffusionPool.toMemoryPool(): MemoryPool = when (this) {

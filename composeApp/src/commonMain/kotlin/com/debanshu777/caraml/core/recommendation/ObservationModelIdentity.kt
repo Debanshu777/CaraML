@@ -1,5 +1,7 @@
 package com.debanshu777.caraml.core.recommendation
 
+import okio.Buffer
+
 /** Descriptor-derived identity used only for versioned, numeric local calibration evidence. */
 @ConsistentCopyVisibility
 data class ObservationModelIdentity private constructor(
@@ -39,17 +41,24 @@ internal fun ObservationModelIdentity.calibrationKey(
     plan: RunPlan,
     engineVersion: String,
     metricKind: MetricKind = MetricKind.PERFORMANCE,
+    observationPhase: InferenceObservationPhase? = null,
 ): CalibrationKey = CalibrationKey(
     backend = plan.backend,
     architectureFamily = architectureFamily,
     quantizationFamily = quantizationFamily,
-    workloadBucket = when (plan) {
-        is LlmRunPlan -> "ctx-${plan.contextTokens}"
-        is DiffusionRunPlan -> "${plan.mode.name.lowercase()}-${plan.width}x${plan.height}-${plan.steps}"
-    },
+    workloadBucket = configurationFingerprint(plan, observationPhase),
     engineVersion = engineVersion,
     metricKind = metricKind,
 )
+
+private fun configurationFingerprint(
+    plan: RunPlan,
+    phase: InferenceObservationPhase?,
+): String {
+    val digest = Buffer().writeUtf8(plan.stableKey).snapshot().sha256().hex()
+    val phaseSuffix = phase?.name?.lowercase()?.let { "-$it" }.orEmpty()
+    return "plan-v2-$digest$phaseSuffix"
+}
 
 internal fun isSafeObservationLabel(value: String): Boolean =
     value.length in 1..128 && OBSERVATION_LABEL.matches(value)

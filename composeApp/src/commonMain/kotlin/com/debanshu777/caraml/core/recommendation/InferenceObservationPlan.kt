@@ -51,7 +51,11 @@ fun LoadRequest.toInferenceObservationPlan(
         ?.takeIf(::isValidObservationNumber)
     if (predictedPerformance == null && predictedHostMemory == null) return null
     return InferenceObservationPlan(
-        key = observationIdentity.calibrationKey(plan, engineVersion),
+        key = observationIdentity.calibrationKey(
+            plan = plan,
+            engineVersion = engineVersion,
+            observationPhase = phase,
+        ),
         prediction = ObservationPrediction(
             performance = predictedPerformance,
             hostMemoryBytes = predictedHostMemory,

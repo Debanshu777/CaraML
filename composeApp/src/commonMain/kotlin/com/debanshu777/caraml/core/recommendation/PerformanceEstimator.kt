@@ -308,7 +308,11 @@ class PerformanceEstimator {
 
         val identity = ObservationModelIdentity.fromDescriptor(descriptor)
             ?: return unknown(AssessmentReason.INVALID_PERFORMANCE_EVIDENCE, "descriptor-observation-identity")
-        val key = identity.calibrationKey(plan, engineVersion)
+        val key = identity.calibrationKey(
+            plan = plan,
+            engineVersion = engineVersion,
+            observationPhase = InferenceObservationPhase.GENERATION,
+        )
         val correction = calibration.correctionFor(key)
         if (correction != null && !validCorrection(correction)) {
             return unknown(AssessmentReason.INVALID_PERFORMANCE_EVIDENCE, "calibration-correction")

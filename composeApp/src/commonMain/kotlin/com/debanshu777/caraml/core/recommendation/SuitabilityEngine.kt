@@ -360,7 +360,6 @@ class SuitabilityEngine(
     private fun memoryCalibration(descriptor: ModelDescriptor, plan: RunPlan): MemoryCalibration {
         val engineVersion = calibrationSource.engineVersion() ?: return MemoryCalibration.None
         val identity = ObservationModelIdentity.fromDescriptor(descriptor) ?: return MemoryCalibration.None
-        val baseKey = identity.calibrationKey(plan, engineVersion, MetricKind.MEMORY)
         val pools = when {
             plan.backend == BackendKind.CPU -> listOf(MemoryPool.HOST)
             plan.memoryTopology == MemoryTopology.UNIFIED -> listOf(MemoryPool.SHARED)
@@ -368,12 +367,33 @@ class SuitabilityEngine(
                 listOf(MemoryPool.HOST, MemoryPool.DISCRETE_GPU)
             else -> emptyList()
         }
-        val corrections = pools.mapNotNull { pool ->
-            calibrationSource.correctionFor(baseKey.copy(memoryPool = pool.stableName))
+        val loadCorrections = pools.mapNotNull { pool ->
+            val key = identity.calibrationKey(
+                plan,
+                engineVersion,
+                MetricKind.MEMORY,
+                InferenceObservationPhase.LOAD,
+            )
+            calibrationSource.correctionFor(key.copy(memoryPool = pool.stableName))
                 ?.toMemoryCorrection()
                 ?.let { pool to it }
         }.toMap()
-        return if (corrections.isEmpty()) MemoryCalibration.None else MemoryCalibration.ByPool(corrections)
+        val generationCorrections = pools.mapNotNull { pool ->
+            val key = identity.calibrationKey(
+                plan,
+                engineVersion,
+                MetricKind.MEMORY,
+                InferenceObservationPhase.GENERATION,
+            )
+            calibrationSource.correctionFor(key.copy(memoryPool = pool.stableName))
+                ?.toMemoryCorrection()
+                ?.let { pool to it }
+        }.toMap()
+        return if (loadCorrections.isEmpty() && generationCorrections.isEmpty()) {
+            MemoryCalibration.None
+        } else {
+            MemoryCalibration.ByPool(loadCorrections, generationCorrections)
+        }
     }
 
     private fun CalibrationCorrection.toMemoryCorrection(): MemoryCalibration.Correction? {

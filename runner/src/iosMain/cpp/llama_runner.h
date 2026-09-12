@@ -92,7 +92,9 @@ struct LlamaCalibrationResultFFI llama_runner_calibrate_backend(
     int backend,
     int duration_millis,
     int64_t buffer_bytes);
+int llama_runner_reserve_backend_calibration(int64_t probe_token);
 void llama_runner_cancel_backend_calibration(int64_t probe_token);
+void llama_runner_abandon_backend_calibration(int64_t probe_token);
 struct LlamaModelFeatureSupportFFI llama_runner_probe_model_features(
     const char *architecture,
     const char *quantization);

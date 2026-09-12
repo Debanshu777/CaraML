@@ -219,7 +219,7 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 
 <!-- This section is updated at the end of each AI-assisted development session -->
 
-- Added opt-in device calibration with descriptor-bound evidence, phase-specific raw memory baselines, conservative throughput tails, isolated bounded timeouts, exact-token native cancellation, and immediate active recommendation reassessment
+- Added opt-in device calibration with byte-bound descriptor identity, phase-specific raw memory baselines, full run-plan fingerprints, real process-memory provenance, and fail-closed quarantine after unresponsive native probes
 - Model loads now derive typed directory targets only from verified storage roots, bind every native-consumed path to revalidated bytes, and keep multi-sequence plans analytical until strict native admission
 - Added bounded, side-effect-free stable-diffusion.cpp preflight with typed component/backend evidence and one shared auto-fit plan for inspection and load
 - Diffusion installs now use deterministic manifest-proven checkpoint/directory identities, recover interrupted bundles independently of tree order, and verify portable multi-config Desktop filesystem runtimes before packaging

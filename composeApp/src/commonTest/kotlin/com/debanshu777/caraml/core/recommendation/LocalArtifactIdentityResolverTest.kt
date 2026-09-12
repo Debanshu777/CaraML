@@ -28,6 +28,84 @@ import kotlin.test.fail
 
 class LocalArtifactIdentityResolverTest {
     @Test
+    fun loadRequestRejectsEveryStaleDescriptorIdentityFieldAfterResolvingBytes() = runTest {
+        withRoot { storage, root ->
+            val bytes = "model".encodeToByteArray()
+            val digest = bytes.sha256()
+            val path = write(root / "owner/model/model.gguf", bytes)
+            val revision = "a".repeat(40)
+            val downloadIdentity = checkNotNull(
+                DownloadArtifactIdentity.create(
+                    repositoryId = "owner/model",
+                    immutableRevision = revision,
+                    relativePath = "model.gguf",
+                    remoteObjectId = "sha256:$digest",
+                    expectedBytes = bytes.size.toLong(),
+                ),
+            )
+            val manifest = checkNotNull(
+                ArtifactManifest.create(
+                    listOf(
+                        checkNotNull(
+                            ArtifactManifestEntry.create(
+                                logicalRole = "model",
+                                identity = downloadIdentity,
+                                byteCount = bytes.size.toLong(),
+                                contentSha256 = digest,
+                            ),
+                        ),
+                    ),
+                ),
+            )
+            val plan = task6LlmPlan()
+            val planAssessment = task6PlanAssessment(plan = plan)
+            val assessment = task6Assessment(
+                plans = listOf(planAssessment),
+                assessmentKey = "artifact-binding",
+            )
+            val recommendation = PersonalizedRecommendation(
+                assessmentKey = "artifact-binding",
+                category = RecommendationCategory.RECOMMENDED,
+                selectedPlan = plan,
+                reasons = emptyList(),
+                profile = RecommendationProfile(),
+                selectedPlanAssessment = planAssessment,
+            )
+            val resolver = resolver(storage, manifest)
+            val installedModel = model(path, bytes.size.toLong())
+
+            assertIs<LoadRequestResolution.Ready>(
+                resolver.createLoadRequest(
+                    installedModel,
+                    emptyList(),
+                    descriptorIdentity(revision, "model.gguf", bytes.size.toLong(), digest),
+                    assessment,
+                    recommendation,
+                ),
+            )
+
+            val staleDescriptors = listOf(
+                descriptorIdentity("b".repeat(40), "model.gguf", bytes.size.toLong(), digest),
+                descriptorIdentity(revision, "stale.gguf", bytes.size.toLong(), digest),
+                descriptorIdentity(revision, "model.gguf", bytes.size.toLong() + 1L, digest),
+                descriptorIdentity(revision, "model.gguf", bytes.size.toLong(), "f".repeat(64)),
+            )
+            staleDescriptors.forEach { descriptor ->
+                val rejected = assertIs<LoadRequestResolution.Rejected>(
+                    resolver.createLoadRequest(
+                        installedModel,
+                        emptyList(),
+                        descriptor,
+                        assessment,
+                        recommendation,
+                    ),
+                )
+                assertEquals(ArtifactIdentityRejection.STALE_MANIFEST, rejected.reason)
+            }
+        }
+    }
+
+    @Test
     fun validSingleFileHubManifestProducesCommitIdentity() = runTest {
         withRoot { storage, root ->
             val bytes = "model".encodeToByteArray()
@@ -432,6 +510,34 @@ class LocalArtifactIdentityResolverTest {
         FileSystem.SYSTEM.write(path) { write(bytes) }
         return path.toString()
     }
+
+    private fun descriptorIdentity(
+        revision: String,
+        relativePath: String,
+        sizeBytes: Long,
+        lfsDigest: String,
+    ) = LlmModelDescriptor(
+        repositoryId = "owner/model",
+        revision = revision,
+        file = ModelFileIdentity(
+            repositoryId = "owner/model",
+            revision = revision,
+            path = relativePath,
+            sizeBytes = sizeBytes,
+            gitOid = null,
+            lfsOid = lfsDigest,
+            xetHash = null,
+            evidence = emptyList(),
+        ),
+        architecture = "llama",
+        quantization = QuantizationEvidence.Known("Q4_K_M"),
+        parameterCount = 7_000_000_000L,
+        contextLimit = 16_384,
+        transformerShape = TransformerShape(32, 8, 32, 4_096, 128),
+        ggufVersion = 3,
+        requiredEngineFeatures = emptyList(),
+        evidence = emptyList(),
+    )
 
     private fun model(path: String, size: Long, filename: String = "model.gguf") = LocalModelEntity(
         modelId = "owner/model",

@@ -76,6 +76,13 @@ actual class LlamaRunner {
         if (nativeAvailable && probeToken > 0L) nativeCancelBackendCalibration(probeToken)
     }
 
+    actual fun reserveBackendCalibration(probeToken: Long): Boolean =
+        nativeAvailable && probeToken > 0L && nativeReserveBackendCalibration(probeToken)
+
+    actual fun abandonBackendCalibration(probeToken: Long) {
+        if (nativeAvailable && probeToken > 0L) nativeAbandonBackendCalibration(probeToken)
+    }
+
     actual fun probeModelFeatures(
         architecture: String,
         quantization: String?,
@@ -160,6 +167,10 @@ actual class LlamaRunner {
     ): LongArray?
 
     private external fun nativeCancelBackendCalibration(probeToken: Long)
+
+    private external fun nativeReserveBackendCalibration(probeToken: Long): Boolean
+
+    private external fun nativeAbandonBackendCalibration(probeToken: Long)
 
     private external fun nativeProbeModelFeatures(
         architecture: String,

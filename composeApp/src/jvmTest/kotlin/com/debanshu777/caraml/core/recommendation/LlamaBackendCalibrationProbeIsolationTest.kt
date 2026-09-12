@@ -20,6 +20,8 @@ class LlamaBackendCalibrationProbeIsolationTest {
         val release = CountDownLatch(1)
         val completed = CountDownLatch(1)
         val cancelledTokens = mutableListOf<Long>()
+        val reservedTokens = mutableListOf<Long>()
+        val abandonedTokens = mutableListOf<Long>()
         val probe = LlamaBackendCalibrationProbe(
             dispatcher = Dispatchers.IO,
             calibrateBackend = { _, _, _, _ ->
@@ -32,6 +34,8 @@ class LlamaBackendCalibrationProbeIsolationTest {
                 }
             },
             cancelBackendCalibration = { cancelledTokens += it },
+            reserveBackendCalibration = { reservedTokens += it; true },
+            abandonBackendCalibration = { abandonedTokens += it },
         )
 
         try {
@@ -46,7 +50,11 @@ class LlamaBackendCalibrationProbeIsolationTest {
             assertNull(result)
             assertTrue(elapsedMillis < 1_500L, "timeout took $elapsedMillis ms")
             probe.cancel(99L)
+            probe.abandon(99L)
+            probe.abandon(41L)
+            assertEquals(listOf(41L), reservedTokens)
             assertEquals(listOf(41L), cancelledTokens)
+            assertEquals(listOf(41L), abandonedTokens)
         } finally {
             release.countDown()
             assertTrue(completed.await(1, TimeUnit.SECONDS))

@@ -3,7 +3,9 @@ package com.debanshu777.runner
 import com.debanshu777.runner.cpp.LlamaRunnerConfigFFI
 import com.debanshu777.runner.cpp.llama_runner_backend_capabilities
 import com.debanshu777.runner.cpp.llama_runner_calibrate_backend
+import com.debanshu777.runner.cpp.llama_runner_abandon_backend_calibration
 import com.debanshu777.runner.cpp.llama_runner_cancel_backend_calibration
+import com.debanshu777.runner.cpp.llama_runner_reserve_backend_calibration
 import com.debanshu777.runner.cpp.llama_runner_cancel_generate
 import com.debanshu777.runner.cpp.llama_runner_clear_context
 import com.debanshu777.runner.cpp.llama_runner_finalize_generation
@@ -162,6 +164,15 @@ actual class LlamaRunner {
     @OptIn(ExperimentalForeignApi::class)
     actual fun cancelBackendCalibration(probeToken: Long) {
         if (probeToken > 0L) llama_runner_cancel_backend_calibration(probeToken)
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    actual fun reserveBackendCalibration(probeToken: Long): Boolean =
+        probeToken > 0L && llama_runner_reserve_backend_calibration(probeToken) != 0
+
+    @OptIn(ExperimentalForeignApi::class)
+    actual fun abandonBackendCalibration(probeToken: Long) {
+        if (probeToken > 0L) llama_runner_abandon_backend_calibration(probeToken)
     }
 
     @OptIn(ExperimentalForeignApi::class)

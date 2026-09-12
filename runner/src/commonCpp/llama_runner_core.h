@@ -171,7 +171,9 @@ LlamaCalibrationResultNative llama_runner_core_calibrate_backend(
     int backend,
     int duration_millis,
     int64_t buffer_bytes);
+bool llama_runner_core_reserve_calibration(int64_t probe_token);
 void llama_runner_core_cancel_calibration(int64_t probe_token);
+void llama_runner_core_abandon_calibration(int64_t probe_token);
 LlamaModelFeatureSupportNative llama_runner_core_probe_model_features(
     const char *architecture,
     const char *quantization);

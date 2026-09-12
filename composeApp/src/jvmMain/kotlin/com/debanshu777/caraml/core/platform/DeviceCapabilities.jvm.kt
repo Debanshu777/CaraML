@@ -94,23 +94,10 @@ actual class DeviceCapabilities actual constructor() {
                 "desktop-memory-unavailable",
             )
         }
-        val runtime = Runtime.getRuntime()
-        val total = runtime.totalMemory()
-        val free = runtime.freeMemory()
-        val processBytes = if (total >= 0L && free >= 0L && total >= free) {
-            total - free
-        } else {
-            evidence += Evidence(
-                AssessmentReason.INVALID_OS_MEMORY_READING,
-                Confidence.LOW,
-                "jvm-process-memory",
-            )
-            null
-        }
         return ResourceSnapshot(
             additionalAllocatableHostBytes = available,
             additionalAllocatableGpuBytes = null,
-            currentProcessBytes = processBytes,
+            currentProcessBytes = null,
             freeStorageBytes = null,
             osPressureReserveHostBytes = null,
             observedAppFootprintNoiseP95Bytes = null,

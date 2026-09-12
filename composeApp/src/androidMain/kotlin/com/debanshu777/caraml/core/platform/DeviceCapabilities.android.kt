@@ -106,6 +106,7 @@ actual class DeviceCapabilities actual constructor() {
                 evidence = evidence,
                 confidence = ResourcePoolConfidence(
                     host = available?.let { Confidence.HIGH },
+                    process = processBytes?.let { Confidence.HIGH },
                 ),
             )
         } catch (exception: Exception) {

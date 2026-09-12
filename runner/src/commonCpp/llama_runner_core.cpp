@@ -68,6 +68,9 @@ std::atomic<bool> g_cancel_flag{false};
 // 0 is idle, a positive token owns the probe, and its negation is the same
 // active probe with cancellation requested. A queued/non-owner token cannot mutate it.
 std::atomic<int64_t> g_calibration_state{0};
+// A timed-out native probe cannot be killed safely in-process. Quarantine all
+// later blocking model operations instead of allowing them to wait behind it.
+std::atomic<bool> g_native_operations_poisoned{false};
 
 class ScopedCalibrationProbe {
 public:
@@ -751,7 +754,10 @@ void llama_runner_core_set_logger(LlamaLogFn fn) {
 }
 
 void llama_runner_core_init(const char *backend_path) {
-    auto operation = g_operation_gate.lock();
+    auto operation = g_operation_gate.lock_interruptible([] {
+        return g_native_operations_poisoned.load(std::memory_order_acquire);
+    });
+    if (!operation) return;
     if (backend_path && !is_bounded_c_string(backend_path, 4096)) {
         log_line(LLAMA_LOG_ERROR, "init: Invalid backend directory");
         return;
@@ -779,8 +785,14 @@ void llama_runner_core_init(const char *backend_path) {
 LlamaPreflightResultNative llama_runner_core_preflight(
     const char *model_path,
     const LlamaRunnerConfig &config) {
-    auto operation = g_operation_gate.lock();
     LlamaPreflightResultNative result;
+    auto operation = g_operation_gate.lock_interruptible([] {
+        return g_native_operations_poisoned.load(std::memory_order_acquire);
+    });
+    if (!operation) {
+        result.status = LLAMA_PREFLIGHT_UNAVAILABLE;
+        return result;
+    }
     if (!is_bounded_c_string(model_path, 4096) || !is_valid_config(config)) {
         result.status = LLAMA_PREFLIGHT_INVALID;
         return result;
@@ -915,12 +927,20 @@ LlamaCalibrationResultNative llama_runner_core_calibrate_backend(
         return result;
     }
 
-    int64_t expected_idle = 0;
-    if (!g_calibration_state.compare_exchange_strong(
-            expected_idle,
-            probe_token,
-            std::memory_order_acq_rel,
-            std::memory_order_acquire)) {
+    int64_t state = g_calibration_state.load(std::memory_order_acquire);
+    if (state == 0) {
+        int64_t expected_idle = 0;
+        if (g_calibration_state.compare_exchange_strong(
+                expected_idle,
+                probe_token,
+                std::memory_order_acq_rel,
+                std::memory_order_acquire)) {
+            state = probe_token;
+        } else {
+            state = expected_idle;
+        }
+    }
+    if (state != probe_token && state != -probe_token) {
         result.status = LLAMA_CALIBRATION_DEFERRED;
         return result;
     }
@@ -1109,6 +1129,16 @@ LlamaCalibrationResultNative llama_runner_core_calibrate_backend(
     }
 }
 
+bool llama_runner_core_reserve_calibration(int64_t probe_token) {
+    if (probe_token <= 0) return false;
+    int64_t expected_idle = 0;
+    return g_calibration_state.compare_exchange_strong(
+        expected_idle,
+        probe_token,
+        std::memory_order_acq_rel,
+        std::memory_order_acquire);
+}
+
 void llama_runner_core_cancel_calibration(int64_t probe_token) {
     if (probe_token <= 0) return;
     int64_t expected = probe_token;
@@ -1117,6 +1147,20 @@ void llama_runner_core_cancel_calibration(int64_t probe_token) {
             -probe_token,
             std::memory_order_acq_rel,
             std::memory_order_acquire)) {
+        g_operation_gate.notify_waiters();
+    }
+}
+
+void llama_runner_core_abandon_calibration(int64_t probe_token) {
+    if (probe_token <= 0) return;
+    int64_t expected = probe_token;
+    const bool cancelled = g_calibration_state.compare_exchange_strong(
+        expected,
+        -probe_token,
+        std::memory_order_acq_rel,
+        std::memory_order_acquire);
+    if (cancelled || expected == -probe_token) {
+        g_native_operations_poisoned.store(true, std::memory_order_release);
         g_operation_gate.notify_waiters();
     }
 }
@@ -1167,7 +1211,10 @@ LlamaModelFeatureSupportNative llama_runner_core_probe_model_features(
 }
 
 bool llama_runner_core_load_model(const char *model_path, const LlamaRunnerConfig &config) {
-    auto operation = g_operation_gate.lock();
+    auto operation = g_operation_gate.lock_interruptible([] {
+        return g_native_operations_poisoned.load(std::memory_order_acquire);
+    });
+    if (!operation) return false;
     log_line(LLAMA_LOG_INFO, "load: model path supplied=%d", model_path ? 1 : 0);
     if (!g_backend_initialized ||
         !is_bounded_c_string(model_path, 4096) || !is_valid_config(config)) {

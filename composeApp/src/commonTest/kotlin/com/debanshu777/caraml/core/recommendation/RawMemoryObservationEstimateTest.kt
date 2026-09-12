@@ -4,9 +4,107 @@ import com.debanshu777.caraml.core.platform.BackendKind
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class RawMemoryObservationEstimateTest {
+    @Test
+    fun hostCorrectionAppliesToLoadPhaseBeforeUncorrectedGenerationIsSummed() {
+        val descriptor = task6DiffusionDescriptor()
+        val fixture = task6DiffusionPlan()
+        val plan = DiffusionRunPlan(
+            mode = fixture.mode,
+            width = fixture.width,
+            height = fixture.height,
+            frameCount = fixture.frameCount,
+            batchSize = fixture.batchSize,
+            steps = fixture.steps,
+            vaeTiling = fixture.vaeTiling,
+            offloadToCpu = fixture.offloadToCpu,
+            keepClipOnCpu = fixture.keepClipOnCpu,
+            keepVaeOnCpu = fixture.keepVaeOnCpu,
+            maxVramBytes = fixture.maxVramBytes,
+            layerStreaming = fixture.layerStreaming,
+            requiresUserAcceptance = fixture.requiresUserAcceptance,
+            backend = BackendKind.CPU,
+            memoryTopology = com.debanshu777.caraml.core.platform.MemoryTopology.UNKNOWN,
+            compromises = fixture.compromises,
+        )
+        val estimator = DiffusionFootprintEstimator()
+        val raw = estimator.estimate(descriptor, plan, MemoryCalibration.None)
+        val calibrated = estimator.estimate(
+            descriptor,
+            plan,
+            MemoryCalibration.ByPool(mapOf(MemoryPool.HOST to doubleCalibration())),
+        )
+        val rawLoad = assertNotNull(raw.rawMemoryByPhase.load.hostMemoryBytes)
+        val rawGeneration = assertNotNull(raw.rawMemoryByPhase.generation.hostMemoryBytes)
+
+        assertEquals(
+            rawLoad.likelyBytes * 2L + rawGeneration.likelyBytes,
+            assertNotNull(calibrated.hostMemoryBytes).likelyBytes,
+        )
+    }
+
+    @Test
+    fun generationCorrectionAppliesOnlyToGenerationBeforeLoadIsSummed() {
+        val descriptor = task6DiffusionDescriptor()
+        val fixture = task6DiffusionPlan()
+        val plan = DiffusionRunPlan(
+            mode = fixture.mode,
+            width = fixture.width,
+            height = fixture.height,
+            frameCount = fixture.frameCount,
+            batchSize = fixture.batchSize,
+            steps = fixture.steps,
+            vaeTiling = fixture.vaeTiling,
+            offloadToCpu = fixture.offloadToCpu,
+            keepClipOnCpu = fixture.keepClipOnCpu,
+            keepVaeOnCpu = fixture.keepVaeOnCpu,
+            maxVramBytes = fixture.maxVramBytes,
+            layerStreaming = fixture.layerStreaming,
+            requiresUserAcceptance = fixture.requiresUserAcceptance,
+            backend = BackendKind.CPU,
+            memoryTopology = com.debanshu777.caraml.core.platform.MemoryTopology.UNKNOWN,
+            compromises = fixture.compromises,
+        )
+        val estimator = DiffusionFootprintEstimator()
+        val raw = estimator.estimate(descriptor, plan, MemoryCalibration.None)
+        val calibrated = estimator.estimate(
+            descriptor,
+            plan,
+            MemoryCalibration.ByPool(
+                corrections = emptyMap(),
+                generationCorrections = mapOf(MemoryPool.HOST to doubleCalibration()),
+            ),
+        )
+        val rawLoad = assertNotNull(raw.rawMemoryByPhase.load.hostMemoryBytes)
+        val rawGeneration = assertNotNull(raw.rawMemoryByPhase.generation.hostMemoryBytes)
+
+        assertEquals(
+            rawLoad.likelyBytes + rawGeneration.likelyBytes * 2L,
+            assertNotNull(calibrated.hostMemoryBytes).likelyBytes,
+        )
+    }
+
+    @Test
+    fun llmReservedComputeGraphIsAttributedToLoadNotGeneration() {
+        val descriptor = llmDescriptor(
+            sizeBytes = GIB,
+            contextLimit = 131_072,
+            architecture = "llama",
+            shape = TransformerShape(32, 8, 32, 4_096, 128),
+        )
+        val estimator = LlmFootprintEstimator()
+        val smallBatch = estimator.estimate(descriptor, llmPlan(batch = 1, microBatch = 1), MemoryCalibration.None)
+        val largeBatch = estimator.estimate(descriptor, llmPlan(batch = 128, microBatch = 128), MemoryCalibration.None)
+
+        val smallLoad = assertNotNull(smallBatch.rawMemoryByPhase.load.hostMemoryBytes)
+        val largeLoad = assertNotNull(largeBatch.rawMemoryByPhase.load.hostMemoryBytes)
+        assertTrue(largeLoad.likelyBytes > smallLoad.likelyBytes)
+        assertNull(largeBatch.rawMemoryByPhase.generation.hostMemoryBytes)
+    }
+
     @Test
     fun calibratedLlmFootprintPreservesRawLoadAndGenerationBaselines() {
         val descriptor = llmDescriptor(
@@ -22,9 +120,8 @@ class RawMemoryObservationEstimateTest {
 
         assertEquals(raw.rawMemoryByPhase, calibrated.rawMemoryByPhase)
         val load = assertNotNull(calibrated.rawMemoryByPhase.load.hostMemoryBytes)
-        val generation = assertNotNull(calibrated.rawMemoryByPhase.generation.hostMemoryBytes)
-        assertTrue(generation.likelyBytes > 0L)
-        assertTrue(assertNotNull(calibrated.hostMemoryBytes).likelyBytes > load.likelyBytes + generation.likelyBytes)
+        assertNull(calibrated.rawMemoryByPhase.generation.hostMemoryBytes)
+        assertEquals(load.likelyBytes * 2L, assertNotNull(calibrated.hostMemoryBytes).likelyBytes)
     }
 
     @Test
@@ -65,6 +162,19 @@ class RawMemoryObservationEstimateTest {
         likelyDenominator = 1,
         highNumerator = 2,
         highDenominator = 1,
+    )
+
+    private fun llmPlan(batch: Int, microBatch: Int) = LlmRunPlan(
+        contextTokens = 4_096,
+        batchSize = batch,
+        microBatchSize = microBatch,
+        sequenceCount = 1,
+        keyCacheType = KvCacheType.Q8_0,
+        valueCacheType = KvCacheType.Q8_0,
+        backend = BackendKind.CPU,
+        memoryTopology = com.debanshu777.caraml.core.platform.MemoryTopology.UNKNOWN,
+        gpuLayerCount = 0,
+        compromises = emptyList(),
     )
 
     private companion object {

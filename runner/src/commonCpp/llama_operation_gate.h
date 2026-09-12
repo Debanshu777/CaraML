@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <condition_variable>
 #include <mutex>
 #include <optional>
@@ -74,6 +75,18 @@ public:
         return std::optional<Lease>(Lease(this));
     }
 
+    template <typename Cancelled>
+    [[nodiscard]] std::optional<Lease> lock_interruptible(Cancelled cancelled) {
+        std::unique_lock<std::mutex> state_lock(state_mutex_);
+        while (session_active_ || operation_active_) {
+            if (cancelled()) return std::nullopt;
+            state_changed_.wait(state_lock);
+        }
+        if (cancelled()) return std::nullopt;
+        operation_active_ = true;
+        return std::optional<Lease>(Lease(this));
+    }
+
     void notify_waiters() noexcept {
         state_changed_.notify_all();
     }
@@ -137,4 +150,3 @@ private:
     bool operation_active_ = false;
     bool session_active_ = false;
 };
-#include <chrono>

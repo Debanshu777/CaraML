@@ -49,6 +49,7 @@ data class ResourcePoolConfidence(
     val gpu: Confidence? = null,
     val shared: Confidence? = null,
     val storage: Confidence? = null,
+    val process: Confidence? = null,
 )
 
 @ConsistentCopyVisibility

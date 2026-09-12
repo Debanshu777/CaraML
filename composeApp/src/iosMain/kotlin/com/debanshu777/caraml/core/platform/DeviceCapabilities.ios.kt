@@ -109,6 +109,7 @@ actual class DeviceCapabilities actual constructor() {
             confidence = ResourcePoolConfidence(
                 host = available?.let { Confidence.HIGH },
                 gpu = gpuHeadroom?.let { Confidence.HIGH },
+                process = processBytes?.let { Confidence.HIGH },
             ),
         )
     }
