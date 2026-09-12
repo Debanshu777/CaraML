@@ -30,6 +30,8 @@ enum class StableLoadFailure {
     UNKNOWN,
 }
 
+class PendingLoadMarkerExistsException : Exception("A prior load marker must be recovered at startup")
+
 class LoadRecoveryRepository(
     private val dataStore: DataStore<Preferences>,
     private val engineVersion: String,
@@ -54,12 +56,8 @@ class LoadRecoveryRepository(
             startedAtEpochMs = startedAt,
         )
         dataStore.edit { preferences ->
-            preferences[PENDING_KEY]?.decodeMarker()?.let { prior ->
-                if (prior.isWithinWindow(startedAt)) {
-                    val records = preferences.readRecords(startedAt).toMutableList()
-                    records.record(prior, startedAt)
-                    preferences.writeRecords(records, startedAt)
-                }
+            if (preferences[PENDING_KEY] != null) {
+                throw PendingLoadMarkerExistsException()
             }
             preferences[PENDING_KEY] = marker.encode()
         }

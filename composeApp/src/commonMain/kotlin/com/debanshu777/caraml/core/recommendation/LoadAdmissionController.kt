@@ -91,6 +91,7 @@ interface LoadRecoveryState {
 class LoadAdmissionController(
     private val snapshotSource: suspend () -> DeviceSnapshot,
     private val recommendationSource: suspend (LoadRequest, DeviceSnapshot) -> PersonalizedRecommendation,
+    private val artifactValidator: suspend (LoadRequest) -> Boolean,
     private val nativePreflight: suspend (LoadRequest) -> NativeLoadPreflight,
     private val recoveryState: LoadRecoveryState,
     private val engineVersion: String,
@@ -168,6 +169,10 @@ class LoadAdmissionController(
                     LoadAdmissionReason.KNOWN_UNSTABLE_CONFIGURATION,
                     explicitRetryRequired = true,
                 )
+        }
+
+        if (!artifactValidator(request)) {
+            return LoadAdmission.Blocked(request, LoadAdmissionReason.INVALID_MODEL)
         }
 
         return when (nativePreflight(request)) {

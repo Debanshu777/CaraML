@@ -141,6 +141,12 @@ class ModelLoadRouterTest {
                         "c".repeat(64), identity,
                     ),
                 ),
+                loadTarget = com.debanshu777.caraml.core.recommendation.VerifiedArtifactLoadTarget.File(
+                    path = "/private/model.gguf",
+                    componentRole = "model",
+                    repositoryId = "owner/model",
+                    localRelativePath = "model.gguf",
+                ),
             ),
             assessedPlans = AssessedPlans(
                 values = listOf(

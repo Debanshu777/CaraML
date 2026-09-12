@@ -8,6 +8,7 @@ import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import com.debanshu777.huggingfacemanager.download.StoredArtifactKind
 import com.debanshu777.huggingfacemanager.download.StoredArtifactSnapshot
+import com.debanshu777.huggingfacemanager.model.DIFFUSERS_BUNDLE_DB_FILENAME
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -80,6 +81,59 @@ class LocalArtifactIdentityResolverTest {
                 listOf(RepositoryCommit("other/vae", "b".repeat(40)), RepositoryCommit("owner/model", "a".repeat(40))),
                 assertIs<RevisionIdentity.HubCommit>(verified.artifact.revisionIdentity).commits,
             )
+        }
+    }
+
+    @Test
+    fun completeDirectoryManifestProducesTypedTargetAndPrimaryMutationInvalidatesIt() = runTest {
+        withRoot { storage, root ->
+            val modelRoot = root / "owner/model"
+            val files = listOf(
+                Triple("model", "unet/diffusion_pytorch_model.safetensors", "unet"),
+                Triple("diffusers-vae", "vae/diffusion_pytorch_model.safetensors", "vae"),
+                Triple("diffusers-clip-l", "text_encoder/model.safetensors", "clip-l"),
+                Triple("diffusers-clip-g", "text_encoder_2/model.safetensors", "clip-g"),
+            )
+            val entries = files.map { (role, relativePath, contents) ->
+                val bytes = contents.encodeToByteArray()
+                write(modelRoot / relativePath, bytes)
+                manifestEntry(role, "owner/model", "a".repeat(40), relativePath, bytes)
+            }
+            val resolver = resolver(storage, manifest(*entries.toTypedArray()))
+            val verified = assertIs<ArtifactIdentityResolution.Verified>(
+                resolver.resolve(
+                    model(
+                        path = modelRoot.toString(),
+                        size = 0L,
+                        filename = DIFFUSERS_BUNDLE_DB_FILENAME,
+                    ),
+                    emptyList(),
+                ),
+            )
+
+            assertIs<VerifiedArtifactLoadTarget.Directory>(verified.artifact.loadTarget)
+            assertEquals(4, verified.artifact.components.size)
+
+            write(modelRoot / "unet/diffusion_pytorch_model.safetensors", "vnet".encodeToByteArray())
+            assertFalse(resolver.revalidate(verified.artifact))
+        }
+    }
+
+    @Test
+    fun legacyDirectoryWithoutCompleteManifestIsRejectedBeforeAnyPrimaryCanBeLoaded() = runTest {
+        withRoot { storage, root ->
+            val modelRoot = root / "owner/model"
+            FileSystem.SYSTEM.createDirectories(modelRoot)
+            val auxiliary = write(root / "other/vae/vae.safetensors", "vae".encodeToByteArray())
+
+            val rejected = assertIs<ArtifactIdentityResolution.Rejected>(
+                resolver(storage, null).resolve(
+                    model(modelRoot.toString(), 0L, DIFFUSERS_BUNDLE_DB_FILENAME),
+                    listOf(component("other/vae", "vae.safetensors", "vae", auxiliary, 3L)),
+                ),
+            )
+
+            assertEquals(ArtifactIdentityRejection.INCOMPLETE_DIRECTORY, rejected.reason)
         }
     }
 
@@ -209,11 +263,86 @@ class LocalArtifactIdentityResolverTest {
         }
     }
 
-    private fun TestScope.resolver(storage: TestStorage, manifest: ArtifactManifest?) = LocalArtifactIdentityResolver(
+    @Test
+    fun aggregateAboveOnePiBIsRejectedWithoutThrowingOrPersistingSidecar() = runTest {
+        withRoot { storage, root ->
+            val main = write(root / "owner/model/model.gguf", byteArrayOf(1))
+            val auxiliary = write(root / "other/vae/vae.safetensors", byteArrayOf(2))
+            storage.snapshots[main] = snapshot(DescriptorLimits.MAX_FILE_BYTES)
+            storage.snapshots[auxiliary] = snapshot(1L)
+            var hashCalls = 0
+
+            val rejected = assertIs<ArtifactIdentityResolution.Rejected>(
+                resolver(storage, null, hashFile = { _, _ ->
+                    hashCalls++
+                    "a".repeat(64)
+                }).resolve(
+                    model(main, DescriptorLimits.MAX_FILE_BYTES),
+                    listOf(component("other/vae", "vae.safetensors", "vae", auxiliary, 1L)),
+                ),
+            )
+
+            assertEquals(ArtifactIdentityRejection.ARTIFACT_TOO_LARGE, rejected.reason)
+            assertEquals(0, hashCalls)
+            assertFalse(FileSystem.SYSTEM.exists(root / "owner/model/${LocalArtifactIdentityResolver.MANIFEST_FILE_NAME}"))
+        }
+    }
+
+    @Test
+    fun aggregateAboveTwoPiBAndOverflowSizedEvidenceAreStableRejections() = runTest {
+        withRoot { storage, root ->
+            val main = write(root / "owner/model/model.gguf", byteArrayOf(1))
+            val first = write(root / "other/one/one.safetensors", byteArrayOf(2))
+            val second = write(root / "other/two/two.safetensors", byteArrayOf(3))
+            storage.snapshots[main] = snapshot(DescriptorLimits.MAX_FILE_BYTES)
+            storage.snapshots[first] = snapshot(DescriptorLimits.MAX_FILE_BYTES)
+            storage.snapshots[second] = snapshot(1L)
+            val resolver = resolver(storage, null, hashFile = { _, _ -> "b".repeat(64) })
+
+            val overBundle = assertIs<ArtifactIdentityResolution.Rejected>(
+                resolver.resolve(
+                    model(main, DescriptorLimits.MAX_FILE_BYTES),
+                    listOf(
+                        component("other/one", "one.safetensors", "one", first, DescriptorLimits.MAX_FILE_BYTES),
+                        component("other/two", "two.safetensors", "two", second, 1L, id = 2),
+                    ),
+                ),
+            )
+            assertEquals(ArtifactIdentityRejection.ARTIFACT_TOO_LARGE, overBundle.reason)
+
+            storage.snapshots[main] = snapshot(Long.MAX_VALUE)
+            val overflow = assertIs<ArtifactIdentityResolution.Rejected>(
+                resolver.resolve(model(main, Long.MAX_VALUE), emptyList()),
+            )
+            assertEquals(ArtifactIdentityRejection.ARTIFACT_TOO_LARGE, overflow.reason)
+        }
+    }
+
+    private fun TestScope.resolver(
+        storage: TestStorage,
+        manifest: ArtifactManifest?,
+        hashFile: (suspend (String, Long) -> String)? = null,
+    ) = LocalArtifactIdentityResolver(
         storagePathProvider = storage,
         manifestSource = { manifest },
         hashingDispatcher = StandardTestDispatcher(testScheduler),
         fileSystem = FileSystem.SYSTEM,
+        hashFile = hashFile ?: { path, maxBytes ->
+            val source = FileSystem.SYSTEM.source(path.toPath())
+            val buffer = Buffer()
+            try {
+                var total = 0L
+                while (total < maxBytes) {
+                    val read = source.read(buffer, minOf(8_192L, maxBytes - total))
+                    if (read == -1L) break
+                    total += read
+                }
+                check(total == maxBytes)
+                buffer.snapshot().sha256().hex()
+            } finally {
+                source.close()
+            }
+        },
     )
 
     private suspend fun withRoot(block: suspend (TestStorage, Path) -> Unit) {
@@ -270,7 +399,14 @@ class LocalArtifactIdentityResolverTest {
         )
     }
 
-    private fun manifest(entry: ArtifactManifestEntry) = checkNotNull(ArtifactManifest.create(listOf(entry)))
+    private fun manifest(vararg entries: ArtifactManifestEntry) =
+        checkNotNull(ArtifactManifest.create(entries.toList()))
+
+    private fun snapshot(bytes: Long) = StoredArtifactSnapshot(
+        kind = StoredArtifactKind.REGULAR_FILE,
+        byteCount = bytes,
+        changeStamp = "stamp:$bytes",
+    )
 
     private fun downloadIdentity(repo: String, revision: String, relative: String, size: Long) =
         checkNotNull(DownloadArtifactIdentity.create(repo, revision, relative, null, size))
@@ -279,6 +415,7 @@ class LocalArtifactIdentityResolverTest {
 
     private class TestStorage(private val root: Path) : StoragePathProvider {
         val unreadable = mutableSetOf<String>()
+        val snapshots = mutableMapOf<String, StoredArtifactSnapshot>()
 
         override fun getModelsStorageDirectory(modelId: String): String = (root / modelId).toString()
         override fun getDatabasePath(): String = (root / "db").toString()
@@ -300,6 +437,7 @@ class LocalArtifactIdentityResolverTest {
         }
 
         private fun inspect(path: String): StoredArtifactSnapshot? {
+            snapshots[path]?.let { return it }
             val value = path.toPath()
             val metadata = FileSystem.SYSTEM.metadataOrNull(value) ?: return null
             if (metadata.symlinkTarget != null) return null

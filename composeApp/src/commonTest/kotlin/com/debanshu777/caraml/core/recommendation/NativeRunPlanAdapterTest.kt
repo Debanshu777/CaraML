@@ -7,6 +7,7 @@ import com.debanshu777.runner.NativeRunnerConfig
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class NativeRunPlanAdapterTest {
@@ -66,6 +67,26 @@ class NativeRunPlanAdapterTest {
         assertEquals(-1, NativeRunPlanAdapter.toLlamaConfig(automatic, NativeRunnerConfig()).nGpuLayers)
         assertFalse(NativeRunPlanAdapter.toLlamaConfig(cpu, NativeRunnerConfig()).autoFit)
         assertEquals(0, NativeRunPlanAdapter.toLlamaConfig(cpu, NativeRunnerConfig()).nGpuLayers)
+    }
+
+    @Test
+    fun multipleLlmSequencesAreRejectedUntilTheNativeAbiCanCarryThem() {
+        val unsupported = LlmRunPlan(
+            contextTokens = 4_096,
+            batchSize = 256,
+            microBatchSize = 128,
+            sequenceCount = 2,
+            keyCacheType = KvCacheType.F16,
+            valueCacheType = KvCacheType.F16,
+            backend = BackendKind.CPU,
+            memoryTopology = MemoryTopology.UNKNOWN,
+            gpuLayerCount = 0,
+            compromises = emptyList(),
+        )
+
+        assertFailsWith<IllegalArgumentException> {
+            NativeRunPlanAdapter.toLlamaConfig(unsupported, NativeRunnerConfig())
+        }
     }
 
     @Test

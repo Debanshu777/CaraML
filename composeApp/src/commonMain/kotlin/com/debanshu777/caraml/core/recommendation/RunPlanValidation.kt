@@ -3,7 +3,16 @@ package com.debanshu777.caraml.core.recommendation
 import com.debanshu777.caraml.core.platform.BackendKind
 import com.debanshu777.caraml.core.platform.MemoryTopology
 
-internal fun validateRunPlan(plan: RunPlan): AssessmentReason? {
+internal fun validateRunPlan(plan: RunPlan): AssessmentReason? =
+    validateRunPlan(plan, allowAnalyticalMultiSequence = false)
+
+internal fun validateRunPlanForEstimation(plan: RunPlan): AssessmentReason? =
+    validateRunPlan(plan, allowAnalyticalMultiSequence = true)
+
+private fun validateRunPlan(
+    plan: RunPlan,
+    allowAnalyticalMultiSequence: Boolean,
+): AssessmentReason? {
     val fieldsAreValid = when (plan) {
         is LlmRunPlan ->
             !plan.collectionLimitExceeded &&
@@ -11,6 +20,7 @@ internal fun validateRunPlan(plan: RunPlan): AssessmentReason? {
                 plan.batchSize in 1..WorkloadLimits.MAX_BATCH_SIZE &&
                 plan.microBatchSize in 1..plan.batchSize &&
                 plan.sequenceCount in 1..WorkloadLimits.MAX_SEQUENCE_COUNT &&
+                (allowAnalyticalMultiSequence || plan.sequenceCount == 1) &&
                 plan.gpuLayerCount?.let { it >= 0 } != false &&
                 (plan.backend != BackendKind.CPU || plan.gpuLayerCount in listOf(null, 0)) &&
                 (plan.backend == BackendKind.CPU || plan.gpuLayerCount != 0) &&

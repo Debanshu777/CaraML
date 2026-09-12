@@ -11,14 +11,16 @@ import kotlin.io.deleteRecursively
 
 class AndroidStoragePathProvider(private val context: Context) : StoragePathProvider {
     override fun getModelsStorageDirectory(modelId: String): String {
-        val safeModelId = validateModelId(modelId)
+        return File(modelsRoot(), validateModelId(modelId)).absolutePath
+    }
+
+    private fun modelsRoot(): File {
         val base = when {
             Environment.getExternalStorageState() == Environment.MEDIA_MOUNTED ->
                 context.getExternalFilesDir(null)
             else -> null
         } ?: context.filesDir
-        val modelsRoot = File(base, "models")
-        return File(modelsRoot, safeModelId).absolutePath
+        return File(base, "models")
     }
     
     override fun getDatabasePath(): String =
@@ -47,12 +49,16 @@ class AndroidStoragePathProvider(private val context: Context) : StoragePathProv
     override fun inspectDownloadedArtifact(modelId: String, localPath: String): StoredArtifactSnapshot? =
         try {
             if (localPath.isBlank() || '\u0000' in localPath) return null
+            val trustedParentRaw = modelsRoot().toPath().toAbsolutePath().normalize()
             val root = File(getModelsStorageDirectory(modelId)).toPath().toAbsolutePath().normalize()
             val raw = File(localPath).toPath().toAbsolutePath().normalize()
+            if (root == trustedParentRaw || !root.startsWith(trustedParentRaw)) return null
             if (raw != root && !raw.startsWith(root)) return null
-            if (Files.isSymbolicLink(raw)) return null
+            if (Files.isSymbolicLink(trustedParentRaw) || Files.isSymbolicLink(root) || Files.isSymbolicLink(raw)) return null
+            val realTrustedParent = trustedParentRaw.toRealPath()
             val realRoot = root.toRealPath()
             val realTarget = raw.toRealPath()
+            if (realRoot == realTrustedParent || !realRoot.startsWith(realTrustedParent)) return null
             if (realTarget != realRoot && !realTarget.startsWith(realRoot)) return null
             val attributes = Files.readAttributes(
                 realTarget,

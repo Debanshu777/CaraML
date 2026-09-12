@@ -1,5 +1,9 @@
 package com.debanshu777.caraml.core.recommendation
 
+import com.debanshu777.caraml.core.data.inference.NATIVE_DIFFUSERS_CONSUMED_PATHS
+import com.debanshu777.caraml.core.data.inference.VerifiedDiffusionLoadTarget
+import com.debanshu777.caraml.core.data.inference.isCompleteDiffusionInstallation
+import com.debanshu777.caraml.core.data.inference.verifiedDiffusionLoadTarget
 import com.debanshu777.caraml.core.storage.component.DownloadedComponentEntity
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.huggingfacemanager.download.ArtifactManifest
@@ -7,6 +11,7 @@ import com.debanshu777.huggingfacemanager.download.ArtifactManifestEntry
 import com.debanshu777.huggingfacemanager.download.StoredArtifactKind
 import com.debanshu777.huggingfacemanager.download.StoredArtifactSnapshot
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
+import com.debanshu777.huggingfacemanager.sdcpp.getModelSetup
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.NonCancellable
@@ -37,16 +42,35 @@ data class ResolvedArtifactComponent(
     val byteCount: Long,
     val contentSha256: String,
     val identity: ModelFileIdentity,
+    val localRelativePath: String = repositoryRelativePath,
 )
 
-data class ResolvedLocalArtifact(
+sealed interface VerifiedArtifactLoadTarget {
+    val path: String
+
+    @ConsistentCopyVisibility
+    data class File internal constructor(
+        override val path: String,
+        val componentRole: String,
+        val repositoryId: String,
+        val localRelativePath: String,
+    ) : VerifiedArtifactLoadTarget
+
+    @ConsistentCopyVisibility
+    data class Directory internal constructor(
+        override val path: String,
+        val storageOwner: String,
+        val nativeConsumedRelativePaths: List<String>,
+    ) : VerifiedArtifactLoadTarget
+}
+
+@ConsistentCopyVisibility
+data class ResolvedLocalArtifact internal constructor(
     val identity: ModelFileIdentity,
     val revisionIdentity: RevisionIdentity,
     val components: List<ResolvedArtifactComponent>,
-) {
-    val primaryPath: String
-        get() = components.firstOrNull { it.logicalRole == "model" }?.localPath ?: components.first().localPath
-}
+    val loadTarget: VerifiedArtifactLoadTarget,
+)
 
 enum class ArtifactIdentityRejection {
     INVALID_INPUT,
@@ -55,6 +79,8 @@ enum class ArtifactIdentityRejection {
     UNREADABLE_OR_ESCAPING_PATH,
     STALE_MANIFEST,
     CONTENT_CHANGED_DURING_HASH,
+    INCOMPLETE_DIRECTORY,
+    ARTIFACT_TOO_LARGE,
     PERSISTENCE_FAILED,
 }
 
@@ -99,6 +125,69 @@ class LocalArtifactIdentityResolver(
         return manifest?.let { resolveHubManifest(model, inputs, it) } ?: resolveLegacy(model, inputs)
     }
 
+    suspend fun revalidate(artifact: ResolvedLocalArtifact): Boolean {
+        if (artifact.components.isEmpty() || artifact.components.size > MAX_COMPONENTS) return false
+        if (artifact.components.distinctBy { Triple(it.logicalRole, it.repositoryId, it.localRelativePath) }.size !=
+            artifact.components.size
+        ) return false
+        if (checkedResolvedArtifactBytes(artifact.components.map(ResolvedArtifactComponent::byteCount)) == null) {
+            return false
+        }
+        val verified = ArrayList<VerifiedComponent>(artifact.components.size)
+        for (component in artifact.components) {
+            if (!component.identity.hasValidExactIdentity() ||
+                component.identity.repositoryId != component.repositoryId ||
+                component.identity.path != component.repositoryRelativePath ||
+                component.identity.sizeBytes != component.byteCount ||
+                !component.contentSha256.isSha256() ||
+                !isValidRole(component.logicalRole) ||
+                !isValidRelativePath(component.localRelativePath)
+            ) return false
+            val snapshot = verifyFile(
+                component.repositoryId,
+                component.localPath,
+                component.byteCount,
+                component.contentSha256,
+            ) ?: return false
+            verified += VerifiedComponent(
+                logicalRole = component.logicalRole,
+                repositoryId = component.repositoryId,
+                repositoryRelativePath = component.repositoryRelativePath,
+                localRelativePath = component.localRelativePath,
+                localPath = component.localPath,
+                byteCount = component.byteCount,
+                contentSha256 = component.contentSha256,
+                changeStamp = snapshot.changeStamp,
+                immutableRevision = when (artifact.revisionIdentity) {
+                    is RevisionIdentity.HubCommit -> component.identity.revision
+                    is RevisionIdentity.LocalContent -> null
+                },
+                remoteObjectId = component.identity.gitOid ?: component.identity.lfsOid ?: component.identity.xetHash,
+            )
+        }
+        val totalBytes = checkedResolvedArtifactBytes(verified.map(VerifiedComponent::byteCount)) ?: return false
+        val aggregateDigest = when (val revision = artifact.revisionIdentity) {
+            is RevisionIdentity.LocalContent -> {
+                val digest = digestComponents(verified, includeRevision = false)
+                if (revision.digest != digest) return false
+                digest
+            }
+            is RevisionIdentity.HubCommit -> {
+                val expectedCommits = verified.map {
+                    RepositoryCommit(it.repositoryId, it.immutableRevision ?: return false)
+                }.distinct().sortedWith(compareBy(RepositoryCommit::repositoryId, RepositoryCommit::revision))
+                if (revision.commits != expectedCommits) return false
+                digestComponents(verified, includeRevision = true)
+            }
+        }
+        if (artifact.identity.sizeBytes != totalBytes ||
+            artifact.identity.revision != aggregateDigest ||
+            artifact.identity.lfsOid != "sha256:$aggregateDigest" ||
+            !artifact.identity.hasValidExactIdentity()
+        ) return false
+        return artifact.hasValidLoadTarget()
+    }
+
     suspend fun createLoadRequest(
         model: LocalModelEntity,
         components: List<DownloadedComponentEntity>,
@@ -137,6 +226,9 @@ class LocalArtifactIdentityResolver(
         if (manifest.entries.isEmpty() || manifest.entries.size > MAX_COMPONENTS) {
             return ArtifactIdentityResolution.Rejected(ArtifactIdentityRejection.STALE_MANIFEST)
         }
+        if (checkedResolvedArtifactBytes(manifest.entries.map(ArtifactManifestEntry::byteCount)) == null) {
+            return ArtifactIdentityResolution.Rejected(ArtifactIdentityRejection.ARTIFACT_TOO_LARGE)
+        }
         val byRemoteIdentity = inputs.associateBy { it.repositoryId to it.repositoryRelativePath }
         val resolved = ArrayList<VerifiedComponent>(manifest.entries.size)
         for (entry in manifest.entries) {
@@ -149,6 +241,7 @@ class LocalArtifactIdentityResolver(
                 logicalRole = entry.logicalRole,
                 repositoryId = entry.identity.repositoryId,
                 repositoryRelativePath = entry.identity.relativePath,
+                localRelativePath = entry.localRelativePath,
                 localPath = localPath,
                 byteCount = verified.byteCount,
                 contentSha256 = entry.contentSha256.lowercase(),
@@ -163,13 +256,16 @@ class LocalArtifactIdentityResolver(
         val commits = resolved.map { RepositoryCommit(it.repositoryId, checkNotNull(it.immutableRevision)) }
             .distinct()
             .sortedWith(compareBy(RepositoryCommit::repositoryId, RepositoryCommit::revision))
-        return ArtifactIdentityResolution.Verified(resolved.toArtifact(model, RevisionIdentity.HubCommit(commits)))
+        return buildArtifact(model, resolved, RevisionIdentity.HubCommit(commits), manifest)
     }
 
     private suspend fun resolveLegacy(
         model: LocalModelEntity,
         inputs: List<InputComponent>,
     ): ArtifactIdentityResolution {
+        if (storagePathProvider.inspectDownloadedArtifact(model.modelId, model.localPath)?.kind == StoredArtifactKind.DIRECTORY) {
+            return ArtifactIdentityResolution.Rejected(ArtifactIdentityRejection.INCOMPLETE_DIRECTORY)
+        }
         if (inputs.isEmpty()) return ArtifactIdentityResolution.Rejected(ArtifactIdentityRejection.INVALID_INPUT)
         val sidecarPath = model.sidecarPath()
         val cached = readSidecar(sidecarPath)
@@ -180,17 +276,30 @@ class LocalArtifactIdentityResolver(
             reuseUnchanged(inputs, cachedComponents)?.let { reused ->
                 val digest = digestComponents(reused, includeRevision = false)
                 if (digest == cached.aggregateDigest) {
-                    return ArtifactIdentityResolution.Verified(reused.toArtifact(model, RevisionIdentity.LocalContent(digest)))
+                    return buildArtifact(model, reused, RevisionIdentity.LocalContent(digest), manifest = null)
                 }
             }
         }
 
+        val inspected = ArrayList<Pair<InputComponent, StoredArtifactSnapshot>>(inputs.size)
+        for (input in inputs) {
+            val snapshot = storagePathProvider.inspectDownloadedArtifact(input.storageOwner, input.localPath)
+                ?: return ArtifactIdentityResolution.Rejected(ArtifactIdentityRejection.UNREADABLE_OR_ESCAPING_PATH)
+            if (snapshot.kind != StoredArtifactKind.REGULAR_FILE) {
+                return ArtifactIdentityResolution.Rejected(ArtifactIdentityRejection.UNREADABLE_OR_ESCAPING_PATH)
+            }
+            if (snapshot.byteCount !in 1..DescriptorLimits.MAX_FILE_BYTES) {
+                return ArtifactIdentityResolution.Rejected(ArtifactIdentityRejection.ARTIFACT_TOO_LARGE)
+            }
+            inspected += input to snapshot
+        }
+        if (checkedResolvedArtifactBytes(inspected.map { it.second.byteCount }) == null) {
+            return ArtifactIdentityResolution.Rejected(ArtifactIdentityRejection.ARTIFACT_TOO_LARGE)
+        }
+
         val verified = ArrayList<VerifiedComponent>(inputs.size)
         try {
-            for (input in inputs) {
-                val before = storagePathProvider.inspectDownloadedArtifact(input.storageOwner, input.localPath)
-                    ?.takeIf { it.kind == StoredArtifactKind.REGULAR_FILE && it.byteCount in 1..DescriptorLimits.MAX_FILE_BYTES }
-                    ?: return ArtifactIdentityResolution.Rejected(ArtifactIdentityRejection.UNREADABLE_OR_ESCAPING_PATH)
+            for ((input, before) in inspected) {
                 val digest = hashOnTrustedDispatcher(input.localPath, before.byteCount)
                     .lowercase()
                     .takeIf { it.isSha256() }
@@ -206,7 +315,7 @@ class LocalArtifactIdentityResolver(
                 sidecarPath,
                 LegacyIdentitySidecar(LEGACY_MANIFEST_VERSION, digest, verified.map(VerifiedComponent::toSidecar)),
             )
-            return ArtifactIdentityResolution.Verified(verified.toArtifact(model, RevisionIdentity.LocalContent(digest)))
+            return buildArtifact(model, verified, RevisionIdentity.LocalContent(digest), manifest = null)
         } catch (cancelled: CancellationException) {
             deletePart(sidecarPath)
             throw cancelled
@@ -304,18 +413,32 @@ class LocalArtifactIdentityResolver(
         }
     }
 
+    private fun buildArtifact(
+        model: LocalModelEntity,
+        components: List<VerifiedComponent>,
+        revisionIdentity: RevisionIdentity,
+        manifest: ArtifactManifest?,
+    ): ArtifactIdentityResolution {
+        val ordered = components.sortedWith(componentComparator)
+        val totalBytes = checkedResolvedArtifactBytes(ordered.map(VerifiedComponent::byteCount))
+            ?: return ArtifactIdentityResolution.Rejected(ArtifactIdentityRejection.ARTIFACT_TOO_LARGE)
+        val loadTarget = resolvedLoadTarget(model, ordered, manifest)
+            ?: return ArtifactIdentityResolution.Rejected(ArtifactIdentityRejection.INCOMPLETE_DIRECTORY)
+        val artifact = ordered.toArtifact(model, revisionIdentity, totalBytes, loadTarget)
+            ?: return ArtifactIdentityResolution.Rejected(ArtifactIdentityRejection.INVALID_INPUT)
+        return ArtifactIdentityResolution.Verified(artifact)
+    }
+
     private fun List<VerifiedComponent>.toArtifact(
         model: LocalModelEntity,
         revisionIdentity: RevisionIdentity,
-    ): ResolvedLocalArtifact {
-        val ordered = sortedWith(componentComparator)
+        totalBytes: Long,
+        loadTarget: VerifiedArtifactLoadTarget,
+    ): ResolvedLocalArtifact? {
+        val ordered = this
         val aggregateDigest = when (revisionIdentity) {
             is RevisionIdentity.LocalContent -> revisionIdentity.digest
             is RevisionIdentity.HubCommit -> digestComponents(ordered, includeRevision = true)
-        }
-        val totalBytes = ordered.fold(0L) { total, component ->
-            require(component.byteCount <= DescriptorLimits.MAX_BUNDLE_BYTES - total)
-            total + component.byteCount
         }
         val aggregateIdentity = ModelFileIdentity(
             repositoryId = model.modelId,
@@ -327,7 +450,7 @@ class LocalArtifactIdentityResolver(
             xetHash = null,
             evidence = emptyList(),
         )
-        require(aggregateIdentity.hasValidExactIdentity())
+        if (!aggregateIdentity.hasValidExactIdentity()) return null
         return ResolvedLocalArtifact(
             identity = aggregateIdentity,
             revisionIdentity = revisionIdentity,
@@ -351,9 +474,67 @@ class LocalArtifactIdentityResolver(
                     component.byteCount,
                     component.contentSha256,
                     identity,
+                    component.localRelativePath,
                 )
             },
+            loadTarget = loadTarget,
         )
+    }
+
+    private fun resolvedLoadTarget(
+        model: LocalModelEntity,
+        components: List<VerifiedComponent>,
+        manifest: ArtifactManifest?,
+    ): VerifiedArtifactLoadTarget? {
+        val modelSnapshot = storagePathProvider.inspectDownloadedArtifact(model.modelId, model.localPath) ?: return null
+        if (modelSnapshot.kind == StoredArtifactKind.REGULAR_FILE) {
+            if (manifest != null &&
+                !manifest.isCompleteDiffusionInstallation(model.modelId, getModelSetup(model.modelId))
+            ) return null
+            val primary = components.singleOrNull {
+                it.logicalRole == "model" && it.repositoryId == model.modelId && it.localPath == model.localPath
+            } ?: return null
+            return VerifiedArtifactLoadTarget.File(
+                path = primary.localPath,
+                componentRole = primary.logicalRole,
+                repositoryId = primary.repositoryId,
+                localRelativePath = primary.localRelativePath,
+            )
+        }
+        val hubManifest = manifest ?: return null
+        if (!hubManifest.isCompleteDiffusionInstallation(model.modelId, getModelSetup(model.modelId)) ||
+            hubManifest.verifiedDiffusionLoadTarget(model.modelId) !is VerifiedDiffusionLoadTarget.Directory
+        ) return null
+        val requiredPaths = NATIVE_DIFFUSERS_CONSUMED_PATHS.sorted()
+        val coveredPaths = components.asSequence()
+            .filter { it.repositoryId == model.modelId }
+            .map(VerifiedComponent::localRelativePath)
+            .toSet()
+        if (!coveredPaths.containsAll(requiredPaths)) return null
+        return VerifiedArtifactLoadTarget.Directory(
+            path = model.localPath,
+            storageOwner = model.modelId,
+            nativeConsumedRelativePaths = requiredPaths,
+        )
+    }
+
+    private fun ResolvedLocalArtifact.hasValidLoadTarget(): Boolean = when (val target = loadTarget) {
+        is VerifiedArtifactLoadTarget.File -> components.singleOrNull {
+            it.logicalRole == target.componentRole &&
+                it.repositoryId == target.repositoryId &&
+                it.localRelativePath == target.localRelativePath &&
+                it.localPath == target.path
+        } != null
+        is VerifiedArtifactLoadTarget.Directory -> {
+            val root = storagePathProvider.inspectDownloadedArtifact(target.storageOwner, target.path)
+            root?.kind == StoredArtifactKind.DIRECTORY &&
+                target.nativeConsumedRelativePaths == NATIVE_DIFFUSERS_CONSUMED_PATHS.sorted() &&
+                components.asSequence()
+                    .filter { it.repositoryId == target.storageOwner }
+                    .map(ResolvedArtifactComponent::localRelativePath)
+                    .toSet()
+                    .containsAll(target.nativeConsumedRelativePaths)
+        }
     }
 
     private fun digestComponents(components: List<VerifiedComponent>, includeRevision: Boolean): String {
@@ -431,7 +612,7 @@ class LocalArtifactIdentityResolver(
     ) {
         fun key(): String = "$logicalRole\u0000$repositoryId\u0000$repositoryRelativePath"
         fun verified(snapshot: StoredArtifactSnapshot, digest: String) = VerifiedComponent(
-            logicalRole, repositoryId, repositoryRelativePath, localPath,
+            logicalRole, repositoryId, repositoryRelativePath, repositoryRelativePath, localPath,
             snapshot.byteCount, digest, snapshot.changeStamp, null, null,
         )
     }
@@ -440,6 +621,7 @@ class LocalArtifactIdentityResolver(
         val logicalRole: String,
         val repositoryId: String,
         val repositoryRelativePath: String,
+        val localRelativePath: String,
         val localPath: String,
         val byteCount: Long,
         val contentSha256: String,
@@ -485,6 +667,8 @@ class LocalArtifactIdentityResolver(
         private const val MAX_COMPONENTS = 64
         private const val MAX_MANIFEST_BYTES = 256 * 1024
         private const val MAX_CHANGE_STAMP_LENGTH = 128
+        /** Resolved identity is a ModelFileIdentity, whose stable public size contract is one PiB. */
+        internal const val MAX_RESOLVED_ARTIFACT_BYTES: Long = DescriptorLimits.MAX_FILE_BYTES
         private val componentComparator = compareBy<VerifiedComponent>(
             VerifiedComponent::logicalRole, VerifiedComponent::repositoryId, VerifiedComponent::repositoryRelativePath,
         )
@@ -506,7 +690,9 @@ class LocalArtifactIdentityResolver(
                 .hasValidExactIdentity()
 
         private suspend fun hashRegularFile(fileSystem: FileSystem, path: Path, expectedBytes: Long): String {
-            require(expectedBytes in 1..DescriptorLimits.MAX_FILE_BYTES)
+            if (expectedBytes !in 1..DescriptorLimits.MAX_FILE_BYTES) {
+                throw IllegalArgumentException("Invalid artifact size")
+            }
             val hashing = HashingSource.sha256(fileSystem.source(path))
             try {
                 val source = hashing.buffer()
@@ -533,4 +719,15 @@ class LocalArtifactIdentityResolver(
             write(bytes)
         }
     }
+}
+
+internal fun checkedResolvedArtifactBytes(byteCounts: Iterable<Long>): Long? {
+    var total = 0L
+    for (byteCount in byteCounts) {
+        if (byteCount !in 1..LocalArtifactIdentityResolver.MAX_RESOLVED_ARTIFACT_BYTES ||
+            total > LocalArtifactIdentityResolver.MAX_RESOLVED_ARTIFACT_BYTES - byteCount
+        ) return null
+        total += byteCount
+    }
+    return total.takeIf { it > 0L }
 }

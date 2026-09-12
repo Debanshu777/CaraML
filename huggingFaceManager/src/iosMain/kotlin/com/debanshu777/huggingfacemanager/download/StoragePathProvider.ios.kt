@@ -19,12 +19,15 @@ import platform.Foundation.NSURL
 class IosStoragePathProvider : StoragePathProvider {
     @OptIn(ExperimentalForeignApi::class)
     override fun getModelsStorageDirectory(modelId: String): String {
-        val safeModelId = validateModelId(modelId)
+        return "${modelsRoot()}/${validateModelId(modelId)}"
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    private fun modelsRoot(): String {
         val docsUrl = NSFileManager.defaultManager
             .URLForDirectory(NSDocumentDirectory, NSUserDomainMask, null, false, null)!!
         val docs = docsUrl.URLByResolvingSymlinksInPath?.path ?: docsUrl.path!!
-        val modelsRoot = "$docs/models"
-        return "$modelsRoot/$safeModelId"
+        return "$docs/models"
     }
     
     @OptIn(ExperimentalForeignApi::class)
@@ -64,15 +67,26 @@ class IosStoragePathProvider : StoragePathProvider {
     override fun inspectDownloadedArtifact(modelId: String, localPath: String): StoredArtifactSnapshot? =
         try {
             if (localPath.isBlank() || '\u0000' in localPath) return null
+            val trustedParentRaw = NSURL.fileURLWithPath(modelsRoot()).URLByStandardizingPath?.path
+                ?.trimEnd('/') ?: return null
             val rootRaw = NSURL.fileURLWithPath(getModelsStorageDirectory(modelId)).URLByStandardizingPath?.path
                 ?.trimEnd('/') ?: return null
             val targetRaw = NSURL.fileURLWithPath(localPath).URLByStandardizingPath?.path
                 ?.trimEnd('/') ?: return null
+            if (!isPathWithinModelRoot(trustedParentRaw, rootRaw) || rootRaw == trustedParentRaw) return null
             if (!isPathWithinModelRoot(rootRaw, targetRaw)) return null
+            val manager = NSFileManager.defaultManager
+            if (manager.attributesOfItemAtPath(trustedParentRaw, null)?.get(NSFileType) == NSFileTypeSymbolicLink ||
+                manager.attributesOfItemAtPath(rootRaw, null)?.get(NSFileType) == NSFileTypeSymbolicLink
+            ) return null
+            val trustedParent = standardizedResolvedPath(trustedParentRaw)
             val root = standardizedResolvedPath(rootRaw)
             val target = standardizedResolvedPath(targetRaw)
-            if (root.isEmpty() || target.isEmpty() || !isPathWithinModelRoot(root, target)) return null
-            val attributes = NSFileManager.defaultManager.attributesOfItemAtPath(target, null) ?: return null
+            if (trustedParent.isEmpty() || root.isEmpty() || target.isEmpty() ||
+                root == trustedParent || !isPathWithinModelRoot(trustedParent, root) ||
+                !isPathWithinModelRoot(root, target)
+            ) return null
+            val attributes = manager.attributesOfItemAtPath(target, null) ?: return null
             if (attributes[NSFileType] == NSFileTypeSymbolicLink) return null
             val kind = when (attributes[NSFileType]) {
                 NSFileTypeRegular -> StoredArtifactKind.REGULAR_FILE

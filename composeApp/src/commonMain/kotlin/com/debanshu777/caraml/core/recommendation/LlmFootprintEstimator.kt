@@ -84,7 +84,7 @@ class LlmFootprintEstimator {
         plan: LlmRunPlan,
         calibration: MemoryCalibration,
     ): AssessmentReason? {
-        validateRunPlan(plan)?.let { return it }
+        validateRunPlanForEstimation(plan)?.let { return it }
         if (descriptor.checkedTotalFileBytes() is CheckedLong.Invalid) {
             return AssessmentReason.INVALID_METADATA
         }

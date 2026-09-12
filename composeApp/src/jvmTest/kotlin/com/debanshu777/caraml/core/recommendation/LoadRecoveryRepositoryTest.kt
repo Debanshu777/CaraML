@@ -13,6 +13,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.test.fail
 
 class LoadRecoveryRepositoryTest {
     @Test
@@ -107,6 +108,24 @@ class LoadRecoveryRepositoryTest {
         assertEquals(64, marker.modelDigest.length)
         assertEquals(64, marker.configDigest.length)
         assertTrue(marker.modelDigest.all { it in '0'..'9' || it in 'a'..'f' })
+    }
+
+    @Test
+    fun beginningAnotherLoadNeverCountsOrOverwritesAnUnrecoveredMarker() = runTest {
+        val repository = repository()
+        val original = repository.beginLoad(RecoveryFixtures.identity, RecoveryFixtures.plan)
+
+        try {
+            repository.beginLoad(RecoveryFixtures.identity, RecoveryFixtures.plan(contextTokens = 2_048))
+            fail("Expected the unrecovered marker to block a second load")
+        } catch (_: PendingLoadMarkerExistsException) {
+            // Startup recovery owns conversion of the abandoned marker.
+        }
+
+        assertEquals(0, repository.recoveryRecordCount())
+        val recovered = assertIs<SuspectedLoadFailure>(repository.recoverPendingLoad())
+        assertEquals(original.modelDigest, recovered.modelDigest)
+        assertEquals(original.configDigest, recovered.configDigest)
     }
 
     private fun TestScope.repository(

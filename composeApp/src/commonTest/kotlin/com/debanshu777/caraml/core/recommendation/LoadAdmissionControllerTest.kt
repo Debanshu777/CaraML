@@ -125,10 +125,56 @@ class LoadAdmissionControllerTest {
         assertTrue(offered.original.plan.stableKey != offered.saferPlan.stableKey)
     }
 
+    @Test
+    fun artifactChangedWhileAwaitingConfirmationStopsBeforeNativePreflight() = runTest {
+        var artifactCurrent = true
+        var preflightCalls = 0
+        val controller = controller(
+            preflight = {
+                preflightCalls++
+                NativeLoadPreflight.Fit
+            },
+            artifactValidator = { artifactCurrent },
+        ) { _, _ -> recommendation(RecommendationCategory.RISKY, requestedPlan) }
+        val request = request()
+
+        assertIs<LoadAdmission.ConfirmationRequired>(controller.evaluate(request, null))
+        artifactCurrent = false
+        val acknowledgement = RiskAcknowledgement(
+            assessmentKey = ASSESSMENT_KEY,
+            planKey = requestedPlan.stableKey,
+            acknowledgedAtEpochMs = 10_000L,
+        )
+
+        val blocked = assertIs<LoadAdmission.Blocked>(controller.evaluate(request, acknowledgement))
+        assertEquals(LoadAdmissionReason.INVALID_MODEL, blocked.reason)
+        assertEquals(0, preflightCalls)
+    }
+
+    @Test
+    fun multipleLlmSequencesAreRejectedBeforeNativePreflight() = runTest {
+        var preflightCalls = 0
+        val multiSequence = plan(context = 4_096, sequenceCount = 2)
+        val controller = controller(
+            preflight = {
+                preflightCalls++
+                NativeLoadPreflight.Fit
+            },
+        ) { _, _ -> recommendation(RecommendationCategory.RECOMMENDED, multiSequence) }
+
+        val blocked = assertIs<LoadAdmission.Blocked>(
+            controller.evaluate(request().copy(plan = multiSequence), null),
+        )
+
+        assertEquals(LoadAdmissionReason.INSUFFICIENT_INFORMATION, blocked.reason)
+        assertEquals(0, preflightCalls)
+    }
+
     private fun controller(
         snapshot: DeviceSnapshot = snapshot(),
         clock: () -> Long = { 10_000L },
         preflight: suspend (LoadRequest) -> NativeLoadPreflight = { NativeLoadPreflight.Fit },
+        artifactValidator: suspend (LoadRequest) -> Boolean = { true },
         recovery: LoadRecoveryState = object : LoadRecoveryState {
             override suspend fun quarantine(identity: ModelFileIdentity, plan: RunPlan, engineVersion: String) =
                 LoadQuarantine.NONE
@@ -140,6 +186,7 @@ class LoadAdmissionControllerTest {
         snapshotSource = { snapshot },
         recommendationSource = recommendation,
         nativePreflight = preflight,
+        artifactValidator = artifactValidator,
         recoveryState = recovery,
         engineVersion = ENGINE_VERSION,
         clock = clock,
@@ -165,11 +212,11 @@ class LoadAdmissionControllerTest {
         profile = RecommendationProfile(),
     )
 
-    private fun plan(context: Int) = LlmRunPlan(
+    private fun plan(context: Int, sequenceCount: Int = 1) = LlmRunPlan(
         contextTokens = context,
         batchSize = 128,
         microBatchSize = 64,
-        sequenceCount = 1,
+        sequenceCount = sequenceCount,
         keyCacheType = KvCacheType.Q8_0,
         valueCacheType = KvCacheType.Q8_0,
         backend = BackendKind.CPU,

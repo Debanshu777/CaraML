@@ -10,6 +10,7 @@ import com.debanshu777.caraml.core.recommendation.DeviceSnapshotProvider
 import com.debanshu777.caraml.core.recommendation.EngineCapabilitySource
 import com.debanshu777.caraml.core.recommendation.LegacySuitabilityAdapter
 import com.debanshu777.caraml.core.recommendation.LoadRecoveryRepository
+import com.debanshu777.caraml.core.recommendation.LoadSessionCoordinator
 import com.debanshu777.caraml.core.recommendation.LocalArtifactIdentityResolver
 import com.debanshu777.caraml.core.recommendation.ModelAssessmentRepository
 import com.debanshu777.caraml.core.recommendation.ModelDescriptorFactory
@@ -78,6 +79,7 @@ val appModule = module {
             clock = { Clock.System.now().toEpochMilliseconds() },
         )
     }
+    single { LoadSessionCoordinator(get()) }
 
     single { DeviceCapabilities() }
     single<BackendCapabilitySource> { RunnerBackendCapabilitySource(get(), get()) }
@@ -147,6 +149,8 @@ val appModule = module {
             suitabilityEngine = get(),
             recommendationPolicy = get(),
             loadRecoveryRepository = get(),
+            artifactIdentityResolver = get(),
+            loadSessionCoordinator = get(),
             engineVersion = NATIVE_LOAD_ENGINE_VERSION,
             rolloutModeSource = get(),
         )
@@ -163,6 +167,8 @@ val appModule = module {
             suitabilityEngine = get(),
             recommendationPolicy = get(),
             loadRecoveryRepository = get(),
+            artifactIdentityResolver = get(),
+            loadSessionCoordinator = get(),
             engineVersion = NATIVE_LOAD_ENGINE_VERSION,
             rolloutModeSource = get(),
         )

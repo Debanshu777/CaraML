@@ -6,17 +6,25 @@ import java.nio.file.LinkOption
 import java.nio.file.attribute.BasicFileAttributes
 import kotlin.io.deleteRecursively
 
-class JvmStoragePathProvider : StoragePathProvider {
-    private val appDir: File by lazy {
+class JvmStoragePathProvider private constructor(
+    private val appDirectorySource: () -> File,
+) : StoragePathProvider {
+    constructor() : this(::defaultAppDirectory)
+    internal constructor(appDirectory: File) : this({ appDirectory })
+
+    private val appDir: File by lazy(appDirectorySource)
+
+    companion object {
+        private fun defaultAppDirectory(): File {
         val home = System.getProperty("user.home") ?: ""
-        val dir = when {
+        return when {
             System.getProperty("os.name").orEmpty().lowercase().contains("mac") ->
                 File(home, "Library/Application Support/CaraML")
             System.getProperty("os.name").orEmpty().lowercase().contains("win") ->
                 File(System.getenv("APPDATA") ?: home, "CaraML")
             else -> File(home, ".config/CaraML")
         }
-        dir
+        }
     }
     
     override fun getModelsStorageDirectory(modelId: String): String {
@@ -36,12 +44,16 @@ class JvmStoragePathProvider : StoragePathProvider {
     override fun inspectDownloadedArtifact(modelId: String, localPath: String): StoredArtifactSnapshot? =
         try {
             if (localPath.isBlank() || '\u0000' in localPath) return null
+            val trustedParentRaw = File(appDir, "models").toPath().toAbsolutePath().normalize()
             val root = File(getModelsStorageDirectory(modelId)).toPath().toAbsolutePath().normalize()
             val raw = File(localPath).toPath().toAbsolutePath().normalize()
+            if (root == trustedParentRaw || !root.startsWith(trustedParentRaw)) return null
             if (raw != root && !raw.startsWith(root)) return null
-            if (Files.isSymbolicLink(raw)) return null
+            if (Files.isSymbolicLink(trustedParentRaw) || Files.isSymbolicLink(root) || Files.isSymbolicLink(raw)) return null
+            val realTrustedParent = trustedParentRaw.toRealPath()
             val realRoot = root.toRealPath()
             val realTarget = raw.toRealPath()
+            if (realRoot == realTrustedParent || !realRoot.startsWith(realTrustedParent)) return null
             if (realTarget != realRoot && !realTarget.startsWith(realRoot)) return null
             val attributes = Files.readAttributes(
                 realTarget,

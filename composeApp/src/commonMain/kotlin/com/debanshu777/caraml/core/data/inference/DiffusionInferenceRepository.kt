@@ -4,11 +4,14 @@ import com.debanshu777.caraml.core.platform.AppLogger
 import com.debanshu777.caraml.core.platform.DeviceCapabilities
 import com.debanshu777.caraml.core.recommendation.DeviceSnapshotProvider
 import com.debanshu777.caraml.core.recommendation.DiffusionRunPlan
-import com.debanshu777.caraml.core.recommendation.LoadAdmission
+import com.debanshu777.caraml.core.recommendation.CoordinatedLoadResult
 import com.debanshu777.caraml.core.recommendation.LoadAdmissionController
 import com.debanshu777.caraml.core.recommendation.LoadRecoveryRepository
 import com.debanshu777.caraml.core.recommendation.LoadRequest
+import com.debanshu777.caraml.core.recommendation.LoadSessionCoordinator
+import com.debanshu777.caraml.core.recommendation.LocalArtifactIdentityResolver
 import com.debanshu777.caraml.core.recommendation.NativeLoadPreflight
+import com.debanshu777.caraml.core.recommendation.NativeLoadOutcome
 import com.debanshu777.caraml.core.recommendation.NativeRunPlanAdapter
 import com.debanshu777.caraml.core.recommendation.PersonalizedRecommendation
 import com.debanshu777.caraml.core.recommendation.RecommendationCategory
@@ -17,6 +20,7 @@ import com.debanshu777.caraml.core.recommendation.RecommendationRolloutMode
 import com.debanshu777.caraml.core.recommendation.RecommendationRolloutModeSource
 import com.debanshu777.caraml.core.recommendation.StableLoadFailure
 import com.debanshu777.caraml.core.recommendation.SuitabilityEngine
+import com.debanshu777.caraml.core.recommendation.VerifiedArtifactLoadTarget
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.diffusionrunner.DiffusionModelConfig
 import com.debanshu777.diffusionrunner.DiffusionPreflightResult
@@ -36,7 +40,6 @@ import com.debanshu777.huggingfacemanager.sdcpp.ComponentRole
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -60,6 +63,8 @@ class DiffusionInferenceRepository(
     private val suitabilityEngine: SuitabilityEngine? = null,
     private val recommendationPolicy: RecommendationPolicy? = null,
     private val loadRecoveryRepository: LoadRecoveryRepository? = null,
+    private val artifactIdentityResolver: LocalArtifactIdentityResolver? = null,
+    private val loadSessionCoordinator: LoadSessionCoordinator? = null,
     private val engineVersion: String = "native-engine-v1",
     private val rolloutModeSource: RecommendationRolloutModeSource = RecommendationRolloutModeSource {
         RecommendationRolloutMode.LEGACY
@@ -99,28 +104,17 @@ class DiffusionInferenceRepository(
             }
             val plan = request.plan as? DiffusionRunPlan
                 ?: return@withContext ModelLoadResult.Error("The selected model configuration is invalid.")
-            val recovery = loadRecoveryRepository
+            val resolver = artifactIdentityResolver
+                ?: return@withContext ModelLoadResult.Error("Load admission is unavailable.")
+            val coordinator = loadSessionCoordinator
                 ?: return@withContext ModelLoadResult.Error("Load recovery is unavailable.")
-            try {
-                recovery.recoverPendingLoad()
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Throwable) {
-                return@withContext ModelLoadResult.Error("Load recovery is unavailable.")
-            }
-            val mainSnapshot = storagePathProvider.inspectDownloadedArtifact(request.model.modelId, request.model.localPath)
-            val modelPath = exactModelPath(request)
-            val readable = if (mainSnapshot?.kind == com.debanshu777.huggingfacemanager.download.StoredArtifactKind.DIRECTORY) {
-                storagePathProvider.isDirectoryReadable(modelPath)
-            } else {
-                storagePathProvider.isModelFileReadable(modelPath)
-            }
-            if (!readable) return@withContext ModelLoadResult.Error("The installed model could not be verified.")
+            val loadTarget = artifact.loadTarget
+            val modelPath = loadTarget.path
             val nativeLibDir = PlatformPaths.getNativeLibDir()
             if (nativeLibDir.isBlank()) {
                 return@withContext ModelLoadResult.Error("Failed to initialize. Please restart the app.")
             }
-            val baseConfig = exactBaseConfig(request, modelPath)
+            val baseConfig = exactBaseConfig(request.model.modelId, artifact, loadTarget)
             val execution = runCatching { NativeRunPlanAdapter.toDiffusionExecutionConfig(plan, baseConfig) }
                 .getOrElse { return@withContext ModelLoadResult.Error("The selected model configuration is invalid.") }
             try {
@@ -142,8 +136,13 @@ class DiffusionInferenceRepository(
             val controller = admissionController { candidate ->
                 val candidatePlan = candidate.plan as? DiffusionRunPlan
                     ?: return@admissionController NativeLoadPreflight.Invalid
-                candidate.artifact ?: return@admissionController NativeLoadPreflight.Invalid
-                val candidateBase = exactBaseConfig(candidate, exactModelPath(candidate))
+                val candidateArtifact = candidate.artifact
+                    ?: return@admissionController NativeLoadPreflight.Invalid
+                val candidateBase = exactBaseConfig(
+                    candidate.model.modelId,
+                    candidateArtifact,
+                    candidateArtifact.loadTarget,
+                )
                 val candidateExecution = runCatching {
                     NativeRunPlanAdapter.toDiffusionExecutionConfig(candidatePlan, candidateBase)
                 }.getOrElse { return@admissionController NativeLoadPreflight.Invalid }
@@ -154,73 +153,64 @@ class DiffusionInferenceRepository(
                     is DiffusionPreflightResult.Unavailable -> NativeLoadPreflight.Unavailable
                 }
             } ?: return@withContext ModelLoadResult.Error("Load admission is unavailable.")
-            val admission = try {
-                controller.evaluate(request, request.riskAcknowledgement)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Throwable) {
-                return@withContext ModelLoadResult.Error("Load admission is temporarily unavailable.")
-            }
-            if (admission !is LoadAdmission.Ready) return@withContext ModelLoadResult.AdmissionRequired(admission)
-
-            val marker = try {
-                recovery.beginLoad(request.identity, request.plan)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Throwable) {
-                return@withContext ModelLoadResult.Error("Load recovery is unavailable.")
-            }
             try {
-                if (!runner.loadModel(execution.model)) {
-                    runCatching { runner.release() }
-                    withContext(NonCancellable) {
-                        runCatching { recovery.markLoadFailed(marker, StableLoadFailure.ALLOCATION) }
-                    }
-                    return@withContext ModelLoadResult.Error("The model could not be loaded with this configuration.")
+                when (val result = coordinator.execute(
+                    request = request,
+                    evaluateAdmission = { controller.evaluate(request, request.riskAcknowledgement) },
+                    artifactValidator = { candidate ->
+                        candidate.artifact?.let { resolver.revalidate(it) } == true
+                    },
+                    releasePartialState = {
+                        runner.release()
+                        lastLoadedArchStr = null
+                        exactExecutionState.clear()
+                    },
+                    nativeLoad = {
+                        if (!runner.loadModel(execution.model)) {
+                            return@execute NativeLoadOutcome.Failed(
+                                ModelLoadResult.Error("The model could not be loaded with this configuration."),
+                                StableLoadFailure.ALLOCATION,
+                            )
+                        }
+                        lastLoadedArchStr = runner.getDiffusionModelMetadata(modelPath)?.architecture
+                        exactExecutionState.publish(execution)
+                        NativeLoadOutcome.Succeeded(ModelLoadResult.Success(contextSize = 0))
+                    },
+                )) {
+                    is CoordinatedLoadResult.AdmissionRequired ->
+                        ModelLoadResult.AdmissionRequired(result.admission)
+                    is CoordinatedLoadResult.ArtifactChanged ->
+                        ModelLoadResult.Error("The installed model changed and could not be verified.")
+                    is CoordinatedLoadResult.Completed -> result.value
                 }
-                lastLoadedArchStr = runner.getDiffusionModelMetadata(modelPath)?.architecture
-                exactExecutionState.publish(execution)
-                recovery.markLoadSucceeded(marker)
-                ModelLoadResult.Success(contextSize = 0)
             } catch (cancelled: CancellationException) {
-                runCatching { runner.release() }
-                lastLoadedArchStr = null
-                exactExecutionState.clear()
-                withContext(NonCancellable) { runCatching { recovery.markLoadCancelled(marker) } }
                 throw cancelled
             } catch (_: Throwable) {
                 runCatching { runner.release() }
                 lastLoadedArchStr = null
                 exactExecutionState.clear()
-                withContext(NonCancellable) {
-                    runCatching { recovery.markLoadFailed(marker, StableLoadFailure.UNKNOWN) }
-                }
                 ModelLoadResult.Error("An error occurred while loading the model.")
             }
         }
     }
 
     suspend fun allowExplicitRetry(request: LoadRequest) {
-        if (request.artifact?.identity == request.identity) {
-            loadRecoveryRepository?.allowExplicitRetry(request.identity, request.plan, engineVersion)
-        }
+        loadSessionCoordinator?.allowExplicitRetry(request, engineVersion)
     }
 
-    private fun exactModelPath(request: LoadRequest): String =
-        if (storagePathProvider.inspectDownloadedArtifact(request.model.modelId, request.model.localPath)?.kind ==
-            com.debanshu777.huggingfacemanager.download.StoredArtifactKind.DIRECTORY
-        ) request.model.localPath else requireNotNull(request.artifact).primaryPath
-
-    private suspend fun exactBaseConfig(request: LoadRequest, modelPath: String): DiffusionModelConfig {
-        val artifact = requireNotNull(request.artifact)
+    private suspend fun exactBaseConfig(
+        modelId: String,
+        artifact: com.debanshu777.caraml.core.recommendation.ResolvedLocalArtifact,
+        loadTarget: VerifiedArtifactLoadTarget,
+    ): DiffusionModelConfig {
         val paths = artifact.components.associate { it.logicalRole.lowercase() to it.localPath }
-        val setup = getModelSetup(request.model.modelId)
+        val setup = getModelSetup(modelId)
         val params = setup?.recommendedParams
         val settings = settingsRepository.getSettings().first()
         val hints = deviceCapabilities.getDeviceHints()
         val gpuEnabled = settings.useGpu && hints.gpuBackendAvailable
         return DiffusionModelConfig(
-            modelPath = modelPath,
+            modelPath = loadTarget.path,
             vaePath = paths["vae"].orEmpty(),
             llmPath = paths["llm"].orEmpty(),
             clipLPath = paths["clip_l"].orEmpty(),
@@ -252,6 +242,9 @@ class DiffusionInferenceRepository(
                     reasons = emptyList(),
                     profile = candidate.profile,
                 )
+            },
+            artifactValidator = { candidate ->
+                candidate.artifact?.let { artifactIdentityResolver?.revalidate(it) } == true
             },
             nativePreflight = nativePreflight,
             recoveryState = recovery,

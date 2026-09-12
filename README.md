@@ -219,7 +219,7 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 
 <!-- This section is updated at the end of each AI-assisted development session -->
 
-- Model loads now require content-addressed artifact identity, a fresh device/native fit decision, exact run-plan mapping, and bounded cross-process suspected-crash recovery
+- Model loads now bind preflight and native entry to revalidated, content-addressed bytes and typed load targets, with one cross-engine admission/recovery coordinator
 - Added bounded, side-effect-free stable-diffusion.cpp preflight with typed component/backend evidence and one shared auto-fit plan for inspection and load
 - Diffusion installs now use deterministic manifest-proven checkpoint/directory identities, recover interrupted bundles independently of tree order, and verify portable multi-config Desktop filesystem runtimes before packaging
 - Added bounded, device-aware model recommendations with immutable Hugging Face metadata, incremental assessment, and profile-local reranking
