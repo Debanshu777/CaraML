@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -19,13 +20,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -117,6 +117,7 @@ fun AppearanceSection(
                             color = color,
                             selected = color.argbInt() == preferences.seedColor.argbInt(),
                             label = "Seed color ${index + 1}",
+                            selectedIndicatorContentDescription = "Selected seed color ${index + 1}",
                             onClick = { viewModel.updateSeedColor(color) },
                         )
                     }
@@ -135,13 +136,13 @@ fun AppearanceSection(
                     contentPadding = PaddingValues(vertical = LocalSpacing.current.xs),
                 ) {
                     items(ThemePaletteStyle.entries) { style ->
-                        FilterChip(
+                        SettingFilterChip(
                             selected = preferences.paletteStyle == style,
                             onClick = { viewModel.updatePaletteStyle(style) },
-                            label = { Text(style.displayName()) },
-                            colors = FilterChipDefaults.filterChipColors(),
+                            label = style.displayName(),
+                            selectedIndicatorContentDescription =
+                                "Selected palette ${style.displayName()}",
                             modifier = Modifier
-                                .heightIn(min = 48.dp)
                                 .semantics {
                                     stateDescription = if (preferences.paletteStyle == style) {
                                         "Selected"
@@ -196,6 +197,7 @@ private fun SeedSwatch(
     color: Color,
     selected: Boolean,
     label: String,
+    selectedIndicatorContentDescription: String,
     onClick: () -> Unit,
 ) {
     val borderColor =
@@ -204,28 +206,45 @@ private fun SeedSwatch(
     val borderWidth = if (selected) 3.dp else 1.dp
     // 48dp meets the WCAG 2.5.8 / Material accessibility minimum touch target.
     Box(
-        modifier = Modifier
-            .size(48.dp)
-            .clip(CircleShape)
-            .background(color)
-            .border(borderWidth, borderColor, CircleShape)
-            .semantics {
-                contentDescription = label
-                stateDescription = if (selected) "Selected" else "Not selected"
-            }
-            .selectable(
-                selected = selected,
-                role = Role.RadioButton,
-                onClick = onClick,
-            ),
-        contentAlignment = Alignment.Center,
+        modifier = Modifier.size(48.dp),
     ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(CircleShape)
+                .background(color)
+                .border(borderWidth, borderColor, CircleShape)
+                .semantics {
+                    contentDescription = label
+                    stateDescription = if (selected) "Selected" else "Not selected"
+                }
+                .selectable(
+                    selected = selected,
+                    role = Role.RadioButton,
+                    onClick = onClick,
+                ),
+        )
         if (selected) {
-            Icon(
-                imageVector = Icons.Default.Check,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onPrimary,
-            )
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .size(20.dp)
+                    .semantics {
+                        contentDescription = selectedIndicatorContentDescription
+                    },
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                    )
+                }
+            }
         }
     }
 }

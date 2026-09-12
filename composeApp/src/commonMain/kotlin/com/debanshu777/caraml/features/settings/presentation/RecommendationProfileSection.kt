@@ -5,8 +5,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -14,7 +12,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.recommendation.OptimizationPriority
 import com.debanshu777.caraml.core.recommendation.RecommendationProfile
 import com.debanshu777.caraml.core.recommendation.RiskTolerance
@@ -107,13 +104,14 @@ private fun <T> ChoiceGroup(
         ) {
             choices.forEach { choice ->
                 val isSelected = choice == selected
-                FilterChip(
+                SettingFilterChip(
                     selected = isSelected,
                     onClick = { onSelect(choice) },
-                    label = { Text(label(choice)) },
+                    label = label(choice),
+                    selectedIndicatorContentDescription =
+                        "Selected ${accessibilityPrefix.lowercase()} ${label(choice)}",
                     enabled = enabled,
                     modifier = Modifier
-                        .heightIn(min = 48.dp)
                         .semantics {
                             contentDescription = "$accessibilityPrefix ${label(choice)}, " +
                                 if (isSelected) "selected" else "not selected"

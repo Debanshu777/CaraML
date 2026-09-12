@@ -13,10 +13,9 @@ import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -32,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -215,7 +215,7 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun GpuAccelerationSection(
+internal fun GpuAccelerationSection(
     enabled: Boolean,
     onToggle: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
@@ -224,14 +224,20 @@ private fun GpuAccelerationSection(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(LocalSpacing.current.l)
+                .toggleable(
+                    value = enabled,
+                    role = Role.Switch,
+                    onValueChange = onToggle,
+                )
                 .semantics(mergeDescendants = true) {
+                    contentDescription = "GPU acceleration (Vulkan)"
                     stateDescription = if (enabled) {
                         "GPU acceleration enabled"
                     } else {
                         "GPU acceleration disabled"
                     }
-                },
+                }
+                .padding(LocalSpacing.current.l),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -248,7 +254,7 @@ private fun GpuAccelerationSection(
             }
             Switch(
                 checked = enabled,
-                onCheckedChange = onToggle,
+                onCheckedChange = null,
                 modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
             )
         }
@@ -256,7 +262,7 @@ private fun GpuAccelerationSection(
 }
 
 @Composable
-private fun KvCacheSection(
+internal fun KvCacheSection(
     selected: KvQuantPreset,
     onSelect: (KvQuantPreset) -> Unit,
     modifier: Modifier = Modifier,
@@ -280,13 +286,13 @@ private fun KvCacheSection(
                 contentPadding = PaddingValues(vertical = LocalSpacing.current.xs),
             ) {
                 items(KvQuantPreset.entries) { preset ->
-                    FilterChip(
+                    SettingFilterChip(
                         selected = selected == preset,
                         onClick = { onSelect(preset) },
-                        label = { Text(preset.chipLabel()) },
-                        colors = FilterChipDefaults.filterChipColors(),
+                        label = preset.chipLabel(),
+                        selectedIndicatorContentDescription =
+                            "Selected KV cache ${preset.chipLabel()}",
                         modifier = Modifier
-                            .heightIn(min = 48.dp)
                             .semantics {
                                 stateDescription = if (selected == preset) "Selected" else "Not selected"
                             },
