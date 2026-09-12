@@ -88,6 +88,13 @@ fun ChatMessageList(
     val motion = LocalAuroraMotionPolicy.current
     val insertionOffset = with(LocalDensity.current) { 8.dp.roundToPx() }
 
+    LaunchedEffect(messages) {
+        val currentMessageIds = messages.mapTo(mutableSetOf()) { it.id }
+        completedEntryIds.keys
+            .filterNot(currentMessageIds::contains)
+            .forEach(completedEntryIds::remove)
+    }
+
     LazyColumn(
         modifier = modifier
             .fillMaxWidth()

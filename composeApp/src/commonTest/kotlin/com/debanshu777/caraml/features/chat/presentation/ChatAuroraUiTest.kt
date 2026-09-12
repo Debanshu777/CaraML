@@ -126,4 +126,43 @@ class ChatAuroraUiTest {
             "A completed entry must not replay when its lazy item is recreated",
         )
     }
+
+    @Test
+    fun removedMessageCompletionDoesNotSuppressARealReinsertion() = runComposeUiTest {
+        val targetText = "Removed then reinserted message"
+        val target = ChatMessage(id = "reinserted", role = MessageRole.User, text = targetText)
+        var messages by mutableStateOf(persistentListOf<ChatMessage>())
+        mainClock.autoAdvance = false
+
+        setContent {
+            MaterialTheme {
+                Box(Modifier.requiredSize(width = 320.dp, height = 180.dp)) {
+                    ChatMessageList(
+                        messages = messages,
+                        listState = rememberLazyListState(),
+                    )
+                }
+            }
+        }
+        waitForIdle()
+
+        runOnIdle { messages = persistentListOf(target) }
+        mainClock.advanceTimeBy(300)
+        mainClock.advanceTimeByFrame()
+
+        runOnIdle { messages = persistentListOf() }
+        mainClock.advanceTimeByFrame()
+        onNodeWithText(targetText).assertDoesNotExist()
+
+        runOnIdle { messages = persistentListOf(target) }
+        mainClock.advanceTimeByFrame()
+        val reinsertedY = onNodeWithText(targetText).fetchSemanticsNode().positionInRoot.y
+        mainClock.advanceTimeBy(100)
+        val reinsertedMidY = onNodeWithText(targetText).fetchSemanticsNode().positionInRoot.y
+
+        assertTrue(
+            abs(reinsertedY - reinsertedMidY) > 0.5f,
+            "Removing a message must prune its completed-entry state before reinsertion",
+        )
+    }
 }
