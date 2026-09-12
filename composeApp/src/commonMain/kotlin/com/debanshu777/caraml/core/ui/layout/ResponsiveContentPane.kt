@@ -23,8 +23,8 @@ fun ResponsiveContentPane(
         val policy = adaptiveLayoutPolicy(maxWidth, kind)
         Box(
             modifier = Modifier
-                .fillMaxSize()
                 .widthIn(max = policy.maxContentWidth)
+                .fillMaxSize()
                 .padding(horizontal = policy.horizontalMargin),
             content = content,
         )
