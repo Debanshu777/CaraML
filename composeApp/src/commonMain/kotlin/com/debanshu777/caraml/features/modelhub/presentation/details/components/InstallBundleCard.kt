@@ -1,7 +1,10 @@
 package com.debanshu777.caraml.features.modelhub.presentation.details.components
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,12 +20,18 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.LocalSpacing
+import com.debanshu777.caraml.core.ui.components.CaraMLPane
+import com.debanshu777.caraml.core.ui.components.CaraMLSectionHeader
+import com.debanshu777.caraml.core.ui.components.CaraMLStatusPill
+import com.debanshu777.caraml.core.ui.components.StatusTone
+import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.features.modelhub.presentation.search.InstallBundleUiState
 import com.debanshu777.caraml.features.modelhub.presentation.search.SetupComponentUiState
 
@@ -60,24 +69,29 @@ fun InstallBundleCard(
     recommendedVariantPath: String? = null,
     installEnabled: Boolean = true,
 ) {
-    Surface(
-        shape = MaterialTheme.shapes.medium,
-        tonalElevation = 1.dp,
+    val spacing = LocalSpacing.current
+    val motion = LocalAuroraMotionPolicy.current
+    val reportedOverallProgress = state.overallProgress?.coerceIn(0f, 1f)
+    val animatedOverallProgress by animateFloatAsState(
+        targetValue = reportedOverallProgress ?: 0f,
+        animationSpec = tween(durationMillis = if (motion.spatialTransitionsEnabled) 180 else 0),
+    )
+    val displayedOverallProgress = if (motion.spatialTransitionsEnabled) {
+        animatedOverallProgress
+    } else {
+        reportedOverallProgress ?: 0f
+    }
+    CaraMLPane(
         modifier = modifier.fillMaxWidth(),
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(spacing.l),
+            verticalArrangement = Arrangement.spacedBy(spacing.m),
         ) {
-
-            // Header
-            if (!familyLabel.isNullOrBlank()) {
-                Text(
-                    text = familyLabel,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            }
+            CaraMLSectionHeader(
+                title = "Install summary",
+                supportingText = familyLabel?.takeIf { it.isNotBlank() },
+            )
             if (!modelDescription.isNullOrBlank()) {
                 Text(
                     text = modelDescription,
@@ -88,10 +102,9 @@ fun InstallBundleCard(
 
             // Variant picker (hidden when model is already downloaded or only one option)
             if (state.variants.isNotEmpty() && !state.variants.all { it.isDownloaded }) {
-                Text(
-                    text = "Select quantization",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                CaraMLSectionHeader(
+                    title = "Variants",
+                    supportingText = "Select quantization",
                 )
                 VariantPickerRow(
                     variants = state.variants,
@@ -100,58 +113,27 @@ fun InstallBundleCard(
                     recommendedVariantPath = recommendedVariantPath,
                 )
             } else if (state.variants.any { it.isDownloaded }) {
-                // All downloaded — show a subtle confirmation
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        Icons.Default.CheckCircle,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                    Text(
-                        text = "Model downloaded",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
+                CaraMLStatusPill(
+                    label = "Model downloaded",
+                    contentDescription = "Model downloaded",
+                    tone = StatusTone.Success,
+                    icon = Icons.Default.CheckCircle,
+                )
             }
 
             // Required components (for multi-component models)
             if (!state.isSelfContained && state.components.isNotEmpty()) {
-                Text(
-                    text = "Required components",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                CaraMLSectionHeader(title = "Required components")
                 state.components.forEach { component ->
-                    ComponentRow(component = component, isInstalling = state.isInstalling)
+                    ComponentRow(component = component)
                 }
             } else if (state.isSelfContained && state.components.isEmpty()) {
-                Surface(
-                    shape = MaterialTheme.shapes.small,
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            Icons.Default.CheckCircle,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        )
-                        Text(
-                            text = "Self-contained — no extra downloads needed",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        )
-                    }
-                }
+                CaraMLStatusPill(
+                    label = "Self-contained",
+                    contentDescription = "Self-contained. No extra downloads needed.",
+                    tone = StatusTone.Success,
+                    icon = Icons.Default.CheckCircle,
+                )
             }
 
             Spacer(modifier = Modifier.height(4.dp))
@@ -168,8 +150,7 @@ fun InstallBundleCard(
                         Text("  Ready to use")
                     }
                     state.isInstalling -> {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                        Text("  Installing…")
+                        Text("Installing…")
                     }
                     state.totalNewDownloadBytes > 0L -> {
                         Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -191,9 +172,9 @@ fun InstallBundleCard(
 
             // Progress area — shown while installing
             if (state.isInstalling) {
-                if (state.overallProgress != null) {
+                if (reportedOverallProgress != null) {
                     LinearProgressIndicator(
-                        progress = { state.overallProgress },
+                        progress = { displayedOverallProgress },
                         modifier = Modifier.fillMaxWidth(),
                     )
                 } else {
@@ -229,9 +210,22 @@ fun InstallBundleCard(
 @Composable
 private fun ComponentRow(
     component: SetupComponentUiState,
-    isInstalling: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    val motion = LocalAuroraMotionPolicy.current
+    val reportedProgress = component.progress
+        ?.takeIf { it >= 0f }
+        ?.coerceIn(0f, 100f)
+        ?.div(100f)
+    val animatedProgress by animateFloatAsState(
+        targetValue = reportedProgress ?: 0f,
+        animationSpec = tween(durationMillis = if (motion.spatialTransitionsEnabled) 180 else 0),
+    )
+    val displayedProgress = if (motion.spatialTransitionsEnabled) {
+        animatedProgress
+    } else {
+        reportedProgress ?: 0f
+    }
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -244,8 +238,8 @@ private fun ComponentRow(
                 modifier = Modifier.size(18.dp),
                 tint = MaterialTheme.colorScheme.primary,
             )
-            component.progress != null -> CircularProgressIndicator(
-                progress = { component.progress },
+            reportedProgress != null -> CircularProgressIndicator(
+                progress = { displayedProgress },
                 modifier = Modifier.size(18.dp),
                 strokeWidth = 2.dp,
             )
@@ -253,7 +247,7 @@ private fun ComponentRow(
                 Icons.Default.Circle,
                 contentDescription = "Not downloaded",
                 modifier = Modifier.size(18.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                tint = MaterialTheme.colorScheme.outlineVariant,
             )
         }
 
@@ -263,9 +257,9 @@ private fun ComponentRow(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface,
             )
-            Row(
+            FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text(
                     text = component.repoId.substringAfterLast('/'),
@@ -281,34 +275,22 @@ private fun ComponentRow(
                 }
                 // "Already have it" badge for shared components
                 if (component.sharedFrom != null) {
-                    Surface(
-                        shape = MaterialTheme.shapes.extraSmall,
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                    ) {
-                        Text(
-                            text = "Already have it",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                        )
-                    }
+                    CaraMLStatusPill(
+                        label = "Already have it",
+                        contentDescription = "Already downloaded with another model",
+                        tone = StatusTone.Success,
+                    )
                 } else if (component.required && !component.isDownloaded) {
-                    Surface(
-                        shape = MaterialTheme.shapes.extraSmall,
-                        color = MaterialTheme.colorScheme.errorContainer,
-                    ) {
-                        Text(
-                            text = "Required",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                        )
-                    }
+                    CaraMLStatusPill(
+                        label = "Required",
+                        contentDescription = "Required component",
+                        tone = StatusTone.Warning,
+                    )
                 }
             }
-            if (component.progress != null) {
+            if (reportedProgress != null) {
                 LinearProgressIndicator(
-                    progress = { component.progress },
+                    progress = { displayedProgress },
                     modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
                 )
             }

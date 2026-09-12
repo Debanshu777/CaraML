@@ -1,22 +1,15 @@
 package com.debanshu777.caraml.features.modelhub.presentation.details
 
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -27,13 +20,32 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.rating.ui.RecommendationDetailsSheet
 import com.debanshu777.caraml.core.rating.ui.recommendationPresentation
+import com.debanshu777.caraml.core.ui.components.CaraMLTopBar
+import com.debanshu777.caraml.core.ui.components.TopBarNavigation
+import com.debanshu777.caraml.core.ui.layout.AppContentKind
+import com.debanshu777.caraml.core.ui.layout.ResponsiveContentPane
 import com.debanshu777.caraml.features.modelhub.presentation.details.components.ModelDetailContent
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
+internal enum class ModelDetailLayout {
+    Compact,
+    SupportingPane,
+}
+
+internal fun modelDetailLayout(width: Dp): ModelDetailLayout = if (width >= 840.dp) {
+    ModelDetailLayout.SupportingPane
+} else {
+    ModelDetailLayout.Compact
+}
+
+internal fun modelDetailsUseSupportingPane(width: Dp): Boolean =
+    modelDetailLayout(width) == ModelDetailLayout.SupportingPane
+
 @Composable
 fun DetailsScreen(
     viewModel: ModelViewModel,
@@ -78,65 +90,64 @@ fun DetailsScreen(
         modifier = modifier.fillMaxSize(),
         containerColor = Color.Transparent,
         topBar = {
-            TopAppBar(
-                title = { },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back"
-                        )
-                    }
-                }
+            CaraMLTopBar(
+                title = "Model details",
+                navigation = TopBarNavigation.Back,
+                onNavigationClick = onBack,
             )
         },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
     ) { innerPadding ->
-        Column(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(innerPadding),
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                contentAlignment = Alignment.Center
+            val detailsWindowWidth = maxWidth
+            ResponsiveContentPane(
+                kind = AppContentKind.Details,
+                modifier = Modifier.fillMaxSize(),
             ) {
-                val detail = modelDetail
-                when {
-                    isDetailLoading -> CircularProgressIndicator()
-                    detailError != null -> Text(
-                        text = detailError ?: "Could not load model details. Please try again.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                    detail != null -> {
-                        val (weightHeading, weightEmpty) = when (hubBrowseMode) {
-                            ModelHubBrowseMode.LanguageModels ->
-                                "GGUF files" to "No GGUF files found"
-                            ModelHubBrowseMode.DiffusionImage,
-                            ModelHubBrowseMode.DiffusionVideo ->
-                                "Weight files" to
-                                    "No weight files found (.gguf, .safetensors, .ckpt, .pth)"
-                        }
-                        ModelDetailContent(
-                            model = detail,
-                            ggufFiles = ggufFiles,
-                            isDownloading = isDownloading,
-                            onDownloadClick = { id, path, metadata ->
-                                viewModel.startDownload(id, path, metadata)
-                            },
-                            weightFilesHeading = weightHeading,
-                            weightFilesEmptyLabel = weightEmpty,
-                            installBundleState = installBundleState,
-                            onVariantSelected = { path -> viewModel.selectVariant(path) },
-                            onSmartInstall = { viewModel.smartInstall(modelId) },
-                            showInstallBundle = isDiffusion,
-                            recommendationState = recommendationState,
-                            onRecommendationInfoClick = { recommendationSheetVisible = true },
-                            modifier = Modifier.fillMaxSize()
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    val detail = modelDetail
+                    when {
+                        isDetailLoading -> CircularProgressIndicator()
+                        detailError != null -> Text(
+                            text = detailError ?: "Could not load model details. Please try again.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error,
                         )
+                        detail != null -> {
+                            val (weightHeading, weightEmpty) = when (hubBrowseMode) {
+                                ModelHubBrowseMode.LanguageModels ->
+                                    "GGUF files" to "No GGUF files found"
+                                ModelHubBrowseMode.DiffusionImage,
+                                ModelHubBrowseMode.DiffusionVideo ->
+                                    "Weight files" to
+                                        "No weight files found (.gguf, .safetensors, .ckpt, .pth)"
+                            }
+                            ModelDetailContent(
+                                model = detail,
+                                ggufFiles = ggufFiles,
+                                isDownloading = isDownloading,
+                                onDownloadClick = { id, path, metadata ->
+                                    viewModel.startDownload(id, path, metadata)
+                                },
+                                weightFilesHeading = weightHeading,
+                                weightFilesEmptyLabel = weightEmpty,
+                                installBundleState = installBundleState,
+                                onVariantSelected = { path -> viewModel.selectVariant(path) },
+                                onSmartInstall = { viewModel.smartInstall(modelId) },
+                                showInstallBundle = isDiffusion,
+                                recommendationState = recommendationState,
+                                onRecommendationInfoClick = { recommendationSheetVisible = true },
+                                modifier = Modifier.fillMaxSize(),
+                                windowWidth = detailsWindowWidth,
+                            )
+                        }
                     }
                 }
             }

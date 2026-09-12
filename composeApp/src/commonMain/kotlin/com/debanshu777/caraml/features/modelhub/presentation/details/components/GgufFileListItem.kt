@@ -1,5 +1,7 @@
 package com.debanshu777.caraml.features.modelhub.presentation.details.components
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,10 +18,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.LocalSpacing
+import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 
 @Composable
 fun GgufFileListItem(
@@ -35,6 +39,17 @@ fun GgufFileListItem(
     val hasDirectory = filename.contains('/')
     val displayName = filename.substringAfterLast('/')
     val directory = if (hasDirectory) filename.substringBeforeLast('/') + "/" else null
+    val reportedProgress = progress?.takeIf { it >= 0f }?.coerceIn(0f, 100f)?.div(100f)
+    val motion = LocalAuroraMotionPolicy.current
+    val animatedProgress by animateFloatAsState(
+        targetValue = reportedProgress ?: 0f,
+        animationSpec = tween(durationMillis = if (motion.spatialTransitionsEnabled) 180 else 0),
+    )
+    val displayedProgress = if (motion.spatialTransitionsEnabled) {
+        animatedProgress
+    } else {
+        reportedProgress ?: 0f
+    }
 
     Surface(
         shape = MaterialTheme.shapes.medium,
@@ -59,7 +74,6 @@ fun GgufFileListItem(
                     Text(
                         text = displayName,
                         style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 1,
                         modifier = Modifier.weight(1f)
                     )
                     if (sizeBytes != null) {
@@ -70,12 +84,15 @@ fun GgufFileListItem(
                         )
                     }
                 }
-                if (progress != null && progress >= 0) {
+                if (reportedProgress != null) {
                     LinearProgressIndicator(
-                        progress = { progress / 100f },
+                        progress = { displayedProgress },
                         modifier = Modifier.fillMaxWidth().padding(top = LocalSpacing.current.xs)
                     )
-                    Text("${progress.toInt()}%", style = MaterialTheme.typography.labelSmall)
+                    Text(
+                        "${(reportedProgress * 100f).toInt()}%",
+                        style = MaterialTheme.typography.labelSmall,
+                    )
                 }
             }
             if (isDownloaded) {
@@ -86,7 +103,7 @@ fun GgufFileListItem(
                 )
             } else {
                 IconButton(onClick = onDownloadClick, enabled = downloadEnabled && !isDownloading) {
-                    Icon(Icons.Default.Download, contentDescription = "Download")
+                    Icon(Icons.Default.Download, contentDescription = "Download $filename")
                 }
             }
         }

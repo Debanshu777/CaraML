@@ -1,38 +1,48 @@
 package com.debanshu777.caraml.features.modelhub.presentation.details.components
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
-import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
-import com.debanshu777.huggingfacemanager.model.ModelDetailResponse
-import com.debanshu777.caraml.features.modelhub.presentation.search.GgufFileUiState
-import com.debanshu777.caraml.features.modelhub.presentation.search.InstallBundleUiState
-import com.debanshu777.caraml.features.modelhub.domain.RecommendedModelUiState
-import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
 import com.debanshu777.caraml.core.recommendation.DiffusionModelDescriptor
 import com.debanshu777.caraml.core.recommendation.LlmModelDescriptor
 import com.debanshu777.caraml.core.recommendation.ModelDescriptor
 import com.debanshu777.caraml.core.recommendation.ModelFileIdentity
 import com.debanshu777.caraml.core.rating.ui.RecommendationStatusChip
+import com.debanshu777.caraml.core.theme.LocalSpacing
+import com.debanshu777.caraml.core.ui.components.CaraMLPane
+import com.debanshu777.caraml.core.ui.components.CaraMLSectionHeader
+import com.debanshu777.caraml.core.ui.components.CaraMLStatusPill
+import com.debanshu777.caraml.core.ui.components.StatusTone
+import com.debanshu777.caraml.features.modelhub.presentation.details.modelDetailsUseSupportingPane
+import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
+import com.debanshu777.caraml.features.modelhub.domain.RecommendedModelUiState
+import com.debanshu777.caraml.features.modelhub.presentation.search.GgufFileUiState
+import com.debanshu777.caraml.features.modelhub.presentation.search.InstallBundleUiState
+import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
+import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
+import com.debanshu777.huggingfacemanager.model.ModelDetailResponse
 import com.debanshu777.huggingfacemanager.sdcpp.getModelSetup
 
 @Composable
@@ -51,6 +61,7 @@ fun ModelDetailContent(
     recommendationState: RecommendedModelUiState? = null,
     onRecommendationInfoClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    windowWidth: Dp? = null,
 ) {
     if (model == null) return
 
@@ -60,165 +71,277 @@ fun ModelDetailContent(
         recommendationState?.selectedDescriptor,
         installBundleState.variants,
     )
+    val installEnabled = recommendedVariant != null &&
+        installBundleState.selectedVariantPath == recommendedVariant
+    val spacing = LocalSpacing.current
 
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        // Title / author
-        Text(
-            text = model.modelId ?: model.id ?: "Unknown",
-            style = MaterialTheme.typography.headlineSmall,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        model.author?.let { author ->
-            Text(
-                text = author,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        // Downloads / likes
-        if (model.downloads != null || model.likes != null) {
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        if (modelDetailsUseSupportingPane(windowWidth ?: maxWidth)) {
             Row(
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                model.downloads?.let { count ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Download,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = count.toString(),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-                model.likes?.let { count ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.FavoriteBorder,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = count.toString(),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-        }
-
-        RecommendationStatusChip(
-            state = recommendationState?.descriptorState ?: DescriptorState.NEEDS_INFORMATION,
-            recommendation = recommendationState?.personalizedResult,
-            onInfoClick = onRecommendationInfoClick,
-        )
-        recommendationState?.selectedVariantName?.let {
-            Text("Selected variant: $it", style = MaterialTheme.typography.labelMedium)
-        }
-
-        // Info card
-        val hasInfo = model.libraryName != null || model.pipelineTag != null ||
-            model.config?.modelType != null || model.config?.architectures?.filterNotNull()?.isNotEmpty() == true ||
-            model.cardData?.license != null || model.cardData?.baseModel?.takeIf { it.isNotEmpty() } != null ||
-            model.createdAt != null || model.lastModified != null
-        if (hasInfo) {
-            Surface(
-                shape = MaterialTheme.shapes.medium,
-                tonalElevation = 1.dp,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxSize().padding(vertical = spacing.s),
+                horizontalArrangement = Arrangement.spacedBy(spacing.xl),
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(spacing.l),
                 ) {
-                    DetailRow("Library", model.libraryName)
-                    DetailRow("Pipeline", model.pipelineTag)
-                    model.config?.let { config ->
-                        DetailRow("Model type", config.modelType)
-                        config.architectures?.filterNotNull()?.joinToString()?.let { arch ->
-                            DetailRow("Architectures", arch)
-                        }
+                    ModelOverviewSection(model, modelSetup?.description)
+                    ModelMetadataSection(model)
+                    if (!showInstallBundle) {
+                        ModelFileVariantsSection(
+                            model = model,
+                            ggufFiles = ggufFiles,
+                            isDownloading = isDownloading,
+                            onDownloadClick = onDownloadClick,
+                            heading = weightFilesHeading,
+                            emptyLabel = weightFilesEmptyLabel,
+                            recommendationState = recommendationState,
+                        )
                     }
-                    model.cardData?.let { card ->
-                        DetailRow("License", card.license)
-                        card.baseModel?.takeIf { it.isNotEmpty() }?.let { models ->
-                            DetailRow("Base model", models.joinToString(", "))
-                        }
+                }
+                Column(
+                    modifier = Modifier
+                        .width(340.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(spacing.l),
+                ) {
+                    ModelRecommendationSection(recommendationState, onRecommendationInfoClick)
+                    if (showInstallBundle) {
+                        InstallBundleCard(
+                            modelId = modelId,
+                            state = installBundleState,
+                            familyLabel = modelSetup?.familyLabel,
+                            modelDescription = null,
+                            onVariantSelected = onVariantSelected,
+                            onInstall = onSmartInstall,
+                            modifier = Modifier.fillMaxWidth(),
+                            recommendedVariantPath = recommendedVariant,
+                            installEnabled = installEnabled,
+                        )
                     }
-                    DetailRow("Created", model.createdAt)
-                    DetailRow("Last modified", model.lastModified)
+                }
+            }
+        } else {
+            Column(modifier = Modifier.fillMaxSize()) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .padding(top = spacing.s),
+                    verticalArrangement = Arrangement.spacedBy(spacing.l),
+                ) {
+                    ModelOverviewSection(model, modelSetup?.description)
+                    ModelMetadataSection(model)
+                    ModelRecommendationSection(recommendationState, onRecommendationInfoClick)
+                    if (!showInstallBundle) {
+                        ModelFileVariantsSection(
+                            model = model,
+                            ggufFiles = ggufFiles,
+                            isDownloading = isDownloading,
+                            onDownloadClick = onDownloadClick,
+                            heading = weightFilesHeading,
+                            emptyLabel = weightFilesEmptyLabel,
+                            recommendationState = recommendationState,
+                        )
+                    }
+                }
+                if (showInstallBundle) {
+                    InstallBundleCard(
+                        modelId = modelId,
+                        state = installBundleState,
+                        familyLabel = modelSetup?.familyLabel,
+                        modelDescription = null,
+                        onVariantSelected = onVariantSelected,
+                        onInstall = onSmartInstall,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = spacing.s),
+                        recommendedVariantPath = recommendedVariant,
+                        installEnabled = installEnabled,
+                    )
                 }
             }
         }
+    }
+}
 
-        // Tags
-        model.tags?.filterNotNull()?.takeIf { it.isNotEmpty() }?.let { tags ->
+@Composable
+private fun ModelOverviewSection(model: ModelDetailResponse, description: String?) {
+    val spacing = LocalSpacing.current
+    CaraMLPane(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(spacing.l),
+            verticalArrangement = Arrangement.spacedBy(spacing.s),
+        ) {
+            CaraMLSectionHeader(title = "Overview")
             Text(
-                text = "Tags",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                text = model.modelId ?: model.id ?: "Unknown",
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onSurface,
             )
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                tags.forEach { tag ->
-                    Surface(shape = MaterialTheme.shapes.large, tonalElevation = 1.dp) {
-                        Text(
-                            text = tag,
-                            style = MaterialTheme.typography.labelMedium,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+            model.author?.let { author ->
+                Text(
+                    text = author,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            description?.takeIf { it.isNotBlank() }?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (model.downloads != null || model.likes != null) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(spacing.l),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    model.downloads?.let { count ->
+                        ModelMetric(Icons.Default.Download, "$count downloads")
+                    }
+                    model.likes?.let { count ->
+                        ModelMetric(Icons.Default.FavoriteBorder, "$count likes")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModelMetric(icon: ImageVector, label: String) {
+    val spacing = LocalSpacing.current
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun ModelMetadataSection(model: ModelDetailResponse) {
+    val tags = model.tags?.filterNotNull().orEmpty()
+    val hasInfo = model.libraryName != null || model.pipelineTag != null ||
+        model.config?.modelType != null ||
+        model.config?.architectures?.filterNotNull()?.isNotEmpty() == true ||
+        model.cardData?.license != null ||
+        model.cardData?.baseModel?.takeIf { it.isNotEmpty() } != null ||
+        model.createdAt != null || model.lastModified != null
+    if (!hasInfo && tags.isEmpty()) return
+
+    val spacing = LocalSpacing.current
+    CaraMLPane(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(spacing.l),
+            verticalArrangement = Arrangement.spacedBy(spacing.s),
+        ) {
+            CaraMLSectionHeader(title = "Metadata")
+            DetailRow("Library", model.libraryName)
+            DetailRow("Pipeline", model.pipelineTag)
+            model.config?.let { config ->
+                DetailRow("Model type", config.modelType)
+                config.architectures?.filterNotNull()?.joinToString()?.let { arch ->
+                    DetailRow("Architectures", arch)
+                }
+            }
+            model.cardData?.let { card ->
+                DetailRow("License", card.license)
+                card.baseModel?.takeIf { it.isNotEmpty() }?.let { models ->
+                    DetailRow("Base model", models.joinToString(", "))
+                }
+            }
+            DetailRow("Created", model.createdAt)
+            DetailRow("Last modified", model.lastModified)
+            if (tags.isNotEmpty()) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(spacing.s),
+                    verticalArrangement = Arrangement.spacedBy(spacing.s),
+                ) {
+                    tags.forEach { tag ->
+                        CaraMLStatusPill(
+                            label = tag,
+                            contentDescription = "Tag: $tag",
+                            tone = StatusTone.Neutral,
                         )
                     }
                 }
             }
         }
+    }
+}
 
-        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+@Composable
+private fun ModelRecommendationSection(
+    recommendationState: RecommendedModelUiState?,
+    onRecommendationInfoClick: (() -> Unit)?,
+) {
+    val spacing = LocalSpacing.current
+    CaraMLPane(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(spacing.l),
+            verticalArrangement = Arrangement.spacedBy(spacing.s),
+        ) {
+            CaraMLSectionHeader(
+                title = "Device fit",
+                supportingText = "Recommendation evidence for this device",
+            )
+            RecommendationStatusChip(
+                state = recommendationState?.descriptorState ?: DescriptorState.NEEDS_INFORMATION,
+                recommendation = recommendationState?.personalizedResult,
+                onInfoClick = onRecommendationInfoClick,
+            )
+            recommendationState?.selectedVariantName?.let { variant ->
+                CaraMLStatusPill(
+                    label = variant,
+                    contentDescription = "Selected variant: $variant",
+                    tone = StatusTone.Accent,
+                )
+            }
+        }
+    }
+}
 
-        if (showInstallBundle) {
-            // ── Diffusion model: unified Smart Install card ──
-            InstallBundleCard(
-                modelId = modelId,
-                state = installBundleState,
-                familyLabel = modelSetup?.familyLabel,
-                modelDescription = modelSetup?.description,
-                onVariantSelected = onVariantSelected,
-                onInstall = onSmartInstall,
-                modifier = Modifier.fillMaxWidth(),
-                recommendedVariantPath = recommendedVariant,
-                installEnabled = recommendedVariant != null &&
-                    installBundleState.selectedVariantPath == recommendedVariant,
+@Composable
+private fun ModelFileVariantsSection(
+    model: ModelDetailResponse,
+    ggufFiles: List<GgufFileUiState>,
+    isDownloading: Boolean,
+    onDownloadClick: (String, String, DownloadMetadataDTO) -> Unit,
+    heading: String,
+    emptyLabel: String,
+    recommendationState: RecommendedModelUiState?,
+) {
+    val spacing = LocalSpacing.current
+    CaraMLPane(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(spacing.l),
+            verticalArrangement = Arrangement.spacedBy(spacing.s),
+        ) {
+            CaraMLSectionHeader(
+                title = heading,
+                supportingText = "Choose an assessed model weight to download",
             )
-        } else {
-            // ── Language model: per-file GGUF list ──
-            Text(
-                text = weightFilesHeading,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(bottom = 4.dp)
-            )
-            if (ggufFiles.isNotEmpty()) {
+            if (ggufFiles.isEmpty()) {
+                Text(
+                    text = emptyLabel,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
                 ggufFiles.forEach { item ->
                     GgufFileListItem(
                         filename = item.path.ifEmpty { item.filename },
@@ -238,22 +361,15 @@ fun ModelDetailContent(
                                     author = model.author,
                                     libraryName = model.libraryName,
                                     pipelineTag = model.pipelineTag,
-                                    contextLength = model.gguf?.contextLength
-                                )
+                                    contextLength = model.gguf?.contextLength,
+                                ),
                             )
                         },
-                        modifier = Modifier.padding(vertical = 4.dp),
                         downloadEnabled = item.artifact?.let { artifact ->
                             artifactMatches(recommendationState?.selectedDescriptor, artifact)
                         } == true,
                     )
                 }
-            } else {
-                Text(
-                    text = weightFilesEmptyLabel,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
     }
@@ -306,19 +422,23 @@ private fun DetailRow(
     modifier: Modifier = Modifier
 ) {
     if (value == null) return
+    val spacing = LocalSpacing.current
     Row(
         modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween
+        horizontalArrangement = Arrangement.spacedBy(spacing.s),
     ) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(0.4f),
         )
         Text(
             text = value,
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface
+            color = MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.End,
+            modifier = Modifier.weight(0.6f),
         )
     }
 }
