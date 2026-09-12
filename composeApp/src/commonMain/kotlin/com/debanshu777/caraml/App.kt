@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -20,6 +19,7 @@ import com.debanshu777.caraml.core.platform.AppLogger
 import com.debanshu777.caraml.core.recommendation.LoadSessionCoordinator
 import com.debanshu777.caraml.core.theme.CaraMLTheme
 import com.debanshu777.caraml.core.theme.ThemeViewModel
+import com.debanshu777.caraml.core.ui.components.AuroraBackdrop
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.serializer
@@ -55,7 +55,7 @@ fun App() {
     }
     val themePreferences by themeViewModel.preferences.collectAsState()
     CaraMLTheme(themePreferences) {
-        Surface(
+        AuroraBackdrop(
             modifier = Modifier.fillMaxSize()
                 .windowInsetsPadding(WindowInsets.ime)
         ) {

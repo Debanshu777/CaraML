@@ -6,6 +6,7 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
@@ -14,6 +15,8 @@ import androidx.compose.ui.Modifier
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import com.debanshu777.caraml.core.navigation.AppScreen
+import com.debanshu777.caraml.core.ui.layout.AppContentKind
+import com.debanshu777.caraml.core.ui.layout.adaptiveLayoutPolicy
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
 
 private val primaryDrawerItems = listOf(
@@ -77,66 +80,67 @@ fun AppDrawerShell(
             else -> null
         }
 
-        AnimatedDrawerScaffold(
-            modifier = modifier,
-            drawerState = controller.drawerState,
-            onDrawerStateChange = { controller.setState(it) },
-            gestureEnabled = gestureEnabled,
-            drawerContent = {
-                CustomDrawer(
-                    items = primaryDrawerItems,
-                    selectedItemId = selectedItemId,
-                    onItemClick = { item ->
-                        when (item.id) {
-                            "chat" -> {
-                                modeController.setState(GenerationMode.Text)
-                                if (currentScreen != AppScreen.Home) {
-                                    Snapshot.withMutableSnapshot {
-                                        backStack.clear()
-                                        backStack.add(AppScreen.Home)
-                                    }
-                                }
-                            }
-                            "image" -> {
-                                modeController.setState(GenerationMode.Image)
-                                if (currentScreen != AppScreen.Home) {
-                                    Snapshot.withMutableSnapshot {
-                                        backStack.clear()
-                                        backStack.add(AppScreen.Home)
-                                    }
-                                }
-                            }
-                            "video" -> {
-                                modeController.setState(GenerationMode.Video)
-                                if (currentScreen != AppScreen.Home) {
-                                    Snapshot.withMutableSnapshot {
-                                        backStack.clear()
-                                        backStack.add(AppScreen.Home)
-                                    }
-                                }
-                            }
-                            "models" -> {
-                                if (currentScreen != AppScreen.Search) {
-                                    Snapshot.withMutableSnapshot {
-                                        backStack.clear()
-                                        backStack.add(AppScreen.Search)
-                                    }
-                                }
-                            }
-                            "settings" -> {
-                                if (currentScreen != AppScreen.Settings) {
-                                    Snapshot.withMutableSnapshot {
-                                        backStack.clear()
-                                        backStack.add(AppScreen.Settings)
-                                    }
-                                }
-                            }
+        val onItemClick: (DrawerItem) -> Unit = { item ->
+            when (item.id) {
+                "chat" -> {
+                    modeController.setState(GenerationMode.Text)
+                    if (currentScreen != AppScreen.Home) {
+                        Snapshot.withMutableSnapshot {
+                            backStack.clear()
+                            backStack.add(AppScreen.Home)
                         }
-                        controller.close()
                     }
-                )
-            },
-            content = content,
-        )
+                }
+                "image" -> {
+                    modeController.setState(GenerationMode.Image)
+                    if (currentScreen != AppScreen.Home) {
+                        Snapshot.withMutableSnapshot {
+                            backStack.clear()
+                            backStack.add(AppScreen.Home)
+                        }
+                    }
+                }
+                "video" -> {
+                    modeController.setState(GenerationMode.Video)
+                    if (currentScreen != AppScreen.Home) {
+                        Snapshot.withMutableSnapshot {
+                            backStack.clear()
+                            backStack.add(AppScreen.Home)
+                        }
+                    }
+                }
+                "models" -> {
+                    if (currentScreen != AppScreen.Search) {
+                        Snapshot.withMutableSnapshot {
+                            backStack.clear()
+                            backStack.add(AppScreen.Search)
+                        }
+                    }
+                }
+                "settings" -> {
+                    if (currentScreen != AppScreen.Settings) {
+                        Snapshot.withMutableSnapshot {
+                            backStack.clear()
+                            backStack.add(AppScreen.Settings)
+                        }
+                    }
+                }
+            }
+            controller.close()
+        }
+
+        BoxWithConstraints(modifier = modifier) {
+            val navigation = adaptiveLayoutPolicy(maxWidth, AppContentKind.Chat).navigation
+            AdaptiveNavigation(
+                navigation = navigation,
+                items = primaryDrawerItems,
+                selectedItemId = selectedItemId,
+                drawerState = controller.drawerState,
+                onDrawerStateChange = controller::setState,
+                gestureEnabled = gestureEnabled,
+                onItemClick = onItemClick,
+                content = content,
+            )
+        }
     }
 }

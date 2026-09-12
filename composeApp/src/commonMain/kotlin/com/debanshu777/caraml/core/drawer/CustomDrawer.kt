@@ -23,7 +23,7 @@ fun CustomDrawer(
     Column(
         modifier = modifier
             .fillMaxHeight()
-            .fillMaxWidth(0.6f)
+            .fillMaxWidth()
             .padding(horizontal = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
