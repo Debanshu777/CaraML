@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.core.platform
 
+import com.debanshu777.caraml.core.recommendation.Confidence
 import com.debanshu777.diffusionrunner.DiffusionBackendCapability
 import com.debanshu777.diffusionrunner.DiffusionBackendDeviceType
 import com.debanshu777.diffusionrunner.DiffusionBackendKind
@@ -28,6 +29,7 @@ class RunnerBackendCapabilitySourceTest {
 
         val cuda = capabilities.single { it.kind == BackendKind.CUDA }
         assertEquals(BackendStatus.UNAVAILABLE, cuda.status)
+        assertEquals(Confidence.HIGH, cuda.availabilityConfidence)
         assertEquals(null, cuda.additionalAllocatableBytes)
     }
 
@@ -142,11 +144,75 @@ class RunnerBackendCapabilitySourceTest {
         assertEquals(8_000L, cuda.additionalAllocatableBytes)
     }
 
+    @Test
+    fun legacyEvidenceOnBothSidesRemainsUnknown() {
+        val capabilities = mapRunnerBackendCapabilities(
+            llamaCapabilities = listOf(
+                native(NativeBackendKind.CUDA, NativeBackendDeviceType.DISCRETE_GPU, 3_000L, null),
+            ),
+            diffusionCapabilities = listOf(
+                diffusionNative(
+                    DiffusionBackendKind.CUDA,
+                    DiffusionBackendDeviceType.DISCRETE_GPU,
+                    4_000L,
+                    null,
+                ),
+            ),
+        )
+
+        val cuda = capabilities.single { it.kind == BackendKind.CUDA }
+        assertEquals(BackendStatus.UNKNOWN, cuda.status)
+        assertEquals(Confidence.LOW, cuda.availabilityConfidence)
+    }
+
+    @Test
+    fun legacyEvidenceOnOneSideCannotDisproveModernEvidence() {
+        val capabilities = mapRunnerBackendCapabilities(
+            llamaCapabilities = listOf(
+                native(NativeBackendKind.CUDA, NativeBackendDeviceType.DISCRETE_GPU, 3_000L, null),
+            ),
+            diffusionCapabilities = listOf(
+                diffusionNative(
+                    DiffusionBackendKind.CUDA,
+                    DiffusionBackendDeviceType.DISCRETE_GPU,
+                    4_000L,
+                    "cuda0",
+                ),
+            ),
+        )
+
+        val cuda = capabilities.single { it.kind == BackendKind.CUDA }
+        assertEquals(BackendStatus.UNKNOWN, cuda.status)
+        assertEquals(Confidence.LOW, cuda.availabilityConfidence)
+    }
+
+    @Test
+    fun duplicateOnlyCanonicalIdentityEvidenceRemainsUnknown() {
+        val capabilities = mapRunnerBackendCapabilities(
+            llamaCapabilities = listOf(
+                native(NativeBackendKind.CUDA, NativeBackendDeviceType.DISCRETE_GPU, 3_000L, "cuda0"),
+                native(NativeBackendKind.CUDA, NativeBackendDeviceType.DISCRETE_GPU, 4_000L, "cuda0"),
+            ),
+            diffusionCapabilities = listOf(
+                diffusionNative(
+                    DiffusionBackendKind.CUDA,
+                    DiffusionBackendDeviceType.DISCRETE_GPU,
+                    5_000L,
+                    "cuda0",
+                ),
+            ),
+        )
+
+        val cuda = capabilities.single { it.kind == BackendKind.CUDA }
+        assertEquals(BackendStatus.UNKNOWN, cuda.status)
+        assertEquals(Confidence.LOW, cuda.availabilityConfidence)
+    }
+
     private fun native(
         kind: NativeBackendKind,
         type: NativeBackendDeviceType,
         freeBytes: Long,
-        identity: String = "${kind.stableName}0",
+        identity: String? = "${kind.stableName}0",
     ) = NativeBackendCapability(
         kind = kind,
         deviceType = type,
@@ -159,7 +225,7 @@ class RunnerBackendCapabilitySourceTest {
         kind: DiffusionBackendKind,
         type: DiffusionBackendDeviceType,
         freeBytes: Long,
-        identity: String = "${kind.stableName}0",
+        identity: String? = "${kind.stableName}0",
     ) = DiffusionBackendCapability(
         kind = kind,
         deviceType = type,

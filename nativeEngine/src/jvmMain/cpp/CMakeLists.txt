@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(llama_runner_desktop VERSION 1.0.0 LANGUAGES C CXX)
 
+include(CTest)
+
 add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../../artifactFs/cpp" artifact-fs-build)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -138,6 +140,7 @@ foreach(_diffusion_test IN ITEMS
         "${SD_SRC}/src"
         "${SD_SRC}/ggml/include"
     )
+    add_test(NAME ${_diffusion_test} COMMAND ${_diffusion_test})
 endforeach()
 
 add_executable(
@@ -150,3 +153,4 @@ target_include_directories(diffusion_max_vram_test PRIVATE
     "${SD_SRC}/ggml/include"
 )
 target_link_libraries(diffusion_max_vram_test PRIVATE stable-diffusion Threads::Threads)
+add_test(NAME diffusion_max_vram_test COMMAND diffusion_max_vram_test)

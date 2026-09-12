@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -59,5 +60,45 @@ int main() {
     constexpr size_t POSITIVE_GIB = 100'000;
     expect(resolved(std::to_string(POSITIVE_GIB)) == POSITIVE_GIB * GIB,
            "positive max-VRAM must be returned verbatim even above free memory");
+
+    const std::vector<caraml::diffusion::PreflightBackendCandidate> candidates = {
+        {"cpu0", 0},
+        {"gpu0", 1},
+        {"optional-failing", 2},
+    };
+    const auto resolve_name = [](const std::string &requested) {
+        return requested.empty() ? std::string("gpu0") : requested;
+    };
+    std::vector<std::string> initialization_attempts;
+    const auto selected_working = caraml::diffusion::collect_selected_backend_budgets(
+        "diffusion=gpu0,te=cpu0,vae=gpu0",
+        "",
+        candidates,
+        resolve_name,
+        [&](const caraml::diffusion::PreflightBackendCandidate &candidate, int64_t &budget_bytes) {
+            initialization_attempts.push_back(candidate.canonical_name);
+            if (candidate.canonical_name == "optional-failing") return false;
+            budget_bytes = candidate.canonical_name == "cpu0" ? 0 : 4'096;
+            return true;
+        });
+    expect(selected_working.status == caraml::diffusion::PreflightBackendBudgetStatus::SUCCESS,
+           "an unused backend initialization failure must not invalidate the selected plan");
+    expect(selected_working.backends.size() == 2,
+           "only selected runtime/parameter devices must be reported");
+    expect(initialization_attempts == std::vector<std::string>({"cpu0", "gpu0"}),
+           "unused backend devices must never be initialized by preflight");
+
+    const auto selected_failing = caraml::diffusion::collect_selected_backend_budgets(
+        "*=optional-failing",
+        "",
+        candidates,
+        resolve_name,
+        [](const caraml::diffusion::PreflightBackendCandidate &, int64_t &) {
+            return false;
+        });
+    expect(selected_failing.status == caraml::diffusion::PreflightBackendBudgetStatus::UNAVAILABLE,
+           "failure of a selected backend must produce unavailable native evidence");
+    expect(selected_failing.backends.empty(),
+           "a failed selected backend must not publish partial budget evidence");
     return 0;
 }

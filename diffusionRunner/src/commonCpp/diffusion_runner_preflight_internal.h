@@ -28,6 +28,26 @@ struct PreflightComponentEvidence {
     int parameter_placement = DIFFUSION_PARAMS_DEFAULT;
 };
 
+struct PreflightBackendCandidate {
+    std::string canonical_name;
+    size_t registry_ordinal = 0;
+};
+
+enum class PreflightBackendBudgetStatus {
+    SUCCESS,
+    UNAVAILABLE,
+};
+
+struct PreflightSelectedBackendBudget {
+    size_t candidate_index = 0;
+    int64_t budget_bytes = 0;
+};
+
+struct PreflightBackendBudgetCollection {
+    PreflightBackendBudgetStatus status = PreflightBackendBudgetStatus::UNAVAILABLE;
+    std::vector<PreflightSelectedBackendBudget> backends;
+};
+
 inline std::string lower_ascii(std::string value) {
     std::transform(value.begin(), value.end(), value.begin(), [](unsigned char byte) {
         return byte >= 'A' && byte <= 'Z'
@@ -35,6 +55,14 @@ inline std::string lower_ascii(std::string value) {
             : static_cast<char>(byte);
     });
     return value;
+}
+
+inline std::string canonical_backend_name(std::string value) {
+    size_t first = 0;
+    size_t last = value.size();
+    while (first < last && std::isspace(static_cast<unsigned char>(value[first]))) ++first;
+    while (last > first && std::isspace(static_cast<unsigned char>(value[last - 1]))) --last;
+    return lower_ascii(value.substr(first, last - first));
 }
 
 inline std::string assignment_value(const std::string &spec, const std::string &module) {
@@ -189,6 +217,61 @@ inline bool max_vram_bytes_for_device(
     if (resolved > static_cast<size_t>(std::numeric_limits<int64_t>::max())) return false;
     bytes = static_cast<int64_t>(resolved);
     return true;
+}
+
+template <typename NameResolver, typename BudgetResolver>
+PreflightBackendBudgetCollection collect_selected_backend_budgets(
+        const std::string &runtime_spec,
+        const std::string &params_spec,
+        const std::vector<PreflightBackendCandidate> &candidates,
+        NameResolver resolve_name,
+        BudgetResolver resolve_budget) {
+    bool selected[DIFFUSION_PREFLIGHT_MAX_BACKENDS]{};
+    if (candidates.empty() || candidates.size() > DIFFUSION_PREFLIGHT_MAX_BACKENDS) return {};
+
+    const auto select_assignment = [&](const std::string &raw_assignment) {
+        const std::string assignment = canonical_backend_name(raw_assignment);
+        size_t start = 0;
+        do {
+            const size_t end = assignment.find('&', start);
+            const std::string token = assignment.substr(
+                start,
+                end == std::string::npos ? std::string::npos : end - start);
+            const std::string resolved = canonical_backend_name(
+                resolve_name(token == "default" || token == "auto" ? std::string() : token));
+            if (resolved.empty()) return false;
+            size_t matched_index = candidates.size();
+            for (size_t index = 0; index < candidates.size(); ++index) {
+                if (canonical_backend_name(candidates[index].canonical_name) != resolved) continue;
+                if (matched_index != candidates.size()) return false;
+                matched_index = index;
+            }
+            if (matched_index == candidates.size()) return false;
+            selected[matched_index] = true;
+            if (end == std::string::npos) break;
+            start = end + 1;
+        } while (start <= assignment.size());
+        return true;
+    };
+
+    constexpr const char *modules[] = {"diffusion", "te", "vae"};
+    for (const char *module : modules) {
+        const std::string runtime = assignment_value(runtime_spec, module);
+        if (!select_assignment(runtime)) return {};
+        const std::string params = canonical_backend_name(assignment_value(params_spec, module));
+        if (!params.empty() && params != "disk" && !select_assignment(params)) return {};
+    }
+
+    PreflightBackendBudgetCollection result;
+    for (size_t index = 0; index < candidates.size(); ++index) {
+        if (!selected[index]) continue;
+        int64_t budget_bytes = 0;
+        if (!resolve_budget(candidates[index], budget_bytes) || budget_bytes < 0) return {};
+        result.backends.push_back({index, budget_bytes});
+    }
+    if (result.backends.empty()) return {};
+    result.status = PreflightBackendBudgetStatus::SUCCESS;
+    return result;
 }
 
 } // namespace caraml::diffusion

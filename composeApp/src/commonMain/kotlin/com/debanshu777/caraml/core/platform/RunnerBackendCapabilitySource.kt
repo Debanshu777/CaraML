@@ -42,22 +42,7 @@ class RunnerBackendCapabilitySource(
     private fun unknownRegistryCapabilities(): List<BackendCapability> = buildList {
         add(availableCpuCapability())
         BackendKind.entries.filterNot { it == BackendKind.CPU }.forEach { kind ->
-            add(
-                BackendCapability(
-                    kind = kind,
-                    status = BackendStatus.UNKNOWN,
-                    additionalAllocatableBytes = null,
-                    availabilityConfidence = Confidence.LOW,
-                    headroomConfidence = null,
-                    evidence = listOf(
-                        Evidence(
-                            reason = AssessmentReason.BACKEND_CAPABILITY_UNKNOWN,
-                            confidence = Confidence.LOW,
-                            detail = "runner-native-registry",
-                        ),
-                    ),
-                ),
-            )
+            add(unknownBackendCapability(kind))
         }
     }
 }
@@ -66,18 +51,30 @@ internal fun mapRunnerBackendCapabilities(
     llamaCapabilities: List<NativeBackendCapability>,
     diffusionCapabilities: List<DiffusionBackendCapability>,
 ): List<BackendCapability> {
-    val llamaByDevice = llamaCapabilities
+    val llamaCompute = llamaCapabilities
         .filter { it.kind != NativeBackendKind.OTHER && it.isComputeDeviceForKind() }
-        .mapNotNull { capability -> capability.deviceKey()?.let { it to capability } }
-        .groupBy({ it.first }, { it.second })
-        .filterValues { it.size == 1 }
-        .mapValues { it.value.single() }
-    val diffusionByDevice = diffusionCapabilities
+    val diffusionCompute = diffusionCapabilities
         .filter { it.kind != DiffusionBackendKind.OTHER && it.isComputeDeviceForKind() }
+    val llamaGrouped = llamaCompute
         .mapNotNull { capability -> capability.deviceKey()?.let { it to capability } }
         .groupBy({ it.first }, { it.second })
+    val diffusionGrouped = diffusionCompute
+        .mapNotNull { capability -> capability.deviceKey()?.let { it to capability } }
+        .groupBy({ it.first }, { it.second })
+    val llamaByDevice = llamaGrouped
         .filterValues { it.size == 1 }
         .mapValues { it.value.single() }
+    val diffusionByDevice = diffusionGrouped
+        .filterValues { it.size == 1 }
+        .mapValues { it.value.single() }
+    val llamaPresentKinds = llamaCompute.mapTo(mutableSetOf()) { it.kind.toBackendKind() }
+    val diffusionPresentKinds = diffusionCompute.mapTo(mutableSetOf()) { it.kind.toBackendKind() }
+    val unresolvedKinds = buildSet {
+        llamaCompute.filter { it.deviceIdentity == null }.forEach { add(it.kind.toBackendKind()) }
+        diffusionCompute.filter { it.deviceIdentity == null }.forEach { add(it.kind.toBackendKind()) }
+        llamaGrouped.filterValues { it.size != 1 }.keys.forEach { add(it.kind) }
+        diffusionGrouped.filterValues { it.size != 1 }.keys.forEach { add(it.kind) }
+    }
     return BackendKind.entries.map { kind ->
         val commonDevices = llamaByDevice.keys.intersect(diffusionByDevice.keys)
             .filter { it.kind == kind }
@@ -105,6 +102,8 @@ internal fun mapRunnerBackendCapabilities(
                     evidence = listOf(verifiedBackendEvidence("runner-native-${kind.name.lowercase()}")),
                 )
             }
+            kind in unresolvedKinds && kind in llamaPresentKinds && kind in diffusionPresentKinds ->
+                unknownBackendCapability(kind)
             else -> BackendCapability(
                 kind = kind,
                 status = BackendStatus.UNAVAILABLE,
@@ -116,6 +115,21 @@ internal fun mapRunnerBackendCapabilities(
         }
     }
 }
+
+private fun unknownBackendCapability(kind: BackendKind) = BackendCapability(
+    kind = kind,
+    status = BackendStatus.UNKNOWN,
+    additionalAllocatableBytes = null,
+    availabilityConfidence = Confidence.LOW,
+    headroomConfidence = null,
+    evidence = listOf(
+        Evidence(
+            reason = AssessmentReason.BACKEND_CAPABILITY_UNKNOWN,
+            confidence = Confidence.LOW,
+            detail = "runner-native-registry",
+        ),
+    ),
+)
 
 private data class RunnerDeviceKey(
     val kind: BackendKind,

@@ -1,5 +1,6 @@
 #include "diffusion_runner_core.h"
 #include "stable-diffusion.h"
+#include "core/ggml_extend_backend.h"
 #include "model.h"
 #include "model_loader.h"
 #include "core/backend_fit.h"
@@ -533,19 +534,24 @@ static ResolvedModelPlan resolve_model_plan(
     return plan;
 }
 
-static int64_t backend_mask_for_assignment(const std::string &value) {
+static int64_t backend_mask_for_assignment(
+        const std::string &value,
+        const std::vector<caraml::diffusion::PreflightBackendCandidate> &candidates,
+        const caraml::diffusion::PreflightBackendBudgetCollection &selected_backends) {
     if (value.empty() || lower_ascii(value.c_str()) == "cpu") return 0;
     int64_t mask = 0;
     size_t start = 0;
     while (start <= value.size()) {
         const size_t end = value.find('&', start);
         const std::string requested = lower_ascii(value.substr(start, end == std::string::npos ? std::string::npos : end - start).c_str());
+        const std::string resolved = caraml::diffusion::canonical_backend_name(
+            sd_backend_resolve_name(requested));
         bool matched = false;
-        const size_t count = std::min(ggml_backend_dev_count(), static_cast<size_t>(DIFFUSION_PREFLIGHT_MAX_BACKENDS));
-        for (size_t index = 0; index < count; ++index) {
-            ggml_backend_dev_t device = ggml_backend_dev_get(index);
-            if (device && requested == lower_ascii(ggml_backend_dev_name(device))) {
-                mask |= int64_t{1} << index;
+        for (size_t report_index = 0; report_index < selected_backends.backends.size(); ++report_index) {
+            const size_t candidate_index = selected_backends.backends[report_index].candidate_index;
+            if (candidate_index < candidates.size() &&
+                resolved == candidates[candidate_index].canonical_name) {
+                mask |= int64_t{1} << report_index;
                 matched = true;
                 break;
             }
@@ -1082,23 +1088,54 @@ DiffusionPreflightResultNative diffusion_runner_core_preflight(const DiffusionMo
             return result;
         }
 
-        const size_t backend_count = ggml_backend_dev_count();
-        if (backend_count == 0 || backend_count > DIFFUSION_PREFLIGHT_MAX_BACKENDS) {
+        const size_t registry_backend_count = ggml_backend_dev_count();
+        if (registry_backend_count == 0 || registry_backend_count > DIFFUSION_PREFLIGHT_MAX_BACKENDS) {
             result.status = DIFFUSION_PREFLIGHT_UNAVAILABLE;
             return result;
         }
-        for (size_t index = 0; index < backend_count; ++index) {
+        std::vector<caraml::diffusion::PreflightBackendCandidate> backend_candidates;
+        backend_candidates.reserve(registry_backend_count);
+        for (size_t index = 0; index < registry_backend_count; ++index) {
             ggml_backend_dev_t device = ggml_backend_dev_get(index);
             if (!device) {
                 result.status = DIFFUSION_PREFLIGHT_UNAVAILABLE;
                 return result;
             }
+            backend_candidates.push_back({
+                caraml::diffusion::canonical_backend_name(ggml_backend_dev_name(device)),
+                index,
+            });
+        }
+        const auto selected_backends = caraml::diffusion::collect_selected_backend_budgets(
+            resolved_plan.runtime_spec,
+            resolved_plan.params_spec,
+            backend_candidates,
+            [](const std::string &requested) { return sd_backend_resolve_name(requested); },
+            [&resolved_plan](
+                    const caraml::diffusion::PreflightBackendCandidate &candidate,
+                    int64_t &budget_bytes) {
+                ggml_backend_dev_t device = ggml_backend_dev_get(candidate.registry_ordinal);
+                return caraml::diffusion::max_vram_bytes_for_device(
+                    resolved_plan.budgets,
+                    device,
+                    budget_bytes);
+            });
+        if (selected_backends.status !=
+            caraml::diffusion::PreflightBackendBudgetStatus::SUCCESS) {
+            result.status = DIFFUSION_PREFLIGHT_UNAVAILABLE;
+            return result;
+        }
+        for (size_t index = 0; index < selected_backends.backends.size(); ++index) {
+            const auto &selected = selected_backends.backends[index];
+            const auto &candidate = backend_candidates[selected.candidate_index];
+            ggml_backend_dev_t device = ggml_backend_dev_get(candidate.registry_ordinal);
             ggml_backend_dev_props properties{};
             ggml_backend_dev_get_props(device, &properties);
             DiffusionPreflightBackendNative &destination = result.backends[index];
             destination.kind = diffusion_backend_kind(device);
             destination.device_type = diffusion_backend_device_type(device);
             destination.ordinal = static_cast<int>(index);
+            destination.budget_bytes = selected.budget_bytes;
             if (properties.memory_total > 0) {
                 if (!checked_size_to_i64(properties.memory_free, destination.free_bytes) ||
                     !checked_size_to_i64(properties.memory_total, destination.total_bytes) ||
@@ -1107,14 +1144,11 @@ DiffusionPreflightResultNative diffusion_runner_core_preflight(const DiffusionMo
                     return result;
                 }
             }
-            if (!caraml::diffusion::max_vram_bytes_for_device(
-                    resolved_plan.budgets,
-                    device,
-                    destination.budget_bytes)) {
-                result.status = DIFFUSION_PREFLIGHT_INVALID;
-                return result;
-            }
         }
+
+        const auto selected_backend_mask = [&](const std::string &assignment) {
+            return backend_mask_for_assignment(assignment, backend_candidates, selected_backends);
+        };
 
         const ggml_type override_type = config.wtype >= 0
             ? static_cast<ggml_type>(config.wtype)
@@ -1145,7 +1179,7 @@ DiffusionPreflightResultNative diffusion_runner_core_preflight(const DiffusionMo
                 tensors,
                 resolved_plan.runtime_spec,
                 resolved_plan.params_spec,
-                backend_mask_for_assignment);
+                selected_backend_mask);
             if (classified.empty() || classified.size() > DIFFUSION_PREFLIGHT_MAX_COMPONENTS) {
                 result.status = DIFFUSION_PREFLIGHT_INVALID;
                 return result;
@@ -1186,7 +1220,7 @@ DiffusionPreflightResultNative diffusion_runner_core_preflight(const DiffusionMo
                 const std::string runtime_value = assignment_value(
                     resolved_plan.runtime_spec,
                     source.module);
-                destination.runtime_backend_mask = backend_mask_for_assignment(runtime_value);
+                destination.runtime_backend_mask = selected_backend_mask(runtime_value);
                 destination.runtime_placement = runtime_placement_for(
                     runtime_value,
                     destination.runtime_backend_mask);
@@ -1206,7 +1240,7 @@ DiffusionPreflightResultNative diffusion_runner_core_preflight(const DiffusionMo
             resolved_plan.params_spec);
         result.declared_component_mask = declared_mask;
         result.component_count = result_component_count;
-        result.backend_count = static_cast<int>(backend_count);
+        result.backend_count = static_cast<int>(selected_backends.backends.size());
     } catch (const std::bad_alloc &) {
         result = DiffusionPreflightResultNative{};
         result.status = DIFFUSION_PREFLIGHT_UNAVAILABLE;

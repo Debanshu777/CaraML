@@ -136,6 +136,7 @@ Create a **separate** Gradle module + CMake project. Do not add here unless it m
 
 <!-- Updated at end of each Claude Code session -->
 
+- `verifyProject` now builds and executes all four stable-diffusion native preflight regressions through CTest
 - Stable-diffusion native builds now expose bounded metadata-only preflight and use the same pinned backend-fit resolver for preflight and actual context creation
 - Desktop native tests cover bundled-role placement, pinned max-VRAM assignment, effective streaming constraints, and failure-atomic context publication
 - Desktop builds now find CMake through validated explicit/PATH executables and place and assert `artifact_fs` at one configuration-independent path before packaging and installed-image smoke tests

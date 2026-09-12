@@ -16,5 +16,6 @@ tasks.register("verifyProject") {
         ":huggingFaceManager:jvmTest",
         ":runner:jvmTest",
         ":diffusionRunner:jvmTest",
+        ":nativeEngine:testDiffusionRunnerNativeDesktop",
     )
 }

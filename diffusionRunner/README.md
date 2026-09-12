@@ -152,6 +152,7 @@ The merged iOS `.a` includes both `llama_runner` and `diffusion_runner` objects.
 
 <!-- Updated at end of each Claude Code session -->
 
+- Preflight initializes and reports only devices selected by the resolved runtime/parameter plan; a failing unused registry device no longer invalidates a valid plan
 - Added fixed-layout Android/JVM/iOS preflight, backend-registry and feature-probe APIs; model load and preflight share the pinned engine's bounded max-VRAM/auto-fit resolution
 - Preflight now reports bundled component roles and exact resolved placements, preserves pinned max-VRAM and streaming semantics, publishes new contexts through immediate RAII ownership, and identifies backend devices canonically across platform ABIs
 - Fix: SD Vulkan SIGABRT root cause — `SD_VULKAN=OFF` in Android CMakeLists is the real fix; `diffusion_runner_core.cpp` reverted: removed `diffusion_conv_direct=true` force and wtype=F16 auto-override from Vulkan detection block (these were failed workarounds); CLIP+VAE CPU-pin block kept as belt-and-suspenders for future Vulkan enablement
