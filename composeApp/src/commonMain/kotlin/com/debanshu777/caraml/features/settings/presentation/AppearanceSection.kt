@@ -2,20 +2,22 @@ package com.debanshu777.caraml.features.settings.presentation
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -31,13 +33,22 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.theme.ThemeDefaults
 import com.debanshu777.caraml.core.theme.ThemeMode
 import com.debanshu777.caraml.core.theme.ThemePaletteStyle
 import com.debanshu777.caraml.core.theme.ThemeViewModel
+import com.debanshu777.caraml.core.theme.auroraColors
+import com.debanshu777.caraml.core.ui.components.CaraMLPane
 
 /**
  * Appearance preferences hosted in [SettingsScreen].
@@ -55,10 +66,7 @@ fun AppearanceSection(
 ) {
     val preferences by viewModel.preferences.collectAsState()
 
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
-    ) {
+    CaraMLPane(modifier = modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(LocalSpacing.current.l),
             verticalArrangement = Arrangement.spacedBy(20.dp),
@@ -67,6 +75,8 @@ fun AppearanceSection(
                 text = "Appearance",
                 style = MaterialTheme.typography.titleMedium,
             )
+
+            AuroraThemePreview()
 
             // Theme mode --------------------------------------------------
             Column(verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.s)) {
@@ -80,6 +90,7 @@ fun AppearanceSection(
                         SegmentedButton(
                             selected = preferences.themeMode == mode,
                             onClick = { viewModel.updateThemeMode(mode) },
+                            modifier = Modifier.heightIn(min = 48.dp),
                             shape = SegmentedButtonDefaults.itemShape(
                                 index = index,
                                 count = ThemeMode.entries.size,
@@ -101,10 +112,11 @@ fun AppearanceSection(
                     horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.m),
                     contentPadding = PaddingValues(vertical = LocalSpacing.current.xs),
                 ) {
-                    items(ThemeDefaults.PRESET_SEEDS) { color ->
+                    itemsIndexed(ThemeDefaults.PRESET_SEEDS) { index, color ->
                         SeedSwatch(
                             color = color,
                             selected = color.argbInt() == preferences.seedColor.argbInt(),
+                            label = "Seed color ${index + 1}",
                             onClick = { viewModel.updateSeedColor(color) },
                         )
                     }
@@ -128,6 +140,15 @@ fun AppearanceSection(
                             onClick = { viewModel.updatePaletteStyle(style) },
                             label = { Text(style.displayName()) },
                             colors = FilterChipDefaults.filterChipColors(),
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .semantics {
+                                    stateDescription = if (preferences.paletteStyle == style) {
+                                        "Selected"
+                                    } else {
+                                        "Not selected"
+                                    }
+                                },
                         )
                     }
                 }
@@ -142,9 +163,39 @@ fun AppearanceSection(
 }
 
 @Composable
+internal fun AuroraThemePreview(modifier: Modifier = Modifier) {
+    val colors = MaterialTheme.auroraColors
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(88.dp)
+            .clip(MaterialTheme.shapes.large)
+            .drawWithCache {
+                val primaryWash = Brush.radialGradient(
+                    colors = listOf(colors.primaryGlow, Color.Transparent),
+                    center = Offset.Zero,
+                    radius = size.maxDimension,
+                )
+                val tertiaryWash = Brush.radialGradient(
+                    colors = listOf(colors.tertiaryGlow, Color.Transparent),
+                    center = Offset(size.width, size.height),
+                    radius = size.maxDimension * 0.7f,
+                )
+                onDrawBehind {
+                    drawRect(colors.canvas)
+                    drawRect(primaryWash)
+                    drawRect(tertiaryWash)
+                }
+            }
+            .semantics { contentDescription = "Current Aurora theme preview" },
+    )
+}
+
+@Composable
 private fun SeedSwatch(
     color: Color,
     selected: Boolean,
+    label: String,
     onClick: () -> Unit,
 ) {
     val borderColor =
@@ -158,8 +209,13 @@ private fun SeedSwatch(
             .clip(CircleShape)
             .background(color)
             .border(borderWidth, borderColor, CircleShape)
-            .clickable(
-                onClickLabel = if (selected) "Selected seed color" else "Use this seed color",
+            .semantics {
+                contentDescription = label
+                stateDescription = if (selected) "Selected" else "Not selected"
+            }
+            .selectable(
+                selected = selected,
+                role = Role.RadioButton,
                 onClick = onClick,
             ),
         contentAlignment = Alignment.Center,
@@ -168,7 +224,7 @@ private fun SeedSwatch(
             Icon(
                 imageVector = Icons.Default.Check,
                 contentDescription = null,
-                tint = Color.White,
+                tint = MaterialTheme.colorScheme.onPrimary,
             )
         }
     }

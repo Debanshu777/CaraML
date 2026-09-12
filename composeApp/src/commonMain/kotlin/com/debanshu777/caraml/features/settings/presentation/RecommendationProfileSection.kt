@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.recommendation.OptimizationPriority
 import com.debanshu777.caraml.core.recommendation.RecommendationProfile
@@ -100,6 +101,7 @@ private fun <T> ChoiceGroup(
     Column(verticalArrangement = Arrangement.spacedBy(spacing.s)) {
         Text(text = title, style = MaterialTheme.typography.labelLarge)
         FlowRow(
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(spacing.s),
             verticalArrangement = Arrangement.spacedBy(spacing.xs),
         ) {
@@ -115,6 +117,7 @@ private fun <T> ChoiceGroup(
                         .semantics {
                             contentDescription = "$accessibilityPrefix ${label(choice)}, " +
                                 if (isSelected) "selected" else "not selected"
+                            stateDescription = if (isSelected) "Selected" else "Not selected"
                         },
                 )
             }
