@@ -8,7 +8,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.v2.runComposeUiTest
@@ -73,7 +76,7 @@ class AdaptiveNavigationUiTest {
         runOnIdle { drawerState = CustomDrawerState.Closed }
         waitForIdle()
 
-        onNodeWithText("CaraML").assertDoesNotExist()
-        onNodeWithContentDescription("Chat, selected").assertDoesNotExist()
+        onAllNodesWithText("CaraML").assertCountEquals(0)
+        onAllNodesWithContentDescription("Chat, selected").assertCountEquals(0)
     }
 }
