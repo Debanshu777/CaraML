@@ -1,3 +1,16 @@
+import groovy.json.JsonSlurper
+import java.io.FileInputStream
+import java.io.FilterInputStream
+import java.io.InputStream
+import java.net.URI
+import java.net.HttpURLConnection
+import java.security.DigestInputStream
+import java.security.MessageDigest
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import javax.net.ssl.HttpsURLConnection
+
 plugins {
     alias(libs.plugins.androidLibrary)
 }
@@ -484,6 +497,274 @@ val verifyArtifactFsDesktopLibrary by tasks.registering {
         val runtime = artifactFsDesktopLibrary.get().asFile
         if (!runtime.isFile || runtime.length() <= 0L) {
             throw GradleException("artifact_fs desktop runtime was not produced at the stable packaging path")
+        }
+    }
+}
+
+// ----------------------------------------------------------------------------
+// License-reviewed, digest-addressed native parity fixtures.
+//
+// The repository-owned manifest is parsed with an exact schema. External
+// redirects are followed manually through a fixed HTTPS host allowlist, every
+// response is streamed under its declared cap, and bytes are published only
+// after SHA-256 verification. Model metadata can never supply a destination.
+// ----------------------------------------------------------------------------
+
+val nativePreflightFixtureManifest = layout.projectDirectory.file(
+    "src/testFixtures/native-preflight-fixtures.json",
+)
+val nativePreflightFixtureDirectory = layout.buildDirectory.dir("native-preflight-fixtures")
+val nativeFixtureGenerators = listOf(
+    layout.projectDirectory.file("src/testFixtures/generators/corrupt-llama-v1.gguf.txt"),
+    layout.projectDirectory.file("src/testFixtures/generators/corrupt-diffusion-v1.safetensors.txt"),
+)
+
+fun Any?.requiredJsonObject(label: String): Map<String, Any?> {
+    val raw = this as? Map<*, *> ?: throw GradleException("$label must be an object")
+    return raw.entries.associate { (key, value) ->
+        val stringKey = key as? String ?: throw GradleException("$label contains a non-string key")
+        stringKey to value
+    }
+}
+
+fun Map<String, Any?>.requireExactKeys(label: String, expected: Set<String>) {
+    if (keys != expected) {
+        throw GradleException("$label has unexpected or missing fields")
+    }
+}
+
+fun Any?.requiredString(label: String, maxLength: Int): String {
+    val value = this as? String ?: throw GradleException("$label must be a string")
+    if (value.isBlank() || value.length > maxLength || value.any { it.code !in 0x20..0x7e }) {
+        throw GradleException("$label is invalid")
+    }
+    return value
+}
+
+fun Any?.requiredLong(label: String): Long {
+    val number = this as? Number ?: throw GradleException("$label must be an integer")
+    val value = number.toLong()
+    if (number.toString() != value.toString()) throw GradleException("$label must be an exact integer")
+    return value
+}
+
+fun sha256Hex(file: File): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    FileInputStream(file).use { input ->
+        DigestInputStream(input, digest).use { stream ->
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            while (stream.read(buffer) >= 0) Unit
+        }
+    }
+    return digest.digest().joinToString("") { "%02x".format(it) }
+}
+
+fun openPinnedFixtureStream(rawUrl: String, decodedByteCap: Long): InputStream {
+    val allowedManifestUrls = setOf(
+        "https://huggingface.co/ggml-org/models-moved/resolve/499bc8821c6b12b4e53c5bffcb21ec206f212d81/tinyllamas/stories260K.gguf",
+    )
+    if (rawUrl !in allowedManifestUrls) throw GradleException("Native fixture URL is not allowlisted")
+    val allowedRedirectHosts = setOf(
+        "huggingface.co",
+        "us.aws.cdn.hf.co",
+        "cas-bridge.xethub.hf.co",
+        "cdn-lfs.hf.co",
+        "cdn-lfs-us-1.hf.co",
+    )
+    var current = URI(rawUrl)
+    repeat(6) {
+        if (current.scheme != "https" || current.userInfo != null ||
+            current.port !in setOf(-1, 443) || current.host !in allowedRedirectHosts
+        ) {
+            throw GradleException("Native fixture redirect target is not allowlisted")
+        }
+        val connection = current.toURL().openConnection() as? HttpsURLConnection
+            ?: throw GradleException("Native fixture connection must use HTTPS")
+        connection.instanceFollowRedirects = false
+        connection.connectTimeout = 15_000
+        connection.readTimeout = 30_000
+        connection.requestMethod = "GET"
+        connection.setRequestProperty("Accept", "application/octet-stream")
+        connection.setRequestProperty("Accept-Encoding", "identity")
+        val status = connection.responseCode
+        if (status in setOf(
+                HttpURLConnection.HTTP_MOVED_PERM,
+                HttpURLConnection.HTTP_MOVED_TEMP,
+                HttpURLConnection.HTTP_SEE_OTHER,
+                307,
+                308,
+            )
+        ) {
+            val location = connection.getHeaderField("Location")
+                ?.takeIf { it.length in 1..4_096 }
+                ?: throw GradleException("Native fixture redirect is missing a bounded location")
+            current = current.resolve(location)
+            connection.disconnect()
+            return@repeat
+        }
+        if (status != HttpURLConnection.HTTP_OK) {
+            connection.disconnect()
+            throw GradleException("Native fixture request failed with HTTP $status")
+        }
+        val contentEncoding = connection.contentEncoding
+        if (contentEncoding != null && !contentEncoding.equals("identity", ignoreCase = true)) {
+            connection.disconnect()
+            throw GradleException("Native fixture response uses unsupported content encoding")
+        }
+        val declaredLength = connection.contentLengthLong
+        if (declaredLength > decodedByteCap) {
+            connection.disconnect()
+            throw GradleException("Native fixture exceeds its decoded byte cap")
+        }
+        return object : FilterInputStream(connection.inputStream) {
+            override fun close() {
+                try {
+                    super.close()
+                } finally {
+                    connection.disconnect()
+                }
+            }
+        }
+    }
+    throw GradleException("Native fixture exceeded the redirect limit")
+}
+
+fun writeVerifiedFixture(
+    input: InputStream,
+    destination: File,
+    decodedByteCap: Long,
+    expectedSha256: String,
+) {
+    val part = destination.resolveSibling("${destination.name}.part")
+    Files.deleteIfExists(part.toPath())
+    val digest = MessageDigest.getInstance("SHA-256")
+    var total = 0L
+    try {
+        input.use { source ->
+            DigestInputStream(source, digest).use { verifiedSource ->
+                part.outputStream().buffered().use { sink ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    while (true) {
+                        val read = verifiedSource.read(buffer)
+                        if (read < 0) break
+                        if (total > decodedByteCap - read) {
+                            throw GradleException("Native fixture exceeds its decoded byte cap")
+                        }
+                        sink.write(buffer, 0, read)
+                        total += read
+                    }
+                }
+            }
+        }
+        val actualSha256 = digest.digest().joinToString("") { "%02x".format(it) }
+        if (actualSha256 != expectedSha256) {
+            throw GradleException("Native fixture SHA-256 mismatch")
+        }
+        try {
+            Files.move(
+                part.toPath(),
+                destination.toPath(),
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+        } catch (_: AtomicMoveNotSupportedException) {
+            Files.move(part.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        }
+    } finally {
+        Files.deleteIfExists(part.toPath())
+    }
+}
+
+val verifyNativePreflightFixtures by tasks.registering {
+    group = "verification"
+    description = "Acquire bounded native preflight fixtures and verify their exact digests"
+    inputs.file(nativePreflightFixtureManifest)
+    inputs.files(nativeFixtureGenerators)
+    outputs.dir(nativePreflightFixtureDirectory)
+    outputs.upToDateWhen { false }
+
+    doLast {
+        val manifestFile = nativePreflightFixtureManifest.asFile
+        if (!manifestFile.isFile || manifestFile.length() !in 1L..65_536L) {
+            throw GradleException("Native fixture manifest is missing or exceeds 64 KiB")
+        }
+        val root = try {
+            JsonSlurper().parse(manifestFile).requiredJsonObject("fixture manifest")
+        } catch (error: GradleException) {
+            throw error
+        } catch (_: Exception) {
+            throw GradleException("Native fixture manifest is malformed")
+        }
+        root.requireExactKeys("fixture manifest", setOf("schemaVersion", "fixtures"))
+        if (root["schemaVersion"].requiredLong("schemaVersion") != 1L) {
+            throw GradleException("Unsupported native fixture schema")
+        }
+        val fixtures = root["fixtures"] as? List<*>
+            ?: throw GradleException("fixtures must be an array")
+        if (fixtures.size !in 1..16) throw GradleException("fixtures exceeds its bounded count")
+
+        val outputDirectory = nativePreflightFixtureDirectory.get().asFile
+        outputDirectory.mkdirs()
+        val seenIds = mutableSetOf<String>()
+        val seenDigests = mutableSetOf<String>()
+        fixtures.forEachIndexed { index, rawFixture ->
+            val label = "fixtures[$index]"
+            val fixture = rawFixture.requiredJsonObject(label)
+            fixture.requireExactKeys(
+                label,
+                setOf(
+                    "id", "source", "licenseSpdx", "licenseSource", "sha256",
+                    "decodedByteCap", "expectedFormat", "outputExtension",
+                ),
+            )
+            val id = fixture["id"].requiredString("$label.id", 64)
+            if (!id.matches(Regex("[a-z0-9][a-z0-9-]{0,63}")) || !seenIds.add(id)) {
+                throw GradleException("$label.id is invalid or duplicated")
+            }
+            val license = fixture["licenseSpdx"].requiredString("$label.licenseSpdx", 64)
+            if (license !in setOf("MIT", "Apache-2.0", "CC0-1.0", "LicenseRef-CaraML-Test-Fixture")) {
+                throw GradleException("$label has no reviewed allowlisted license")
+            }
+            fixture["licenseSource"].requiredString("$label.licenseSource", 512)
+            val sha256 = fixture["sha256"].requiredString("$label.sha256", 64).lowercase()
+            if (!sha256.matches(Regex("[0-9a-f]{64}")) || !seenDigests.add(sha256)) {
+                throw GradleException("$label.sha256 is invalid or duplicated")
+            }
+            val cap = fixture["decodedByteCap"].requiredLong("$label.decodedByteCap")
+            if (cap !in 1L..67_108_864L) throw GradleException("$label decoded byte cap is invalid")
+            val expectedFormat = fixture["expectedFormat"].requiredString("$label.expectedFormat", 32)
+            val extension = fixture["outputExtension"].requiredString("$label.outputExtension", 16)
+            val expectedExtension = when (expectedFormat) {
+                "GGUF", "CORRUPT_GGUF" -> "gguf"
+                "CORRUPT_SAFETENSORS" -> "safetensors"
+                else -> throw GradleException("$label.expectedFormat is unsupported")
+            }
+            if (extension != expectedExtension) throw GradleException("$label output extension is invalid")
+            val source = fixture["source"].requiredJsonObject("$label.source")
+            source.requireExactKeys("$label.source", setOf("type", "value"))
+            val sourceType = source["type"].requiredString("$label.source.type", 16)
+            val sourceValue = source["value"].requiredString("$label.source.value", 1_024)
+            val destination = outputDirectory.resolve("$sha256.$extension")
+            if (destination.isFile && destination.length() <= cap && sha256Hex(destination) == sha256) {
+                return@forEachIndexed
+            }
+
+            val stream = when (sourceType) {
+                "url" -> openPinnedFixtureStream(sourceValue, cap)
+                "generator" -> {
+                    val allowedGenerators = nativeFixtureGenerators.associateBy {
+                        it.asFile.relativeTo(rootProject.projectDir).invariantSeparatorsPath
+                    }
+                    val generator = allowedGenerators[sourceValue]?.asFile
+                        ?: throw GradleException("$label generator is not allowlisted")
+                    if (!generator.isFile || generator.length() > cap) {
+                        throw GradleException("$label generator payload is invalid")
+                    }
+                    FileInputStream(generator)
+                }
+                else -> throw GradleException("$label source type is unsupported")
+            }
+            writeVerifiedFixture(stream, destination, cap, sha256)
         }
     }
 }

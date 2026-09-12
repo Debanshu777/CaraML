@@ -1,0 +1,296 @@
+{
+  "schemaVersion": 1,
+  "releaseEvidence": {
+    "deviceMatrixVerified": false,
+    "pinnedPerformanceRunnerVerified": false
+  },
+  "cases": [
+    {
+      "id": "llm-dense-q4-unified-fit",
+      "descriptor": {
+        "kind": "LLM", "repositoryId": "fixtures/llm-dense-q4", "revision": "1111111111111111111111111111111111111111",
+        "architecture": "llama", "quantization": "Q4_K_M", "fileBytes": 4300000000,
+        "files": [{ "path": "model-Q4_K_M.gguf", "sizeBytes": 4300000000, "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "role": null, "primary": true }],
+        "requirements": [], "parameterCount": 7000000000, "contextLimit": 4096, "ggufVersion": 3,
+        "shape": { "layerCount": 32, "kvHeadCount": 8, "attentionHeadCount": 32, "hiddenSize": 4096, "headDim": 128 }
+      },
+      "device": { "topology": "UNIFIED", "baseHostBytes": null, "baseGpuBytes": null, "baseSharedBytes": 8589934592 },
+      "workload": { "contextTokens": 4096, "keyCacheType": "Q8_0", "valueCacheType": "Q8_0", "batchSize": 128, "microBatchSize": 128, "sequenceCount": 1, "gpuLayerCount": 16, "useMmap": true },
+      "profile": { "risk": "BALANCED", "priority": "BALANCED" },
+      "predicted": { "lowBytes": 4835339968, "likelyBytes": 5076292224, "highBytes": 5549021696 },
+      "expected": { "category": "RECOMMENDED", "reasons": ["MEMORY_FIT_COMFORTABLE", "SPEED_NOT_VERIFIED"] },
+      "observed": null
+    },
+    {
+      "id": "llm-dense-q5-tight",
+      "descriptor": {
+        "kind": "LLM", "repositoryId": "fixtures/llm-dense-q5", "revision": "2222222222222222222222222222222222222222",
+        "architecture": "llama", "quantization": "Q5_K_M", "fileBytes": 5200000000,
+        "files": [{ "path": "model-Q5_K_M.gguf", "sizeBytes": 5200000000, "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "role": null, "primary": true }],
+        "requirements": [], "parameterCount": 7000000000, "contextLimit": 4096, "ggufVersion": 3,
+        "shape": { "layerCount": 32, "kvHeadCount": 8, "attentionHeadCount": 32, "hiddenSize": 4096, "headDim": 128 }
+      },
+      "device": { "topology": "UNIFIED", "baseHostBytes": null, "baseGpuBytes": null, "baseSharedBytes": 8589934592 },
+      "workload": { "contextTokens": 4096, "keyCacheType": "Q8_0", "valueCacheType": "Q8_0", "batchSize": 128, "microBatchSize": 128, "sequenceCount": 1, "gpuLayerCount": 16, "useMmap": true },
+      "profile": { "risk": "BALANCED", "priority": "QUALITY_CONTEXT" },
+      "predicted": { "lowBytes": 5780339968, "likelyBytes": 6066292224, "highBytes": 6629021696 },
+      "expected": { "category": "RECOMMENDED", "reasons": ["MEMORY_FIT_COMFORTABLE", "SPEED_NOT_VERIFIED"] },
+      "observed": null
+    },
+    {
+      "id": "llm-dense-q8-no-fit",
+      "descriptor": {
+        "kind": "LLM", "repositoryId": "fixtures/llm-dense-q8", "revision": "3333333333333333333333333333333333333333",
+        "architecture": "llama", "quantization": "Q8_0", "fileBytes": 9000000000,
+        "files": [{ "path": "model-Q8_0.gguf", "sizeBytes": 9000000000, "oid": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "role": null, "primary": true }],
+        "requirements": [], "parameterCount": 7000000000, "contextLimit": 8192, "ggufVersion": 3,
+        "shape": { "layerCount": 32, "kvHeadCount": 8, "attentionHeadCount": 32, "hiddenSize": 4096, "headDim": 128 }
+      },
+      "device": { "topology": "UNIFIED", "baseHostBytes": null, "baseGpuBytes": null, "baseSharedBytes": 8589934592 },
+      "workload": { "contextTokens": 8192, "keyCacheType": "F16", "valueCacheType": "F16", "batchSize": 128, "microBatchSize": 128, "sequenceCount": 1, "gpuLayerCount": 16, "useMmap": true },
+      "profile": { "risk": "EXPERIMENTAL", "priority": "QUALITY_CONTEXT" },
+      "predicted": { "lowBytes": 10558869120, "likelyBytes": 11034821376, "highBytes": 11977550848 },
+      "expected": { "category": "NOT_SUITABLE", "reasons": ["MEMORY_NO_FIT", "SPEED_NOT_VERIFIED"] },
+      "observed": null
+    },
+    {
+      "id": "llm-dense-f16-discrete",
+      "descriptor": {
+        "kind": "LLM", "repositoryId": "fixtures/llm-dense-f16", "revision": "4444444444444444444444444444444444444444",
+        "architecture": "llama", "quantization": "F16", "fileBytes": 11000000000,
+        "files": [{ "path": "model-F16.gguf", "sizeBytes": 11000000000, "oid": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "role": null, "primary": true }],
+        "requirements": [], "parameterCount": 7000000000, "contextLimit": 2048, "ggufVersion": 3,
+        "shape": { "layerCount": 32, "kvHeadCount": 8, "attentionHeadCount": 32, "hiddenSize": 4096, "headDim": 128 }
+      },
+      "device": { "topology": "DISCRETE", "baseHostBytes": 17179869184, "baseGpuBytes": 8589934592, "baseSharedBytes": null },
+      "workload": { "contextTokens": 2048, "keyCacheType": "Q8_0", "valueCacheType": "Q8_0", "batchSize": 128, "microBatchSize": 128, "sequenceCount": 1, "gpuLayerCount": 16, "useMmap": true },
+      "profile": { "risk": "BALANCED", "priority": "BALANCED" },
+      "predicted": { "lowBytes": 4577733632, "likelyBytes": 5153685888, "highBytes": 5471415360 },
+      "expected": { "category": "RECOMMENDED", "reasons": ["MEMORY_FIT_COMFORTABLE", "SPEED_NOT_VERIFIED"] },
+      "observed": null
+    },
+    {
+      "id": "llm-moe-q4-offload",
+      "descriptor": {
+        "kind": "LLM", "repositoryId": "fixtures/llm-moe-q4", "revision": "5555555555555555555555555555555555555555",
+        "architecture": "mixtral", "quantization": "Q4_K_M", "fileBytes": 26000000000,
+        "files": [{ "path": "model-Q4_K_M.gguf", "sizeBytes": 26000000000, "oid": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "role": null, "primary": true }],
+        "requirements": [], "parameterCount": 46000000000, "contextLimit": 4096, "ggufVersion": 3,
+        "shape": { "layerCount": 32, "kvHeadCount": 8, "attentionHeadCount": 32, "hiddenSize": 4096, "headDim": 128 }
+      },
+      "device": { "topology": "DISCRETE", "baseHostBytes": 34359738368, "baseGpuBytes": 8589934592, "baseSharedBytes": null },
+      "workload": { "contextTokens": 4096, "keyCacheType": "Q8_0", "valueCacheType": "Q8_0", "batchSize": 128, "microBatchSize": 128, "sequenceCount": 1, "gpuLayerCount": 8, "useMmap": true },
+      "profile": { "risk": "EXPERIMENTAL", "priority": "SPEED_EFFICIENCY" },
+      "predicted": { "lowBytes": 5520339968, "likelyBytes": 6196292224, "highBytes": 6564021696 },
+      "expected": { "category": "RECOMMENDED", "reasons": ["MEMORY_FIT_COMFORTABLE", "SPEED_NOT_VERIFIED"] },
+      "observed": null
+    },
+    {
+      "id": "llm-hybrid-q4-recurrent",
+      "descriptor": {
+        "kind": "LLM", "repositoryId": "fixtures/llm-hybrid-q4", "revision": "6666666666666666666666666666666666666666",
+        "architecture": "mamba-hybrid", "quantization": "Q4_K_M", "fileBytes": 4800000000,
+        "files": [{ "path": "model-Q4_K_M.gguf", "sizeBytes": 4800000000, "oid": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "role": null, "primary": true }],
+        "requirements": [], "parameterCount": 7000000000, "contextLimit": 8192, "ggufVersion": 3,
+        "shape": { "layerCount": 32, "kvHeadCount": 8, "attentionHeadCount": 32, "hiddenSize": 4096, "headDim": 128 }
+      },
+      "device": { "topology": "UNIFIED", "baseHostBytes": null, "baseGpuBytes": null, "baseSharedBytes": 8589934592 },
+      "workload": { "contextTokens": 8192, "keyCacheType": "Q8_0", "valueCacheType": "Q8_0", "batchSize": 128, "microBatchSize": 128, "sequenceCount": 1, "gpuLayerCount": 16, "useMmap": true },
+      "profile": { "risk": "BALANCED", "priority": "BALANCED" },
+      "predicted": { "lowBytes": 5645814784, "likelyBytes": 5912029184, "highBytes": 6435282944 },
+      "expected": { "category": "RISKY", "reasons": ["MEMORY_FIT_COMFORTABLE", "SAFETY_EVIDENCE_LIMITED", "SPEED_NOT_VERIFIED"] },
+      "observed": null
+    },
+    {
+      "id": "llm-recurrent-q8-small",
+      "descriptor": {
+        "kind": "LLM", "repositoryId": "fixtures/llm-recurrent-q8", "revision": "7777777777777777777777777777777777777777",
+        "architecture": "mamba", "quantization": "Q8_0", "fileBytes": 3100000000,
+        "files": [{ "path": "model-Q8_0.gguf", "sizeBytes": 3100000000, "oid": "1111111111111111111111111111111111111111111111111111111111111111", "role": null, "primary": true }],
+        "requirements": [], "parameterCount": 3000000000, "contextLimit": 16384, "ggufVersion": 3,
+        "shape": { "layerCount": 24, "kvHeadCount": 8, "attentionHeadCount": 16, "hiddenSize": 2048, "headDim": 128 }
+      },
+      "device": { "topology": "UNIFIED", "baseHostBytes": null, "baseGpuBytes": null, "baseSharedBytes": 17179869184 },
+      "workload": { "contextTokens": 16384, "keyCacheType": "Q8_0", "valueCacheType": "Q8_0", "batchSize": 128, "microBatchSize": 128, "sequenceCount": 1, "gpuLayerCount": 16, "useMmap": true },
+      "profile": { "risk": "CONSERVATIVE", "priority": "QUALITY_CONTEXT" },
+      "predicted": { "lowBytes": 4145077184, "likelyBytes": 4325734528, "highBytes": 4678267392 },
+      "expected": { "category": "RISKY", "reasons": ["MEMORY_FIT_COMFORTABLE", "SAFETY_EVIDENCE_LIMITED", "SPEED_NOT_VERIFIED"] },
+      "observed": null
+    },
+    {
+      "id": "llm-unknown-shape",
+      "descriptor": {
+        "kind": "LLM", "repositoryId": "fixtures/llm-unknown-shape", "revision": "8888888888888888888888888888888888888888",
+        "architecture": "unknown", "quantization": "Q4_K_M", "fileBytes": 4300000000,
+        "files": [{ "path": "model-Q4_K_M.gguf", "sizeBytes": 4300000000, "oid": "2222222222222222222222222222222222222222222222222222222222222222", "role": null, "primary": true }],
+        "requirements": [], "parameterCount": 7000000000, "contextLimit": 4096, "ggufVersion": 3, "shape": null
+      },
+      "device": { "topology": "UNKNOWN", "baseHostBytes": 8589934592, "baseGpuBytes": null, "baseSharedBytes": null },
+      "workload": { "contextTokens": 4096, "keyCacheType": "Q8_0", "valueCacheType": "Q8_0", "batchSize": 128, "microBatchSize": 128, "sequenceCount": 1, "gpuLayerCount": 0, "useMmap": true },
+      "profile": { "risk": "BALANCED", "priority": "BALANCED" },
+      "predicted": { "lowBytes": 4850544320, "likelyBytes": 5937959552, "highBytes": 9723402752 },
+      "expected": { "category": "RISKY", "reasons": ["MEMORY_FIT_LIKELY", "SAFETY_EVIDENCE_LIMITED", "SPEED_NOT_VERIFIED"], "estimatorReasons": ["MISSING_MODEL_SHAPE"] },
+      "observed": null
+    },
+    {
+      "id": "sd15-512-unified",
+      "descriptor": {
+        "kind": "DIFFUSION", "repositoryId": "runwayml/stable-diffusion-v1-5", "revision": "9999999999999999999999999999999999999999",
+        "architecture": "SD1", "quantization": "F16", "fileBytes": 4265000000,
+        "files": [
+          { "path": "model-F16.safetensors", "sizeBytes": 3800000000, "oid": "3333333333333333333333333333333333333333333333333333333333333333", "role": null, "primary": true },
+          { "path": "vae-F16.safetensors", "sizeBytes": 300000000, "oid": "4444444444444444444444444444444444444444444444444444444444444444", "role": "VAE", "primary": false },
+          { "path": "clip-l-F16.safetensors", "sizeBytes": 165000000, "oid": "5555555555555555555555555555555555555555555555555555555555555555", "role": "CLIP_L", "primary": false }
+        ],
+        "requirements": [{ "role": "VAE", "path": "vae-F16.safetensors" }, { "role": "CLIP_L", "path": "clip-l-F16.safetensors" }],
+        "nativeWidth": 512, "nativeHeight": 512
+      },
+      "device": { "topology": "UNIFIED", "baseHostBytes": null, "baseGpuBytes": null, "baseSharedBytes": 8589934592 },
+      "workload": { "width": 512, "height": 512, "steps": 20, "frames": 1, "batchSize": 1, "vaeTiling": false, "offloadToCpu": false, "keepClipOnCpu": false, "keepVaeOnCpu": false, "maxVramBytes": null, "layerStreaming": false },
+      "profile": { "risk": "BALANCED", "priority": "BALANCED" },
+      "predicted": { "lowBytes": 4382440511, "likelyBytes": 4466326590, "highBytes": 4634098751 },
+      "expected": { "category": "RECOMMENDED", "reasons": ["MEMORY_FIT_COMFORTABLE", "SPEED_NOT_VERIFIED"] },
+      "observed": null
+    },
+    {
+      "id": "sdxl-1024-tiling",
+      "descriptor": {
+        "kind": "DIFFUSION", "repositoryId": "stabilityai/stable-diffusion-xl-base-1.0", "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "architecture": "SDXL", "quantization": "F16", "fileBytes": 6900000000,
+        "files": [
+          { "path": "model-F16.safetensors", "sizeBytes": 5500000000, "oid": "6666666666666666666666666666666666666666666666666666666666666666", "role": null, "primary": true },
+          { "path": "vae-F16.safetensors", "sizeBytes": 400000000, "oid": "7777777777777777777777777777777777777777777777777777777777777777", "role": "VAE", "primary": false },
+          { "path": "clip-l-F16.safetensors", "sizeBytes": 400000000, "oid": "8888888888888888888888888888888888888888888888888888888888888888", "role": "CLIP_L", "primary": false },
+          { "path": "clip-g-F16.safetensors", "sizeBytes": 600000000, "oid": "9999999999999999999999999999999999999999999999999999999999999999", "role": "CLIP_G", "primary": false }
+        ],
+        "requirements": [{ "role": "VAE", "path": "vae-F16.safetensors" }, { "role": "CLIP_L", "path": "clip-l-F16.safetensors" }, { "role": "CLIP_G", "path": "clip-g-F16.safetensors" }],
+        "nativeWidth": 1024, "nativeHeight": 1024
+      },
+      "device": { "topology": "UNIFIED", "baseHostBytes": null, "baseGpuBytes": null, "baseSharedBytes": 17179869184 },
+      "workload": { "width": 1024, "height": 1024, "steps": 30, "frames": 1, "batchSize": 1, "vaeTiling": true, "offloadToCpu": false, "keepClipOnCpu": false, "keepVaeOnCpu": false, "maxVramBytes": null, "layerStreaming": false },
+      "profile": { "risk": "CONSERVATIVE", "priority": "QUALITY_CONTEXT" },
+      "predicted": { "lowBytes": 7269098752, "likelyBytes": 7466398811, "highBytes": 7805969664 },
+      "expected": { "category": "USABLE", "reasons": ["MEMORY_FIT_COMFORTABLE", "SAFETY_EVIDENCE_LIMITED", "SPEED_NOT_VERIFIED"] },
+      "observed": null
+    },
+    {
+      "id": "flux-1024-streaming",
+      "descriptor": {
+        "kind": "DIFFUSION", "repositoryId": "black-forest-labs/FLUX.1-dev", "revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "architecture": "FLUX", "quantization": "Q4_K_M", "fileBytes": 12500000000,
+        "files": [
+          { "path": "model-Q4_K_M.safetensors", "sizeBytes": 8000000000, "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "role": null, "primary": true },
+          { "path": "vae-Q4_K_M.safetensors", "sizeBytes": 500000000, "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "role": "VAE", "primary": false },
+          { "path": "clip-l-Q4_K_M.safetensors", "sizeBytes": 500000000, "oid": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "role": "CLIP_L", "primary": false },
+          { "path": "t5xxl-Q4_K_M.safetensors", "sizeBytes": 3500000000, "oid": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "role": "T5XXL", "primary": false }
+        ],
+        "requirements": [{ "role": "VAE", "path": "vae-Q4_K_M.safetensors" }, { "role": "CLIP_L", "path": "clip-l-Q4_K_M.safetensors" }, { "role": "T5XXL", "path": "t5xxl-Q4_K_M.safetensors" }],
+        "nativeWidth": 1024, "nativeHeight": 1024
+      },
+      "device": { "topology": "UNIFIED", "baseHostBytes": null, "baseGpuBytes": null, "baseSharedBytes": 17179869184 },
+      "workload": { "width": 1024, "height": 1024, "steps": 28, "frames": 1, "batchSize": 1, "vaeTiling": false, "offloadToCpu": true, "keepClipOnCpu": false, "keepVaeOnCpu": false, "maxVramBytes": null, "layerStreaming": true },
+      "profile": { "risk": "BALANCED", "priority": "BALANCED" },
+      "predicted": { "lowBytes": 13103979774, "likelyBytes": 13439524095, "highBytes": 13842177278 },
+      "expected": { "category": "RECOMMENDED", "reasons": ["MEMORY_FIT_COMFORTABLE", "SPEED_NOT_VERIFIED"] },
+      "observed": null
+    },
+    {
+      "id": "dit-discrete",
+      "descriptor": {
+        "kind": "DIFFUSION", "repositoryId": "stabilityai/stable-diffusion-3-medium", "revision": "cccccccccccccccccccccccccccccccccccccccc",
+        "architecture": "SD3", "quantization": "F16", "fileBytes": 10000000000,
+        "files": [
+          { "path": "model-F16.safetensors", "sizeBytes": 6000000000, "oid": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "role": null, "primary": true },
+          { "path": "vae-F16.safetensors", "sizeBytes": 500000000, "oid": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "role": "VAE", "primary": false },
+          { "path": "clip-l-F16.safetensors", "sizeBytes": 500000000, "oid": "1111111111111111111111111111111111111111111111111111111111111111", "role": "CLIP_L", "primary": false },
+          { "path": "clip-g-F16.safetensors", "sizeBytes": 500000000, "oid": "2222222222222222222222222222222222222222222222222222222222222222", "role": "CLIP_G", "primary": false },
+          { "path": "t5xxl-F16.safetensors", "sizeBytes": 2500000000, "oid": "3333333333333333333333333333333333333333333333333333333333333333", "role": "T5XXL", "primary": false }
+        ],
+        "requirements": [{ "role": "VAE", "path": "vae-F16.safetensors" }, { "role": "CLIP_L", "path": "clip-l-F16.safetensors" }, { "role": "CLIP_G", "path": "clip-g-F16.safetensors" }, { "role": "T5XXL", "path": "t5xxl-F16.safetensors" }],
+        "nativeWidth": 1024, "nativeHeight": 1024
+      },
+      "device": { "topology": "DISCRETE", "baseHostBytes": 17179869184, "baseGpuBytes": 12884901888, "baseSharedBytes": null },
+      "workload": { "width": 1024, "height": 1024, "steps": 28, "frames": 1, "batchSize": 1, "vaeTiling": false, "offloadToCpu": false, "keepClipOnCpu": false, "keepVaeOnCpu": false, "maxVramBytes": null, "layerStreaming": false },
+      "profile": { "risk": "BALANCED", "priority": "QUALITY_CONTEXT" },
+      "predicted": { "lowBytes": 10469762046, "likelyBytes": 10738197503, "highBytes": 11140850686 },
+      "expected": { "category": "USABLE", "reasons": ["MEMORY_FIT_LIKELY", "SPEED_NOT_VERIFIED"] },
+      "observed": null
+    },
+    {
+      "id": "wan-video-8",
+      "descriptor": {
+        "kind": "DIFFUSION", "repositoryId": "city96/Wan2.1-T2V-14B-gguf", "revision": "dddddddddddddddddddddddddddddddddddddddd",
+        "architecture": "WAN_LARGE", "quantization": "Q5_K_M", "fileBytes": 14500000000,
+        "files": [
+          { "path": "model-Q5_K_M.gguf", "sizeBytes": 12500000000, "oid": "4444444444444444444444444444444444444444444444444444444444444444", "role": null, "primary": true },
+          { "path": "vae-Q5_K_M.safetensors", "sizeBytes": 500000000, "oid": "5555555555555555555555555555555555555555555555555555555555555555", "role": "VAE", "primary": false },
+          { "path": "t5xxl-Q5_K_M.safetensors", "sizeBytes": 1500000000, "oid": "6666666666666666666666666666666666666666666666666666666666666666", "role": "T5XXL", "primary": false }
+        ],
+        "requirements": [{ "role": "VAE", "path": "vae-Q5_K_M.safetensors" }, { "role": "T5XXL", "path": "t5xxl-Q5_K_M.safetensors" }],
+        "nativeWidth": 832, "nativeHeight": 480
+      },
+      "device": { "topology": "UNIFIED", "baseHostBytes": null, "baseGpuBytes": null, "baseSharedBytes": 34359738368 },
+      "workload": { "width": 832, "height": 480, "steps": 30, "frames": 8, "batchSize": 1, "vaeTiling": false, "offloadToCpu": false, "keepClipOnCpu": false, "keepVaeOnCpu": false, "maxVramBytes": null, "layerStreaming": false },
+      "profile": { "risk": "BALANCED", "priority": "QUALITY_CONTEXT" },
+      "predicted": { "lowBytes": 15998415104, "likelyBytes": 16678940928, "highBytes": 17835520256 },
+      "expected": { "category": "RECOMMENDED", "reasons": ["MEMORY_FIT_COMFORTABLE", "SPEED_NOT_VERIFIED"] },
+      "observed": null
+    },
+    {
+      "id": "wan-video-32-no-fit",
+      "descriptor": {
+        "kind": "DIFFUSION", "repositoryId": "city96/Wan2.1-T2V-14B-gguf", "revision": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "architecture": "WAN_LARGE", "quantization": "Q8_0", "fileBytes": 24000000000,
+        "files": [
+          { "path": "model-Q8_0.gguf", "sizeBytes": 22000000000, "oid": "7777777777777777777777777777777777777777777777777777777777777777", "role": null, "primary": true },
+          { "path": "vae-Q8_0.safetensors", "sizeBytes": 500000000, "oid": "8888888888888888888888888888888888888888888888888888888888888888", "role": "VAE", "primary": false },
+          { "path": "t5xxl-Q8_0.safetensors", "sizeBytes": 1500000000, "oid": "9999999999999999999999999999999999999999999999999999999999999999", "role": "T5XXL", "primary": false }
+        ],
+        "requirements": [{ "role": "VAE", "path": "vae-Q8_0.safetensors" }, { "role": "T5XXL", "path": "t5xxl-Q8_0.safetensors" }],
+        "nativeWidth": 832, "nativeHeight": 480
+      },
+      "device": { "topology": "UNIFIED", "baseHostBytes": null, "baseGpuBytes": null, "baseSharedBytes": 17179869184 },
+      "workload": { "width": 832, "height": 480, "steps": 30, "frames": 32, "batchSize": 1, "vaeTiling": false, "offloadToCpu": false, "keepClipOnCpu": false, "keepVaeOnCpu": false, "maxVramBytes": null, "layerStreaming": false },
+      "profile": { "risk": "EXPERIMENTAL", "priority": "QUALITY_CONTEXT" },
+      "predicted": { "lowBytes": 29792333824, "likelyBytes": 32313110528, "highBytes": 36536774656 },
+      "expected": { "category": "NOT_SUITABLE", "reasons": ["MEMORY_NO_FIT", "SPEED_NOT_VERIFIED"] },
+      "observed": null
+    },
+    {
+      "id": "bundle-missing-vae",
+      "descriptor": {
+        "kind": "DIFFUSION", "repositoryId": "stabilityai/stable-diffusion-xl-base-1.0", "revision": "ffffffffffffffffffffffffffffffffffffffff",
+        "architecture": "SDXL", "quantization": "F16", "fileBytes": 6500000000,
+        "files": [
+          { "path": "model-F16.safetensors", "sizeBytes": 5500000000, "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "role": null, "primary": true },
+          { "path": "clip-l-F16.safetensors", "sizeBytes": 400000000, "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "role": "CLIP_L", "primary": false },
+          { "path": "clip-g-F16.safetensors", "sizeBytes": 600000000, "oid": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "role": "CLIP_G", "primary": false }
+        ],
+        "requirements": [{ "role": "VAE", "path": "vae-F16.safetensors" }, { "role": "CLIP_L", "path": "clip-l-F16.safetensors" }, { "role": "CLIP_G", "path": "clip-g-F16.safetensors" }],
+        "nativeWidth": 1024, "nativeHeight": 1024
+      },
+      "device": { "topology": "UNIFIED", "baseHostBytes": null, "baseGpuBytes": null, "baseSharedBytes": 17179869184 },
+      "workload": { "width": 1024, "height": 1024, "steps": 30, "frames": 1, "batchSize": 1, "vaeTiling": false, "offloadToCpu": false, "keepClipOnCpu": false, "keepVaeOnCpu": false, "maxVramBytes": null, "layerStreaming": false },
+      "profile": { "risk": "BALANCED", "priority": "BALANCED" },
+      "predicted": { "lowBytes": 0, "likelyBytes": 0, "highBytes": 0 },
+      "expected": { "category": "INCOMPATIBLE", "reasons": ["MISSING_REQUIRED_COMPONENT"] },
+      "observed": null
+    },
+    {
+      "id": "malformed-overflow",
+      "descriptor": {
+        "kind": "LLM", "repositoryId": "fixtures/llm-overflow", "revision": "0123456789abcdef0123456789abcdef01234567",
+        "architecture": "llama", "quantization": "F16", "fileBytes": 1000000,
+        "files": [{ "path": "model-F16.gguf", "sizeBytes": 1000000, "oid": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "role": null, "primary": true }],
+        "requirements": [], "parameterCount": 1000000, "contextLimit": 16777216, "ggufVersion": 3,
+        "shape": { "layerCount": 1048576, "kvHeadCount": 1048576, "attentionHeadCount": 1048576, "hiddenSize": 1048576, "headDim": 1048576 }
+      },
+      "device": { "topology": "UNKNOWN", "baseHostBytes": 8589934592, "baseGpuBytes": null, "baseSharedBytes": null },
+      "workload": { "contextTokens": 16777216, "keyCacheType": "F16", "valueCacheType": "F16", "batchSize": 128, "microBatchSize": 128, "sequenceCount": 1, "gpuLayerCount": 0, "useMmap": true },
+      "profile": { "risk": "CONSERVATIVE", "priority": "QUALITY_CONTEXT" },
+      "predicted": { "lowBytes": 0, "likelyBytes": 0, "highBytes": 0 },
+      "expected": { "category": "NEEDS_INFORMATION", "reasons": ["MEMORY_BOUNDS_UNKNOWN"], "estimatorReasons": ["ARITHMETIC_OVERFLOW"] },
+      "observed": null
+    }
+  ]
+}

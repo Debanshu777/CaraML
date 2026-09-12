@@ -178,10 +178,33 @@ Run: `./gradlew :composeApp:jvmTest`
 
 ---
 
+## Device-Aware Recommendation Rollout
+
+The release build remains in `LEGACY` mode. V2 assessment is available for shadow verification, but it is not yet the sole displayed category source because the required measured Android/iOS/Desktop device matrix and pinned benchmark-runner result have not been recorded. Do not remove the legacy calculator or rollout bridge until those gates are reviewed.
+
+Profiles change plan selection without changing objective compatibility evidence. Risk tolerance reserves 25% (`CONSERVATIVE`), 15% (`BALANCED`, the default), or 5% (`EXPERIMENTAL`) of reliable memory. Optimization priority favors speed/efficiency, a balanced mix, or quality/context. Categories mean: `RECOMMENDED` has comfortable supported headroom; `USABLE` is expected to fit with less margin or a compromise; `RISKY` needs explicit acknowledgement; `NOT_SUITABLE` has no acceptable resource plan; `INCOMPATIBLE` is a hard engine/format mismatch; and `NEEDS_INFORMATION` means bounded trustworthy evidence is missing.
+
+All repository IDs, revisions, relative paths, component counts, byte sizes, model shapes, workload dimensions, evidence, and native records are bounded before use. Unknown, inconsistent, duplicate, overflowing, or stale metadata fails closed instead of being guessed. Selection carries the exact assessed descriptor, recommendation, run plan, and verified local bytes into just-in-time native preflight; it never reconstructs identity from a database filename.
+
+Calibration is local-only and numeric. It is stored in the disposable sibling `recommendation_cache.db`, never uploads prompts, paths, repository IDs, or user content, and cannot delete or migrate `caraml.db`. A schema mismatch or corrupt recommendation cache may reset that cache and rebuild conservative estimates; model/download records remain intact. Profile-only reranking stays cached and performs no metadata, filesystem, calibration, or native work on the Compose main thread.
+
+Verification commands:
+
+```bash
+./gradlew :composeApp:jvmTest --tests '*Recommendation*' --tests '*ModelFitFixture*'
+./gradlew :composeApp:jvmTest --tests '*RecommendationPerformanceTest*'
+CARAML_NATIVE_PARITY=true ./gradlew :runner:jvmTest :diffusionRunner:jvmTest
+```
+
+The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATION_PERF=true` and the documented bounded `CARAML_BENCHMARK_RUNNER_ID` are supplied on the pinned runner. Ordinary JVM runs report timing but are not release evidence.
+
+---
+
 ## Recent Changes
 
 <!-- Updated at end of each AI-assisted development session -->
 
+- Added a strict 16-case recommendation corpus, analytical timing coverage, exact assessed-artifact selection handoff, and explicit release gating; unmeasured outcomes remain null and production remains `LEGACY`
 - Recommendations now learn only from byte-bound descriptors, phase-specific raw memory evidence, full run-plan fingerprints, and trustworthy process-memory counters; stale identities and unresponsive native probes fail closed
 - Exact model selections now derive directory targets only from verified storage roots, bind every native-consumed component path, keep multi-sequence planning analytical, and reject it at native admission
 - Legacy or duplicate native device identities now remain low-confidence Unknown evidence unless exact llama/diffusion device-and-type intersection is provable

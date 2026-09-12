@@ -1,0 +1,1 @@
+CaraML corrupt safetensors fixture v1. This is deliberately not a safetensors container.

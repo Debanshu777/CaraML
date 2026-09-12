@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "fixtures": [
+    {
+      "id": "llama-tiny-stories-260k",
+      "source": {
+        "type": "url",
+        "value": "https://huggingface.co/ggml-org/models-moved/resolve/499bc8821c6b12b4e53c5bffcb21ec206f212d81/tinyllamas/stories260K.gguf"
+      },
+      "licenseSpdx": "MIT",
+      "licenseSource": "https://huggingface.co/karpathy/tinyllamas/tree/cbffbc90324256436c13dc6b4592c82c1e716354",
+      "sha256": "270cba1bd5109f42d03350f60406024560464db173c0e387d91f0426d3bd256d",
+      "decodedByteCap": 1185376,
+      "expectedFormat": "GGUF",
+      "outputExtension": "gguf"
+    },
+    {
+      "id": "corrupt-llama-v1",
+      "source": {
+        "type": "generator",
+        "value": "nativeEngine/src/testFixtures/generators/corrupt-llama-v1.gguf.txt"
+      },
+      "licenseSpdx": "LicenseRef-CaraML-Test-Fixture",
+      "licenseSource": "repository-generated-test-data",
+      "sha256": "6d7811831369848469bfa8d62686c7b42baa9e4fcda7555e2a5353f5c5edd47a",
+      "decodedByteCap": 75,
+      "expectedFormat": "CORRUPT_GGUF",
+      "outputExtension": "gguf"
+    },
+    {
+      "id": "corrupt-diffusion-v1",
+      "source": {
+        "type": "generator",
+        "value": "nativeEngine/src/testFixtures/generators/corrupt-diffusion-v1.safetensors.txt"
+      },
+      "licenseSpdx": "LicenseRef-CaraML-Test-Fixture",
+      "licenseSource": "repository-generated-test-data",
+      "sha256": "f7b42800f307f3bab038f325218b57a683cce41e35b0353f6820dcf260d767ad",
+      "decodedByteCap": 89,
+      "expectedFormat": "CORRUPT_SAFETENSORS",
+      "outputExtension": "safetensors"
+    }
+  ]
+}

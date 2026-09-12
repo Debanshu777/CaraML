@@ -126,6 +126,7 @@ when (val result = api.searchModels(params)) {
 
 <!-- Updated at end of each Claude Code session -->
 
+- Recommendation evidence consumes only bounded immutable Hub identities and sanitized metadata; profile reranking is network-free, and unknown, oversized, duplicate, or inconsistent fields remain unavailable rather than inferred
 - Platform storage providers now expose a sibling `recommendation_cache.db` path so derived calibration evidence remains isolated from the primary app database
 - Storage providers now reject symlinked model roots and require canonical model paths to remain beneath the canonical trusted models parent
 - Downloads require pinned artifact identities and roots, strict UTF-8 descriptor-relative regular-file operations, and idempotent rollback journals; the native backend is exercised from packaged Desktop images and Android APKs

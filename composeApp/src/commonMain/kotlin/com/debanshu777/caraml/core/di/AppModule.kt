@@ -49,6 +49,7 @@ import com.debanshu777.caraml.features.modelhub.domain.HuggingFaceModelMetadataS
 import com.debanshu777.caraml.features.modelhub.domain.ModelMetadataSource
 import com.debanshu777.caraml.features.modelhub.domain.ModelRecommendationService
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelViewModel
+import com.debanshu777.caraml.features.modelhub.presentation.search.RecommendedModelLoadRequestResolver
 import com.debanshu777.caraml.features.settings.presentation.SettingsViewModel
 import com.debanshu777.huggingfacemanager.createHuggingFaceApi
 import com.debanshu777.huggingfacemanager.download.DownloadManager
@@ -73,6 +74,7 @@ val appModule = module {
     single { get<AppDatabase>().downloadedComponentDao() }
     single { LocalModelRepository(get()) }
     single { ComponentRepository(get()) }
+    single { RecommendedModelLoadRequestResolver(get(), get()) }
     single { DownloadManager(get()) }
 
     single { createHuggingFaceApi() }

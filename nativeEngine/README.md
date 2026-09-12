@@ -94,6 +94,7 @@ This prevents duplicate symbol errors from linking two independent GGML builds.
 | `applyNativePatches` | Apply `.patch` files from `libraries/patches/<submodule>/` (idempotent via git am) |
 | `revertNativePatches` | Revert all patches (run before bumping submodule SHA) |
 | `compileLlamaRunnerDesktop` | Build desktop shared libs via CMake |
+| `verifyNativePreflightFixtures` | Strictly acquire/generate digest-addressed native fixtures under fixed HTTPS hosts and decoded-size caps |
 | `mergeLlamaRunnerStaticIosArm64` | Merge iOS arm64 `.a` files via `libtool -static` |
 | `mergeLlamaRunnerStaticIosSimulatorArm64` | Merge iOS simulator arm64 `.a` files |
 
@@ -136,6 +137,7 @@ Create a **separate** Gradle module + CMake project. Do not add here unless it m
 
 <!-- Updated at end of each Claude Code session -->
 
+- Added a strict versioned native-fixture manifest, fixed-host HTTPS acquisition with redirect/size/digest enforcement, generated corrupt fixtures, and isolated opt-in runner parity CI; normal JVM verification performs no fixture download
 - Desktop native hardening now verifies bounded typed calibration inputs, token-owned lock-free cancellation, and timed operation admission; iOS builds export the same calibrated backend bridge
 - `verifyProject` now builds and executes all four stable-diffusion native preflight regressions through CTest
 - Stable-diffusion native builds now expose bounded metadata-only preflight and use the same pinned backend-fit resolver for preflight and actual context creation

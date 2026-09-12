@@ -152,6 +152,7 @@ The merged iOS `.a` includes both `llama_runner` and `diffusion_runner` objects.
 
 <!-- Updated at end of each Claude Code session -->
 
+- Opt-in native parity verifies bounded corrupt safetensors rejection and repeat-cleanup via `CARAML_NATIVE_PARITY=true ./gradlew :diffusionRunner:jvmTest`; successful diffusion load remains a physical-device gate because no small redistribution-safe fixture is pinned
 - Preflight initializes and reports only devices selected by the resolved runtime/parameter plan; a failing unused registry device no longer invalidates a valid plan
 - Added fixed-layout Android/JVM/iOS preflight, backend-registry and feature-probe APIs; model load and preflight share the pinned engine's bounded max-VRAM/auto-fit resolution
 - Preflight now reports bundled component roles and exact resolved placements, preserves pinned max-VRAM and streaming semantics, publishes new contexts through immediate RAII ownership, and identifies backend devices canonically across platform ABIs
