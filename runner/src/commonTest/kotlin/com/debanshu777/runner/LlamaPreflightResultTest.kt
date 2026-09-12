@@ -210,6 +210,23 @@ class LlamaPreflightResultTest {
     }
 
     @Test
+    fun backendRegistryDecoderCarriesBoundedCanonicalDeviceIdentity() {
+        val payload = longArrayOf(
+            1L,
+            NativeBackendKind.METAL.ordinal.toLong(),
+            NativeBackendDeviceType.INTEGRATED_GPU.ordinal.toLong(),
+            30_000L,
+            40_000L,
+            6L,
+            *packIdentity("metal0"),
+        )
+
+        val decoded = decodeNativeBackendCapabilities(payload)
+
+        assertTrue(decoded.single().toString().contains("deviceIdentity=metal0"))
+    }
+
+    @Test
     fun malformedBackendRegistryFailsClosed() {
         assertTrue(decodeNativeBackendCapabilities(longArrayOf(1L, 0L)).isEmpty())
         assertTrue(
@@ -217,10 +234,22 @@ class LlamaPreflightResultTest {
                 longArrayOf(1L, 0L, 0L, -2L, 20L),
             ).isEmpty(),
         )
+        assertTrue(
+            decodeNativeBackendCapabilities(
+                longArrayOf(1L, 4_294_967_296L, 0L, 10L, 20L),
+            ).isEmpty(),
+        )
     }
 
     private fun supportedFeaturePayload(buildNumber: Long = 1L): LongArray =
         longArrayOf(0L, 0L, buildNumber)
+
+    private fun packIdentity(value: String): LongArray = LongArray(8).also { packed ->
+        value.encodeToByteArray().forEachIndexed { index, byte ->
+            packed[index / 8] = packed[index / 8] or
+                ((byte.toLong() and 0xffL) shl ((index % 8) * 8))
+        }
+    }
 
     private fun successPayload(hostModel: Long, gpuModel: Long): LongArray = longArrayOf(
         0L, 4_096L, 24L, 2L,

@@ -2,7 +2,7 @@ package com.debanshu777.diffusionrunner
 
 import kotlinx.coroutines.CancellationException
 
-internal const val DIFFUSION_PREFLIGHT_MAX_COMPONENTS = 8
+internal const val DIFFUSION_PREFLIGHT_MAX_COMPONENTS = 10
 internal const val DIFFUSION_PREFLIGHT_MAX_BACKENDS = 16
 internal const val DIFFUSION_PREFLIGHT_HEADER_FIELDS = 8
 internal const val DIFFUSION_PREFLIGHT_COMPONENT_FIELDS = 6
@@ -64,6 +64,8 @@ enum class DiffusionComponentRole {
     CLIP_G,
     T5XXL,
     TAESD,
+    TEXT_ENCODER,
+    OTHER,
 }
 
 enum class DiffusionRuntimePlacement {
@@ -238,7 +240,7 @@ internal fun decodeDiffusionPreflight(payload: LongArray?): DiffusionPreflightRe
         val budgetBytes = payload[offset + 3]
         val freeBytes = payload[offset + 4]
         val totalBytes = payload[offset + 5]
-        if (budgetBytes > freeBytes || freeBytes > totalBytes) return malformedDiffusionPreflight()
+        if (freeBytes > totalBytes) return malformedDiffusionPreflight()
         backends += DiffusionPreflightBackend(kind, type, index, budgetBytes, freeBytes, totalBytes)
     }
 

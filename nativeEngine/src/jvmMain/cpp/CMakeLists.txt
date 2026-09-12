@@ -124,3 +124,29 @@ set_target_properties(diffusion_runner PROPERTIES OUTPUT_NAME "diffusion_runner"
 if(CMAKE_BUILD_TYPE MATCHES Release)
     target_compile_options(diffusion_runner PRIVATE -O3)
 endif()
+
+foreach(_diffusion_test IN ITEMS
+        diffusion_bundled_components_test
+        diffusion_stream_layers_test
+        diffusion_context_publication_test)
+    add_executable(
+        ${_diffusion_test}
+        "${CMAKE_CURRENT_LIST_DIR}/../../../../diffusionRunner/src/nativeTest/cpp/${_diffusion_test}.cpp"
+    )
+    target_include_directories(${_diffusion_test} PRIVATE
+        ${DIFFUSION_RUNNER_INCLUDE_DIRS}
+        "${SD_SRC}/src"
+        "${SD_SRC}/ggml/include"
+    )
+endforeach()
+
+add_executable(
+    diffusion_max_vram_test
+    "${CMAKE_CURRENT_LIST_DIR}/../../../../diffusionRunner/src/nativeTest/cpp/diffusion_max_vram_test.cpp"
+)
+target_include_directories(diffusion_max_vram_test PRIVATE
+    ${DIFFUSION_RUNNER_INCLUDE_DIRS}
+    "${SD_SRC}/src"
+    "${SD_SRC}/ggml/include"
+)
+target_link_libraries(diffusion_max_vram_test PRIVATE stable-diffusion Threads::Threads)

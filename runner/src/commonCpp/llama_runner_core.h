@@ -79,6 +79,8 @@ struct LlamaBackendCapabilityNative {
     int device_type = LLAMA_BACKEND_DEVICE_CPU;
     int64_t free_bytes = -1;
     int64_t total_bytes = -1;
+    int device_identity_length = 0;
+    int64_t device_identity_words[8]{};
 };
 
 struct LlamaBackendCapabilitiesNative {

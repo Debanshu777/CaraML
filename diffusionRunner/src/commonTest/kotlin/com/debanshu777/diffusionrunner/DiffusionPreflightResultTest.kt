@@ -85,7 +85,11 @@ class DiffusionPreflightResultTest {
                 2 * DIFFUSION_PREFLIGHT_COMPONENT_FIELDS
             it[offset + 3] = 9_001L
         }
-        assertIs<DiffusionPreflightResult.Unavailable>(decodeDiffusionPreflight(budgetOverFree))
+        assertEquals(
+            9_001L,
+            assertIs<DiffusionPreflightResult.Fit>(decodeDiffusionPreflight(budgetOverFree))
+                .report.backends.first().budgetBytes,
+        )
 
         val unknownBackendBit = successfulPreflightPayload().also {
             it[DIFFUSION_PREFLIGHT_HEADER_FIELDS + 4] = 1L shl 7
@@ -216,6 +220,23 @@ class DiffusionPreflightResultTest {
         assertTrue(decodeDiffusionBackendCapabilities(longArrayOf(1L, 0L)).isEmpty())
     }
 
+    @Test
+    fun backendRegistryDecoderCarriesBoundedCanonicalDeviceIdentity() {
+        val capabilities = decodeDiffusionBackendCapabilities(
+            longArrayOf(
+                1L,
+                DiffusionBackendKind.METAL.ordinal.toLong(),
+                DiffusionBackendDeviceType.INTEGRATED_GPU.ordinal.toLong(),
+                30L,
+                40L,
+                6L,
+                *packIdentity("metal0"),
+            ),
+        )
+
+        assertTrue(capabilities.single().toString().contains("deviceIdentity=metal0"))
+    }
+
     private fun successfulPreflightPayload(): LongArray = longArrayOf(
         0L,
         DiffusionArchitecture.SDXL.ordinal.toLong(),
@@ -239,4 +260,11 @@ class DiffusionPreflightResultTest {
         DiffusionBackendDeviceType.CPU.ordinal.toLong(),
         1L, 0L, 40_000L, 50_000L,
     )
+
+    private fun packIdentity(value: String): LongArray = LongArray(8).also { packed ->
+        value.encodeToByteArray().forEachIndexed { index, byte ->
+            packed[index / 8] = packed[index / 8] or
+                ((byte.toLong() and 0xffL) shl ((index % 8) * 8))
+        }
+    }
 }

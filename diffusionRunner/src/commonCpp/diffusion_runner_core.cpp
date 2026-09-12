@@ -4,6 +4,8 @@
 #include "model_loader.h"
 #include "core/backend_fit.h"
 #include "core/ggml_graph_cut.h"
+#include "diffusion_runner_preflight_internal.h"
+#include "scoped_context_publication.h"
 #include "ggml.h"
 #include "ggml-backend.h"
 #ifdef SD_USE_VULKAN
@@ -16,6 +18,7 @@
 #include <limits>
 #include <map>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <mutex>
@@ -311,6 +314,34 @@ static int diffusion_backend_device_type(ggml_backend_dev_t device) {
     return DIFFUSION_BACKEND_DEVICE_META;
 }
 
+static bool encode_device_identity(
+        ggml_backend_dev_t device,
+        int &length,
+        int64_t (&words)[8]) {
+    const char *raw = device ? ggml_backend_dev_name(device) : nullptr;
+    if (!raw) return false;
+    const size_t raw_length = ::strnlen(raw, 65);
+    if (raw_length == 0 || raw_length > 64) return false;
+    size_t first = 0;
+    size_t last = raw_length;
+    while (first < last && std::isspace(static_cast<unsigned char>(raw[first]))) ++first;
+    while (last > first && std::isspace(static_cast<unsigned char>(raw[last - 1]))) --last;
+    const size_t canonical_length = last - first;
+    if (canonical_length == 0 || canonical_length > 64) return false;
+    std::fill(std::begin(words), std::end(words), int64_t{0});
+    for (size_t index = 0; index < canonical_length; ++index) {
+        const unsigned char byte = static_cast<unsigned char>(raw[first + index]);
+        if (byte < 0x20 || byte > 0x7e) return false;
+        const unsigned char canonical = byte >= 'A' && byte <= 'Z'
+            ? static_cast<unsigned char>(byte - 'A' + 'a') : byte;
+        const uint64_t shifted = static_cast<uint64_t>(canonical) << ((index % 8) * 8);
+        words[index / 8] = static_cast<int64_t>(
+            static_cast<uint64_t>(words[index / 8]) | shifted);
+    }
+    length = static_cast<int>(canonical_length);
+    return true;
+}
+
 static bool checked_size_to_i64(size_t value, int64_t &destination) {
     if (value > static_cast<size_t>(std::numeric_limits<int64_t>::max())) return false;
     destination = static_cast<int64_t>(value);
@@ -541,30 +572,6 @@ static int parameter_placement_for(const std::string &value) {
     return DIFFUSION_PARAMS_DEFAULT;
 }
 
-static int64_t device_budget_bytes(
-        ggml_backend_dev_t device,
-        const sd::ggml_graph_cut::MaxVramAssignment &budgets,
-        bool budget_active,
-        int64_t free_bytes) {
-    if (!budget_active || !device ||
-        (ggml_backend_dev_type(device) != GGML_BACKEND_DEVICE_TYPE_GPU &&
-            ggml_backend_dev_type(device) != GGML_BACKEND_DEVICE_TYPE_IGPU)) {
-        return 0;
-    }
-    float gib = budgets.default_gib;
-    const auto it = budgets.backend_gib.find(lower_ascii(ggml_backend_dev_name(device)));
-    if (it != budgets.backend_gib.end()) gib = it->second;
-    constexpr double GIB = 1024.0 * 1024.0 * 1024.0;
-    constexpr int64_t MARGIN = 512LL * 1024LL * 1024LL;
-    if (gib > 0.0f) {
-        return std::min<int64_t>(static_cast<int64_t>(gib * GIB), free_bytes);
-    }
-    if (gib < 0.0f) {
-        return std::max<int64_t>(free_bytes + static_cast<int64_t>(gib * GIB), 0);
-    }
-    return std::max<int64_t>(free_bytes - MARGIN, 0);
-}
-
 int64_t diffusion_runner_core_load_model(const DiffusionModelConfig &config) {
     std::lock_guard<std::mutex> operation_lock(g_operation_mutex);
     if (!g_backend_initialized || !valid_model_config_native(config)) {
@@ -667,7 +674,10 @@ int64_t diffusion_runner_core_load_model(const DiffusionModelConfig &config) {
     if (!backend_assignment.empty()) params.backend = backend_assignment.c_str();
     if (!params_backend_assignment.empty()) params.params_backend = params_backend_assignment.c_str();
     params.max_vram = config.max_vram[0] == '\0' ? nullptr : config.max_vram;
-    params.stream_layers = config.stream_layers;
+    params.stream_layers = caraml::diffusion::effective_stream_layers(
+        config.stream_layers,
+        resolved_plan.runtime_spec,
+        resolved_plan.params_spec);
     // Auto-fit was resolved above from the same loader assumptions; passing false
     // prevents new_sd_ctx from recomputing a different placement against changing memory.
     params.auto_fit = false;
@@ -712,24 +722,36 @@ int64_t diffusion_runner_core_load_model(const DiffusionModelConfig &config) {
             (int)params.diffusion_flash_attn, (int)params.prediction);
 
     // Create context
-    sd_ctx_t *ctx = new_sd_ctx(&params);
-    if (!ctx) {
+    sd_ctx_t *raw_context = new_sd_ctx(&params);
+    if (!raw_context) {
         dr_logf(DIFFUSION_LOG_ERROR, "load_model: new_sd_ctx returned NULL");
         return 0;  // Failed to load
     }
+    const int64_t handle_id = caraml::publish_owned_context(
+        raw_context,
+        [](sd_ctx_t *context) { free_sd_ctx(context); },
+        [&config](sd_ctx_t *context) {
+            auto handle = std::make_shared<SdHandle>();
+            handle->ctx = context;
+            handle->flow_shift = config.flow_shift;
+            handle->flow_shift_is_set = config.flow_shift_is_set;
+            handle->vae_tiling = config.vae_tiling;
+            return handle;
+        },
+        [](const std::shared_ptr<SdHandle> &handle) {
+            std::lock_guard<std::mutex> lock(g_handles_mutex);
+            if (g_next_handle <= 0 || g_next_handle == std::numeric_limits<int64_t>::max()) {
+                throw std::overflow_error("native handle space exhausted");
+            }
+            const int64_t id = g_next_handle;
+            if (!g_handles.emplace(id, handle).second) {
+                throw std::runtime_error("native handle publication failed");
+            }
+            ++g_next_handle;
+            return id;
+        });
+
     dr_logf(DIFFUSION_LOG_INFO, "load_model: new_sd_ctx OK");
-
-    // Create handle
-    auto handle = std::make_shared<SdHandle>();
-    handle->ctx = ctx;
-    handle->flow_shift = config.flow_shift;
-    handle->flow_shift_is_set = config.flow_shift_is_set;
-    handle->vae_tiling = config.vae_tiling;
-
-    std::lock_guard<std::mutex> lock(g_handles_mutex);
-    int64_t handle_id = g_next_handle++;
-    g_handles[handle_id] = handle;
-
     dr_logf(DIFFUSION_LOG_INFO, "load_model: handle_id=%lld", (long long)handle_id);
     return handle_id;
 }
@@ -1007,6 +1029,12 @@ DiffusionBackendCapabilitiesNative diffusion_runner_core_backend_capabilities() 
             DiffusionBackendCapabilityNative &destination = result.devices[index];
             destination.kind = diffusion_backend_kind(device);
             destination.device_type = diffusion_backend_device_type(device);
+            if (!encode_device_identity(
+                    device,
+                    destination.device_identity_length,
+                    destination.device_identity_words)) {
+                return DiffusionBackendCapabilitiesNative{};
+            }
             if (properties.memory_total > 0) {
                 if (!checked_size_to_i64(properties.memory_free, destination.free_bytes) ||
                     !checked_size_to_i64(properties.memory_total, destination.total_bytes) ||
@@ -1059,8 +1087,6 @@ DiffusionPreflightResultNative diffusion_runner_core_preflight(const DiffusionMo
             result.status = DIFFUSION_PREFLIGHT_UNAVAILABLE;
             return result;
         }
-        const bool budget_active = config.auto_fit ||
-            (config.max_vram[0] != '\0' && std::strcmp(config.max_vram, "0") != 0);
         for (size_t index = 0; index < backend_count; ++index) {
             ggml_backend_dev_t device = ggml_backend_dev_get(index);
             if (!device) {
@@ -1081,12 +1107,10 @@ DiffusionPreflightResultNative diffusion_runner_core_preflight(const DiffusionMo
                     return result;
                 }
             }
-            destination.budget_bytes = device_budget_bytes(
-                device,
-                resolved_plan.budgets,
-                budget_active,
-                destination.free_bytes);
-            if (destination.budget_bytes < 0 || destination.budget_bytes > destination.free_bytes) {
+            if (!caraml::diffusion::max_vram_bytes_for_device(
+                    resolved_plan.budgets,
+                    device,
+                    destination.budget_bytes)) {
                 result.status = DIFFUSION_PREFLIGHT_INVALID;
                 return result;
             }
@@ -1096,7 +1120,49 @@ DiffusionPreflightResultNative diffusion_runner_core_preflight(const DiffusionMo
             ? static_cast<ggml_type>(config.wtype)
             : GGML_TYPE_COUNT;
         int64_t declared_mask = 0;
-        for (size_t index = 0; index < components.size(); ++index) {
+        int result_component_count = 0;
+        if (!has_split_components(config)) {
+            std::vector<caraml::diffusion::PreflightTensorEvidence> tensors;
+            tensors.reserve(combined_loader.get_tensor_storage_map().size());
+            for (const auto &[name, source_storage] : combined_loader.get_tensor_storage_map()) {
+                TensorStorage storage = source_storage;
+                if (is_unused_tensor(storage.name)) continue;
+                if (override_type != GGML_TYPE_COUNT &&
+                    combined_loader.tensor_should_be_converted(storage, override_type)) {
+                    storage.type = override_type;
+                } else if (storage.expected_type != GGML_TYPE_COUNT &&
+                    storage.expected_type != storage.type) {
+                    storage.type = storage.expected_type;
+                }
+                const uint64_t tensor_bytes = storage.nbytes();
+                if (tensor_bytes > static_cast<uint64_t>(std::numeric_limits<int64_t>::max() - 64)) {
+                    result.status = DIFFUSION_PREFLIGHT_INVALID;
+                    return result;
+                }
+                tensors.push_back({name, static_cast<int64_t>(tensor_bytes) + 64});
+            }
+            const auto classified = caraml::diffusion::classify_bundled_components(
+                tensors,
+                resolved_plan.runtime_spec,
+                resolved_plan.params_spec,
+                backend_mask_for_assignment);
+            if (classified.empty() || classified.size() > DIFFUSION_PREFLIGHT_MAX_COMPONENTS) {
+                result.status = DIFFUSION_PREFLIGHT_INVALID;
+                return result;
+            }
+            for (size_t index = 0; index < classified.size(); ++index) {
+                const auto &source = classified[index];
+                DiffusionPreflightComponentNative &destination = result.components[index];
+                destination.role = source.role;
+                destination.ordinal = static_cast<int>(index);
+                destination.parameter_bytes = source.parameter_bytes;
+                destination.runtime_placement = source.runtime_placement;
+                destination.runtime_backend_mask = source.runtime_backend_mask;
+                destination.parameter_placement = source.parameter_placement;
+                declared_mask |= int64_t{1} << source.role;
+            }
+            result_component_count = static_cast<int>(classified.size());
+        } else for (size_t index = 0; index < components.size(); ++index) {
             const DeclaredComponent &source = components[index];
             ModelLoader component_loader;
             if (!component_loader.init_from_file(source.path, source.prefix)) {
@@ -1127,15 +1193,19 @@ DiffusionPreflightResultNative diffusion_runner_core_preflight(const DiffusionMo
                 destination.parameter_placement = parameter_placement_for(
                     assignment_value(resolved_plan.params_spec, source.module));
             }
+            result_component_count = static_cast<int>(components.size());
         }
 
         result.status = DIFFUSION_PREFLIGHT_FIT;
         result.architecture = architecture_code(version);
         result.quantization = dominant_quantization_code(combined_loader);
         result.memory_confidence = 1;
-        result.stream_layers = config.stream_layers;
+        result.stream_layers = caraml::diffusion::effective_stream_layers(
+            config.stream_layers,
+            resolved_plan.runtime_spec,
+            resolved_plan.params_spec);
         result.declared_component_mask = declared_mask;
-        result.component_count = static_cast<int>(components.size());
+        result.component_count = result_component_count;
         result.backend_count = static_cast<int>(backend_count);
     } catch (const std::bad_alloc &) {
         result = DiffusionPreflightResultNative{};

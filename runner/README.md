@@ -135,6 +135,7 @@ The native `.so`/`.a`/`.dylib` is built by `:nativeEngine`, not this module. Thi
 <!-- Updated at end of each Claude Code session -->
 
 - Bounded llama.cpp preflight now shares a thread-independent stream session lease across prompt, token, and finalization calls, keeps cancellation lock-free, recognizes only exact pinned quantization labels, and releases transient native state on every exit
+- Backend capability records now carry bounded canonical device identity and type so cross-engine aggregation cannot combine different devices merely because their backend kinds match
 - Added native delta accessors `getReasoningDelta`/`getContentDelta` (with `\x01` resync sentinel); `structuredChunkFlow` now accumulates O(n) deltas in Kotlin instead of copying full native accumulators per token
 - Added native reasoning/content accessors + `supportsThinking`; new `InferenceChunk` + `generateStructuredChunks`; removed `StructuredOutputGrammar`/`StructuredOutputParser`; `processUserPrompt` no longer takes a grammar
 - GPU layer offloading via `NativeRunnerConfig.gpuLayers`

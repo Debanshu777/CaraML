@@ -244,7 +244,7 @@ Java_com_debanshu777_runner_LlamaRunner_nativeBackendCapabilities(JNIEnv *env, j
             return static_cast<jlongArray>(nullptr);
         }
         constexpr size_t header_fields = 1;
-        constexpr size_t record_fields = 4;
+        constexpr size_t record_fields = 13;
         const size_t field_count = header_fields + static_cast<size_t>(native.count) * record_fields;
         std::array<jlong, header_fields + LLAMA_BACKEND_MAX_DEVICES * record_fields> values{};
         values[0] = static_cast<jlong>(native.count);
@@ -255,6 +255,10 @@ Java_com_debanshu777_runner_LlamaRunner_nativeBackendCapabilities(JNIEnv *env, j
             values[offset + 1] = static_cast<jlong>(device.device_type);
             values[offset + 2] = static_cast<jlong>(device.free_bytes);
             values[offset + 3] = static_cast<jlong>(device.total_bytes);
+            values[offset + 4] = static_cast<jlong>(device.device_identity_length);
+            for (size_t word = 0; word < 8; ++word) {
+                values[offset + 5 + word] = static_cast<jlong>(device.device_identity_words[word]);
+            }
         }
         jlongArray result = env->NewLongArray(static_cast<jsize>(field_count));
         if (!result || env->ExceptionCheck()) return static_cast<jlongArray>(nullptr);

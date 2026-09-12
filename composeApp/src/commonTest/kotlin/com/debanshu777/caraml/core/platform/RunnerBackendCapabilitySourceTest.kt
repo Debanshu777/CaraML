@@ -84,25 +84,87 @@ class RunnerBackendCapabilitySourceTest {
         assertEquals(BackendStatus.UNAVAILABLE, capabilities.single { it.kind == BackendKind.OTHER }.status)
     }
 
+    @Test
+    fun sameKindOnDifferentDevicesIsNotCommonBackendEvidence() {
+        val capabilities = mapRunnerBackendCapabilities(
+            llamaCapabilities = listOf(
+                native(
+                    NativeBackendKind.CUDA,
+                    NativeBackendDeviceType.DISCRETE_GPU,
+                    3_000L,
+                    identity = "cuda0",
+                ),
+            ),
+            diffusionCapabilities = listOf(
+                diffusionNative(
+                    DiffusionBackendKind.CUDA,
+                    DiffusionBackendDeviceType.DISCRETE_GPU,
+                    4_000L,
+                    identity = "cuda1",
+                ),
+                diffusionNative(
+                    DiffusionBackendKind.CUDA,
+                    DiffusionBackendDeviceType.INTEGRATED_GPU,
+                    5_000L,
+                    identity = "cuda0",
+                ),
+            ),
+        )
+
+        assertEquals(BackendStatus.UNAVAILABLE, capabilities.single { it.kind == BackendKind.CUDA }.status)
+    }
+
+    @Test
+    fun matchingMultiDeviceEvidenceAggregatesOnlyExactDeviceAndTypePairs() {
+        val capabilities = mapRunnerBackendCapabilities(
+            llamaCapabilities = listOf(
+                native(NativeBackendKind.CUDA, NativeBackendDeviceType.DISCRETE_GPU, 3_000L, "cuda0"),
+                native(NativeBackendKind.CUDA, NativeBackendDeviceType.DISCRETE_GPU, 5_000L, "cuda1"),
+            ),
+            diffusionCapabilities = listOf(
+                diffusionNative(
+                    DiffusionBackendKind.CUDA,
+                    DiffusionBackendDeviceType.DISCRETE_GPU,
+                    6_000L,
+                    "cuda1",
+                ),
+                diffusionNative(
+                    DiffusionBackendKind.CUDA,
+                    DiffusionBackendDeviceType.DISCRETE_GPU,
+                    4_000L,
+                    "cuda0",
+                ),
+            ),
+        )
+
+        val cuda = capabilities.single { it.kind == BackendKind.CUDA }
+        assertEquals(BackendStatus.AVAILABLE, cuda.status)
+        assertEquals(8_000L, cuda.additionalAllocatableBytes)
+    }
+
     private fun native(
         kind: NativeBackendKind,
         type: NativeBackendDeviceType,
         freeBytes: Long,
+        identity: String = "${kind.stableName}0",
     ) = NativeBackendCapability(
         kind = kind,
         deviceType = type,
         freeBytes = freeBytes,
         totalBytes = freeBytes * 2,
+        deviceIdentity = identity,
     )
 
     private fun diffusionNative(
         kind: DiffusionBackendKind,
         type: DiffusionBackendDeviceType,
         freeBytes: Long,
+        identity: String = "${kind.stableName}0",
     ) = DiffusionBackendCapability(
         kind = kind,
         deviceType = type,
         freeBytes = freeBytes,
         totalBytes = freeBytes * 2,
+        deviceIdentity = identity,
     )
 }

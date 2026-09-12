@@ -125,6 +125,12 @@ struct LlamaBackendCapabilitiesFFI llama_runner_backend_capabilities(void) {
                 result.devices[index].device_type = native.devices[index].device_type;
                 result.devices[index].free_bytes = native.devices[index].free_bytes;
                 result.devices[index].total_bytes = native.devices[index].total_bytes;
+                result.devices[index].device_identity_length =
+                    native.devices[index].device_identity_length;
+                for (int word = 0; word < 8; ++word) {
+                    result.devices[index].device_identity_words[word] =
+                        native.devices[index].device_identity_words[word];
+                }
             }
             return result;
         });

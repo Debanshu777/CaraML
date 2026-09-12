@@ -227,7 +227,7 @@ int diffusion_runner_ios_backend_capabilities(long long *output, int capacity) {
         const DiffusionBackendCapabilitiesNative native =
             diffusion_runner_core_backend_capabilities();
         if (!output || native.count < 1 || native.count > DIFFUSION_BACKEND_MAX_DEVICES) return 0;
-        const int count = 1 + native.count * 4;
+        const int count = 1 + native.count * 13;
         if (capacity < count) return 0;
         int cursor = 0;
         output[cursor++] = native.count;
@@ -237,6 +237,10 @@ int diffusion_runner_ios_backend_capabilities(long long *output, int capacity) {
             output[cursor++] = device.device_type;
             output[cursor++] = device.free_bytes;
             output[cursor++] = device.total_bytes;
+            output[cursor++] = device.device_identity_length;
+            for (int word = 0; word < 8; ++word) {
+                output[cursor++] = device.device_identity_words[word];
+            }
         }
         return cursor;
     });

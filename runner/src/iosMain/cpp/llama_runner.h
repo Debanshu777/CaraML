@@ -52,6 +52,8 @@ struct LlamaBackendCapabilityFFI {
     int device_type;
     int64_t free_bytes;
     int64_t total_bytes;
+    int device_identity_length;
+    int64_t device_identity_words[8];
 };
 
 struct LlamaBackendCapabilitiesFFI {

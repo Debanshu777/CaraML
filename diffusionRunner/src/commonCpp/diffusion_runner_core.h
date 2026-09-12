@@ -120,7 +120,7 @@ struct DiffusionMetadataResult {
  */
 DiffusionMetadataResult diffusion_runner_core_get_metadata(const char* model_path);
 
-constexpr int DIFFUSION_PREFLIGHT_MAX_COMPONENTS = 8;
+constexpr int DIFFUSION_PREFLIGHT_MAX_COMPONENTS = 10;
 constexpr int DIFFUSION_PREFLIGHT_MAX_BACKENDS = 16;
 constexpr int DIFFUSION_BACKEND_MAX_DEVICES = 16;
 
@@ -171,6 +171,8 @@ enum DiffusionComponentRoleNative {
     DIFFUSION_COMPONENT_CLIP_G = 5,
     DIFFUSION_COMPONENT_T5XXL = 6,
     DIFFUSION_COMPONENT_TAESD = 7,
+    DIFFUSION_COMPONENT_TEXT_ENCODER = 8,
+    DIFFUSION_COMPONENT_OTHER = 9,
 };
 
 enum DiffusionRuntimePlacementNative {
@@ -240,6 +242,8 @@ struct DiffusionBackendCapabilityNative {
     int device_type = DIFFUSION_BACKEND_DEVICE_META;
     int64_t free_bytes = -1;
     int64_t total_bytes = -1;
+    int device_identity_length = 0;
+    int64_t device_identity_words[8]{};
 };
 
 struct DiffusionBackendCapabilitiesNative {

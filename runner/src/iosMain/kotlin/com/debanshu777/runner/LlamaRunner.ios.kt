@@ -99,6 +99,10 @@ actual class LlamaRunner {
                         payload[offset + 1] = device.device_type.toLong()
                         payload[offset + 2] = device.free_bytes
                         payload[offset + 3] = device.total_bytes
+                        payload[offset + 4] = device.device_identity_length.toLong()
+                        repeat(8) { word ->
+                            payload[offset + 5 + word] = device.device_identity_words[word]
+                        }
                     }
                 }
             },

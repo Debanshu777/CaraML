@@ -3,6 +3,7 @@
 #include <atomic>
 #include <algorithm>
 #include <chrono>
+#include <cctype>
 #include <cmath>
 #include <cstdarg>
 #include <cstdint>
@@ -330,6 +331,34 @@ static int backend_device_type(ggml_backend_dev_t device) {
         case GGML_BACKEND_DEVICE_TYPE_META: return LLAMA_BACKEND_DEVICE_META;
     }
     return LLAMA_BACKEND_DEVICE_META;
+}
+
+static bool encode_device_identity(
+        ggml_backend_dev_t device,
+        int &length,
+        int64_t (&words)[8]) {
+    const char *raw = device ? ggml_backend_dev_name(device) : nullptr;
+    if (!raw) return false;
+    const size_t raw_length = ::strnlen(raw, 65);
+    if (raw_length == 0 || raw_length > 64) return false;
+    size_t first = 0;
+    size_t last = raw_length;
+    while (first < last && std::isspace(static_cast<unsigned char>(raw[first]))) ++first;
+    while (last > first && std::isspace(static_cast<unsigned char>(raw[last - 1]))) --last;
+    const size_t canonical_length = last - first;
+    if (canonical_length == 0 || canonical_length > 64) return false;
+    for (int64_t &word : words) word = 0;
+    for (size_t index = 0; index < canonical_length; ++index) {
+        const unsigned char byte = static_cast<unsigned char>(raw[first + index]);
+        if (byte < 0x20 || byte > 0x7e) return false;
+        const unsigned char canonical = byte >= 'A' && byte <= 'Z'
+            ? static_cast<unsigned char>(byte - 'A' + 'a') : byte;
+        const uint64_t shifted = static_cast<uint64_t>(canonical) << ((index % 8) * 8);
+        words[index / 8] = static_cast<int64_t>(
+            static_cast<uint64_t>(words[index / 8]) | shifted);
+    }
+    length = static_cast<int>(canonical_length);
+    return true;
 }
 
 static bool is_safe_feature_label(const char *value, size_t max_bytes) {
@@ -824,6 +853,12 @@ LlamaBackendCapabilitiesNative llama_runner_core_backend_capabilities() {
             LlamaBackendCapabilityNative &destination = result.devices[index];
             destination.kind = backend_kind(device);
             destination.device_type = backend_device_type(device);
+            if (!encode_device_identity(
+                    device,
+                    destination.device_identity_length,
+                    destination.device_identity_words)) {
+                return LlamaBackendCapabilitiesNative{};
+            }
             if (properties.memory_total > 0) {
                 if (!checked_size_to_i64(properties.memory_free, destination.free_bytes) ||
                     !checked_size_to_i64(properties.memory_total, destination.total_bytes) ||

@@ -66,23 +66,27 @@ internal fun mapRunnerBackendCapabilities(
     llamaCapabilities: List<NativeBackendCapability>,
     diffusionCapabilities: List<DiffusionBackendCapability>,
 ): List<BackendCapability> {
-    val llamaGrouped = llamaCapabilities
+    val llamaByDevice = llamaCapabilities
         .filter { it.kind != NativeBackendKind.OTHER && it.isComputeDeviceForKind() }
-        .groupBy { it.kind.stableName }
-    val diffusionGrouped = diffusionCapabilities
+        .mapNotNull { capability -> capability.deviceKey()?.let { it to capability } }
+        .groupBy({ it.first }, { it.second })
+        .filterValues { it.size == 1 }
+        .mapValues { it.value.single() }
+    val diffusionByDevice = diffusionCapabilities
         .filter { it.kind != DiffusionBackendKind.OTHER && it.isComputeDeviceForKind() }
-        .groupBy { it.kind.stableName }
+        .mapNotNull { capability -> capability.deviceKey()?.let { it to capability } }
+        .groupBy({ it.first }, { it.second })
+        .filterValues { it.size == 1 }
+        .mapValues { it.value.single() }
     return BackendKind.entries.map { kind ->
-        val commonStableKinds = llamaGrouped.keys.intersect(diffusionGrouped.keys).filter { stableName ->
-            llamaGrouped.getValue(stableName).first().kind.toBackendKind() == kind &&
-                diffusionGrouped.getValue(stableName).first().kind.toBackendKind() == kind
-        }
+        val commonDevices = llamaByDevice.keys.intersect(diffusionByDevice.keys)
+            .filter { it.kind == kind }
         when {
             kind == BackendKind.CPU -> availableCpuCapability()
-            commonStableKinds.isNotEmpty() -> {
-                val freeBytes = commonStableKinds.fold(0L as Long?) { accumulated, stableName ->
-                    val llamaFree = llamaGrouped.getValue(stableName).checkedLlamaFreeBytesSum()
-                    val diffusionFree = diffusionGrouped.getValue(stableName).checkedDiffusionFreeBytesSum()
+            commonDevices.isNotEmpty() -> {
+                val freeBytes = commonDevices.fold(0L as Long?) { accumulated, device ->
+                    val llamaFree = llamaByDevice.getValue(device).freeBytes
+                    val diffusionFree = diffusionByDevice.getValue(device).freeBytes
                     val commonFree = if (llamaFree != null && diffusionFree != null) {
                         minOf(llamaFree, diffusionFree)
                     } else {
@@ -111,6 +115,36 @@ internal fun mapRunnerBackendCapabilities(
             )
         }
     }
+}
+
+private data class RunnerDeviceKey(
+    val kind: BackendKind,
+    val deviceType: String,
+    val identity: String,
+)
+
+private fun NativeBackendCapability.deviceKey(): RunnerDeviceKey? = deviceIdentity?.let { identity ->
+    RunnerDeviceKey(kind.toBackendKind(), deviceType.stableName(), identity)
+}
+
+private fun DiffusionBackendCapability.deviceKey(): RunnerDeviceKey? = deviceIdentity?.let { identity ->
+    RunnerDeviceKey(kind.toBackendKind(), deviceType.stableName(), identity)
+}
+
+private fun NativeBackendDeviceType.stableName(): String = when (this) {
+    NativeBackendDeviceType.CPU -> "cpu"
+    NativeBackendDeviceType.DISCRETE_GPU -> "discrete_gpu"
+    NativeBackendDeviceType.INTEGRATED_GPU -> "integrated_gpu"
+    NativeBackendDeviceType.ACCELERATOR -> "accelerator"
+    NativeBackendDeviceType.META -> "meta"
+}
+
+private fun DiffusionBackendDeviceType.stableName(): String = when (this) {
+    DiffusionBackendDeviceType.CPU -> "cpu"
+    DiffusionBackendDeviceType.DISCRETE_GPU -> "discrete_gpu"
+    DiffusionBackendDeviceType.INTEGRATED_GPU -> "integrated_gpu"
+    DiffusionBackendDeviceType.ACCELERATOR -> "accelerator"
+    DiffusionBackendDeviceType.META -> "meta"
 }
 
 private fun availableCpuCapability() = BackendCapability(
@@ -160,24 +194,4 @@ private fun DiffusionBackendCapability.isComputeDeviceForKind(): Boolean = when 
     DiffusionBackendKind.CPU -> deviceType == DiffusionBackendDeviceType.CPU
     else -> deviceType == DiffusionBackendDeviceType.DISCRETE_GPU ||
         deviceType == DiffusionBackendDeviceType.INTEGRATED_GPU
-}
-
-private fun List<NativeBackendCapability>.checkedLlamaFreeBytesSum(): Long? {
-    var sum = 0L
-    for (device in this) {
-        val value = device.freeBytes ?: return null
-        if (value < 0L || sum > Long.MAX_VALUE - value) return null
-        sum += value
-    }
-    return sum
-}
-
-private fun List<DiffusionBackendCapability>.checkedDiffusionFreeBytesSum(): Long? {
-    var sum = 0L
-    for (device in this) {
-        val value = device.freeBytes ?: return null
-        if (value < 0L || sum > Long.MAX_VALUE - value) return null
-        sum += value
-    }
-    return sum
 }

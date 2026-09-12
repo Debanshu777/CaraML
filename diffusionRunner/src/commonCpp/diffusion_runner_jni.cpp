@@ -307,7 +307,7 @@ Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeBackendCapabilities(
             diffusion_runner_core_backend_capabilities();
         if (native.count < 1 || native.count > DIFFUSION_BACKEND_MAX_DEVICES) return nullptr;
         std::vector<int64_t> payload;
-        payload.reserve(1 + native.count * 4);
+        payload.reserve(1 + native.count * 13);
         payload.push_back(native.count);
         for (int index = 0; index < native.count; ++index) {
             const DiffusionBackendCapabilityNative &device = native.devices[index];
@@ -316,7 +316,11 @@ Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeBackendCapabilities(
                 device.device_type,
                 device.free_bytes,
                 device.total_bytes,
+                device.device_identity_length,
             });
+            for (int word = 0; word < 8; ++word) {
+                payload.push_back(device.device_identity_words[word]);
+            }
         }
         return make_long_array(env, payload);
     } catch (...) {
