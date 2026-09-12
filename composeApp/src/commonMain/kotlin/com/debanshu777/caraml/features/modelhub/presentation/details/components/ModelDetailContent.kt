@@ -136,7 +136,16 @@ fun ModelDetailContent(
                     ModelOverviewSection(model, modelSetup?.description)
                     ModelMetadataSection(model)
                     ModelRecommendationSection(recommendationState, onRecommendationInfoClick)
-                    if (!showInstallBundle) {
+                    if (showInstallBundle) {
+                        InstallBundleSummaryCard(
+                            state = installBundleState,
+                            familyLabel = modelSetup?.familyLabel,
+                            modelDescription = null,
+                            onVariantSelected = onVariantSelected,
+                            modifier = Modifier.fillMaxWidth(),
+                            recommendedVariantPath = recommendedVariant,
+                        )
+                    } else {
                         ModelFileVariantsSection(
                             model = model,
                             ggufFiles = ggufFiles,
@@ -149,15 +158,10 @@ fun ModelDetailContent(
                     }
                 }
                 if (showInstallBundle) {
-                    InstallBundleCard(
-                        modelId = modelId,
+                    InstallBundleActionFooter(
                         state = installBundleState,
-                        familyLabel = modelSetup?.familyLabel,
-                        modelDescription = null,
-                        onVariantSelected = onVariantSelected,
-                        onInstall = onSmartInstall,
                         modifier = Modifier.fillMaxWidth().padding(vertical = spacing.s),
-                        recommendedVariantPath = recommendedVariant,
+                        onInstall = onSmartInstall,
                         installEnabled = installEnabled,
                     )
                 }

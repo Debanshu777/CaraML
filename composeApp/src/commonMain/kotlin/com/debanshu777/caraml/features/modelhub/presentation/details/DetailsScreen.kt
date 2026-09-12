@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.drawer.LocalAppWindowWidth
 import com.debanshu777.caraml.core.rating.ui.RecommendationDetailsSheet
 import com.debanshu777.caraml.core.rating.ui.recommendationPresentation
 import com.debanshu777.caraml.core.ui.components.CaraMLTopBar
@@ -54,6 +55,7 @@ fun DetailsScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val hostedWindowWidth = LocalAppWindowWidth.current
     val modelDetail by viewModel.modelDetail.collectAsState()
     val isDetailLoading by viewModel.isDetailLoading.collectAsState()
     val detailError by viewModel.detailError.collectAsState()
@@ -103,7 +105,7 @@ fun DetailsScreen(
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
-            val detailsWindowWidth = maxWidth
+            val detailsWindowWidth = hostedWindowWidth ?: maxWidth
             ResponsiveContentPane(
                 kind = AppContentKind.Details,
                 modifier = Modifier.fillMaxSize(),
