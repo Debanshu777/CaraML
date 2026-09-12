@@ -219,6 +219,7 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 
 <!-- This section is updated at the end of each AI-assisted development session -->
 
+- Modernized Model Hub browsing with pinned tabs, one scroll owner per tab, compact Material 3 search and filter controls, and responsive content width
 - Added versioned recommendation/native fixture gates, opt-in real-runner parity, pinned CI jobs, and exact artifact-bound model selection; production remains on the legacy display path until measured physical-device and pinned-runner release evidence exists
 - Added opt-in device calibration with byte-bound descriptor identity, phase-specific raw memory baselines, full run-plan fingerprints, real process-memory provenance, and fail-closed quarantine after unresponsive native probes
 - Model loads now derive typed directory targets only from verified storage roots, bind every native-consumed path to revalidated bytes, and keep multi-sequence plans analytical until strict native admission
@@ -228,11 +229,17 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 - Added persisted Balanced-by-default recommendation profiles with atomic onboarding, rollout-gated Material 3 controls, and rapid-update-safe settings state
 - Added bounded profile-neutral model assessment caching, fresh device-snapshot assembly, and privacy-safe debug shadow comparison with release-safe legacy rollout
 - Hardened side-effect-free llama.cpp preflight with a thread-independent stream session lease, exact pinned quantization labels, trusted capability evidence, exception-safe transient cleanup, and build-owned patched sources that keep the pinned submodule immutable
+- Contained P0/P1 inference failures with live memory admission, cancellable race-safe diffusion handles, failure-atomic llama prompts, bounded disk-backed generated media, and explicit iOS video capability gating
+- Hardened inference and downloads against crashes: serialized native LLM access, contained C++ exceptions at JNI/iOS boundaries, handled missing native libraries, validated generation inputs, and preserved coroutine cancellation
+- Downloads are now path-contained and transactional across Android, iOS, and Desktop: HTTP status/length checks, `.part` staging, atomic commit where supported, cleanup on interruption, and coalesced progress updates
+- Reduced streaming overhead with native deltas, 20 Hz immutable UI snapshots, a single streaming-state collector, and deferred Markdown rendering until generation completes
+- Added stale `params_fit` cache invalidation, bounded Hugging Face request inputs, safe context-reset failure reporting, and resilient bulk deletion
+- Expanded regression coverage for download integrity/traversal, native-session exclusion, streaming resync/throttling, diffusion bounds, cancellation, and API path construction
 - Added a least-privilege GitHub Actions JVM test gate and weekly Dependabot updates; actions are pinned to immutable release commits
 - Removed the obsolete Obsidian MCP config and persisted Graphify's `libraries/` exclusion
 - Consolidated shared Claude Code and Codex project guidance into `AGENTS.md`; `CLAUDE.md` is now a thin import wrapper containing only Claude-specific model policy
 - Added a Graphify knowledge graph for app-owned modules, with interactive HTML, GraphRAG JSON, labeled communities, and an audit report; vendored `libraries/` sources are excluded
-- Inference perf: O(n²) → O(n) JNI emission via native delta accessors (`getReasoningDelta`/`getContentDelta`) with resync-sentinel support; reduces GC churn and dropped frames on long replies
+- Inference perf: native delta accessors plus bounded UI snapshots avoid per-token cumulative copying and repeated Markdown parsing
 - Inference perf: hybrid-SSM arch Vulkan denylist (qwen35, jamba, mamba, etc.) skips doomed first-load GPU attempt; suitability sheet now shows runnability warnings for IQ-quant + CPU-only and hybrid-SSM models
 - Reasoning/content split now uses llama.cpp native `common_chat_parse` (per-model chat template), replacing the custom GBNF grammar and name-based classifier
 - Fix: SD Vulkan SIGABRT on Mali-G715/Adreno — `SD_VULKAN` decoupled from `GGML_VULKAN` in Android CMakeLists; `SD_VULKAN=OFF` compiles stable-diffusion.cpp without `SD_USE_VULKAN`, preventing `GGMLRunner` from initializing Vulkan for image generation; `GGML_VULKAN` stays ON for LLM inference; root cause was `ggml_extend.hpp:1967` unconditionally offloading UNet params to Vulkan at inference time regardless of config flags

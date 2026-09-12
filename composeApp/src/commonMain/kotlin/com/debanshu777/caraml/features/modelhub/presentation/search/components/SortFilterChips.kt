@@ -2,12 +2,17 @@ package com.debanshu777.caraml.features.modelhub.presentation.search.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -32,36 +37,49 @@ fun SortFilterChips(
     onMaxParamsChange: (ParameterRange) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Row(
+    LazyRow(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(vertical = 4.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        SortDropdown(
-            label = if (ordering is ModelOrdering.Personalized) "Recommended for me" else "Server order",
-            options = listOf(ModelOrdering.Personalized, ModelOrdering.Server(sort)),
-            selected = ordering,
-            onSelect = onOrderingChange,
-        )
-        SortDropdown(
-            label = sort.displayName,
-            options = ModelSort.entries.filter { it != ModelSort.SIMILAR },
-            selected = sort,
-            onSelect = onSortChange
-        )
-        SortDropdown(
-            label = "Min: ${minParams.displayName}",
-            options = ParameterRange.entries,
-            selected = minParams,
-            onSelect = onMinParamsChange
-        )
-        SortDropdown(
-            label = "Max: ${maxParams.displayName}",
-            options = ParameterRange.entries,
-            selected = maxParams,
-            onSelect = onMaxParamsChange
-        )
+        item(key = "ordering") {
+            SortDropdown(
+                label = if (ordering is ModelOrdering.Personalized) "Recommended" else "Server order",
+                options = listOf(ModelOrdering.Personalized, ModelOrdering.Server(sort)),
+                selected = ordering,
+                highlighted = ordering is ModelOrdering.Personalized,
+                onSelect = onOrderingChange,
+            )
+        }
+        item(key = "sort") {
+            SortDropdown(
+                label = "Sort: ${sort.displayName}",
+                options = ModelSort.entries.filter { it != ModelSort.SIMILAR },
+                selected = sort,
+                highlighted = sort != ModelSort.TRENDING,
+                onSelect = onSortChange,
+            )
+        }
+        item(key = "min-params") {
+            SortDropdown(
+                label = "Min: ${minParams.displayName}",
+                options = ParameterRange.entries,
+                selected = minParams,
+                highlighted = minParams != ParameterRange.ZERO,
+                onSelect = onMinParamsChange,
+            )
+        }
+        item(key = "max-params") {
+            SortDropdown(
+                label = "Max: ${maxParams.displayName}",
+                options = ParameterRange.entries,
+                selected = maxParams,
+                highlighted = maxParams != ParameterRange.SIX_B,
+                onSelect = onMaxParamsChange,
+            )
+        }
     }
 }
 
@@ -70,16 +88,24 @@ private fun <T> SortDropdown(
     label: String,
     options: List<T>,
     selected: T,
+    highlighted: Boolean,
     onSelect: (T) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box(modifier = modifier) {
-        OutlinedButton(
-            onClick = { expanded = true }
-        ) {
-            Text(label)
-        }
+        FilterChip(
+            selected = highlighted,
+            onClick = { expanded = true },
+            label = { Text(label) },
+            trailingIcon = {
+                Icon(
+                    imageVector = Icons.Default.ArrowDropDown,
+                    contentDescription = "Choose $label",
+                    modifier = Modifier.size(18.dp),
+                )
+            },
+        )
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false }

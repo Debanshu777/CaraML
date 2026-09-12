@@ -15,6 +15,9 @@ data class SearchModelsParams(
         require(query.isNotBlank()) {
             "query must not be blank"
         }
+        require(query.length <= MAX_QUERY_LENGTH && query.none { it.isISOControl() }) {
+            "query is invalid"
+        }
         require(limit in 1..100) {
             "limit must be between 1 and 100"
         }
@@ -22,5 +25,6 @@ data class SearchModelsParams(
 
     companion object {
         private const val DEFAULT_LIMIT = 20
+        private const val MAX_QUERY_LENGTH = 256
     }
 }

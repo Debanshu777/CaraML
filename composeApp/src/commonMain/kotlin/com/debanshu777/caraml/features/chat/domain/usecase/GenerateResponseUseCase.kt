@@ -9,12 +9,11 @@ import com.debanshu777.caraml.core.recommendation.ObservationOutcome
 import com.debanshu777.caraml.features.chat.data.InferenceMetrics
 import com.debanshu777.caraml.features.chat.data.LiveGenerationStats
 import com.debanshu777.caraml.features.chat.data.TokenTimer
-import com.debanshu777.runner.InferenceChunk
 import com.debanshu777.runner.StopReason
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.flow.onEach
+import kotlin.time.TimeSource
 
 data class GenerationResult(
     val metrics: InferenceMetrics?,
@@ -28,6 +27,7 @@ class GenerateResponseUseCase(
 ) {
     companion object {
         private const val TAG = "Inference"
+        private const val UI_UPDATE_INTERVAL_MS = 50L
     }
 
     private fun stopReasonLabel(code: Int): String = when (code) {
@@ -68,6 +68,8 @@ class GenerateResponseUseCase(
         val timer = TokenTimer()
         val benchMode = BenchmarkUtils.benchmarkMode
         val detailedTimer = if (benchMode) BenchmarkUtils.DetailedTokenTimer() else null
+        val accumulator = InferenceTextAccumulator(UI_UPDATE_INTERVAL_MS)
+        val generationStart = TimeSource.Monotonic.markNow()
         var firstToken = true
         var nativeDecodeNanoseconds = 0L
 
@@ -88,24 +90,28 @@ class GenerateResponseUseCase(
         }
 
         inferenceRepository.generateResponse(userPrompt)
-            .onEach {
-                timer.onToken()
-                if (detailedTimer != null) {
-                    if (firstToken) {
-                        detailedTimer.onFirstToken()
-                        firstToken = false
-                    } else {
-                        detailedTimer.onToken()
-                    }
-                }
-            }
             .flowOn(Dispatchers.IO)
             .collect { chunk ->
-                nativeDecodeNanoseconds = if (
-                    chunk.nativeDecodeNanoseconds > Long.MAX_VALUE - nativeDecodeNanoseconds
-                ) Long.MAX_VALUE else nativeDecodeNanoseconds + chunk.nativeDecodeNanoseconds
-                emit(chunk.reasoning, chunk.content)
+                if (chunk.isTokenEvent) {
+                    nativeDecodeNanoseconds = if (
+                        chunk.nativeDecodeNanoseconds > Long.MAX_VALUE - nativeDecodeNanoseconds
+                    ) Long.MAX_VALUE else nativeDecodeNanoseconds + chunk.nativeDecodeNanoseconds
+                    timer.onToken()
+                    if (detailedTimer != null) {
+                        if (firstToken) {
+                            detailedTimer.onFirstToken()
+                            firstToken = false
+                        } else {
+                            detailedTimer.onToken()
+                        }
+                    }
+                }
+                accumulator.apply(chunk)
+                accumulator.snapshotIfDue(generationStart.elapsedNow().inWholeMilliseconds)
+                    ?.let { emit(it.reasoning, it.content) }
             }
+
+        accumulator.finalSnapshot()?.let { emit(it.reasoning, it.content) }
 
         val metrics = timer.buildMetrics()
         val stopReason = inferenceRepository.getStopReason()

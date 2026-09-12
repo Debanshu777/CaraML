@@ -205,7 +205,7 @@ object ModelSuitabilityCalculator {
 
         // Weights: prefer real on-disk size when known (more accurate than params × bpw).
         val weightsBytes: Long = sizeBytes
-            ?: ((numParameters!!.toDouble() * bpw / 8.0).toLong())
+            ?: ((requireNotNull(numParameters).toDouble() * bpw / 8.0).toLong())
 
         val isEstimate = sizeBytes == null
         val ctx = contextLength?.takeIf { it > 0 } ?: DEFAULT_CTX

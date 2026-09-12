@@ -138,6 +138,10 @@ The native `.so`/`.a`/`.dylib` is built by `:nativeEngine`, not this module. Thi
 - Calibration now uses typed memory-copy/GEMM windows, pre-reserved exact-token cancellation, bounded caller timeouts, and permanent fail-closed operation quarantine if an in-process native probe becomes unresponsive; LLM chunks expose native decode-only timing
 - Bounded llama.cpp preflight now shares a thread-independent stream session lease across prompt, token, and finalization calls, keeps cancellation lock-free, recognizes only exact pinned quantization labels, and releases transient native state on every exit
 - Backend capability records now carry bounded canonical device identity and type so cross-engine aggregation cannot combine different devices merely because their backend kinds match
+- User prompts are admitted before KV/history mutation, reserve response capacity without tail truncation, and return a dedicated context-full result with failure cleanup
+- Native operations now fail through controlled fallbacks when the shared library is unavailable; JNI and iOS C boundaries catch allocation/native exceptions instead of allowing C++ unwinding to terminate the process
+- Structured streaming emits token deltas plus explicit resync flags and distinguishes parser-finalization events from generated tokens for accurate metrics
+- Coroutines use the shared 1.11.0 dependency catalog version across modules
 - Added native delta accessors `getReasoningDelta`/`getContentDelta` (with `\x01` resync sentinel); `structuredChunkFlow` now accumulates O(n) deltas in Kotlin instead of copying full native accumulators per token
 - Added native reasoning/content accessors + `supportsThinking`; new `InferenceChunk` + `generateStructuredChunks`; removed `StructuredOutputGrammar`/`StructuredOutputParser`; `processUserPrompt` no longer takes a grammar
 - GPU layer offloading via `NativeRunnerConfig.gpuLayers`

@@ -3,8 +3,9 @@ package com.debanshu777.caraml.core.di
 import com.debanshu777.caraml.core.data.inference.DiffusionInferenceRepository
 import com.debanshu777.caraml.core.data.inference.InferenceRepository
 import com.debanshu777.caraml.core.data.inference.LlamaInferenceRepository
-import com.debanshu777.caraml.core.recommendation.BackendCalibrationProbe
+import com.debanshu777.caraml.core.media.GeneratedMediaStore
 import com.debanshu777.caraml.core.recommendation.CalibrationSource
+import com.debanshu777.caraml.core.recommendation.BackendCalibrationProbe
 import com.debanshu777.caraml.core.recommendation.CalibrationRepository
 import com.debanshu777.caraml.core.recommendation.CompatibilityChecker
 import com.debanshu777.caraml.core.recommendation.DefaultRecommendationRolloutModeSource
@@ -54,8 +55,8 @@ import com.debanshu777.caraml.features.settings.presentation.SettingsViewModel
 import com.debanshu777.huggingfacemanager.createHuggingFaceApi
 import com.debanshu777.huggingfacemanager.download.DownloadManager
 import com.debanshu777.runner.LlamaRunner
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import com.debanshu777.huggingfacemanager.download.ArtifactManifest
@@ -134,6 +135,7 @@ val appModule = module {
         DefaultRecommendationRolloutModeSource(isDebugBuild = platformIsDebugBuild())
     }
     single { LegacySuitabilityAdapter(get()) }
+    factory { GeneratedMediaStore() }
 
     single { LlamaRunner() }
     single { DiffusionRunner() }
@@ -274,6 +276,7 @@ val appModule = module {
             inferenceRepository = get(),
             diffusionRepository = get(),
             storagePathProvider = get(),
+            generatedMediaStore = get(),
             recommendationRolloutModeSource = get(),
         )
     }

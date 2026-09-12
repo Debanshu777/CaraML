@@ -65,6 +65,77 @@ class DiffusionRunnerValidationTest {
         }
     }
 
+    @Test
+    fun rejectsImageRequestsThatCanExhaustOrCorruptNativeGeneration() {
+        val unsafe = listOf(
+            ImageGenParams(prompt = "x", width = 4_104),
+            ImageGenParams(prompt = "x", width = 4_096, height = 4_096 + 8),
+            ImageGenParams(prompt = "x", steps = 151),
+            ImageGenParams(prompt = "x", cfgScale = Float.NaN),
+            ImageGenParams(prompt = "x", cfgScale = Float.POSITIVE_INFINITY),
+            ImageGenParams(prompt = "x".repeat(16_385)),
+            ImageGenParams(
+                prompt = "x",
+                loraPaths = List(33) { "/models/lora-$it.gguf" },
+                loraStrengths = List(33) { 1f },
+            ),
+            ImageGenParams(
+                prompt = "x",
+                loraPaths = listOf("/models/lora.gguf"),
+                loraStrengths = listOf(Float.NaN),
+            ),
+        )
+
+        unsafe.forEach { params ->
+            assertFailsWith<IllegalArgumentException> {
+                validateImageGenParams(params)
+            }
+        }
+    }
+
+    @Test
+    fun rejectsUnsafeVideoFrameBudgets() {
+        listOf(0, 257).forEach { frames ->
+            assertFailsWith<IllegalArgumentException> {
+                validateVideoGenParams(VideoGenParams(prompt = "x", videoFrames = frames))
+            }
+        }
+
+        assertFailsWith<IllegalArgumentException> {
+            validateVideoGenParams(
+                VideoGenParams(
+                    prompt = "x",
+                    width = 4_096,
+                    height = 4_096,
+                    videoFrames = 2,
+                )
+            )
+        }
+    }
+
+    @Test
+    fun acceptsConservativeImageAndVideoRequests() {
+        validateImageGenParams(
+            ImageGenParams(
+                prompt = "render a mountain",
+                width = 1_024,
+                height = 1_024,
+                steps = 40,
+                cfgScale = 7f,
+            )
+        )
+        validateVideoGenParams(
+            VideoGenParams(
+                prompt = "a slow camera pan",
+                width = 512,
+                height = 512,
+                videoFrames = 64,
+                steps = 30,
+                cfgScale = 6f,
+            )
+        )
+    }
+
     private fun modelConfig(
         modelPath: String = "/models/model.gguf",
         vaePath: String = "",

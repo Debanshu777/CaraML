@@ -3,8 +3,11 @@ package com.debanshu777.caraml.features.chat.presentation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.debanshu777.caraml.core.data.inference.DiffusionInferenceRepository
+import com.debanshu777.caraml.core.data.inference.DiffusionMemoryException
 import com.debanshu777.caraml.core.data.inference.InferenceRepository
 import com.debanshu777.caraml.core.data.inference.ModelLoadResult
+import com.debanshu777.caraml.core.data.inference.PromptContextFullException
+import com.debanshu777.caraml.core.media.GeneratedMediaStore
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.recommendation.LoadAdmission
 import com.debanshu777.caraml.core.recommendation.LoadRequest
@@ -20,6 +23,7 @@ import com.debanshu777.caraml.features.chat.domain.matchesGenerationMode
 import com.debanshu777.caraml.features.chat.domain.usecase.GenerateResponseUseCase
 import com.debanshu777.caraml.features.chat.domain.usecase.GenerationResult
 import com.debanshu777.caraml.features.chat.domain.usecase.GetAvailableModelsUseCase
+import com.debanshu777.caraml.features.chat.domain.usecase.ContextResetResult
 import com.debanshu777.caraml.features.chat.domain.usecase.ManageContextUseCase
 import com.debanshu777.caraml.features.chat.domain.usecase.TrackModelUsageUseCase
 import com.debanshu777.caraml.core.rating.DiffusionStepPolicy
@@ -54,6 +58,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.time.Clock
 
 private sealed class InternalChatState {
@@ -97,6 +102,7 @@ class ChatViewModel(
     private val inferenceRepository: InferenceRepository,
     private val diffusionRepository: DiffusionInferenceRepository,
     private val storagePathProvider: StoragePathProvider,
+    private val generatedMediaStore: GeneratedMediaStore,
     private val recommendationRolloutModeSource: RecommendationRolloutModeSource,
 ) : ViewModel() {
 
@@ -172,8 +178,10 @@ class ChatViewModel(
     private val teardownScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     private suspend fun releaseAllRunners() {
-        inferenceRepository.unloadModel()
-        diffusionRepository.release()
+        withContext(Dispatchers.Default) {
+            inferenceRepository.unloadModel()
+            diffusionRepository.release()
+        }
     }
 
     init {
@@ -209,6 +217,14 @@ class ChatViewModel(
         models: ImmutableList<LocalModelEntity>,
         mode: GenerationMode,
     ) {
+        if (mode == GenerationMode.Video && !diffusionRepository.supportsVideoGeneration()) {
+            releaseAllRunners()
+            _internal.value = InternalChatState.ModelError(
+                "Video generation is not available on this platform yet."
+            )
+            _selectedModel.value = null
+            return
+        }
         if (models.isEmpty()) {
             releaseAllRunners()
             _internal.value = InternalChatState.NoModels
@@ -253,21 +269,30 @@ class ChatViewModel(
 
     override fun onCleared() {
         super.onCleared()
+        signalGenerationCancellation()
         teardownScope.launch {
             inferenceRepository.unloadModel()
             diffusionRepository.release()
+            generatedMediaStore.clear()
         }
     }
 
     fun setGenerationMode(mode: GenerationMode) {
         if (_generationMode.value == mode) return
         modelLoadJob?.cancel()
+        signalGenerationCancellation()
         generationJob?.cancel()
-        if (_generationMode.value == GenerationMode.Text) {
-            inferenceRepository.cancelGeneration()
-        }
         _streamingState.value = StreamingState()
         _generationMode.value = mode
+
+        if (mode == GenerationMode.Video && !diffusionRepository.supportsVideoGeneration()) {
+            _selectedModel.value = null
+            _internal.value = InternalChatState.ModelError(
+                "Video generation is not available on this platform yet."
+            )
+            viewModelScope.launch(Dispatchers.Default) { releaseAllRunners() }
+            return
+        }
 
         val models = _topModels.value
         val picker = models.filterForMode(mode)
@@ -316,6 +341,7 @@ class ChatViewModel(
     private fun loadModel(model: LocalModelEntity) {
         val previousJob = modelLoadJob
         modelLoadJob?.cancel()
+        signalGenerationCancellation()
         generationJob?.cancel()
         _streamingState.value = StreamingState()
 
@@ -519,6 +545,8 @@ class ChatViewModel(
                     handleContextReset(m)
                 }
             } catch (_: CancellationException) {
+            } catch (error: PromptContextFullException) {
+                finalizeWithError(assistantMessage.id, error.message.orEmpty())
             } catch (_: Exception) {
                 finalizeWithError(assistantMessage.id)
             }
@@ -547,19 +575,16 @@ class ChatViewModel(
                     sampleMethod = sampler,
                 )
                 val result = diffusionRepository.generateImage(params)
-                result.fold(
-                    onSuccess = { bytes ->
-                        if (bytes.isEmpty()) {
-                            finalizeWithError(assistantMessage.id)
-                        } else {
-                            finalizeMediaMessage(assistantMessage.id, imageBytes = bytes)
-                        }
-                    },
-                    onFailure = {
-                        finalizeWithError(assistantMessage.id)
-                    },
-                )
+                val bytes = result.getOrElse { throw it }
+                if (bytes.isEmpty()) {
+                    finalizeWithError(assistantMessage.id)
+                } else {
+                    val imagePath = generatedMediaStore.saveImage(assistantMessage.id, bytes)
+                    finalizeMediaMessage(assistantMessage.id, imagePath = imagePath)
+                }
             } catch (_: CancellationException) {
+            } catch (error: DiffusionMemoryException) {
+                finalizeWithError(assistantMessage.id, error.message.orEmpty())
             } catch (_: Exception) {
                 finalizeWithError(assistantMessage.id)
             }
@@ -589,19 +614,16 @@ class ChatViewModel(
                     sampleMethod = sampler,
                 )
                 val result = diffusionRepository.generateVideo(params)
-                result.fold(
-                    onSuccess = { frames ->
-                        if (frames.isEmpty()) {
-                            finalizeWithError(assistantMessage.id)
-                        } else {
-                            finalizeMediaMessage(assistantMessage.id, videoFrames = frames)
-                        }
-                    },
-                    onFailure = {
-                        finalizeWithError(assistantMessage.id)
-                    },
-                )
+                val frames = result.getOrElse { throw it }
+                if (frames.isEmpty()) {
+                    finalizeWithError(assistantMessage.id)
+                } else {
+                    val framePaths = generatedMediaStore.saveVideo(assistantMessage.id, frames)
+                    finalizeMediaMessage(assistantMessage.id, videoFramePaths = framePaths)
+                }
             } catch (_: CancellationException) {
+            } catch (error: DiffusionMemoryException) {
+                finalizeWithError(assistantMessage.id, error.message.orEmpty())
             } catch (_: Exception) {
                 finalizeWithError(assistantMessage.id)
             }
@@ -687,21 +709,17 @@ class ChatViewModel(
 
     private fun finalizeMediaMessage(
         assistantMessageId: String,
-        imageBytes: ByteArray? = null,
-        videoFrames: List<ByteArray>? = null,
+        imagePath: String? = null,
+        videoFramePaths: List<String>? = null,
     ) {
         _messages.update { list ->
             val messages = list.toMutableList()
             val idx = messages.indexOfLast { it.id == assistantMessageId }
             if (idx >= 0) {
-                val meta = buildMap {
-                    put("prompt", messages.getOrNull(idx - 1)?.text ?: "")
-                }
                 messages[idx] = messages[idx].copy(
                     text = "",
-                    imageBytes = imageBytes,
-                    videoFrames = videoFrames,
-                    metadata = meta,
+                    imagePath = imagePath,
+                    videoFramePaths = videoFramePaths,
                 )
             }
             messages.toImmutableList()
@@ -710,13 +728,16 @@ class ChatViewModel(
         _streamingState.value = StreamingState()
     }
 
-    private fun finalizeWithError(assistantMessageId: String) {
+    private fun finalizeWithError(
+        assistantMessageId: String,
+        message: String = "Something went wrong. Please try again.",
+    ) {
         _messages.update { list ->
             val messages = list.toMutableList()
             val idx = messages.indexOfLast { it.id == assistantMessageId }
             if (idx >= 0) {
                 messages[idx] = messages[idx].copy(
-                    text = "Something went wrong. Please try again.",
+                    text = message,
                 )
             }
             messages.toImmutableList()
@@ -727,8 +748,11 @@ class ChatViewModel(
 
     private suspend fun handleContextReset(messages: List<ChatMessage>) {
         val progressMessageId = addProgressMessage("Chat summarization in progress")
-        manageContext.resetContext(messages)
-        updateProgressMessage(progressMessageId, "Chat summarized")
+        val status = when (manageContext.resetContext(messages)) {
+            ContextResetResult.Success -> "Chat summarized"
+            ContextResetResult.Failure -> "Could not reset chat context"
+        }
+        updateProgressMessage(progressMessageId, status)
     }
 
     private fun addProgressMessage(text: String): String {
@@ -756,9 +780,18 @@ class ChatViewModel(
     fun cancelGeneration() {
         updateReadyCore { it.copy(isGenerating = false) }
         _streamingState.value = StreamingState()
-        if (_generationMode.value == GenerationMode.Text) {
-            inferenceRepository.cancelGeneration()
-        }
+        signalGenerationCancellation()
         generationJob?.cancel()
+    }
+
+    suspend fun loadGeneratedMedia(path: String): ByteArray? = generatedMediaStore.read(path)
+
+    private fun signalGenerationCancellation() {
+        when (_generationMode.value) {
+            GenerationMode.Text -> inferenceRepository.cancelGeneration()
+            GenerationMode.Image,
+            GenerationMode.Video,
+            -> diffusionRepository.cancelGeneration()
+        }
     }
 }

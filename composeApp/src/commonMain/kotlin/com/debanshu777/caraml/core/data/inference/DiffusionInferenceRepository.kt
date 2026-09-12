@@ -53,8 +53,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.concurrent.Volatile
 
@@ -80,8 +78,9 @@ class DiffusionInferenceRepository(
     private val observationRecorder: InferenceObservationRecorder? = null,
 ) {
     private val downloadManager = DownloadManager(storagePathProvider)
-    private val nativeSession = Mutex()
+    private val nativeSession = NativeSessionGate()
     private var lastLoadedArchStr: String? = null
+    private var loadedWeightsBytes: Long = 0L
     private val exactExecutionState = AdmittedDiffusionExecutionState()
     @Volatile private var generationObservation: InferenceObservationPlan? = null
 
@@ -105,7 +104,7 @@ class DiffusionInferenceRepository(
         private const val TAG = "DiffusionInference"
     }
 
-    suspend fun loadModel(request: LoadRequest): ModelLoadResult = nativeSession.withLock {
+    suspend fun loadModel(request: LoadRequest): ModelLoadResult = nativeSession.exclusive {
         withContext(Dispatchers.Default) {
             val artifact = request.artifact
                 ?: return@withContext ModelLoadResult.Error("The installed model could not be verified.")
@@ -138,6 +137,7 @@ class DiffusionInferenceRepository(
                 return@withContext ModelLoadResult.Error("The previous model could not be released safely.")
             }
             lastLoadedArchStr = null
+            loadedWeightsBytes = 0L
             exactExecutionState.clear()
             generationObservation = null
             try {
@@ -152,11 +152,8 @@ class DiffusionInferenceRepository(
                     ?: return@admissionController NativeLoadPreflight.Invalid
                 val candidateArtifact = candidate.artifact
                     ?: return@admissionController NativeLoadPreflight.Invalid
-                val candidateBase = exactBaseConfig(
-                    candidate.model.modelId,
-                    candidateArtifact,
-                    candidateArtifact.loadTarget,
-                )
+                val candidateTarget = candidateArtifact.loadTarget
+                val candidateBase = exactBaseConfig(candidate.model.modelId, candidateArtifact, candidateTarget)
                 val candidateExecution = runCatching {
                     NativeRunPlanAdapter.toDiffusionExecutionConfig(candidatePlan, candidateBase)
                 }.getOrElse { return@admissionController NativeLoadPreflight.Invalid }
@@ -177,6 +174,7 @@ class DiffusionInferenceRepository(
                     releasePartialState = {
                         runner.release()
                         lastLoadedArchStr = null
+                        loadedWeightsBytes = 0L
                         exactExecutionState.clear()
                         generationObservation = null
                     },
@@ -201,6 +199,9 @@ class DiffusionInferenceRepository(
                                 StableLoadFailure.ALLOCATION,
                             )
                         }
+                        loadedWeightsBytes = artifact.components.fold(0L) { total, component ->
+                            if (total > Long.MAX_VALUE - component.byteCount) Long.MAX_VALUE else total + component.byteCount
+                        }
                         lastLoadedArchStr = runner.getDiffusionModelMetadata(modelPath)?.architecture
                         exactExecutionState.publish(execution)
                         generationObservation = nextGenerationObservation
@@ -218,6 +219,7 @@ class DiffusionInferenceRepository(
             } catch (_: Throwable) {
                 runCatching { runner.release() }
                 lastLoadedArchStr = null
+                loadedWeightsBytes = 0L
                 exactExecutionState.clear()
                 generationObservation = null
                 ModelLoadResult.Error("An error occurred while loading the model.")
@@ -284,13 +286,15 @@ class DiffusionInferenceRepository(
         )
     }
 
-    suspend fun loadModel(model: LocalModelEntity): ModelLoadResult = withContext(Dispatchers.Default) {
-        if (rolloutModeSource.current() != RecommendationRolloutMode.LEGACY) {
-            return@withContext ModelLoadResult.Error(
-                "This installed model needs to be reassessed before it can be loaded safely.",
-            )
-        }
-        try {
+    suspend fun loadModel(model: LocalModelEntity): ModelLoadResult =
+        nativeSession.exclusive {
+            if (rolloutModeSource.current() != RecommendationRolloutMode.LEGACY) {
+                return@exclusive ModelLoadResult.Error(
+                    "This installed model needs to be reassessed before it can be loaded safely.",
+                )
+            }
+            withContext(Dispatchers.Default) {
+                try {
             val aggregate = downloadManager.validatedBundle(model.modelId)
                 ?: return@withContext ModelLoadResult.Error(
                     "The installed model could not be verified. Open the model page to repair it.",
@@ -329,11 +333,18 @@ class DiffusionInferenceRepository(
             // Pre-flight memory check: sum of main model + all components vs device RAM.
             // Native loader will OOM-kill the process silently if weights don't fit, so we
             // refuse upfront with a clear error rather than crashing.
-            preflightMemoryCheck(aggregate)?.let { error ->
+            val metadata = runner.getDiffusionModelMetadata(modelPath)
+            val estimatedWeightsBytes = estimateModelWeightsBytes(
+                nativeEstimatedBytes = metadata?.estimatedRamBytes ?: 0L,
+                aggregate = aggregate,
+            )
+            preflightMemoryCheck(estimatedWeightsBytes)?.let { error ->
                 return@withContext error
             }
 
             runner.release()
+            lastLoadedArchStr = null
+            loadedWeightsBytes = 0L
             exactExecutionState.clear()
             generationObservation = null
             runner.initialize(nativeLibDir)
@@ -347,16 +358,18 @@ class DiffusionInferenceRepository(
                 )
             }
             // Cache the native architecture string for step-count policy lookups.
-            lastLoadedArchStr = runner.getDiffusionModelMetadata(modelPath)?.architecture
+            lastLoadedArchStr = metadata?.architecture
+            loadedWeightsBytes = estimatedWeightsBytes
             AppLogger.i(TAG) { "loadModel: success" }
-            ModelLoadResult.Success(contextSize = 0)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            AppLogger.e(TAG, "loadModel: failed")
-            ModelLoadResult.Error("An error occurred while loading the model.")
+                    ModelLoadResult.Success(contextSize = 0)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    AppLogger.e(TAG, "loadModel: failed")
+                    ModelLoadResult.Error("An error occurred while loading the model.")
+                }
+            }
         }
-    }
 
     /**
      * Returns a [ModelLoadResult.Error] if the model + components clearly exceed the device
@@ -365,20 +378,37 @@ class DiffusionInferenceRepository(
      * This guards against silent OOM kills (the Android low-memory killer terminates the
      * process without throwing a Kotlin exception).
      */
-    private fun preflightMemoryCheck(aggregate: ArtifactManifest): ModelLoadResult.Error? {
-        val totalBytes = aggregate.entries.fold(0L) { total, entry ->
+    private fun estimateModelWeightsBytes(
+        nativeEstimatedBytes: Long,
+        aggregate: ArtifactManifest,
+    ): Long {
+        val verifiedBytes = aggregate.entries.fold(0L) { total, entry ->
             if (total > Long.MAX_VALUE - entry.byteCount) Long.MAX_VALUE else total + entry.byteCount
         }
-        if (totalBytes <= 0L) return null
+        return estimateDiffusionWeightsBytes(
+            mainFileBytes = verifiedBytes,
+            nativeEstimatedBytes = nativeEstimatedBytes.coerceAtLeast(0L),
+            componentBytes = 0L,
+        )
+    }
 
-        val budgetBytes = deviceCapabilities.getDeviceHints().memoryBudgetMB * 1024L * 1024L
-        if (budgetBytes <= 0L) return null
+    private fun preflightMemoryCheck(weightsBytes: Long): ModelLoadResult.Error? {
+        if (weightsBytes <= 0L) {
+            return ModelLoadResult.Error(
+                "Could not determine a safe memory requirement for this model."
+            )
+        }
 
-        // Weights typically need ~1.1x their on-disk size in RAM (decompression + activations
-        // + KV cache headroom). Anything above the device's safe budget is rejected.
-        val requiredBytes = (totalBytes * 1.1).toLong()
+        val budgetBytes = currentMemoryBudgetBytes()
+        if (budgetBytes <= 0L) {
+            return ModelLoadResult.Error(
+                "Could not determine how much memory is safely available for inference."
+            )
+        }
+
+        val requiredBytes = requiredDiffusionMemoryBytes(weightsBytes, outputBytes = 0L)
         AppLogger.i(TAG) {
-            "preflight: weights=${formatGB(totalBytes)}, required~${formatGB(requiredBytes)}, " +
+            "preflight: weights=${formatGB(weightsBytes)}, required~${formatGB(requiredBytes)}, " +
                 "device budget=${formatGB(budgetBytes)}"
         }
         if (requiredBytes <= budgetBytes) return null
@@ -397,11 +427,15 @@ class DiffusionInferenceRepository(
     }
 
     suspend fun generateImage(params: ImageGenParams): Result<ByteArray> =
-        withContext(Dispatchers.Default) {
-            val executionParams = exactExecutionState.applyTo(params)
-            if (executionParams == null) {
-                return@withContext Result.failure(Exception("The selected model configuration does not support images."))
-            }
+        nativeSession.exclusive {
+            withContext(Dispatchers.Default) {
+                val executionParams = exactExecutionState.applyTo(params)
+                if (executionParams == null) {
+                    return@withContext Result.failure(Exception("The selected model configuration does not support images."))
+                }
+                generationMemoryError(executionParams.width, executionParams.height, frames = 1)?.let {
+                    return@withContext Result.failure(it)
+                }
             val startMs = kotlin.time.TimeSource.Monotonic.markNow()
             _imageGenProgress.value = DiffusionProgress(
                 step = 0, totalSteps = 0, requestedSteps = executionParams.steps, elapsedSeconds = 0,
@@ -411,8 +445,8 @@ class DiffusionInferenceRepository(
                     delay(250)
                     val raw = runner.getStepProgress()
                     _imageGenProgress.value = DiffusionProgress(
-                        step = raw[0],
-                        totalSteps = raw[1],
+                        step = raw.getOrElse(0) { 0 },
+                        totalSteps = raw.getOrElse(1) { 0 },
                         requestedSteps = executionParams.steps,
                         elapsedSeconds = startMs.elapsedNow().inWholeSeconds.toInt(),
                     )
@@ -422,7 +456,7 @@ class DiffusionInferenceRepository(
                 val r = observeGeneration(executionParams.steps) {
                     runner.generateImage(executionParams)
                 }
-                r.exceptionOrNull()?.let { AppLogger.e(TAG, "generateImage failed", it) }
+                if (r.isFailure) AppLogger.e(TAG, "generateImage failed")
                 r.fold(
                     onSuccess = { Result.success(it) },
                     onFailure = { Result.failure(Exception("Generation failed. Please try again.")) },
@@ -432,13 +466,18 @@ class DiffusionInferenceRepository(
                 _imageGenProgress.value = null
             }
         }
+    }
 
     suspend fun generateVideo(params: VideoGenParams): Result<List<ByteArray>> =
-        withContext(Dispatchers.Default) {
-            val executionParams = exactExecutionState.applyTo(params)
-            if (executionParams == null) {
-                return@withContext Result.failure(Exception("The selected model configuration does not support video."))
-            }
+        nativeSession.exclusive {
+            withContext(Dispatchers.Default) {
+                val executionParams = exactExecutionState.applyTo(params)
+                if (executionParams == null) {
+                    return@withContext Result.failure(Exception("The selected model configuration does not support video."))
+                }
+                generationMemoryError(executionParams.width, executionParams.height, executionParams.videoFrames)?.let {
+                    return@withContext Result.failure(it)
+                }
             val startMs = kotlin.time.TimeSource.Monotonic.markNow()
             _imageGenProgress.value = DiffusionProgress(
                 step = 0, totalSteps = 0, requestedSteps = executionParams.steps, elapsedSeconds = 0,
@@ -448,8 +487,8 @@ class DiffusionInferenceRepository(
                     delay(250)
                     val raw = runner.getStepProgress()
                     _imageGenProgress.value = DiffusionProgress(
-                        step = raw[0],
-                        totalSteps = raw[1],
+                        step = raw.getOrElse(0) { 0 },
+                        totalSteps = raw.getOrElse(1) { 0 },
                         requestedSteps = executionParams.steps,
                         elapsedSeconds = startMs.elapsedNow().inWholeSeconds.toInt(),
                     )
@@ -463,7 +502,7 @@ class DiffusionInferenceRepository(
                 val r = observeGeneration(completedUnits) {
                     runner.generateVideo(executionParams)
                 }
-                r.exceptionOrNull()?.let { AppLogger.e(TAG, "generateVideo failed", it) }
+                if (r.isFailure) AppLogger.e(TAG, "generateVideo failed")
                 r.fold(
                     onSuccess = { Result.success(it) },
                     onFailure = { Result.failure(Exception("Generation failed. Please try again.")) },
@@ -473,13 +512,19 @@ class DiffusionInferenceRepository(
                 _imageGenProgress.value = null
             }
         }
-
-    fun release() {
-        runner.release()
-        lastLoadedArchStr = null
-        exactExecutionState.clear()
-        generationObservation = null
     }
+
+    suspend fun release() = nativeSession.exclusive {
+        withContext(Dispatchers.Default) {
+            runner.release()
+            lastLoadedArchStr = null
+            loadedWeightsBytes = 0L
+            exactExecutionState.clear()
+            generationObservation = null
+        }
+    }
+
+    fun cancelGeneration(): Boolean = runner.cancelGeneration()
 
     private suspend fun <T> observeGeneration(
         completedUnits: Int,
@@ -496,6 +541,30 @@ class DiffusionInferenceRepository(
                 outcome = ObservationOutcome.SUCCESS,
             )
         }
+    }
+
+    fun supportsVideoGeneration(): Boolean = runner.supportsVideoGeneration()
+
+    private fun generationMemoryError(width: Int, height: Int, frames: Int): Exception? {
+        val outputBytes = estimateMediaOutputBytes(width, height, frames)
+        val budgetBytes = currentMemoryBudgetBytes()
+        val additionalBytes = requiredDiffusionAdditionalMemoryBytes(
+            loadedWeightsBytes = loadedWeightsBytes,
+            outputBytes = outputBytes,
+        )
+        if (loadedWeightsBytes > 0L && additionalBytes <= budgetBytes) {
+            return null
+        }
+        AppLogger.w(TAG, "Generation rejected by the current memory budget")
+        return DiffusionMemoryException()
+    }
+
+    private fun currentMemoryBudgetBytes(): Long {
+        val budgetMb = deviceCapabilities.getDeviceHints().memoryBudgetMB
+        if (budgetMb <= 0L) return 0L
+        val bytesPerMb = 1024L * 1024L
+        return if (budgetMb > Long.MAX_VALUE / bytesPerMb) Long.MAX_VALUE
+        else budgetMb * bytesPerMb
     }
 
     /** Architecture string reported by the native layer for the currently loaded model. */
@@ -602,7 +671,7 @@ class DiffusionInferenceRepository(
     private fun shouldEnableVaeTiling(params: SdCppRecommendedParams?): Boolean {
         val w = params?.width ?: 512
         val h = params?.height ?: 512
-        return w * h > 512 * 512
+        return w.toLong() * h.toLong() > 512L * 512L
     }
 
     /**

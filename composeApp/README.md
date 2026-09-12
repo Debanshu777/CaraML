@@ -204,6 +204,7 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 
 <!-- Updated at end of each AI-assisted development session -->
 
+- Model Hub now keeps Search/Downloaded tabs visible while overview cards, filters, states, and results share one responsive Material 3 scroll surface
 - Added a strict 16-case recommendation corpus, analytical timing coverage, exact assessed-artifact selection handoff, and explicit release gating; unmeasured outcomes remain null and production remains `LEGACY`
 - Recommendations now learn only from byte-bound descriptors, phase-specific raw memory evidence, full run-plan fingerprints, and trustworthy process-memory counters; stale identities and unresponsive native probes fail closed
 - Exact model selections now derive directory targets only from verified storage roots, bind every native-consumed component path, keep multi-sequence planning analytical, and reject it at native admission
@@ -214,11 +215,15 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 - Recommendation profiles now persist atomically, default safely to Balanced, and appear through accessible Material 3 controls only in SHADOW/V2 rollout modes
 - Model assessment now reuses bounded profile-neutral plan estimates with cancellation-safe single-flight coordination, fresh snapshot assembly, and privacy-safe staged rollout comparison
 - Model compatibility and backend availability now initialize the pinned llama.cpp engine from the trusted platform library directory, exclude non-GPU devices from offload evidence, and fail closed to Unknown
+- Diffusion load/generation now uses current conservative memory budgets, serialized native sessions, actionable safe failures, and a 512 MiB session media cache decoded off the Compose thread
+- Chat now signals native diffusion cancellation before coroutine teardown, rejects unsupported iOS video early, and reports oversized llama prompts without corrupting prior conversation state
+- `LlamaInferenceRepository` now serializes all native-session access, snapshots synchronous stats safely, retries stale cached fits, and preserves cancellation through load/reset paths
+- Text streaming now accumulates lossless deltas and publishes at most every 50 ms; Compose collects streaming state once and renders Markdown only after completion
+- Context reset, model download, and bulk-delete flows now report partial failure, prevent duplicate starts, clean up state in `finally`, and never swallow cancellation
+- Diffusion preflight uses overflow-safe dimension math, sanitized diagnostics, and defensive progress-array reads
 - `SuitabilityResult` now carries `warnings: List<String>`; `ModelSuitabilityCalculator.rateLlm` emits runnability warnings for IQ-quant CPU-only and hybrid-SSM models; `SuitabilityInfoSheet` renders a "Runnability" section with warning icon when present
 - `LlamaInferenceRepository`: hybrid-SSM arch Vulkan denylist (`DENYLIST_HYBRID_SSM_VULKAN=true`) skips doomed GPU attempt on first load; combines with runtime `gpuIncompatible` self-learning set
 - `generateResponse` emits `InferenceChunk`; removed `ReasoningModelClassifier` and structured-output prompt suffixes
-- `DiffusionInferenceRepository.buildDiffusionModelConfig()` reverted: removed `diffusionConvDirect=true` from both selfContained and component branches (was a failed Vulkan workaround); selfContained branch also had spurious `offloadToCpu` propagation removed
-- `DiffusionInferenceRepository.buildDiffusionModelConfig()` selfContained branch now propagates `offloadToCpu` from `recommendedParams` (was missing, so registry `offloadToCpu=true` had no effect)
 - `DiffusionInferenceRepository.buildDiffusionModelConfig()` now always passes `diffusionConvDirect=true`; bypasses IM2COL path in ggml-vulkan that aborts when conv kernel type is not F32/F16
 - `DiffusionInferenceRepository.buildDiffusionModelConfig()` now propagates `flowShift`, `freeParamsImmediately` (auto-enabled when weights ≥ 65% of memory budget), `taesdPath` (auto-resolves `madebyollin/taesd` when downloaded), and `vaeTiling` (auto-enabled when width × height > 512²)
 - `ChatViewModel` image/video send paths now honor registry-pinned `sampleMethod` (via `SampleMethod.fromName`) and `seed` (falls back to current millis when unset)

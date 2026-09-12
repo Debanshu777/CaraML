@@ -4,6 +4,7 @@ import com.debanshu777.diffusionrunner.cpp.DiffusionMetadataResultFFI
 import com.debanshu777.diffusionrunner.cpp.DiffusionModelConfigFFI
 import com.debanshu777.diffusionrunner.cpp.ImageGenConfigFFI
 import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_free_png
+import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_cancel_generation
 import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_get_metadata
 import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_backend_capabilities
 import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_engine_version
@@ -174,10 +175,12 @@ actual class DiffusionRunner {
                     diffusion_runner_ios_free_result(result)
                     null
                 } else {
-                    val bytes = resultStruct.data!!.readBytes(resultStruct.size)
-                    diffusion_runner_ios_free_png(resultStruct.data)
-                    diffusion_runner_ios_free_result(result)
-                    bytes
+                    try {
+                        resultStruct.data!!.readBytes(resultStruct.size)
+                    } finally {
+                        diffusion_runner_ios_free_png(resultStruct.data)
+                        diffusion_runner_ios_free_result(result)
+                    }
                 }
             }
         }
@@ -185,36 +188,14 @@ actual class DiffusionRunner {
 
     actual fun videoGen(params: VideoGenParams): List<ByteArray>? {
         if (handle == 0L) return null
-
-        // For now, implement video generation as multiple image generations
-        // This is a simplified implementation - full video generation would require
-        // additional FFI functions similar to the JNI implementation
-
-        val frames = mutableListOf<ByteArray>()
-        for (frame in 0 until params.videoFrames) {
-            val imageParams = ImageGenParams(
-                prompt = params.prompt,
-                negativePrompt = params.negativePrompt,
-                width = params.width,
-                height = params.height,
-                steps = params.steps,
-                cfgScale = params.cfgScale,
-                seed = if (params.seed == -1L) -1L else params.seed + frame,
-                sampleMethod = params.sampleMethod,
-                loraPaths = params.loraPaths,
-                loraStrengths = params.loraStrengths
-            )
-
-            val frameData = txt2Img(imageParams)
-            if (frameData != null) {
-                frames.add(frameData)
-            } else {
-                return null // Failed to generate a frame
-            }
-        }
-
-        return frames
+        validateVideoGenParams(params)
+        return null
     }
+
+    actual fun cancelGeneration(): Boolean =
+        handle != 0L && diffusion_runner_ios_cancel_generation(handle) != 0
+
+    actual fun supportsVideoGeneration(): Boolean = false
 
     actual fun release() {
         if (handle != 0L) {

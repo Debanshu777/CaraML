@@ -21,10 +21,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.debanshu777.caraml.features.chat.presentation.StreamingState
+import com.debanshu777.caraml.features.chat.data.LiveGenerationStats
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.StateFlow
 
 @Composable
 internal fun ContextProgressIndicator(
@@ -72,10 +70,8 @@ internal fun ContextProgressIndicator(
 
 @Composable
 fun RowScope.ContextStatsIndicator(
-    streamingStateFlow: StateFlow<StreamingState>,
+    liveStats: LiveGenerationStats?,
 ) {
-    val state by streamingStateFlow.collectAsStateWithLifecycle()
-    val liveStats = state.liveStats
     if (liveStats != null) {
         ContextProgressIndicator(
             contextUsed = liveStats.contextUsed,

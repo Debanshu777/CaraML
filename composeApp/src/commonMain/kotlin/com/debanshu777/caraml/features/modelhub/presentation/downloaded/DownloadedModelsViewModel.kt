@@ -8,6 +8,7 @@ import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -102,30 +103,45 @@ class DownloadedModelsViewModel(
         val ids = _selectedIds.value
         if (ids.isEmpty()) return
         val snapshot = _allDownloadedModels.value.filter { it.id in ids }
+        _isDeleting.value = true
         viewModelScope.launch {
-            _isDeleting.value = true
-            _deleteResultMessage.value = null
-            var anyFailed = false
-            val removedIds = mutableSetOf<Long>()
-            withContext(Dispatchers.IO) {
-                for (entity in snapshot) {
-                    val ok = storagePathProvider.deleteDownloadedModelContent(entity.modelId, entity.localPath)
-                    if (!ok) {
-                        anyFailed = true
-                        continue
+            try {
+                _deleteResultMessage.value = null
+                var anyFailed = false
+                val removedIds = mutableSetOf<Long>()
+                withContext(Dispatchers.IO) {
+                    for (entity in snapshot) {
+                        try {
+                            val ok = storagePathProvider.deleteDownloadedModelContent(
+                                entity.modelId,
+                                entity.localPath,
+                            )
+                            if (!ok) {
+                                anyFailed = true
+                                continue
+                            }
+                            localModelRepository.deleteByModelIdAndFilename(
+                                entity.modelId,
+                                entity.filename,
+                            )
+                            removedIds.add(entity.id)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (_: Exception) {
+                            anyFailed = true
+                        }
                     }
-                    localModelRepository.deleteByModelIdAndFilename(entity.modelId, entity.filename)
-                    removedIds.add(entity.id)
                 }
+                _selectedIds.update { it - removedIds }
+                if (_selectedIds.value.isEmpty()) {
+                    _selectionMode.value = false
+                }
+                if (anyFailed) {
+                    _deleteResultMessage.value = "Could not remove some items. Try again."
+                }
+            } finally {
+                _isDeleting.value = false
             }
-            _selectedIds.update { it - removedIds }
-            if (_selectedIds.value.isEmpty()) {
-                _selectionMode.value = false
-            }
-            if (anyFailed) {
-                _deleteResultMessage.value = "Could not remove some items. Try again."
-            }
-            _isDeleting.value = false
         }
     }
 

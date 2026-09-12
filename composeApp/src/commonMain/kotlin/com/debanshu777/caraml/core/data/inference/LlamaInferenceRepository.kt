@@ -38,6 +38,7 @@ import com.debanshu777.runner.InferenceChunk
 import com.debanshu777.runner.LlamaRunner
 import com.debanshu777.runner.LlamaPreflightResult
 import com.debanshu777.runner.NativeRunnerConfig
+import com.debanshu777.runner.PromptProcessingResult
 import com.debanshu777.runner.generateFlowTokens
 import com.debanshu777.runner.generateStructuredChunks
 import kotlinx.coroutines.CancellationException
@@ -47,8 +48,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.concurrent.Volatile
 
@@ -75,6 +74,7 @@ class LlamaInferenceRepository(
         private const val TAG = "Inference"
         const val CONTEXT_THRESHOLD = 0.85f
         private const val FALLBACK_SYSTEM_PROMPT = "You are a helpful assistant."
+        private const val MAX_RESPONSE_TOKENS = 1024
 
         /**
          * Upper bound for auto-fit context when the user hasn't set a preference.
@@ -113,11 +113,22 @@ class LlamaInferenceRepository(
 
     /**
      * Caches the result of llama_params_fit() so repeated loads of the same model
-     * skip the ~1.2s probe. Key: "modelPath:memTierGB:gpuEnabled".
-     * Cleared when the entry is used and the subsequent load fails (mem conditions changed).
+     * skip the ~1.2s probe. Every input that changes the fit is part of the key;
+     * a failed cached load is invalidated and retried with a fresh fit.
      */
     private data class ParamsFitResult(val nGpuLayers: Int, val nCtx: Int)
-    private val paramsFitCache = mutableMapOf<String, ParamsFitResult>()
+    private data class ParamsFitCacheKey(
+        val modelPath: String,
+        val memoryTierGb: Long,
+        val gpuEnabled: Boolean,
+        val requestedContext: Int,
+        val batchSize: Int,
+        val microBatchSize: Int,
+        val typeK: Int,
+        val typeV: Int,
+        val offloadKqv: Boolean,
+    )
+    private val paramsFitCache = mutableMapOf<ParamsFitCacheKey, ParamsFitResult>()
 
     /**
      * Model paths whose GPU (Vulkan) load has failed at runtime. On reload we
@@ -127,23 +138,36 @@ class LlamaInferenceRepository(
      */
     private val gpuIncompatible = mutableSetOf<String>()
 
-    private fun paramsFitCacheKey(modelPath: String, memBudgetMB: Long, gpuEnabled: Boolean): String {
-        val memTierGB = memBudgetMB / 1024  // round down to GB — tolerates minor fluctuations
-        return "$modelPath:$memTierGB:$gpuEnabled"
-    }
+    private fun paramsFitCacheKey(
+        modelPath: String,
+        memBudgetMB: Long,
+        gpuEnabled: Boolean,
+        config: NativeRunnerConfig,
+    ) = ParamsFitCacheKey(
+        modelPath = modelPath,
+        memoryTierGb = memBudgetMB / 1024,
+        gpuEnabled = gpuEnabled,
+        requestedContext = config.nCtx,
+        batchSize = config.nBatch,
+        microBatchSize = config.nUbatch,
+        typeK = config.typeK,
+        typeV = config.typeV,
+        offloadKqv = config.offloadKqv,
+    )
 
-    /**
-     * Serializes all native load/unload operations so they never run concurrently.
-     * Without this, a cancelled load job that is still inside JNI can race with
-     * the next load job's unload call → double-free in llama_sampler_free.
-     */
-    private val nativeLock = Mutex()
+    /** Serializes every operation that reads or mutates the native model session. */
+    private val nativeSession = NativeSessionGate()
 
     /**
      * True once the native model is successfully loaded; false after unload.
-     * Only written under [nativeLock].
+     * Only written under [nativeSession].
      */
     @Volatile private var nativeLoaded = false
+
+    /** Native statistics copied while [nativeSession] is held for safe synchronous UI reads. */
+    @Volatile private var contextUsedSnapshot = 0
+    @Volatile private var contextLimitSnapshot = 0
+    @Volatile private var stopReasonSnapshot = 0
 
     /** Cached runtime config string built after each successful model load. */
     @Volatile private var lastRuntimeConfig: String = ""
@@ -151,28 +175,28 @@ class LlamaInferenceRepository(
     @Volatile private var generationObservation: InferenceObservationPlan? = null
 
     override suspend fun loadModel(request: LoadRequest): ModelLoadResult =
-        nativeLock.withLock {
+        nativeSession.exclusive {
             val artifact = request.artifact
-                ?: return@withLock ModelLoadResult.Error("The installed model could not be verified.")
+                ?: return@exclusive ModelLoadResult.Error("The installed model could not be verified.")
             if (artifact.identity != request.identity) {
-                return@withLock ModelLoadResult.Error("The installed model identity is invalid.")
+                return@exclusive ModelLoadResult.Error("The installed model identity is invalid.")
             }
             val plan = request.plan as? com.debanshu777.caraml.core.recommendation.LlmRunPlan
-                ?: return@withLock ModelLoadResult.Error("The selected model configuration is invalid.")
+                ?: return@exclusive ModelLoadResult.Error("The selected model configuration is invalid.")
             val resolver = artifactIdentityResolver
-                ?: return@withLock ModelLoadResult.Error("Load admission is unavailable.")
+                ?: return@exclusive ModelLoadResult.Error("Load admission is unavailable.")
             val coordinator = loadSessionCoordinator
-                ?: return@withLock ModelLoadResult.Error("Load recovery is unavailable.")
+                ?: return@exclusive ModelLoadResult.Error("Load recovery is unavailable.")
             val modelPath = (artifact.loadTarget as? VerifiedArtifactLoadTarget.File)?.path
-                ?: return@withLock ModelLoadResult.Error("The installed model could not be verified.")
+                ?: return@exclusive ModelLoadResult.Error("The installed model could not be verified.")
             val nativeLibDir = PlatformPaths.getNativeLibDir()
             if (nativeLibDir.isBlank()) {
-                return@withLock ModelLoadResult.Error("Failed to initialize. Please restart the app.")
+                return@exclusive ModelLoadResult.Error("Failed to initialize. Please restart the app.")
             }
             val settings = currentSettings()
             val base = buildRunnerConfig(request.model, settings.temperature, settings, modelPath)
             val exactConfig = runCatching { NativeRunPlanAdapter.toLlamaConfig(plan, base) }
-                .getOrElse { return@withLock ModelLoadResult.Error("The selected model configuration is invalid.") }
+                .getOrElse { return@exclusive ModelLoadResult.Error("The selected model configuration is invalid.") }
             val loadObservation = request.toInferenceObservationPlan(engineVersion, InferenceObservationPhase.LOAD)
             val nextGenerationObservation =
                 request.toInferenceObservationPlan(engineVersion, InferenceObservationPhase.GENERATION)
@@ -182,17 +206,17 @@ class LlamaInferenceRepository(
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Throwable) {
-                    return@withLock ModelLoadResult.Error("The previous model could not be released safely.")
+                    return@exclusive ModelLoadResult.Error("The previous model could not be released safely.")
                 }
                 nativeLoaded = false
-                generationObservation = null
+                resetNativeSnapshots()
             }
             try {
                 runner.initialize(nativeLibDir)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Throwable) {
-                return@withLock ModelLoadResult.Error("Failed to initialize. Please restart the app.")
+                return@exclusive ModelLoadResult.Error("Failed to initialize. Please restart the app.")
             }
             val controller = admissionController { candidate ->
                 val candidatePlan = candidate.plan as? com.debanshu777.caraml.core.recommendation.LlmRunPlan
@@ -207,7 +231,7 @@ class LlamaInferenceRepository(
                     is LlamaPreflightResult.InvalidModel -> NativeLoadPreflight.Invalid
                     is LlamaPreflightResult.Unavailable -> NativeLoadPreflight.Unavailable
                 }
-            } ?: return@withLock ModelLoadResult.Error("Load admission is unavailable.")
+            } ?: return@exclusive ModelLoadResult.Error("Load admission is unavailable.")
             try {
                 when (val result = coordinator.execute(
                     request = request,
@@ -218,7 +242,7 @@ class LlamaInferenceRepository(
                     releasePartialState = {
                         runner.unloadModel()
                         nativeLoaded = false
-                        generationObservation = null
+                        resetNativeSnapshots()
                     },
                     nativeLoad = {
                         val loaded = loadObservation?.let { observation ->
@@ -249,6 +273,7 @@ class LlamaInferenceRepository(
                                 StableLoadFailure.UNSUPPORTED_CONFIGURATION,
                             )
                         }
+                        updateNativeSnapshots()
                         generationObservation = nextGenerationObservation
                         val contextSize = runner.getContextLimit()
                         lastRuntimeConfig = BenchmarkUtils.formatRuntimeConfig(
@@ -276,7 +301,7 @@ class LlamaInferenceRepository(
                 if (nativeLoaded) {
                     runCatching { runner.unloadModel() }
                     nativeLoaded = false
-                    generationObservation = null
+                    resetNativeSnapshots()
                 }
                 ModelLoadResult.Error("Load admission is temporarily unavailable.")
             }
@@ -317,9 +342,9 @@ class LlamaInferenceRepository(
     }
 
     override suspend fun loadModel(model: LocalModelEntity): ModelLoadResult =
-        nativeLock.withLock {
+        nativeSession.exclusive {
             if (rolloutModeSource.current() != RecommendationRolloutMode.LEGACY) {
-                return@withLock ModelLoadResult.Error(
+                return@exclusive ModelLoadResult.Error(
                     "This installed model needs to be reassessed before it can be loaded safely.",
                 )
             }
@@ -329,17 +354,17 @@ class LlamaInferenceRepository(
 
                 val modelPath = resolveModelPath(model)
                 if (modelPath.isBlank()) {
-                    return@withLock ModelLoadResult.Error("Model path is invalid")
+                    return@exclusive ModelLoadResult.Error("Model path is invalid")
                 }
                 if (!storagePathProvider.isModelFileReadable(modelPath)) {
-                    return@withLock ModelLoadResult.Error(
+                    return@exclusive ModelLoadResult.Error(
                         "Model file not found or not readable. It may have been moved or deleted."
                     )
                 }
 
                 val nativeLibDir = PlatformPaths.getNativeLibDir()
                 if (nativeLibDir.isBlank()) {
-                    return@withLock ModelLoadResult.Error(
+                    return@exclusive ModelLoadResult.Error(
                         "Failed to initialize. Please restart the app."
                     )
                 }
@@ -348,13 +373,14 @@ class LlamaInferenceRepository(
                 if (nativeLoaded) {
                     runner.unloadModel()
                     nativeLoaded = false
+                    resetNativeSnapshots()
                 }
 
                 runner.initialize(nativeLibDir)
 
                 val settings = currentSettings()
 
-                val config = buildRunnerConfig(
+                var config = buildRunnerConfig(
                     model = model,
                     temperature = settings.temperature,
                     settings = settings,
@@ -370,6 +396,20 @@ class LlamaInferenceRepository(
                     modelPath = modelPath,
                     config = config,
                 )
+
+                // Cached fits can become stale when available device memory changes.
+                // Retry one fresh native fit before treating the GPU/model as incompatible.
+                if (!loaded && !config.autoFit) {
+                    paramsFitCache.keys.removeAll { it.modelPath == modelPath }
+                    config = buildRunnerConfig(
+                        model = model,
+                        temperature = settings.temperature,
+                        settings = settings,
+                        modelPath = modelPath,
+                        useFitCache = false,
+                    )
+                    loaded = runner.loadModel(modelPath = modelPath, config = config)
+                }
 
                 // A GPU load can fail for TWO very different reasons:
                 //   (a) Transient — the previously-loaded model's Vulkan buffers
@@ -416,7 +456,7 @@ class LlamaInferenceRepository(
                 val effectiveConfig = cpuFallbackConfig ?: config
 
                 if (!loaded) {
-                    return@withLock ModelLoadResult.Error(
+                    return@exclusive ModelLoadResult.Error(
                         "Failed to load model. The file may be corrupted or unsupported."
                     )
                 }
@@ -430,6 +470,8 @@ class LlamaInferenceRepository(
                             AppLogger.i(TAG) { "loadModel: detected arch='$nativeArch', backfilling DB" }
                             localModelRepository?.updateArch(model.modelId, nativeArch)
                         }
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (_: Exception) { /* non-fatal */ }
                 }
 
@@ -452,24 +494,33 @@ class LlamaInferenceRepository(
 
                 val spRet = runner.processSystemPrompt(systemPrompt)
                 if (spRet != 0) {
-                    return@withLock ModelLoadResult.Error(
+                    runner.unloadModel()
+                    nativeLoaded = false
+                    resetNativeSnapshots()
+                    return@exclusive ModelLoadResult.Error(
                         "Failed to initialize conversation context."
                     )
                 }
 
                 val ctxSize = runner.getContextLimit()
+                updateNativeSnapshots()
 
                 // Phase 10: populate params_fit cache so the next load of this model
                 // skips the ~1.2s probe. Only cache the primary-config path; if we
                 // fell back to CPU (cpuFallbackConfig != null) the GPU load failed and
                 // we shouldn't cache misleading nGpuLayers=0 under a gpuEnabled key.
-                if (modelPath.isNotBlank() && cpuFallbackConfig == null && actualGpuLayers >= 0) {
+                if (modelPath.isNotBlank() && config.autoFit && cpuFallbackConfig == null && actualGpuLayers >= 0) {
                     val fitHints = deviceCapabilities.getDeviceHints()
                     val gpuEnabled = settings.useGpu && fitHints.gpuBackendAvailable
-                    val fitCacheKey = paramsFitCacheKey(modelPath, fitHints.memoryBudgetMB, gpuEnabled)
+                    val fitCacheKey = paramsFitCacheKey(
+                        modelPath,
+                        fitHints.memoryBudgetMB,
+                        gpuEnabled,
+                        config,
+                    )
                     paramsFitCache[fitCacheKey] = ParamsFitResult(nGpuLayers = actualGpuLayers, nCtx = ctxSize)
                     AppLogger.i(TAG) {
-                        "loadModel: params_fit cached — key=$fitCacheKey, gpuLayers=$actualGpuLayers, ctx=$ctxSize"
+                        "loadModel: params_fit cached — gpuLayers=$actualGpuLayers, ctx=$ctxSize"
                     }
                 }
 
@@ -497,9 +548,9 @@ class LlamaInferenceRepository(
                 // and can leave the native sampler in an invalid state for the next caller.
                 AppLogger.i(TAG) { "loadModel: cancelled" }
                 throw e
-            } catch (e: Exception) {
-                AppLogger.e(TAG, "loadModel: failed", e)
-                ModelLoadResult.Error("An error occurred while loading the model: ${e.message}")
+            } catch (_: Exception) {
+                AppLogger.e(TAG, "loadModel: failed")
+                ModelLoadResult.Error("An error occurred while loading the model.")
             }
         }
 
@@ -508,14 +559,13 @@ class LlamaInferenceRepository(
         temperature: Float,
         settings: AppSettings,
         modelPath: String = "",
+        useFitCache: Boolean = true,
     ): NativeRunnerConfig {
         val hints = deviceCapabilities.getDeviceHints()
         AppLogger.i(TAG) {
             "device: cores=${hints.performanceCoreCount}/${hints.totalCoreCount}, " +
             "memMB=${hints.memoryBudgetMB}, gpu=${hints.gpuBackendAvailable}"
         }
-        // Phase 10: params_fit cache — skip the ~1.2s probe on repeated loads of the same model.
-        // Cache is keyed on modelPath + memory tier (GB) + gpuEnabled flag.
         val gpuActive = hints.gpuBackendAvailable
         val knownIncompatible = modelPath.isNotBlank() && modelPath in gpuIncompatible
         val archDenied = DENYLIST_HYBRID_SSM_VULKAN && archFamily(model.arch) == ArchFamily.HYBRID_SSM
@@ -523,12 +573,6 @@ class LlamaInferenceRepository(
         if (knownIncompatible || archDenied) {
             AppLogger.i(TAG) { "buildRunnerConfig: GPU disabled for this model (incompatible=$knownIncompatible, archDenied=$archDenied)" }
         }
-        val cacheKey = if (modelPath.isNotBlank()) paramsFitCacheKey(modelPath, hints.memoryBudgetMB, gpuEnabled) else ""
-        val cachedFit = if (cacheKey.isNotBlank()) paramsFitCache[cacheKey] else null
-        if (cachedFit != null) {
-            AppLogger.i(TAG) { "buildRunnerConfig: params_fit cache hit — skipping probe (nGpuLayers=${cachedFit.nGpuLayers}, nCtx=${cachedFit.nCtx})" }
-        }
-
         val userRequestedCtx = (model.contextLength ?: 0).let { raw ->
             if (raw <= 0) AUTO_FIT_CONTEXT_CAP else raw.coerceAtMost(AUTO_FIT_CONTEXT_CAP)
         }
@@ -584,15 +628,8 @@ class LlamaInferenceRepository(
         // the Vulkan backend (assertion failure in the recurrent state compute graph).
         val nUbatch = if (gpuEnabled && archFam != ArchFamily.HYBRID_SSM) batchSize else batchSize / 2
 
-        // Phase 10: use cached params_fit result to skip the ~1.2s probe on re-loads.
-        val (resolvedNGpuLayers, resolvedNCtx, resolvedAutoFit) = if (cachedFit != null) {
-            Triple(cachedFit.nGpuLayers, cachedFit.nCtx, false)
-        } else {
-            Triple(if (gpuEnabled) -1 else 0, userRequestedCtx, true)
-        }
-
-        return NativeRunnerConfig(
-            nCtx           = resolvedNCtx,
+        val baseConfig = NativeRunnerConfig(
+            nCtx           = userRequestedCtx,
             nCtxMin        = 512,
             nThreads       = nThreads,
             nThreadsBatch  = nThreadsBatch,
@@ -602,14 +639,38 @@ class LlamaInferenceRepository(
             offloadKqv     = gpuEnabled,
             typeK          = typeK,
             typeV          = typeV,
-            nGpuLayers     = resolvedNGpuLayers,
+            nGpuLayers     = if (gpuEnabled) -1 else 0,
             useMmap        = true,
             useMlock       = useMlock,
             temperature    = temperature,
-            autoFit        = resolvedAutoFit,
+            autoFit        = true,
             cpuMask        = hints.perfCoreMask,
             cpuMaskBatch   = hints.perfCoreMask,
         )
+
+        val cacheKey = if (useFitCache && modelPath.isNotBlank()) {
+            paramsFitCacheKey(modelPath, hints.memoryBudgetMB, gpuEnabled, baseConfig)
+        } else {
+            null
+        }
+        val cachedFit = cacheKey?.let(paramsFitCache::get)
+        if (cachedFit != null) {
+            AppLogger.i(TAG) {
+                "buildRunnerConfig: params_fit cache hit — skipping probe " +
+                    "(nGpuLayers=${cachedFit.nGpuLayers}, nCtx=${cachedFit.nCtx})"
+            }
+        }
+
+        // Phase 10: use cached params_fit result to skip the ~1.2s probe on re-loads.
+        return if (cachedFit != null) {
+            baseConfig.copy(
+                nGpuLayers = cachedFit.nGpuLayers,
+                nCtx = cachedFit.nCtx,
+                autoFit = false,
+            )
+        } else {
+            baseConfig
+        }
     }
 
     private fun getModelFileSizeMB(model: LocalModelEntity): Long {
@@ -617,32 +678,49 @@ class LlamaInferenceRepository(
     }
 
     override fun generateResponse(userPrompt: String): Flow<InferenceChunk> = flow {
-        val remainingCtx = (runner.getContextLimit() - runner.getContextUsed()).coerceAtLeast(1)
-        AppLogger.i(TAG) {
-            "generate: promptLen=${userPrompt.length}, remainingCtx=$remainingCtx, " +
-            "context=${runner.getContextUsed()}/${runner.getContextLimit()}"
-        }
-        val ret = runner.processUserPrompt(userPrompt, remainingCtx)
-        if (ret != 0) {
-            throw IllegalStateException("Failed to process message")
-        }
-        try {
-            runner.generateStructuredChunks().collect { chunk ->
-                emit(chunk)
+        if (!isPromptLengthSupported(userPrompt)) throw PromptContextFullException()
+        nativeSession.exclusive {
+            val contextLimit = runner.getContextLimit()
+            val remainingCtx = (contextLimit - runner.getContextUsed()).coerceAtLeast(1)
+            val responseBudget = minOf(
+                MAX_RESPONSE_TOKENS,
+                (contextLimit / 4).coerceAtLeast(1),
+                remainingCtx,
+            )
+            AppLogger.i(TAG) {
+                "generate: promptLen=${userPrompt.length}, remainingCtx=$remainingCtx, " +
+                    "context=${runner.getContextUsed()}/${runner.getContextLimit()}"
             }
-        } finally {
-            runner.finalizeGeneration()
+            try {
+                when (PromptProcessingResult.fromNativeCode(
+                    runner.processUserPrompt(userPrompt, responseBudget)
+                )) {
+                    PromptProcessingResult.Success -> Unit
+                    PromptProcessingResult.ContextFull -> throw PromptContextFullException()
+                    PromptProcessingResult.Failure ->
+                        throw IllegalStateException("Failed to process message")
+                }
+                runner.generateStructuredChunks().collect { chunk ->
+                    if (chunk.isTokenEvent) {
+                        contextUsedSnapshot = runner.getContextUsed()
+                    }
+                    emit(chunk)
+                }
+            } finally {
+                runner.finalizeGeneration()
+                updateNativeSnapshots()
+            }
         }
-    }
-
-    override suspend fun unloadModel() = nativeLock.withLock {
-        if (!nativeLoaded) return@withLock
-        runner.unloadModel()
-        nativeLoaded = false
-        generationObservation = null
     }
 
     override fun currentGenerationObservation(): InferenceObservationPlan? = generationObservation
+
+    override suspend fun unloadModel() = nativeSession.exclusive {
+        if (!nativeLoaded) return@exclusive
+        runner.unloadModel()
+        nativeLoaded = false
+        resetNativeSnapshots()
+    }
 
     override fun cancelGeneration() {
         AppLogger.i(TAG) { "cancelled" }
@@ -650,15 +728,15 @@ class LlamaInferenceRepository(
     }
 
     override fun getContextUsed(): Int {
-        return runner.getContextUsed()
+        return contextUsedSnapshot
     }
 
     override fun getContextLimit(): Int {
-        return runner.getContextLimit()
+        return contextLimitSnapshot
     }
 
     override fun getStopReason(): Int {
-        return runner.getStopReason()
+        return stopReasonSnapshot
     }
 
     override fun getRuntimeConfigString(): String = lastRuntimeConfig
@@ -671,78 +749,102 @@ class LlamaInferenceRepository(
     }
 
     override fun summarizeConversation(transcript: String): Flow<String> = flow {
-        val systemPrompt = currentSystemPrompt()
-        try {
-            runner.clearContext()
+        nativeSession.exclusive {
+            val systemPrompt = currentSystemPrompt()
+            try {
+                runner.clearContext()
 
-            val spRet = runner.processSystemPrompt(
-                "$systemPrompt Your task is to summarize the conversation below."
-            )
-            if (spRet != 0) {
-                throw IllegalStateException("Failed to process summarization system prompt")
+                val spRet = runner.processSystemPrompt(
+                    "$systemPrompt Your task is to summarize the conversation below."
+                )
+                if (spRet != 0) {
+                    throw IllegalStateException("Failed to process summarization system prompt")
+                }
+
+                val contextLimit = runner.getContextLimit()
+                val maxTranscriptChars = (contextLimit * 0.6 * 3).toInt()
+                val truncatedTranscript = if (transcript.length > maxTranscriptChars) {
+                    transcript.takeLast(maxTranscriptChars)
+                } else {
+                    transcript
+                }
+
+                val promptText = """
+                    |Conversation:
+                    |$truncatedTranscript
+                    |
+                    |Summary:
+                """.trimMargin()
+
+                val ret = runner.processUserPrompt(promptText, 256)
+                if (ret != 0) {
+                    throw IllegalStateException("Failed to process summarization prompt")
+                }
+
+                runner.generateFlowTokens().collect { token ->
+                    emit(token)
+                }
+            } finally {
+                runner.finalizeGeneration()
+                updateNativeSnapshots()
             }
-
-            val contextLimit = runner.getContextLimit()
-            val maxTranscriptChars = (contextLimit * 0.6 * 3).toInt()
-            val truncatedTranscript = if (transcript.length > maxTranscriptChars) {
-                transcript.takeLast(maxTranscriptChars)
-            } else {
-                transcript
-            }
-
-            val promptText = """
-                |Conversation:
-                |$truncatedTranscript
-                |
-                |Summary:
-            """.trimMargin()
-
-            val ret = runner.processUserPrompt(promptText, 256)
-            if (ret != 0) {
-                throw IllegalStateException("Failed to process summarization prompt")
-            }
-
-            runner.generateFlowTokens().collect { token ->
-                emit(token)
-            }
-        } finally {
-            runner.finalizeGeneration()
         }
     }.flowOn(Dispatchers.IO)
 
     override suspend fun resetContext() = withContext(Dispatchers.IO) {
-        runner.clearContext()
+        nativeSession.exclusive {
+            runner.clearContext()
+            updateNativeSnapshots()
+        }
     }
 
     override suspend fun resetContextWithSummary(summary: String, lastExchange: String): Boolean =
         withContext(Dispatchers.IO) {
-            val basePrompt = currentSystemPrompt()
-            try {
-                runner.clearContext()
+            nativeSession.exclusive {
+                val basePrompt = currentSystemPrompt()
+                try {
+                    runner.clearContext()
 
-                val systemPrompt = buildString {
-                    append(basePrompt)
+                    val systemPrompt = buildString {
+                        append(basePrompt)
 
-                    if (summary.isNotBlank()) {
-                        append(" Here is a summary of our previous conversation:\n")
-                        append(summary)
-                    }
-
-                    if (lastExchange.isNotBlank()) {
                         if (summary.isNotBlank()) {
-                            append("\n\n")
+                            append(" Here is a summary of our previous conversation:\n")
+                            append(summary)
                         }
-                        append("The most recent exchange was:\n")
-                        append(lastExchange)
-                    }
-                }
 
-                val ret = runner.processSystemPrompt(systemPrompt)
-                ret == 0
-            } catch (e: Exception) {
-                false
+                        if (lastExchange.isNotBlank()) {
+                            if (summary.isNotBlank()) {
+                                append("\n\n")
+                            }
+                            append("The most recent exchange was:\n")
+                            append(lastExchange)
+                        }
+                    }
+
+                    val ret = runner.processSystemPrompt(systemPrompt)
+                    updateNativeSnapshots()
+                    ret == 0
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    false
+                }
             }
         }
+
+    private fun updateNativeSnapshots() {
+        contextUsedSnapshot = runner.getContextUsed()
+        contextLimitSnapshot = runner.getContextLimit()
+        stopReasonSnapshot = runner.getStopReason()
+    }
+
+    private fun resetNativeSnapshots() {
+        contextUsedSnapshot = 0
+        contextLimitSnapshot = 0
+        stopReasonSnapshot = 0
+        generationObservation = null
+    }
 
     private fun resolveModelPath(model: LocalModelEntity): String {
         if (model.localPath.isNotBlank() && storagePathProvider.fileExists(model.localPath)) {

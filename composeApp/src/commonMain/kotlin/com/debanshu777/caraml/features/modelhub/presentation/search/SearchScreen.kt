@@ -4,11 +4,11 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,7 +16,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
@@ -33,7 +35,9 @@ import androidx.compose.material3.Tab
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
@@ -133,36 +137,47 @@ fun SearchScreen(
             )
         }
     ) { paddingValues ->
-        Column(modifier = Modifier.padding(paddingValues)) {
-            StorageInfoBar(storageInfo = storageInfo)
-            DeviceInfoSection(deviceHints = storageInfo.deviceHints)
-            PrimaryTabRow(selectedTabIndex = selectedTabIndex) {
-                tabs.forEachIndexed { index, title ->
-                    Tab(
-                        selected = selectedTabIndex == index,
-                        onClick = { selectedTabIndex = index },
-                        text = { Text(title) }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .widthIn(max = 840.dp),
+            ) {
+                PrimaryTabRow(selectedTabIndex = selectedTabIndex) {
+                    tabs.forEachIndexed { index, title ->
+                        Tab(
+                            selected = selectedTabIndex == index,
+                            onClick = { selectedTabIndex = index },
+                            text = { Text(title) },
+                        )
+                    }
+                }
+
+                when (selectedTabIndex) {
+                    0 -> SearchTabContent(
+                        viewModel = modelViewModel,
+                        storageInfo = storageInfo,
+                        onNavigateToDetails = onNavigateToDetails,
+                        onRecommendationInfoClick = { recommendationSheetState = it },
+                        recommendationProfileState = recommendationProfileState,
+                        onOpenProfileEditor = { profileEditorVisible = true },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+
+                    1 -> DownloadedTabContent(
+                        viewModel = downloadedModelsViewModel,
+                        storageInfo = storageInfo,
+                        onSelectModelAndGoBack = onSelectModelAndGoBack,
+                        onNavigateToDetails = onNavigateToDetails,
+                        snackbarHostState = snackbarHostState,
+                        modifier = Modifier.fillMaxSize(),
                     )
                 }
-            }
-
-            when (selectedTabIndex) {
-                0 -> SearchTabContent(
-                    viewModel = modelViewModel,
-                    onNavigateToDetails = onNavigateToDetails,
-                    onRecommendationInfoClick = { recommendationSheetState = it },
-                    recommendationProfileState = recommendationProfileState,
-                    onOpenProfileEditor = { profileEditorVisible = true },
-                    modifier = Modifier.fillMaxSize()
-                )
-
-                1 -> DownloadedTabContent(
-                    viewModel = downloadedModelsViewModel,
-                    onSelectModelAndGoBack = onSelectModelAndGoBack,
-                    onNavigateToDetails = onNavigateToDetails,
-                    snackbarHostState = snackbarHostState,
-                    modifier = Modifier.fillMaxSize()
-                )
             }
         }
     }
@@ -222,6 +237,7 @@ fun SearchScreen(
 @Composable
 private fun SearchTabContent(
     viewModel: ModelViewModel,
+    storageInfo: StorageInfoUiState,
     onNavigateToDetails: (modelId: String, hubBrowseMode: ModelHubBrowseMode) -> Unit,
     onRecommendationInfoClick: (RecommendedModelUiState) -> Unit,
     recommendationProfileState: RecommendationProfileUiState,
@@ -244,58 +260,50 @@ private fun SearchTabContent(
     val isLlmHub = browseMode == ModelHubBrowseMode.LanguageModels
     val isSearchMode = isLlmHub && (searchQuery.isNotEmpty() || searchResponse != null)
 
-    Column(modifier = modifier) {
-        if (recommendationProfileState.isAvailable) {
-            RecommendationProfileAction(
-                profile = recommendationProfileState.profile,
-                onClick = onOpenProfileEditor,
-            )
+    val spacing = LocalSpacing.current
+    LazyColumn(
+        modifier = modifier,
+        contentPadding = PaddingValues(bottom = spacing.xxl),
+    ) {
+        item(key = "storage-overview") {
+            StorageInfoBar(storageInfo = storageInfo)
+        }
+        item(key = "device-overview") {
+            DeviceInfoSection(deviceHints = storageInfo.deviceHints)
         }
 
-        val chipScroll = rememberScrollState()
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(chipScroll)
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            FilterChip(
-                selected = browseMode == ModelHubBrowseMode.LanguageModels,
-                onClick = { viewModel.setBrowseMode(ModelHubBrowseMode.LanguageModels) },
-                label = { Text("LLM") }
-            )
-            FilterChip(
-                selected = browseMode == ModelHubBrowseMode.DiffusionImage,
-                onClick = { viewModel.setBrowseMode(ModelHubBrowseMode.DiffusionImage) },
-                label = { Text("Image") }
-            )
-            FilterChip(
-                selected = browseMode == ModelHubBrowseMode.DiffusionVideo,
-                onClick = { viewModel.setBrowseMode(ModelHubBrowseMode.DiffusionVideo) },
-                label = { Text("Video") }
+        if (recommendationProfileState.isAvailable) {
+            item(key = "recommendation-profile") {
+                RecommendationProfileAction(
+                    profile = recommendationProfileState.profile,
+                    onClick = onOpenProfileEditor,
+                )
+            }
+        }
+
+        item(key = "model-kind-filter") {
+            ModelKindFilterRow(
+                browseMode = browseMode,
+                onBrowseModeChange = viewModel::setBrowseMode,
             )
         }
 
         if (!isLlmHub) {
-            Text(
-                text = "Curated Hugging Face repos from stable-diffusion.cpp docs (no search).",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-            )
+            item(key = "curated-hint") {
+                Text(
+                    text = "Curated Hugging Face repositories supported by the on-device engine.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+            }
         }
 
         if (isLlmHub) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            item(key = "model-search") {
                 SearchBar(
                     query = searchQuery,
-                    onQueryChange = { viewModel.updateSearchQuery(it) },
+                    onQueryChange = viewModel::updateSearchQuery,
                     onSearch = {
                         if (searchQuery.isNotEmpty()) {
                             viewModel.performSearch()
@@ -303,142 +311,192 @@ private fun SearchTabContent(
                             viewModel.loadModels()
                         }
                     },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
+        }
+
+        if (isSearchMode && (searchResponse != null || searchError != null)) {
+            item(key = "search-summary") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Results for “$searchQuery” · ${searchResponse?.modelsCount ?: 0}",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = viewModel::clearSearch) {
+                        Text("Clear")
+                    }
+                }
+            }
+        } else if (isLlmHub) {
+            item(key = "sort-filters") {
+                SortFilterChips(
+                    ordering = modelOrdering,
+                    sort = listParams.sort,
+                    minParams = listParams.minParams,
+                    maxParams = listParams.maxParams,
+                    onSortChange = {
+                        viewModel.updateParams(sort = it)
+                        viewModel.setModelOrdering(ModelOrdering.Server(it))
+                    },
+                    onOrderingChange = viewModel::setModelOrdering,
+                    onMinParamsChange = { viewModel.updateParams(minParams = it) },
+                    onMaxParamsChange = { viewModel.updateParams(maxParams = it) },
                 )
             }
         }
 
         if (isSearchMode) {
-            if (searchResponse != null || searchError != null) {
-                Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                    Text(
-                        text = "Results for \"$searchQuery\" (${searchResponse?.modelsCount ?: 0} models)",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(vertical = 8.dp)
-                    )
-                    TextButton(
-                        onClick = {
-                            viewModel.clearSearch()
-                        }
-                    ) {
-                        Text("← Back to Browse")
-                    }
-                }
-            }
-        } else if (isLlmHub) {
-            SortFilterChips(
-                ordering = modelOrdering,
-                sort = listParams.sort,
-                minParams = listParams.minParams,
-                maxParams = listParams.maxParams,
-                onSortChange = {
-                    viewModel.updateParams(sort = it)
-                    viewModel.setModelOrdering(ModelOrdering.Server(it))
-                },
-                onOrderingChange = viewModel::setModelOrdering,
-                onMinParamsChange = { viewModel.updateParams(minParams = it) },
-                onMaxParamsChange = { viewModel.updateParams(maxParams = it) }
-            )
-        }
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            contentAlignment = Alignment.Center
-        ) {
             when {
-                isSearchMode -> {
-                    when {
-                        isSearchLoading -> CircularProgressIndicator()
-                        searchError != null -> Text(
+                isSearchLoading -> item(key = "search-loading") {
+                    ModelHubListMessage { CircularProgressIndicator() }
+                }
+
+                searchError != null -> item(key = "search-error") {
+                    ModelHubListMessage {
+                        Text(
                             text = searchError ?: "Something went wrong. Please try again.",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.error
+                            color = MaterialTheme.colorScheme.error,
                         )
-
-                        searchResponse?.models.isNullOrEmpty() -> Text(
-                            text = "No models found for \"$searchQuery\".",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
-                        else -> LazyColumn(
-                            modifier = Modifier.fillMaxSize()
-                        ) {
-                            items(
-                                items = searchResponse?.models?.filterNotNull() ?: emptyList(),
-                                key = { it.id ?: it.hashCode().toString() }
-                            ) { model ->
-                                val recommendationState = recommendedModels.firstOrNull {
-                                    it.repositoryId == model.id
-                                }
-                                SearchModelListItem(
-                                    model = model,
-                                    recommendationState = recommendationState,
-                                    onRecommendationInfoClick = recommendationState
-                                        ?.takeIf { it.personalizedResult != null }
-                                        ?.let { state -> { onRecommendationInfoClick(state) } },
-                                    onClick = {
-                                        model.id?.let { id ->
-                                            onNavigateToDetails(id, browseMode)
-                                        }
-                                    }
-                                )
-                            }
-                        }
                     }
                 }
 
-                else -> {
-                    when {
-                        isListLoading -> CircularProgressIndicator()
-                        listError != null -> Text(
+                searchResponse?.models.isNullOrEmpty() -> item(key = "search-empty") {
+                    ModelHubListMessage {
+                        Text(
+                            text = "No models found for “$searchQuery”.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                else -> items(
+                    items = searchResponse?.models?.filterNotNull() ?: emptyList(),
+                    key = { "search-${it.id ?: it.hashCode()}" },
+                ) { model ->
+                    val recommendationState = recommendedModels.firstOrNull {
+                        it.repositoryId == model.id
+                    }
+                    SearchModelListItem(
+                        model = model,
+                        recommendationState = recommendationState,
+                        onRecommendationInfoClick = recommendationState
+                            ?.takeIf { it.personalizedResult != null }
+                            ?.let { state -> { onRecommendationInfoClick(state) } },
+                        onClick = {
+                            model.id?.let { id -> onNavigateToDetails(id, browseMode) }
+                        },
+                    )
+                }
+            }
+        } else {
+            when {
+                isListLoading -> item(key = "list-loading") {
+                    ModelHubListMessage { CircularProgressIndicator() }
+                }
+
+                listError != null -> item(key = "list-error") {
+                    ModelHubListMessage {
+                        Text(
                             text = listError ?: "Something went wrong. Please try again.",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.error
+                            color = MaterialTheme.colorScheme.error,
                         )
+                    }
+                }
 
-                        listResponse?.models.isNullOrEmpty() -> Text(
+                listResponse?.models.isNullOrEmpty() -> item(key = "list-empty") {
+                    ModelHubListMessage {
+                        Text(
                             text = if (isLlmHub) {
-                                "No models found. Tap Search to try."
+                                "No models found. Adjust the filters or search by name."
                             } else {
-                                "No curated models in this list."
+                                "No curated models are available."
                             },
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-
-                        else -> LazyColumn(
-                            modifier = Modifier.fillMaxSize()
-                        ) {
-                            items(
-                                items = if (modelOrdering is ModelOrdering.Personalized) {
-                                    recommendedModels.map { it.sourceModel }
-                                } else listResponse?.models?.filterNotNull() ?: emptyList(),
-                                key = { it.id ?: it.hashCode().toString() }
-                            ) { model ->
-                                val recommendationState = recommendedModels.firstOrNull {
-                                    it.repositoryId == model.id
-                                }
-                                ModelListItem(
-                                    model = model,
-                                    onClick = {
-                                        model.id?.let { id ->
-                                            onNavigateToDetails(id, browseMode)
-                                        }
-                                    },
-                                    recommendationState = recommendationState,
-                                    onRecommendationInfoClick = recommendationState
-                                        ?.takeIf { it.personalizedResult != null }
-                                        ?.let { state -> { onRecommendationInfoClick(state) } },
-                                )
-                            }
-                        }
                     }
+                }
+
+                else -> items(
+                    items = if (modelOrdering is ModelOrdering.Personalized) {
+                        recommendedModels.map { it.sourceModel }
+                    } else {
+                        listResponse?.models?.filterNotNull() ?: emptyList()
+                    },
+                    key = { "browse-${it.id ?: it.hashCode()}" },
+                ) { model ->
+                    val recommendationState = recommendedModels.firstOrNull {
+                        it.repositoryId == model.id
+                    }
+                    ModelListItem(
+                        model = model,
+                        onClick = {
+                            model.id?.let { id -> onNavigateToDetails(id, browseMode) }
+                        },
+                        recommendationState = recommendationState,
+                        onRecommendationInfoClick = recommendationState
+                            ?.takeIf { it.personalizedResult != null }
+                            ?.let { state -> { onRecommendationInfoClick(state) } },
+                    )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ModelKindFilterRow(
+    browseMode: ModelHubBrowseMode,
+    onBrowseModeChange: (ModelHubBrowseMode) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val modes = listOf(
+        ModelHubBrowseMode.LanguageModels to "LLM",
+        ModelHubBrowseMode.DiffusionImage to "Image",
+        ModelHubBrowseMode.DiffusionVideo to "Video",
+    )
+    LazyRow(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        items(modes, key = { it.first.name }) { (mode, label) ->
+            FilterChip(
+                selected = browseMode == mode,
+                onClick = { onBrowseModeChange(mode) },
+                label = { Text(label) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ModelHubListMessage(
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 160.dp)
+            .padding(24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        content()
     }
 }
 
@@ -450,17 +508,47 @@ private fun RecommendationProfileAction(
 ) {
     val risk = profile.riskTolerance.label()
     val priority = profile.optimizationPriority.label()
-    FilledTonalButton(
+    Surface(
         onClick = onClick,
         modifier = modifier
             .padding(horizontal = LocalSpacing.current.l, vertical = LocalSpacing.current.s)
+            .fillMaxWidth()
             .heightIn(min = 48.dp)
             .semantics {
                 contentDescription = "Recommendation profile. Selected risk: $risk. " +
                     "Selected priority: $priority. Open profile controls."
             },
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.secondaryContainer,
     ) {
-        Text("Profile: $risk · $priority")
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Default.Tune,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Recommendation profile",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+                Text(
+                    text = "$risk · $priority",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+            }
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+        }
     }
 }
 
@@ -736,6 +824,7 @@ private fun formatStorageBytes(bytes: Long): String {
 @Composable
 private fun DownloadedTabContent(
     viewModel: DownloadedModelsViewModel,
+    storageInfo: StorageInfoUiState,
     onSelectModelAndGoBack: (LocalModelEntity) -> Unit,
     onNavigateToDetails: (modelId: String, hubBrowseMode: ModelHubBrowseMode) -> Unit,
     snackbarHostState: SnackbarHostState,
@@ -757,109 +846,116 @@ private fun DownloadedTabContent(
         viewModel.acknowledgeDeleteResult()
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = LocalSpacing.current.xxl),
+    ) {
+        item(key = "storage-overview") {
+            StorageInfoBar(storageInfo = storageInfo)
+        }
+        item(key = "device-overview") {
+            DeviceInfoSection(deviceHints = storageInfo.deviceHints)
+        }
+
         if (selectionMode && downloadedModels.isNotEmpty()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(
-                    onClick = { viewModel.clearSelection() },
-                    enabled = !isDeleting
+            item(key = "selection-actions") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("Cancel")
-                }
-                FilledTonalButton(
-                    onClick = { showDeleteConfirm = true },
-                    enabled = selectedIds.isNotEmpty() && !isDeleting
-                ) {
-                    Text("Delete (${selectedIds.size})")
+                    TextButton(
+                        onClick = viewModel::clearSelection,
+                        enabled = !isDeleting,
+                    ) {
+                        Text("Cancel")
+                    }
+                    FilledTonalButton(
+                        onClick = { showDeleteConfirm = true },
+                        enabled = selectedIds.isNotEmpty() && !isDeleting,
+                    ) {
+                        Text("Delete (${selectedIds.size})")
+                    }
                 }
             }
         }
 
-        // Readiness filter chips (hidden during selection mode)
         if (!selectionMode) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                ReadinessFilter.entries.forEach { filter ->
-                    FilterChip(
-                        selected = readinessFilter == filter,
-                        onClick = { viewModel.setReadinessFilter(filter) },
-                        label = {
-                            Text(
-                                when (filter) {
-                                    ReadinessFilter.ALL -> "All"
-                                    ReadinessFilter.READY -> "Ready"
-                                    ReadinessFilter.PARTIAL -> "Needs setup"
-                                }
-                            )
-                        },
-                    )
-                }
-            }
-        }
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            contentAlignment = if (downloadedModels.isEmpty()) Alignment.Center else Alignment.TopStart
-        ) {
-            if (downloadedModels.isEmpty()) {
-                Text(
-                    text = "No downloaded models yet.\nBrowse and download models to see them here.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(16.dp)
-                )
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize()
+            item(key = "readiness-filters") {
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    items(
-                        items = downloadedModels,
-                        key = { it.id }
-                    ) { model ->
-                        LocalModelListItem(
-                            model = model,
-                            selectionMode = selectionMode,
-                            isSelected = model.id in selectedIds,
-                            onOpenModel = {
-                                scope.launch {
-                                    viewModel.trackModelUsage(model)
-                                }
-                                onSelectModelAndGoBack(model)
-                            },
-                            onToggleSelect = { viewModel.toggleSelection(model) },
-                            onLongPress = {
-                                if (selectionMode) {
-                                    viewModel.toggleSelection(model)
-                                } else {
-                                    viewModel.beginSelection(model)
-                                }
-                            },
-                            onFixComponents = if (model.componentStatus == com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity.STATUS_PARTIAL) {
-                                {
-                                    val mode = when (model.modelType) {
-                                        com.debanshu777.caraml.core.storage.localmodel.ModelType.VIDEO -> ModelHubBrowseMode.DiffusionVideo
-                                        com.debanshu777.caraml.core.storage.localmodel.ModelType.IMAGE -> ModelHubBrowseMode.DiffusionImage
-                                        else -> ModelHubBrowseMode.DiffusionImage
-                                    }
-                                    onNavigateToDetails(model.modelId, mode)
-                                }
-                            } else null,
+                    items(ReadinessFilter.entries, key = { it.name }) { filter ->
+                        val label = when (filter) {
+                            ReadinessFilter.ALL -> "All"
+                            ReadinessFilter.READY -> "Ready"
+                            ReadinessFilter.PARTIAL -> "Needs setup"
+                        }
+                        FilterChip(
+                            selected = readinessFilter == filter,
+                            onClick = { viewModel.setReadinessFilter(filter) },
+                            label = { Text(label) },
                         )
                     }
                 }
+            }
+        }
+
+        if (downloadedModels.isEmpty()) {
+            item(key = "downloaded-empty") {
+                ModelHubListMessage {
+                    Text(
+                        text = "No downloaded models yet.\nBrowse and download models to see them here.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        } else {
+            items(
+                items = downloadedModels,
+                key = { it.id },
+            ) { model ->
+                LocalModelListItem(
+                    model = model,
+                    selectionMode = selectionMode,
+                    isSelected = model.id in selectedIds,
+                    onOpenModel = {
+                        scope.launch { viewModel.trackModelUsage(model) }
+                        onSelectModelAndGoBack(model)
+                    },
+                    onToggleSelect = { viewModel.toggleSelection(model) },
+                    onLongPress = {
+                        if (selectionMode) {
+                            viewModel.toggleSelection(model)
+                        } else {
+                            viewModel.beginSelection(model)
+                        }
+                    },
+                    onFixComponents = if (
+                        model.componentStatus ==
+                        com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity.STATUS_PARTIAL
+                    ) {
+                        {
+                            val mode = when (model.modelType) {
+                                com.debanshu777.caraml.core.storage.localmodel.ModelType.VIDEO ->
+                                    ModelHubBrowseMode.DiffusionVideo
+                                com.debanshu777.caraml.core.storage.localmodel.ModelType.IMAGE ->
+                                    ModelHubBrowseMode.DiffusionImage
+                                else -> ModelHubBrowseMode.DiffusionImage
+                            }
+                            onNavigateToDetails(model.modelId, mode)
+                        }
+                    } else {
+                        null
+                    },
+                )
             }
         }
     }

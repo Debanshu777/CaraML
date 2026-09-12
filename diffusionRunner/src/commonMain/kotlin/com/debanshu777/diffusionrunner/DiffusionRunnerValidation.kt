@@ -1,5 +1,15 @@
 package com.debanshu777.diffusionrunner
 
+private const val MAX_PROMPT_LENGTH = 16_384
+private const val MAX_IMAGE_DIMENSION = 4_096
+private const val MAX_IMAGE_PIXELS = 16_777_216L
+private const val MAX_VIDEO_FRAME_PIXELS = 16_777_216L
+private const val MAX_GENERATION_STEPS = 150
+private const val MAX_VIDEO_FRAMES = 256
+private const val MAX_LORA_COUNT = 32
+private const val MAX_LORA_PATH_LENGTH = 4_096
+private const val MAX_CFG_SCALE = 50f
+private const val MAX_ABSOLUTE_LORA_STRENGTH = 10f
 private const val MAX_MODEL_PATH_BYTES = 4_096
 private const val MAX_MAX_VRAM_SPEC_BYTES = 256
 private const val MAX_NATIVE_THREADS = 1_024
@@ -84,9 +94,78 @@ private fun String.isActiveMaxVramBudget(): Boolean {
 }
 
 internal fun validateImageGenParams(params: ImageGenParams) {
-    require(params.prompt.isNotBlank()) { "prompt must not be blank" }
-    require(params.width > 0 && params.width % 8 == 0) { "width must be positive and divisible by 8" }
-    require(params.height > 0 && params.height % 8 == 0) { "height must be positive and divisible by 8" }
-    require(params.steps > 0) { "steps must be positive" }
-    require(params.loraPaths.size == params.loraStrengths.size) { "loraPaths and loraStrengths must have same size" }
+    validateGenerationParams(
+        prompt = params.prompt,
+        negativePrompt = params.negativePrompt,
+        width = params.width,
+        height = params.height,
+        steps = params.steps,
+        cfgScale = params.cfgScale,
+        loraPaths = params.loraPaths,
+        loraStrengths = params.loraStrengths,
+    )
+}
+
+internal fun validateVideoGenParams(params: VideoGenParams) {
+    validateGenerationParams(
+        prompt = params.prompt,
+        negativePrompt = params.negativePrompt,
+        width = params.width,
+        height = params.height,
+        steps = params.steps,
+        cfgScale = params.cfgScale,
+        loraPaths = params.loraPaths,
+        loraStrengths = params.loraStrengths,
+    )
+    require(params.videoFrames in 1..MAX_VIDEO_FRAMES) {
+        "videoFrames is outside the supported range"
+    }
+    require(
+        params.width.toLong() * params.height.toLong() * params.videoFrames.toLong() <=
+            MAX_VIDEO_FRAME_PIXELS
+    ) {
+        "video output is outside the supported range"
+    }
+}
+
+private fun validateGenerationParams(
+    prompt: String,
+    negativePrompt: String,
+    width: Int,
+    height: Int,
+    steps: Int,
+    cfgScale: Float,
+    loraPaths: List<String>,
+    loraStrengths: List<Float>,
+) {
+    require(prompt.isNotBlank() && prompt.length <= MAX_PROMPT_LENGTH) {
+        "prompt is outside the supported range"
+    }
+    require(negativePrompt.length <= MAX_PROMPT_LENGTH) {
+        "negativePrompt is outside the supported range"
+    }
+    require(width in 8..MAX_IMAGE_DIMENSION && width % 8 == 0) {
+        "width is outside the supported range"
+    }
+    require(height in 8..MAX_IMAGE_DIMENSION && height % 8 == 0) {
+        "height is outside the supported range"
+    }
+    require(width.toLong() * height.toLong() <= MAX_IMAGE_PIXELS) {
+        "image area is outside the supported range"
+    }
+    require(steps in 1..MAX_GENERATION_STEPS) {
+        "steps is outside the supported range"
+    }
+    require(cfgScale.isFinite() && cfgScale in 0f..MAX_CFG_SCALE) {
+        "cfgScale is outside the supported range"
+    }
+    require(loraPaths.size == loraStrengths.size && loraPaths.size <= MAX_LORA_COUNT) {
+        "LoRA configuration is outside the supported range"
+    }
+    require(loraPaths.all { it.isNotBlank() && it.length <= MAX_LORA_PATH_LENGTH }) {
+        "LoRA path is outside the supported range"
+    }
+    require(loraStrengths.all { it.isFinite() && kotlin.math.abs(it) <= MAX_ABSOLUTE_LORA_STRENGTH }) {
+        "LoRA strength is outside the supported range"
+    }
 }

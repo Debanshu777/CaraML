@@ -11,7 +11,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -35,12 +34,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontStyle
@@ -53,6 +54,8 @@ import com.debanshu777.caraml.features.chat.data.ChatMessage
 import com.debanshu777.caraml.features.chat.data.MessageRole
 import com.debanshu777.caraml.features.chat.presentation.components.providers.ChatMessagePreviewProvider
 import com.mikepenz.markdown.m3.Markdown
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Preview
 @Composable
@@ -76,6 +79,7 @@ fun MessageBubble(
     imageGenTotalSteps: Int = 0,
     imageGenRequestedSteps: Int = 0,
     imageGenElapsedSeconds: Int = 0,
+    loadMedia: suspend (String) -> ByteArray? = { null },
     modifier: Modifier = Modifier
 ) {
     val isUser = message.role == MessageRole.User
@@ -130,16 +134,25 @@ fun MessageBubble(
                 )
             }
         } else if (output.isNotEmpty()) {
-            // Render assistant answer as markdown — always, even mid-stream.
-            Markdown(
-                content = output,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(MaterialTheme.shapes.medium)
-                    .background(backgroundColor)
-                    .padding(if (backgroundColor == Color.Transparent) 0.dp else LocalSpacing.current.m),
-                typography = chatMarkdownTypography(),
-            )
+            val outputModifier = Modifier
+                .fillMaxWidth()
+                .clip(MaterialTheme.shapes.medium)
+                .background(backgroundColor)
+                .padding(if (backgroundColor == Color.Transparent) 0.dp else LocalSpacing.current.m)
+            if (isStreaming) {
+                Text(
+                    text = output,
+                    modifier = outputModifier,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = textColor,
+                )
+            } else {
+                Markdown(
+                    content = output,
+                    modifier = outputModifier,
+                    typography = chatMarkdownTypography(),
+                )
+            }
         }
 
         if (!isUser && showMediaPending) {
@@ -190,11 +203,13 @@ fun MessageBubble(
             }
         }
 
-        val imageBytes = message.imageBytes
-        if (!isUser && imageBytes != null && imageBytes.isNotEmpty()) {
-            val bitmap = remember(message.id, imageBytes.size) {
-                decodePngToImageBitmap(imageBytes)
-            }
+        if (!isUser && (message.imagePath != null || message.imageBytes?.isNotEmpty() == true)) {
+            val bitmap = rememberDecodedMediaBitmap(
+                key = message.id,
+                path = message.imagePath,
+                inlineBytes = message.imageBytes,
+                loadMedia = loadMedia,
+            )
             if (bitmap != null) {
                 Image(
                     bitmap = bitmap,
@@ -208,18 +223,30 @@ fun MessageBubble(
             }
         }
 
-        val frames = message.videoFrames
-        if (!isUser && !frames.isNullOrEmpty()) {
+        val frameSources = remember(message.videoFramePaths, message.videoFrames) {
+            when {
+                !message.videoFramePaths.isNullOrEmpty() ->
+                    message.videoFramePaths.map { path -> path to null }
+                !message.videoFrames.isNullOrEmpty() ->
+                    message.videoFrames.map { bytes -> null to bytes }
+                else -> emptyList()
+            }
+        }
+        if (!isUser && frameSources.isNotEmpty()) {
             LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = LocalSpacing.current.s),
                 horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.s)
             ) {
-                itemsIndexed(frames, key = { index, _ -> "${message.id}_$index" }) { index, frameBytes ->
-                    val frameBitmap = remember(message.id, index, frameBytes.size) {
-                        decodePngToImageBitmap(frameBytes)
-                    }
+                itemsIndexed(frameSources, key = { index, _ -> "${message.id}_$index" }) {
+                        index, (framePath, frameBytes) ->
+                    val frameBitmap = rememberDecodedMediaBitmap(
+                        key = "${message.id}_$index",
+                        path = framePath,
+                        inlineBytes = frameBytes,
+                        loadMedia = loadMedia,
+                    )
                     if (frameBitmap != null) {
                         Image(
                             bitmap = frameBitmap,
@@ -268,6 +295,31 @@ fun MessageBubble(
             }
         }
     }
+}
+
+@Composable
+private fun rememberDecodedMediaBitmap(
+    key: String,
+    path: String?,
+    inlineBytes: ByteArray?,
+    loadMedia: suspend (String) -> ByteArray?,
+): ImageBitmap? {
+    val bitmap by produceState<ImageBitmap?>(
+        initialValue = null,
+        key1 = key,
+        key2 = path,
+        key3 = inlineBytes,
+    ) {
+        val encoded = when {
+            path != null -> loadMedia(path)
+            inlineBytes?.isNotEmpty() == true -> inlineBytes
+            else -> null
+        }
+        value = encoded?.let { bytes ->
+            withContext(Dispatchers.Default) { decodePngToImageBitmap(bytes) }
+        }
+    }
+    return bitmap
 }
 
 /**

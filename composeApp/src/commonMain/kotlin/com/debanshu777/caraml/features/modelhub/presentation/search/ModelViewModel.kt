@@ -1283,12 +1283,12 @@ class ModelViewModel(
                         label = componentLabel,
                     )
                 }
-                if (progress.localPath != null) {
+                progress.localPath?.let { completedPath ->
                     val compId = componentRepository.insertComponent(
                         repoId = component.repoId,
                         filePath = component.filePath,
                         role = component.role.name,
-                        localPath = progress.localPath!!,
+                        localPath = completedPath,
                         sizeBytes = component.sizeHint?.let { parseSizeHint(it) },
                     )
                     componentRepository.linkComponentToModel(modelId, compId, component.role.name)
@@ -1330,11 +1330,17 @@ class ModelViewModel(
             _searchError.update { "Please enter a search query" }
             return
         }
+        val params = try {
+            SearchModelsParams(query = query)
+        } catch (_: IllegalArgumentException) {
+            _searchError.update { "Search text is too long or contains invalid characters." }
+            return
+        }
         val owner = beginModelRequest()
         searchRequestJob = viewModelScope.launch {
             _isSearchLoading.update { true }
             _searchError.update { null }
-            when (val result = api.searchModels(SearchModelsParams(query = query))) {
+            when (val result = api.searchModels(params)) {
                 is Result.Success -> {
                     if (!ownsSearchRequest(owner, query)) return@launch
                     _searchResponse.update { result.data }

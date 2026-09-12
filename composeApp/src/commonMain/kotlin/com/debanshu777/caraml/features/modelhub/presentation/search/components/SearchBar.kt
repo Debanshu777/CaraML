@@ -1,11 +1,8 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search.components
 
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material.icons.Icons
@@ -14,11 +11,9 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
-import com.debanshu777.caraml.core.theme.LocalSpacing
 
 @Composable
 fun SearchBar(
@@ -27,44 +22,38 @@ fun SearchBar(
     onSearch: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Row(
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
         modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        OutlinedTextField(
-            value = query,
-            onValueChange = onQueryChange,
-            modifier = Modifier.weight(1f),
-            placeholder = { Text("Search models...") },
-            leadingIcon = {
-                Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = "Search icon"
-                )
-            },
-            trailingIcon = {
+        placeholder = { Text("Search models") },
+        leadingIcon = {
+            Icon(
+                imageVector = Icons.Default.Search,
+                contentDescription = null,
+            )
+        },
+        trailingIcon = {
+            androidx.compose.foundation.layout.Row {
                 if (query.isNotEmpty()) {
                     IconButton(onClick = { onQueryChange("") }) {
                         Icon(
                             imageVector = Icons.Default.Clear,
-                            contentDescription = "Clear search"
+                            contentDescription = "Clear model search",
                         )
                     }
                 }
-            },
-            keyboardOptions = KeyboardOptions(
-                imeAction = ImeAction.Search
-            ),
-            keyboardActions = KeyboardActions(
-                onSearch = { onSearch() }
-            ),
-            singleLine = true
-        )
-        Button(
-            onClick = onSearch,
-            modifier = Modifier.padding(start = LocalSpacing.current.s)
-        ) {
-            Text("Search")
-        }
-    }
+                IconButton(onClick = onSearch) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Submit model search",
+                    )
+                }
+            }
+        },
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { onSearch() }),
+        singleLine = true,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
+    )
 }

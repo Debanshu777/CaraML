@@ -3,6 +3,7 @@ package com.debanshu777.huggingfacemanager.download
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.LinkOption
+import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.BasicFileAttributes
 import kotlin.io.deleteRecursively
 
@@ -99,7 +100,24 @@ class JvmStoragePathProvider private constructor(
     }
 
     override fun renameFile(from: String, to: String): Boolean =
-        try { File(from).renameTo(File(to)) } catch (_: Exception) { false }
+        try {
+            val source = File(from).toPath()
+            val destination = File(to).toPath()
+            destination.parent?.let(Files::createDirectories)
+            try {
+                Files.move(
+                    source,
+                    destination,
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
+            } catch (_: Exception) {
+                Files.move(source, destination, StandardCopyOption.REPLACE_EXISTING)
+            }
+            true
+        } catch (_: Exception) {
+            false
+        }
 
     override fun deleteDownloadedModelContent(modelId: String, localPath: String): Boolean =
         try {

@@ -46,7 +46,6 @@ import com.debanshu777.caraml.features.chat.presentation.components.providers.Li
 import com.debanshu777.caraml.features.chat.presentation.components.providers.LocalModelPreviewProvider
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
-import kotlinx.coroutines.flow.StateFlow
 import com.debanshu777.caraml.features.chat.presentation.components.ChatInputBar
 import com.debanshu777.caraml.features.chat.presentation.components.ContextStatsIndicator
 import com.debanshu777.caraml.features.chat.presentation.components.ChatMessageList
@@ -83,7 +82,6 @@ fun ChatScreen(
     ChatScreenContent(
         uiState = uiState,
         streamingState = streamingState,
-        streamingStateFlow = viewModel.streamingState,
         onSelectModel = viewModel::selectModel,
         onSendMessage = viewModel::sendMessage,
         onCancelGeneration = viewModel::cancelGeneration,
@@ -91,10 +89,11 @@ fun ChatScreen(
         onAcceptAlternative = viewModel::acceptSaferPlan,
         onRetryLoad = viewModel::retryPendingLoad,
         onCancelLoad = viewModel::cancelPendingLoad,
+        loadMedia = viewModel::loadGeneratedMedia,
         onNavigateToSearch = onNavigateToSearch,
         onNavigateToModelDetail = onNavigateToModelDetail,
         contextIndicator = {
-            ContextStatsIndicator(streamingStateFlow = viewModel.streamingState)
+            ContextStatsIndicator(liveStats = streamingState.liveStats)
         },
         modifier = modifier
     )
@@ -104,7 +103,6 @@ fun ChatScreen(
 fun ChatScreenContent(
     uiState: ChatUiState,
     streamingState: StreamingState,
-    streamingStateFlow: StateFlow<StreamingState>? = null,
     onSelectModel: (LocalModelEntity) -> Unit,
     onSendMessage: (String) -> Unit,
     onCancelGeneration: () -> Unit,
@@ -112,6 +110,7 @@ fun ChatScreenContent(
     onAcceptAlternative: () -> Unit = {},
     onRetryLoad: () -> Unit = {},
     onCancelLoad: () -> Unit = {},
+    loadMedia: suspend (String) -> ByteArray? = { null },
     onNavigateToSearch: () -> Unit,
     onNavigateToModelDetail: (modelId: String, mode: ModelHubBrowseMode) -> Unit = { _, _ -> },
     contextIndicator: @Composable RowScope.() -> Unit = {},
@@ -233,7 +232,8 @@ fun ChatScreenContent(
                     messages = uiState.messages,
                     listState = listState,
                     streamingMessageId = streamingState.streamingMessageId,
-                    streamingStateFlow = streamingStateFlow,
+                    streamingState = streamingState,
+                    loadMedia = loadMedia,
                     modifier = Modifier.fillMaxSize()
                         .padding(
                             top = paddingValues.calculateTopPadding(),

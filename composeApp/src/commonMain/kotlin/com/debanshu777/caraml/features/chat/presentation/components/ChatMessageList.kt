@@ -13,7 +13,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -21,19 +20,17 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.debanshu777.caraml.features.chat.data.ChatMessage
 import com.debanshu777.caraml.features.chat.presentation.StreamingState
 import com.debanshu777.caraml.features.chat.presentation.components.providers.ChatMessageListPreviewProvider
 import kotlinx.collections.immutable.ImmutableList
-import kotlinx.coroutines.flow.StateFlow
 
 @Composable
 private fun StreamingMessageBubble(
     message: ChatMessage,
-    streamingStateFlow: StateFlow<StreamingState>,
+    streamingState: StreamingState,
+    loadMedia: suspend (String) -> ByteArray?,
 ) {
-    val streamingState by streamingStateFlow.collectAsStateWithLifecycle()
     val displayText = streamingState.streamingText.takeIf { it.isNotEmpty() } ?: message.text
     val pendingMedia = streamingState.pendingMediaGeneration &&
         streamingState.streamingMessageId == message.id
@@ -46,6 +43,7 @@ private fun StreamingMessageBubble(
         imageGenTotalSteps = streamingState.imageGenTotalSteps,
         imageGenRequestedSteps = streamingState.imageGenRequestedSteps,
         imageGenElapsedSeconds = streamingState.imageGenElapsedSeconds,
+        loadMedia = loadMedia,
     )
 }
 
@@ -70,7 +68,8 @@ fun ChatMessageList(
     messages: ImmutableList<ChatMessage>,
     listState: LazyListState,
     streamingMessageId: String? = null,
-    streamingStateFlow: StateFlow<StreamingState>? = null,
+    streamingState: StreamingState? = null,
+    loadMedia: suspend (String) -> ByteArray? = { null },
     modifier: Modifier = Modifier
 ) {
     if (messages.isEmpty()) {
@@ -98,13 +97,14 @@ fun ChatMessageList(
                 items = messages,
                 key = { it.id }
             ) { message ->
-                if (message.id == streamingMessageId && streamingStateFlow != null) {
+                if (message.id == streamingMessageId && streamingState != null) {
                     StreamingMessageBubble(
                         message = message,
-                        streamingStateFlow = streamingStateFlow
+                        streamingState = streamingState,
+                        loadMedia = loadMedia,
                     )
                 } else {
-                    MessageBubble(message)
+                    MessageBubble(message, loadMedia = loadMedia)
                 }
             }
             item{

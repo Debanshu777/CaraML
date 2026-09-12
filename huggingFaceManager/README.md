@@ -130,6 +130,10 @@ when (val result = api.searchModels(params)) {
 - Platform storage providers now expose a sibling `recommendation_cache.db` path so derived calibration evidence remains isolated from the primary app database
 - Storage providers now reject symlinked model roots and require canonical model paths to remain beneath the canonical trusted models parent
 - Downloads require pinned artifact identities and roots, strict UTF-8 descriptor-relative regular-file operations, and idempotent rollback journals; the native backend is exercised from packaged Desktop images and Android APKs
+- Downloads now validate repository/file paths, prevent storage-root escape, stage into `.part` files, verify HTTP status and byte counts, sync/close before commit, and preserve existing files on failure across JVM, Android, and iOS
+- Progress emissions are coalesced to percentage changes (or 1 MiB for unknown lengths), avoiding channel/UI pressure during multi-gigabyte downloads
+- Model detail/tree URLs are built from validated path segments; search, pagination, and filter inputs are bounded; network cancellation is propagated
+- Added JVM loopback integration tests for success, HTTP failure, truncation, traversal, and final-file preservation
 - `nota-ai/bk-sdm-tiny` registry now sets `prediction=0` (EPS) — skips `is_using_v_parameterization_for_sd2()` probe; `offloadToCpu` reverted (moot since Vulkan is now disabled for diffusion at build level via `SD_VULKAN=OFF`)
 - `nota-ai/bk-sdm-tiny` registry entry now sets `prediction=0` (EPS) — prevents `is_using_v_parameterization_for_sd2()` probe from running a test UNet forward pass; SD1.x is always EPS, never V-pred
 - `SdCppRecommendedParams` gained `seed: Long?` (registry-pinned seed for deterministic / debug generation)

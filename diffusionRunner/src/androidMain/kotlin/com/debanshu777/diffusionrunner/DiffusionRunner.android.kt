@@ -75,6 +75,7 @@ actual class DiffusionRunner {
 
     actual fun videoGen(params: VideoGenParams): List<ByteArray>? {
         if (handle == 0L) return null
+        validateVideoGenParams(params)
         val frames = nativeVideoGen(
             handle, params.prompt, params.negativePrompt,
             params.width, params.height, params.videoFrames,
@@ -86,6 +87,11 @@ actual class DiffusionRunner {
         return frames.toList()
     }
 
+    actual fun cancelGeneration(): Boolean =
+        handle != 0L && nativeAvailable && nativeCancelGeneration(handle)
+
+    actual fun supportsVideoGeneration(): Boolean = true
+
     actual fun release() {
         if (handle != 0L) {
             nativeRelease(handle)
@@ -93,9 +99,11 @@ actual class DiffusionRunner {
         }
     }
 
-    actual fun getStepProgress(): IntArray = nativeGetStepProgress()
+    actual fun getStepProgress(): IntArray =
+        if (nativeAvailable) nativeGetStepProgress() else intArrayOf(0, 0)
 
     actual fun getDiffusionModelMetadata(modelPath: String): DiffusionModelMetadata? {
+        if (!nativeAvailable) return null
         return try {
             nativeGetDiffusionModelMetadata(modelPath)
         } catch (_: LinkageError) {
@@ -129,6 +137,7 @@ actual class DiffusionRunner {
     ): Array<ByteArray>?
 
     private external fun nativeRelease(handle: Long)
+    private external fun nativeCancelGeneration(handle: Long): Boolean
     private external fun nativeGetStepProgress(): IntArray
     private external fun nativeGetDiffusionModelMetadata(modelPath: String): DiffusionModelMetadata?
 }

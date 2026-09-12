@@ -12,6 +12,8 @@ expect class DiffusionRunner() {
     ): DiffusionModelFeatureSupport
     fun txt2Img(params: ImageGenParams): ByteArray?
     fun videoGen(params: VideoGenParams): List<ByteArray>?
+    fun cancelGeneration(): Boolean
+    fun supportsVideoGeneration(): Boolean
     fun release()
     /** Returns [currentStep, totalSteps] for the active generation. Both 0 when idle. */
     fun getStepProgress(): IntArray

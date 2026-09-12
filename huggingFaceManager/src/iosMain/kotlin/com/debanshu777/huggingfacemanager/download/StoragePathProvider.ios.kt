@@ -147,13 +147,29 @@ class IosStoragePathProvider : StoragePathProvider {
 
     @OptIn(ExperimentalForeignApi::class)
     override fun renameFile(from: String, to: String): Boolean =
-        try { NSFileManager.defaultManager.moveItemAtPath(from, to, null) } catch (_: Exception) { false }
+        try {
+            val manager = NSFileManager.defaultManager
+            if (manager.fileExistsAtPath(to)) {
+                manager.replaceItemAtURL(
+                    originalItemURL = NSURL.fileURLWithPath(to),
+                    withItemAtURL = NSURL.fileURLWithPath(from),
+                    backupItemName = null,
+                    options = 0uL,
+                    resultingItemURL = null,
+                    error = null,
+                )
+            } else {
+                manager.moveItemAtPath(from, to, null)
+            }
+        } catch (_: Exception) {
+            false
+        }
 
     @OptIn(ExperimentalForeignApi::class)
     override fun deleteDownloadedModelContent(modelId: String, localPath: String): Boolean =
         try {
-            val root = getModelsStorageDirectory(modelId).trimEnd('/')
-            val target = localPath.trimEnd('/')
+            val root = standardizedResolvedPath(getModelsStorageDirectory(modelId))
+            val target = standardizedResolvedPath(localPath)
             if (!isPathWithinModelRoot(root, target)) return false
             val mgr = NSFileManager.defaultManager
             if (!mgr.fileExistsAtPath(target)) return true
