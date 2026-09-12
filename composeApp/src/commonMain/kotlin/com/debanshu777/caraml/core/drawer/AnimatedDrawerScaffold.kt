@@ -114,25 +114,22 @@ fun AnimatedDrawerScaffold(
         ) { opened ->
             if (motionPolicy.spatialTransitionsEnabled || opened) 1f else 0f
         }
-        val contentShape = RoundedCornerShape(animatedCornerSize)
+        val contentShape = RoundedCornerShape(animatedCornerSize.coerceAtLeast(0.dp))
+        val drawerParticipatingInTransition =
+            transition.currentState || transition.targetState
 
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .fillMaxHeight()
-                .alpha(drawerAlpha.coerceIn(0f, 1f))
-                .zIndex(
-                    if (
-                        !motionPolicy.spatialTransitionsEnabled &&
-                        (transition.currentState || transition.targetState)
-                    ) {
-                        2f
-                    } else {
-                        0f
-                    },
-                )
-        ) {
-            drawerContent()
+        if (drawerParticipatingInTransition) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .fillMaxHeight()
+                    .alpha(drawerAlpha.coerceIn(0f, 1f))
+                    .zIndex(
+                        if (!motionPolicy.spatialTransitionsEnabled) 2f else 0f,
+                    )
+            ) {
+                drawerContent()
+            }
         }
 
         Box(
