@@ -1,10 +1,10 @@
 package com.debanshu777.caraml.features.chat.presentation.components
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,7 +18,10 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Surface
@@ -31,6 +34,7 @@ import com.debanshu777.caraml.features.chat.data.ChatMessage
 import com.debanshu777.caraml.features.chat.presentation.StreamingState
 import com.debanshu777.caraml.features.chat.presentation.components.providers.ChatMessageListPreviewProvider
 import kotlinx.collections.immutable.ImmutableList
+import kotlinx.coroutines.flow.first
 
 @Composable
 private fun StreamingMessageBubble(
@@ -80,6 +84,7 @@ fun ChatMessageList(
     modifier: Modifier = Modifier
 ) {
     val initialMessageIds = remember { messages.mapTo(mutableSetOf()) { it.id } }
+    val completedEntryIds = remember { mutableStateMapOf<String, Boolean>() }
     val motion = LocalAuroraMotionPolicy.current
     val insertionOffset = with(LocalDensity.current) { 8.dp.roundToPx() }
 
@@ -94,31 +99,42 @@ fun ChatMessageList(
                 items = messages,
                 key = { it.id }
             ) { message ->
-                val inserted = message.id !in initialMessageIds
+                val shouldAnimateEntry = message.id !in initialMessageIds &&
+                    completedEntryIds[message.id] != true
                 Box(
-                    modifier = if (inserted) {
+                    modifier = if (shouldAnimateEntry) {
                         Modifier.animateItem(
-                            fadeInSpec = tween(motion.opacityDurationMillis),
-                            placementSpec = null,
+                            fadeInSpec = null,
+                            placementSpec = if (motion.spatialTransitionsEnabled) {
+                                tween(motion.peerTransitionMillis)
+                            } else {
+                                null
+                            },
                             fadeOutSpec = null,
                         )
                     } else {
                         Modifier
                     },
                 ) {
-                    if (inserted) {
+                    if (shouldAnimateEntry) {
                         val visibility = remember(message.id) {
                             MutableTransitionState(false).apply { targetState = true }
+                        }
+                        LaunchedEffect(message.id) {
+                            snapshotFlow { visibility.isIdle && visibility.currentState }
+                                .first { it }
+                            completedEntryIds[message.id] = true
                         }
                         AnimatedVisibility(
                             visibleState = visibility,
                             enter = if (motion.spatialTransitionsEnabled) {
-                                slideInVertically(
-                                    animationSpec = tween(motion.peerTransitionMillis),
-                                    initialOffsetY = { insertionOffset },
-                                )
+                                fadeIn(tween(motion.opacityDurationMillis)) +
+                                    slideInVertically(
+                                        animationSpec = tween(motion.peerTransitionMillis),
+                                        initialOffsetY = { insertionOffset },
+                                    )
                             } else {
-                                EnterTransition.None
+                                fadeIn(tween(motion.opacityDurationMillis))
                             },
                             exit = ExitTransition.None,
                         ) {
