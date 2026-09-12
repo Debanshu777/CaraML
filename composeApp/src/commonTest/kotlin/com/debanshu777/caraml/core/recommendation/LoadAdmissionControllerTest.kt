@@ -195,6 +195,7 @@ class LoadAdmissionControllerTest {
     private fun request() = LoadRequest(
         model = model,
         identity = identity,
+        observationIdentity = requireNotNull(ObservationModelIdentity.fromDescriptor(task6LlmDescriptor())),
         plan = requestedPlan,
         assessmentKey = ASSESSMENT_KEY,
     )

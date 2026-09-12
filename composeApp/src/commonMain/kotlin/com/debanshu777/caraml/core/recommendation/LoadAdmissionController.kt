@@ -7,6 +7,7 @@ import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 data class LoadRequest(
     val model: LocalModelEntity,
     val identity: ModelFileIdentity,
+    val observationIdentity: ObservationModelIdentity,
     val plan: RunPlan,
     val assessmentKey: String,
     val artifact: ResolvedLocalArtifact? = null,

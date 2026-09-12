@@ -182,7 +182,7 @@ Run: `./gradlew :composeApp:jvmTest`
 
 <!-- Updated at end of each AI-assisted development session -->
 
-- Recommendations now learn from opt-in typed calibration and native-comparable admitted inference against raw analytical baselines, recover a validated disposable cache in isolation, and reassess active cached descriptors without network or native work
+- Recommendations now learn from descriptor-bound observations, uncalibrated load/generation memory baselines, and conservative backend tails while isolating timed-out native probes and reassessing cached descriptors without network or native work
 - Exact model selections now derive directory targets only from verified storage roots, bind every native-consumed component path, keep multi-sequence planning analytical, and reject it at native admission
 - Legacy or duplicate native device identities now remain low-confidence Unknown evidence unless exact llama/diffusion device-and-type intersection is provable
 - Native capability evidence now routes by model kind and advertises GPU offload only when exact named compute backends are available to both llama.cpp and stable-diffusion.cpp

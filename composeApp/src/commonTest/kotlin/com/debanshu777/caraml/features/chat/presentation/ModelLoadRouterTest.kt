@@ -10,11 +10,13 @@ import com.debanshu777.caraml.core.recommendation.Confidence
 import com.debanshu777.caraml.core.recommendation.LlmRunPlan
 import com.debanshu777.caraml.core.recommendation.LoadRequest
 import com.debanshu777.caraml.core.recommendation.ModelFileIdentity
+import com.debanshu777.caraml.core.recommendation.ObservationModelIdentity
 import com.debanshu777.caraml.core.recommendation.RecommendationRolloutMode
 import com.debanshu777.caraml.core.recommendation.PlanAssessment
 import com.debanshu777.caraml.core.recommendation.ResolvedArtifactComponent
 import com.debanshu777.caraml.core.recommendation.ResolvedLocalArtifact
 import com.debanshu777.caraml.core.recommendation.RevisionIdentity
+import com.debanshu777.caraml.core.recommendation.task6LlmDescriptor
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
 import kotlinx.coroutines.test.runTest
@@ -128,6 +130,7 @@ class ModelLoadRouterTest {
         val request = LoadRequest(
             model = model,
             identity = identity,
+            observationIdentity = requireNotNull(ObservationModelIdentity.fromDescriptor(task6LlmDescriptor())),
             plan = plan,
             assessmentKey = "assessment",
             artifact = ResolvedLocalArtifact(

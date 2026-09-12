@@ -155,6 +155,18 @@ interface PlanReference {
     val stableKey: String
 }
 
+/** Uncalibrated estimator output aligned with process-RSS observation phases and memory pools. */
+data class MemoryPoolEstimates(
+    val hostMemoryBytes: EstimateRange? = null,
+    val gpuMemoryBytes: EstimateRange? = null,
+    val sharedMemoryBytes: EstimateRange? = null,
+)
+
+data class MemoryPhaseEstimates(
+    val load: MemoryPoolEstimates = MemoryPoolEstimates(),
+    val generation: MemoryPoolEstimates = MemoryPoolEstimates(),
+)
+
 @ConsistentCopyVisibility
 data class PlanAssessment private constructor(
     val plan: PlanReference,
@@ -166,6 +178,7 @@ data class PlanAssessment private constructor(
     val evidence: List<Evidence>,
     val performance: PerformanceEstimate,
     val utilityMetrics: PlanUtilityMetrics,
+    val rawMemoryByPhase: MemoryPhaseEstimates,
     internal val collectionLimitExceeded: Boolean,
 ) {
     constructor(
@@ -178,6 +191,7 @@ data class PlanAssessment private constructor(
         evidence: Collection<Evidence>,
         performance: PerformanceEstimate = PerformanceEstimate.Unknown(AssessmentReason.SPEED_NOT_VERIFIED),
         utilityMetrics: PlanUtilityMetrics = PlanUtilityMetrics(),
+        rawMemoryByPhase: MemoryPhaseEstimates = MemoryPhaseEstimates(),
     ) : this(
         plan = plan,
         hostMemoryBytes = hostMemoryBytes,
@@ -188,6 +202,7 @@ data class PlanAssessment private constructor(
         evidence = boundedCollectionSnapshot(evidence, RecommendationPolicyV1.MAX_EVIDENCE_ENTRIES),
         performance = performance,
         utilityMetrics = utilityMetrics,
+        rawMemoryByPhase = rawMemoryByPhase,
     )
 
     private constructor(
@@ -200,6 +215,7 @@ data class PlanAssessment private constructor(
         evidence: BoundedCollectionSnapshot<Evidence>,
         performance: PerformanceEstimate,
         utilityMetrics: PlanUtilityMetrics,
+        rawMemoryByPhase: MemoryPhaseEstimates,
     ) : this(
         plan = plan,
         hostMemoryBytes = hostMemoryBytes,
@@ -210,6 +226,7 @@ data class PlanAssessment private constructor(
         evidence = evidence.values,
         performance = performance,
         utilityMetrics = utilityMetrics,
+        rawMemoryByPhase = rawMemoryByPhase,
         collectionLimitExceeded = evidence.limitExceeded,
     )
 }

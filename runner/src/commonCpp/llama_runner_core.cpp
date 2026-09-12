@@ -65,7 +65,29 @@ private:
 };
 
 std::atomic<bool> g_cancel_flag{false};
-std::atomic<int64_t> g_cancelled_calibration_token{0};
+// 0 is idle, a positive token owns the probe, and its negation is the same
+// active probe with cancellation requested. A queued/non-owner token cannot mutate it.
+std::atomic<int64_t> g_calibration_state{0};
+
+class ScopedCalibrationProbe {
+public:
+    explicit ScopedCalibrationProbe(int64_t token) : token_(token) {}
+    ~ScopedCalibrationProbe() {
+        int64_t expected = token_;
+        if (!g_calibration_state.compare_exchange_strong(
+                expected, 0, std::memory_order_acq_rel, std::memory_order_acquire)) {
+            expected = -token_;
+            g_calibration_state.compare_exchange_strong(
+                expected, 0, std::memory_order_acq_rel, std::memory_order_acquire);
+        }
+    }
+
+    ScopedCalibrationProbe(const ScopedCalibrationProbe &) = delete;
+    ScopedCalibrationProbe &operator=(const ScopedCalibrationProbe &) = delete;
+
+private:
+    int64_t token_;
+};
 int g_max_tokens_remaining = 0;
 std::vector<llama_token> g_streaming_tokens;
 size_t g_streaming_n_generated = 0;
@@ -893,8 +915,19 @@ LlamaCalibrationResultNative llama_runner_core_calibrate_backend(
         return result;
     }
 
+    int64_t expected_idle = 0;
+    if (!g_calibration_state.compare_exchange_strong(
+            expected_idle,
+            probe_token,
+            std::memory_order_acq_rel,
+            std::memory_order_acquire)) {
+        result.status = LLAMA_CALIBRATION_DEFERRED;
+        return result;
+    }
+    const ScopedCalibrationProbe release_probe(probe_token);
+
     const auto cancelled = [probe_token]() {
-        return g_cancelled_calibration_token.load(std::memory_order_acquire) == probe_token;
+        return g_calibration_state.load(std::memory_order_acquire) == -probe_token;
     };
     if (cancelled()) {
         result.status = LLAMA_CALIBRATION_CANCELLED;
@@ -1078,8 +1111,14 @@ LlamaCalibrationResultNative llama_runner_core_calibrate_backend(
 
 void llama_runner_core_cancel_calibration(int64_t probe_token) {
     if (probe_token <= 0) return;
-    g_cancelled_calibration_token.store(probe_token, std::memory_order_release);
-    g_operation_gate.notify_waiters();
+    int64_t expected = probe_token;
+    if (g_calibration_state.compare_exchange_strong(
+            expected,
+            -probe_token,
+            std::memory_order_acq_rel,
+            std::memory_order_acquire)) {
+        g_operation_gate.notify_waiters();
+    }
 }
 
 LlamaModelFeatureSupportNative llama_runner_core_probe_model_features(

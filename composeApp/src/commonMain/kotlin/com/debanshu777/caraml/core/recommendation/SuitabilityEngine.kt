@@ -72,6 +72,7 @@ class SuitabilityEngine(
                     Evidence(AssessmentReason.ENERGY_NOT_VERIFIED, Confidence.LOW, "energy-metric-omitted"),
                 performance = performance,
                 utilityMetrics = utility.metrics,
+                rawMemoryByPhase = footprint.rawMemoryByPhase,
             )
         }
         return AssessedPlans(
@@ -358,27 +359,8 @@ class SuitabilityEngine(
 
     private fun memoryCalibration(descriptor: ModelDescriptor, plan: RunPlan): MemoryCalibration {
         val engineVersion = calibrationSource.engineVersion() ?: return MemoryCalibration.None
-        val baseKey = CalibrationKey(
-            backend = plan.backend,
-            architectureFamily = when (descriptor) {
-                is LlmModelDescriptor -> descriptor.architecture ?: "unknown"
-                is DiffusionModelDescriptor -> descriptor.architecture?.name ?: descriptor.family
-            }.take(DescriptorLimits.MAX_METADATA_STRING_LENGTH),
-            quantizationFamily = when (descriptor) {
-                is LlmModelDescriptor -> when (val value = descriptor.quantization) {
-                    is QuantizationEvidence.Known -> value.quantization
-                    is QuantizationEvidence.Mixed -> "mixed"
-                    QuantizationEvidence.Unknown -> "unknown"
-                }
-                is DiffusionModelDescriptor -> descriptor.quantizationDistribution.sorted().joinToString("+")
-            }.take(DescriptorLimits.MAX_METADATA_STRING_LENGTH),
-            workloadBucket = when (plan) {
-                is LlmRunPlan -> "ctx-${plan.contextTokens}"
-                is DiffusionRunPlan -> "${plan.mode.name.lowercase()}-${plan.width}x${plan.height}-${plan.steps}"
-            },
-            engineVersion = engineVersion,
-            metricKind = MetricKind.MEMORY,
-        )
+        val identity = ObservationModelIdentity.fromDescriptor(descriptor) ?: return MemoryCalibration.None
+        val baseKey = identity.calibrationKey(plan, engineVersion, MetricKind.MEMORY)
         val pools = when {
             plan.backend == BackendKind.CPU -> listOf(MemoryPool.HOST)
             plan.memoryTopology == MemoryTopology.UNIFIED -> listOf(MemoryPool.SHARED)

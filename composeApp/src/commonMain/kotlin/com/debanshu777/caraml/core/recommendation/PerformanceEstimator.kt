@@ -27,6 +27,8 @@ data class CalibrationKey(
 data class BackendPerformanceProfile private constructor(
     val sustainedBytesPerSecond: Double,
     val sustainedOperationsPerSecond: Double,
+    val conservativeBytesPerSecond: Double,
+    val conservativeOperationsPerSecond: Double,
     val confidence: Confidence,
     val evidence: List<Evidence>,
 ) {
@@ -38,6 +40,24 @@ data class BackendPerformanceProfile private constructor(
     ) : this(
         sustainedBytesPerSecond,
         sustainedOperationsPerSecond,
+        sustainedBytesPerSecond,
+        sustainedOperationsPerSecond,
+        confidence,
+        evidence.toList(),
+    )
+
+    constructor(
+        sustainedBytesPerSecond: Double,
+        sustainedOperationsPerSecond: Double,
+        conservativeBytesPerSecond: Double,
+        conservativeOperationsPerSecond: Double,
+        confidence: Confidence,
+        evidence: Collection<Evidence> = emptyList(),
+    ) : this(
+        sustainedBytesPerSecond,
+        sustainedOperationsPerSecond,
+        conservativeBytesPerSecond,
+        conservativeOperationsPerSecond,
         confidence,
         evidence.toList(),
     )
@@ -277,12 +297,18 @@ class PerformanceEstimator {
         val backendProfile = calibration.backendProfileFor(plan.backend)
             ?: return unknown(AssessmentReason.SPEED_NOT_VERIFIED, "calibration-unavailable")
         if (!validPositiveFinite(backendProfile.sustainedBytesPerSecond) ||
-            !validPositiveFinite(backendProfile.sustainedOperationsPerSecond)
+            !validPositiveFinite(backendProfile.sustainedOperationsPerSecond) ||
+            !validPositiveFinite(backendProfile.conservativeBytesPerSecond) ||
+            !validPositiveFinite(backendProfile.conservativeOperationsPerSecond) ||
+            backendProfile.conservativeBytesPerSecond > backendProfile.sustainedBytesPerSecond ||
+            backendProfile.conservativeOperationsPerSecond > backendProfile.sustainedOperationsPerSecond
         ) {
             return unknown(AssessmentReason.INVALID_PERFORMANCE_EVIDENCE, "backend-profile")
         }
 
-        val key = calibrationKey(descriptor, plan, engineVersion)
+        val identity = ObservationModelIdentity.fromDescriptor(descriptor)
+            ?: return unknown(AssessmentReason.INVALID_PERFORMANCE_EVIDENCE, "descriptor-observation-identity")
+        val key = identity.calibrationKey(plan, engineVersion)
         val correction = calibration.correctionFor(key)
         if (correction != null && !validCorrection(correction)) {
             return unknown(AssessmentReason.INVALID_PERFORMANCE_EVIDENCE, "calibration-correction")
@@ -347,7 +373,17 @@ class PerformanceEstimator {
             bytes.toDouble() / profile.sustainedBytesPerSecond,
             operations / profile.sustainedOperationsPerSecond,
         )
-        val decodeDuration = durationRange(secondsPerDecode, factors, confidence, evidence)
+        val conservativeSecondsPerDecode = max(
+            bytes.toDouble() / profile.conservativeBytesPerSecond,
+            operations / profile.conservativeOperationsPerSecond,
+        )
+        val decodeDuration = durationRange(
+            secondsPerDecode,
+            conservativeSecondsPerDecode,
+            factors,
+            confidence,
+            evidence,
+        )
             ?: return unknown(AssessmentReason.ARITHMETIC_OVERFLOW, "llm-decode-duration")
         val decodeRate = reciprocalRange(decodeDuration)
             ?: return unknown(AssessmentReason.ARITHMETIC_OVERFLOW, "llm-decode-rate")
@@ -356,6 +392,7 @@ class PerformanceEstimator {
             ?: return unknown(AssessmentReason.ARITHMETIC_OVERFLOW, "llm-prompt-rate")
         val loadDuration = durationRange(
             bytes.toDouble() / profile.sustainedBytesPerSecond,
+            bytes.toDouble() / profile.conservativeBytesPerSecond,
             factors,
             confidence,
             evidence,
@@ -417,7 +454,17 @@ class PerformanceEstimator {
             bytesPerStep / profile.sustainedBytesPerSecond,
             operationsPerStep / profile.sustainedOperationsPerSecond,
         )
-        val secondsPerStep = durationRange(baseSecondsPerStep, factors, confidence, evidence)
+        val conservativeSecondsPerStep = max(
+            bytesPerStep / profile.conservativeBytesPerSecond,
+            operationsPerStep / profile.conservativeOperationsPerSecond,
+        )
+        val secondsPerStep = durationRange(
+            baseSecondsPerStep,
+            conservativeSecondsPerStep,
+            factors,
+            confidence,
+            evidence,
+        )
             ?: return unknown(AssessmentReason.ARITHMETIC_OVERFLOW, "diffusion-step-duration")
         val secondsPerFrame = scaleDurationRange(secondsPerStep, plan.steps.toDouble())
             ?: return unknown(AssessmentReason.ARITHMETIC_OVERFLOW, "diffusion-frame-duration")
@@ -455,41 +502,19 @@ class PerformanceEstimator {
         )
     }
 
-    private fun calibrationKey(
-        descriptor: ModelDescriptor,
-        plan: RunPlan,
-        engineVersion: String,
-    ): CalibrationKey = CalibrationKey(
-        backend = plan.backend,
-        architectureFamily = when (descriptor) {
-            is LlmModelDescriptor -> descriptor.architecture ?: "unknown"
-            is DiffusionModelDescriptor -> descriptor.architecture?.name ?: descriptor.family
-        }.take(DescriptorLimits.MAX_METADATA_STRING_LENGTH),
-        quantizationFamily = when (descriptor) {
-            is LlmModelDescriptor -> when (val value = descriptor.quantization) {
-                is QuantizationEvidence.Known -> value.quantization
-                is QuantizationEvidence.Mixed -> "mixed"
-                QuantizationEvidence.Unknown -> "unknown"
-            }
-            is DiffusionModelDescriptor -> descriptor.quantizationDistribution.sorted().joinToString("+")
-        }.take(DescriptorLimits.MAX_METADATA_STRING_LENGTH),
-        workloadBucket = when (plan) {
-            is LlmRunPlan -> "ctx-${plan.contextTokens}"
-            is DiffusionRunPlan -> "${plan.mode.name.lowercase()}-${plan.width}x${plan.height}-${plan.steps}"
-        },
-        engineVersion = engineVersion,
-    )
-
     private fun durationRange(
         baseSeconds: Double,
+        conservativeSeconds: Double,
         correction: CorrectionFactors,
         confidence: Confidence,
         evidence: Collection<Evidence>,
     ): PerformanceRange? {
-        if (!validPositiveFinite(baseSeconds)) return null
+        if (!validPositiveFinite(baseSeconds) || !validPositiveFinite(conservativeSeconds) ||
+            conservativeSeconds < baseSeconds
+        ) return null
         val low = baseSeconds * correction.low
         val likely = baseSeconds * correction.likely
-        val high = baseSeconds * correction.high
+        val high = max(likely, conservativeSeconds * correction.high)
         if (high > RecommendationPolicyV1.MAX_SERIALIZED_PERFORMANCE_VALUE) return null
         return PerformanceRange.create(
             low,

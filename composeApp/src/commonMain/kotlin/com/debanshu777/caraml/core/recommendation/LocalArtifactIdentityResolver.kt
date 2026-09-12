@@ -191,10 +191,14 @@ class LocalArtifactIdentityResolver(
     suspend fun createLoadRequest(
         model: LocalModelEntity,
         components: List<DownloadedComponentEntity>,
+        descriptor: ModelDescriptor,
         assessment: ModelAssessment,
         recommendation: PersonalizedRecommendation,
     ): LoadRequestResolution {
-        if (assessment.assessmentKey.isBlank() || assessment.assessmentKey != recommendation.assessmentKey) {
+        val observationIdentity = ObservationModelIdentity.fromDescriptor(descriptor)
+        if (descriptor.repositoryId != model.modelId || observationIdentity == null ||
+            assessment.assessmentKey.isBlank() || assessment.assessmentKey != recommendation.assessmentKey
+        ) {
             return LoadRequestResolution.Rejected(ArtifactIdentityRejection.INVALID_INPUT)
         }
         val selected = recommendation.selectedPlan as? RunPlan
@@ -208,6 +212,7 @@ class LocalArtifactIdentityResolver(
                 LoadRequest(
                     model = model,
                     identity = resolved.artifact.identity,
+                    observationIdentity = observationIdentity,
                     plan = selected,
                     assessmentKey = assessment.assessmentKey,
                     artifact = resolved.artifact,

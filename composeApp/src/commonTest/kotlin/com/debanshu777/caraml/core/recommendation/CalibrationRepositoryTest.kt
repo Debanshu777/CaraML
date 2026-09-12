@@ -54,6 +54,23 @@ class CalibrationRepositoryTest {
     }
 
     @Test
+    fun backendProfilePreservesMedianAndLowerThroughputTail() = runTest {
+        val repository = CalibrationRepository(FakeObservationDao(), ENGINE, now = { NOW })
+        repository.initialize()
+        listOf(10.0, 100.0, 100.0, 100.0, 100.0).forEach { value ->
+            assertTrue(repository.record(profileSample(MetricKind.BANDWIDTH, value)))
+            assertTrue(repository.record(profileSample(MetricKind.COMPUTE, value * 1_000.0)))
+        }
+
+        val profile = requireNotNull(repository.backendProfileFor(BackendKind.CPU))
+
+        assertEquals(100.0, profile.sustainedBytesPerSecond, 0.000_001)
+        assertEquals(10.0, profile.conservativeBytesPerSecond, 0.000_001)
+        assertEquals(100_000.0, profile.sustainedOperationsPerSecond, 0.000_001)
+        assertEquals(10_000.0, profile.conservativeOperationsPerSecond, 0.000_001)
+    }
+
+    @Test
     fun recordRejectsMalformedExternalValuesWithoutChangingRevision() = runTest {
         val dao = FakeObservationDao()
         val repository = CalibrationRepository(dao, ENGINE, now = { NOW })
@@ -182,6 +199,16 @@ class CalibrationRepositoryTest {
         outcome = ObservationOutcome.SUCCESS,
         capturedAtEpochMs = capturedAt,
         similarity = similarity,
+    )
+
+    private fun profileSample(kind: MetricKind, observedValue: Double) = RecommendationObservationEntity.from(
+        key = memoryKey().copy(metricKind = kind, memoryPool = null),
+        predictedValue = observedValue,
+        observedValue = observedValue,
+        completedUnits = 1L,
+        elapsedNanoseconds = 1L,
+        outcome = ObservationOutcome.SUCCESS,
+        capturedAtEpochMs = NOW,
     )
 
     private class FakeObservationDao(

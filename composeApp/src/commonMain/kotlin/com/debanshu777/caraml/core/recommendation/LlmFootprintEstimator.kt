@@ -41,13 +41,15 @@ class LlmFootprintEstimator {
         val poolEstimate = when {
             plan.backend == BackendKind.CPU -> singlePool(
                 weights = totalFileBytes,
-                dynamic = components.allDynamic,
+                loadDynamic = components.runtimeAndPersistent,
+                generationDynamic = components.graph,
                 calibration = calibration,
                 pool = Pool.HOST,
             )
             plan.memoryTopology == MemoryTopology.UNIFIED -> singlePool(
                 weights = totalFileBytes,
-                dynamic = components.allDynamic,
+                loadDynamic = components.runtimeAndPersistent,
+                generationDynamic = components.graph,
                 calibration = calibration,
                 pool = Pool.SHARED,
             )
@@ -56,8 +58,8 @@ class LlmFootprintEstimator {
                 layerCount = descriptor.transformerShape?.layerCount,
                 gpuLayerCount = plan.gpuLayerCount,
                 runtime = components.runtime,
-                acceleratorDynamic = components.acceleratorDynamic,
-                allDynamic = components.allDynamic,
+                persistentAccelerator = components.persistentAccelerator,
+                graph = components.graph,
                 calibration = calibration,
             )
             else -> PoolResult.Invalid(AssessmentReason.BACKEND_CAPABILITY_UNKNOWN)
@@ -80,6 +82,7 @@ class LlmFootprintEstimator {
             storageBytes = storage,
             confidence = confidence(if (lowConfidence) Confidence.LOW else Confidence.MEDIUM, hasStorage = true),
             evidence = evidence,
+            rawMemoryByPhase = poolEstimate.rawMemoryByPhase,
         )
     }
 
@@ -184,18 +187,19 @@ class LlmFootprintEstimator {
                 value.range
             }
         }
-        val acceleratorDynamic = when (val value = addRanges(kv, graph, backend, recurrent)) {
+        val persistentAccelerator = when (val value = addRanges(kv, backend, recurrent)) {
             is RangeResult.Invalid -> return ComponentResult.Invalid(value.reason)
             is RangeResult.Value -> value.range
         }
-        val allDynamic = when (val value = addRanges(acceleratorDynamic, runtime)) {
+        val runtimeAndPersistent = when (val value = addRanges(runtime, persistentAccelerator)) {
             is RangeResult.Invalid -> return ComponentResult.Invalid(value.reason)
             is RangeResult.Value -> value.range
         }
         return ComponentResult.Value(
             runtime = runtime,
-            acceleratorDynamic = acceleratorDynamic,
-            allDynamic = allDynamic,
+            persistentAccelerator = persistentAccelerator,
+            runtimeAndPersistent = runtimeAndPersistent,
+            graph = graph,
             lowConfidence = lowConfidence,
             evidence = evidence,
         )
@@ -302,11 +306,16 @@ class LlmFootprintEstimator {
 
     private fun singlePool(
         weights: Long,
-        dynamic: EstimateRange,
+        loadDynamic: EstimateRange,
+        generationDynamic: EstimateRange,
         calibration: MemoryCalibration,
         pool: Pool,
     ): PoolResult {
-        val total = when (val value = addRanges(exactRange(weights), dynamic)) {
+        val rawLoad = when (val value = addRanges(exactRange(weights), loadDynamic)) {
+            is RangeResult.Invalid -> return PoolResult.Invalid(value.reason)
+            is RangeResult.Value -> value.range
+        }
+        val total = when (val value = addRanges(rawLoad, generationDynamic)) {
             is RangeResult.Invalid -> return PoolResult.Invalid(value.reason)
             is RangeResult.Value -> value.range
         }
@@ -318,6 +327,10 @@ class LlmFootprintEstimator {
             host = calibrated.takeIf { pool == Pool.HOST },
             gpu = null,
             shared = calibrated.takeIf { pool == Pool.SHARED },
+            rawMemoryByPhase = MemoryPhaseEstimates(
+                load = pool.estimates(rawLoad),
+                generation = pool.estimates(generationDynamic),
+            ),
             lowConfidence = false,
             evidence = emptyList(),
         )
@@ -328,25 +341,25 @@ class LlmFootprintEstimator {
         layerCount: Int?,
         gpuLayerCount: Int?,
         runtime: EstimateRange,
-        acceleratorDynamic: EstimateRange,
-        allDynamic: EstimateRange,
+        persistentAccelerator: EstimateRange,
+        graph: EstimateRange,
         calibration: MemoryCalibration,
     ): PoolResult {
         if (layerCount == null || gpuLayerCount == null) {
             val half = weights / 2L
             val hostWeights = validRange(0L, half, weights)
             val gpuWeights = validRange(0L, weights - half, weights)
-            val hostDynamic = validRange(runtime.lowBytes, runtime.likelyBytes, allDynamic.highBytes)
-            val gpuDynamic = validRange(
-                acceleratorDynamic.lowBytes,
-                acceleratorDynamic.likelyBytes,
-                allDynamic.highBytes,
-            )
+            val hostLoadDynamic = when (val value = addRanges(runtime, persistentAccelerator)) {
+                is RangeResult.Invalid -> return PoolResult.Invalid(value.reason)
+                is RangeResult.Value -> value.range
+            }
             return buildDiscreteResult(
                 hostWeights,
                 gpuWeights,
-                hostDynamic,
-                gpuDynamic,
+                hostLoadDynamic,
+                hostLoadDynamic,
+                graph,
+                graph,
                 calibration,
                 lowConfidence = true,
                 evidence = listOf(
@@ -382,7 +395,9 @@ class LlmFootprintEstimator {
             hostWeights,
             gpuWeights,
             runtime,
-            acceleratorDynamic,
+            persistentAccelerator,
+            exactRange(0L),
+            graph,
             calibration,
             lowConfidence = false,
             evidence = emptyList(),
@@ -392,17 +407,27 @@ class LlmFootprintEstimator {
     private fun buildDiscreteResult(
         hostWeights: EstimateRange,
         gpuWeights: EstimateRange,
-        runtime: EstimateRange,
-        acceleratorDynamic: EstimateRange,
+        hostLoadDynamic: EstimateRange,
+        gpuLoadDynamic: EstimateRange,
+        hostGenerationDynamic: EstimateRange,
+        gpuGenerationDynamic: EstimateRange,
         calibration: MemoryCalibration,
         lowConfidence: Boolean,
         evidence: List<Evidence>,
     ): PoolResult {
-        val host = when (val value = addRanges(hostWeights, runtime)) {
+        val rawHostLoad = when (val value = addRanges(hostWeights, hostLoadDynamic)) {
             is RangeResult.Invalid -> return PoolResult.Invalid(value.reason)
             is RangeResult.Value -> value.range
         }
-        val gpu = when (val value = addRanges(gpuWeights, acceleratorDynamic)) {
+        val rawGpuLoad = when (val value = addRanges(gpuWeights, gpuLoadDynamic)) {
+            is RangeResult.Invalid -> return PoolResult.Invalid(value.reason)
+            is RangeResult.Value -> value.range
+        }
+        val host = when (val value = addRanges(rawHostLoad, hostGenerationDynamic)) {
+            is RangeResult.Invalid -> return PoolResult.Invalid(value.reason)
+            is RangeResult.Value -> value.range
+        }
+        val gpu = when (val value = addRanges(rawGpuLoad, gpuGenerationDynamic)) {
             is RangeResult.Invalid -> return PoolResult.Invalid(value.reason)
             is RangeResult.Value -> value.range
         }
@@ -418,6 +443,13 @@ class LlmFootprintEstimator {
             host = calibratedHost,
             gpu = calibratedGpu,
             shared = null,
+            rawMemoryByPhase = MemoryPhaseEstimates(
+                load = MemoryPoolEstimates(hostMemoryBytes = rawHostLoad, gpuMemoryBytes = rawGpuLoad),
+                generation = MemoryPoolEstimates(
+                    hostMemoryBytes = hostGenerationDynamic.takeUnless { it.isZero() },
+                    gpuMemoryBytes = gpuGenerationDynamic.takeUnless { it.isZero() },
+                ),
+            ),
             lowConfidence = lowConfidence,
             evidence = evidence,
         )
@@ -444,6 +476,13 @@ class LlmFootprintEstimator {
         Pool.HOST -> MemoryPool.HOST
         Pool.SHARED -> MemoryPool.SHARED
     }
+
+    private fun Pool.estimates(range: EstimateRange): MemoryPoolEstimates = when (this) {
+        Pool.HOST -> MemoryPoolEstimates(hostMemoryBytes = range)
+        Pool.SHARED -> MemoryPoolEstimates(sharedMemoryBytes = range)
+    }
+
+    private fun EstimateRange.isZero(): Boolean = highBytes == 0L
 
     private fun invalidAssessment(
         plan: LlmRunPlan,
@@ -479,8 +518,9 @@ private enum class Pool { HOST, SHARED }
 private sealed interface ComponentResult {
     data class Value(
         val runtime: EstimateRange,
-        val acceleratorDynamic: EstimateRange,
-        val allDynamic: EstimateRange,
+        val persistentAccelerator: EstimateRange,
+        val runtimeAndPersistent: EstimateRange,
+        val graph: EstimateRange,
         val lowConfidence: Boolean,
         val evidence: List<Evidence>,
     ) : ComponentResult
@@ -493,6 +533,7 @@ private sealed interface PoolResult {
         val host: EstimateRange?,
         val gpu: EstimateRange?,
         val shared: EstimateRange?,
+        val rawMemoryByPhase: MemoryPhaseEstimates,
         val lowConfidence: Boolean,
         val evidence: List<Evidence>,
     ) : PoolResult

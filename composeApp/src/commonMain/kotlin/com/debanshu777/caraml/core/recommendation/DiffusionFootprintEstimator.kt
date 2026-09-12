@@ -78,6 +78,7 @@ class DiffusionFootprintEstimator {
             storageBytes = storage,
             confidence = diffusionConfidence(if (allocation.lowConfidence) Confidence.LOW else Confidence.MEDIUM),
             evidence = evidence,
+            rawMemoryByPhase = allocation.rawMemoryByPhase,
         )
     }
 
@@ -224,22 +225,29 @@ class DiffusionFootprintEstimator {
         calibration: MemoryCalibration,
     ): DiffusionAllocationResult {
         val allWeights = diffusionExactRange(weights.total)
-        val allActivations = when (
-            val result = diffusionAddRanges(
-                activations.layer,
-                activations.conditioning,
-                activations.vae,
-                activations.backend,
-            )
+        val generationActivations = when (
+            val result = diffusionAddRanges(activations.layer, activations.conditioning, activations.vae)
         ) {
             is DiffusionRangeResult.Invalid -> return DiffusionAllocationResult.Invalid(result.reason)
             is DiffusionRangeResult.Value -> result.range
         }
         if (plan.backend == BackendKind.CPU) {
-            return diffusionSinglePool(allWeights, allActivations, calibration, DiffusionPool.HOST)
+            return diffusionSinglePool(
+                allWeights,
+                activations.backend,
+                generationActivations,
+                calibration,
+                DiffusionPool.HOST,
+            )
         }
         if (plan.memoryTopology == MemoryTopology.UNIFIED) {
-            return diffusionSinglePool(allWeights, allActivations, calibration, DiffusionPool.SHARED)
+            return diffusionSinglePool(
+                allWeights,
+                activations.backend,
+                generationActivations,
+                calibration,
+                DiffusionPool.SHARED,
+            )
         }
         if (plan.memoryTopology != MemoryTopology.DISCRETE) {
             return DiffusionAllocationResult.Invalid(AssessmentReason.BACKEND_CAPABILITY_UNKNOWN)
@@ -249,11 +257,16 @@ class DiffusionFootprintEstimator {
 
     private fun diffusionSinglePool(
         weights: EstimateRange,
-        activations: EstimateRange,
+        backend: EstimateRange,
+        generationActivations: EstimateRange,
         calibration: MemoryCalibration,
         pool: DiffusionPool,
     ): DiffusionAllocationResult {
-        val total = when (val result = diffusionAddRanges(weights, activations)) {
+        val rawLoad = when (val result = diffusionAddRanges(weights, backend)) {
+            is DiffusionRangeResult.Invalid -> return DiffusionAllocationResult.Invalid(result.reason)
+            is DiffusionRangeResult.Value -> result.range
+        }
+        val total = when (val result = diffusionAddRanges(rawLoad, generationActivations)) {
             is DiffusionRangeResult.Invalid -> return DiffusionAllocationResult.Invalid(result.reason)
             is DiffusionRangeResult.Value -> result.range
         }
@@ -267,6 +280,10 @@ class DiffusionFootprintEstimator {
             host = calibrated.takeIf { pool == DiffusionPool.HOST },
             gpu = null,
             shared = calibrated.takeIf { pool == DiffusionPool.SHARED },
+            rawMemoryByPhase = MemoryPhaseEstimates(
+                load = pool.estimates(rawLoad),
+                generation = pool.estimates(generationActivations),
+            ),
             lowConfidence = false,
             evidence = emptyList(),
         )
@@ -289,7 +306,7 @@ class DiffusionFootprintEstimator {
             is DiffusionRangeResult.Invalid -> return DiffusionAllocationResult.Invalid(result.reason, evidence)
             is DiffusionRangeResult.Value -> result.range
         }
-        val hostNonPrimary = diffusionAddRanges(
+        val hostLoadNonPrimary = diffusionAddRanges(
             hostRuntime,
             if (plan.offloadToCpu || plan.keepClipOnCpu) {
                 diffusionExactRange(weights.conditioning)
@@ -301,15 +318,22 @@ class DiffusionFootprintEstimator {
             } else {
                 diffusionExactRange(0L)
             },
+        )
+        if (hostLoadNonPrimary is DiffusionRangeResult.Invalid) {
+            return DiffusionAllocationResult.Invalid(hostLoadNonPrimary.reason)
+        }
+        hostLoadNonPrimary as DiffusionRangeResult.Value
+
+        val hostGeneration = diffusionAddRanges(
             if (plan.keepClipOnCpu) activations.conditioning else diffusionExactRange(0L),
             if (plan.keepVaeOnCpu) activations.vae else diffusionExactRange(0L),
         )
-        if (hostNonPrimary is DiffusionRangeResult.Invalid) {
-            return DiffusionAllocationResult.Invalid(hostNonPrimary.reason)
+        if (hostGeneration is DiffusionRangeResult.Invalid) {
+            return DiffusionAllocationResult.Invalid(hostGeneration.reason)
         }
-        hostNonPrimary as DiffusionRangeResult.Value
+        hostGeneration as DiffusionRangeResult.Value
 
-        val gpuFixed = diffusionAddRanges(
+        val gpuLoadFixed = diffusionAddRanges(
             if (plan.offloadToCpu || plan.keepClipOnCpu) {
                 diffusionExactRange(0L)
             } else {
@@ -320,13 +344,25 @@ class DiffusionFootprintEstimator {
             } else {
                 diffusionExactRange(weights.vae)
             },
+            activations.backend,
+        )
+        if (gpuLoadFixed is DiffusionRangeResult.Invalid) return DiffusionAllocationResult.Invalid(gpuLoadFixed.reason)
+        gpuLoadFixed as DiffusionRangeResult.Value
+
+        val gpuGeneration = diffusionAddRanges(
             activations.layer,
             if (plan.keepClipOnCpu) diffusionExactRange(0L) else activations.conditioning,
             if (plan.keepVaeOnCpu) diffusionExactRange(0L) else activations.vae,
-            activations.backend,
         )
-        if (gpuFixed is DiffusionRangeResult.Invalid) return DiffusionAllocationResult.Invalid(gpuFixed.reason)
-        gpuFixed as DiffusionRangeResult.Value
+        if (gpuGeneration is DiffusionRangeResult.Invalid) {
+            return DiffusionAllocationResult.Invalid(gpuGeneration.reason)
+        }
+        gpuGeneration as DiffusionRangeResult.Value
+        val gpuFixedTotal = diffusionAddRanges(gpuLoadFixed.range, gpuGeneration.range)
+        if (gpuFixedTotal is DiffusionRangeResult.Invalid) {
+            return DiffusionAllocationResult.Invalid(gpuFixedTotal.reason)
+        }
+        gpuFixedTotal as DiffusionRangeResult.Value
 
         var lowConfidence = false
         val primaryAllocation = when {
@@ -357,13 +393,13 @@ class DiffusionFootprintEstimator {
         var gpuPrimary = primaryAllocation.gpu
         if (plan.maxVramBytes != null) {
             val cap = plan.maxVramBytes
-            if (gpuFixed.range.highBytes > cap) {
+            if (gpuFixedTotal.range.highBytes > cap) {
                 return DiffusionAllocationResult.Invalid(
                     AssessmentReason.GPU_ALLOCATION_UNKNOWN,
                     evidence + Evidence(AssessmentReason.GPU_ALLOCATION_UNKNOWN, Confidence.LOW, "max-vram:fixed-floor"),
                 )
             }
-            val safePrimaryHigh = minOf(gpuPrimary.highBytes, cap - gpuFixed.range.highBytes)
+            val safePrimaryHigh = minOf(gpuPrimary.highBytes, cap - gpuFixedTotal.range.highBytes)
             val safePrimaryLikely = minOf(gpuPrimary.likelyBytes, safePrimaryHigh)
             val safePrimaryLow = minOf(gpuPrimary.lowBytes, safePrimaryLikely)
             gpuPrimary = diffusionValidRange(safePrimaryLow, safePrimaryLikely, safePrimaryHigh)
@@ -384,11 +420,19 @@ class DiffusionFootprintEstimator {
             )
         }
 
-        val host = when (val result = diffusionAddRanges(hostNonPrimary.range, hostPrimary)) {
+        val rawHostLoad = when (val result = diffusionAddRanges(hostLoadNonPrimary.range, hostPrimary)) {
             is DiffusionRangeResult.Invalid -> return DiffusionAllocationResult.Invalid(result.reason, evidence)
             is DiffusionRangeResult.Value -> result.range
         }
-        val gpu = when (val result = diffusionAddRanges(gpuFixed.range, gpuPrimary)) {
+        val rawGpuLoad = when (val result = diffusionAddRanges(gpuLoadFixed.range, gpuPrimary)) {
+            is DiffusionRangeResult.Invalid -> return DiffusionAllocationResult.Invalid(result.reason, evidence)
+            is DiffusionRangeResult.Value -> result.range
+        }
+        val host = when (val result = diffusionAddRanges(rawHostLoad, hostGeneration.range)) {
+            is DiffusionRangeResult.Invalid -> return DiffusionAllocationResult.Invalid(result.reason, evidence)
+            is DiffusionRangeResult.Value -> result.range
+        }
+        val gpu = when (val result = diffusionAddRanges(rawGpuLoad, gpuGeneration.range)) {
             is DiffusionRangeResult.Invalid -> return DiffusionAllocationResult.Invalid(result.reason, evidence)
             is DiffusionRangeResult.Value -> result.range
         }
@@ -408,6 +452,13 @@ class DiffusionFootprintEstimator {
             host = calibratedHost,
             gpu = calibratedGpu,
             shared = null,
+            rawMemoryByPhase = MemoryPhaseEstimates(
+                load = MemoryPoolEstimates(hostMemoryBytes = rawHostLoad, gpuMemoryBytes = rawGpuLoad),
+                generation = MemoryPoolEstimates(
+                    hostMemoryBytes = hostGeneration.range.takeUnless { it.isZero() },
+                    gpuMemoryBytes = gpuGeneration.range.takeUnless { it.isZero() },
+                ),
+            ),
             lowConfidence = lowConfidence,
             evidence = evidence,
         )
@@ -486,6 +537,7 @@ private sealed interface DiffusionAllocationResult {
         val host: EstimateRange?,
         val gpu: EstimateRange?,
         val shared: EstimateRange?,
+        val rawMemoryByPhase: MemoryPhaseEstimates,
         val lowConfidence: Boolean,
         val evidence: List<Evidence>,
     ) : DiffusionAllocationResult
@@ -589,6 +641,13 @@ private fun DiffusionPool.toMemoryPool(): MemoryPool = when (this) {
     DiffusionPool.HOST -> MemoryPool.HOST
     DiffusionPool.SHARED -> MemoryPool.SHARED
 }
+
+private fun DiffusionPool.estimates(range: EstimateRange): MemoryPoolEstimates = when (this) {
+    DiffusionPool.HOST -> MemoryPoolEstimates(hostMemoryBytes = range)
+    DiffusionPool.SHARED -> MemoryPoolEstimates(sharedMemoryBytes = range)
+}
+
+private fun EstimateRange.isZero(): Boolean = highBytes == 0L
 
 private fun diffusionMultiplyRatio(value: Long, numerator: Long, denominator: Long): CheckedLong {
     if (value < 0L || numerator < 0L || denominator <= 0L) {

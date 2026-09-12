@@ -141,8 +141,10 @@ class CalibrationRepository(
         val bandwidth = profileMetric(backend, MetricKind.BANDWIDTH, currentTime) ?: return null
         val compute = profileMetric(backend, MetricKind.COMPUTE, currentTime) ?: return null
         return BackendPerformanceProfile(
-            sustainedBytesPerSecond = bandwidth.value,
-            sustainedOperationsPerSecond = compute.value,
+            sustainedBytesPerSecond = bandwidth.likely,
+            sustainedOperationsPerSecond = compute.likely,
+            conservativeBytesPerSecond = bandwidth.conservative,
+            conservativeOperationsPerSecond = compute.conservative,
             confidence = if (minOf(bandwidth.samples, compute.samples) >= HIGH_CONFIDENCE_SAMPLES) {
                 Confidence.HIGH
             } else {
@@ -194,7 +196,10 @@ class CalibrationRepository(
             .mapNotNull { row -> row.toWeightedValue(currentTime) }
             .toList()
         if (values.size < MIN_COMPARABLE_SAMPLES) return null
-        return weightedQuantile(values, 0.5)?.let { ProfileMetric(it, values.size) }
+        val likely = weightedQuantile(values, 0.5) ?: return null
+        val conservative = weightedQuantile(values, CONSERVATIVE_THROUGHPUT_QUANTILE) ?: return null
+        if (conservative > likely) return null
+        return ProfileMetric(likely, conservative, values.size)
     }
 
     private fun publishCommittedRows(rows: List<RecommendationObservationEntity>, commitStamp: Long) {
@@ -297,13 +302,18 @@ class CalibrationRepository(
 
     private data class Snapshot(val rows: List<RecommendationObservationEntity>, val revision: Long)
     private data class WeightedValue(val value: Double, val weight: Double)
-    private data class ProfileMetric(val value: Double, val samples: Int)
+    private data class ProfileMetric(
+        val likely: Double,
+        val conservative: Double,
+        val samples: Int,
+    )
 
     companion object {
         const val MIN_COMPARABLE_SAMPLES = 5
         const val MAX_OBSERVATIONS = 500
         const val RETENTION_DAYS = 90L
         private const val HIGH_CONFIDENCE_SAMPLES = 20
+        private const val CONSERVATIVE_THROUGHPUT_QUANTILE = 0.1
         private const val DECAY_DAYS = 30.0
         private const val DAY_MS = 86_400_000L
         private const val RETENTION_MS = RETENTION_DAYS * DAY_MS

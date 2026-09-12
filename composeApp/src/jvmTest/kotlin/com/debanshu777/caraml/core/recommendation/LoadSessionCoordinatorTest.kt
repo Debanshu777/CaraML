@@ -124,6 +124,7 @@ class LoadSessionCoordinatorTest {
                 pipelineTag = "text-generation",
             ),
             identity = RecoveryFixtures.identity,
+            observationIdentity = requireNotNull(ObservationModelIdentity.fromDescriptor(task6LlmDescriptor())),
             plan = RecoveryFixtures.plan,
             assessmentKey = "assessment-1",
         )

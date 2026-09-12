@@ -219,6 +219,12 @@ void calibration_cancellation_is_atomic_and_nonblocking() {
     expect(
         cancellation.wait_for(std::chrono::milliseconds(100)) == std::future_status::ready,
         "calibration cancellation blocked behind operation ownership");
+
+    const auto result = llama_runner_core_calibrate_backend(
+        3, LLAMA_BACKEND_CPU, 500, 4LL * 1024LL * 1024LL);
+    expect(
+        result.status != LLAMA_CALIBRATION_CANCELLED,
+        "queued cancellation poisoned a later probe with the same token");
 }
 
 } // namespace

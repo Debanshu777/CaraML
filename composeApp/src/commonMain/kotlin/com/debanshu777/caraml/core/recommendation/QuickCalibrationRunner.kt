@@ -12,10 +12,12 @@ import com.debanshu777.runner.BackendCalibrationMetric
 import com.debanshu777.runner.LlamaRunner
 import com.debanshu777.runner.NativeBackendKind
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
-import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
@@ -52,10 +54,24 @@ interface BackendCalibrationProbe {
 
 private val backendCalibrationAdmission = Mutex()
 
-class LlamaBackendCalibrationProbe(
-    private val runner: LlamaRunner,
+@OptIn(ExperimentalAtomicApi::class)
+class LlamaBackendCalibrationProbe internal constructor(
     private val dispatcher: CoroutineDispatcher,
+    private val calibrateBackend: (Long, NativeBackendKind, Int, Long) -> BackendCalibrationResult,
+    private val cancelBackendCalibration: (Long) -> Unit,
 ) : BackendCalibrationProbe {
+    constructor(
+        runner: LlamaRunner,
+        dispatcher: CoroutineDispatcher,
+    ) : this(
+        dispatcher = dispatcher,
+        calibrateBackend = runner::calibrateBackend,
+        cancelBackendCalibration = runner::cancelBackendCalibration,
+    )
+
+    private val workerScope = CoroutineScope(SupervisorJob() + dispatcher)
+    private val activeState = AtomicLong(NO_ACTIVE_PROBE)
+
     override suspend fun run(
         probeToken: Long,
         backend: NativeBackendKind,
@@ -63,30 +79,41 @@ class LlamaBackendCalibrationProbe(
         bufferBytes: Long,
     ): BackendCalibrationResult {
         if (probeToken <= 0L) return BackendCalibrationResult.Invalid
-        try {
-            return backendCalibrationAdmission.withLock {
-                coroutineScope {
-                    val work = async(dispatcher) {
-                        runner.calibrateBackend(probeToken, backend, durationMillis, bufferBytes)
-                    }
-                    try {
-                        work.await()
-                    } catch (cancelled: CancellationException) {
-                        runner.cancelBackendCalibration(probeToken)
-                        work.cancelAndJoin()
-                        throw cancelled
+        val work = workerScope.async {
+            backendCalibrationAdmission.withLock {
+                currentCoroutineContext().ensureActive()
+                if (!activeState.compareAndSet(NO_ACTIVE_PROBE, probeToken)) {
+                    return@withLock BackendCalibrationResult.Unavailable
+                }
+                try {
+                    calibrateBackend(probeToken, backend, durationMillis, bufferBytes)
+                } finally {
+                    if (!activeState.compareAndSet(probeToken, NO_ACTIVE_PROBE)) {
+                        activeState.compareAndSet(-probeToken, NO_ACTIVE_PROBE)
                     }
                 }
             }
+        }
+        return try {
+            work.await()
         } catch (cancelled: CancellationException) {
-            runner.cancelBackendCalibration(probeToken)
+            cancel(probeToken)
+            work.cancel()
             throw cancelled
         } catch (_: Exception) {
-            return BackendCalibrationResult.Unavailable
+            BackendCalibrationResult.Unavailable
         }
     }
 
-    override fun cancel(probeToken: Long) = runner.cancelBackendCalibration(probeToken)
+    override fun cancel(probeToken: Long) {
+        if (probeToken > 0L && activeState.compareAndSet(probeToken, -probeToken)) {
+            cancelBackendCalibration(probeToken)
+        }
+    }
+
+    private companion object {
+        const val NO_ACTIVE_PROBE = 0L
+    }
 }
 
 @OptIn(ExperimentalAtomicApi::class)
