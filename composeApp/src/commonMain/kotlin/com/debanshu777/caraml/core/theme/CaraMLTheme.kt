@@ -6,6 +6,11 @@ import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.MotionDurationScale
+import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
+import com.debanshu777.caraml.core.ui.motion.auroraMotionPolicy
 import com.materialkolor.DynamicMaterialTheme
 
 /**
@@ -47,7 +52,15 @@ fun CaraMLTheme(
             typography = AppTypography,
             motionScheme = AppMotionScheme,
         ) {
-            CompositionLocalProvider(LocalSpacing provides Spacing()) {
+            val scheme = MaterialTheme.colorScheme
+            val auroraColors = remember(scheme) { scheme.toAuroraColors() }
+            val durationScale = rememberCoroutineScope().coroutineContext[MotionDurationScale]?.scaleFactor ?: 1f
+            val motionPolicy = auroraMotionPolicy(durationScale)
+            CompositionLocalProvider(
+                LocalSpacing provides Spacing(),
+                LocalAuroraColors provides auroraColors,
+                LocalAuroraMotionPolicy provides motionPolicy,
+            ) {
                 content()
             }
         }

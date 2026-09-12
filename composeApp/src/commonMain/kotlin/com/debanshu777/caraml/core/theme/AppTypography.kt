@@ -14,20 +14,24 @@ import androidx.compose.ui.unit.sp
  * (Roboto / Roboto Flex is the recommended default).
  *
  * Customizations we *do* make:
- * - `titleMedium` and `labelLarge` lifted to `SemiBold` to give cards/buttons
+ * - `titleLarge`, `titleMedium`, and `labelLarge` lifted to `SemiBold` to give cards/buttons
  *   a clearer hierarchy in dense screens (chat, model lists). This replaces
  *   ad-hoc `FontWeight.SemiBold` / `Medium` overrides scattered through the UI.
  */
 val AppTypography: Typography = Typography().run {
     copy(
+        titleLarge = titleLarge.copy(
+            fontWeight = FontWeight.SemiBold,
+        ),
         titleMedium = titleMedium.copy(
             fontWeight = FontWeight.SemiBold,
         ),
         labelLarge = labelLarge.copy(
             fontWeight = FontWeight.SemiBold,
         ),
-        // Slightly tighter body for chat-dense layouts; keeps readability while
-        // letting more content fit on small screens.
+        bodyLarge = bodyLarge.copy(
+            lineHeight = 24.sp,
+        ),
         bodyMedium = bodyMedium.copy(
             lineHeight = 20.sp,
         ),
@@ -39,4 +43,5 @@ val AppNumericLabel: TextStyle = TextStyle(
     fontWeight = FontWeight.Medium,
     fontSize = 12.sp,
     lineHeight = 16.sp,
+    fontFeatureSettings = "tnum",
 )
