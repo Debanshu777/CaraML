@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.platform.DeviceHints
 import com.debanshu777.caraml.core.rating.SuitabilityRating
 import com.debanshu777.caraml.core.rating.SuitabilityResult
+import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
 
 /**
  * Modal bottom sheet that explains the suitability rating to the user.
@@ -63,6 +64,8 @@ fun SuitabilityInfoSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         modifier = modifier,
+        shape = MaterialTheme.shapes.extraLarge,
+        containerColor = AuroraSurfaceLevel.Floating.containerColor(MaterialTheme.colorScheme),
     ) {
         Column(
             modifier = Modifier

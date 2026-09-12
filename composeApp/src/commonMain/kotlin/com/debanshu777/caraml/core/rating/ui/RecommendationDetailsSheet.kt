@@ -27,6 +27,7 @@ import com.debanshu777.caraml.core.recommendation.PersonalizedRecommendation
 import com.debanshu777.caraml.core.recommendation.RecommendationCategory
 import com.debanshu777.caraml.core.recommendation.RiskTolerance
 import com.debanshu777.caraml.core.recommendation.WorkloadConfig
+import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
 
 data class RecommendationPresentation(
     val selectedVariant: String,
@@ -137,7 +138,12 @@ fun RecommendationDetailsSheet(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss, modifier = modifier) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        modifier = modifier,
+        shape = MaterialTheme.shapes.extraLarge,
+        containerColor = AuroraSurfaceLevel.Floating.containerColor(MaterialTheme.colorScheme),
+    ) {
         RecommendationDetailsContent(modelId, recommendation, presentation)
     }
 }

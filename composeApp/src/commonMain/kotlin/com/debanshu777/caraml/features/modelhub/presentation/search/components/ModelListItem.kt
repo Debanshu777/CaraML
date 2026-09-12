@@ -1,19 +1,12 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search.components
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.recommendation.RecommendationCategory
 import com.debanshu777.caraml.core.rating.ui.RecommendationStatusChip
 import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
 import com.debanshu777.caraml.features.modelhub.domain.RecommendedModelUiState
@@ -28,48 +21,33 @@ fun ModelListItem(
     onRecommendationInfoClick: (() -> Unit)? = null,
 ) {
     if (model == null) return
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            Text(
-                text = model.id ?: "Unknown",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = buildString {
-                    model.author?.let { append("by $it") }
-                    model.pipelineTag?.let { if (isNotEmpty()) append(" • ") else Unit; append(it) }
-                    append(" • ")
-                    append("${model.downloads ?: 0} downloads")
-                    append(" • ")
-                    append("${model.likes ?: 0} likes")
-                    model.numParameters?.let { append(" • ${formatParams(it)} params") }
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
+    ModelResultCard(
+        title = model.id ?: "Unknown",
+        author = model.author?.let { "by $it" },
+        metadata = buildString {
+            model.pipelineTag?.let(::append)
+            if (isNotEmpty()) append(" • ")
+            append("${model.downloads ?: 0} downloads")
+            append(" • ${model.likes ?: 0} likes")
+            model.numParameters?.let { append(" • ${formatParams(it)} params") }
+        },
+        status = {
             RecommendationStatusChip(
                 state = recommendationState?.descriptorState ?: DescriptorState.NEEDS_INFORMATION,
                 recommendation = recommendationState?.personalizedResult,
                 onInfoClick = onRecommendationInfoClick,
             )
+        },
+        onClick = onClick,
+        modifier = modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+        highlighted = recommendationState?.personalizedResult?.category ==
+            RecommendationCategory.RECOMMENDED,
+        trailing = {
             recommendationState?.selectedVariantName?.let {
                 Text("Selected variant: $it", style = MaterialTheme.typography.labelSmall)
             }
-        }
-    }
-    HorizontalDivider()
+        },
+    )
 }
 
 private fun formatParams(params: Long): String {

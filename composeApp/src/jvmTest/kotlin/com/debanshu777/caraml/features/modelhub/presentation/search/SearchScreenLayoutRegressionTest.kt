@@ -10,41 +10,23 @@ import kotlin.test.assertTrue
 class SearchScreenLayoutRegressionTest {
 
     @Test
-    fun profileEditorIsScrollableModalInsteadOfFixedSearchHeader() {
-        val source = Files.readString(searchScreenSource())
-        val searchHeader = source
-            .substringAfter("private fun SearchTabContent(")
-            .substringBefore("private fun RecommendationProfileAction(")
-
-        assertFalse(
-            searchHeader.contains("RecommendationProfileSection("),
-            "The full profile editor must not consume fixed height above the results list.",
-        )
-
-        val editorSheet = source
-            .substringAfter("private fun RecommendationProfileEditorSheet(")
-            .substringBefore("private fun DeviceInfoSection(")
-        assertTrue(editorSheet.contains("ModalBottomSheet("))
-        assertTrue(
-            editorSheet.contains("verticalScroll("),
-            "Profile controls must remain reachable in compact-height windows.",
-        )
-    }
-
-    @Test
     fun searchTabUsesOneVerticalScrollOwnerForControlsAndResults() {
         val source = Files.readString(searchScreenSource())
         val searchTab = source
             .substringAfter("private fun SearchTabContent(")
-            .substringBefore("private fun RecommendationProfileAction(")
+            .substringBefore("private fun ModelKindFilterRow(")
 
+        assertFalse(
+            searchTab.contains("RecommendationProfileSection("),
+            "The full profile editor must not consume fixed height above the results list.",
+        )
         assertEquals(
             1,
             Regex("\\bLazyColumn\\(").findAll(searchTab).count(),
             "Search controls and results must share one LazyColumn instead of competing scroll regions.",
         )
         assertTrue(
-            searchTab.indexOf("LazyColumn(") < searchTab.indexOf("StorageInfoBar("),
+            searchTab.indexOf("LazyColumn(") < searchTab.indexOf("ModelHubOverview("),
             "Storage and device context must be list content so it can scroll away from results.",
         )
         assertFalse(
@@ -62,9 +44,9 @@ class SearchScreenLayoutRegressionTest {
             .substringAfter("fun SearchScreen(")
             .substringBefore("private fun SearchTabContent(")
 
-        assertTrue(screen.indexOf("PrimaryTabRow(") < screen.indexOf("SearchTabContent("))
+        assertTrue(screen.indexOf("ModelHubTabRow(") < screen.indexOf("SearchTabContent("))
         assertFalse(
-            screen.substringBefore("PrimaryTabRow(").contains("StorageInfoBar("),
+            screen.substringBefore("ModelHubTabRow(").contains("ModelHubOverview("),
             "The large overview cards must not push the primary tabs below the fold.",
         )
     }

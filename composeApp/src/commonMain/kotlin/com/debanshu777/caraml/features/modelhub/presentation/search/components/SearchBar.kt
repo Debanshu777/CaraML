@@ -1,10 +1,12 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search.components
 
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
@@ -25,7 +27,9 @@ fun SearchBar(
     OutlinedTextField(
         value = query,
         onValueChange = onQueryChange,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp),
         placeholder = { Text("Search models") },
         leadingIcon = {
             Icon(
@@ -54,6 +58,6 @@ fun SearchBar(
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
         keyboardActions = KeyboardActions(onSearch = { onSearch() }),
         singleLine = true,
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
+        shape = MaterialTheme.shapes.small,
     )
 }

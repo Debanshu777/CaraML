@@ -2,18 +2,25 @@ package com.debanshu777.caraml.features.modelhub.presentation.search.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -24,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import com.debanshu777.huggingfacemanager.model.ModelSort
 import com.debanshu777.huggingfacemanager.model.ParameterRange
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelOrdering
+import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
 
 @Composable
 fun SortFilterChips(
@@ -83,6 +91,7 @@ fun SortFilterChips(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun <T> SortDropdown(
     label: String,
@@ -93,11 +102,14 @@ private fun <T> SortDropdown(
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     Box(modifier = modifier) {
         FilterChip(
             selected = highlighted,
             onClick = { expanded = true },
             label = { Text(label) },
+            modifier = Modifier.heightIn(min = 48.dp),
+            shape = MaterialTheme.shapes.small,
             trailingIcon = {
                 Icon(
                     imageVector = Icons.Default.ArrowDropDown,
@@ -106,25 +118,62 @@ private fun <T> SortDropdown(
                 )
             },
         )
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false }
+    }
+    if (expanded) {
+        ModalBottomSheet(
+            onDismissRequest = { expanded = false },
+            sheetState = sheetState,
+            shape = MaterialTheme.shapes.extraLarge,
+            containerColor = AuroraSurfaceLevel.Floating.containerColor(MaterialTheme.colorScheme),
         ) {
-            options.forEach { option ->
-                val displayName = when (option) {
-                    ModelOrdering.Personalized -> "Recommended for me"
-                    is ModelOrdering.Server -> "Server: ${option.value.displayName}"
-                    is ModelSort -> option.displayName
-                    is ParameterRange -> option.displayName
-                    else -> option.toString()
-                }
-                DropdownMenuItem(
-                    text = { Text(displayName) },
-                    onClick = {
-                        onSelect(option)
-                        expanded = false
-                    }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(vertical = 12.dp),
                 )
+                options.forEach { option ->
+                    val displayName = when (option) {
+                        ModelOrdering.Personalized -> "Recommended for me"
+                        is ModelOrdering.Server -> "Server: ${option.value.displayName}"
+                        is ModelSort -> option.displayName
+                        is ParameterRange -> option.displayName
+                        else -> option.toString()
+                    }
+                    Surface(
+                        onClick = {
+                            onSelect(option)
+                            expanded = false
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp),
+                        shape = MaterialTheme.shapes.small,
+                        color = if (option == selected) {
+                            MaterialTheme.colorScheme.secondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surfaceContainerHigh
+                        },
+                    ) {
+                        Text(
+                            text = displayName,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (option == selected) {
+                                MaterialTheme.colorScheme.onSecondaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            },
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        )
+                    }
+                }
             }
         }
     }

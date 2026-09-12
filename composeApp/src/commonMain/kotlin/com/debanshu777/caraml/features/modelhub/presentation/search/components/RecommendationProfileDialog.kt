@@ -21,6 +21,7 @@ import androidx.compose.ui.semantics.semantics
 import com.debanshu777.caraml.core.recommendation.RecommendationProfile
 import com.debanshu777.caraml.core.recommendation.CalibrationDeferralReason
 import com.debanshu777.caraml.core.recommendation.CalibrationRunResult
+import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
 import com.debanshu777.caraml.features.modelhub.presentation.search.QuickCalibrationUiState
 import com.debanshu777.caraml.features.settings.presentation.RecommendationProfileSection
 
@@ -38,6 +39,8 @@ fun RecommendationProfileDialog(
         onDismissRequest = {
             if (!submitting) onDismissWithBalanced()
         },
+        shape = MaterialTheme.shapes.extraLarge,
+        containerColor = AuroraSurfaceLevel.Floating.containerColor(MaterialTheme.colorScheme),
         title = { Text("Personalize model recommendations") },
         text = {
             Column(
@@ -97,6 +100,8 @@ fun QuickCalibrationDialog(
     val result = state.result
     AlertDialog(
         onDismissRequest = { if (!state.running) onSkip() },
+        shape = MaterialTheme.shapes.extraLarge,
+        containerColor = AuroraSurfaceLevel.Floating.containerColor(MaterialTheme.colorScheme),
         title = { Text(if (state.running) "Optimizing for this device" else "Improve recommendations") },
         text = {
             Column {

@@ -1,6 +1,7 @@
 package com.debanshu777.caraml.features.modelhub.presentation.downloaded.components
 
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,14 +10,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.CheckBoxOutlineBlank
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -28,6 +30,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.storage.localmodel.displayFilename
+import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
+import com.debanshu777.caraml.core.ui.components.CaraMLPane
+import com.debanshu777.caraml.core.ui.components.CaraMLStatusPill
+import com.debanshu777.caraml.core.ui.components.StatusTone
 import com.debanshu777.huggingfacemanager.model.DIFFUSERS_BUNDLE_DB_FILENAME
 import com.debanshu777.huggingfacemanager.model.PipelineTag
 import kotlin.math.roundToInt
@@ -58,10 +64,19 @@ fun LocalModelListItem(
     val selectDescription =
         if (isSelected) "Selected ${model.modelId}, tap to deselect" else "Not selected ${model.modelId}, tap to select"
 
-    Surface(
+    val cardShape = if (isSelected) MaterialTheme.shapes.large else MaterialTheme.shapes.medium
+    CaraMLPane(
         modifier = modifier
+            .padding(horizontal = 16.dp, vertical = 6.dp)
             .fillMaxWidth()
             .alpha(visibleAlpha)
+            .let {
+                if (isSelected) {
+                    it.border(1.5.dp, MaterialTheme.colorScheme.primary, cardShape)
+                } else {
+                    it
+                }
+            }
             .semantics {
                 contentDescription = if (selectionMode) selectDescription else openDescription
             }
@@ -74,11 +89,9 @@ fun LocalModelListItem(
                 },
                 onLongClick = onLongPress
             ),
-        color = if (isSelected) {
-            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
-        } else {
-            MaterialTheme.colorScheme.surface
-        }
+        level = AuroraSurfaceLevel.Pane,
+        shape = cardShape,
+        showBorder = !isSelected,
     ) {
         Row(
             modifier = Modifier
@@ -95,23 +108,11 @@ fun LocalModelListItem(
                 Spacer(modifier = Modifier.width(12.dp))
             }
             Column(modifier = Modifier.weight(1f)) {
-                // Model ID + optional "Ready" chip
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(
-                        text = model.modelId,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                    when {
-                        isReady -> ReadinessPill(label = "Ready", isReady = true)
-                        isPartial -> ReadinessPill(label = "Partial", isReady = false)
-                        // null componentStatus → no pill (self-contained or not yet reconciled)
-                    }
-                }
+                Text(
+                    text = model.modelId,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
                 Text(
                     text = buildString {
                         append(model.displayFilename())
@@ -133,19 +134,47 @@ fun LocalModelListItem(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp),
                 )
-                if (!isSupported) {
-                    Text(
-                        text = "Chat not available for this model type",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(top = 4.dp),
-                    )
+                Column(
+                    modifier = Modifier.padding(top = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    if (isSelected) {
+                        CaraMLStatusPill(
+                            label = "Selected",
+                            contentDescription = "Selected model ${model.modelId}.",
+                            tone = StatusTone.Accent,
+                            icon = Icons.Filled.CheckBox,
+                        )
+                    }
+                    when {
+                        isPartial -> CaraMLStatusPill(
+                            label = "Needs setup",
+                            contentDescription = "Partial download. Missing components need setup.",
+                            tone = StatusTone.Warning,
+                            icon = Icons.Default.Build,
+                        )
+                        isReady -> CaraMLStatusPill(
+                            label = "Ready",
+                            contentDescription = "Ready for chat.",
+                            tone = StatusTone.Success,
+                            icon = Icons.Default.CheckCircle,
+                        )
+                    }
+                    if (!isSupported) {
+                        CaraMLStatusPill(
+                            label = "Unsupported",
+                            contentDescription = "Unsupported. Chat is not available for this model type.",
+                            tone = StatusTone.Error,
+                            icon = Icons.Default.Block,
+                        )
+                    }
                 }
-                // "Fix" action for partial models
                 if (isPartial && onFixComponents != null && !selectionMode) {
                     TextButton(
                         onClick = onFixComponents,
-                        modifier = Modifier.padding(top = 2.dp),
+                        modifier = Modifier
+                            .padding(top = 2.dp)
+                            .heightIn(min = 48.dp),
                     ) {
                         Icon(
                             Icons.Default.Build,
@@ -161,24 +190,6 @@ fun LocalModelListItem(
                 }
             }
         }
-    }
-    HorizontalDivider()
-}
-
-@Composable
-private fun ReadinessPill(label: String, isReady: Boolean) {
-    Surface(
-        shape = MaterialTheme.shapes.extraSmall,
-        color = if (isReady) MaterialTheme.colorScheme.primaryContainer
-        else MaterialTheme.colorScheme.errorContainer,
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = if (isReady) MaterialTheme.colorScheme.onPrimaryContainer
-            else MaterialTheme.colorScheme.onErrorContainer,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-        )
     }
 }
 

@@ -1,22 +1,18 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -26,26 +22,14 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -57,25 +41,29 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.drawer.LocalDrawerController
-import com.debanshu777.caraml.core.platform.DeviceHints
 import com.debanshu777.caraml.core.recommendation.RecommendationProfile
 import com.debanshu777.caraml.core.recommendation.RecommendationRolloutModeSource
 import com.debanshu777.caraml.core.recommendation.RiskTolerance
 import com.debanshu777.caraml.core.recommendation.OptimizationPriority
 import com.debanshu777.caraml.core.rating.ui.RecommendationDetailsSheet
 import com.debanshu777.caraml.core.rating.ui.recommendationPresentation
+import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
 import com.debanshu777.caraml.core.theme.LocalSpacing
+import com.debanshu777.caraml.core.ui.components.CaraMLTopBar
+import com.debanshu777.caraml.core.ui.components.TopBarNavigation
+import com.debanshu777.caraml.core.ui.layout.AppContentKind
+import com.debanshu777.caraml.core.ui.layout.ResponsiveContentPane
+import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.DownloadedModelsViewModel
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.ReadinessFilter
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.components.LocalModelListItem
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelListItem
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubOverview
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.RecommendationProfileDialog
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.QuickCalibrationDialog
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchBar
@@ -84,7 +72,6 @@ import com.debanshu777.caraml.features.modelhub.presentation.search.components.S
 import com.debanshu777.caraml.features.modelhub.domain.RecommendedModelUiState
 import com.debanshu777.caraml.features.settings.presentation.RecommendationProfileSection
 import com.debanshu777.caraml.features.settings.presentation.SettingsViewModel
-import com.debanshu777.caraml.features.settings.presentation.label
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
@@ -128,36 +115,27 @@ fun SearchScreen(
         containerColor = Color.Transparent,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
-                title = { Text("Models") },
-                navigationIcon = {
-                    IconButton(onClick = { drawerController.toggle() }) {
-                        Icon(Icons.Default.Menu, contentDescription = "Open menu")
-                    }
-                }
+            CaraMLTopBar(
+                title = "Models",
+                navigation = TopBarNavigation.Menu,
+                onNavigationClick = drawerController::toggle,
             )
         }
     ) { paddingValues ->
-        Box(
+        ResponsiveContentPane(
+            kind = AppContentKind.ModelHub,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues),
-            contentAlignment = Alignment.TopCenter,
         ) {
             Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .widthIn(max = 840.dp),
+                modifier = Modifier.fillMaxSize(),
             ) {
-                PrimaryTabRow(selectedTabIndex = selectedTabIndex) {
-                    tabs.forEachIndexed { index, title ->
-                        Tab(
-                            selected = selectedTabIndex == index,
-                            onClick = { selectedTabIndex = index },
-                            text = { Text(title) },
-                        )
-                    }
-                }
+                ModelHubTabRow(
+                    tabs = tabs,
+                    selectedTabIndex = selectedTabIndex,
+                    onTabSelected = { selectedTabIndex = it },
+                )
 
                 when (selectedTabIndex) {
                     0 -> SearchTabContent(
@@ -236,6 +214,62 @@ fun SearchScreen(
 }
 
 @Composable
+private fun ModelHubTabRow(
+    tabs: List<String>,
+    selectedTabIndex: Int,
+    onTabSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val motion = LocalAuroraMotionPolicy.current
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = LocalSpacing.current.s),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Row(modifier = Modifier.padding(4.dp)) {
+            tabs.forEachIndexed { index, title ->
+                val selected = selectedTabIndex == index
+                val containerColor by animateColorAsState(
+                    targetValue = if (selected) {
+                        MaterialTheme.colorScheme.secondaryContainer
+                    } else {
+                        Color.Transparent
+                    },
+                    animationSpec = tween(motion.opacityDurationMillis),
+                )
+                val contentColor by animateColorAsState(
+                    targetValue = if (selected) {
+                        MaterialTheme.colorScheme.onSecondaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    animationSpec = tween(motion.opacityDurationMillis),
+                )
+                Surface(
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .selectable(
+                            selected = selected,
+                            onClick = { onTabSelected(index) },
+                            role = Role.Tab,
+                        ),
+                    shape = MaterialTheme.shapes.large,
+                    color = containerColor,
+                    contentColor = contentColor,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(title, style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun SearchTabContent(
     viewModel: ModelViewModel,
     storageInfo: StorageInfoUiState,
@@ -262,24 +296,25 @@ private fun SearchTabContent(
     val isSearchMode = isLlmHub && (searchQuery.isNotEmpty() || searchResponse != null)
 
     val spacing = LocalSpacing.current
+    val motion = LocalAuroraMotionPolicy.current
     LazyColumn(
         modifier = modifier,
         contentPadding = PaddingValues(bottom = spacing.xxl),
     ) {
-        item(key = "storage-overview") {
-            StorageInfoBar(storageInfo = storageInfo)
-        }
-        item(key = "device-overview") {
-            DeviceInfoSection(deviceHints = storageInfo.deviceHints)
-        }
-
-        if (recommendationProfileState.isAvailable) {
-            item(key = "recommendation-profile") {
-                RecommendationProfileAction(
-                    profile = recommendationProfileState.profile,
-                    onClick = onOpenProfileEditor,
-                )
-            }
+        item(key = "model-hub-overview") {
+            ModelHubOverview(
+                storageInfo = storageInfo,
+                profile = if (recommendationProfileState.isAvailable) {
+                    recommendationProfileState.profile
+                } else {
+                    null
+                },
+                onOpenProfile = if (recommendationProfileState.isAvailable) {
+                    onOpenProfileEditor
+                } else {
+                    null
+                },
+            )
         }
 
         item(key = "model-kind-filter") {
@@ -391,6 +426,15 @@ private fun SearchTabContent(
                     }
                     SearchModelListItem(
                         model = model,
+                        modifier = Modifier.animateItem(
+                            fadeInSpec = tween(motion.opacityDurationMillis),
+                            placementSpec = if (motion.spatialTransitionsEnabled) {
+                                tween(motion.peerTransitionMillis)
+                            } else {
+                                null
+                            },
+                            fadeOutSpec = tween(motion.opacityDurationMillis),
+                        ),
                         recommendationState = recommendationState,
                         onRecommendationInfoClick = recommendationState
                             ?.takeIf { it.personalizedResult != null }
@@ -444,6 +488,15 @@ private fun SearchTabContent(
                     }
                     ModelListItem(
                         model = model,
+                        modifier = Modifier.animateItem(
+                            fadeInSpec = tween(motion.opacityDurationMillis),
+                            placementSpec = if (motion.spatialTransitionsEnabled) {
+                                tween(motion.peerTransitionMillis)
+                            } else {
+                                null
+                            },
+                            fadeOutSpec = tween(motion.opacityDurationMillis),
+                        ),
                         onClick = {
                             model.id?.let { id -> onNavigateToDetails(id, browseMode) }
                         },
@@ -481,6 +534,8 @@ private fun ModelKindFilterRow(
                 selected = browseMode == mode,
                 onClick = { onBrowseModeChange(mode) },
                 label = { Text(label) },
+                modifier = Modifier.heightIn(min = 48.dp),
+                shape = MaterialTheme.shapes.small,
             )
         }
     }
@@ -501,58 +556,6 @@ private fun ModelHubListMessage(
     }
 }
 
-@Composable
-private fun RecommendationProfileAction(
-    profile: RecommendationProfile,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val risk = profile.riskTolerance.label()
-    val priority = profile.optimizationPriority.label()
-    Surface(
-        onClick = onClick,
-        modifier = modifier
-            .padding(horizontal = LocalSpacing.current.l, vertical = LocalSpacing.current.s)
-            .fillMaxWidth()
-            .heightIn(min = 48.dp)
-            .semantics {
-                contentDescription = "Recommendation profile. Selected risk: $risk. " +
-                    "Selected priority: $priority. Open profile controls."
-            },
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.secondaryContainer,
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Icon(
-                imageVector = Icons.Default.Tune,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSecondaryContainer,
-            )
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Recommendation profile",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                )
-                Text(
-                    text = "$risk · $priority",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                )
-            }
-            Icon(
-                imageVector = Icons.Default.ChevronRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSecondaryContainer,
-            )
-        }
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RecommendationProfileEditorSheet(
@@ -569,6 +572,8 @@ private fun RecommendationProfileEditorSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        shape = MaterialTheme.shapes.extraLarge,
+        containerColor = AuroraSurfaceLevel.Floating.containerColor(MaterialTheme.colorScheme),
     ) {
         Column(
             modifier = Modifier
@@ -596,233 +601,6 @@ private fun RecommendationProfileEditorSheet(
 }
 
 @Composable
-private fun DeviceInfoSection(
-    deviceHints: DeviceHints?,
-    modifier: Modifier = Modifier
-) {
-    if (deviceHints == null) return
-
-    var expanded by remember { mutableStateOf(false) }
-    val spacing = LocalSpacing.current
-
-    val ramBudgetBytes = deviceHints.memoryBudgetMB * 1024 * 1024
-    val gpuText = if (deviceHints.gpuBackendAvailable) "Available" else "Unavailable"
-    val summary = "${deviceHints.performanceCoreCount}P/${deviceHints.totalCoreCount} cores · " +
-        "${formatStorageBytes(ramBudgetBytes)} RAM · GPU $gpuText"
-
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = spacing.l, vertical = spacing.s),
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        tonalElevation = 1.dp
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { expanded = !expanded }
-                .padding(spacing.m)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Device",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Icon(
-                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = if (expanded) "Collapse" else "Expand",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            if (!expanded) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = summary,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            AnimatedVisibility(visible = expanded) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    DeviceInfoRow(
-                        label = "Performance cores",
-                        value = "${deviceHints.performanceCoreCount} of ${deviceHints.totalCoreCount}"
-                    )
-                    if (deviceHints.perfCoreMask.isNotBlank()) {
-                        DeviceInfoRow(
-                            label = "Perf core mask",
-                            value = deviceHints.perfCoreMask
-                        )
-                    }
-                    DeviceInfoRow(
-                        label = "Total cores",
-                        value = "${deviceHints.totalCoreCount}"
-                    )
-                    DeviceInfoRow(
-                        label = "RAM budget",
-                        value = formatStorageBytes(ramBudgetBytes)
-                    )
-                    DeviceInfoRow(
-                        label = "GPU backend",
-                        value = gpuText,
-                        valueColor = if (deviceHints.gpuBackendAvailable) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        }
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = "Personalized recommendations",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "Compatibility, current memory and storage, workload, and expected speed are checked together. " +
-                            "Open a model's recommendation for the evidence and fallback plan.",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DeviceInfoRow(
-    label: String,
-    value: String,
-    valueColor: Color = MaterialTheme.colorScheme.onSurface,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 2.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.labelSmall,
-            color = valueColor
-        )
-    }
-}
-
-@Composable
-private fun StorageInfoBar(
-    storageInfo: StorageInfoUiState,
-    modifier: Modifier = Modifier
-) {
-    if (storageInfo.totalDeviceBytes <= 0L) return
-
-    val usedFraction = if (storageInfo.totalDeviceBytes > 0L) {
-        (storageInfo.usedByModelsBytes.toFloat() / storageInfo.totalDeviceBytes).coerceIn(0f, 1f)
-    } else 0f
-
-    val animatedProgress by animateFloatAsState(
-        targetValue = usedFraction,
-        animationSpec = tween(durationMillis = 600)
-    )
-
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = LocalSpacing.current.l, vertical = LocalSpacing.current.s),
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        tonalElevation = 1.dp
-    ) {
-        Column(modifier = Modifier.padding(LocalSpacing.current.m)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Device Storage",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = "${formatStorageBytes(storageInfo.availableDeviceBytes)} free of ${
-                        formatStorageBytes(
-                            storageInfo.totalDeviceBytes
-                        )
-                    }",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            LinearProgressIndicator(
-                progress = { animatedProgress },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(8.dp)
-                    .clip(MaterialTheme.shapes.extraSmall),
-                color = if (usedFraction > 0.85f) {
-                    MaterialTheme.colorScheme.error
-                } else {
-                    MaterialTheme.colorScheme.primary
-                },
-                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-            )
-
-            Spacer(modifier = Modifier.height(6.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "Models: ${formatStorageBytes(storageInfo.usedByModelsBytes)}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-    }
-}
-
-private fun formatStorageBytes(bytes: Long): String {
-    if (bytes <= 0L) return "0 B"
-    val units = listOf("B", "KB", "MB", "GB", "TB")
-    var value = bytes.toDouble()
-    var unitIndex = 0
-    while (value >= 1024.0 && unitIndex < units.lastIndex) {
-        value /= 1024.0
-        unitIndex++
-    }
-    val display = if (value >= 100 || unitIndex == 0) {
-        value.toInt().toString()
-    } else {
-        val rounded = kotlin.math.round(value * 10.0) / 10.0
-        if (rounded % 1.0 == 0.0) rounded.toInt().toString() else rounded.toString()
-    }
-    return "$display ${units[unitIndex]}"
-}
-
-@Composable
 private fun DownloadedTabContent(
     viewModel: DownloadedModelsViewModel,
     storageInfo: StorageInfoUiState,
@@ -839,6 +617,7 @@ private fun DownloadedTabContent(
     val readinessFilter by viewModel.readinessFilter.collectAsState()
 
     val scope = rememberCoroutineScope()
+    val motion = LocalAuroraMotionPolicy.current
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
     LaunchedEffect(deleteResultMessage) {
@@ -851,11 +630,12 @@ private fun DownloadedTabContent(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = LocalSpacing.current.xxl),
     ) {
-        item(key = "storage-overview") {
-            StorageInfoBar(storageInfo = storageInfo)
-        }
-        item(key = "device-overview") {
-            DeviceInfoSection(deviceHints = storageInfo.deviceHints)
+        item(key = "model-hub-overview") {
+            ModelHubOverview(
+                storageInfo = storageInfo,
+                profile = null,
+                onOpenProfile = null,
+            )
         }
 
         if (selectionMode && downloadedModels.isNotEmpty()) {
@@ -902,6 +682,8 @@ private fun DownloadedTabContent(
                             selected = readinessFilter == filter,
                             onClick = { viewModel.setReadinessFilter(filter) },
                             label = { Text(label) },
+                            modifier = Modifier.heightIn(min = 48.dp),
+                            shape = MaterialTheme.shapes.small,
                         )
                     }
                 }
@@ -925,6 +707,15 @@ private fun DownloadedTabContent(
             ) { model ->
                 LocalModelListItem(
                     model = model,
+                    modifier = Modifier.animateItem(
+                        fadeInSpec = tween(motion.opacityDurationMillis),
+                        placementSpec = if (motion.spatialTransitionsEnabled) {
+                            tween(motion.peerTransitionMillis)
+                        } else {
+                            null
+                        },
+                        fadeOutSpec = tween(motion.opacityDurationMillis),
+                    ),
                     selectionMode = selectionMode,
                     isSelected = model.id in selectedIds,
                     onOpenModel = {
@@ -964,6 +755,8 @@ private fun DownloadedTabContent(
     if (showDeleteConfirm) {
         AlertDialog(
             onDismissRequest = { if (!isDeleting) showDeleteConfirm = false },
+            shape = MaterialTheme.shapes.extraLarge,
+            containerColor = AuroraSurfaceLevel.Floating.containerColor(MaterialTheme.colorScheme),
             title = { Text("Remove downloads?") },
             text = { Text("Remove selected downloads from this device?") },
             confirmButton = {
