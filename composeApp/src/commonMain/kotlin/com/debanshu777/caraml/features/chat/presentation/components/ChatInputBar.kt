@@ -39,6 +39,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -320,35 +322,40 @@ fun ChatInputBar(
                     )
                 }
 
-                Crossfade(
-                    targetState = isGenerating,
-                    animationSpec = tween(durationMillis = motion.opacityDurationMillis),
-                    label = "composer generation action",
-                ) { generating ->
-                    if (generating) {
-                        FilledIconButton(
-                            onClick = onCancelGeneration,
-                            modifier = Modifier.size(48.dp),
-                        ) {
+                FilledIconButton(
+                    onClick = {
+                        if (isGenerating) {
+                            onCancelGeneration()
+                        } else if (inputText.isNotBlank()) {
+                            onSendMessage(inputText)
+                            inputText = ""
+                        }
+                    },
+                    modifier = Modifier
+                        .size(48.dp)
+                        .semantics {
+                            contentDescription = if (isGenerating) {
+                                "Stop generation"
+                            } else {
+                                "Send message"
+                            }
+                        },
+                    enabled = isGenerating || inputText.isNotBlank(),
+                ) {
+                    Crossfade(
+                        targetState = isGenerating,
+                        animationSpec = tween(durationMillis = motion.opacityDurationMillis),
+                        label = "composer generation icon",
+                    ) { generating ->
+                        if (generating) {
                             Icon(
                                 imageVector = Icons.Default.Stop,
-                                contentDescription = "Stop generation",
+                                contentDescription = null,
                             )
-                        }
-                    } else {
-                        FilledIconButton(
-                            onClick = {
-                                if (inputText.isNotBlank()) {
-                                    onSendMessage(inputText)
-                                    inputText = ""
-                                }
-                            },
-                            modifier = Modifier.size(48.dp),
-                            enabled = inputText.isNotBlank(),
-                        ) {
+                        } else {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Default.Send,
-                                contentDescription = "Send message",
+                                contentDescription = null,
                             )
                         }
                     }

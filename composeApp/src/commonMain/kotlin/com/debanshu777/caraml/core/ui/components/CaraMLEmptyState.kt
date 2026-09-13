@@ -3,6 +3,7 @@ package com.debanshu777.caraml.core.ui.components
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -49,7 +50,10 @@ fun CaraMLEmptyState(
             textAlign = TextAlign.Center,
         )
         if (actionLabel != null && onAction != null) {
-            Button(onClick = onAction) {
+            Button(
+                onClick = onAction,
+                modifier = Modifier.heightIn(min = 48.dp),
+            ) {
                 Text(actionLabel)
             }
         }

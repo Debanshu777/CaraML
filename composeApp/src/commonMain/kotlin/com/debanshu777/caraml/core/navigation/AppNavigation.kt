@@ -44,6 +44,39 @@ internal enum class NavigationTransitionFamily {
     Hierarchical,
 }
 
+internal enum class NavigationTransitionDirection {
+    Forward,
+    Pop,
+}
+
+internal enum class NavigationTransitionAxis {
+    None,
+    Vertical,
+    Horizontal,
+}
+
+internal data class NavigationTransitionDescriptor(
+    val family: NavigationTransitionFamily,
+    val direction: NavigationTransitionDirection,
+    val axis: NavigationTransitionAxis,
+    val enterDurationMillis: Int,
+    val exitDurationMillis: Int,
+    private val peerOffsetPx: Int,
+) {
+    private val directionSign: Int
+        get() = if (direction == NavigationTransitionDirection.Pop) -1 else 1
+
+    fun enterOffset(containerSize: Int): Int = spatialOffset(containerSize) * directionSign
+
+    fun exitOffset(containerSize: Int): Int = -spatialOffset(containerSize) * directionSign
+
+    private fun spatialOffset(containerSize: Int): Int = when (axis) {
+        NavigationTransitionAxis.None -> 0
+        NavigationTransitionAxis.Vertical -> peerOffsetPx
+        NavigationTransitionAxis.Horizontal -> containerSize / 10
+    }
+}
+
 internal fun navigationTransitionFamily(target: NavKey?): NavigationTransitionFamily =
     if (target is AppScreen.Details) {
         NavigationTransitionFamily.Hierarchical
@@ -51,43 +84,69 @@ internal fun navigationTransitionFamily(target: NavKey?): NavigationTransitionFa
         NavigationTransitionFamily.Peer
     }
 
-private fun navigationContentTransform(
+internal fun navigationTransitionDescriptor(
     family: NavigationTransitionFamily,
+    direction: NavigationTransitionDirection,
     motionPolicy: AuroraMotionPolicy,
-    reverse: Boolean,
     peerOffsetPx: Int,
-): ContentTransform {
-    if (!motionPolicy.spatialTransitionsEnabled) {
-        return fadeIn(tween(motionPolicy.opacityDurationMillis)) togetherWith
-            fadeOut(tween(motionPolicy.opacityDurationMillis))
+): NavigationTransitionDescriptor = if (!motionPolicy.spatialTransitionsEnabled) {
+    NavigationTransitionDescriptor(
+        family = family,
+        direction = direction,
+        axis = NavigationTransitionAxis.None,
+        enterDurationMillis = motionPolicy.opacityDurationMillis,
+        exitDurationMillis = motionPolicy.opacityDurationMillis,
+        peerOffsetPx = peerOffsetPx,
+    )
+} else {
+    NavigationTransitionDescriptor(
+        family = family,
+        direction = direction,
+        axis = when (family) {
+            NavigationTransitionFamily.Peer -> NavigationTransitionAxis.Vertical
+            NavigationTransitionFamily.Hierarchical -> NavigationTransitionAxis.Horizontal
+        },
+        enterDurationMillis = when (family) {
+            NavigationTransitionFamily.Peer -> motionPolicy.peerTransitionMillis
+            NavigationTransitionFamily.Hierarchical -> motionPolicy.detailEnterMillis
+        },
+        exitDurationMillis = when (family) {
+            NavigationTransitionFamily.Peer -> motionPolicy.peerTransitionMillis
+            NavigationTransitionFamily.Hierarchical -> motionPolicy.exitMillis
+        },
+        peerOffsetPx = peerOffsetPx,
+    )
+}
+
+private fun navigationContentTransform(
+    descriptor: NavigationTransitionDescriptor,
+): ContentTransform = when (descriptor.axis) {
+    NavigationTransitionAxis.None ->
+        fadeIn(tween(descriptor.enterDurationMillis)) togetherWith
+            fadeOut(tween(descriptor.exitDurationMillis))
+
+    NavigationTransitionAxis.Vertical -> {
+        val enter = fadeIn(tween(descriptor.enterDurationMillis)) +
+            slideInVertically(tween(descriptor.enterDurationMillis)) {
+                descriptor.enterOffset(it)
+            }
+        val exit = fadeOut(tween(descriptor.exitDurationMillis)) +
+            slideOutVertically(tween(descriptor.exitDurationMillis)) {
+                descriptor.exitOffset(it)
+            }
+        enter togetherWith exit
     }
 
-    return when (family) {
-        NavigationTransitionFamily.Peer -> {
-            val direction = if (reverse) -1 else 1
-            val enter = fadeIn(tween(motionPolicy.peerTransitionMillis)) +
-                slideInVertically(tween(motionPolicy.peerTransitionMillis)) {
-                    peerOffsetPx * direction
-                }
-            val exit = fadeOut(tween(motionPolicy.peerTransitionMillis)) +
-                slideOutVertically(tween(motionPolicy.peerTransitionMillis)) {
-                    -peerOffsetPx * direction
-                }
-            enter togetherWith exit
-        }
-
-        NavigationTransitionFamily.Hierarchical -> {
-            val direction = if (reverse) -1 else 1
-            val enter = fadeIn(tween(motionPolicy.detailEnterMillis)) +
-                slideInHorizontally(tween(motionPolicy.detailEnterMillis)) {
-                    (it / 10) * direction
-                }
-            val exit = fadeOut(tween(motionPolicy.exitMillis)) +
-                slideOutHorizontally(tween(motionPolicy.exitMillis)) {
-                    -(it / 10) * direction
-                }
-            enter togetherWith exit
-        }
+    NavigationTransitionAxis.Horizontal -> {
+        val enter = fadeIn(tween(descriptor.enterDurationMillis)) +
+            slideInHorizontally(tween(descriptor.enterDurationMillis)) {
+                descriptor.enterOffset(it)
+            }
+        val exit = fadeOut(tween(descriptor.exitDurationMillis)) +
+            slideOutHorizontally(tween(descriptor.exitDurationMillis)) {
+                descriptor.exitOffset(it)
+            }
+        enter togetherWith exit
     }
 }
 
@@ -162,18 +221,22 @@ fun NavigationHost(
                     metadata = metadata {
                         put(NavDisplay.PopTransitionKey) {
                             navigationContentTransform(
-                                family = NavigationTransitionFamily.Hierarchical,
-                                motionPolicy = motionPolicy,
-                                reverse = true,
-                                peerOffsetPx = peerOffsetPx,
+                                navigationTransitionDescriptor(
+                                    family = NavigationTransitionFamily.Hierarchical,
+                                    direction = NavigationTransitionDirection.Pop,
+                                    motionPolicy = motionPolicy,
+                                    peerOffsetPx = peerOffsetPx,
+                                ),
                             )
                         }
                         put(NavDisplay.PredictivePopTransitionKey) { _ ->
                             navigationContentTransform(
-                                family = NavigationTransitionFamily.Hierarchical,
-                                motionPolicy = motionPolicy,
-                                reverse = true,
-                                peerOffsetPx = peerOffsetPx,
+                                navigationTransitionDescriptor(
+                                    family = NavigationTransitionFamily.Hierarchical,
+                                    direction = NavigationTransitionDirection.Pop,
+                                    motionPolicy = motionPolicy,
+                                    peerOffsetPx = peerOffsetPx,
+                                ),
                             )
                         }
                     },
@@ -195,26 +258,32 @@ fun NavigationHost(
             },
         transitionSpec = {
             navigationContentTransform(
-                family = navigationTransitionFamily(backStack.lastOrNull()),
-                motionPolicy = motionPolicy,
-                reverse = false,
-                peerOffsetPx = peerOffsetPx,
+                navigationTransitionDescriptor(
+                    family = navigationTransitionFamily(backStack.lastOrNull()),
+                    direction = NavigationTransitionDirection.Forward,
+                    motionPolicy = motionPolicy,
+                    peerOffsetPx = peerOffsetPx,
+                ),
             )
         },
         popTransitionSpec = {
             navigationContentTransform(
-                family = NavigationTransitionFamily.Peer,
-                motionPolicy = motionPolicy,
-                reverse = true,
-                peerOffsetPx = peerOffsetPx,
+                navigationTransitionDescriptor(
+                    family = NavigationTransitionFamily.Peer,
+                    direction = NavigationTransitionDirection.Pop,
+                    motionPolicy = motionPolicy,
+                    peerOffsetPx = peerOffsetPx,
+                ),
             )
         },
         predictivePopTransitionSpec = { _ ->
             navigationContentTransform(
-                family = NavigationTransitionFamily.Peer,
-                motionPolicy = motionPolicy,
-                reverse = true,
-                peerOffsetPx = peerOffsetPx,
+                navigationTransitionDescriptor(
+                    family = NavigationTransitionFamily.Peer,
+                    direction = NavigationTransitionDirection.Pop,
+                    motionPolicy = motionPolicy,
+                    peerOffsetPx = peerOffsetPx,
+                ),
             )
         },
     )

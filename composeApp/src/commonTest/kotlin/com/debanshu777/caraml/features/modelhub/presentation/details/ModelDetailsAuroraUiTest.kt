@@ -3,10 +3,15 @@
 package com.debanshu777.caraml.features.modelhub.presentation.details
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -17,12 +22,15 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -78,9 +86,46 @@ class ModelDetailsAuroraUiTest {
             }
         }
 
-        onNodeWithContentDescription("Download weights/model-q4.gguf").performClick()
+        onNodeWithContentDescription("Download weights/model-q4.gguf")
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
         runOnIdle { assertEquals("weights/model-q4.gguf", requested) }
     }
+
+    @Test
+    fun fileSectionProgressAndDownloadRemainReachableAtTwoHundredPercentFontScale() =
+        runComposeUiTest {
+            setContent {
+                AtTwoHundredPercentFontScale {
+                    MaterialTheme {
+                        Box(Modifier.width(360.dp).height(180.dp)) {
+                            Column(Modifier.verticalScroll(rememberScrollState())) {
+                                Spacer(Modifier.height(240.dp))
+                                GgufFileListItem(
+                                    filename = "weights/model-q4.gguf",
+                                    sizeBytes = 1_073_741_824L,
+                                    isDownloaded = false,
+                                    progress = 50f,
+                                    isDownloading = false,
+                                    onDownloadClick = {},
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            onNodeWithText("model-q4.gguf")
+                .performScrollTo()
+                .assertIsDisplayed()
+            onNodeWithText("50%")
+                .performScrollTo()
+                .assertIsDisplayed()
+            onNodeWithContentDescription("Download weights/model-q4.gguf")
+                .performScrollTo()
+                .assertIsDisplayed()
+        }
 
     @Test
     fun drawerShellWindowWidthMovesDetailsIntoSupportingPaneAtExpandedBoundary() = runComposeUiTest {
@@ -431,3 +476,12 @@ private fun setupComponent(
     progress = null,
     required = true,
 )
+
+@Composable
+private fun AtTwoHundredPercentFontScale(content: @Composable () -> Unit) {
+    val current = LocalDensity.current
+    CompositionLocalProvider(
+        LocalDensity provides Density(current.density, fontScale = 2f),
+        content = content,
+    )
+}

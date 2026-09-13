@@ -5,6 +5,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 
 @Immutable
 data class AuroraMotionPolicy(
+    val durationScale: Float,
     val spatialTransitionsEnabled: Boolean,
     val pulseEnabled: Boolean,
     val shapeMorphEnabled: Boolean,
@@ -18,6 +19,7 @@ data class AuroraMotionPolicy(
 fun auroraMotionPolicy(durationScale: Float): AuroraMotionPolicy {
     val reducedMotion = durationScale <= 0f
     return AuroraMotionPolicy(
+        durationScale = durationScale,
         spatialTransitionsEnabled = !reducedMotion,
         pulseEnabled = !reducedMotion,
         shapeMorphEnabled = !reducedMotion,

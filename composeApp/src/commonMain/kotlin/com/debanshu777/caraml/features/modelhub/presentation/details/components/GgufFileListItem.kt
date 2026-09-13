@@ -102,7 +102,11 @@ fun GgufFileListItem(
                     tint = MaterialTheme.colorScheme.primary
                 )
             } else {
-                IconButton(onClick = onDownloadClick, enabled = downloadEnabled && !isDownloading) {
+                IconButton(
+                    onClick = onDownloadClick,
+                    modifier = Modifier.size(48.dp),
+                    enabled = downloadEnabled && !isDownloading,
+                ) {
                     Icon(Icons.Default.Download, contentDescription = "Download $filename")
                 }
             }
