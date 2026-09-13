@@ -6,6 +6,8 @@ Upgrade CaraML from a functional Material 3 interface into a cohesive, modern, c
 
 The redesign keeps user-selected dynamic colors as a core product feature. It derives atmospheric gradients and accent treatments from the active Material color scheme, applies one consistent spacing and surface hierarchy across the app, and uses motion to explain state changes. The result should feel calm while idle, expressive while generating, and efficient when browsing dense model information.
 
+This revision incorporates physical-device feedback from the first Aurora implementation. The original implementation was internally consistent but visually missed the intended system: opaque bordered panes hid the ambient gradient, oversized containers reduced information density, and compound drawer/content transforms made navigation feel theatrical. The corrected system below supersedes those implementation choices while preserving the original product and ownership boundaries.
+
 ## Design references
 
 CaraML Aurora adapts principles from several references instead of visually cloning one product:
@@ -24,7 +26,7 @@ These sources are aesthetic references, not asset libraries. CaraML will not cop
 ## Product principles
 
 1. **The model output is the hero.** Chrome becomes quieter as a conversation fills with content.
-2. **Color describes state.** Gradients identify the active theme and generation mode; they do not decorate every card.
+2. **Color creates atmosphere and describes state.** One coherent gradient field establishes the active theme; restrained focal treatments identify the primary action or selected context without decorating every card.
 3. **Motion explains change.** Animation connects a user action to its result, communicates progress, or preserves spatial context.
 4. **One system, two densities.** Empty states may be spacious and expressive; model lists and settings remain compact and scannable.
 5. **Platform-native readability.** Use the platform sans-serif through Material typography. Do not bundle a brand font solely for visual novelty.
@@ -59,16 +61,17 @@ This design covers:
 
 The active `ThemePreferences` remains the single input to `CaraMLTheme`. `materialKolor` continues to create the light or dark `ColorScheme`; Aurora tokens are derived after that scheme exists.
 
-The ambient backdrop uses a layered Compose brush:
+The ambient backdrop uses a layered Compose brush that must remain visibly present after content is composed:
 
 1. `surface` is the full-window base.
-2. A radial wash of `primaryContainer` at low alpha enters from the top-leading corner.
-3. A smaller radial wash of `tertiaryContainer` at lower alpha enters from the opposing edge.
-4. Content remains on opaque or near-opaque Material surface roles so text contrast never depends on the gradient.
+2. In light themes, a broad wash of `primaryContainer` enters from the top-leading corner and a smaller `tertiaryContainer` wash enters from the opposing edge.
+3. In dark themes, the washes use low-alpha `primary` and `tertiary` roles so the color does not disappear into dark container tones.
+4. A gentle diagonal interpolation connects the anchors; isolated decorative blobs are prohibited.
+5. Standard panes composite semantic Material surface roles over the backdrop instead of fully covering it. Foreground contrast is verified against the final composited color, never assumed from the uncomposited token.
 
-The gradient is visible in the navigation shell, empty-state hero, active composer halo, and selected recommendation panel. Standard settings rows, message text, dialogs, and dense lists use tonal surfaces rather than gradient fills.
+The gradient is visible through the navigation shell and normal panes. Each screen may additionally use one focal gradient treatment: the empty-state/composer halo in Chat, the device summary in Model Hub, the overview header in Details, or the appearance preview in Settings. Dense rows, ordinary cards, dialogs, and secondary controls use translucent tonal surfaces rather than independent gradients.
 
-Gradient-filled text and arbitrary white text over gradients are prohibited. Primary actions remain Material filled or filled-tonal buttons. A gradient may sit behind a button as a halo, but the button itself retains a valid semantic container/foreground pair.
+Gradient-filled text and arbitrary white text over gradients are prohibited. A primary action may use a seed-derived gradient only when its foreground passes contrast against every endpoint and the midpoint in all supported palettes and themes. Otherwise the gradient forms a clearly visible outer halo around a solid semantic Material button. Destructive actions never use gradients.
 
 ### Surface hierarchy
 
@@ -77,13 +80,13 @@ CaraML uses four visual levels mapped to existing Material roles:
 | Level | Material role | Use |
 |---|---|---|
 | Canvas | `surface` | App background and long-form assistant output |
-| Recessed | `surfaceContainerLow` | Navigation and low-priority grouped regions |
-| Pane | `surfaceContainer` | Composer, model cards, settings groups, and loading states |
-| Floating | `surfaceContainerHigh` | Menus, sheets, dialogs, selected or interactive overlays |
+| Recessed | `surfaceContainerLow` composited at approximately 72–82% | Navigation and low-priority grouped regions |
+| Pane | `surfaceContainer` composited at approximately 82–90% | Composer, model cards, settings groups, and loading states |
+| Floating | `surfaceContainerHigh` composited at approximately 92–96% | Menus, sheets, dialogs, selected or interactive overlays |
 
-`surfaceContainerHighest` is reserved for pressed, selected, or high-attention transient states. Tonal difference is the primary depth cue. Shadows appear only on content that physically overlaps another pane, such as the open compact drawer, modal sheet, or floating composer.
+`surfaceContainerHighest` is reserved for pressed, selected, or high-attention transient states. Tonal translucency is the primary depth cue. A single soft, long-throw shadow style is used only on content that physically overlaps another pane, such as the open compact drawer, modal sheet, or floating composer.
 
-Boundaries use `outlineVariant`; `outline` is reserved for focused fields and important selection boundaries. Dark mode uses slightly lighter tonal steps instead of heavy black shadows.
+Borders are rare. `outlineVariant` may separate adjacent rows or protect a control boundary, while `outline` is reserved for focused fields and important selections. Standard panes do not all receive an outline. Dark mode uses slightly lighter tonal steps instead of heavy black shadows.
 
 ### Typography
 
@@ -94,7 +97,7 @@ The app continues to use the platform Material sans-serif. Typography becomes mo
 | Empty-state statement | `headlineMedium` | Medium weight, tight visual grouping |
 | Screen title | `titleLarge` | Semibold, no oversized app-bar text |
 | Section heading | `titleMedium` | Semibold |
-| Model/card title | `titleMedium` | Semibold, maximum two lines |
+| Model/card title | `titleMedium` | Semibold, maximum two lines; repository owner is a separate caption |
 | Conversation body | `bodyLarge` | Relaxed line height for reading |
 | Dense settings/model metadata | `bodyMedium` | Standard weight |
 | Buttons and chips | `labelLarge` | Semibold |
@@ -111,13 +114,13 @@ Shape roles are:
 | Role | Radius | Use |
 |---|---:|---|
 | Micro | 4dp | Small status badges and progress tracks |
-| Control | 12dp | Inputs, tabs, compact rows, and small cards |
-| Pane | 16dp | Standard cards and message bubbles |
-| Feature | 24dp | Composer, highlighted recommendations, and large panels |
+| Compact | 8dp | Tabs, chips, status labels, and compact selection indicators |
+| Control | 12dp | Inputs, buttons, compact rows, and small cards |
+| Pane | 16dp | Standard cards, focal panels, composer, and message bubbles |
 | Modal | 28dp | Dialogs and bottom sheets |
-| Full | Capsule | Buttons, filter pills, selection indicators, and icon controls |
+| Full | Capsule | True tags, small badges, and circular icon controls only |
 
-Compact windows use 16dp horizontal margins. Medium and expanded windows use 24dp. Large desktop content may use 32dp internal pane padding, but readable content widths remain constrained.
+Compact windows use exactly one 16dp horizontal content margin. Children inside `ResponsiveContentPane` do not add a second page gutter. Medium and expanded windows use one 24dp margin. Standard pane padding is 16dp on compact windows and 20–24dp only where content density allows it. Large desktop content may use 32dp internal pane padding, but readable content widths remain constrained.
 
 ## Motion system
 
@@ -132,10 +135,10 @@ No animation exists merely to keep the screen moving. Idle gradients are static.
 | Category | Behavior | Timing |
 |---|---|---|
 | Press and selection | Shape, scale, or tonal response with low bounce | Expressive spring; settle without overshoot that changes layout |
-| Top-level destination change | Short crossfade with 4–8dp vertical continuity | 220ms |
-| Forward detail navigation | Fade plus horizontal shared-axis movement over roughly 10% of width | 300ms enter, 200ms exit |
-| Back navigation | Reverse the detail shared axis | 250ms enter, 200ms exit |
-| Drawer | Offset, content scale, corner, and scrim animate as one transition | Medium-stiffness spring |
+| Top-level destination change | Opacity blend with no whole-screen translation or scale | 180–200ms |
+| Forward detail navigation | Fade plus a fixed 24dp horizontal shared-axis movement | 220–250ms enter, 180–200ms exit |
+| Back navigation | Reverse the same fixed detail movement | 220–250ms enter, 180–200ms exit |
+| Drawer | Drawer panel slides over stationary content while the scrim fades | 220–280ms emphasized easing |
 | Sheet/dialog | Fade scrim and decelerating vertical entrance | 250ms enter, 200ms exit |
 | Expand/collapse | Animate content size and chevron rotation | 220ms |
 | List/filter update | Animate only inserted, removed, and repositioned rows | 180–260ms |
@@ -146,7 +149,8 @@ The existing full-width linear slide between every route is replaced because it 
 
 ### Feature motion
 
-- Opening the compact drawer reveals the underlying Aurora shell while the content pane translates, scales slightly, and gains feature-radius corners. Closing reverses the same transition.
+- Opening the compact drawer slides a modal navigation surface above stationary content. The underlying route keeps identical bounds, scale, and corner geometry throughout the transition. The drawer and route transition never compete for spatial movement.
+- Switching peer destinations uses a short opacity blend. Tabs use at most 1dp of translation plus opacity, matching the Arc reference; neither interaction scales a full pane.
 - Switching Chat, Image, and Video modes uses `AnimatedContent` so the empty-state message, prompt hint, mode pill, and relevant controls transform together.
 - The composer changes tonal level and receives a subtle theme-gradient halo on focus or while generation is active. It does not continuously float or bounce.
 - A newly submitted user message enters with a short fade and 8dp upward translation. Assistant tokens are not animated individually.
@@ -183,7 +187,9 @@ Keyboard, safe-area, status-bar, navigation-bar, and display-cutout insets remai
 The redesign adds a small `core/ui` presentation vocabulary rather than a parallel component framework:
 
 - `AuroraBackdrop`: remembers and draws the seed-derived ambient brush.
-- `CaraMLPane`: applies an approved surface level, border role, shape role, and optional overlap elevation.
+- `CaraMLPane`: composites an approved translucent surface level, optional rare boundary, shape role, and optional overlap elevation.
+- `AuroraFocalSurface`: provides the single approved per-screen gradient field with a contrast-safe semantic content layer.
+- `AuroraPrimaryAction`: provides a contrast-verified gradient action or a gradient halo around a semantic Material action.
 - `CaraMLTopBar`: standardizes menu/back affordance, title metrics, scroll treatment, and optional trailing action.
 - `CaraMLSectionHeader`: standard title, supporting copy, and optional action alignment.
 - `CaraMLStatusPill`: semantic status icon, label, and container role.
@@ -201,17 +207,19 @@ The initial state is the most expressive surface. A centered `CaraMLEmptyState` 
 
 Assistant output sits directly on the canvas with a constrained reading width. User messages retain a compact container aligned to the trailing edge. Thinking and generation metadata are secondary disclosures, not competing cards.
 
-The composer uses the Feature radius, a Pane surface, a subtle boundary, and a Floating surface when focused. Model selection, context status, attachable mode indicators, send, and stop controls share one baseline and meet minimum touch targets. The send/stop transformation is animated as one control.
+The composer uses the Pane radius, a Pane surface, a subtle boundary, and a Floating surface when focused. Model selection, context status, attachable mode indicators, send, and stop controls share one baseline and meet minimum touch targets. The send/stop transformation is animated as one control.
 
 Image and video generation use the same conversational structure. Active work displays phase, reported progress, elapsed time, and a lightweight generation pulse. Generated media enters with a fade and size reveal after decoding, never before bytes are available.
 
 ### Model Hub
 
-The Models screen retains Search and Downloaded as peer tabs but gives them a quieter pill/segmented treatment inside the content pane. The app bar and tabs remain pinned; each tab owns exactly one vertical scroll container.
+The Models screen retains Search and Downloaded as peer tabs but renders them as a compact 48dp tab treatment, not a feature-radius segmented hero. The app bar and tabs remain pinned; each tab owns exactly one vertical scroll container.
 
-Device capacity and recommendation profile become a compact overview band rather than multiple equal-weight cards. Model-kind and sort/filter controls form a single responsive control row that wraps only on compact widths.
+Device capacity and recommendation profile become one gradient-washed focal band with a translucent semantic inner surface. Device details remain collapsed initially, and the profile action reads as a compact row rather than a second large filled panel.
 
-Model cards use a consistent hierarchy: title and author first, fit/recommendation status second, capability metadata third, and actions last. Recommended models receive a seed-derived edge tint and tonal emphasis, not a full gradient fill. Downloading cards transform in place to show truthful progress and cancellation controls.
+Model-kind controls occupy one compact row. Ordering stays immediately visible, while sort and parameter ranges move behind one clearly labeled Filters action whose badge or summary exposes active selections. Opening that action uses the existing modal sheet behavior and does not change filter semantics. Controls scroll horizontally rather than creating three or more stacked chip rows. Search shows one search affordance and one conditional clear affordance, never duplicate search icons.
+
+Model cards use a compact list-card hierarchy: owner caption, two-line model title, one compact fit/status label, and one muted metadata line. Standard compact cards use 12–16dp internal padding and no redundant outer page gutter. A non-interactive status is visually 28–32dp high; an interactive status retains a 48dp semantic and touch target without inflating its painted container. Recommended models receive a seed-derived edge tint and tonal emphasis, not a full gradient fill. Downloading cards transform in place to show truthful progress and cancellation controls.
 
 Downloaded models use the same card grammar as search results. Readiness, missing components, and selected-model status use `CaraMLStatusPill` so the same state looks identical across Search, Downloaded, Details, and Chat.
 
@@ -219,7 +227,9 @@ Downloaded models use the same card grammar as search results. Readiness, missin
 
 Compact windows show a single scrolling detail view with a normal top app bar and a stable bottom action region when an install action is available. Expanded windows use a list-detail/supporting-pane composition: description and files in the primary pane, device fit and install summary in the supporting pane.
 
-Metadata is grouped into meaningful sections rather than a flat wall of chips. File variants remain explicit, and recommendation evidence remains readable before the user initiates a download or model load.
+The overview is the screen's one focal gradient treatment. Repository owner is a small eyebrow; the model name uses `titleLarge` and wraps naturally without repeating the owner. Download and like metrics remain secondary.
+
+Metadata is grouped into meaningful sections rather than a flat wall of chips. Common short values may use a label/value row; long values such as base-model identifiers stack below their label and remain start-aligned. ISO timestamps are formatted for people. Structured or duplicate namespaced tags are not rendered as raw pills. A compact initial tag set is followed by an explicit Show all/Show less disclosure when needed. File variants remain explicit, and recommendation evidence remains readable before the user initiates a download or model load.
 
 ### Settings
 
@@ -275,13 +285,17 @@ Implementation follows test-driven development for behavior and testable present
 Automated coverage will verify:
 
 - Aurora gradient tokens derive only from semantic `ColorScheme` roles.
-- Surface and shape role mappings remain stable in light and dark schemes.
+- Gradient atmosphere remains visibly non-uniform after panes are composed in light and dark schemes.
+- Surface and shape role mappings remain stable in light and dark schemes, with standard panes borderless by default.
 - Window-width policy selects drawer, rail, and sidebar at the specified boundaries.
-- Peer and hierarchical routes select their intended transition families.
+- Opening and closing the compact drawer leaves content bounds and scale unchanged.
+- Peer routes are opacity-only; hierarchical routes use the fixed 24dp shared axis.
 - Reduced-motion policy disables translation, scale, pulse, and stagger.
 - Shared components preserve accessible labels, touch-target sizing, and state semantics.
 - Chat, Model Hub, Details, and Settings retain their existing actions and state routing.
 - Existing Model Hub scroll-owner and layout regressions remain covered.
+- At a representative compact phone viewport, Model Hub does not double its 16dp page gutter, filter controls do not create three stacked rows, and a result or loading state enters the initial scroll viewport.
+- Model Details separates owner from model name, formats timestamps, start-aligns long metadata, and hides raw duplicate namespaced tags from the initial hierarchy.
 
 Verification gates are:
 
@@ -296,6 +310,8 @@ Verification gates are:
 
 Visual review checks typography hierarchy, spacing rhythm, contrast, focus, insets, scroll ownership, animation continuity, progress truthfulness, and idle rendering cost.
 
+The supplied compact-phone screenshots and drawer recording are regression references. Final Android review repeats the same flows in light and dark themes and records the corrected drawer open/close, Model Hub initial/result states, and long-name Details state. A compile-only gate is never reported as visual approval.
+
 ## Documentation
 
 Implementation updates the root and `composeApp` README Recent Changes sections with concise bullets describing the visual system, adaptive shell, and motion behavior. Other module READMEs remain unchanged because native engines, runners, and Hugging Face networking are outside this design.
@@ -304,11 +320,14 @@ Implementation updates the root and `composeApp` README Recent Changes sections 
 
 - All primary destinations visibly share one CaraML Aurora system in light and dark themes.
 - The active seed color influences atmosphere without reducing content contrast.
-- Gradients appear only in the approved focal treatments.
+- The ambient gradient remains clearly visible through the shell and pane hierarchy, and each screen uses at most one approved focal gradient treatment.
+- Ordinary panes do not form a wall of opaque bordered cards.
 - Chat becomes quieter as content accumulates, while empty and generating states remain expressive.
 - Model discovery and Settings present dense information with consistent hierarchy and spacing.
+- Model Hub uses one page gutter, compact controls, one advanced-filter affordance, and compact list cards on phones.
+- Model Details does not repeat repository ownership, right-align long identifiers, expose raw ISO timestamps, or dump every raw tag into the initial view.
 - Compact, medium, and expanded widths use the specified navigation treatment and readable content limits.
-- Peer and hierarchical transitions feel spatially distinct.
+- Drawer content overlays a stationary route; peer routes crossfade; hierarchical transitions use only a shallow fixed translation.
 - Active generation and download states communicate truthful progress without excessive continuous motion.
 - Reduced-motion mode remains fully usable and removes spatial/continuous effects.
 - Existing product behavior and ownership boundaries are preserved.
