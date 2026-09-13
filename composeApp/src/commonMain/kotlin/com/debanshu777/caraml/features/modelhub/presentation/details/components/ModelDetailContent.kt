@@ -78,13 +78,14 @@ fun ModelDetailContent(
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         if (modelDetailsUseSupportingPane(windowWidth ?: maxWidth)) {
             Row(
-                modifier = Modifier.fillMaxSize().padding(vertical = spacing.s),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(vertical = spacing.s),
                 horizontalArrangement = Arrangement.spacedBy(spacing.xl),
             ) {
                 Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState()),
+                    modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(spacing.l),
                 ) {
                     ModelOverviewSection(model, modelSetup?.description)
@@ -102,9 +103,7 @@ fun ModelDetailContent(
                     }
                 }
                 Column(
-                    modifier = Modifier
-                        .width(340.dp)
-                        .verticalScroll(rememberScrollState()),
+                    modifier = Modifier.width(340.dp),
                     verticalArrangement = Arrangement.spacedBy(spacing.l),
                 ) {
                     ModelRecommendationSection(recommendationState, onRecommendationInfoClick)
@@ -347,12 +346,15 @@ private fun ModelFileVariantsSection(
                 )
             } else {
                 ggufFiles.forEach { item ->
+                    val matchesSelectedDescriptor = item.artifact?.let { artifact ->
+                        artifactMatches(recommendationState?.selectedDescriptor, artifact)
+                    } == true
                     GgufFileListItem(
                         filename = item.path.ifEmpty { item.filename },
                         sizeBytes = item.sizeBytes,
                         isDownloaded = item.isDownloaded,
                         progress = item.progress,
-                        isDownloading = isDownloading,
+                        isDownloading = isDownloading && matchesSelectedDescriptor,
                         onDownloadClick = {
                             val artifact = item.artifact ?: return@GgufFileListItem
                             onDownloadClick(
@@ -369,9 +371,8 @@ private fun ModelFileVariantsSection(
                                 ),
                             )
                         },
-                        downloadEnabled = item.artifact?.let { artifact ->
-                            artifactMatches(recommendationState?.selectedDescriptor, artifact)
-                        } == true,
+                        downloadEnabled = matchesSelectedDescriptor,
+                        interactionLocked = isDownloading,
                     )
                 }
             }

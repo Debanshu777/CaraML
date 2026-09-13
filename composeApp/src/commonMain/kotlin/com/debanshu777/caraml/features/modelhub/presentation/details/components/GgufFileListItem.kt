@@ -37,6 +37,7 @@ fun GgufFileListItem(
     onDownloadClick: () -> Unit,
     modifier: Modifier = Modifier,
     downloadEnabled: Boolean = true,
+    interactionLocked: Boolean = false,
 ) {
     val hasDirectory = filename.contains('/')
     val displayName = filename.substringAfterLast('/')
@@ -116,7 +117,7 @@ fun GgufFileListItem(
                 IconButton(
                     onClick = onDownloadClick,
                     modifier = Modifier.size(48.dp),
-                    enabled = downloadEnabled && !isDownloading,
+                    enabled = downloadEnabled && !interactionLocked && !isDownloading,
                 ) {
                     Icon(Icons.Default.Download, contentDescription = "Download $filename")
                 }

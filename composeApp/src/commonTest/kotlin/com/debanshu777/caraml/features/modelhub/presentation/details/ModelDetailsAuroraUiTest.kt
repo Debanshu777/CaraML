@@ -24,7 +24,9 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
@@ -45,7 +47,9 @@ import com.debanshu777.caraml.core.rating.SdArchitecture
 import com.debanshu777.caraml.core.recommendation.DiffusionComponentDescriptor
 import com.debanshu777.caraml.core.recommendation.DiffusionMode
 import com.debanshu777.caraml.core.recommendation.DiffusionModelDescriptor
+import com.debanshu777.caraml.core.recommendation.LlmModelDescriptor
 import com.debanshu777.caraml.core.recommendation.ModelFileIdentity
+import com.debanshu777.caraml.core.recommendation.QuantizationEvidence
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.core.ui.motion.auroraMotionPolicy
 import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
@@ -57,6 +61,7 @@ import com.debanshu777.caraml.features.modelhub.presentation.search.GgufFileUiSt
 import com.debanshu777.caraml.features.modelhub.presentation.search.InstallBundleUiState
 import com.debanshu777.caraml.features.modelhub.presentation.search.SetupComponentUiState
 import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
+import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
 import com.debanshu777.huggingfacemanager.model.ListModelsResponse
 import com.debanshu777.huggingfacemanager.model.ModelDetailResponse
 import com.debanshu777.huggingfacemanager.sdcpp.ComponentRole
@@ -137,6 +142,112 @@ class ModelDetailsAuroraUiTest {
                 hasText("50%"),
         ).assertCountEquals(1)
     }
+
+    @Test
+    fun modelDetailsAssociatesDownloadStateAndCallbacksWithTheExactSelectedFile() =
+        runComposeUiTest {
+            val fixture = ggufDownloadFixture()
+            var isDownloading by mutableStateOf(true)
+            var recommendation by mutableStateOf(fixture.activeRecommendation)
+            var requestedModelId = ""
+            var requestedPath = ""
+            var requestedMetadata: DownloadMetadataDTO? = null
+            setContent {
+                MaterialTheme {
+                    Box(Modifier.width(620.dp).height(720.dp)) {
+                        ModelDetailContent(
+                            model = fixture.model,
+                            ggufFiles = fixture.files,
+                            isDownloading = isDownloading,
+                            onDownloadClick = { modelId, path, metadata ->
+                                requestedModelId = modelId
+                                requestedPath = path
+                                requestedMetadata = metadata
+                            },
+                            recommendationState = recommendation,
+                        )
+                    }
+                }
+            }
+
+            onAllNodes(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.StateDescription,
+                    "Downloading",
+                ) and hasText("50%"),
+            ).assertCountEquals(1)
+
+            val idleLabel = onNodeWithText("idle-q8.gguf").fetchSemanticsNode()
+            val idleAction = onNodeWithContentDescription("Download weights/idle-q8.gguf")
+                .assertIsNotEnabled()
+                .fetchSemanticsNode()
+            assertTrue(
+                idleLabel.boundsInRoot.right <= idleAction.boundsInRoot.left,
+                "An idle row must keep filename and exact-path Download action separate",
+            )
+
+            runOnIdle {
+                isDownloading = false
+                recommendation = fixture.idleRecommendation
+            }
+
+            onNodeWithContentDescription("Download weights/active-q4.gguf")
+                .assertIsNotEnabled()
+            onNodeWithContentDescription("Download weights/idle-q8.gguf")
+                .assertIsEnabled()
+                .performClick()
+
+            runOnIdle {
+                assertEquals(fixture.model.modelId, requestedModelId)
+                assertEquals(fixture.idleArtifact.relativePath, requestedPath)
+                assertEquals(fixture.idleArtifact, requestedMetadata?.artifact)
+            }
+        }
+
+    @Test
+    fun expandedLargeTextUsesOneScrollOwnerAcrossPrimaryAndSupportingColumns() =
+        runComposeUiTest {
+            val fixture = ggufDownloadFixture()
+            var downloadClicks = 0
+            setContent {
+                AtTwoHundredPercentFontScale {
+                    MaterialTheme {
+                        Box(Modifier.width(900.dp).height(280.dp)) {
+                            ModelDetailContent(
+                                model = fixture.model.copy(
+                                    tags = listOf(
+                                        "text-generation",
+                                        "transformers",
+                                        "large-language-model",
+                                        "on-device-inference",
+                                    ),
+                                ),
+                                ggufFiles = fixture.files,
+                                isDownloading = false,
+                                onDownloadClick = { _, _, _ -> downloadClicks += 1 },
+                                recommendationState = fixture.activeRecommendation,
+                                windowWidth = 900.dp,
+                            )
+                        }
+                    }
+                }
+            }
+
+            val scrollOwners = onAllNodes(
+                SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange),
+            ).fetchSemanticsNodes()
+            assertEquals(1, scrollOwners.size)
+
+            val overview = onNodeWithText("Overview").fetchSemanticsNode().boundsInRoot
+            val deviceFit = onNodeWithText("Device fit").fetchSemanticsNode().boundsInRoot
+            assertTrue(deviceFit.left > overview.left, "Expanded details must remain two-column")
+
+            onNodeWithContentDescription("Download weights/active-q4.gguf")
+                .performScrollTo()
+                .assertIsDisplayed()
+                .performClick()
+            runOnIdle { assertEquals(1, downloadClicks) }
+        }
 
     @Test
     fun fileSectionProgressAndDownloadRemainReachableAtTwoHundredPercentFontScale() =
@@ -420,6 +531,105 @@ private data class InstallFixture(
     val installState: InstallBundleUiState,
     val recommendation: RecommendedModelUiState,
 )
+
+private data class GgufDownloadFixture(
+    val model: ModelDetailResponse,
+    val files: List<GgufFileUiState>,
+    val activeArtifact: DownloadArtifactIdentity,
+    val idleArtifact: DownloadArtifactIdentity,
+    val activeRecommendation: RecommendedModelUiState,
+    val idleRecommendation: RecommendedModelUiState,
+)
+
+private fun ggufDownloadFixture(): GgufDownloadFixture {
+    val repositoryId = "org/gguf-model"
+    val revision = "c".repeat(40)
+    fun artifact(path: String, oid: Char, expectedBytes: Long): DownloadArtifactIdentity =
+        requireNotNull(
+            DownloadArtifactIdentity.create(
+                repositoryId = repositoryId,
+                immutableRevision = revision,
+                relativePath = path,
+                remoteObjectId = "sha256:${oid.toString().repeat(64)}",
+                expectedBytes = expectedBytes,
+            ),
+        )
+
+    fun file(artifact: DownloadArtifactIdentity): ModelFileIdentity = ModelFileIdentity(
+        repositoryId = artifact.repositoryId,
+        revision = artifact.immutableRevision,
+        path = artifact.relativePath,
+        sizeBytes = artifact.expectedBytes,
+        gitOid = null,
+        lfsOid = requireNotNull(artifact.remoteObjectId).removePrefix("sha256:"),
+        xetHash = null,
+        evidence = emptyList(),
+    )
+
+    fun descriptor(artifact: DownloadArtifactIdentity): LlmModelDescriptor = LlmModelDescriptor(
+        repositoryId = repositoryId,
+        revision = revision,
+        file = file(artifact),
+        architecture = "llama",
+        quantization = QuantizationEvidence.Known(
+            if (artifact.relativePath.contains("q4")) "Q4_K_M" else "Q8_0",
+        ),
+        parameterCount = 7_000_000_000L,
+        contextLimit = 4_096,
+        transformerShape = null,
+        ggufVersion = 3,
+        requiredEngineFeatures = emptyList(),
+        evidence = emptyList(),
+    )
+
+    fun recommendation(
+        descriptor: LlmModelDescriptor,
+        variant: String,
+    ): RecommendedModelUiState = RecommendedModelUiState(
+        sourceModel = ListModelsResponse.Model(id = repositoryId),
+        repositoryId = repositoryId,
+        descriptorState = DescriptorState.ASSESSED,
+        objectiveAssessment = null,
+        personalizedResult = null,
+        selectedVariantName = variant,
+        stableModelId = repositoryId,
+        sourceIndex = 0,
+        selectedDescriptor = descriptor,
+    )
+
+    val activeArtifact = artifact("weights/active-q4.gguf", 'd', 4_294_967_296L)
+    val idleArtifact = artifact("weights/idle-q8.gguf", 'e', 8_589_934_592L)
+    return GgufDownloadFixture(
+        model = ModelDetailResponse(
+            modelId = repositoryId,
+            author = "Model author",
+            downloads = 12_345,
+            likes = 678,
+        ),
+        files = listOf(
+            GgufFileUiState(
+                path = activeArtifact.relativePath,
+                filename = "active-q4.gguf",
+                sizeBytes = activeArtifact.expectedBytes,
+                isDownloaded = false,
+                progress = 50f,
+                artifact = activeArtifact,
+            ),
+            GgufFileUiState(
+                path = idleArtifact.relativePath,
+                filename = "idle-q8.gguf",
+                sizeBytes = idleArtifact.expectedBytes,
+                isDownloaded = false,
+                progress = null,
+                artifact = idleArtifact,
+            ),
+        ),
+        activeArtifact = activeArtifact,
+        idleArtifact = idleArtifact,
+        activeRecommendation = recommendation(descriptor(activeArtifact), "Q4_K_M"),
+        idleRecommendation = recommendation(descriptor(idleArtifact), "Q8_0"),
+    )
+}
 
 private fun realisticInstallFixture(): InstallFixture {
     val repositoryId = "org/model"
