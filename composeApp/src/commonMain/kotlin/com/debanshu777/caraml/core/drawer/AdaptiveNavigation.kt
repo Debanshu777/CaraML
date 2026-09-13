@@ -1,14 +1,20 @@
 package com.debanshu777.caraml.core.drawer
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,6 +32,7 @@ fun AppNavigationPanel(
     compact: Boolean,
     onItemClick: (DrawerItem) -> Unit,
     modifier: Modifier = Modifier,
+    contentInsets: WindowInsets = WindowInsets(0),
 ) {
     CaraMLPane(
         modifier = modifier.fillMaxHeight(),
@@ -33,25 +40,31 @@ fun AppNavigationPanel(
         shape = RectangleShape,
         showBorder = false,
     ) {
-        if (!compact) {
-            Text(
-                text = "CaraML",
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp),
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-        } else {
-            Spacer(modifier = Modifier.height(16.dp))
-        }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .windowInsetsPadding(contentInsets.only(WindowInsetsSides.Top)),
+        ) {
+            if (!compact) {
+                Text(
+                    text = "CaraML",
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            } else {
+                Spacer(modifier = Modifier.height(16.dp))
+            }
 
-        items.forEach { item ->
-            DrawerItemView(
-                item = item,
-                selected = item.id == selectedItemId,
-                showLabel = !compact,
-                onClick = { onItemClick(item) },
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-            )
+            items.forEach { item ->
+                DrawerItemView(
+                    item = item,
+                    selected = item.id == selectedItemId,
+                    showLabel = !compact,
+                    onClick = { onItemClick(item) },
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                )
+            }
         }
     }
 }
@@ -81,6 +94,7 @@ fun AdaptiveNavigation(
                     compact = false,
                     onItemClick = onItemClick,
                     modifier = Modifier.fillMaxWidth(0.80f),
+                    contentInsets = WindowInsets.safeDrawing,
                 )
             },
             content = content,
