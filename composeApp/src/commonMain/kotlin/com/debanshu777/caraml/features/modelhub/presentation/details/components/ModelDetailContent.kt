@@ -18,11 +18,15 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.recommendation.DiffusionModelDescriptor
@@ -34,6 +38,7 @@ import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.ui.components.CaraMLPane
 import com.debanshu777.caraml.core.ui.components.CaraMLSectionHeader
 import com.debanshu777.caraml.core.ui.components.CaraMLStatusPill
+import com.debanshu777.caraml.core.ui.components.AuroraFocalSurface
 import com.debanshu777.caraml.core.ui.components.StatusTone
 import com.debanshu777.caraml.features.modelhub.presentation.details.modelDetailsUseSupportingPane
 import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
@@ -175,41 +180,51 @@ fun ModelDetailContent(
 @Composable
 private fun ModelOverviewSection(model: ModelDetailResponse, description: String?) {
     val spacing = LocalSpacing.current
-    CaraMLPane(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(spacing.l),
-            verticalArrangement = Arrangement.spacedBy(spacing.s),
+    val heading = splitRepositoryId(model.modelId ?: model.id.orEmpty())
+    val owner = heading.owner ?: model.author?.trim()?.takeIf { it.isNotEmpty() }
+    AuroraFocalSurface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+    ) {
+        CaraMLPane(
+            modifier = Modifier.fillMaxWidth().padding(1.dp),
+            shape = MaterialTheme.shapes.medium,
         ) {
-            CaraMLSectionHeader(title = "Overview")
-            Text(
-                text = model.modelId ?: model.id ?: "Unknown",
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            model.author?.let { author ->
+            Column(
+                modifier = Modifier.padding(spacing.l),
+                verticalArrangement = Arrangement.spacedBy(spacing.s),
+            ) {
+                CaraMLSectionHeader(title = "Overview")
+                owner?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
                 Text(
-                    text = author,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = heading.name,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
-            }
-            description?.takeIf { it.isNotBlank() }?.let {
-                Text(
-                    text = it,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (model.downloads != null || model.likes != null) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(spacing.l),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    model.downloads?.let { count ->
-                        ModelMetric(Icons.Default.Download, "$count downloads")
-                    }
-                    model.likes?.let { count ->
-                        ModelMetric(Icons.Default.FavoriteBorder, "$count likes")
+                description?.takeIf { it.isNotBlank() }?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (model.downloads != null || model.likes != null) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(spacing.l),
+                        verticalArrangement = Arrangement.spacedBy(spacing.xs),
+                    ) {
+                        model.downloads?.let { count ->
+                            ModelMetric(Icons.Default.Download, "$count downloads")
+                        }
+                        model.likes?.let { count ->
+                            ModelMetric(Icons.Default.FavoriteBorder, "$count likes")
+                        }
                     }
                 }
             }
@@ -240,7 +255,12 @@ private fun ModelMetric(icon: ImageVector, label: String) {
 
 @Composable
 private fun ModelMetadataSection(model: ModelDetailResponse) {
-    val tags = model.tags?.filterNotNull().orEmpty()
+    val tags = visibleModelTags(
+        tags = model.tags.orEmpty(),
+        pipelineTag = model.pipelineTag,
+        libraryName = model.libraryName,
+        modelType = model.config?.modelType,
+    )
     val hasInfo = model.libraryName != null || model.pipelineTag != null ||
         model.config?.modelType != null ||
         model.config?.architectures?.filterNotNull()?.isNotEmpty() == true ||
@@ -270,19 +290,29 @@ private fun ModelMetadataSection(model: ModelDetailResponse) {
                     DetailRow("Base model", models.joinToString(", "))
                 }
             }
-            DetailRow("Created", model.createdAt)
-            DetailRow("Last modified", model.lastModified)
+            DetailRow("Created", formatHubTimestamp(model.createdAt))
+            DetailRow("Last modified", formatHubTimestamp(model.lastModified))
             if (tags.isNotEmpty()) {
+                var expanded by rememberSaveable(model.modelId, model.id) { mutableStateOf(false) }
+                val displayedTags = if (expanded) tags else tags.take(4)
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(spacing.s),
                     verticalArrangement = Arrangement.spacedBy(spacing.s),
                 ) {
-                    tags.forEach { tag ->
+                    displayedTags.forEach { tag ->
                         CaraMLStatusPill(
                             label = tag,
                             contentDescription = "Tag: $tag",
                             tone = StatusTone.Neutral,
                         )
+                    }
+                }
+                if (tags.size > 4) {
+                    TextButton(
+                        onClick = { expanded = !expanded },
+                        modifier = Modifier.align(Alignment.Start),
+                    ) {
+                        Text(if (expanded) "Show less" else "Show all")
                     }
                 }
             }
@@ -435,22 +465,104 @@ private fun DetailRow(
 ) {
     if (value == null) return
     val spacing = LocalSpacing.current
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(spacing.s),
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(0.4f),
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-            textAlign = TextAlign.End,
-            modifier = Modifier.weight(0.6f),
-        )
+    val stackValue = value.length > 28 || '/' in value || ',' in value
+    if (stackValue) {
+        Column(
+            modifier = modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(spacing.xs),
+        ) {
+            DetailLabel(label)
+            DetailValue(value)
+        }
+    } else {
+        Row(
+            modifier = modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(spacing.s),
+            verticalAlignment = Alignment.Top,
+        ) {
+            DetailLabel(label, Modifier.weight(0.4f))
+            DetailValue(value, Modifier.weight(0.6f))
+        }
     }
+}
+
+@Composable
+private fun DetailLabel(label: String, modifier: Modifier = Modifier) {
+    Text(
+        text = label,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = modifier,
+    )
+}
+
+@Composable
+private fun DetailValue(value: String, modifier: Modifier = Modifier) {
+    Text(
+        text = value,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = modifier,
+    )
+}
+
+internal data class RepositoryHeading(
+    val owner: String?,
+    val name: String,
+)
+
+internal fun splitRepositoryId(id: String): RepositoryHeading {
+    val normalized = id.trim()
+    if (normalized.isEmpty()) return RepositoryHeading(owner = null, name = "Unknown")
+    val separator = normalized.indexOf('/')
+    if (separator <= 0 || separator == normalized.lastIndex) {
+        return RepositoryHeading(owner = null, name = normalized)
+    }
+    return RepositoryHeading(
+        owner = normalized.substring(0, separator),
+        name = normalized.substring(separator + 1),
+    )
+}
+
+private val hubTimestampDate = Regex(
+    """^(\d{4})-(\d{2})-(\d{2})(?:T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d))?$""",
+)
+private val monthLabels = listOf(
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+)
+
+internal fun formatHubTimestamp(value: String?): String? {
+    if (value == null) return null
+    val match = hubTimestampDate.matchEntire(value) ?: return value
+    val year = match.groupValues[1].toIntOrNull() ?: return value
+    val month = match.groupValues[2].toIntOrNull() ?: return value
+    val day = match.groupValues[3].toIntOrNull() ?: return value
+    if (month !in 1..12 || day !in 1..daysInMonth(year, month)) return value
+    return "$day ${monthLabels[month - 1]} $year"
+}
+
+private fun daysInMonth(year: Int, month: Int): Int = when (month) {
+    2 -> if (year % 400 == 0 || (year % 4 == 0 && year % 100 != 0)) 29 else 28
+    4, 6, 9, 11 -> 30
+    else -> 31
+}
+
+internal fun visibleModelTags(
+    tags: List<String?>,
+    pipelineTag: String?,
+    libraryName: String? = null,
+    modelType: String? = null,
+): List<String> {
+    val representedFacts = listOfNotNull(pipelineTag, libraryName, modelType)
+        .map { it.trim().lowercase() }
+        .toSet()
+    return tags.asSequence()
+        .filterNotNull()
+        .map { it.trim() }
+        .filter { tag ->
+            tag.isNotEmpty() && ':' !in tag && tag.lowercase() !in representedFacts
+        }
+        .distinctBy { it.lowercase() }
+        .toList()
 }

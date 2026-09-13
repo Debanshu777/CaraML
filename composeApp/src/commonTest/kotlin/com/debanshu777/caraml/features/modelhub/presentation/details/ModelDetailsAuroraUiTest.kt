@@ -55,8 +55,12 @@ import com.debanshu777.caraml.core.ui.motion.auroraMotionPolicy
 import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
 import com.debanshu777.caraml.features.modelhub.domain.RecommendedModelUiState
 import com.debanshu777.caraml.features.modelhub.presentation.details.components.ModelDetailContent
+import com.debanshu777.caraml.features.modelhub.presentation.details.components.RepositoryHeading
+import com.debanshu777.caraml.features.modelhub.presentation.details.components.formatHubTimestamp
 import com.debanshu777.caraml.features.modelhub.presentation.details.components.GgufFileListItem
 import com.debanshu777.caraml.features.modelhub.presentation.details.components.InstallBundleCard
+import com.debanshu777.caraml.features.modelhub.presentation.details.components.splitRepositoryId
+import com.debanshu777.caraml.features.modelhub.presentation.details.components.visibleModelTags
 import com.debanshu777.caraml.features.modelhub.presentation.search.GgufFileUiState
 import com.debanshu777.caraml.features.modelhub.presentation.search.InstallBundleUiState
 import com.debanshu777.caraml.features.modelhub.presentation.search.SetupComponentUiState
@@ -70,6 +74,99 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class ModelDetailsAuroraUiTest {
+
+    @Test
+    fun repositoryHeadingSeparatesOwnerFromNameWithoutRepeatingEither() {
+        assertEquals(
+            RepositoryHeading(
+                owner = "GnLOLot",
+                name = "MiniCPM5-1B-Claude-Opus-Fable5-Thinking-GGUF",
+            ),
+            splitRepositoryId("GnLOLot/MiniCPM5-1B-Claude-Opus-Fable5-Thinking-GGUF"),
+        )
+        assertEquals(RepositoryHeading(null, "ownerless-model"), splitRepositoryId("ownerless-model"))
+    }
+
+    @Test
+    fun metadataFormatsDatesAndFiltersStructuredDuplicateTags() {
+        assertEquals("3 Jul 2026", formatHubTimestamp("2026-07-03T09:24:41.000Z"))
+        assertEquals("not-a-date", formatHubTimestamp("not-a-date"))
+        assertEquals(
+            listOf("gguf", "llama.cpp", "quantized", "coding"),
+            visibleModelTags(
+                tags = listOf(
+                    "gguf",
+                    "llama.cpp",
+                    "quantized",
+                    "coding",
+                    "base_model:org/model",
+                    "text-generation",
+                ),
+                pipelineTag = "text-generation",
+            ),
+        )
+    }
+
+    @Test
+    fun compactDetailsUseHumanHierarchyAndDiscloseOnlyUsefulTags() = runComposeUiTest {
+        val modelName = "MiniCPM5-1B-Claude-Opus-Fable5-Thinking-GGUF"
+        val baseModel = "OtherOrg/MiniCPM5-1B-Claude-Opus-Fable5-Thinking"
+        val createdAt = "2026-07-03T09:24:41.000Z"
+        setContent {
+            AtTwoHundredPercentFontScale {
+                MaterialTheme {
+                    Box(Modifier.width(420.dp).height(520.dp)) {
+                        ModelDetailContent(
+                            model = ModelDetailResponse(
+                                modelId = "GnLOLot/$modelName",
+                                author = "GnLOLot",
+                                libraryName = "gguf",
+                                pipelineTag = "text-generation",
+                                createdAt = createdAt,
+                                lastModified = "2026-07-13T14:56:34.000Z",
+                                cardData = ModelDetailResponse.CardData(
+                                    baseModel = listOf(baseModel),
+                                    license = "apache-2.0",
+                                ),
+                                tags = listOf(
+                                    "gguf",
+                                    "llama.cpp",
+                                    "quantized",
+                                    "coding",
+                                    "base_model:OtherOrg/model",
+                                    "text-generation",
+                                    "en",
+                                    "zh",
+                                ),
+                            ),
+                            ggufFiles = emptyList(),
+                            isDownloading = false,
+                            onDownloadClick = { _, _, _ -> },
+                        )
+                    }
+                }
+            }
+        }
+
+        onAllNodes(hasText("GnLOLot")).assertCountEquals(1)
+        onNodeWithText(modelName).assertExists()
+        onNodeWithText("GnLOLot/$modelName").assertDoesNotExist()
+        onNodeWithText(createdAt).assertDoesNotExist()
+        onNodeWithText("3 Jul 2026").performScrollTo().assertIsDisplayed()
+
+        onNodeWithText(baseModel).performScrollTo().assertIsDisplayed()
+        val baseLabelBounds = onNodeWithText("Base model").fetchSemanticsNode().boundsInRoot
+        val baseValueBounds = onNodeWithText(baseModel).fetchSemanticsNode().boundsInRoot
+        assertTrue(baseValueBounds.top >= baseLabelBounds.bottom)
+        assertTrue(kotlin.math.abs(baseValueBounds.left - baseLabelBounds.left) < 1f)
+
+        onNodeWithContentDescription("Tag: base_model:OtherOrg/model").assertDoesNotExist()
+        onNodeWithContentDescription("Tag: text-generation").assertDoesNotExist()
+        onNodeWithText("zh").assertDoesNotExist()
+        onNodeWithText("Show all").performScrollTo().assertIsDisplayed().performClick()
+        onNodeWithText("zh").performScrollTo().assertIsDisplayed()
+        onNodeWithText("Show less").assertExists()
+    }
 
     @Test
     fun detailsUseSupportingPaneOnlyAtExpandedWidth() {
