@@ -52,15 +52,20 @@ fun GgufFileListItem(
     } else {
         reportedProgress ?: 0f
     }
+    val downloadStateSemantics = if (isDownloading) {
+        Modifier.semantics(mergeDescendants = true) {
+            stateDescription = "Downloading"
+        }
+    } else {
+        Modifier
+    }
 
     Surface(
         shape = MaterialTheme.shapes.medium,
         tonalElevation = 1.dp,
         modifier = modifier
             .fillMaxWidth()
-            .semantics(mergeDescendants = true) {
-                if (isDownloading) stateDescription = "Downloading"
-            },
+            .then(downloadStateSemantics),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(LocalSpacing.current.m),

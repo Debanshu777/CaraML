@@ -22,10 +22,12 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -91,6 +93,49 @@ class ModelDetailsAuroraUiTest {
             .assertHeightIsAtLeast(48.dp)
             .performClick()
         runOnIdle { assertEquals("weights/model-q4.gguf", requested) }
+    }
+
+    @Test
+    fun downloadSemanticsMergeOnlyWhileTheFileIsActivelyDownloading() = runComposeUiTest {
+        var requested = ""
+        setContent {
+            MaterialTheme {
+                Column {
+                    GgufFileListItem(
+                        filename = "idle.gguf",
+                        sizeBytes = 1_024L,
+                        isDownloaded = false,
+                        progress = null,
+                        isDownloading = false,
+                        onDownloadClick = { requested = "idle.gguf" },
+                    )
+                    GgufFileListItem(
+                        filename = "active.gguf",
+                        sizeBytes = 2_048L,
+                        isDownloaded = false,
+                        progress = 50f,
+                        isDownloading = true,
+                        onDownloadClick = {},
+                    )
+                }
+            }
+        }
+
+        val idleLabel = onNodeWithText("idle.gguf").fetchSemanticsNode()
+        val idleAction = onNode(
+            hasContentDescription("Download idle.gguf") and hasClickAction(),
+        ).fetchSemanticsNode()
+        assertTrue(
+            idleLabel.boundsInRoot.right <= idleAction.boundsInRoot.left,
+            "Idle file text semantics must remain separate from its Download action",
+        )
+        onNode(hasContentDescription("Download idle.gguf") and hasClickAction()).performClick()
+        runOnIdle { assertEquals("idle.gguf", requested) }
+
+        onAllNodes(
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Downloading") and
+                hasText("50%"),
+        ).assertCountEquals(1)
     }
 
     @Test
