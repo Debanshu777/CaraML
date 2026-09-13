@@ -370,6 +370,7 @@ private fun SearchTabContent(
                             viewModel.loadModels()
                         }
                     },
+                    onClear = viewModel::clearSearch,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 8.dp),
@@ -379,22 +380,11 @@ private fun SearchTabContent(
 
         if (isSearchMode && (searchResponse != null || searchError != null)) {
             item(key = "search-summary") {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = "Results for “$searchQuery” · ${searchResponse?.modelsCount ?: 0}",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.weight(1f),
-                    )
-                    TextButton(onClick = viewModel::clearSearch) {
-                        Text("Clear")
-                    }
-                }
+                SearchResultsSummary(
+                    query = searchQuery,
+                    resultCount = searchResponse?.modelsCount ?: 0,
+                    onClear = viewModel::clearSearch,
+                )
             }
         }
 
@@ -464,6 +454,32 @@ private fun SearchTabContent(
                         ?.let { state -> { onRecommendationInfoClick(state) } },
                 )
             }
+        }
+    }
+}
+
+@Composable
+internal fun SearchResultsSummary(
+    query: String,
+    resultCount: Int,
+    onClear: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "Results for “$query” · $resultCount",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onClear) {
+            Text("Clear")
         }
     }
 }

@@ -36,10 +36,11 @@ fun AppNavigationPanel(
     modifier: Modifier = Modifier,
     contentInsets: WindowInsets = WindowInsets(0),
     contentInsetSides: WindowInsetsSides = WindowInsetsSides.Top,
+    surfaceLevel: AuroraSurfaceLevel = AuroraSurfaceLevel.Recessed,
 ) {
     CaraMLPane(
         modifier = modifier.fillMaxHeight(),
-        level = AuroraSurfaceLevel.Recessed,
+        level = surfaceLevel,
         shape = RectangleShape,
         showBorder = false,
     ) {
@@ -102,6 +103,7 @@ fun AdaptiveNavigation(
                     onItemClick = onItemClick,
                     modifier = Modifier.fillMaxWidth(0.80f),
                     contentInsets = navigationInsets,
+                    surfaceLevel = AuroraSurfaceLevel.Canvas,
                 )
             },
             content = content,

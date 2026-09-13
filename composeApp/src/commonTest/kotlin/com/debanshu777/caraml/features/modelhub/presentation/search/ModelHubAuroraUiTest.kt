@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -13,14 +14,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertWidthIsAtLeast
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -41,6 +47,43 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class ModelHubAuroraUiTest {
+
+    @Test
+    fun darkSearchSummaryUsesReadableThemeContentColor() = runComposeUiTest {
+        val scheme = darkColorScheme()
+        setContent {
+            MaterialTheme(colorScheme = scheme) {
+                Box(
+                    Modifier
+                        .width(360.dp)
+                        .background(scheme.surface)
+                        .testTag("search-summary-root"),
+                ) {
+                    SearchResultsSummary(
+                        query = "MiniCPM5",
+                        resultCount = 552,
+                        onClear = {},
+                    )
+                }
+            }
+        }
+
+        val bounds = onNodeWithText("Results for “MiniCPM5” · 552")
+            .fetchSemanticsNode().boundsInRoot
+        val pixels = onNodeWithTag("search-summary-root", useUnmergedTree = true)
+            .captureToImage()
+            .toPixelMap()
+        var brightestTextPixel = 0f
+        for (y in bounds.top.toInt() until bounds.bottom.toInt()) {
+            for (x in bounds.left.toInt() until bounds.right.toInt()) {
+                brightestTextPixel = maxOf(brightestTextPixel, pixels[x, y].luminance())
+            }
+        }
+        assertTrue(
+            brightestTextPixel > 0.5f,
+            "Dark-theme result summary must paint readable text; max luminance was $brightestTextPixel",
+        )
+    }
 
     @Test
     fun modelResultCardKeepsTitleStatusMetadataAndActionOrder() = runComposeUiTest {

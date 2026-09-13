@@ -62,6 +62,40 @@ import kotlin.test.assertTrue
 class AuroraComponentsUiTest {
 
     @Test
+    fun translucentPaneProvidesReadableContentColorInDarkTheme() = runComposeUiTest {
+        val background = Color.Black
+        setContent {
+            CompositionLocalProvider(LocalDensity provides Density(1f)) {
+                MaterialTheme(
+                    colorScheme = darkColorScheme(
+                        surface = background,
+                        surfaceContainer = background,
+                        onSurface = Color.White,
+                    ),
+                ) {
+                    Box(
+                        Modifier
+                            .requiredSize(width = 320.dp, height = 120.dp)
+                            .background(background)
+                            .testTag("pane-content-color-host"),
+                    ) {
+                        CaraMLPane(Modifier.fillMaxSize()) {
+                            androidx.compose.material3.Text("Pane heading")
+                        }
+                    }
+                }
+            }
+        }
+
+        val bounds = onNodeWithText("Pane heading").fetchSemanticsNode().boundsInRoot
+        val pixels = onNodeWithTag("pane-content-color-host").captureToImage().toPixelMap()
+        assertTrue(
+            pixels.maximumContrastAgainst(background, bounds) >= 4.5f,
+            "Pane content must inherit onSurface in dark theme",
+        )
+    }
+
+    @Test
     fun standardPaneKeepsTheAuroraBackdropVisiblyNonUniform() = runComposeUiTest {
         setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f)) {

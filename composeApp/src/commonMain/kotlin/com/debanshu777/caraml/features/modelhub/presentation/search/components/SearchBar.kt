@@ -22,6 +22,7 @@ fun SearchBar(
     query: String,
     onQueryChange: (String) -> Unit,
     onSearch: () -> Unit,
+    onClear: () -> Unit = { onQueryChange("") },
     modifier: Modifier = Modifier
 ) {
     OutlinedTextField(
@@ -40,7 +41,7 @@ fun SearchBar(
         trailingIcon = {
             if (query.isNotEmpty()) {
                 androidx.compose.foundation.layout.Row {
-                    IconButton(onClick = { onQueryChange("") }) {
+                    IconButton(onClick = onClear) {
                         Icon(
                             imageVector = Icons.Default.Clear,
                             contentDescription = "Clear model search",

@@ -134,4 +134,22 @@ class ModelHubControlsUiTest {
         onAllNodesWithContentDescription("Submit model search").assertCountEquals(1)
         onNodeWithContentDescription("Clear model search").assertIsDisplayed()
     }
+
+    @Test
+    fun clearSearchActionCanClearBothTheQueryAndItsResultState() = runComposeUiTest {
+        var clearCalls = 0
+        setContent {
+            MaterialTheme {
+                SearchBar(
+                    query = "MiniCPM5",
+                    onQueryChange = {},
+                    onSearch = {},
+                    onClear = { clearCalls += 1 },
+                )
+            }
+        }
+
+        onNodeWithContentDescription("Clear model search").performClick()
+        runOnIdle { assertEquals(1, clearCalls) }
+    }
 }

@@ -24,6 +24,7 @@ fun CaraMLPane(
         modifier = modifier,
         shape = shape,
         color = level.containerColor(MaterialTheme.colorScheme).copy(alpha = level.containerAlpha),
+        contentColor = MaterialTheme.colorScheme.onSurface,
         border = if (showBorder) BorderStroke(1.dp, MaterialTheme.auroraColors.paneBorder) else null,
         shadowElevation = if (level == AuroraSurfaceLevel.Floating) 3.dp else 0.dp,
     ) {

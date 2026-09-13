@@ -2,6 +2,7 @@
 
 package com.debanshu777.caraml.core.drawer
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,16 +12,20 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -41,6 +46,40 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class AdaptiveNavigationUiTest {
+
+    @Test
+    fun modalDrawerSurfaceFullyOccludesRouteChrome() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        setContent {
+            MaterialTheme(colorScheme = darkColorScheme(surface = Color.Black)) {
+                AdaptiveNavigation(
+                    navigation = AppNavigationLayout.ModalDrawer,
+                    items = emptyList(),
+                    selectedItemId = null,
+                    drawerState = CustomDrawerState.Opened,
+                    onDrawerStateChange = {},
+                    gestureEnabled = true,
+                    onItemClick = {},
+                    navigationInsets = WindowInsets(0),
+                    modifier = Modifier
+                        .requiredSize(width = 320.dp, height = 480.dp)
+                        .testTag("drawer-root"),
+                    content = {
+                        Box(Modifier.fillMaxSize().background(Color.Red))
+                    },
+                )
+            }
+        }
+        mainClock.advanceTimeBy(300)
+
+        val drawerPixel = onNodeWithTag("drawer-root", useUnmergedTree = true)
+            .captureToImage()
+            .toPixelMap()[120, 300]
+        assertTrue(
+            drawerPixel.red < 0.05f,
+            "Modal drawer must occlude route chrome; sampled red was ${drawerPixel.red}",
+        )
+    }
 
     @Test
     fun openingModalDrawerKeepsRouteContentAtIdenticalBounds() = runComposeUiTest {
