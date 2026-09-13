@@ -6,8 +6,11 @@ import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.MotionDurationScale
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.core.ui.motion.auroraMotionPolicy
@@ -33,12 +36,17 @@ import com.materialkolor.DynamicMaterialTheme
 @Composable
 fun CaraMLTheme(
     preferences: ThemePreferences,
+    onEffectiveDarkThemeChanged: (Boolean) -> Unit = {},
     content: @Composable () -> Unit,
 ) {
     val isDark = when (preferences.themeMode) {
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
+    }
+    val currentOnEffectiveDarkThemeChanged by rememberUpdatedState(onEffectiveDarkThemeChanged)
+    LaunchedEffect(isDark) {
+        currentOnEffectiveDarkThemeChanged(isDark)
     }
     DynamicMaterialTheme(
         seedColor = preferences.seedColor,

@@ -41,7 +41,7 @@ private val config =
     }
 
 @Composable
-fun App() {
+fun App(onEffectiveDarkThemeChanged: (Boolean) -> Unit = {}) {
     val themeViewModel: ThemeViewModel = koinViewModel()
     val loadSessionCoordinator: LoadSessionCoordinator = koinInject()
     LaunchedEffect(loadSessionCoordinator) {
@@ -54,7 +54,10 @@ fun App() {
         }
     }
     val themePreferences by themeViewModel.preferences.collectAsState()
-    CaraMLTheme(themePreferences) {
+    CaraMLTheme(
+        preferences = themePreferences,
+        onEffectiveDarkThemeChanged = onEffectiveDarkThemeChanged,
+    ) {
         AuroraBackdrop(
             modifier = Modifier.fillMaxSize()
                 .windowInsetsPadding(WindowInsets.ime)
