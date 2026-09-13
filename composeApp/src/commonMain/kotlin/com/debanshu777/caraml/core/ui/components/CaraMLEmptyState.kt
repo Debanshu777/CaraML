@@ -37,10 +37,12 @@ fun CaraMLEmptyState(
         Icon(
             imageVector = icon,
             contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurface,
         )
         Text(
             text = title,
             style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center,
         )
         Text(
