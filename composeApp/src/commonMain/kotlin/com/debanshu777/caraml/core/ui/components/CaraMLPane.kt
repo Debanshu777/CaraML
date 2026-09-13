@@ -17,13 +17,13 @@ fun CaraMLPane(
     modifier: Modifier = Modifier,
     level: AuroraSurfaceLevel = AuroraSurfaceLevel.Pane,
     shape: Shape = MaterialTheme.shapes.medium,
-    showBorder: Boolean = true,
+    showBorder: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Surface(
         modifier = modifier,
         shape = shape,
-        color = level.containerColor(MaterialTheme.colorScheme),
+        color = level.containerColor(MaterialTheme.colorScheme).copy(alpha = level.containerAlpha),
         border = if (showBorder) BorderStroke(1.dp, MaterialTheme.auroraColors.paneBorder) else null,
         shadowElevation = if (level == AuroraSurfaceLevel.Floating) 3.dp else 0.dp,
     ) {

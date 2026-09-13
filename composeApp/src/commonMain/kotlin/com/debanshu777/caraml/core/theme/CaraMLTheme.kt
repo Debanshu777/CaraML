@@ -61,7 +61,7 @@ fun CaraMLTheme(
             motionScheme = AppMotionScheme,
         ) {
             val scheme = MaterialTheme.colorScheme
-            val auroraColors = remember(scheme) { scheme.toAuroraColors() }
+            val auroraColors = remember(scheme, isDark) { scheme.toAuroraColors(isDark) }
             val durationScale = rememberCoroutineScope().coroutineContext[MotionDurationScale]?.scaleFactor ?: 1f
             val motionPolicy = auroraMotionPolicy(durationScale)
             CompositionLocalProvider(

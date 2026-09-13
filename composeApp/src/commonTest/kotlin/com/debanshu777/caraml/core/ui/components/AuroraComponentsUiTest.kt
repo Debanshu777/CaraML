@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
@@ -59,6 +60,42 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class AuroraComponentsUiTest {
+
+    @Test
+    fun standardPaneKeepsTheAuroraBackdropVisiblyNonUniform() = runComposeUiTest {
+        setContent {
+            CompositionLocalProvider(LocalDensity provides Density(1f)) {
+                MaterialTheme(
+                    colorScheme = darkColorScheme(
+                        surface = Color(0xFF0E1118),
+                        surfaceContainer = Color(0xFF1B202B),
+                        primary = Color(0xFF9CB9FF),
+                        tertiary = Color(0xFFFFA9D8),
+                    ),
+                ) {
+                    AuroraBackdrop(
+                        modifier = Modifier
+                            .requiredSize(width = 320.dp, height = 180.dp)
+                            .testTag("aurora-pane-host"),
+                    ) {
+                        CaraMLPane(Modifier.fillMaxSize()) {}
+                    }
+                }
+            }
+        }
+
+        val pixels = onNodeWithTag("aurora-pane-host").captureToImage().toPixelMap()
+        val leading = pixels[24, 24]
+        val trailing = pixels[296, 156]
+        val channelDelta = kotlin.math.abs(leading.red - trailing.red) +
+            kotlin.math.abs(leading.green - trailing.green) +
+            kotlin.math.abs(leading.blue - trailing.blue)
+
+        assertTrue(
+            channelDelta >= 0.035f,
+            "A standard pane must preserve a visible Aurora color field; delta was $channelDelta",
+        )
+    }
 
     @Test
     fun emptyStateIconAndTitleMeetContrastOnTransparentDarkHost() {

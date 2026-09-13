@@ -7,6 +7,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 
 @Immutable
 data class AuroraColors(
@@ -16,11 +17,11 @@ data class AuroraColors(
     val paneBorder: Color,
 )
 
-enum class AuroraSurfaceLevel {
-    Canvas,
-    Recessed,
-    Pane,
-    Floating,
+enum class AuroraSurfaceLevel(val containerAlpha: Float) {
+    Canvas(1f),
+    Recessed(0.76f),
+    Pane(0.82f),
+    Floating(0.94f),
     ;
 
     fun containerColor(scheme: ColorScheme): Color = when (this) {
@@ -31,10 +32,12 @@ enum class AuroraSurfaceLevel {
     }
 }
 
-internal fun ColorScheme.toAuroraColors(): AuroraColors = AuroraColors(
+internal fun ColorScheme.toAuroraColors(
+    isDark: Boolean = surface.luminance() < 0.5f,
+): AuroraColors = AuroraColors(
     canvas = surface,
-    primaryGlow = primaryContainer.copy(alpha = 0.34f),
-    tertiaryGlow = tertiaryContainer.copy(alpha = 0.22f),
+    primaryGlow = if (isDark) primary.copy(alpha = 0.38f) else primaryContainer.copy(alpha = 0.46f),
+    tertiaryGlow = if (isDark) tertiary.copy(alpha = 0.28f) else tertiaryContainer.copy(alpha = 0.34f),
     paneBorder = outlineVariant.copy(alpha = 0.72f),
 )
 
