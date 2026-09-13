@@ -140,12 +140,19 @@ class ModelHubAuroraUiTest {
             onNodeWithText("Models: 2 GB")
                 .performScrollTo()
                 .assertIsDisplayed()
-            onNodeWithContentDescription("Open model org/large-text-model")
+            val title = onNodeWithText("org/large-text-model", useUnmergedTree = true)
+            val status = onNodeWithText("Recommended", useUnmergedTree = true)
+            val action = onNodeWithText("Download", useUnmergedTree = true)
+
+            title
                 .performScrollTo()
                 .assertIsDisplayed()
-            onNodeWithText("org/large-text-model").assertIsDisplayed()
-            onNodeWithText("Recommended").assertIsDisplayed()
-            onNodeWithText("Download").assertIsDisplayed()
+            status
+                .performScrollTo()
+                .assertIsDisplayed()
+            action
+                .performScrollTo()
+                .assertIsDisplayed()
         }
 }
 

@@ -16,6 +16,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
 import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.ui.components.CaraMLPane
@@ -35,7 +37,9 @@ fun GenerationActivity(
     }
 
     CaraMLPane(
-        modifier = modifier.alpha(activityAlpha),
+        modifier = modifier
+            .alpha(activityAlpha)
+            .semantics(mergeDescendants = true) { stateDescription = "Generating" },
         level = AuroraSurfaceLevel.Pane,
     ) {
         Column(

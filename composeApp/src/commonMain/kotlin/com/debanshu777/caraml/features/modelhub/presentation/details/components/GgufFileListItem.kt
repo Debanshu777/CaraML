@@ -21,6 +21,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
@@ -54,7 +56,11 @@ fun GgufFileListItem(
     Surface(
         shape = MaterialTheme.shapes.medium,
         tonalElevation = 1.dp,
-        modifier = modifier.fillMaxWidth()
+        modifier = modifier
+            .fillMaxWidth()
+            .semantics(mergeDescendants = true) {
+                if (isDownloading) stateDescription = "Downloading"
+            },
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(LocalSpacing.current.m),

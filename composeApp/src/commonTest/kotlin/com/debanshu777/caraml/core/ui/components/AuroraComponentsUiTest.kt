@@ -8,29 +8,40 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Block
-import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Error
-import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.assertWidthIsAtLeast
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.rating.ui.RecommendationStatusChip
+import com.debanshu777.caraml.core.recommendation.PersonalizedRecommendation
+import com.debanshu777.caraml.core.recommendation.RecommendationCategory
+import com.debanshu777.caraml.core.recommendation.RecommendationProfile
+import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
+import com.debanshu777.caraml.features.chat.data.ChatMessage
+import com.debanshu777.caraml.features.chat.data.MessageRole
+import com.debanshu777.caraml.features.chat.presentation.components.MessageBubble
+import com.debanshu777.caraml.features.chat.presentation.components.ModelErrorScreen
+import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
+import com.debanshu777.caraml.features.modelhub.presentation.details.components.GgufFileListItem
+import com.debanshu777.caraml.features.modelhub.presentation.details.components.InstallBundleCard
+import com.debanshu777.caraml.features.modelhub.presentation.downloaded.components.LocalModelListItem
+import com.debanshu777.caraml.features.modelhub.presentation.search.GgufFileUiState
+import com.debanshu777.caraml.features.modelhub.presentation.search.InstallBundleUiState
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -100,47 +111,189 @@ class AuroraComponentsUiTest {
     }
 
     @Test
-    fun semanticStatusMatrixNeverDependsOnColorAlone() = runComposeUiTest {
-        val cases = listOf(
-            StatusCase("Ready", "Ready status", StatusTone.Success, Icons.Default.CheckCircle),
-            StatusCase("Partial", "Partial status", StatusTone.Warning, Icons.Default.Build),
-            StatusCase("Unsupported", "Unsupported status", StatusTone.Error, Icons.Default.Block),
-            StatusCase("Recommended", "Recommended status", StatusTone.Accent, Icons.Default.AutoAwesome),
-            StatusCase("Risky", "Risky status", StatusTone.Warning, Icons.Default.Warning),
-            StatusCase("Downloading", "Downloading status", StatusTone.Neutral, Icons.Default.Download),
-            StatusCase("Generating", "Generating status", StatusTone.Accent, Icons.Default.Sync),
-            StatusCase("Success", "Success status", StatusTone.Success, Icons.Default.CheckCircle),
-            StatusCase("Error", "Error status", StatusTone.Error, Icons.Default.Error),
-        )
+    fun localModelStateMappingsExposeNonColorMeaning() = runComposeUiTest {
         setContent {
             MaterialTheme {
                 Column {
-                    cases.forEach { status ->
-                        CaraMLStatusPill(
-                            label = status.label,
-                            contentDescription = status.description,
-                            tone = status.tone,
-                            icon = status.icon,
-                        )
-                    }
+                    LocalModelStatusFixture(
+                        id = "ready-model",
+                        filename = "ready.gguf",
+                        componentStatus = LocalModelEntity.STATUS_READY,
+                    )
+                    LocalModelStatusFixture(
+                        id = "partial-model",
+                        filename = "partial.gguf",
+                        componentStatus = LocalModelEntity.STATUS_PARTIAL,
+                    )
+                    LocalModelStatusFixture(
+                        id = "unsupported-model",
+                        filename = "unsupported.bin",
+                        componentStatus = null,
+                    )
                 }
             }
         }
 
-        cases.forEach { status ->
-            onNodeWithContentDescription(status.description)
-                .assertIsDisplayed()
-                .assertTextEquals(status.label)
+        listOf(
+            "Ready" to "Ready for chat.",
+            "Needs setup" to "Partial download. Missing components need setup.",
+            "Unsupported" to "Unsupported. Chat is not available for this model type.",
+        ).forEach { (label, description) ->
+            onNodeWithText(label, useUnmergedTree = true).assertIsDisplayed()
+            onNodeWithContentDescription(description).assertIsDisplayed()
         }
+    }
+
+    @Test
+    fun recommendationStateMappingsExposeNonColorMeaning() = runComposeUiTest {
+        setContent {
+            MaterialTheme {
+                Column {
+                    RecommendationStatusChip(
+                        state = DescriptorState.ASSESSED,
+                        recommendation = recommendation(RecommendationCategory.RECOMMENDED),
+                    )
+                    RecommendationStatusChip(
+                        state = DescriptorState.ASSESSED,
+                        recommendation = recommendation(RecommendationCategory.RISKY),
+                    )
+                }
+            }
+        }
+
+        listOf("Recommended", "Risky").forEach { label ->
+            onNodeWithText(label, useUnmergedTree = true).assertIsDisplayed()
+            onNodeWithContentDescription(
+                "$label. Unavailable confidence. No reason available.",
+            ).assertIsDisplayed()
+        }
+    }
+
+    @Test
+    fun downloadingStateMappingExposesNonColorMeaning() = runComposeUiTest {
+        setContent {
+            MaterialTheme {
+                GgufFileListItem(
+                    filename = "weights.gguf",
+                    sizeBytes = 1_024L,
+                    isDownloaded = false,
+                    progress = 42f,
+                    isDownloading = true,
+                    onDownloadClick = {},
+                )
+            }
+        }
+
+        onNodeWithText("42%", useUnmergedTree = true).assertIsDisplayed()
+        onNode(hasStateDescription("Downloading") and hasText("42%")).assertIsDisplayed()
+    }
+
+    @Test
+    fun generatingStateMappingExposesNonColorMeaning() = runComposeUiTest {
+        setContent {
+            MaterialTheme {
+                MessageBubble(
+                    message = ChatMessage(
+                        id = "generating-message",
+                        role = MessageRole.Assistant,
+                        text = "",
+                    ),
+                    showMediaPending = true,
+                    imageGenStep = 3,
+                    imageGenTotalSteps = 10,
+                    imageGenElapsedSeconds = 2,
+                )
+            }
+        }
+
+        onNodeWithText("Step 3 / 10  ·  2s", useUnmergedTree = true).assertIsDisplayed()
+        onNode(
+            hasStateDescription("Generating") and hasText("Step 3 / 10  ·  2s"),
+        ).assertIsDisplayed()
+    }
+
+    @Test
+    fun successStateMappingExposesNonColorMeaning() = runComposeUiTest {
+        setContent {
+            MaterialTheme {
+                InstallBundleCard(
+                    modelId = "org/downloaded-model",
+                    state = InstallBundleUiState(
+                        variants = listOf(
+                            GgufFileUiState(
+                                path = "weights.gguf",
+                                filename = "weights.gguf",
+                                sizeBytes = 1_024L,
+                                isDownloaded = true,
+                                progress = null,
+                            ),
+                        ),
+                        isReady = true,
+                    ),
+                    familyLabel = null,
+                    modelDescription = null,
+                    onVariantSelected = {},
+                    onInstall = {},
+                )
+            }
+        }
+
+        onNodeWithText("Model downloaded", useUnmergedTree = true).assertIsDisplayed()
+        onNodeWithContentDescription("Model downloaded").assertIsDisplayed()
+    }
+
+    @Test
+    fun errorStateMappingExposesNonColorMeaning() = runComposeUiTest {
+        setContent {
+            MaterialTheme {
+                ModelErrorScreen(
+                    errorMessage = "Runtime rejected this model.",
+                    onTryAnotherModelClick = {},
+                )
+            }
+        }
+
+        onNodeWithText("Unable to load model", useUnmergedTree = true).assertIsDisplayed()
+        onNode(hasStateDescription("Error") and hasText("Unable to load model")).assertIsDisplayed()
     }
 }
 
-private data class StatusCase(
-    val label: String,
-    val description: String,
-    val tone: StatusTone,
-    val icon: ImageVector,
+@Composable
+private fun LocalModelStatusFixture(
+    id: String,
+    filename: String,
+    componentStatus: String?,
+) {
+    LocalModelListItem(
+        model = LocalModelEntity(
+            modelId = id,
+            filename = filename,
+            localPath = "/models/$filename",
+            sizeBytes = 1_024L,
+            downloadedAt = 0L,
+            author = null,
+            libraryName = null,
+            pipelineTag = if (filename.endsWith(".bin")) "audio-classification" else null,
+            componentStatus = componentStatus,
+        ),
+        selectionMode = false,
+        isSelected = false,
+        onOpenModel = {},
+        onToggleSelect = {},
+        onLongPress = {},
+    )
+}
+
+private fun recommendation(category: RecommendationCategory) = PersonalizedRecommendation(
+    assessmentKey = "${category.name.lowercase()}-assessment",
+    category = category,
+    selectedPlan = null,
+    reasons = emptyList(),
+    profile = RecommendationProfile(),
 )
+
+private fun hasStateDescription(description: String) =
+    SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, description)
 
 @Composable
 private fun AtTwoHundredPercentFontScale(content: @Composable () -> Unit) {
