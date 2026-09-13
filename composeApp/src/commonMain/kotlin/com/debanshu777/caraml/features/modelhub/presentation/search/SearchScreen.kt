@@ -58,8 +58,7 @@ import com.debanshu777.caraml.core.rating.ui.RecommendationDetailsSheet
 import com.debanshu777.caraml.core.rating.ui.recommendationPresentation
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
 import com.debanshu777.caraml.core.theme.LocalSpacing
-import com.debanshu777.caraml.core.ui.components.CaraMLTopBar
-import com.debanshu777.caraml.core.ui.components.TopBarNavigation
+import com.debanshu777.caraml.core.ui.components.CaraMLPrimaryTopBar
 import com.debanshu777.caraml.core.ui.layout.AppContentKind
 import com.debanshu777.caraml.core.ui.layout.ResponsiveContentPane
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
@@ -121,10 +120,9 @@ fun SearchScreen(
         containerColor = Color.Transparent,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            CaraMLTopBar(
+            CaraMLPrimaryTopBar(
                 title = "Models",
-                navigation = TopBarNavigation.Menu,
-                onNavigationClick = drawerController::toggle,
+                onMenuClick = drawerController::toggle,
             )
         }
     ) { paddingValues ->

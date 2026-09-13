@@ -12,6 +12,7 @@ data class AuroraMotionPolicy(
     val opacityDurationMillis: Int,
     val peerTransitionMillis: Int,
     val detailEnterMillis: Int,
+    val hierarchicalPopEnterMillis: Int,
     val exitMillis: Int,
     val generationPulseMillis: Int,
 )
@@ -26,6 +27,7 @@ fun auroraMotionPolicy(durationScale: Float): AuroraMotionPolicy {
         opacityDurationMillis = if (reducedMotion) 100 else 220,
         peerTransitionMillis = 220,
         detailEnterMillis = 300,
+        hierarchicalPopEnterMillis = 250,
         exitMillis = 200,
         generationPulseMillis = 1600,
     )

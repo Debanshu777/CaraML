@@ -108,7 +108,10 @@ internal fun navigationTransitionDescriptor(
         },
         enterDurationMillis = when (family) {
             NavigationTransitionFamily.Peer -> motionPolicy.peerTransitionMillis
-            NavigationTransitionFamily.Hierarchical -> motionPolicy.detailEnterMillis
+            NavigationTransitionFamily.Hierarchical -> when (direction) {
+                NavigationTransitionDirection.Forward -> motionPolicy.detailEnterMillis
+                NavigationTransitionDirection.Pop -> motionPolicy.hierarchicalPopEnterMillis
+            }
         },
         exitDurationMillis = when (family) {
             NavigationTransitionFamily.Peer -> motionPolicy.peerTransitionMillis

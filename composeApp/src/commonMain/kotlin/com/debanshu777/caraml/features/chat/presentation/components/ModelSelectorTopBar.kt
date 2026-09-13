@@ -6,8 +6,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
-import com.debanshu777.caraml.core.ui.components.CaraMLTopBar
-import com.debanshu777.caraml.core.ui.components.TopBarNavigation
+import com.debanshu777.caraml.core.ui.components.CaraMLPrimaryTopBar
 
 @Preview
 @Composable
@@ -25,10 +24,9 @@ fun ModelSelectorTopBar(
     modifier: Modifier = Modifier,
     onMenuClick: () -> Unit = {},
 ) {
-    CaraMLTopBar(
+    CaraMLPrimaryTopBar(
         title = title,
-        navigation = TopBarNavigation.Menu,
-        onNavigationClick = onMenuClick,
+        onMenuClick = onMenuClick,
         modifier = modifier,
     )
 }

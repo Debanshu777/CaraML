@@ -34,6 +34,7 @@ class AuroraMotionPolicyTest {
         assertTrue(policy.pulseEnabled)
         assertEquals(220, policy.peerTransitionMillis)
         assertEquals(300, policy.detailEnterMillis)
+        assertEquals(250, policy.hierarchicalPopEnterMillis)
         assertEquals(200, policy.exitMillis)
         assertEquals(1600, policy.generationPulseMillis)
     }

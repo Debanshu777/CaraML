@@ -56,7 +56,7 @@ class NavigationTransitionPolicyTest {
                 family = NavigationTransitionFamily.Hierarchical,
                 direction = NavigationTransitionDirection.Pop,
                 expectedAxis = NavigationTransitionAxis.Horizontal,
-                expectedEnterMillis = 300,
+                expectedEnterMillis = 250,
                 expectedExitMillis = 200,
                 expectedEnterOffset = -100,
                 expectedExitOffset = 100,

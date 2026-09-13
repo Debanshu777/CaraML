@@ -1,6 +1,7 @@
 package com.debanshu777.caraml.core.ui.layout
 
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -8,6 +9,11 @@ enum class AppNavigationLayout {
     ModalDrawer,
     Rail,
     Sidebar,
+}
+
+/** Presentation-only shell mode used by primary destination chrome. */
+val LocalAppNavigationLayout = staticCompositionLocalOf {
+    AppNavigationLayout.ModalDrawer
 }
 
 enum class AppContentKind {

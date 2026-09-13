@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,6 +35,7 @@ fun AppNavigationPanel(
     onItemClick: (DrawerItem) -> Unit,
     modifier: Modifier = Modifier,
     contentInsets: WindowInsets = WindowInsets(0),
+    contentInsetSides: WindowInsetsSides = WindowInsetsSides.Top,
 ) {
     CaraMLPane(
         modifier = modifier.fillMaxHeight(),
@@ -42,8 +45,9 @@ fun AppNavigationPanel(
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .windowInsetsPadding(contentInsets.only(WindowInsetsSides.Top)),
+                .fillMaxSize()
+                .windowInsetsPadding(contentInsets.only(contentInsetSides))
+                .verticalScroll(rememberScrollState()),
         ) {
             if (!compact) {
                 Text(
@@ -79,6 +83,7 @@ fun AdaptiveNavigation(
     gestureEnabled: Boolean,
     onItemClick: (DrawerItem) -> Unit,
     modifier: Modifier = Modifier,
+    navigationInsets: WindowInsets = WindowInsets.safeDrawing,
     content: @Composable () -> Unit,
 ) {
     when (navigation) {
@@ -94,7 +99,7 @@ fun AdaptiveNavigation(
                     compact = false,
                     onItemClick = onItemClick,
                     modifier = Modifier.fillMaxWidth(0.80f),
-                    contentInsets = WindowInsets.safeDrawing,
+                    contentInsets = navigationInsets,
                 )
             },
             content = content,
@@ -107,6 +112,8 @@ fun AdaptiveNavigation(
                 compact = true,
                 onItemClick = onItemClick,
                 modifier = Modifier.width(80.dp),
+                contentInsets = navigationInsets,
+                contentInsetSides = WindowInsetsSides.Vertical,
             )
             Box(
                 modifier = Modifier
@@ -124,6 +131,8 @@ fun AdaptiveNavigation(
                 compact = false,
                 onItemClick = onItemClick,
                 modifier = Modifier.width(240.dp),
+                contentInsets = navigationInsets,
+                contentInsetSides = WindowInsetsSides.Vertical,
             )
             Box(
                 modifier = Modifier

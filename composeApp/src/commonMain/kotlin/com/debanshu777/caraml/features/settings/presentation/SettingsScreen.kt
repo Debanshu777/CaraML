@@ -42,8 +42,7 @@ import com.debanshu777.caraml.core.settings.KvQuantPreset
 import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.theme.ThemeViewModel
 import com.debanshu777.caraml.core.ui.components.CaraMLPane
-import com.debanshu777.caraml.core.ui.components.CaraMLTopBar
-import com.debanshu777.caraml.core.ui.components.TopBarNavigation
+import com.debanshu777.caraml.core.ui.components.CaraMLPrimaryTopBar
 import com.debanshu777.caraml.core.ui.layout.AppContentKind
 import com.debanshu777.caraml.core.ui.layout.ResponsiveContentPane
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.QuickCalibrationDialog
@@ -77,10 +76,9 @@ fun SettingsScreen(
         modifier = modifier,
         containerColor = Color.Transparent,
         topBar = {
-            CaraMLTopBar(
+            CaraMLPrimaryTopBar(
                 title = "Settings",
-                navigation = TopBarNavigation.Menu,
-                onNavigationClick = drawerController::toggle,
+                onMenuClick = drawerController::toggle,
             )
         },
     ) { paddingValues ->

@@ -11,6 +11,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import com.debanshu777.caraml.core.ui.layout.AppNavigationLayout
+import com.debanshu777.caraml.core.ui.layout.LocalAppNavigationLayout
 
 enum class TopBarNavigation {
     None,
@@ -49,6 +51,23 @@ fun CaraMLTopBar(
                 }
             }
         },
+        actions = actions,
+    )
+}
+
+@Composable
+fun CaraMLPrimaryTopBar(
+    title: String,
+    onMenuClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    actions: @Composable RowScope.() -> Unit = {},
+) {
+    val isModal = LocalAppNavigationLayout.current == AppNavigationLayout.ModalDrawer
+    CaraMLTopBar(
+        title = title,
+        navigation = if (isModal) TopBarNavigation.Menu else TopBarNavigation.None,
+        onNavigationClick = onMenuClick.takeIf { isModal },
+        modifier = modifier,
         actions = actions,
     )
 }

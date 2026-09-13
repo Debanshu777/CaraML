@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshots.Snapshot
@@ -18,6 +19,8 @@ import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import com.debanshu777.caraml.core.navigation.AppScreen
 import com.debanshu777.caraml.core.ui.layout.AppContentKind
+import com.debanshu777.caraml.core.ui.layout.AppNavigationLayout
+import com.debanshu777.caraml.core.ui.layout.LocalAppNavigationLayout
 import com.debanshu777.caraml.core.ui.layout.adaptiveLayoutPolicy
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
 
@@ -137,6 +140,11 @@ fun AppDrawerShell(
         BoxWithConstraints(modifier = modifier) {
             val appWindowWidth = maxWidth
             val navigation = adaptiveLayoutPolicy(maxWidth, AppContentKind.Chat).navigation
+            LaunchedEffect(navigation) {
+                if (navigation != AppNavigationLayout.ModalDrawer) {
+                    controller.close()
+                }
+            }
             AdaptiveNavigation(
                 navigation = navigation,
                 items = primaryDrawerItems,
@@ -146,7 +154,10 @@ fun AppDrawerShell(
                 gestureEnabled = gestureEnabled,
                 onItemClick = onItemClick,
                 content = {
-                    CompositionLocalProvider(LocalAppWindowWidth provides appWindowWidth) {
+                    CompositionLocalProvider(
+                        LocalAppWindowWidth provides appWindowWidth,
+                        LocalAppNavigationLayout provides navigation,
+                    ) {
                         content()
                     }
                 },
