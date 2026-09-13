@@ -181,25 +181,31 @@ fun ChatScreenContent(
         },
         bottomBar = {
             if (uiState is ChatUiState.Ready) {
-                Column {
-                    if (uiState.generationMode == GenerationMode.Text &&
-                        uiState.isGenerating &&
-                        streamingState.liveStats != null
-                    ) {
-                        GenerationStatsBar(stats = streamingState.liveStats)
-                    }
+                ResponsiveContentPane(
+                    kind = AppContentKind.Chat,
+                    modifier = Modifier.fillMaxWidth(),
+                    fillMaxHeight = false,
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        if (uiState.generationMode == GenerationMode.Text &&
+                            uiState.isGenerating &&
+                            streamingState.liveStats != null
+                        ) {
+                            GenerationStatsBar(stats = streamingState.liveStats)
+                        }
 
-                    ChatInputBar(
-                        generationMode = uiState.generationMode,
-                        isGenerating = uiState.isGenerating,
-                        selectedModel = uiState.selectedModel,
-                        topModels = uiState.topModels,
-                        onSelectModel = onSelectModel,
-                        onDownloadModelClick = onNavigateToSearch,
-                        onSendMessage = onSendMessage,
-                        onCancelGeneration = onCancelGeneration,
-                        contextIndicator = contextIndicator
-                    )
+                        ChatInputBar(
+                            generationMode = uiState.generationMode,
+                            isGenerating = uiState.isGenerating,
+                            selectedModel = uiState.selectedModel,
+                            topModels = uiState.topModels,
+                            onSelectModel = onSelectModel,
+                            onDownloadModelClick = onNavigateToSearch,
+                            onSendMessage = onSendMessage,
+                            onCancelGeneration = onCancelGeneration,
+                            contextIndicator = contextIndicator,
+                        )
+                    }
                 }
             }
         }

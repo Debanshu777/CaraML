@@ -3,39 +3,58 @@
 package com.debanshu777.caraml.features.chat.presentation
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertWidthIsAtLeast
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.features.chat.data.ChatMessage
+import com.debanshu777.caraml.features.chat.data.LiveGenerationStats
 import com.debanshu777.caraml.features.chat.data.MessageRole
+import com.debanshu777.caraml.core.drawer.DrawerController
+import com.debanshu777.caraml.core.drawer.LocalDrawerController
+import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
+import com.debanshu777.caraml.core.ui.motion.auroraMotionPolicy
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
 import com.debanshu777.caraml.features.chat.presentation.components.ChatInputBar
 import com.debanshu777.caraml.features.chat.presentation.components.ChatMessageList
+import com.debanshu777.caraml.features.chat.presentation.components.GenerationActivity
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toPersistentList
 import kotlin.math.abs
@@ -44,6 +63,133 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class ChatAuroraUiTest {
+
+    @Test
+    fun wideChatAlignsConversationComposerAndGenerationStatsToOneReadableWidth() =
+        assertChatSurfaceAlignment(viewportWidth = 1200.dp, expectedBodyWidth = 760f)
+
+    @Test
+    fun compactChatKeepsConversationComposerAndGenerationStatsOnTheSameMargins() =
+        assertChatSurfaceAlignment(viewportWidth = 360.dp, expectedBodyWidth = 296f)
+
+    @Test
+    fun generatingComposerUsesOneSolidSemanticBoundaryInsteadOfAHorizontalHalo() =
+        runComposeUiTest {
+            val host = Color.White
+            setContent {
+                CompositionLocalProvider(LocalDensity provides Density(1f)) {
+                    MaterialTheme(
+                        colorScheme = lightColorScheme(
+                            primary = Color.Red,
+                            tertiary = Color.Blue,
+                            surface = host,
+                            surfaceContainer = host,
+                            surfaceContainerHigh = host,
+                        ),
+                    ) {
+                        Box(
+                            Modifier
+                                .requiredSize(width = 360.dp, height = 180.dp)
+                                .background(host)
+                                .testTag("generating-composer-host"),
+                        ) {
+                            ChatInputBar(
+                                generationMode = GenerationMode.Text,
+                                isGenerating = true,
+                                selectedModel = null,
+                                topModels = persistentListOf(),
+                                onSelectModel = {},
+                                onDownloadModelClick = {},
+                                onSendMessage = {},
+                                onCancelGeneration = {},
+                            )
+                        }
+                    }
+                }
+            }
+
+            val image = onNodeWithTag("generating-composer-host").captureToImage()
+            val pixels = image.toPixelMap()
+            val leftBoundary = pixels[17, 70]
+            val rightBoundary = pixels[342, 70]
+
+            assertTrue(
+                colorDistance(leftBoundary, rightBoundary) <= 0.01f,
+                "Active composer boundary must be solid; left=$leftBoundary right=$rightBoundary",
+            )
+            assertTrue(
+                colorDistance(leftBoundary, host) >= 0.05f,
+                "Active composer boundary must remain visibly seed-derived",
+            )
+        }
+
+    @Test
+    fun unknownGenerationProgressKeepsItsContainerStaticWhileIndicatorRemainsIndeterminate() =
+        runComposeUiTest {
+            mainClock.autoAdvance = false
+            setContent {
+                GenerationActivityTestHost(progress = null, tag = "unknown-generation")
+            }
+            mainClock.advanceTimeByFrame()
+
+            val progressInfo = onAllNodes(
+                SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo),
+                useUnmergedTree = true,
+            ).fetchSemanticsNodes().single().config[SemanticsProperties.ProgressBarRangeInfo]
+            assertEquals(ProgressBarRangeInfo.Indeterminate, progressInfo)
+
+            val before = generationContainerProbe("unknown-generation")
+            mainClock.advanceTimeBy(800)
+            mainClock.advanceTimeByFrame()
+            val after = generationContainerProbe("unknown-generation")
+
+            assertTrue(
+                colorDistance(before, after) <= 0.01f,
+                "Unknown progress must not pulse its container; before=$before after=$after",
+            )
+        }
+
+    @Test
+    fun determinateGenerationProgressKeepsThePolicyAwareContainerPulse() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        setContent {
+            GenerationActivityTestHost(progress = 0.4f, tag = "known-generation")
+        }
+        mainClock.advanceTimeByFrame()
+
+        val before = generationContainerProbe("known-generation")
+        mainClock.advanceTimeBy(800)
+        mainClock.advanceTimeByFrame()
+        val after = generationContainerProbe("known-generation")
+
+        assertTrue(
+            colorDistance(before, after) >= 0.05f,
+            "The frame probe must detect the allowed determinate pulse; before=$before after=$after",
+        )
+    }
+
+    @Test
+    fun reducedMotionKeepsDeterminateGenerationContainerStatic() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        setContent {
+            CompositionLocalProvider(
+                LocalAuroraMotionPolicy provides auroraMotionPolicy(durationScale = 0f),
+            ) {
+                GenerationActivityTestHost(progress = 0.4f, tag = "reduced-generation")
+            }
+        }
+        mainClock.advanceTimeByFrame()
+
+        val before = generationContainerProbe("reduced-generation")
+        mainClock.advanceTimeBy(800)
+        mainClock.advanceTimeByFrame()
+        val after = generationContainerProbe("reduced-generation")
+
+        assertTrue(
+            colorDistance(before, after) <= 0.01f,
+            "Reduced motion must keep the generation container static; before=$before after=$after",
+        )
+    }
 
     @Test
     fun everyGenerationModeHasSpecificHumanCopy() {
@@ -253,6 +399,108 @@ class ChatAuroraUiTest {
         )
     }
 }
+
+private fun assertChatSurfaceAlignment(
+    viewportWidth: androidx.compose.ui.unit.Dp,
+    expectedBodyWidth: Float,
+) = runComposeUiTest {
+    val messageText = "Alignment probe output"
+    val message = ChatMessage(
+        id = "alignment-probe",
+        role = MessageRole.Assistant,
+        text = messageText,
+    )
+    setContent {
+        MaterialTheme {
+            CompositionLocalProvider(
+                LocalDrawerController provides remember { DrawerController() },
+            ) {
+                Box(Modifier.width(viewportWidth).height(800.dp)) {
+                    ChatScreenContent(
+                        uiState = ChatUiState.Ready(
+                            messages = persistentListOf(message),
+                            generationMode = GenerationMode.Text,
+                            isGenerating = true,
+                        ),
+                        streamingState = StreamingState(
+                            streamingText = messageText,
+                            streamingMessageId = message.id,
+                            liveStats = LiveGenerationStats(
+                                contextUsed = 10,
+                                contextLimit = 100,
+                                outputTokenCount = 12,
+                                tokensPerSecond = 42.5,
+                            ),
+                        ),
+                        onSelectModel = {},
+                        onSendMessage = {},
+                        onCancelGeneration = {},
+                        onNavigateToSearch = {},
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+        }
+    }
+
+    val body = onNodeWithText(messageText).fetchSemanticsNode().boundsInRoot
+    val composer = onNodeWithText("How can I help you today?").fetchSemanticsNode().boundsInRoot
+    val stats = onNodeWithContentDescription(
+        "Generation speed 42.5 tokens per second",
+    ).fetchSemanticsNode().boundsInRoot
+
+    assertBoundsWidth(expectedBodyWidth, body, "conversation body")
+    assertAligned(body.left, composer.left, "composer left")
+    assertAligned(body.right, composer.right, "composer right")
+    assertAligned(body.right, stats.right, "generation stats right")
+}
+
+private fun assertBoundsWidth(expected: Float, bounds: Rect, label: String) {
+    assertTrue(
+        abs(bounds.width - expected) <= 1f,
+        "$label width must be $expected px, but was ${bounds.width}px ($bounds)",
+    )
+}
+
+private fun assertAligned(expected: Float, actual: Float, label: String) {
+    assertTrue(
+        abs(expected - actual) <= 4f,
+        "$label must align within 4px: expected $expected, actual $actual",
+    )
+}
+
+private fun colorDistance(first: Color, second: Color): Float =
+    abs(first.red - second.red) +
+        abs(first.green - second.green) +
+        abs(first.blue - second.blue)
+
+@Composable
+private fun GenerationActivityTestHost(progress: Float?, tag: String) {
+    val host = Color.Black
+    MaterialTheme(
+        colorScheme = lightColorScheme(
+            surface = host,
+            surfaceContainer = Color.White,
+        ),
+    ) {
+        Box(
+            Modifier
+                .requiredSize(width = 320.dp, height = 96.dp)
+                .background(host),
+        ) {
+            GenerationActivity(
+                label = "Working locally",
+                progress = progress,
+                modifier = Modifier
+                    .requiredSize(width = 320.dp, height = 96.dp)
+                    .testTag(tag),
+            )
+        }
+    }
+}
+
+private fun androidx.compose.ui.test.ComposeUiTest.generationContainerProbe(tag: String): Color =
+    onNodeWithTag(tag).captureToImage().toPixelMap()[300, 18]
 
 @Composable
 private fun AtTwoHundredPercentFontScale(content: @Composable () -> Unit) {

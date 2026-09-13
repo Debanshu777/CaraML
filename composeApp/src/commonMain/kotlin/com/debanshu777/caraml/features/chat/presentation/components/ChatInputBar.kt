@@ -37,7 +37,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -48,7 +47,6 @@ import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
-import com.debanshu777.caraml.core.theme.auroraColors
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.ui.components.CaraMLPane
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
@@ -223,11 +221,8 @@ fun ChatInputBar(
     var isFocused by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState()
     val motion = LocalAuroraMotionPolicy.current
-    val activeHaloColors = MaterialTheme.auroraColors.activeHalo
-    val activeHalo = remember(activeHaloColors) {
-        Brush.horizontalGradient(activeHaloColors)
-    }
-    val showActiveHalo = isFocused || isGenerating
+    val activeBoundaryColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.36f)
+    val showActiveBoundary = isFocused || isGenerating
     val composerShape = MaterialTheme.shapes.large
 
     val placeholderText = when (generationMode) {
@@ -245,8 +240,8 @@ fun ChatInputBar(
                 bottom = LocalSpacing.current.l,
             )
             .then(
-                if (showActiveHalo) {
-                    Modifier.background(activeHalo, composerShape)
+                if (showActiveBoundary) {
+                    Modifier.background(activeBoundaryColor, composerShape)
                 } else {
                     Modifier
                 },

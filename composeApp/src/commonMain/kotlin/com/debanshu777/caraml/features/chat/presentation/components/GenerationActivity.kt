@@ -30,7 +30,7 @@ fun GenerationActivity(
     progress: Float? = null,
 ) {
     val motion = LocalAuroraMotionPolicy.current
-    val activityAlpha = if (motion.pulseEnabled) {
+    val activityAlpha = if (progress != null && motion.pulseEnabled) {
         rememberGenerationPulse(motion.generationPulseMillis)
     } else {
         1f

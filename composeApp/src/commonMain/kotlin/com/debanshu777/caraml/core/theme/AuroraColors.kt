@@ -13,7 +13,6 @@ data class AuroraColors(
     val canvas: Color,
     val primaryGlow: Color,
     val tertiaryGlow: Color,
-    val activeHalo: List<Color>,
     val paneBorder: Color,
 )
 
@@ -36,7 +35,6 @@ internal fun ColorScheme.toAuroraColors(): AuroraColors = AuroraColors(
     canvas = surface,
     primaryGlow = primaryContainer.copy(alpha = 0.34f),
     tertiaryGlow = tertiaryContainer.copy(alpha = 0.22f),
-    activeHalo = listOf(primary.copy(alpha = 0.32f), tertiary.copy(alpha = 0.24f)),
     paneBorder = outlineVariant.copy(alpha = 0.72f),
 )
 
