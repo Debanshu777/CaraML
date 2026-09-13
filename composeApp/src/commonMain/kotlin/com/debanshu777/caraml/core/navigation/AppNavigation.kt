@@ -4,9 +4,7 @@ import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
@@ -51,7 +49,6 @@ internal enum class NavigationTransitionDirection {
 
 internal enum class NavigationTransitionAxis {
     None,
-    Vertical,
     Horizontal,
 }
 
@@ -61,7 +58,7 @@ internal data class NavigationTransitionDescriptor(
     val axis: NavigationTransitionAxis,
     val enterDurationMillis: Int,
     val exitDurationMillis: Int,
-    private val peerOffsetPx: Int,
+    private val detailOffsetPx: Int,
 ) {
     private val directionSign: Int
         get() = if (direction == NavigationTransitionDirection.Pop) -1 else 1
@@ -72,8 +69,7 @@ internal data class NavigationTransitionDescriptor(
 
     private fun spatialOffset(containerSize: Int): Int = when (axis) {
         NavigationTransitionAxis.None -> 0
-        NavigationTransitionAxis.Vertical -> peerOffsetPx
-        NavigationTransitionAxis.Horizontal -> containerSize / 10
+        NavigationTransitionAxis.Horizontal -> detailOffsetPx
     }
 }
 
@@ -88,7 +84,7 @@ internal fun navigationTransitionDescriptor(
     family: NavigationTransitionFamily,
     direction: NavigationTransitionDirection,
     motionPolicy: AuroraMotionPolicy,
-    peerOffsetPx: Int,
+    detailOffsetPx: Int,
 ): NavigationTransitionDescriptor = if (!motionPolicy.spatialTransitionsEnabled) {
     NavigationTransitionDescriptor(
         family = family,
@@ -96,14 +92,14 @@ internal fun navigationTransitionDescriptor(
         axis = NavigationTransitionAxis.None,
         enterDurationMillis = motionPolicy.opacityDurationMillis,
         exitDurationMillis = motionPolicy.opacityDurationMillis,
-        peerOffsetPx = peerOffsetPx,
+        detailOffsetPx = detailOffsetPx,
     )
 } else {
     NavigationTransitionDescriptor(
         family = family,
         direction = direction,
         axis = when (family) {
-            NavigationTransitionFamily.Peer -> NavigationTransitionAxis.Vertical
+            NavigationTransitionFamily.Peer -> NavigationTransitionAxis.None
             NavigationTransitionFamily.Hierarchical -> NavigationTransitionAxis.Horizontal
         },
         enterDurationMillis = when (family) {
@@ -117,7 +113,7 @@ internal fun navigationTransitionDescriptor(
             NavigationTransitionFamily.Peer -> motionPolicy.peerTransitionMillis
             NavigationTransitionFamily.Hierarchical -> motionPolicy.exitMillis
         },
-        peerOffsetPx = peerOffsetPx,
+        detailOffsetPx = detailOffsetPx,
     )
 }
 
@@ -127,18 +123,6 @@ private fun navigationContentTransform(
     NavigationTransitionAxis.None ->
         fadeIn(tween(descriptor.enterDurationMillis)) togetherWith
             fadeOut(tween(descriptor.exitDurationMillis))
-
-    NavigationTransitionAxis.Vertical -> {
-        val enter = fadeIn(tween(descriptor.enterDurationMillis)) +
-            slideInVertically(tween(descriptor.enterDurationMillis)) {
-                descriptor.enterOffset(it)
-            }
-        val exit = fadeOut(tween(descriptor.exitDurationMillis)) +
-            slideOutVertically(tween(descriptor.exitDurationMillis)) {
-                descriptor.exitOffset(it)
-            }
-        enter togetherWith exit
-    }
 
     NavigationTransitionAxis.Horizontal -> {
         val enter = fadeIn(tween(descriptor.enterDurationMillis)) +
@@ -159,7 +143,7 @@ fun NavigationHost(
     backStack: NavBackStack<NavKey>,
 ) {
     val motionPolicy = LocalAuroraMotionPolicy.current
-    val peerOffsetPx = with(LocalDensity.current) { 6.dp.roundToPx() }
+    val detailOffsetPx = with(LocalDensity.current) { 24.dp.roundToPx() }
     val chatViewModel: ChatViewModel = koinViewModel()
     val modelLoadRequestResolver: RecommendedModelLoadRequestResolver = koinInject()
     val recommendationRolloutModeSource: RecommendationRolloutModeSource = koinInject()
@@ -228,7 +212,7 @@ fun NavigationHost(
                                     family = NavigationTransitionFamily.Hierarchical,
                                     direction = NavigationTransitionDirection.Pop,
                                     motionPolicy = motionPolicy,
-                                    peerOffsetPx = peerOffsetPx,
+                                    detailOffsetPx = detailOffsetPx,
                                 ),
                             )
                         }
@@ -238,7 +222,7 @@ fun NavigationHost(
                                     family = NavigationTransitionFamily.Hierarchical,
                                     direction = NavigationTransitionDirection.Pop,
                                     motionPolicy = motionPolicy,
-                                    peerOffsetPx = peerOffsetPx,
+                                    detailOffsetPx = detailOffsetPx,
                                 ),
                             )
                         }
@@ -265,7 +249,7 @@ fun NavigationHost(
                     family = navigationTransitionFamily(backStack.lastOrNull()),
                     direction = NavigationTransitionDirection.Forward,
                     motionPolicy = motionPolicy,
-                    peerOffsetPx = peerOffsetPx,
+                    detailOffsetPx = detailOffsetPx,
                 ),
             )
         },
@@ -275,7 +259,7 @@ fun NavigationHost(
                     family = NavigationTransitionFamily.Peer,
                     direction = NavigationTransitionDirection.Pop,
                     motionPolicy = motionPolicy,
-                    peerOffsetPx = peerOffsetPx,
+                    detailOffsetPx = detailOffsetPx,
                 ),
             )
         },
@@ -285,7 +269,7 @@ fun NavigationHost(
                     family = NavigationTransitionFamily.Peer,
                     direction = NavigationTransitionDirection.Pop,
                     motionPolicy = motionPolicy,
-                    peerOffsetPx = peerOffsetPx,
+                    detailOffsetPx = detailOffsetPx,
                 ),
             )
         },

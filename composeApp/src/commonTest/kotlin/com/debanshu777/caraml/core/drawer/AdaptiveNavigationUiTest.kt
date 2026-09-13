@@ -18,11 +18,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -39,6 +41,68 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class AdaptiveNavigationUiTest {
+
+    @Test
+    fun openingModalDrawerKeepsRouteContentAtIdenticalBounds() = runComposeUiTest {
+        var drawerState by mutableStateOf(CustomDrawerState.Closed)
+        mainClock.autoAdvance = false
+
+        setContent {
+            MaterialTheme {
+                AnimatedDrawerScaffold(
+                    drawerState = drawerState,
+                    onDrawerStateChange = { drawerState = it },
+                    gestureEnabled = true,
+                    drawerContent = { Box(Modifier.fillMaxSize()) },
+                    content = {
+                        Box(Modifier.fillMaxSize().testTag("route-content"))
+                    },
+                    modifier = Modifier.requiredSize(width = 320.dp, height = 480.dp),
+                )
+            }
+        }
+
+        val closedBounds = onNodeWithTag("route-content", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        runOnIdle { drawerState = CustomDrawerState.Opened }
+        mainClock.advanceTimeBy(150)
+        val midTransitionBounds = onNodeWithTag("route-content", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        mainClock.advanceTimeBy(500)
+        val openBounds = onNodeWithTag("route-content", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+
+        assertEquals(closedBounds, midTransitionBounds)
+        assertEquals(closedBounds, openBounds)
+    }
+
+    @Test
+    fun drawerDestinationChangesOnlyAfterTheOverlayCloses() = runComposeUiTest {
+        lateinit var backStack: NavBackStack<NavKey>
+        mainClock.autoAdvance = false
+
+        setContent {
+            MaterialTheme {
+                backStack = remember { NavBackStack(AppScreen.Home) }
+                AppDrawerShell(
+                    backStack = backStack,
+                    modifier = Modifier.requiredSize(width = 599.dp, height = 720.dp),
+                ) {
+                    ModelSelectorTopBar(
+                        onMenuClick = LocalDrawerController.current::toggle,
+                    )
+                }
+            }
+        }
+
+        onNodeWithContentDescription("Open navigation menu").performClick()
+        mainClock.advanceTimeBy(300)
+        onNodeWithText("Models").performClick()
+
+        runOnIdle { assertEquals(AppScreen.Home, backStack.last()) }
+        mainClock.advanceTimeBy(300)
+        runOnIdle { assertEquals(AppScreen.Search, backStack.last()) }
+    }
 
     @Test
     fun primaryTopBarShowsOneMenuActionOnlyInTheModalShell() = runComposeUiTest {

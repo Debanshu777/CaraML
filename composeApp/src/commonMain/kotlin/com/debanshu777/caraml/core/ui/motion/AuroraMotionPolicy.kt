@@ -24,11 +24,11 @@ fun auroraMotionPolicy(durationScale: Float): AuroraMotionPolicy {
         spatialTransitionsEnabled = !reducedMotion,
         pulseEnabled = !reducedMotion,
         shapeMorphEnabled = !reducedMotion,
-        opacityDurationMillis = if (reducedMotion) 100 else 220,
-        peerTransitionMillis = 220,
-        detailEnterMillis = 300,
-        hierarchicalPopEnterMillis = 250,
-        exitMillis = 200,
+        opacityDurationMillis = if (reducedMotion) 100 else 180,
+        peerTransitionMillis = 180,
+        detailEnterMillis = 240,
+        hierarchicalPopEnterMillis = 240,
+        exitMillis = 190,
         generationPulseMillis = 1600,
     )
 }

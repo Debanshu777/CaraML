@@ -10,8 +10,11 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
@@ -87,8 +90,9 @@ fun AppDrawerShell(
             currentScreen is AppScreen.Settings -> "settings"
             else -> null
         }
+        var pendingDrawerItem by remember { mutableStateOf<DrawerItem?>(null) }
 
-        val onItemClick: (DrawerItem) -> Unit = { item ->
+        val navigateToItem: (DrawerItem) -> Unit = { item ->
             when (item.id) {
                 "chat" -> {
                     modeController.setState(GenerationMode.Text)
@@ -134,7 +138,14 @@ fun AppDrawerShell(
                     }
                 }
             }
-            controller.close()
+        }
+        val onItemClick: (DrawerItem) -> Unit = { item ->
+            if (controller.drawerState.isOpened()) {
+                pendingDrawerItem = item
+                controller.close()
+            } else {
+                navigateToItem(item)
+            }
         }
 
         BoxWithConstraints(modifier = modifier) {
@@ -151,6 +162,10 @@ fun AppDrawerShell(
                 selectedItemId = selectedItemId,
                 drawerState = controller.drawerState,
                 onDrawerStateChange = controller::setState,
+                onDrawerClosed = {
+                    pendingDrawerItem?.let(navigateToItem)
+                    pendingDrawerItem = null
+                },
                 gestureEnabled = gestureEnabled,
                 onItemClick = onItemClick,
                 content = {

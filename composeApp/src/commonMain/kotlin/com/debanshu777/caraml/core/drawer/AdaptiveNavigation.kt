@@ -84,6 +84,7 @@ fun AdaptiveNavigation(
     onItemClick: (DrawerItem) -> Unit,
     modifier: Modifier = Modifier,
     navigationInsets: WindowInsets = WindowInsets.safeDrawing,
+    onDrawerClosed: () -> Unit = {},
     content: @Composable () -> Unit,
 ) {
     when (navigation) {
@@ -92,6 +93,7 @@ fun AdaptiveNavigation(
             drawerState = drawerState,
             onDrawerStateChange = onDrawerStateChange,
             gestureEnabled = gestureEnabled,
+            onDrawerClosed = onDrawerClosed,
             drawerContent = {
                 AppNavigationPanel(
                     items = items,

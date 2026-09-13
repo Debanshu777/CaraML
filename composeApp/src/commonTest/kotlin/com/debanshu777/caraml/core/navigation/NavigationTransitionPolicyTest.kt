@@ -28,38 +28,38 @@ class NavigationTransitionPolicyTest {
             TransitionExpectation(
                 family = NavigationTransitionFamily.Peer,
                 direction = NavigationTransitionDirection.Forward,
-                expectedAxis = NavigationTransitionAxis.Vertical,
-                expectedEnterMillis = 220,
-                expectedExitMillis = 220,
-                expectedEnterOffset = 6,
-                expectedExitOffset = -6,
+                expectedAxis = NavigationTransitionAxis.None,
+                expectedEnterMillis = 180,
+                expectedExitMillis = 180,
+                expectedEnterOffset = 0,
+                expectedExitOffset = 0,
             ),
             TransitionExpectation(
                 family = NavigationTransitionFamily.Peer,
                 direction = NavigationTransitionDirection.Pop,
-                expectedAxis = NavigationTransitionAxis.Vertical,
-                expectedEnterMillis = 220,
-                expectedExitMillis = 220,
-                expectedEnterOffset = -6,
-                expectedExitOffset = 6,
+                expectedAxis = NavigationTransitionAxis.None,
+                expectedEnterMillis = 180,
+                expectedExitMillis = 180,
+                expectedEnterOffset = 0,
+                expectedExitOffset = 0,
             ),
             TransitionExpectation(
                 family = NavigationTransitionFamily.Hierarchical,
                 direction = NavigationTransitionDirection.Forward,
                 expectedAxis = NavigationTransitionAxis.Horizontal,
-                expectedEnterMillis = 300,
-                expectedExitMillis = 200,
-                expectedEnterOffset = 100,
-                expectedExitOffset = -100,
+                expectedEnterMillis = 240,
+                expectedExitMillis = 190,
+                expectedEnterOffset = 24,
+                expectedExitOffset = -24,
             ),
             TransitionExpectation(
                 family = NavigationTransitionFamily.Hierarchical,
                 direction = NavigationTransitionDirection.Pop,
                 expectedAxis = NavigationTransitionAxis.Horizontal,
-                expectedEnterMillis = 250,
-                expectedExitMillis = 200,
-                expectedEnterOffset = -100,
-                expectedExitOffset = 100,
+                expectedEnterMillis = 240,
+                expectedExitMillis = 190,
+                expectedEnterOffset = -24,
+                expectedExitOffset = 24,
             ),
         )
 
@@ -68,7 +68,7 @@ class NavigationTransitionPolicyTest {
                 family = expected.family,
                 direction = expected.direction,
                 motionPolicy = motion,
-                peerOffsetPx = 6,
+                detailOffsetPx = 24,
             )
 
             assertEquals(expected.family, descriptor.family)
@@ -91,7 +91,7 @@ class NavigationTransitionPolicyTest {
                     family = family,
                     direction = direction,
                     motionPolicy = reducedMotion,
-                    peerOffsetPx = 6,
+                    detailOffsetPx = 24,
                 )
 
                 assertEquals(family, descriptor.family)
