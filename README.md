@@ -219,7 +219,8 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 
 <!-- This section is updated at the end of each AI-assisted development session -->
 
-- Modernized Model Hub browsing with pinned tabs, one scroll owner per tab, compact Material 3 search and filter controls, and responsive content width
+- Added the CaraML Aurora visual system with seed-derived atmosphere, semantic tonal surfaces, consistent typography and spacing, and reduced-motion-aware interactions
+- Added adaptive drawer, rail, and sidebar navigation with responsive Chat, Model Hub, Details, and Settings layouts, focused state transitions, truthful progress, and static idle rendering
 - Added versioned recommendation/native fixture gates, opt-in real-runner parity, pinned CI jobs, and exact artifact-bound model selection; production remains on the legacy display path until measured physical-device and pinned-runner release evidence exists
 - Added opt-in device calibration with byte-bound descriptor identity, phase-specific raw memory baselines, full run-plan fingerprints, real process-memory provenance, and fail-closed quarantine after unresponsive native probes
 - Model loads now derive typed directory targets only from verified storage roots, bind every native-consumed path to revalidated bytes, and keep multi-sequence plans analytical until strict native admission
