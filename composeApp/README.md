@@ -204,8 +204,9 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 
 <!-- Updated at end of each AI-assisted development session -->
 
-- Added seed-derived Aurora theming and responsive Chat, Model Hub, Details, and Settings surfaces with adaptive drawer, rail, and sidebar navigation
-- Added reduced-motion-aware generation, download, list, disclosure, and route transitions while preserving backend-authoritative progress and static idle rendering
+- Refined the shared Aurora system with visible semantic gradients, translucent borderless panes, restrained focal surfaces, and consistent compact spacing across Chat, Model Hub, Details, and Settings
+- Model Hub and Model Details now use a denser hierarchy, one advanced-filter surface, readable repository metadata, compact status treatments, and large-text-safe scrolling
+- Navigation now keeps route content stationary beneath the modal drawer, crossfades peer destinations, uses a shallow fixed axis for Details, and preserves reduced-motion behavior
 - Added a strict 16-case recommendation corpus, analytical timing coverage, exact assessed-artifact selection handoff, and explicit release gating; unmeasured outcomes remain null and production remains `LEGACY`
 - Recommendations now learn only from byte-bound descriptors, phase-specific raw memory evidence, full run-plan fingerprints, and trustworthy process-memory counters; stale identities and unresponsive native probes fail closed
 - Exact model selections now derive directory targets only from verified storage roots, bind every native-consumed component path, keep multi-sequence planning analytical, and reject it at native admission
