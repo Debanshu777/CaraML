@@ -148,7 +148,7 @@ class ModelDetailsAuroraUiTest {
         runComposeUiTest {
             val fixture = ggufDownloadFixture()
             var isDownloading by mutableStateOf(true)
-            var recommendation by mutableStateOf(fixture.activeRecommendation)
+            var activeDownloadArtifact by mutableStateOf<DownloadArtifactIdentity?>(fixture.activeArtifact)
             var requestedModelId = ""
             var requestedPath = ""
             var requestedMetadata: DownloadMetadataDTO? = null
@@ -159,12 +159,13 @@ class ModelDetailsAuroraUiTest {
                             model = fixture.model,
                             ggufFiles = fixture.files,
                             isDownloading = isDownloading,
+                            activeDownloadArtifact = activeDownloadArtifact,
                             onDownloadClick = { modelId, path, metadata ->
                                 requestedModelId = modelId
                                 requestedPath = path
                                 requestedMetadata = metadata
                             },
-                            recommendationState = recommendation,
+                            recommendationState = fixture.recommendation,
                         )
                     }
                 }
@@ -174,11 +175,19 @@ class ModelDetailsAuroraUiTest {
                 SemanticsMatcher.expectValue(
                     SemanticsProperties.StateDescription,
                     "Downloading",
-                ) and hasText("50%"),
+                ),
             ).assertCountEquals(1)
+            onNode(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.StateDescription,
+                    "Downloading",
+                ) and hasText("model-q4-00001-of-00002.gguf"),
+            ).assertExists()
 
-            val idleLabel = onNodeWithText("idle-q8.gguf").fetchSemanticsNode()
-            val idleAction = onNodeWithContentDescription("Download weights/idle-q8.gguf")
+            val idleLabel = onNodeWithText("model-q4-00002-of-00002.gguf").fetchSemanticsNode()
+            val idleAction = onNodeWithContentDescription(
+                "Download weights/model-q4-00002-of-00002.gguf",
+            )
                 .assertIsNotEnabled()
                 .fetchSemanticsNode()
             assertTrue(
@@ -188,12 +197,12 @@ class ModelDetailsAuroraUiTest {
 
             runOnIdle {
                 isDownloading = false
-                recommendation = fixture.idleRecommendation
+                activeDownloadArtifact = null
             }
 
-            onNodeWithContentDescription("Download weights/active-q4.gguf")
-                .assertIsNotEnabled()
-            onNodeWithContentDescription("Download weights/idle-q8.gguf")
+            onNodeWithContentDescription("Download weights/model-q4-00001-of-00002.gguf")
+                .assertIsEnabled()
+            onNodeWithContentDescription("Download weights/model-q4-00002-of-00002.gguf")
                 .assertIsEnabled()
                 .performClick()
 
@@ -225,7 +234,7 @@ class ModelDetailsAuroraUiTest {
                                 ggufFiles = fixture.files,
                                 isDownloading = false,
                                 onDownloadClick = { _, _, _ -> downloadClicks += 1 },
-                                recommendationState = fixture.activeRecommendation,
+                                recommendationState = fixture.recommendation,
                                 windowWidth = 900.dp,
                             )
                         }
@@ -242,7 +251,7 @@ class ModelDetailsAuroraUiTest {
             val deviceFit = onNodeWithText("Device fit").fetchSemanticsNode().boundsInRoot
             assertTrue(deviceFit.left > overview.left, "Expanded details must remain two-column")
 
-            onNodeWithContentDescription("Download weights/active-q4.gguf")
+            onNodeWithContentDescription("Download weights/model-q4-00001-of-00002.gguf")
                 .performScrollTo()
                 .assertIsDisplayed()
                 .performClick()
@@ -537,8 +546,7 @@ private data class GgufDownloadFixture(
     val files: List<GgufFileUiState>,
     val activeArtifact: DownloadArtifactIdentity,
     val idleArtifact: DownloadArtifactIdentity,
-    val activeRecommendation: RecommendedModelUiState,
-    val idleRecommendation: RecommendedModelUiState,
+    val recommendation: RecommendedModelUiState,
 )
 
 private fun ggufDownloadFixture(): GgufDownloadFixture {
@@ -566,14 +574,12 @@ private fun ggufDownloadFixture(): GgufDownloadFixture {
         evidence = emptyList(),
     )
 
-    fun descriptor(artifact: DownloadArtifactIdentity): LlmModelDescriptor = LlmModelDescriptor(
+    fun descriptor(vararg artifacts: DownloadArtifactIdentity): LlmModelDescriptor = LlmModelDescriptor(
         repositoryId = repositoryId,
         revision = revision,
-        file = file(artifact),
+        files = artifacts.map(::file),
         architecture = "llama",
-        quantization = QuantizationEvidence.Known(
-            if (artifact.relativePath.contains("q4")) "Q4_K_M" else "Q8_0",
-        ),
+        quantization = QuantizationEvidence.Known("Q4_K_M"),
         parameterCount = 7_000_000_000L,
         contextLimit = 4_096,
         transformerShape = null,
@@ -597,8 +603,8 @@ private fun ggufDownloadFixture(): GgufDownloadFixture {
         selectedDescriptor = descriptor,
     )
 
-    val activeArtifact = artifact("weights/active-q4.gguf", 'd', 4_294_967_296L)
-    val idleArtifact = artifact("weights/idle-q8.gguf", 'e', 8_589_934_592L)
+    val activeArtifact = artifact("weights/model-q4-00001-of-00002.gguf", 'd', 4_294_967_296L)
+    val idleArtifact = artifact("weights/model-q4-00002-of-00002.gguf", 'e', 4_294_967_296L)
     return GgufDownloadFixture(
         model = ModelDetailResponse(
             modelId = repositoryId,
@@ -609,15 +615,15 @@ private fun ggufDownloadFixture(): GgufDownloadFixture {
         files = listOf(
             GgufFileUiState(
                 path = activeArtifact.relativePath,
-                filename = "active-q4.gguf",
+                filename = "model-q4-00001-of-00002.gguf",
                 sizeBytes = activeArtifact.expectedBytes,
                 isDownloaded = false,
-                progress = 50f,
+                progress = null,
                 artifact = activeArtifact,
             ),
             GgufFileUiState(
                 path = idleArtifact.relativePath,
-                filename = "idle-q8.gguf",
+                filename = "model-q4-00002-of-00002.gguf",
                 sizeBytes = idleArtifact.expectedBytes,
                 isDownloaded = false,
                 progress = null,
@@ -626,8 +632,10 @@ private fun ggufDownloadFixture(): GgufDownloadFixture {
         ),
         activeArtifact = activeArtifact,
         idleArtifact = idleArtifact,
-        activeRecommendation = recommendation(descriptor(activeArtifact), "Q4_K_M"),
-        idleRecommendation = recommendation(descriptor(idleArtifact), "Q8_0"),
+        recommendation = recommendation(
+            descriptor(activeArtifact, idleArtifact),
+            "Q4_K_M (2 shards)",
+        ),
     )
 }
 

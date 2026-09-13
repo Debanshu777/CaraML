@@ -51,6 +51,7 @@ import com.debanshu777.huggingfacemanager.api.error.Result
 import com.debanshu777.huggingfacemanager.download.DownloadManager
 import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
+import com.debanshu777.huggingfacemanager.download.DownloadProgressDTO
 import com.debanshu777.huggingfacemanager.download.ArtifactVerificationException
 import com.debanshu777.huggingfacemanager.download.ArtifactManifest
 import com.debanshu777.huggingfacemanager.download.ArtifactManifestEntry
@@ -75,6 +76,7 @@ import com.debanshu777.huggingfacemanager.sdcpp.SdCppComponent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -83,6 +85,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -475,6 +479,11 @@ class ModelViewModel(
 
     private val _isDownloading = MutableStateFlow(false)
     val isDownloading: StateFlow<Boolean> = _isDownloading.asStateFlow()
+
+    /** Exact artifact currently transferring; null during admission and between transfers. */
+    private val _activeDownloadArtifact = MutableStateFlow<DownloadArtifactIdentity?>(null)
+    val activeDownloadArtifact: StateFlow<DownloadArtifactIdentity?> =
+        _activeDownloadArtifact.asStateFlow()
 
     private val _downloadError = MutableStateFlow<String?>(null)
     val downloadError: StateFlow<String?> = _downloadError.asStateFlow()
@@ -883,6 +892,7 @@ class ModelViewModel(
                 _ggufFiles.update { list -> list.map { it.copy(progress = null) } }
                 _setupComponents.update { list -> list.map { it.copy(progress = null) } }
             } finally {
+                _activeDownloadArtifact.value = null
                 _isDownloading.update { false }
                 _installProgress.update { InstallProgress() }
             }
@@ -948,6 +958,7 @@ class ModelViewModel(
                 _downloadError.update { "Download failed. Please check your connection and try again." }
                 _ggufFiles.update { list -> list.map { it.copy(progress = null) } }
             } finally {
+                _activeDownloadArtifact.value = null
                 _isDownloading.update { false }
             }
         }
@@ -1101,7 +1112,7 @@ class ModelViewModel(
         metadata: DownloadMetadataDTO,
         modelType: String,
     ) {
-        downloadManager.download(modelId, path, metadata).collect { progress ->
+        trackedDownload(modelId, path, metadata).collect { progress ->
             _ggufFiles.update { list ->
                 list.map {
                     if (it.path == path) it.copy(progress = progress.percentage) else it
@@ -1125,6 +1136,21 @@ class ModelViewModel(
                     modelType = modelType,
                     isMainModel = !filename.contains("mmproj", ignoreCase = true),
                 )
+            }
+        }
+    }
+
+    private fun trackedDownload(
+        modelId: String,
+        path: String,
+        metadata: DownloadMetadataDTO,
+    ): Flow<DownloadProgressDTO> = flow {
+        _activeDownloadArtifact.value = metadata.artifact
+        try {
+            emitAll(downloadManager.download(modelId, path, metadata))
+        } finally {
+            if (_activeDownloadArtifact.value == metadata.artifact) {
+                _activeDownloadArtifact.value = null
             }
         }
     }
@@ -1178,7 +1204,7 @@ class ModelViewModel(
         for ((file, meta) in orderedMetadata) {
             refreshDownloadAdmission(modelId, meta).requireForComponent(downloadForLaterConfirmed)
             val bytesBeforeThisFile = _installBytesCompleted
-            downloadManager.download(modelId, file.path, meta).collect { progress ->
+            trackedDownload(modelId, file.path, meta).collect { progress ->
                 _ggufFiles.update { list ->
                     list.map {
                         if (it.path == file.path) it.copy(progress = progress.percentage) else it
@@ -1266,7 +1292,7 @@ class ModelViewModel(
             refreshDownloadAdmission(modelId, meta).requireForComponent(downloadForLaterConfirmed)
             val bytesBeforeThisComponent = _installBytesCompleted
             val componentLabel = component.filePath.substringAfterLast('/')
-            downloadManager.download(component.repoId, component.filePath, meta).collect { progress ->
+            trackedDownload(component.repoId, component.filePath, meta).collect { progress ->
                 _setupComponents.update { list ->
                     list.map {
                         if (it.repoId == component.repoId && it.filePath == component.filePath) {
@@ -1748,6 +1774,7 @@ class ModelViewModel(
                 _downloadError.update { "Download failed. Please check your connection and try again." }
                 _setupComponents.update { list -> list.map { it.copy(progress = null) } }
             } finally {
+                _activeDownloadArtifact.value = null
                 _isDownloading.update { false }
             }
         }

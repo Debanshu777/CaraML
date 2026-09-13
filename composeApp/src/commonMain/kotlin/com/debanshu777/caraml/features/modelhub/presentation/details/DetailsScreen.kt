@@ -61,6 +61,7 @@ fun DetailsScreen(
     val detailError by viewModel.detailError.collectAsState()
     val ggufFiles by viewModel.ggufFiles.collectAsState()
     val isDownloading by viewModel.isDownloading.collectAsState()
+    val activeDownloadArtifact by viewModel.activeDownloadArtifact.collectAsState()
     val downloadError by viewModel.downloadError.collectAsState()
     val showDownloadForLaterConfirmation by viewModel.showDownloadForLaterConfirmation.collectAsState()
     val installBundleState by viewModel.installBundleState.collectAsState()
@@ -135,6 +136,7 @@ fun DetailsScreen(
                                 model = detail,
                                 ggufFiles = ggufFiles,
                                 isDownloading = isDownloading,
+                                activeDownloadArtifact = activeDownloadArtifact,
                                 onDownloadClick = { id, path, metadata ->
                                     viewModel.startDownload(id, path, metadata)
                                 },

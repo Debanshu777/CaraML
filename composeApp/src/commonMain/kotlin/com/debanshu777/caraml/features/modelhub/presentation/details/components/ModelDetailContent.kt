@@ -51,6 +51,7 @@ fun ModelDetailContent(
     ggufFiles: List<GgufFileUiState>,
     isDownloading: Boolean,
     onDownloadClick: (String, String, DownloadMetadataDTO) -> Unit,
+    activeDownloadArtifact: DownloadArtifactIdentity? = null,
     weightFilesHeading: String = "GGUF files",
     weightFilesEmptyLabel: String = "No GGUF files found",
     // Diffusion-specific
@@ -95,6 +96,7 @@ fun ModelDetailContent(
                             model = model,
                             ggufFiles = ggufFiles,
                             isDownloading = isDownloading,
+                            activeDownloadArtifact = activeDownloadArtifact,
                             onDownloadClick = onDownloadClick,
                             heading = weightFilesHeading,
                             emptyLabel = weightFilesEmptyLabel,
@@ -149,6 +151,7 @@ fun ModelDetailContent(
                             model = model,
                             ggufFiles = ggufFiles,
                             isDownloading = isDownloading,
+                            activeDownloadArtifact = activeDownloadArtifact,
                             onDownloadClick = onDownloadClick,
                             heading = weightFilesHeading,
                             emptyLabel = weightFilesEmptyLabel,
@@ -323,6 +326,7 @@ private fun ModelFileVariantsSection(
     model: ModelDetailResponse,
     ggufFiles: List<GgufFileUiState>,
     isDownloading: Boolean,
+    activeDownloadArtifact: DownloadArtifactIdentity?,
     onDownloadClick: (String, String, DownloadMetadataDTO) -> Unit,
     heading: String,
     emptyLabel: String,
@@ -349,12 +353,15 @@ private fun ModelFileVariantsSection(
                     val matchesSelectedDescriptor = item.artifact?.let { artifact ->
                         artifactMatches(recommendationState?.selectedDescriptor, artifact)
                     } == true
+                    val isActiveDownload = isDownloading &&
+                        activeDownloadArtifact != null &&
+                        item.artifact == activeDownloadArtifact
                     GgufFileListItem(
                         filename = item.path.ifEmpty { item.filename },
                         sizeBytes = item.sizeBytes,
                         isDownloaded = item.isDownloaded,
                         progress = item.progress,
-                        isDownloading = isDownloading && matchesSelectedDescriptor,
+                        isDownloading = isActiveDownload,
                         onDownloadClick = {
                             val artifact = item.artifact ?: return@GgufFileListItem
                             onDownloadClick(

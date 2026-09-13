@@ -18,6 +18,7 @@ import com.debanshu777.caraml.core.recommendation.CalibrationKey
 import com.debanshu777.caraml.core.recommendation.CalibrationSource
 import com.debanshu777.caraml.core.recommendation.BackendPerformanceProfile
 import com.debanshu777.caraml.core.recommendation.Confidence
+import com.debanshu777.caraml.core.recommendation.FitBand
 import com.debanshu777.caraml.core.recommendation.LlmModelDescriptor
 import com.debanshu777.caraml.core.recommendation.ModelAssessment
 import com.debanshu777.caraml.core.recommendation.ModelDescriptor
@@ -49,6 +50,7 @@ import com.debanshu777.huggingfacemanager.HuggingFaceApi
 import com.debanshu777.huggingfacemanager.api.RemoteHuggingFaceApiService
 import com.debanshu777.huggingfacemanager.download.DownloadManager
 import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
+import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
 import com.debanshu777.huggingfacemanager.download.ArtifactManifest
 import com.debanshu777.huggingfacemanager.download.ArtifactManifestEntry
 import com.debanshu777.huggingfacemanager.download.ArtifactManifestStore
@@ -64,6 +66,7 @@ import com.debanshu777.huggingfacemanager.usecase.GetRecommendationModelDetailUs
 import com.debanshu777.huggingfacemanager.usecase.ListModelsUseCase
 import com.debanshu777.huggingfacemanager.usecase.ListRecommendationModelsUseCase
 import com.debanshu777.huggingfacemanager.usecase.SearchModelsUseCase
+import com.sun.net.httpserver.HttpServer
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockEngineConfig
@@ -76,10 +79,13 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -89,6 +95,7 @@ import kotlinx.coroutines.test.setMain
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 import java.io.File
+import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.security.MessageDigest
 import kotlin.test.Test
@@ -98,6 +105,105 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ModelViewModelRecommendationTest {
+    @Test
+    fun confirmedLanguageDownloadPublishesExactPathBeforeProgressAndClearsAfterCompletion() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val repositoryId = "org/download-state"
+        val path = "weights/model-00001-of-00002.gguf"
+        val revision = "a".repeat(40)
+        val objectId = "b".repeat(40)
+        val body = ByteArray(100) { it.toByte() }
+        val descriptorFile = ModelFileIdentity(
+            repositoryId = repositoryId,
+            revision = revision,
+            path = path,
+            sizeBytes = body.size.toLong(),
+            gitOid = objectId,
+            lfsOid = null,
+            xetHash = null,
+            evidence = emptyList(),
+        )
+        val artifact = requireNotNull(
+            DownloadArtifactIdentity.create(
+                repositoryId = repositoryId,
+                immutableRevision = revision,
+                relativePath = path,
+                remoteObjectId = objectId,
+                expectedBytes = body.size.toLong(),
+            ),
+        )
+        val metadata = DownloadMetadataDTO(
+            artifact = artifact,
+            logicalRole = "model",
+            sizeBytes = artifact.expectedBytes,
+            author = null,
+            libraryName = null,
+            pipelineTag = null,
+        )
+        val requestDispatcher = dispatcher
+        val engine = object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler { respondJson(searchResponse("download", repositoryId)) }
+        }) {
+            override val dispatcher: CoroutineDispatcher = requestDispatcher
+        }
+        val client = HttpClient(engine)
+        val trusted = Files.createTempDirectory("caraml-active-download-").toRealPath().toFile()
+        val storage = FakeStoragePathProvider(
+            trusted,
+            realFileAccess = true,
+            availableStorageBytes = 1024L * 1024 * 1024,
+        )
+        val server = ControlledDownloadServer(body)
+        try {
+            val viewModel = viewModel(
+                client = client,
+                dispatcher = dispatcher,
+                storagePathProvider = storage,
+                downloadManager = DownloadManager(storage, server.baseUrl),
+                recommendationService = recommendationService(
+                    dispatcher = dispatcher,
+                    descriptorFiles = listOf(descriptorFile),
+                    recommendationCategory = RecommendationCategory.NOT_SUITABLE,
+                    recommendationStorageFit = FitBand.COMFORTABLE,
+                ),
+            )
+            viewModel.updateSearchQuery("download")
+            viewModel.performSearch()
+            advanceUntilIdle()
+
+            viewModel.startDownload(repositoryId, path, metadata)
+            advanceUntilIdle()
+
+            assertTrue(
+                viewModel.showDownloadForLaterConfirmation.value,
+                "recommendations=${viewModel.recommendedModels.value}, error=${viewModel.downloadError.value}",
+            )
+            assertFalse(viewModel.isDownloading.value)
+            assertEquals(null, viewModel.activeDownloadArtifact.value)
+
+            viewModel.confirmDownloadForLater()
+            server.requestStarted.await()
+
+            assertTrue(viewModel.isDownloading.value)
+            assertEquals(artifact, viewModel.activeDownloadArtifact.value)
+
+            val activeArtifactCleared = async { viewModel.activeDownloadArtifact.first { it == null } }
+            server.releaseResponse.complete(Unit)
+            activeArtifactCleared.await()
+            runCurrent()
+
+            assertEquals(null, viewModel.activeDownloadArtifact.value)
+            assertFalse(viewModel.isDownloading.value)
+        } finally {
+            server.close()
+            client.close()
+            trusted.deleteRecursively()
+            Dispatchers.resetMain()
+        }
+    }
+
     @Test
     fun diffusionDetailIgnoresStaleRoomBundleSentinelWithoutValidatedManifestEvidence() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -503,6 +609,7 @@ class ModelViewModelRecommendationTest {
         dispatcher: CoroutineDispatcher,
         localModelDao: LocalModelDao = FakeLocalModelDao(),
         storagePathProvider: StoragePathProvider = FakeStoragePathProvider(),
+        downloadManager: DownloadManager = DownloadManager(storagePathProvider),
         recommendationService: ModelRecommendationService = recommendationService(dispatcher),
         calibrationSource: CalibrationSource = NoCalibrationSource,
     ): ModelViewModel {
@@ -510,7 +617,7 @@ class ModelViewModelRecommendationTest {
             api = huggingFaceApi(client),
             localModelRepository = LocalModelRepository(localModelDao),
             componentRepository = ComponentRepository(FakeDownloadedComponentDao()),
-            downloadManager = DownloadManager(storagePathProvider),
+            downloadManager = downloadManager,
             storagePathProvider = storagePathProvider,
             deviceCapabilities = DeviceCapabilities(),
             recommendationService = recommendationService,
@@ -611,25 +718,31 @@ private fun recommendationService(
     dispatcher: CoroutineDispatcher,
     onAssess: () -> Unit = {},
     onReassess: () -> Unit = {},
+    descriptorFiles: List<ModelFileIdentity>? = null,
+    recommendationCategory: RecommendationCategory = RecommendationCategory.RECOMMENDED,
+    recommendationStorageFit: FitBand? = null,
 ) = ModelRecommendationService(
     metadataSource = ModelMetadataSource { repositoryId, _ ->
-        val identity = ModelFileIdentity(
-            repositoryId = repositoryId,
-            revision = "a".repeat(40),
-            path = "model-Q4_K_M.gguf",
-            sizeBytes = 100L,
-            gitOid = "oid-$repositoryId",
-            lfsOid = null,
-            xetHash = null,
-            evidence = emptyList(),
+        val identities = descriptorFiles ?: listOf(
+            ModelFileIdentity(
+                repositoryId = repositoryId,
+                revision = "a".repeat(40),
+                path = "model-Q4_K_M.gguf",
+                sizeBytes = 100L,
+                gitOid = "oid-$repositoryId",
+                lfsOid = null,
+                xetHash = null,
+                evidence = emptyList(),
+            ),
         )
+        val identity = identities.first()
         RepositoryVariantSet.Ready(
             listOf(
                 RepositoryVariant(
                     descriptor = LlmModelDescriptor(
                         repositoryId = repositoryId,
                         revision = identity.revision,
-                        file = identity,
+                        files = identities,
                         architecture = "llama",
                         quantization = QuantizationEvidence.Known("Q4_K_M"),
                         parameterCount = 1_000_000L,
@@ -672,10 +785,11 @@ private fun recommendationService(
             profile: RecommendationProfile,
         ) = PersonalizedRecommendation(
             assessmentKey = assessment.assessmentKey,
-            category = RecommendationCategory.RECOMMENDED,
+            category = recommendationCategory,
             selectedPlan = null,
             reasons = listOf(AssessmentReason.METADATA_VALIDATED),
             profile = profile,
+            storageFit = recommendationStorageFit,
         )
 
         override fun sortKey(
@@ -772,15 +886,40 @@ private class FakeSettingsRepository : SettingsRepository {
     override suspend fun completeModelProfileOnboarding(profile: RecommendationProfile) = Unit
 }
 
+private class ControlledDownloadServer(
+    private val body: ByteArray,
+) : AutoCloseable {
+    val requestStarted = CompletableDeferred<Unit>()
+    val releaseResponse = CompletableDeferred<Unit>()
+    private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
+        createContext("/") { exchange ->
+            requestStarted.complete(Unit)
+            runBlocking { releaseResponse.await() }
+            exchange.sendResponseHeaders(200, body.size.toLong())
+            exchange.responseBody.use { it.write(body) }
+            exchange.close()
+        }
+        start()
+    }
+
+    val baseUrl: String = "http://127.0.0.1:${server.address.port}"
+
+    override fun close() {
+        releaseResponse.complete(Unit)
+        server.stop(0)
+    }
+}
+
 private class FakeStoragePathProvider(
     private val baseDirectory: File = File("/tmp/caraml-test"),
     private val realFileAccess: Boolean = false,
+    private val availableStorageBytes: Long = 1_000_000L,
 ) : StoragePathProvider {
     override fun getModelsStorageDirectory(modelId: String): String = File(baseDirectory, modelId).path
     override fun getDatabasePath(): String = "/tmp/caraml-test.db"
     override fun fileExists(path: String): Boolean = realFileAccess && File(path).isFile
-    override fun getAvailableStorageBytes(): Long = 1_000_000L
-    override fun getTotalStorageBytes(): Long = 2_000_000L
+    override fun getAvailableStorageBytes(): Long = availableStorageBytes
+    override fun getTotalStorageBytes(): Long = maxOf(availableStorageBytes, 2_000_000L)
     override fun isModelFileReadable(path: String): Boolean = realFileAccess && File(path).isFile && File(path).canRead()
     override fun isDirectoryReadable(path: String): Boolean = realFileAccess && File(path).isDirectory && File(path).canRead()
     override fun getFileSize(path: String): Long = if (realFileAccess) File(path).length() else 0L
