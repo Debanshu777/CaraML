@@ -39,7 +39,7 @@ fun ModelListItem(
             )
         },
         onClick = onClick,
-        modifier = modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+        modifier = modifier.padding(vertical = 5.dp),
         highlighted = recommendationState?.personalizedResult?.category ==
             RecommendationCategory.RECOMMENDED,
         trailing = {

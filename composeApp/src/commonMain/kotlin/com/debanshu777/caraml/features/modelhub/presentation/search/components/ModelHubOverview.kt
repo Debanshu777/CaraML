@@ -46,6 +46,7 @@ import com.debanshu777.caraml.core.recommendation.RecommendationProfile
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
 import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.ui.components.CaraMLPane
+import com.debanshu777.caraml.core.ui.components.AuroraFocalSurface
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.features.modelhub.presentation.search.StorageInfoUiState
 import com.debanshu777.caraml.features.settings.presentation.label
@@ -68,27 +69,32 @@ fun ModelHubOverview(
     if (!showStorage && !showDevice && !showProfile) return
 
     val spacing = LocalSpacing.current
-    CaraMLPane(
+    AuroraFocalSurface(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = spacing.l, vertical = spacing.s),
-        level = AuroraSurfaceLevel.Pane,
+            .padding(vertical = spacing.s),
         shape = MaterialTheme.shapes.medium,
     ) {
-        if (showStorage) {
-            StorageInfoBar(storageInfo)
-        }
-        if (showStorage && showDevice) {
-            HorizontalDivider(modifier = Modifier.padding(horizontal = spacing.m))
-        }
-        storageInfo.deviceHints?.let { deviceHints ->
-            DeviceInfoSection(deviceHints)
-        }
-        if ((showStorage || showDevice) && showProfile) {
-            HorizontalDivider(modifier = Modifier.padding(horizontal = spacing.m))
-        }
-        if (profile != null && onOpenProfile != null) {
-            RecommendationProfileAction(profile, onOpenProfile)
+        CaraMLPane(
+            modifier = Modifier.fillMaxWidth().padding(1.dp),
+            level = AuroraSurfaceLevel.Pane,
+            shape = MaterialTheme.shapes.medium,
+        ) {
+            if (showStorage) {
+                StorageInfoBar(storageInfo)
+            }
+            if (showStorage && showDevice) {
+                HorizontalDivider(modifier = Modifier.padding(horizontal = spacing.m))
+            }
+            storageInfo.deviceHints?.let { deviceHints ->
+                DeviceInfoSection(deviceHints)
+            }
+            if ((showStorage || showDevice) && showProfile) {
+                HorizontalDivider(modifier = Modifier.padding(horizontal = spacing.m))
+            }
+            if (profile != null && onOpenProfile != null) {
+                RecommendationProfileAction(profile, onOpenProfile)
+            }
         }
     }
 }
@@ -283,8 +289,8 @@ private fun RecommendationProfileAction(
                 contentDescription = "Recommendation profile. Selected risk: $risk. " +
                     "Selected priority: $priority. Open profile controls."
             },
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.secondaryContainer,
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
@@ -294,24 +300,24 @@ private fun RecommendationProfileAction(
             Icon(
                 imageVector = Icons.Default.Tune,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                tint = MaterialTheme.colorScheme.primary,
             )
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = "Recommendation profile",
                     style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
                     text = "$risk · $priority",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Icon(
                 imageVector = Icons.Default.ChevronRight,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }

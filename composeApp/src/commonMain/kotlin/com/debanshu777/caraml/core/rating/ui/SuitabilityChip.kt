@@ -37,7 +37,7 @@ fun RecommendationStatusChip(
         SuitabilityChip(recommendation, modifier, onInfoClick)
     } else {
         Surface(
-            modifier = modifier.heightIn(min = 48.dp),
+            modifier = modifier,
             shape = MaterialTheme.shapes.small,
             color = MaterialTheme.colorScheme.surfaceVariant,
         ) {
@@ -48,7 +48,7 @@ fun RecommendationStatusChip(
                     DescriptorState.NEEDS_INFORMATION -> "Needs information"
                     DescriptorState.ASSESSED -> "Needs information"
                 },
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                 style = MaterialTheme.typography.labelMedium,
             )
         }
@@ -71,7 +71,9 @@ fun SuitabilityChip(
     onInfoClick: (() -> Unit)? = null,
 ) {
     Surface(
-        modifier = modifier.heightIn(min = 48.dp).semantics { contentDescription = recommendationSemantics(recommendation) },
+        modifier = modifier
+            .heightIn(min = if (onInfoClick != null) 48.dp else 0.dp)
+            .semantics { contentDescription = recommendationSemantics(recommendation) },
         shape = MaterialTheme.shapes.small,
         color = recommendation.category.containerColor(),
         contentColor = recommendation.category.onContainerColor(),
@@ -80,7 +82,7 @@ fun SuitabilityChip(
         Row(
             modifier = Modifier
                 .let { if (onInfoClick != null) it.clickable { onInfoClick() } else it }
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(horizontal = 10.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {

@@ -229,8 +229,8 @@ private fun ModelHubTabRow(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = LocalSpacing.current.s),
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f),
     ) {
         Row(modifier = Modifier.padding(4.dp)) {
             tabs.forEachIndexed { index, title ->
@@ -260,7 +260,7 @@ private fun ModelHubTabRow(
                             onClick = { onTabSelected(index) },
                             role = Role.Tab,
                         ),
-                    shape = MaterialTheme.shapes.large,
+                    shape = MaterialTheme.shapes.small,
                     color = containerColor,
                     contentColor = contentColor,
                 ) {
@@ -353,7 +353,7 @@ private fun SearchTabContent(
                     text = "Curated Hugging Face repositories supported by the on-device engine.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    modifier = Modifier.padding(vertical = 4.dp),
                 )
             }
         }
@@ -372,7 +372,7 @@ private fun SearchTabContent(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                        .padding(vertical = 8.dp),
                 )
             }
         }
@@ -382,7 +382,7 @@ private fun SearchTabContent(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                        .padding(vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -659,7 +659,7 @@ private fun DownloadedTabContent(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                        .padding(vertical = 8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -685,7 +685,7 @@ private fun DownloadedTabContent(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 4.dp),
-                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    contentPadding = PaddingValues(horizontal = 0.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     items(ReadinessFilter.entries, key = { it.name }) { filter ->

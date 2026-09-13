@@ -11,11 +11,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubBrowseControls
@@ -30,8 +33,8 @@ import kotlin.test.assertTrue
 class ModelHubControlsUiTest {
 
     @Test
-    fun browseControlsWrapTogetherOnCompactAndShareOneExpandedRow() = runComposeUiTest {
-        var controlWidth by mutableStateOf(320.dp)
+    fun compactBrowseControlsKeepKindsOnOneRowAndPutRangesBehindFilters() = runComposeUiTest {
+        val controlWidth = 320.dp
         setContent {
             MaterialTheme {
                 Box(Modifier.width(controlWidth)) {
@@ -52,31 +55,20 @@ class ModelHubControlsUiTest {
             }
         }
 
-        onNodeWithText("LLM").assertIsDisplayed()
-        onNodeWithText("Max: 6B").assertIsDisplayed()
-        val compactKindY = onNodeWithText("LLM").fetchSemanticsNode().positionInRoot.y
-        val compactMaxY = onNodeWithText("Max: 6B").fetchSemanticsNode().positionInRoot.y
-        assertTrue(compactMaxY > compactKindY, "Compact controls must wrap within one container")
+        val kindPositions = listOf("LLM", "Image", "Video").map {
+            onNodeWithText(it).fetchSemanticsNode().positionInRoot.y
+        }
+        assertTrue(kindPositions.max() - kindPositions.min() < 1f)
+        onNodeWithText("Server order").assertIsDisplayed()
+        onNodeWithText("Filters").assertIsDisplayed()
+        onNodeWithText("Min: 0").assertDoesNotExist()
+        onNodeWithText("Max: 6B").assertDoesNotExist()
 
-        runOnIdle { controlWidth = 720.dp }
-        waitForIdle()
-
-        val mediumKindY = onNodeWithText("LLM").fetchSemanticsNode().positionInRoot.y
-        val mediumMaxY = onNodeWithText("Max: 6B").fetchSemanticsNode().positionInRoot.y
-        assertTrue(
-            kotlin.math.abs(mediumMaxY - mediumKindY) < 1f,
-            "Medium controls must remain on one row",
-        )
-
-        runOnIdle { controlWidth = 1_000.dp }
-        waitForIdle()
-
-        val expandedKindY = onNodeWithText("LLM").fetchSemanticsNode().positionInRoot.y
-        val expandedMaxY = onNodeWithText("Max: 6B").fetchSemanticsNode().positionInRoot.y
-        assertTrue(
-            kotlin.math.abs(expandedMaxY - expandedKindY) < 1f,
-            "Expanded controls must remain on one row",
-        )
+        onNodeWithText("Filters").performClick()
+        onNodeWithText("Minimum parameters").assertIsDisplayed()
+        onNodeWithText("Maximum parameters")
+            .performScrollTo()
+            .assertIsDisplayed()
     }
 
     @Test
@@ -97,13 +89,14 @@ class ModelHubControlsUiTest {
             }
         }
 
-        onNodeWithText("Sort: Trending").performClick()
+        onNodeWithText("Filters").performClick()
         onNode(hasText("Trending") and isSelectable()).assertIsSelected()
         onNodeWithText("Downloads").performClick()
 
         runOnIdle { assertEquals(ModelSort.DOWNLOADS, selectedSort) }
-        onNodeWithText("Downloads").assertDoesNotExist()
-        onNodeWithText("Sort: Downloads").assertIsDisplayed()
+        onNode(hasText("Downloads") and isSelectable()).assertIsSelected()
+        onNodeWithText("Done").performClick()
+        onNodeWithText("Filters (1)").assertIsDisplayed()
     }
 
     @Test
@@ -121,5 +114,24 @@ class ModelHubControlsUiTest {
 
         onNodeWithContentDescription("Submit model search").performClick()
         runOnIdle { assertEquals(1, submissions) }
+    }
+
+    @Test
+    fun emptySearchDoesNotShowADuplicateTrailingSearchAction() = runComposeUiTest {
+        var query by mutableStateOf("")
+        setContent {
+            MaterialTheme {
+                SearchBar(
+                    query = query,
+                    onQueryChange = { query = it },
+                    onSearch = {},
+                )
+            }
+        }
+
+        onAllNodesWithContentDescription("Submit model search").assertCountEquals(0)
+        runOnIdle { query = "tinyllama" }
+        onAllNodesWithContentDescription("Submit model search").assertCountEquals(1)
+        onNodeWithContentDescription("Clear model search").assertIsDisplayed()
     }
 }

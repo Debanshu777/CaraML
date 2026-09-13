@@ -38,20 +38,20 @@ fun SearchBar(
             )
         },
         trailingIcon = {
-            androidx.compose.foundation.layout.Row {
-                if (query.isNotEmpty()) {
+            if (query.isNotEmpty()) {
+                androidx.compose.foundation.layout.Row {
                     IconButton(onClick = { onQueryChange("") }) {
                         Icon(
                             imageVector = Icons.Default.Clear,
                             contentDescription = "Clear model search",
                         )
                     }
-                }
-                IconButton(onClick = onSearch) {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = "Submit model search",
-                    )
+                    IconButton(onClick = onSearch) {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Submit model search",
+                        )
+                    }
                 }
             }
         },

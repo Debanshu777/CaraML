@@ -17,10 +17,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -32,6 +34,8 @@ import com.debanshu777.caraml.core.ui.components.StatusTone
 import com.debanshu777.caraml.core.recommendation.RecommendationProfile
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubOverview
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelResultCard
+import com.debanshu777.caraml.core.rating.ui.RecommendationStatusChip
+import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -54,12 +58,12 @@ class ModelHubAuroraUiTest {
             }
         }
 
-        onNodeWithText("org/tiny-model").assertIsDisplayed()
+        onNodeWithText("tiny-model").assertIsDisplayed()
         onNodeWithText("org").assertIsDisplayed()
         onNodeWithText("Text generation · 1.2 GB").assertIsDisplayed()
         onNodeWithText("Recommended").assertIsDisplayed()
         onNodeWithText("Download").assertIsDisplayed()
-        val titleY = onNodeWithText("org/tiny-model", useUnmergedTree = true)
+        val titleY = onNodeWithText("tiny-model", useUnmergedTree = true)
             .fetchSemanticsNode().positionInRoot.y
         val authorY = onNodeWithText("org", useUnmergedTree = true)
             .fetchSemanticsNode().positionInRoot.y
@@ -69,8 +73,8 @@ class ModelHubAuroraUiTest {
             .fetchSemanticsNode().positionInRoot.y
         val actionY = onNodeWithText("Download", useUnmergedTree = true)
             .fetchSemanticsNode().positionInRoot.y
-        assertTrue(titleY < authorY)
-        assertTrue(authorY < statusY)
+        assertTrue(authorY < titleY)
+        assertTrue(titleY < statusY)
         assertTrue(statusY < metadataY)
         assertTrue(metadataY < actionY)
         onNodeWithContentDescription("Open model org/tiny-model")
@@ -78,6 +82,23 @@ class ModelHubAuroraUiTest {
             .assertHeightIsAtLeast(48.dp)
             .performClick()
         runOnIdle { assertEquals(1, opened) }
+    }
+
+    @Test
+    fun passiveRecommendationStatusUsesCompactPaintedHeight() = runComposeUiTest {
+        setContent {
+            MaterialTheme {
+                RecommendationStatusChip(
+                    state = DescriptorState.NEEDS_INFORMATION,
+                    recommendation = null,
+                    modifier = Modifier.testTag("passive-status"),
+                )
+            }
+        }
+
+        val height = onNodeWithTag("passive-status").fetchSemanticsNode().boundsInRoot.height
+        assertTrue(height <= 36f, "Passive status paint should stay compact; height was $height")
+        onNodeWithText("Needs information").assertIsDisplayed()
     }
 
     @Test
@@ -140,7 +161,7 @@ class ModelHubAuroraUiTest {
             onNodeWithText("Models: 2 GB")
                 .performScrollTo()
                 .assertIsDisplayed()
-            val title = onNodeWithText("org/large-text-model", useUnmergedTree = true)
+            val title = onNodeWithText("large-text-model", useUnmergedTree = true)
             val status = onNodeWithText("Recommended", useUnmergedTree = true)
             val action = onNodeWithText("Download", useUnmergedTree = true)
 

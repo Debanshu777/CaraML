@@ -19,6 +19,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
 import com.debanshu777.caraml.core.ui.components.CaraMLPane
@@ -35,6 +36,9 @@ fun ModelResultCard(
     trailing: @Composable RowScope.() -> Unit = {},
 ) {
     val edgeColor = MaterialTheme.colorScheme.primary
+    val inferredOwner = title.substringBefore('/', missingDelimiterValue = "").takeIf { it.isNotBlank() }
+    val displayOwner = author?.removePrefix("by ") ?: inferredOwner
+    val displayTitle = title.substringAfter('/', missingDelimiterValue = title)
     CaraMLPane(
         modifier = modifier
             .fillMaxWidth()
@@ -59,20 +63,22 @@ fun ModelResultCard(
                 }
                 .padding(start = if (highlighted) 20.dp else 16.dp, end = 16.dp)
                 .padding(vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            author?.let {
+            displayOwner?.let {
                 Text(
                     text = it,
-                    style = MaterialTheme.typography.labelMedium,
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            Text(
+                text = displayTitle,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
             Box(modifier = Modifier.fillMaxWidth()) {
                 status()
             }
