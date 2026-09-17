@@ -22,11 +22,11 @@ private fun ModelSelectorTopBarPreview() {
 fun ModelSelectorTopBar(
     title: String = "Assistant",
     modifier: Modifier = Modifier,
+    @Suppress("UNUSED_PARAMETER")
     onMenuClick: () -> Unit = {},
 ) {
     CaraMLPrimaryTopBar(
         title = title,
-        onMenuClick = onMenuClick,
         modifier = modifier,
     )
 }

@@ -36,7 +36,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
-import com.debanshu777.caraml.core.drawer.LocalDrawerController
 import com.debanshu777.caraml.core.recommendation.RecommendationRolloutModeSource
 import com.debanshu777.caraml.core.settings.KvQuantPreset
 import com.debanshu777.caraml.core.theme.LocalSpacing
@@ -70,15 +69,12 @@ fun SettingsScreen(
         rolloutMode = rolloutModeSource.current(),
         settingsLoaded = settingsLoaded,
     )
-    val drawerController = LocalDrawerController.current
-
     Scaffold(
         modifier = modifier,
         containerColor = Color.Transparent,
         topBar = {
             CaraMLPrimaryTopBar(
                 title = "Settings",
-                onMenuClick = drawerController::toggle,
             )
         },
     ) { paddingValues ->

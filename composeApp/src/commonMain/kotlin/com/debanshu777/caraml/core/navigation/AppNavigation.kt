@@ -73,6 +73,11 @@ internal data class NavigationTransitionDescriptor(
     }
 }
 
+private const val PeerTransitionMillis = 180
+private const val DetailEnterMillis = 220
+private const val DetailExitMillis = 180
+private const val ReducedMotionTransitionMillis = 90
+
 internal fun navigationTransitionFamily(target: NavKey?): NavigationTransitionFamily =
     if (target is AppScreen.Details) {
         NavigationTransitionFamily.Hierarchical
@@ -90,8 +95,14 @@ internal fun navigationTransitionDescriptor(
         family = family,
         direction = direction,
         axis = NavigationTransitionAxis.None,
-        enterDurationMillis = motionPolicy.opacityDurationMillis,
-        exitDurationMillis = motionPolicy.opacityDurationMillis,
+        enterDurationMillis = minOf(
+            motionPolicy.opacityDurationMillis,
+            ReducedMotionTransitionMillis,
+        ),
+        exitDurationMillis = minOf(
+            motionPolicy.opacityDurationMillis,
+            ReducedMotionTransitionMillis,
+        ),
         detailOffsetPx = detailOffsetPx,
     )
 } else {
@@ -103,15 +114,12 @@ internal fun navigationTransitionDescriptor(
             NavigationTransitionFamily.Hierarchical -> NavigationTransitionAxis.Horizontal
         },
         enterDurationMillis = when (family) {
-            NavigationTransitionFamily.Peer -> motionPolicy.peerTransitionMillis
-            NavigationTransitionFamily.Hierarchical -> when (direction) {
-                NavigationTransitionDirection.Forward -> motionPolicy.detailEnterMillis
-                NavigationTransitionDirection.Pop -> motionPolicy.hierarchicalPopEnterMillis
-            }
+            NavigationTransitionFamily.Peer -> PeerTransitionMillis
+            NavigationTransitionFamily.Hierarchical -> DetailEnterMillis
         },
         exitDurationMillis = when (family) {
-            NavigationTransitionFamily.Peer -> motionPolicy.peerTransitionMillis
-            NavigationTransitionFamily.Hierarchical -> motionPolicy.exitMillis
+            NavigationTransitionFamily.Peer -> PeerTransitionMillis
+            NavigationTransitionFamily.Hierarchical -> DetailExitMillis
         },
         detailOffsetPx = detailOffsetPx,
     )
@@ -143,7 +151,7 @@ fun NavigationHost(
     backStack: NavBackStack<NavKey>,
 ) {
     val motionPolicy = LocalAuroraMotionPolicy.current
-    val detailOffsetPx = with(LocalDensity.current) { 24.dp.roundToPx() }
+    val detailOffsetPx = with(LocalDensity.current) { 16.dp.roundToPx() }
     val chatViewModel: ChatViewModel = koinViewModel()
     val modelLoadRequestResolver: RecommendedModelLoadRequestResolver = koinInject()
     val recommendationRolloutModeSource: RecommendationRolloutModeSource = koinInject()

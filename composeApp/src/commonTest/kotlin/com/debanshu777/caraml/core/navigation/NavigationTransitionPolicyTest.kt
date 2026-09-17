@@ -47,19 +47,19 @@ class NavigationTransitionPolicyTest {
                 family = NavigationTransitionFamily.Hierarchical,
                 direction = NavigationTransitionDirection.Forward,
                 expectedAxis = NavigationTransitionAxis.Horizontal,
-                expectedEnterMillis = 240,
-                expectedExitMillis = 190,
-                expectedEnterOffset = 24,
-                expectedExitOffset = -24,
+                expectedEnterMillis = 220,
+                expectedExitMillis = 180,
+                expectedEnterOffset = 16,
+                expectedExitOffset = -16,
             ),
             TransitionExpectation(
                 family = NavigationTransitionFamily.Hierarchical,
                 direction = NavigationTransitionDirection.Pop,
                 expectedAxis = NavigationTransitionAxis.Horizontal,
-                expectedEnterMillis = 240,
-                expectedExitMillis = 190,
-                expectedEnterOffset = -24,
-                expectedExitOffset = 24,
+                expectedEnterMillis = 220,
+                expectedExitMillis = 180,
+                expectedEnterOffset = -16,
+                expectedExitOffset = 16,
             ),
         )
 
@@ -68,7 +68,7 @@ class NavigationTransitionPolicyTest {
                 family = expected.family,
                 direction = expected.direction,
                 motionPolicy = motion,
-                detailOffsetPx = 24,
+                detailOffsetPx = 16,
             )
 
             assertEquals(expected.family, descriptor.family)
@@ -91,14 +91,14 @@ class NavigationTransitionPolicyTest {
                     family = family,
                     direction = direction,
                     motionPolicy = reducedMotion,
-                    detailOffsetPx = 24,
+                    detailOffsetPx = 16,
                 )
 
                 assertEquals(family, descriptor.family)
                 assertEquals(direction, descriptor.direction)
                 assertEquals(NavigationTransitionAxis.None, descriptor.axis)
-                assertEquals(100, descriptor.enterDurationMillis)
-                assertEquals(100, descriptor.exitDurationMillis)
+                assertEquals(90, descriptor.enterDurationMillis)
+                assertEquals(90, descriptor.exitDurationMillis)
                 assertEquals(0, descriptor.enterOffset(containerSize = 1_000))
                 assertEquals(0, descriptor.exitOffset(containerSize = 1_000))
             }

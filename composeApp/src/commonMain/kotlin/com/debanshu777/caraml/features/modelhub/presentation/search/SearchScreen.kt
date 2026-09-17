@@ -49,7 +49,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import com.debanshu777.caraml.core.drawer.LocalDrawerController
 import com.debanshu777.caraml.core.recommendation.RecommendationProfile
 import com.debanshu777.caraml.core.recommendation.RecommendationRolloutModeSource
 import com.debanshu777.caraml.core.recommendation.RiskTolerance
@@ -112,7 +111,6 @@ fun SearchScreen(
 
     var recommendationSheetState by remember { mutableStateOf<RecommendedModelUiState?>(null) }
 
-    val drawerController = LocalDrawerController.current
     val snackbarHostState = remember { SnackbarHostState() }
 
     Scaffold(
@@ -122,7 +120,6 @@ fun SearchScreen(
         topBar = {
             CaraMLPrimaryTopBar(
                 title = "Models",
-                onMenuClick = drawerController::toggle,
             )
         }
     ) { paddingValues ->

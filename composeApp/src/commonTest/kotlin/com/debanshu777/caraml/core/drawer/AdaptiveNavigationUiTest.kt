@@ -2,15 +2,16 @@
 
 package com.debanshu777.caraml.core.drawer
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChatBubbleOutline
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.CompositionLocalProvider
@@ -25,6 +26,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
@@ -39,8 +41,12 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import com.debanshu777.caraml.core.navigation.AppScreen
+import com.debanshu777.caraml.core.theme.auroraColors
 import com.debanshu777.caraml.core.ui.layout.AppNavigationLayout
+import com.debanshu777.caraml.core.ui.layout.LocalAppNavigationLayout
+import com.debanshu777.caraml.features.chat.domain.GenerationMode
 import com.debanshu777.caraml.features.chat.presentation.components.ModelSelectorTopBar
+import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -48,75 +54,155 @@ import kotlin.test.assertTrue
 class AdaptiveNavigationUiTest {
 
     @Test
-    fun modalDrawerSurfaceFullyOccludesRouteChrome() = runComposeUiTest {
-        mainClock.autoAdvance = false
-        setContent {
-            MaterialTheme(colorScheme = darkColorScheme(surface = Color.Black)) {
-                AdaptiveNavigation(
-                    navigation = AppNavigationLayout.ModalDrawer,
-                    items = emptyList(),
-                    selectedItemId = null,
-                    drawerState = CustomDrawerState.Opened,
-                    onDrawerStateChange = {},
-                    gestureEnabled = true,
-                    onItemClick = {},
-                    navigationInsets = WindowInsets(0),
-                    modifier = Modifier
-                        .requiredSize(width = 320.dp, height = 480.dp)
-                        .testTag("drawer-root"),
-                    content = {
-                        Box(Modifier.fillMaxSize().background(Color.Red))
-                    },
-                )
-            }
-        }
-        mainClock.advanceTimeBy(300)
-
-        val drawerPixel = onNodeWithTag("drawer-root", useUnmergedTree = true)
-            .captureToImage()
-            .toPixelMap()[120, 300]
-        assertTrue(
-            drawerPixel.red < 0.05f,
-            "Modal drawer must occlude route chrome; sampled red was ${drawerPixel.red}",
-        )
-    }
-
-    @Test
-    fun openingModalDrawerKeepsRouteContentAtIdenticalBounds() = runComposeUiTest {
-        var drawerState by mutableStateOf(CustomDrawerState.Closed)
-        mainClock.autoAdvance = false
+    fun width599UsesBottomBarWithExactlyCreateModelsAndSettings() = runComposeUiTest {
+        lateinit var observedLayout: AppNavigationLayout
 
         setContent {
             MaterialTheme {
-                AnimatedDrawerScaffold(
-                    drawerState = drawerState,
-                    onDrawerStateChange = { drawerState = it },
-                    gestureEnabled = true,
-                    drawerContent = { Box(Modifier.fillMaxSize()) },
-                    content = {
-                        Box(Modifier.fillMaxSize().testTag("route-content"))
-                    },
-                    modifier = Modifier.requiredSize(width = 320.dp, height = 480.dp),
-                )
+                val backStack = remember { NavBackStack<NavKey>(AppScreen.Home) }
+                AppDrawerShell(
+                    backStack = backStack,
+                    modifier = Modifier.requiredSize(width = 599.dp, height = 720.dp),
+                ) {
+                    observedLayout = LocalAppNavigationLayout.current
+                    ModelSelectorTopBar()
+                }
             }
         }
 
-        val closedBounds = onNodeWithTag("route-content", useUnmergedTree = true)
-            .fetchSemanticsNode().boundsInRoot
-        runOnIdle { drawerState = CustomDrawerState.Opened }
-        mainClock.advanceTimeBy(150)
-        val midTransitionBounds = onNodeWithTag("route-content", useUnmergedTree = true)
-            .fetchSemanticsNode().boundsInRoot
-        mainClock.advanceTimeBy(500)
-        val openBounds = onNodeWithTag("route-content", useUnmergedTree = true)
-            .fetchSemanticsNode().boundsInRoot
-
-        assertEquals(closedBounds, midTransitionBounds)
-        assertEquals(closedBounds, openBounds)
+        runOnIdle { assertEquals(AppNavigationLayout.BottomBar, observedLayout) }
+        onAllNodesWithContentDescription("Create, selected").assertCountEquals(1)
+        onAllNodesWithContentDescription("Models").assertCountEquals(1)
+        onAllNodesWithContentDescription("Settings").assertCountEquals(1)
+        onAllNodesWithText("Chat").assertCountEquals(0)
+        onAllNodesWithText("Image").assertCountEquals(0)
+        onAllNodesWithText("Video").assertCountEquals(0)
+        onAllNodesWithContentDescription("Open navigation menu").assertCountEquals(0)
     }
 
     @Test
-    fun drawerDestinationChangesOnlyAfterTheOverlayCloses() = runComposeUiTest {
+    fun width600UsesRailAndWidth1199StillUsesRail() = runComposeUiTest {
+        var windowWidth by mutableStateOf(600.dp)
+        lateinit var observedLayout: AppNavigationLayout
+
+        setContent {
+            MaterialTheme {
+                val backStack = remember { NavBackStack<NavKey>(AppScreen.Home) }
+                Box(Modifier.width(windowWidth).height(720.dp)) {
+                    AppDrawerShell(
+                        modifier = Modifier.fillMaxSize(),
+                        backStack = backStack,
+                    ) {
+                        observedLayout = LocalAppNavigationLayout.current
+                        Box(Modifier.fillMaxSize())
+                    }
+                }
+            }
+        }
+
+        runOnIdle { assertEquals(AppNavigationLayout.Rail, observedLayout) }
+        onAllNodesWithContentDescription("Create, selected").assertCountEquals(1)
+        onAllNodesWithText("CaraML").assertCountEquals(0)
+
+        runOnIdle { windowWidth = 1199.dp }
+        runOnIdle { assertEquals(AppNavigationLayout.Rail, observedLayout) }
+        onAllNodesWithContentDescription("Create, selected").assertCountEquals(1)
+        onAllNodesWithText("CaraML").assertCountEquals(0)
+    }
+
+    @Test
+    fun width1200UsesContextualSidebar() = runComposeUiTest {
+        lateinit var observedLayout: AppNavigationLayout
+
+        setContent {
+            MaterialTheme {
+                val backStack = remember { NavBackStack<NavKey>(AppScreen.Home) }
+                AppDrawerShell(
+                    modifier = Modifier.requiredSize(width = 1200.dp, height = 720.dp),
+                    backStack = backStack,
+                ) {
+                    observedLayout = LocalAppNavigationLayout.current
+                    Box(Modifier.fillMaxSize())
+                }
+            }
+        }
+
+        runOnIdle { assertEquals(AppNavigationLayout.Sidebar, observedLayout) }
+        onNodeWithText("CaraML").assertIsDisplayed()
+        onNodeWithText("Create modes").assertIsDisplayed()
+        onNodeWithText("Text").assertIsDisplayed()
+        onNodeWithText("Image").assertIsDisplayed()
+        onNodeWithText("Video").assertIsDisplayed()
+        onAllNodesWithContentDescription("Create, selected").assertCountEquals(1)
+    }
+
+    @Test
+    fun generationModeChangeDoesNotChangeSelectedCreateDestination() = runComposeUiTest {
+        lateinit var backStack: NavBackStack<NavKey>
+        lateinit var modeController: GenerationModeController
+
+        setContent {
+            MaterialTheme {
+                backStack = remember { NavBackStack(AppScreen.Home) }
+                AppDrawerShell(
+                    modifier = Modifier.requiredSize(width = 1200.dp, height = 720.dp),
+                    backStack = backStack,
+                ) {
+                    modeController = LocalGenerationModeController.current
+                    Box(Modifier.fillMaxSize())
+                }
+            }
+        }
+
+        assertCreateAndModeSelection("Text", backStack)
+
+        onNodeWithContentDescription("Image").performClick()
+        runOnIdle { assertEquals(GenerationMode.Image, modeController.mode) }
+        assertCreateAndModeSelection("Image", backStack)
+
+        onNodeWithContentDescription("Video").performClick()
+        runOnIdle { assertEquals(GenerationMode.Video, modeController.mode) }
+        assertCreateAndModeSelection("Video", backStack)
+
+        onNodeWithContentDescription("Text").performClick()
+        runOnIdle { assertEquals(GenerationMode.Text, modeController.mode) }
+        assertCreateAndModeSelection("Text", backStack)
+    }
+
+    @Test
+    fun selectingModelsUpdatesVisibleRouteAndSelectionAtomically() = runComposeUiTest {
+        lateinit var backStack: NavBackStack<NavKey>
+
+        setContent {
+            MaterialTheme {
+                backStack = remember { NavBackStack(AppScreen.Home) }
+                AppDrawerShell(
+                    modifier = Modifier.requiredSize(width = 599.dp, height = 720.dp),
+                    backStack = backStack,
+                ) {
+                    val visibleRoute = requireNotNull(backStack.lastOrNull())
+                    androidx.compose.material3.Text(
+                        text = visibleRoute.routeLabel(),
+                        modifier = Modifier.testTag("visible-route"),
+                    )
+                }
+            }
+        }
+
+        onNodeWithTag("visible-route").assertTextEquals("Create route")
+        onNodeWithContentDescription("Models").performClick()
+
+        onNodeWithTag("visible-route").assertTextEquals("Models route")
+        onAllNodesWithContentDescription("Models, selected").assertCountEquals(1)
+        onAllNodesWithContentDescription("Create").assertCountEquals(1)
+        runOnIdle {
+            assertEquals(1, backStack.size)
+            assertEquals(AppScreen.Search, backStack.last())
+        }
+    }
+
+    @Test
+    fun peerDestinationTransitionNeverMovesTheRouteBounds() = runComposeUiTest {
         lateinit var backStack: NavBackStack<NavKey>
         mainClock.autoAdvance = false
 
@@ -124,136 +210,81 @@ class AdaptiveNavigationUiTest {
             MaterialTheme {
                 backStack = remember { NavBackStack(AppScreen.Home) }
                 AppDrawerShell(
-                    backStack = backStack,
                     modifier = Modifier.requiredSize(width = 599.dp, height = 720.dp),
+                    backStack = backStack,
                 ) {
-                    ModelSelectorTopBar(
-                        onMenuClick = LocalDrawerController.current::toggle,
-                    )
+                    Box(Modifier.fillMaxSize().testTag("route-content"))
                 }
             }
         }
 
-        onNodeWithContentDescription("Open navigation menu").performClick()
-        mainClock.advanceTimeBy(300)
-        onNodeWithText("Models").performClick()
+        val initialBounds = onNodeWithTag("route-content", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        onNodeWithContentDescription("Models").performClick()
+        mainClock.advanceTimeBy(90)
+        val midTransitionBounds = onNodeWithTag("route-content", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        mainClock.advanceTimeBy(180)
+        val settledBounds = onNodeWithTag("route-content", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
 
-        runOnIdle { assertEquals(AppScreen.Home, backStack.last()) }
-        mainClock.advanceTimeBy(300)
+        assertEquals(initialBounds, midTransitionBounds)
+        assertEquals(initialBounds, settledBounds)
         runOnIdle { assertEquals(AppScreen.Search, backStack.last()) }
     }
 
     @Test
-    fun primaryTopBarShowsOneMenuActionOnlyInTheModalShell() = runComposeUiTest {
-        var windowWidth by mutableStateOf(599.dp)
-
-        setContent {
-            MaterialTheme {
-                val backStack = remember { NavBackStack<NavKey>(AppScreen.Home) }
-                Box(Modifier.width(windowWidth).height(720.dp)) {
-                    AppDrawerShell(
-                        modifier = Modifier.fillMaxSize(),
-                        backStack = backStack,
-                    ) {
-                        ModelSelectorTopBar(
-                            onMenuClick = LocalDrawerController.current::toggle,
-                        )
-                    }
-                }
-            }
-        }
-
-        onAllNodesWithContentDescription("Open navigation menu").assertCountEquals(1)
-
-        runOnIdle { windowWidth = 600.dp }
-        onAllNodesWithContentDescription("Open navigation menu").assertCountEquals(0)
-        onAllNodesWithContentDescription("Chat, selected").assertCountEquals(1)
-
-        runOnIdle { windowWidth = 839.dp }
-        onAllNodesWithContentDescription("Open navigation menu").assertCountEquals(0)
-        onAllNodesWithText("CaraML").assertCountEquals(0)
-
-        runOnIdle { windowWidth = 840.dp }
-        onAllNodesWithContentDescription("Open navigation menu").assertCountEquals(0)
-        onAllNodesWithText("CaraML").assertCountEquals(1)
-        onAllNodesWithContentDescription("Chat, selected").assertCountEquals(1)
-    }
-
-    @Test
-    fun leavingModalLayoutClosesTheDrawerBeforeReturningToCompactWidth() = runComposeUiTest {
-        var windowWidth by mutableStateOf(599.dp)
-        lateinit var controller: DrawerController
-
-        setContent {
-            MaterialTheme {
-                val backStack = remember { NavBackStack<NavKey>(AppScreen.Home) }
-                Box(Modifier.width(windowWidth).height(720.dp)) {
-                    AppDrawerShell(
-                        modifier = Modifier.fillMaxSize(),
-                        backStack = backStack,
-                    ) {
-                        controller = LocalDrawerController.current
-                        ModelSelectorTopBar(onMenuClick = controller::toggle)
-                    }
-                }
-            }
-        }
-
-        onNodeWithContentDescription("Open navigation menu").performClick()
-        runOnIdle { assertEquals(CustomDrawerState.Opened, controller.drawerState) }
-        onNodeWithText("CaraML").assertIsDisplayed()
-
-        runOnIdle { windowWidth = 600.dp }
-        runOnIdle { assertEquals(CustomDrawerState.Closed, controller.drawerState) }
-
-        runOnIdle { windowWidth = 599.dp }
-        onAllNodesWithText("CaraML").assertCountEquals(0)
-        onAllNodesWithContentDescription("Open navigation menu").assertCountEquals(1)
-    }
-
-    @Test
-    fun railKeepsFirstAndLastActionsInsideInjectedSafeDrawingInsetsAtLargeText() =
+    fun bottomBarAndRailRespectSafeDrawingInsetsAtTwoHundredPercentFontScale() =
         runComposeUiTest {
-            var clickedId = ""
-            val height = 320.dp
+            var navigation by mutableStateOf(AppNavigationLayout.BottomBar)
+            val height = 260.dp
+
             setContent {
                 CompositionLocalProvider(
                     LocalDensity provides Density(density = 1f, fontScale = 2f),
                 ) {
                     MaterialTheme {
                         AdaptiveNavigation(
-                            navigation = AppNavigationLayout.Rail,
-                            items = persistentNavigationItems(),
-                            selectedItemId = "chat",
-                            drawerState = CustomDrawerState.Closed,
-                            onDrawerStateChange = {},
-                            gestureEnabled = false,
-                            onItemClick = { clickedId = it.id },
+                            navigation = navigation,
+                            items = primaryNavigationItems(),
+                            selectedItemId = "create",
+                            onItemClick = {},
                             navigationInsets = WindowInsets(top = 48.dp, bottom = 56.dp),
                             modifier = Modifier.requiredSize(width = 420.dp, height = height),
-                            content = {},
+                            content = { Box(Modifier.fillMaxSize()) },
                         )
                     }
                 }
             }
 
-            val first = onNodeWithContentDescription("Chat, selected").fetchSemanticsNode()
-            assertTrue(first.boundsInRoot.top >= 48f)
+            val compactCreate = onNodeWithContentDescription("Create, selected")
+                .assertIsDisplayed()
+                .fetchSemanticsNode().boundsInRoot
+            val compactSettings = onNodeWithContentDescription("Settings")
+                .assertIsDisplayed()
+                .fetchSemanticsNode().boundsInRoot
+            assertTrue(compactCreate.bottom <= height.value - 56f)
+            assertTrue(compactSettings.bottom <= height.value - 56f)
 
+            runOnIdle { navigation = AppNavigationLayout.Rail }
+
+            val railCreate = onNodeWithContentDescription("Create, selected")
+                .assertIsDisplayed()
+                .fetchSemanticsNode().boundsInRoot
+            assertTrue(railCreate.top >= 48f)
             onNodeWithContentDescription("Settings")
                 .performScrollTo()
                 .assertIsDisplayed()
-                .performClick()
-            val last = onNodeWithContentDescription("Settings").fetchSemanticsNode()
-            assertTrue(last.boundsInRoot.bottom <= height.value - 56f)
-            runOnIdle { assertEquals("settings", clickedId) }
+            val railSettings = onNodeWithContentDescription("Settings")
+                .fetchSemanticsNode().boundsInRoot
+            assertTrue(railSettings.bottom <= height.value - 56f)
         }
 
     @Test
-    fun sidebarKeepsHeaderAndLastActionInsideInjectedSafeDrawingInsetsAtLargeText() =
+    fun contextualSidebarRemainsScrollableInsideSafeInsetsAtTwoHundredPercentFontScale() =
         runComposeUiTest {
-            var clickedId = ""
             val height = 360.dp
+
             setContent {
                 CompositionLocalProvider(
                     LocalDensity provides Density(density = 1f, fontScale = 2f),
@@ -261,134 +292,102 @@ class AdaptiveNavigationUiTest {
                     MaterialTheme {
                         AdaptiveNavigation(
                             navigation = AppNavigationLayout.Sidebar,
-                            items = persistentNavigationItems(),
-                            selectedItemId = "chat",
-                            drawerState = CustomDrawerState.Closed,
-                            onDrawerStateChange = {},
-                            gestureEnabled = false,
-                            onItemClick = { clickedId = it.id },
+                            items = primaryNavigationItems(),
+                            selectedItemId = "create",
+                            onItemClick = {},
                             navigationInsets = WindowInsets(top = 48.dp, bottom = 56.dp),
+                            contextualItems = modeNavigationItems(),
+                            selectedContextualItemId = "mode-text",
+                            onContextualItemClick = {},
                             modifier = Modifier.requiredSize(width = 520.dp, height = height),
-                            content = {},
+                            content = { Box(Modifier.fillMaxSize()) },
                         )
                     }
                 }
             }
 
-            val header = onNodeWithText("CaraML").fetchSemanticsNode()
-            assertTrue(header.boundsInRoot.top >= 48f)
-
-            onNodeWithContentDescription("Settings")
+            val header = onNodeWithText("CaraML").fetchSemanticsNode().boundsInRoot
+            assertTrue(header.top >= 48f)
+            onNodeWithContentDescription("Video")
                 .performScrollTo()
                 .assertIsDisplayed()
-                .performClick()
-            val last = onNodeWithContentDescription("Settings").fetchSemanticsNode()
-            assertTrue(last.boundsInRoot.bottom <= height.value - 56f)
-            runOnIdle { assertEquals("settings", clickedId) }
+            val lastMode = onNodeWithContentDescription("Video").fetchSemanticsNode().boundsInRoot
+            assertTrue(lastMode.bottom <= height.value - 56f)
         }
 
     @Test
-    fun expandedPanelKeepsHeaderAndActionsBelowInjectedSafeTopInsetAtLargeText() = runComposeUiTest {
-        var clickCount = 0
+    fun selectedNavigationItemUsesOneSignalRailOverANeutralTonalSurface() = runComposeUiTest {
+        val scheme = darkColorScheme(
+            surface = Color(0xFF101217),
+            surfaceContainerHigh = Color(0xFF2B303A),
+            primary = Color(0xFF4F83FF),
+        )
+        var selectedSurface = Color.Unspecified
 
         setContent {
-            CompositionLocalProvider(LocalDensity provides Density(density = 1f, fontScale = 2f)) {
-                MaterialTheme {
-                    AppNavigationPanel(
-                        items = listOf(
-                            DrawerItem(
-                                id = "chat",
-                                title = "Chat",
-                                icon = Icons.Default.ChatBubbleOutline,
-                            ),
-                        ),
-                        selectedItemId = "chat",
-                        compact = false,
-                        onItemClick = { clickCount += 1 },
-                        modifier = Modifier.requiredSize(width = 360.dp, height = 640.dp),
-                        contentInsets = WindowInsets(top = 48.dp),
+            CompositionLocalProvider(LocalDensity provides Density(1f)) {
+                MaterialTheme(colorScheme = scheme) {
+                    selectedSurface = MaterialTheme.auroraColors.selectedSurface
+                    AdaptiveNavigation(
+                        navigation = AppNavigationLayout.Sidebar,
+                        items = primaryNavigationItems(),
+                        selectedItemId = "create",
+                        onItemClick = {},
+                        navigationInsets = WindowInsets(0),
+                        modifier = Modifier.requiredSize(width = 520.dp, height = 360.dp),
+                        content = {},
                     )
                 }
             }
         }
 
-        val headerTop = onNodeWithText("CaraML").fetchSemanticsNode().boundsInRoot.top
+        val pixels = onNodeWithContentDescription("Create, selected")
+            .captureToImage()
+            .toPixelMap()
+        val centerY = pixels.height / 2
+        (0..2).forEach { x ->
+            assertTrue(
+                pixels[x, centerY].colorDistance(scheme.primary) <= 0.05f,
+                "Selected navigation must paint one 3dp accent signal rail",
+            )
+        }
+        assertTrue(pixels[3, centerY].colorDistance(selectedSurface) <= 0.05f)
+        assertTrue(pixels[pixels.width - 8, centerY].colorDistance(selectedSurface) <= 0.05f)
         assertTrue(
-            headerTop >= 48f,
-            "Drawer header must start below the injected 48dp safe top inset, but started at ${headerTop}px",
+            pixels[3, centerY].colorDistance(pixels[pixels.width - 8, centerY]) <= 0.02f,
+            "Selected navigation background must remain a uniform neutral tone",
         )
-        onNodeWithContentDescription("Chat, selected")
-            .assertIsDisplayed()
-            .performClick()
-        assertEquals(1, clickCount)
     }
 
-    @Test
-    fun expandedPanelShowsBrandAndDestinationLabels() = runComposeUiTest {
-        setContent {
-            MaterialTheme {
-                AppNavigationPanel(
-                    items = listOf(
-                        DrawerItem(
-                            id = "chat",
-                            title = "Chat",
-                            icon = Icons.Default.ChatBubbleOutline,
-                        ),
-                    ),
-                    selectedItemId = "chat",
-                    compact = false,
-                    onItemClick = {},
-                )
-            }
-        }
-
-        onNodeWithText("CaraML").assertIsDisplayed()
-        onNodeWithText("Chat").assertIsDisplayed()
-        onNodeWithContentDescription("Chat, selected").assertIsDisplayed()
-    }
-
-    @Test
-    fun closedDrawerRemovesItsVisualAndSemanticPanel() = runComposeUiTest {
-        var drawerState by mutableStateOf(CustomDrawerState.Opened)
-
-        setContent {
-            MaterialTheme {
-                AnimatedDrawerScaffold(
-                    drawerState = drawerState,
-                    onDrawerStateChange = { drawerState = it },
-                    gestureEnabled = true,
-                    drawerContent = {
-                        AppNavigationPanel(
-                            items = listOf(
-                                DrawerItem(
-                                    id = "chat",
-                                    title = "Chat",
-                                    icon = Icons.Default.ChatBubbleOutline,
-                                ),
-                            ),
-                            selectedItemId = "chat",
-                            compact = false,
-                            onItemClick = {},
-                        )
-                    },
-                    content = {},
-                )
-            }
-        }
-
-        onNodeWithText("CaraML").assertIsDisplayed()
-        runOnIdle { drawerState = CustomDrawerState.Closed }
-        waitForIdle()
-
-        onAllNodesWithText("CaraML").assertCountEquals(0)
-        onAllNodesWithContentDescription("Chat, selected").assertCountEquals(0)
+    private fun androidx.compose.ui.test.ComposeUiTest.assertCreateAndModeSelection(
+        modeLabel: String,
+        backStack: NavBackStack<NavKey>,
+    ) {
+        onAllNodesWithContentDescription("Create, selected").assertCountEquals(1)
+        onAllNodesWithContentDescription("$modeLabel, selected").assertCountEquals(1)
+        runOnIdle { assertEquals(AppScreen.Home, backStack.last()) }
     }
 }
 
-private fun persistentNavigationItems() = listOf(
-    DrawerItem("chat", "Chat", Icons.Default.ChatBubbleOutline),
-    DrawerItem("image", "Image", Icons.Default.ChatBubbleOutline),
-    DrawerItem("video", "Video", Icons.Default.ChatBubbleOutline),
-    DrawerItem("models", "Models", Icons.Default.ChatBubbleOutline),
-    DrawerItem("settings", "Settings", Icons.Default.ChatBubbleOutline),
+private fun primaryNavigationItems() = listOf(
+    DrawerItem("create", "Create", Icons.Default.ChatBubbleOutline),
+    DrawerItem("models", "Models", Icons.Default.Storage),
+    DrawerItem("settings", "Settings", Icons.Default.Settings),
 )
+
+private fun modeNavigationItems() = listOf(
+    DrawerItem("mode-text", "Text", Icons.Default.ChatBubbleOutline),
+    DrawerItem("mode-image", "Image", Icons.Default.ChatBubbleOutline),
+    DrawerItem("mode-video", "Video", Icons.Default.ChatBubbleOutline),
+)
+
+private fun NavKey.routeLabel(): String = when (this) {
+    AppScreen.Home -> "Create route"
+    AppScreen.Search -> "Models route"
+    AppScreen.Settings -> "Settings route"
+    is AppScreen.Details -> "Details route"
+    else -> error("Unexpected route $this")
+}
+
+private fun Color.colorDistance(other: Color): Float =
+    abs(red - other.red) + abs(green - other.green) + abs(blue - other.blue)
