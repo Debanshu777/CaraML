@@ -244,6 +244,7 @@ fun MessageBubble(
         }
 
         if (!isUser && message.inferenceMetrics != null) {
+            val inferenceStatsColor = MaterialTheme.colorScheme.onSurfaceVariant
             Row(
                 modifier = Modifier.padding(top = LocalSpacing.current.s),
                 horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.s)
@@ -251,7 +252,7 @@ fun MessageBubble(
                 Text(
                     text = "Statistics:",
                     style = MaterialTheme.typography.labelSmall,
-                    color = textColor.copy(alpha = 0.5f)
+                    color = inferenceStatsColor,
                 )
 
                 val tokensPerSec =
@@ -259,20 +260,20 @@ fun MessageBubble(
                 StatItem(
                     icon = Icons.Default.Speed,
                     text = "$tokensPerSec tokens/s",
-                    textColor = textColor
+                    textColor = inferenceStatsColor,
                 )
 
                 StatItem(
                     icon = Icons.Default.DataUsage,
                     text = "${message.inferenceMetrics.tokenCount} tokens",
-                    textColor = textColor
+                    textColor = inferenceStatsColor,
                 )
 
                 val timeSec = ((message.inferenceMetrics.generationTimeMs / 10.0).toInt() / 100.0)
                 StatItem(
                     icon = Icons.Default.AccessTime,
                     text = "${timeSec}s",
-                    textColor = textColor
+                    textColor = inferenceStatsColor,
                 )
             }
         }
@@ -411,13 +412,13 @@ private fun StatItem(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = textColor.copy(alpha = 0.5f),
+            tint = textColor,
             modifier = Modifier.size(12.dp)
         )
         Text(
             text = text,
             style = MaterialTheme.typography.labelSmall,
-            color = textColor.copy(alpha = 0.5f)
+            color = textColor,
         )
     }
 }

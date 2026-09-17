@@ -5,18 +5,24 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Error
@@ -34,6 +40,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
@@ -71,6 +78,9 @@ import com.debanshu777.caraml.features.chat.presentation.components.ModelSelecto
 import com.debanshu777.caraml.features.chat.presentation.components.NoCompatibleModelsScreen
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 import com.debanshu777.caraml.features.chat.presentation.components.NoModelsScreen
+
+internal val LocalCreateSafeDrawingInsetsOverride =
+    staticCompositionLocalOf<WindowInsets?> { null }
 
 @Immutable
 data class ChatEmptyStateCopy(
@@ -158,6 +168,7 @@ fun ChatScreenContent(
 ) {
     val listState = rememberLazyListState()
     val navigationLayout = LocalAppNavigationLayout.current
+    val safeDrawingInsets = LocalCreateSafeDrawingInsetsOverride.current ?: WindowInsets.safeDrawing
     val generationMode = controlledGenerationMode ?: when (val state = uiState) {
         is ChatUiState.Ready -> state.generationMode
         is ChatUiState.NoModelsForMode -> state.mode
@@ -176,7 +187,9 @@ fun ChatScreenContent(
         containerColor = Color.Transparent,
         topBar = {
             Box(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .windowInsetsPadding(safeDrawingInsets.only(WindowInsetsSides.Top)),
                 contentAlignment = Alignment.TopCenter,
             ) {
                 ModelSelectorTopBar(
@@ -204,7 +217,17 @@ fun ChatScreenContent(
             if (uiState is ChatUiState.Ready) {
                 ResponsiveContentPane(
                     kind = AppContentKind.Chat,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(
+                            if (navigationLayout == AppNavigationLayout.BottomBar) {
+                                Modifier
+                            } else {
+                                Modifier.windowInsetsPadding(
+                                    safeDrawingInsets.only(WindowInsetsSides.Bottom),
+                                )
+                            },
+                        ),
                     fillMaxHeight = false,
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
@@ -235,60 +258,84 @@ fun ChatScreenContent(
             kind = AppContentKind.Chat,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = paddingValues.calculateTopPadding()),
+                .padding(top = paddingValues.calculateTopPadding())
+                .then(
+                    if (
+                        uiState !is ChatUiState.Ready &&
+                        navigationLayout != AppNavigationLayout.BottomBar
+                    ) {
+                        Modifier.windowInsetsPadding(
+                            safeDrawingInsets.only(WindowInsetsSides.Bottom),
+                        )
+                    } else {
+                        Modifier
+                    },
+                ),
         ) {
             when (uiState) {
                 is ChatUiState.NoModels -> {
-                    NoModelsScreen(
-                        onDownloadModelClick = onNavigateToSearch,
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                    CreateStateViewport {
+                        NoModelsScreen(
+                            onDownloadModelClick = onNavigateToSearch,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
 
                 is ChatUiState.NoModelsForMode -> {
-                    NoCompatibleModelsScreen(
-                        mode = uiState.mode,
-                        onDownloadModelClick = onNavigateToSearch,
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                    CreateStateViewport {
+                        NoCompatibleModelsScreen(
+                            mode = uiState.mode,
+                            onDownloadModelClick = onNavigateToSearch,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
 
                 is ChatUiState.ModelLoading -> {
-                    ModelLoadingScreen(Modifier.fillMaxSize())
+                    CreateStateViewport {
+                        ModelLoadingScreen(Modifier.fillMaxWidth())
+                    }
                 }
 
                 is ChatUiState.ModelError -> {
-                    ModelErrorScreen(
-                        errorMessage = uiState.message,
-                        onTryAnotherModelClick = onNavigateToSearch,
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                    CreateStateViewport {
+                        ModelErrorScreen(
+                            errorMessage = uiState.message,
+                            onTryAnotherModelClick = onNavigateToSearch,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
 
                 is ChatUiState.MissingComponents -> {
-                    MissingComponentsScreen(
-                        missingComponentLabels = uiState.missingComponentLabels,
-                        modelName = uiState.modelName,
-                        onGoToModelHubClick = onNavigateToSearch,
-                        onFixComponentsClick = {
-                            onNavigateToModelDetail(
-                                uiState.modelId,
-                                ModelHubBrowseMode.DiffusionImage,
-                            )
-                        },
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                    CreateStateViewport {
+                        MissingComponentsScreen(
+                            missingComponentLabels = uiState.missingComponentLabels,
+                            modelName = uiState.modelName,
+                            onGoToModelHubClick = onNavigateToSearch,
+                            onFixComponentsClick = {
+                                onNavigateToModelDetail(
+                                    uiState.modelId,
+                                    ModelHubBrowseMode.DiffusionImage,
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
 
                 is ChatUiState.LoadActionRequired -> {
-                    LoadActionRequiredScreen(
-                        action = uiState.action,
-                        onConfirmLoad = onConfirmLoad,
-                        onAcceptAlternative = onAcceptAlternative,
-                        onRetryLoad = onRetryLoad,
-                        onCancelLoad = onCancelLoad,
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                    CreateStateViewport {
+                        LoadActionRequiredScreen(
+                            action = uiState.action,
+                            onConfirmLoad = onConfirmLoad,
+                            onAcceptAlternative = onAcceptAlternative,
+                            onRetryLoad = onRetryLoad,
+                            onCancelLoad = onCancelLoad,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
 
                 is ChatUiState.Ready -> {
@@ -311,6 +358,28 @@ fun ChatScreenContent(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CreateStateViewport(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(vertical = LocalSpacing.current.l),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(
+            space = LocalSpacing.current.m,
+            alignment = Alignment.CenterVertically,
+        ),
+    ) {
+        item {
+            Box(modifier = Modifier.fillParentMaxWidth()) {
+                content()
             }
         }
     }
@@ -382,8 +451,7 @@ private fun LoadActionRequiredScreen(
         is PendingLoadAction.RetryQuarantined -> action.request.plan.compromises
     }
     Column(
-        modifier = modifier.fillMaxSize().padding(LocalSpacing.current.xl),
-        verticalArrangement = Arrangement.Center,
+        modifier = modifier.fillMaxWidth().padding(LocalSpacing.current.xl),
     ) {
         CaraMLPane(
             modifier = Modifier.fillMaxWidth(),
@@ -437,9 +505,8 @@ private fun MissingComponentsScreen(
 ) {
     Column(
         modifier = modifier
-            .fillMaxSize()
+            .fillMaxWidth()
             .padding(LocalSpacing.current.xl),
-        verticalArrangement = Arrangement.Center,
         horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
     ) {
         Icon(

@@ -5,9 +5,14 @@ package com.debanshu777.caraml.features.chat.presentation
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -16,6 +21,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -35,10 +41,12 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
@@ -48,12 +56,25 @@ import com.debanshu777.caraml.core.drawer.GenerationModeController
 import com.debanshu777.caraml.core.drawer.LocalDrawerController
 import com.debanshu777.caraml.core.drawer.LocalGenerationModeController
 import com.debanshu777.caraml.core.navigation.AppScreen
+import com.debanshu777.caraml.core.platform.BackendKind
+import com.debanshu777.caraml.core.platform.MemoryTopology
+import com.debanshu777.caraml.core.recommendation.KvCacheType
+import com.debanshu777.caraml.core.recommendation.LlmRunPlan
+import com.debanshu777.caraml.core.recommendation.LoadRequest
+import com.debanshu777.caraml.core.recommendation.ObservationModelIdentity
+import com.debanshu777.caraml.core.recommendation.RunPlanCompromise
+import com.debanshu777.caraml.core.recommendation.task6LlmDescriptor
+import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
+import com.debanshu777.caraml.core.ui.layout.AppNavigationLayout
+import com.debanshu777.caraml.core.ui.layout.LocalAppNavigationLayout
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.core.ui.motion.auroraMotionPolicy
 import com.debanshu777.caraml.features.chat.data.ChatMessage
+import com.debanshu777.caraml.features.chat.data.InferenceMetrics
 import com.debanshu777.caraml.features.chat.data.MessageRole
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
 import com.debanshu777.caraml.features.chat.presentation.components.MessageBubble
+import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 import kotlinx.collections.immutable.persistentListOf
 import kotlin.math.abs
 import kotlin.test.Test
@@ -405,6 +426,288 @@ class CreateWorkbenchUiTest {
                 .assertHeightIsAtLeast(48.dp)
         }
 
+    @Test
+    fun createChromeRespectsInjectedTopInsetAcrossNavigationLayoutsAtTwoHundredPercent() =
+        runComposeUiTest {
+            var navigation by mutableStateOf(AppNavigationLayout.BottomBar)
+            var width by mutableStateOf(420.dp)
+            val safeDrawing = WindowInsets(top = 24.dp, bottom = 32.dp)
+
+            setContent {
+                CompositionLocalProvider(
+                    LocalDensity provides Density(1f, fontScale = 2f),
+                    LocalAppNavigationLayout provides navigation,
+                    LocalCreateSafeDrawingInsetsOverride provides safeDrawing,
+                ) {
+                    MaterialTheme {
+                        CreateTestLocals {
+                            ReadyCreateScreen(
+                                mode = GenerationMode.Text,
+                                modifier = Modifier.requiredSize(width = width, height = 360.dp),
+                            )
+                        }
+                    }
+                }
+            }
+
+            listOf(
+                AppNavigationLayout.BottomBar to 420.dp,
+                AppNavigationLayout.Rail to 600.dp,
+                AppNavigationLayout.Sidebar to 1_200.dp,
+            ).forEach { (layout, layoutWidth) ->
+                setNavigationLayout(layout, layoutWidth) { nextLayout, nextWidth ->
+                    navigation = nextLayout
+                    width = nextWidth
+                }
+                val bounds = if (layout == AppNavigationLayout.Sidebar) {
+                    onNodeWithText("Create", useUnmergedTree = true)
+                        .fetchSemanticsNode()
+                        .boundsInRoot
+                } else {
+                    onNodeWithContentDescription("Text mode, selected", useUnmergedTree = true)
+                        .fetchSemanticsNode()
+                        .boundsInRoot
+                }
+                assertTrue(
+                    bounds.top >= 24f,
+                    "$layout Create chrome must start below the 24dp safe top; bounds=$bounds",
+                )
+            }
+        }
+
+    @Test
+    fun composerOwnsBottomInsetOnlyForRailAndSidebarAtTwoHundredPercent() =
+        runComposeUiTest {
+            var navigation by mutableStateOf(AppNavigationLayout.BottomBar)
+            var width by mutableStateOf(420.dp)
+            val hostHeight = 360f
+            val safeBottom = 32f
+            val safeDrawing = WindowInsets(top = 24.dp, bottom = safeBottom.dp)
+
+            setContent {
+                CompositionLocalProvider(
+                    LocalDensity provides Density(1f, fontScale = 2f),
+                    LocalAppNavigationLayout provides navigation,
+                    LocalCreateSafeDrawingInsetsOverride provides safeDrawing,
+                ) {
+                    MaterialTheme {
+                        CreateTestLocals {
+                            ReadyCreateScreen(
+                                mode = GenerationMode.Text,
+                                modifier = Modifier.requiredSize(width = width, height = hostHeight.dp),
+                            )
+                        }
+                    }
+                }
+            }
+
+            listOf(
+                AppNavigationLayout.BottomBar to 420.dp,
+                AppNavigationLayout.Rail to 600.dp,
+                AppNavigationLayout.Sidebar to 1_200.dp,
+            ).forEach { (layout, layoutWidth) ->
+                setNavigationLayout(layout, layoutWidth) { nextLayout, nextWidth ->
+                    navigation = nextLayout
+                    width = nextWidth
+                }
+                val action = onNodeWithContentDescription("Send message")
+                    .assertIsDisplayed()
+                    .assertWidthIsAtLeast(48.dp)
+                    .assertHeightIsAtLeast(48.dp)
+                    .fetchSemanticsNode()
+                val bottomGap = hostHeight - action.boundsInRoot.bottom
+                if (layout == AppNavigationLayout.BottomBar) {
+                    assertTrue(
+                        bottomGap < safeBottom,
+                        "BottomBar shell already constrains content and must not duplicate its " +
+                            "32dp safe bottom; gap=$bottomGap",
+                    )
+                } else {
+                    assertTrue(
+                        bottomGap >= safeBottom,
+                        "$layout composer must remain above the 32dp safe bottom; gap=$bottomGap",
+                    )
+                }
+            }
+        }
+
+    @Test
+    fun nonReadyStateMatrixHasOneScrollOwnerAndInvokesExactReachableActions() =
+        runComposeUiTest {
+            val request = loadRequestForUi()
+            val alternativePlan = loadPlanForUi(contextTokens = 1_024)
+            var state by mutableStateOf<ChatUiState>(ChatUiState.NoModels)
+            var modelHubNavigations = 0
+            var detailNavigation: Pair<String, ModelHubBrowseMode>? = null
+            var confirmedLoads = 0
+            var acceptedAlternatives = 0
+            var retriedLoads = 0
+            var cancelledLoads = 0
+
+            setContent {
+                CompositionLocalProvider(LocalDensity provides Density(1f, fontScale = 2f)) {
+                    MaterialTheme {
+                        CreateTestLocals {
+                            ChatScreenContent(
+                                uiState = state,
+                                streamingState = StreamingState(),
+                                onSelectModel = {},
+                                onSendMessage = {},
+                                onCancelGeneration = {},
+                                onConfirmLoad = { confirmedLoads += 1 },
+                                onAcceptAlternative = { acceptedAlternatives += 1 },
+                                onRetryLoad = { retriedLoads += 1 },
+                                onCancelLoad = { cancelledLoads += 1 },
+                                onNavigateToSearch = { modelHubNavigations += 1 },
+                                onNavigateToModelDetail = { modelId, mode ->
+                                    detailNavigation = modelId to mode
+                                },
+                                modifier = Modifier.requiredSize(width = 420.dp, height = 280.dp),
+                            )
+                        }
+                    }
+                }
+            }
+
+            fun show(nextState: ChatUiState) {
+                runOnIdle { state = nextState }
+                waitForIdle()
+                onAllNodes(
+                    SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollBy),
+                    useUnmergedTree = true,
+                ).assertCountEquals(1)
+            }
+
+            show(ChatUiState.NoModels)
+            onNodeWithText("Download Model").performScrollTo().assertIsDisplayed().performClick()
+            runOnIdle { assertEquals(1, modelHubNavigations) }
+
+            show(ChatUiState.NoModelsForMode(GenerationMode.Video))
+            onNodeWithText("Browse models").performScrollTo().assertIsDisplayed().performClick()
+            runOnIdle { assertEquals(2, modelHubNavigations) }
+
+            show(ChatUiState.ModelLoading)
+            onNodeWithText("Loading model...").performScrollTo().assertIsDisplayed()
+
+            show(ChatUiState.ModelError("The selected model could not be opened."))
+            onNodeWithText("Try Another Model").performScrollTo().assertIsDisplayed().performClick()
+            runOnIdle { assertEquals(3, modelHubNavigations) }
+
+            show(
+                ChatUiState.MissingComponents(
+                    missingComponentLabels = listOf(
+                        "Text encoder",
+                        "Variational autoencoder",
+                        "Vision projection adapter",
+                    ),
+                    modelName = "owner/long-diffusion-model",
+                    modelId = "owner/long-diffusion-model",
+                ),
+            )
+            onNodeWithText("Download missing components")
+                .performScrollTo()
+                .assertIsDisplayed()
+                .performClick()
+            runOnIdle {
+                assertEquals(
+                    "owner/long-diffusion-model" to ModelHubBrowseMode.DiffusionImage,
+                    detailNavigation,
+                )
+                assertEquals(3, modelHubNavigations)
+            }
+
+            show(ChatUiState.LoadActionRequired(PendingLoadAction.ConfirmRisk(request)))
+            onNodeWithText("Continue").performScrollTo().assertIsDisplayed().performClick()
+            onNodeWithText("Cancel").performScrollTo().assertIsDisplayed().performClick()
+            runOnIdle {
+                assertEquals(1, confirmedLoads)
+                assertEquals(1, cancelledLoads)
+            }
+
+            show(
+                ChatUiState.LoadActionRequired(
+                    PendingLoadAction.AcceptAlternative(request, alternativePlan),
+                ),
+            )
+            onNodeWithText("Use safer plan").performScrollTo().assertIsDisplayed().performClick()
+            onNodeWithText("Cancel").performScrollTo().assertIsDisplayed().performClick()
+            runOnIdle {
+                assertEquals(1, acceptedAlternatives)
+                assertEquals(2, cancelledLoads)
+            }
+
+            show(ChatUiState.LoadActionRequired(PendingLoadAction.RetryQuarantined(request)))
+            onNodeWithText("Retry explicitly").performScrollTo().assertIsDisplayed().performClick()
+            onNodeWithText("Cancel").performScrollTo().assertIsDisplayed().performClick()
+            runOnIdle {
+                assertEquals(1, retriedLoads)
+                assertEquals(3, cancelledLoads)
+            }
+        }
+
+    @Test
+    fun lightInferenceStatisticsMeetBodyTextContrast() = assertInferenceStatsContrast(
+        scheme = lightColorScheme(
+            surface = Color.White,
+            onSurface = Color.Black,
+            onSurfaceVariant = Color(0xFF49454F),
+        ),
+    )
+
+    @Test
+    fun darkInferenceStatisticsMeetBodyTextContrast() = assertInferenceStatsContrast(
+        scheme = darkColorScheme(
+            surface = Color.Black,
+            onSurface = Color.White,
+            onSurfaceVariant = Color(0xFFCAC4D0),
+        ),
+    )
+
+    private fun assertInferenceStatsContrast(scheme: ColorScheme) = runComposeUiTest {
+        setContent {
+            CompositionLocalProvider(LocalDensity provides Density(2f, fontScale = 1f)) {
+                MaterialTheme(colorScheme = scheme) {
+                    Surface(
+                        modifier = Modifier
+                            .requiredSize(width = 420.dp, height = 180.dp)
+                            .testTag("inference-stats-root"),
+                        color = scheme.surface,
+                    ) {
+                        MessageBubble(
+                            message = ChatMessage(
+                                id = "metrics",
+                                role = MessageRole.Assistant,
+                                text = "Local response",
+                                inferenceMetrics = InferenceMetrics(
+                                    tpotMs = 400.0,
+                                    tokenCount = 42,
+                                    generationTimeMs = 1_230L,
+                                ),
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+
+        val rootNode = onNodeWithTag("inference-stats-root", useUnmergedTree = true)
+            .fetchSemanticsNode()
+        val pixels = onNodeWithTag("inference-stats-root", useUnmergedTree = true)
+            .captureToImage()
+            .toPixelMap()
+        listOf("Statistics:", "2.5 tokens/s", "42 tokens", "1.23s").forEach { label ->
+            val bounds = onNodeWithText(label, useUnmergedTree = true)
+                .fetchSemanticsNode()
+                .boundsInRoot
+                .translate(-rootNode.boundsInRoot.left, -rootNode.boundsInRoot.top)
+            val contrast = pixels.maximumContrastAgainst(scheme.surface, bounds)
+            assertTrue(
+                contrast >= 4.5f,
+                "$label must meet 4.5:1 body-text contrast; measured $contrast in $scheme",
+            )
+        }
+    }
+
     private fun androidx.compose.ui.test.ComposeUiTest.assertSingleProgress(
         expected: ProgressBarRangeInfo,
     ) {
@@ -414,6 +717,15 @@ class CreateWorkbenchUiTest {
         ).fetchSemanticsNodes()
         assertEquals(1, progressNodes.size)
         assertEquals(expected, progressNodes.single().config[SemanticsProperties.ProgressBarRangeInfo])
+    }
+
+    private fun androidx.compose.ui.test.ComposeUiTest.setNavigationLayout(
+        layout: AppNavigationLayout,
+        width: Dp,
+        update: (AppNavigationLayout, Dp) -> Unit,
+    ) {
+        runOnIdle { update(layout, width) }
+        waitForIdle()
     }
 
     private fun androidx.compose.ui.test.ComposeUiTest.assertTextDoesNotOverflow(text: String) {
@@ -436,6 +748,61 @@ class CreateWorkbenchUiTest {
                 "size=${result.size}, lines=${result.lineCount}",
         )
     }
+}
+
+private fun loadPlanForUi(contextTokens: Int = 2_048) = LlmRunPlan(
+    contextTokens = contextTokens,
+    batchSize = 128,
+    microBatchSize = 64,
+    sequenceCount = 1,
+    keyCacheType = KvCacheType.Q8_0,
+    valueCacheType = KvCacheType.Q8_0,
+    backend = BackendKind.CPU,
+    memoryTopology = MemoryTopology.UNKNOWN,
+    gpuLayerCount = 0,
+    compromises = listOf(RunPlanCompromise.CONTEXT_REDUCED),
+)
+
+private fun loadRequestForUi(): LoadRequest {
+    val descriptor = task6LlmDescriptor()
+    return LoadRequest(
+        model = LocalModelEntity(
+            id = 1L,
+            modelId = "owner/model",
+            filename = "model-Q4_K_M.gguf",
+            localPath = "/models/model-Q4_K_M.gguf",
+            sizeBytes = descriptor.file.sizeBytes,
+            downloadedAt = 1L,
+            author = "owner",
+            libraryName = "gguf",
+            pipelineTag = "text-generation",
+        ),
+        identity = descriptor.file,
+        observationIdentity = requireNotNull(ObservationModelIdentity.fromDescriptor(descriptor)),
+        plan = loadPlanForUi(),
+        assessmentKey = "create-ui-assessment",
+    )
+}
+
+private fun androidx.compose.ui.graphics.PixelMap.maximumContrastAgainst(
+    background: Color,
+    bounds: androidx.compose.ui.geometry.Rect,
+): Float {
+    val left = bounds.left.toInt().coerceIn(0, width - 1)
+    val top = bounds.top.toInt().coerceIn(0, height - 1)
+    val right = bounds.right.toInt().coerceIn(left + 1, width)
+    val bottom = bounds.bottom.toInt().coerceIn(top + 1, height)
+    var maximum = 1f
+    for (y in top until bottom) {
+        for (x in left until right) {
+            val foregroundLuminance = this[x, y].luminance()
+            val backgroundLuminance = background.luminance()
+            val contrast = (maxOf(foregroundLuminance, backgroundLuminance) + 0.05f) /
+                (minOf(foregroundLuminance, backgroundLuminance) + 0.05f)
+            maximum = maxOf(maximum, contrast)
+        }
+    }
+    return maximum
 }
 
 @Composable
