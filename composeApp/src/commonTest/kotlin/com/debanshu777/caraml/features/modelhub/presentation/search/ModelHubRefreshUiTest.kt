@@ -16,8 +16,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.dp
@@ -92,6 +96,12 @@ class ModelHubRefreshUiTest {
             assertEquals(0, disposedCompositions, "Refresh must not dispose the existing row")
         }
         onNodeWithText("Retained model").assertIsDisplayed()
+        onNodeWithTag("model-results").assert(
+            SemanticsMatcher.expectValue(
+                SemanticsProperties.StateDescription,
+                "Model results loaded",
+            ),
+        )
         onNodeWithContentDescription("Refreshing model results").assertIsDisplayed()
 
         runOnIdle { refreshing = false }

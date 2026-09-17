@@ -1,11 +1,13 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -14,11 +16,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -27,7 +29,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -45,10 +46,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.drawer.LocalAppWindowWidth
 import com.debanshu777.caraml.core.recommendation.RecommendationProfile
 import com.debanshu777.caraml.core.recommendation.RecommendationRolloutModeSource
 import com.debanshu777.caraml.core.recommendation.RiskTolerance
@@ -67,8 +72,11 @@ import com.debanshu777.caraml.features.modelhub.presentation.downloaded.Download
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.ReadinessFilter
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.components.LocalModelListItem
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelListItem
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubBrowseControls
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubOverview
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubContextStrip
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubHeader
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubStateKind
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubStateView
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubToolbar
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.RecommendationProfileDialog
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.QuickCalibrationDialog
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchBar
@@ -92,7 +100,6 @@ fun SearchScreen(
     rolloutModeSource: RecommendationRolloutModeSource = koinInject(),
 ) {
     var selectedTabIndex by remember { mutableStateOf(0) }
-    val tabs = listOf("Search", "Downloaded")
 
     val storageInfo by modelViewModel.storageInfo.collectAsState()
     val settings by settingsViewModel.settings.collectAsState()
@@ -113,54 +120,33 @@ fun SearchScreen(
 
     val snackbarHostState = remember { SnackbarHostState() }
 
-    Scaffold(
+    ModelHubScreenLayout(
+        selectedTabIndex = selectedTabIndex,
+        onTabSelected = { selectedTabIndex = it },
         modifier = modifier,
-        containerColor = Color.Transparent,
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        topBar = {
-            CaraMLPrimaryTopBar(
-                title = "Models",
-            )
-        }
-    ) { paddingValues ->
-        ResponsiveContentPane(
-            kind = AppContentKind.ModelHub,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues),
-        ) {
-            Column(
+        snackbarHostState = snackbarHostState,
+        discoverContent = {
+            SearchTabContent(
+                viewModel = modelViewModel,
+                storageInfo = storageInfo,
+                onNavigateToDetails = onNavigateToDetails,
+                onRecommendationInfoClick = { recommendationSheetState = it },
+                recommendationProfileState = recommendationProfileState,
+                onOpenProfileEditor = { profileEditorVisible = true },
                 modifier = Modifier.fillMaxSize(),
-            ) {
-                ModelHubTabRow(
-                    tabs = tabs,
-                    selectedTabIndex = selectedTabIndex,
-                    onTabSelected = { selectedTabIndex = it },
-                )
-
-                when (selectedTabIndex) {
-                    0 -> SearchTabContent(
-                        viewModel = modelViewModel,
-                        storageInfo = storageInfo,
-                        onNavigateToDetails = onNavigateToDetails,
-                        onRecommendationInfoClick = { recommendationSheetState = it },
-                        recommendationProfileState = recommendationProfileState,
-                        onOpenProfileEditor = { profileEditorVisible = true },
-                        modifier = Modifier.fillMaxSize(),
-                    )
-
-                    1 -> DownloadedTabContent(
-                        viewModel = downloadedModelsViewModel,
-                        storageInfo = storageInfo,
-                        onSelectModelAndGoBack = onSelectModelAndGoBack,
-                        onNavigateToDetails = onNavigateToDetails,
-                        snackbarHostState = snackbarHostState,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                }
-            }
-        }
-    }
+            )
+        },
+        libraryContent = {
+            DownloadedTabContent(
+                viewModel = downloadedModelsViewModel,
+                storageInfo = storageInfo,
+                onSelectModelAndGoBack = onSelectModelAndGoBack,
+                onNavigateToDetails = onNavigateToDetails,
+                snackbarHostState = snackbarHostState,
+                modifier = Modifier.fillMaxSize(),
+            )
+        },
+    )
 
     val sheetState = recommendationSheetState
     val sheetRecommendation = sheetState?.personalizedResult
@@ -215,57 +201,153 @@ fun SearchScreen(
 }
 
 @Composable
+internal fun ModelHubScreenLayout(
+    selectedTabIndex: Int,
+    onTabSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    snackbarHostState: SnackbarHostState? = null,
+    discoverContent: @Composable () -> Unit,
+    libraryContent: @Composable () -> Unit,
+) {
+    val tabs = listOf("Discover", "Library")
+    Scaffold(
+        modifier = modifier,
+        containerColor = Color.Transparent,
+        snackbarHost = {
+            if (snackbarHostState != null) SnackbarHost(snackbarHostState)
+        },
+        topBar = { CaraMLPrimaryTopBar(title = "Models") },
+    ) { paddingValues ->
+        ResponsiveContentPane(
+            kind = AppContentKind.ModelHub,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues),
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                ModelHubTabRow(
+                    tabs = tabs,
+                    selectedTabIndex = selectedTabIndex,
+                    onTabSelected = onTabSelected,
+                )
+                Box(modifier = Modifier.weight(1f)) {
+                    when (selectedTabIndex) {
+                        0 -> discoverContent()
+                        1 -> libraryContent()
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ModelHubTabRow(
     tabs: List<String>,
     selectedTabIndex: Int,
     onTabSelected: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val motion = LocalAuroraMotionPolicy.current
-    Surface(
+    Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = LocalSpacing.current.s),
-        shape = MaterialTheme.shapes.small,
-        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f),
+            .testTag("model-tabs"),
     ) {
-        Row(modifier = Modifier.padding(4.dp)) {
-            tabs.forEachIndexed { index, title ->
-                val selected = selectedTabIndex == index
-                val containerColor by animateColorAsState(
-                    targetValue = if (selected) {
-                        MaterialTheme.colorScheme.secondaryContainer
-                    } else {
-                        Color.Transparent
-                    },
-                    animationSpec = tween(motion.opacityDurationMillis),
-                )
-                val contentColor by animateColorAsState(
-                    targetValue = if (selected) {
-                        MaterialTheme.colorScheme.onSecondaryContainer
+        tabs.forEachIndexed { index, title ->
+            val selected = selectedTabIndex == index
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 48.dp)
+                    .selectable(
+                        selected = selected,
+                        onClick = { onTabSelected(index) },
+                        role = Role.Tab,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (selected) {
+                        MaterialTheme.colorScheme.primary
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
-                    animationSpec = tween(motion.opacityDurationMillis),
                 )
-                Surface(
+                Box(
                     modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = 48.dp)
-                        .selectable(
-                            selected = selected,
-                            onClick = { onTabSelected(index) },
-                            role = Role.Tab,
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .heightIn(min = 2.dp, max = 2.dp)
+                        .background(
+                            if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
                         ),
-                    shape = MaterialTheme.shapes.small,
-                    color = containerColor,
-                    contentColor = contentColor,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun ModelHubTabLayout(
+    context: @Composable () -> Unit,
+    toolbar: @Composable () -> Unit,
+    summary: @Composable () -> Unit,
+    results: LazyListScope.() -> Unit,
+    modifier: Modifier = Modifier,
+    windowWidth: Dp? = null,
+    command: (@Composable () -> Unit)? = null,
+) {
+    BoxWithConstraints(modifier = modifier) {
+        val supportingWidth = 296.dp
+        val paneGap = 16.dp
+        val effectiveWindowWidth = windowWidth ?: maxWidth
+        val useSupportingContext = effectiveWindowWidth >= 840.dp &&
+            maxWidth - supportingWidth - paneGap >= 480.dp
+
+        val primaryContent: @Composable (Modifier, Boolean) -> Unit =
+            { primaryModifier, includeContext ->
+                LazyColumn(
+                    modifier = primaryModifier.testTag("model-primary-results"),
+                    contentPadding = PaddingValues(bottom = LocalSpacing.current.xxl),
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(title, style = MaterialTheme.typography.labelLarge)
+                    command?.let { commandContent ->
+                        item(key = "model-command") {
+                            Box(Modifier.padding(bottom = 8.dp)) { commandContent() }
+                        }
                     }
+                    if (includeContext) {
+                        item(key = "model-context") {
+                            Box(Modifier.padding(bottom = 8.dp)) { context() }
+                        }
+                    }
+                    item(key = "model-toolbar") {
+                        Box(Modifier.padding(bottom = 4.dp)) { toolbar() }
+                    }
+                    item(key = "model-summary") {
+                        summary()
+                    }
+                    results()
                 }
             }
+
+        if (useSupportingContext) {
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.spacedBy(paneGap),
+            ) {
+                primaryContent(Modifier.weight(1f), false)
+                Column(
+                    modifier = Modifier
+                        .width(supportingWidth)
+                        .testTag("model-supporting-context"),
+                ) {
+                    context()
+                }
+            }
+        } else {
+            primaryContent(Modifier.fillMaxSize(), true)
         }
     }
 }
@@ -296,19 +378,61 @@ private fun SearchTabContent(
     val isLlmHub = browseMode == ModelHubBrowseMode.LanguageModels
     val isSearchMode = isLlmHub && (searchQuery.isNotEmpty() || searchResponse != null)
 
-    val spacing = LocalSpacing.current
     val motion = LocalAuroraMotionPolicy.current
     val browseModels = if (modelOrdering is ModelOrdering.Personalized) {
         recommendedModels.map { it.sourceModel }
     } else {
         listResponse?.models?.filterNotNull() ?: emptyList()
     }
-    LazyColumn(
+    val activeFilterCount = listOf(
+        listParams.sort != com.debanshu777.huggingfacemanager.model.ModelSort.TRENDING,
+        listParams.minParams != com.debanshu777.huggingfacemanager.model.ParameterRange.ZERO,
+        listParams.maxParams != com.debanshu777.huggingfacemanager.model.ParameterRange.SIX_B,
+    ).count { it }
+    val visibleActiveFilterCount = if (isSearchMode) 0 else activeFilterCount
+    val visibleResultCount = if (isSearchMode) {
+        searchResponse?.modelsCount ?: searchResponse?.models?.filterNotNull()?.size ?: 0
+    } else if (modelOrdering is ModelOrdering.Personalized) {
+        browseModels.size
+    } else {
+        listResponse?.numTotalItems ?: browseModels.size
+    }
+    val resetFilters = {
+        viewModel.updateParams(
+            sort = com.debanshu777.huggingfacemanager.model.ModelSort.TRENDING,
+            minParams = com.debanshu777.huggingfacemanager.model.ParameterRange.ZERO,
+            maxParams = com.debanshu777.huggingfacemanager.model.ParameterRange.SIX_B,
+        )
+        viewModel.setModelOrdering(
+            ModelOrdering.Server(com.debanshu777.huggingfacemanager.model.ModelSort.TRENDING),
+        )
+        viewModel.loadModels()
+    }
+
+    ModelHubTabLayout(
         modifier = modifier,
-        contentPadding = PaddingValues(bottom = spacing.xxl),
-    ) {
-        item(key = "model-hub-overview") {
-            ModelHubOverview(
+        windowWidth = LocalAppWindowWidth.current,
+        command = if (isLlmHub) {
+            {
+                SearchBar(
+                    query = searchQuery,
+                    onQueryChange = viewModel::updateSearchQuery,
+                    onSearch = {
+                        if (searchQuery.isNotEmpty()) {
+                            viewModel.performSearch()
+                        } else {
+                            viewModel.loadModels()
+                        }
+                    },
+                    onClear = viewModel::clearSearch,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        } else {
+            null
+        },
+        context = {
+            ModelHubContextStrip(
                 storageInfo = storageInfo,
                 profile = if (recommendationProfileState.isAvailable) {
                     recommendationProfileState.profile
@@ -321,10 +445,9 @@ private fun SearchTabContent(
                     null
                 },
             )
-        }
-
-        item(key = "browse-controls") {
-            ModelHubBrowseControls(
+        },
+        toolbar = {
+            ModelHubToolbar(
                 browseMode = browseMode,
                 onBrowseModeChange = viewModel::setBrowseMode,
                 showSortFilters = isLlmHub && !(
@@ -342,117 +465,133 @@ private fun SearchTabContent(
                 onMinParamsChange = { viewModel.updateParams(minParams = it) },
                 onMaxParamsChange = { viewModel.updateParams(maxParams = it) },
             )
-        }
-
-        if (!isLlmHub) {
-            item(key = "curated-hint") {
-                Text(
-                    text = "Curated Hugging Face repositories supported by the on-device engine.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 4.dp),
-                )
-            }
-        }
-
-        if (isLlmHub) {
-            item(key = "model-search") {
-                SearchBar(
-                    query = searchQuery,
-                    onQueryChange = viewModel::updateSearchQuery,
-                    onSearch = {
-                        if (searchQuery.isNotEmpty()) {
-                            viewModel.performSearch()
-                        } else {
-                            viewModel.loadModels()
-                        }
-                    },
-                    onClear = viewModel::clearSearch,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp),
-                )
-            }
-        }
-
-        if (isSearchMode && (searchResponse != null || searchError != null)) {
-            item(key = "search-summary") {
-                SearchResultsSummary(
-                    query = searchQuery,
-                    resultCount = searchResponse?.modelsCount ?: 0,
-                    onClear = viewModel::clearSearch,
-                )
-            }
-        }
-
-        if (isSearchMode) {
-            modelHubResultItems(
-                isLoading = isSearchLoading,
-                hasResponse = searchResponse != null,
-                errorMessage = searchError,
-                models = searchResponse?.models?.filterNotNull() ?: emptyList(),
-                itemKey = { "search-${it.id ?: it.hashCode()}" },
-                blockingLoadingKey = "search-loading",
-                refreshLoadingKey = "search-refreshing",
-                errorKey = "search-error",
-                emptyKey = "search-empty",
-                blockingLoadingDescription = "Loading search results",
-                refreshLoadingDescription = "Refreshing search results",
-                emptyMessage = "No models found for “$searchQuery”.",
-                motion = motion,
-            ) { model, itemModifier ->
-                val recommendationState = recommendedModels.firstOrNull {
-                    it.repositoryId == model.id
+        },
+        summary = {
+            ModelHubResultSummary(
+                resultCount = visibleResultCount,
+                resultNoun = if (isSearchMode) "results" else "models",
+                query = searchQuery.takeIf { isSearchMode },
+                activeFilterCount = visibleActiveFilterCount,
+                onClearQuery = viewModel::clearSearch,
+                onResetFilters = resetFilters,
+            )
+        },
+        results = {
+            if (isSearchMode) {
+                modelHubResultItems(
+                    isLoading = isSearchLoading,
+                    hasResponse = searchResponse != null,
+                    errorMessage = searchError,
+                    models = searchResponse?.models?.filterNotNull() ?: emptyList(),
+                    itemKey = { "search-${it.id ?: it.hashCode()}" },
+                    blockingLoadingKey = "search-loading",
+                    refreshLoadingKey = "search-refreshing",
+                    errorKey = "search-error",
+                    emptyKey = "search-empty",
+                    blockingLoadingDescription = "Loading search results",
+                    refreshLoadingDescription = "Refreshing search results",
+                    emptyMessage = "No models match “$searchQuery”.",
+                    errorActionLabel = "Retry",
+                    onErrorAction = viewModel::performSearch,
+                    motion = motion,
+                ) { model, itemModifier ->
+                    val recommendationState = recommendedModels.firstOrNull {
+                        it.repositoryId == model.id
+                    }
+                    SearchModelListItem(
+                        model = model,
+                        modifier = itemModifier,
+                        recommendationState = recommendationState,
+                        onRecommendationInfoClick = recommendationState
+                            ?.takeIf { it.personalizedResult != null }
+                            ?.let { state -> { onRecommendationInfoClick(state) } },
+                        onClick = {
+                            model.id?.let { id -> onNavigateToDetails(id, browseMode) }
+                        },
+                    )
                 }
-                SearchModelListItem(
-                    model = model,
-                    modifier = itemModifier,
-                    recommendationState = recommendationState,
-                    onRecommendationInfoClick = recommendationState
-                        ?.takeIf { it.personalizedResult != null }
-                        ?.let { state -> { onRecommendationInfoClick(state) } },
-                    onClick = {
-                        model.id?.let { id -> onNavigateToDetails(id, browseMode) }
+            } else {
+                modelHubResultItems(
+                    isLoading = isListLoading,
+                    hasResponse = listResponse != null,
+                    errorMessage = listError,
+                    models = browseModels,
+                    itemKey = { "browse-${it.id ?: it.hashCode()}" },
+                    blockingLoadingKey = "list-loading",
+                    refreshLoadingKey = "list-refreshing",
+                    errorKey = "list-error",
+                    emptyKey = "list-empty",
+                    blockingLoadingDescription = "Loading models",
+                    refreshLoadingDescription = "Refreshing models",
+                    emptyMessage = if (visibleActiveFilterCount > 0) {
+                        "No models match the active filters."
+                    } else if (isLlmHub) {
+                        "No models are available yet."
+                    } else {
+                        "No curated models are available."
                     },
-                )
-            }
-        } else {
-            modelHubResultItems(
-                isLoading = isListLoading,
-                hasResponse = listResponse != null,
-                errorMessage = listError,
-                models = browseModels,
-                itemKey = { "browse-${it.id ?: it.hashCode()}" },
-                blockingLoadingKey = "list-loading",
-                refreshLoadingKey = "list-refreshing",
-                errorKey = "list-error",
-                emptyKey = "list-empty",
-                blockingLoadingDescription = "Loading models",
-                refreshLoadingDescription = "Refreshing models",
-                emptyMessage = if (isLlmHub) {
-                    "No models found. Adjust the filters or search by name."
-                } else {
-                    "No curated models are available."
-                },
-                motion = motion,
-            ) { model, itemModifier ->
-                val recommendationState = recommendedModels.firstOrNull {
-                    it.repositoryId == model.id
+                    errorActionLabel = "Retry",
+                    onErrorAction = {
+                        if (isLlmHub) viewModel.loadModels() else viewModel.setBrowseMode(browseMode)
+                    },
+                    motion = motion,
+                ) { model, itemModifier ->
+                    val recommendationState = recommendedModels.firstOrNull {
+                        it.repositoryId == model.id
+                    }
+                    ModelListItem(
+                        model = model,
+                        modifier = itemModifier,
+                        onClick = {
+                            model.id?.let { id -> onNavigateToDetails(id, browseMode) }
+                        },
+                        recommendationState = recommendationState,
+                        onRecommendationInfoClick = recommendationState
+                            ?.takeIf { it.personalizedResult != null }
+                            ?.let { state -> { onRecommendationInfoClick(state) } },
+                    )
                 }
-                ModelListItem(
-                    model = model,
-                    modifier = itemModifier,
-                    onClick = {
-                        model.id?.let { id -> onNavigateToDetails(id, browseMode) }
-                    },
-                    recommendationState = recommendationState,
-                    onRecommendationInfoClick = recommendationState
-                        ?.takeIf { it.personalizedResult != null }
-                        ?.let { state -> { onRecommendationInfoClick(state) } },
-                )
             }
+        },
+    )
+}
+
+@Composable
+internal fun ModelHubResultSummary(
+    resultCount: Int,
+    resultNoun: String = "models",
+    query: String? = null,
+    activeFilterCount: Int = 0,
+    onClearQuery: (() -> Unit)? = null,
+    onResetFilters: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
+    val noun = if (resultCount == 1) resultNoun.removeSuffix("s") else resultNoun
+    val summary = buildList {
+        query?.takeIf(String::isNotBlank)?.let { add("Query: “$it”") }
+        if (activeFilterCount > 0) {
+            add("$activeFilterCount ${if (activeFilterCount == 1) "filter" else "filters"} active")
         }
+    }.joinToString(" · ").ifBlank { null }
+    val actionLabel: String?
+    val action: (() -> Unit)?
+    if (activeFilterCount > 0 && onResetFilters != null) {
+        actionLabel = "Reset filters"
+        action = onResetFilters
+    } else if (!query.isNullOrBlank() && onClearQuery != null) {
+        actionLabel = "Clear query"
+        action = onClearQuery
+    } else {
+        actionLabel = null
+        action = null
     }
+    ModelHubHeader(
+        title = "$resultCount $noun",
+        summary = summary,
+        actionLabel = actionLabel,
+        onAction = action,
+        modifier = modifier,
+    )
 }
 
 @Composable
@@ -494,62 +633,76 @@ internal fun <T> LazyListScope.modelHubResultItems(
     blockingLoadingDescription: String,
     refreshLoadingDescription: String,
     emptyMessage: String,
+    errorActionLabel: String? = null,
+    onErrorAction: (() -> Unit)? = null,
+    emptyActionLabel: String? = null,
+    onEmptyAction: (() -> Unit)? = null,
     motion: AuroraMotionPolicy,
     itemContent: @Composable LazyItemScope.(T, Modifier) -> Unit,
 ) {
     if (isLoading && !hasResponse) {
         item(key = blockingLoadingKey) {
-            ModelHubListMessage {
-                CircularProgressIndicator(
-                    modifier = Modifier.semantics {
-                        contentDescription = blockingLoadingDescription
-                    },
-                )
-            }
+            ModelHubStateView(
+                kind = ModelHubStateKind.Loading,
+                message = blockingLoadingDescription,
+                modifier = Modifier.semantics {
+                    contentDescription = blockingLoadingDescription
+                },
+            )
         }
         return
     }
 
     if (errorMessage != null) {
         item(key = errorKey) {
-            ModelHubListMessage {
-                Text(
-                    text = errorMessage,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
+            ModelHubStateView(
+                kind = ModelHubStateKind.Error,
+                message = errorMessage,
+                actionLabel = errorActionLabel,
+                onAction = onErrorAction,
+            )
         }
         return
     }
 
     if (models.isEmpty()) {
         item(key = emptyKey) {
-            ModelHubListMessage {
-                Text(
-                    text = emptyMessage,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            ModelHubStateView(
+                kind = ModelHubStateKind.Empty,
+                message = emptyMessage,
+                actionLabel = emptyActionLabel,
+                onAction = onEmptyAction,
+            )
         }
     } else {
-        items(
+        itemsIndexed(
             items = models,
-            key = itemKey,
-        ) { model ->
-            itemContent(
-                model,
-                Modifier.animateItem(
-                    fadeInSpec = tween(motion.opacityDurationMillis),
-                    placementSpec = if (motion.spatialTransitionsEnabled) {
-                        tween(motion.peerTransitionMillis)
-                    } else {
-                        null
-                    },
-                    fadeOutSpec = tween(motion.opacityDurationMillis),
-                ),
-            )
+            key = { _, model -> itemKey(model) },
+        ) { index, model ->
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .animateItem(
+                        fadeInSpec = tween(motion.opacityDurationMillis),
+                        placementSpec = if (motion.spatialTransitionsEnabled) {
+                            tween(motion.peerTransitionMillis)
+                        } else {
+                            null
+                        },
+                        fadeOutSpec = tween(motion.opacityDurationMillis),
+                    )
+                    .then(
+                        if (index == 0) {
+                            Modifier
+                                .testTag("model-results")
+                                .semantics { stateDescription = "Model results loaded" }
+                        } else {
+                            Modifier
+                        },
+                    ),
+            ) {
+                itemContent(model, Modifier.fillMaxWidth())
+            }
         }
     }
 
@@ -567,21 +720,6 @@ internal fun <T> LazyListScope.modelHubResultItems(
                 CircularProgressIndicator(modifier = Modifier.size(24.dp))
             }
         }
-    }
-}
-
-@Composable
-private fun ModelHubListMessage(
-    content: @Composable () -> Unit,
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 160.dp)
-            .padding(24.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        content()
     }
 }
 
@@ -655,24 +793,23 @@ private fun DownloadedTabContent(
         viewModel.acknowledgeDeleteResult()
     }
 
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = LocalSpacing.current.xxl),
-    ) {
-        item(key = "model-hub-overview") {
-            ModelHubOverview(
+    val readinessFilterCount = if (readinessFilter == ReadinessFilter.ALL) 0 else 1
+    ModelHubTabLayout(
+        modifier = modifier,
+        windowWidth = LocalAppWindowWidth.current,
+        context = {
+            ModelHubContextStrip(
                 storageInfo = storageInfo,
                 profile = null,
                 onOpenProfile = null,
             )
-        }
-
-        if (selectionMode && downloadedModels.isNotEmpty()) {
-            item(key = "selection-actions") {
+        },
+        toolbar = {
+            if (selectionMode && downloadedModels.isNotEmpty()) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 8.dp),
+                        .testTag("model-toolbar"),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -689,97 +826,99 @@ private fun DownloadedTabContent(
                         Text("Delete (${selectedIds.size})")
                     }
                 }
+            } else {
+                LibraryReadinessToolbar(
+                    selected = readinessFilter,
+                    onSelected = viewModel::setReadinessFilter,
+                )
             }
-        }
-
-        if (!selectionMode) {
-            item(key = "readiness-filters") {
-                LazyRow(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    contentPadding = PaddingValues(horizontal = 0.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    items(ReadinessFilter.entries, key = { it.name }) { filter ->
-                        val label = when (filter) {
-                            ReadinessFilter.ALL -> "All"
-                            ReadinessFilter.READY -> "Ready"
-                            ReadinessFilter.PARTIAL -> "Needs setup"
-                        }
-                        FilterChip(
-                            selected = readinessFilter == filter,
-                            onClick = { viewModel.setReadinessFilter(filter) },
-                            label = { Text(label) },
-                            modifier = Modifier.heightIn(min = 48.dp),
-                            shape = MaterialTheme.shapes.small,
+        },
+        summary = {
+            ModelHubResultSummary(
+                resultCount = downloadedModels.size,
+                resultNoun = "downloaded models",
+                activeFilterCount = readinessFilterCount,
+                onResetFilters = { viewModel.setReadinessFilter(ReadinessFilter.ALL) },
+            )
+        },
+        results = {
+            if (downloadedModels.isEmpty()) {
+                item(key = "downloaded-empty") {
+                    ModelHubStateView(
+                        kind = ModelHubStateKind.Empty,
+                        message = if (readinessFilterCount > 0) {
+                            "No downloaded models match the active filter."
+                        } else {
+                            "No downloaded models yet. Browse and download models to see them here."
+                        },
+                    )
+                }
+            } else {
+                itemsIndexed(
+                    items = downloadedModels,
+                    key = { _, model -> model.id },
+                ) { index, model ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .animateItem(
+                                fadeInSpec = tween(motion.opacityDurationMillis),
+                                placementSpec = if (motion.spatialTransitionsEnabled) {
+                                    tween(motion.peerTransitionMillis)
+                                } else {
+                                    null
+                                },
+                                fadeOutSpec = tween(motion.opacityDurationMillis),
+                            )
+                            .then(
+                                if (index == 0) {
+                                    Modifier
+                                        .testTag("model-results")
+                                        .semantics { stateDescription = "Model results loaded" }
+                                } else {
+                                    Modifier
+                                },
+                            ),
+                    ) {
+                        LocalModelListItem(
+                            model = model,
+                            selectionMode = selectionMode,
+                            isSelected = model.id in selectedIds,
+                            onOpenModel = {
+                                scope.launch { viewModel.trackModelUsage(model) }
+                                onSelectModelAndGoBack(model)
+                            },
+                            onToggleSelect = { viewModel.toggleSelection(model) },
+                            onLongPress = {
+                                if (selectionMode) {
+                                    viewModel.toggleSelection(model)
+                                } else {
+                                    viewModel.beginSelection(model)
+                                }
+                            },
+                            onFixComponents = if (
+                                model.componentStatus ==
+                                com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity.STATUS_PARTIAL
+                            ) {
+                                {
+                                    val mode = when (model.modelType) {
+                                        com.debanshu777.caraml.core.storage.localmodel.ModelType.VIDEO ->
+                                            ModelHubBrowseMode.DiffusionVideo
+                                        com.debanshu777.caraml.core.storage.localmodel.ModelType.IMAGE ->
+                                            ModelHubBrowseMode.DiffusionImage
+                                        else -> ModelHubBrowseMode.DiffusionImage
+                                    }
+                                    onNavigateToDetails(model.modelId, mode)
+                                }
+                            } else {
+                                null
+                            },
                         )
                     }
                 }
             }
-        }
-
-        if (downloadedModels.isEmpty()) {
-            item(key = "downloaded-empty") {
-                ModelHubListMessage {
-                    Text(
-                        text = "No downloaded models yet.\nBrowse and download models to see them here.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        } else {
-            items(
-                items = downloadedModels,
-                key = { it.id },
-            ) { model ->
-                LocalModelListItem(
-                    model = model,
-                    modifier = Modifier.animateItem(
-                        fadeInSpec = tween(motion.opacityDurationMillis),
-                        placementSpec = if (motion.spatialTransitionsEnabled) {
-                            tween(motion.peerTransitionMillis)
-                        } else {
-                            null
-                        },
-                        fadeOutSpec = tween(motion.opacityDurationMillis),
-                    ),
-                    selectionMode = selectionMode,
-                    isSelected = model.id in selectedIds,
-                    onOpenModel = {
-                        scope.launch { viewModel.trackModelUsage(model) }
-                        onSelectModelAndGoBack(model)
-                    },
-                    onToggleSelect = { viewModel.toggleSelection(model) },
-                    onLongPress = {
-                        if (selectionMode) {
-                            viewModel.toggleSelection(model)
-                        } else {
-                            viewModel.beginSelection(model)
-                        }
-                    },
-                    onFixComponents = if (
-                        model.componentStatus ==
-                        com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity.STATUS_PARTIAL
-                    ) {
-                        {
-                            val mode = when (model.modelType) {
-                                com.debanshu777.caraml.core.storage.localmodel.ModelType.VIDEO ->
-                                    ModelHubBrowseMode.DiffusionVideo
-                                com.debanshu777.caraml.core.storage.localmodel.ModelType.IMAGE ->
-                                    ModelHubBrowseMode.DiffusionImage
-                                else -> ModelHubBrowseMode.DiffusionImage
-                            }
-                            onNavigateToDetails(model.modelId, mode)
-                        }
-                    } else {
-                        null
-                    },
-                )
-            }
-        }
-    }
+        },
+    )
 
     if (showDeleteConfirm) {
         AlertDialog(
@@ -808,5 +947,34 @@ private fun DownloadedTabContent(
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun LibraryReadinessToolbar(
+    selected: ReadinessFilter,
+    onSelected: (ReadinessFilter) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .testTag("model-toolbar"),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        ReadinessFilter.entries.forEach { filter ->
+            val label = when (filter) {
+                ReadinessFilter.ALL -> "All"
+                ReadinessFilter.READY -> "Ready"
+                ReadinessFilter.PARTIAL -> "Needs setup"
+            }
+            FilterChip(
+                selected = selected == filter,
+                onClick = { onSelected(filter) },
+                label = { Text(label) },
+                modifier = Modifier.heightIn(min = 48.dp),
+                shape = MaterialTheme.shapes.extraSmall,
+            )
+        }
     }
 }
