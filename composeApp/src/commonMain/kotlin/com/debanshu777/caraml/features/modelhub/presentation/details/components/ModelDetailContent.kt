@@ -22,12 +22,15 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -39,6 +42,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.recommendation.DiffusionModelDescriptor
@@ -92,6 +96,12 @@ fun ModelDetailContent(
     )
     val installEnabled = recommendedVariant != null &&
         installBundleState.selectedVariantPath == recommendedVariant
+    val compactArtifactAction = if (showInstallBundle) {
+        null
+    } else {
+        primaryArtifactItem(recommendationState?.selectedDescriptor, ggufFiles)
+            ?.takeUnless { it.isDownloaded }
+    }
     val spacing = LocalSpacing.current
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
@@ -184,6 +194,7 @@ fun ModelDetailContent(
                             heading = weightFilesHeading,
                             emptyLabel = weightFilesEmptyLabel,
                             recommendationState = recommendationState,
+                            footerOwnedArtifact = compactArtifactAction?.artifact,
                         )
                     }
                 }
@@ -195,6 +206,16 @@ fun ModelDetailContent(
                             .testTag("detail-action"),
                         onInstall = onSmartInstall,
                         installEnabled = installEnabled,
+                    )
+                } else if (compactArtifactAction != null) {
+                    ArtifactDownloadActionFooter(
+                        model = model,
+                        item = compactArtifactAction,
+                        isDownloading = isDownloading,
+                        onDownloadClick = onDownloadClick,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("detail-action"),
                     )
                 }
             }
@@ -208,16 +229,19 @@ private fun ModelOverviewSection(model: ModelDetailResponse, description: String
     val heading = splitRepositoryId(model.modelId ?: model.id.orEmpty())
     val owner = heading.owner ?: model.author?.trim()?.takeIf { it.isNotEmpty() }
     val colors = MaterialTheme.auroraColors
+    val overviewBrush = remember(colors.focusPrimary, colors.focusTertiary) {
+        Brush.horizontalGradient(
+            colors = listOf(
+                colors.focusPrimary.copy(alpha = 0.12f),
+                colors.focusTertiary.copy(alpha = 0.08f),
+            ),
+        )
+    }
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .background(
-                brush = Brush.horizontalGradient(
-                    colors = listOf(
-                        colors.focusPrimary.copy(alpha = 0.12f),
-                        colors.focusTertiary.copy(alpha = 0.08f),
-                    ),
-                ),
+                brush = overviewBrush,
                 shape = MaterialTheme.shapes.large,
             )
             .testTag("detail-overview"),
@@ -300,22 +324,25 @@ private data class MetadataEntry(
     val value: String,
 )
 
+private fun String?.nonBlankMetadata(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
+
 private fun ModelDetailResponse.metadataEntries(): List<MetadataEntry> = buildList {
-    libraryName?.let { add(MetadataEntry("Library", it)) }
-    pipelineTag?.let { add(MetadataEntry("Pipeline", it)) }
-    cardData?.license?.let { add(MetadataEntry("License", it)) }
+    libraryName.nonBlankMetadata()?.let { add(MetadataEntry("Library", it)) }
+    pipelineTag.nonBlankMetadata()?.let { add(MetadataEntry("Pipeline", it)) }
+    cardData?.license.nonBlankMetadata()?.let { add(MetadataEntry("License", it)) }
     cardData?.baseModel
+        ?.mapNotNull { it.nonBlankMetadata() }
         ?.takeIf { it.isNotEmpty() }
         ?.joinToString(", ")
         ?.let { add(MetadataEntry("Base model", it)) }
-    config?.modelType?.let { add(MetadataEntry("Model type", it)) }
+    config?.modelType.nonBlankMetadata()?.let { add(MetadataEntry("Model type", it)) }
     config?.architectures
-        ?.filterNotNull()
+        ?.mapNotNull { it.nonBlankMetadata() }
         ?.takeIf { it.isNotEmpty() }
         ?.joinToString()
         ?.let { add(MetadataEntry("Architectures", it)) }
-    formatHubTimestamp(createdAt)?.let { add(MetadataEntry("Created", it)) }
-    formatHubTimestamp(lastModified)?.let { add(MetadataEntry("Last modified", it)) }
+    formatHubTimestamp(createdAt).nonBlankMetadata()?.let { add(MetadataEntry("Created", it)) }
+    formatHubTimestamp(lastModified).nonBlankMetadata()?.let { add(MetadataEntry("Last modified", it)) }
 }
 
 @Composable
@@ -425,6 +452,7 @@ private fun ModelFileVariantsSection(
     heading: String,
     emptyLabel: String,
     recommendationState: RecommendedModelUiState?,
+    footerOwnedArtifact: DownloadArtifactIdentity? = null,
 ) {
     val spacing = LocalSpacing.current
     val selectedDescriptor = recommendationState?.selectedDescriptor
@@ -462,21 +490,9 @@ private fun ModelFileVariantsSection(
                     isActiveDownload = isActiveDownload,
                     interactionLocked = isDownloading,
                     downloadEnabled = matchesSelectedDescriptor,
+                    showDownloadAction = item.artifact != footerOwnedArtifact,
                     onDownloadClick = {
-                        val artifact = item.artifact ?: return@ArtifactFileRow
-                        onDownloadClick(
-                            model.modelId ?: model.id ?: "",
-                            item.path,
-                            DownloadMetadataDTO(
-                                artifact = artifact,
-                                logicalRole = "model",
-                                sizeBytes = artifact.expectedBytes,
-                                author = model.author,
-                                libraryName = model.libraryName,
-                                pipelineTag = model.pipelineTag,
-                                contextLength = model.gguf?.contextLength,
-                            ),
-                        )
+                        dispatchExactArtifactDownload(model, item, onDownloadClick)
                     },
                 )
             }
@@ -491,6 +507,7 @@ private fun ArtifactFileRow(
     isActiveDownload: Boolean,
     interactionLocked: Boolean,
     downloadEnabled: Boolean,
+    showDownloadAction: Boolean = true,
     onDownloadClick: () -> Unit,
 ) {
     val colors = MaterialTheme.auroraColors
@@ -508,7 +525,7 @@ private fun ArtifactFileRow(
         if (recommended) {
             SignalRail(tone = SignalTone.Accent)
         }
-        GgufFileListItem(
+        GgufFileTechnicalRow(
             filename = item.path.ifEmpty { item.filename },
             sizeBytes = item.sizeBytes,
             isDownloaded = item.isDownloaded,
@@ -518,8 +535,80 @@ private fun ArtifactFileRow(
             modifier = Modifier.weight(1f),
             downloadEnabled = downloadEnabled,
             interactionLocked = interactionLocked,
+            showDownloadAction = showDownloadAction,
         )
     }
+}
+
+@Composable
+private fun ArtifactDownloadActionFooter(
+    model: ModelDetailResponse,
+    item: GgufFileUiState,
+    isDownloading: Boolean,
+    onDownloadClick: (String, String, DownloadMetadataDTO) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 2.dp,
+    ) {
+        Row(
+            modifier = Modifier.padding(LocalSpacing.current.m),
+            horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.s),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.xs),
+            ) {
+                Text(
+                    text = "Selected artifact",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = item.path.ifBlank { item.filename }.substringAfterLast('/'),
+                    style = AppTechnicalLabel,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            IconButton(
+                onClick = { dispatchExactArtifactDownload(model, item, onDownloadClick) },
+                enabled = !isDownloading,
+                modifier = Modifier
+                    .size(48.dp)
+                    .semantics {
+                        contentDescription = "Download ${item.path}"
+                    },
+            ) {
+                Icon(Icons.Default.Download, contentDescription = null)
+            }
+        }
+    }
+}
+
+private fun dispatchExactArtifactDownload(
+    model: ModelDetailResponse,
+    item: GgufFileUiState,
+    onDownloadClick: (String, String, DownloadMetadataDTO) -> Unit,
+) {
+    val artifact = item.artifact ?: return
+    onDownloadClick(
+        model.modelId ?: model.id ?: "",
+        item.path,
+        DownloadMetadataDTO(
+            artifact = artifact,
+            logicalRole = "model",
+            sizeBytes = artifact.expectedBytes,
+            author = model.author,
+            libraryName = model.libraryName,
+            pipelineTag = model.pipelineTag,
+            contextLength = model.gguf?.contextLength,
+        ),
+    )
 }
 
 private fun descriptorFiles(descriptor: ModelDescriptor?): List<ModelFileIdentity> = when (descriptor) {
@@ -534,6 +623,16 @@ private fun primaryDescriptorFile(descriptor: ModelDescriptor?): ModelFileIdenti
     is LlmModelDescriptor -> descriptor.file
     is DiffusionModelDescriptor -> descriptor.components.singleOrNull { it.isPrimary }?.file
     null -> null
+}
+
+private fun primaryArtifactItem(
+    descriptor: ModelDescriptor?,
+    files: List<GgufFileUiState>,
+): GgufFileUiState? {
+    val primaryFile = primaryDescriptorFile(descriptor) ?: return null
+    return files.singleOrNull { item ->
+        item.artifact?.let(primaryFile::matches) == true
+    }
 }
 
 private fun ModelFileIdentity.matches(artifact: DownloadArtifactIdentity): Boolean {

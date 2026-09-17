@@ -41,6 +41,33 @@ fun GgufFileListItem(
     downloadEnabled: Boolean = true,
     interactionLocked: Boolean = false,
 ) {
+    GgufFileTechnicalRow(
+        filename = filename,
+        sizeBytes = sizeBytes,
+        isDownloaded = isDownloaded,
+        progress = progress,
+        isDownloading = isDownloading,
+        onDownloadClick = onDownloadClick,
+        modifier = modifier,
+        downloadEnabled = downloadEnabled,
+        interactionLocked = interactionLocked,
+        showDownloadAction = true,
+    )
+}
+
+@Composable
+internal fun GgufFileTechnicalRow(
+    filename: String,
+    sizeBytes: Long?,
+    isDownloaded: Boolean,
+    progress: Float?,
+    isDownloading: Boolean,
+    onDownloadClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    downloadEnabled: Boolean = true,
+    interactionLocked: Boolean = false,
+    showDownloadAction: Boolean = true,
+) {
     val hasDirectory = filename.contains('/')
     val displayName = filename.substringAfterLast('/')
     val directory = if (hasDirectory) filename.substringBeforeLast('/') + "/" else null
@@ -115,7 +142,7 @@ fun GgufFileListItem(
                     contentDescription = "Downloaded",
                     tint = MaterialTheme.colorScheme.primary
                 )
-            } else {
+            } else if (showDownloadAction) {
                 IconButton(
                     onClick = onDownloadClick,
                     modifier = Modifier.size(48.dp),

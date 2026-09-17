@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
@@ -18,7 +20,10 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -177,6 +182,49 @@ class ModelDetailsWorkbenchUiTest {
     }
 
     @Test
+    fun blankMetadataDoesNotConsumeTheFourPrimaryRows() = runComposeUiTest {
+        setContent {
+            CompositionLocalProvider(LocalDensity provides Density(1f)) {
+                MaterialTheme {
+                    Box(Modifier.width(420.dp).height(700.dp)) {
+                        ModelDetailContent(
+                            model = ModelDetailResponse(
+                                modelId = "org/blank-metadata",
+                                libraryName = "   ",
+                                pipelineTag = "\n",
+                                createdAt = "2026-07-03T09:24:41.000Z",
+                                lastModified = "2026-07-13T14:56:34.000Z",
+                                config = ModelDetailResponse.Config(
+                                    modelType = "llama",
+                                    architectures = listOf("", "LlamaForCausalLM"),
+                                ),
+                                cardData = ModelDetailResponse.CardData(
+                                    baseModel = listOf(" "),
+                                    license = "\t",
+                                ),
+                            ),
+                            ggufFiles = emptyList(),
+                            isDownloading = false,
+                            onDownloadClick = { _, _, _ -> },
+                        )
+                    }
+                }
+            }
+        }
+
+        onNodeWithTag("detail-metadata").performScrollTo().assertIsDisplayed()
+        onNodeWithText("Library").assertDoesNotExist()
+        onNodeWithText("Pipeline").assertDoesNotExist()
+        onNodeWithText("License").assertDoesNotExist()
+        onNodeWithText("Base model").assertDoesNotExist()
+        onNodeWithText("Model type").assertExists()
+        onNodeWithText("Architectures").assertExists()
+        onNodeWithText("Created").assertExists()
+        onNodeWithText("Last modified").assertExists()
+        onNodeWithText("Show all").assertDoesNotExist()
+    }
+
+    @Test
     fun selectedArtifactUsesOneSignalRailAndExactDownloadAction() = runComposeUiTest {
         val fixture = workbenchGgufFixture()
         val scheme = workbenchColorScheme()
@@ -275,6 +323,76 @@ class ModelDetailsWorkbenchUiTest {
                 .assertIsDisplayed()
                 .performClick()
             runOnIdle { assertEquals(1, installClicks) }
+        }
+
+    @Test
+    fun compactLlmKeepsOneExactArtifactActionReachableAtTwoHundredPercentText() =
+        runComposeUiTest {
+            val fixture = workbenchGgufFixture()
+            var isDownloading by androidx.compose.runtime.mutableStateOf(false)
+            var activeArtifact by androidx.compose.runtime.mutableStateOf<DownloadArtifactIdentity?>(null)
+            var requestedModelId = ""
+            var requestedPath = ""
+            var requestedMetadata: DownloadMetadataDTO? = null
+            setContent {
+                CompositionLocalProvider(LocalDensity provides Density(1f, fontScale = 2f)) {
+                    MaterialTheme {
+                        Box(Modifier.width(420.dp).height(280.dp)) {
+                            ModelDetailContent(
+                                model = ModelDetailResponse(modelId = fixture.repositoryId),
+                                ggufFiles = fixture.files.map { file ->
+                                    if (file.artifact == activeArtifact) file.copy(progress = 42f) else file
+                                },
+                                isDownloading = isDownloading,
+                                activeDownloadArtifact = activeArtifact,
+                                onDownloadClick = { modelId, path, metadata ->
+                                    requestedModelId = modelId
+                                    requestedPath = path
+                                    requestedMetadata = metadata
+                                },
+                                recommendationState = fixture.recommendation,
+                            )
+                        }
+                    }
+                }
+            }
+
+            onAllNodes(
+                SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange),
+            ).assertCountEquals(1)
+            onNodeWithTag("detail-action").assertIsDisplayed()
+            onAllNodes(
+                hasContentDescription("Download ${fixture.primaryArtifact.relativePath}") and
+                    hasClickAction(),
+            ).assertCountEquals(1)
+            onNodeWithContentDescription("Download ${fixture.primaryArtifact.relativePath}")
+                .assertIsDisplayed()
+                .assertIsEnabled()
+                .performClick()
+            runOnIdle {
+                assertEquals(fixture.repositoryId, requestedModelId)
+                assertEquals(fixture.primaryArtifact.relativePath, requestedPath)
+                assertEquals(fixture.primaryArtifact, requestedMetadata?.artifact)
+                isDownloading = true
+                activeArtifact = fixture.secondaryArtifact
+            }
+
+            onAllNodes(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.StateDescription,
+                    "Downloading",
+                ),
+            ).assertCountEquals(1)
+            onNode(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.StateDescription,
+                    "Downloading",
+                ) and hasText("model-q4-00002-of-00002.gguf") and hasText("42%"),
+            ).assertExists()
+            onNodeWithContentDescription("Download ${fixture.primaryArtifact.relativePath}")
+                .assertIsNotEnabled()
+            onNodeWithContentDescription("Download ${fixture.secondaryArtifact.relativePath}")
+                .assertIsNotEnabled()
         }
 
     @Test
