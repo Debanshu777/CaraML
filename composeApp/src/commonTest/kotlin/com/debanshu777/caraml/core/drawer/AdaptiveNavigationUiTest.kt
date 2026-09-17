@@ -39,11 +39,14 @@ import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.navigation3.runtime.NavBackStack
+import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.runtime.NavKey
 import com.debanshu777.caraml.core.navigation.AppScreen
+import com.debanshu777.caraml.core.navigation.NavigationTransitionDisplay
 import com.debanshu777.caraml.core.theme.auroraColors
 import com.debanshu777.caraml.core.ui.layout.AppNavigationLayout
 import com.debanshu777.caraml.core.ui.layout.LocalAppNavigationLayout
+import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
 import com.debanshu777.caraml.features.chat.presentation.components.ModelSelectorTopBar
 import kotlin.math.abs
@@ -213,19 +216,35 @@ class AdaptiveNavigationUiTest {
                     modifier = Modifier.requiredSize(width = 599.dp, height = 720.dp),
                     backStack = backStack,
                 ) {
-                    Box(Modifier.fillMaxSize().testTag("route-content"))
+                    NavigationTransitionDisplay(
+                        modifier = Modifier.fillMaxSize(),
+                        backStack = backStack,
+                        motionPolicy = LocalAuroraMotionPolicy.current,
+                        detailOffsetPx = with(LocalDensity.current) { 16.dp.roundToPx() },
+                        entryDecorators = emptyList(),
+                        entryProvider = { key ->
+                            NavEntry(key) { route ->
+                                val tag = when (route) {
+                                    AppScreen.Home -> "create-route-content"
+                                    AppScreen.Search -> "models-route-content"
+                                    else -> error("Unexpected peer route: $route")
+                                }
+                                Box(Modifier.fillMaxSize().testTag(tag))
+                            }
+                        },
+                    )
                 }
             }
         }
 
-        val initialBounds = onNodeWithTag("route-content", useUnmergedTree = true)
+        val initialBounds = onNodeWithTag("create-route-content", useUnmergedTree = true)
             .fetchSemanticsNode().boundsInRoot
         onNodeWithContentDescription("Models").performClick()
         mainClock.advanceTimeBy(90)
-        val midTransitionBounds = onNodeWithTag("route-content", useUnmergedTree = true)
+        val midTransitionBounds = onNodeWithTag("models-route-content", useUnmergedTree = true)
             .fetchSemanticsNode().boundsInRoot
         mainClock.advanceTimeBy(180)
-        val settledBounds = onNodeWithTag("route-content", useUnmergedTree = true)
+        val settledBounds = onNodeWithTag("models-route-content", useUnmergedTree = true)
             .fetchSemanticsNode().boundsInRoot
 
         assertEquals(initialBounds, midTransitionBounds)

@@ -14,6 +14,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.runtime.NavBackStack
+import androidx.navigation3.runtime.NavEntry
+import androidx.navigation3.runtime.NavEntryDecorator
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.metadata
@@ -146,6 +148,54 @@ private fun navigationContentTransform(
 }
 
 @Composable
+internal fun NavigationTransitionDisplay(
+    modifier: Modifier,
+    backStack: NavBackStack<NavKey>,
+    motionPolicy: AuroraMotionPolicy,
+    detailOffsetPx: Int,
+    entryDecorators: List<NavEntryDecorator<NavKey>>,
+    entryProvider: (NavKey) -> NavEntry<NavKey>,
+) {
+    NavDisplay(
+        modifier = modifier,
+        backStack = backStack,
+        onBack = { if (backStack.size > 1) backStack.removeLastOrNull() },
+        entryDecorators = entryDecorators,
+        entryProvider = entryProvider,
+        transitionSpec = {
+            navigationContentTransform(
+                navigationTransitionDescriptor(
+                    family = navigationTransitionFamily(backStack.lastOrNull()),
+                    direction = NavigationTransitionDirection.Forward,
+                    motionPolicy = motionPolicy,
+                    detailOffsetPx = detailOffsetPx,
+                ),
+            )
+        },
+        popTransitionSpec = {
+            navigationContentTransform(
+                navigationTransitionDescriptor(
+                    family = NavigationTransitionFamily.Peer,
+                    direction = NavigationTransitionDirection.Pop,
+                    motionPolicy = motionPolicy,
+                    detailOffsetPx = detailOffsetPx,
+                ),
+            )
+        },
+        predictivePopTransitionSpec = { _ ->
+            navigationContentTransform(
+                navigationTransitionDescriptor(
+                    family = NavigationTransitionFamily.Peer,
+                    direction = NavigationTransitionDirection.Pop,
+                    motionPolicy = motionPolicy,
+                    detailOffsetPx = detailOffsetPx,
+                ),
+            )
+        },
+    )
+}
+
+@Composable
 fun NavigationHost(
     modifier: Modifier,
     backStack: NavBackStack<NavKey>,
@@ -156,10 +206,11 @@ fun NavigationHost(
     val modelLoadRequestResolver: RecommendedModelLoadRequestResolver = koinInject()
     val recommendationRolloutModeSource: RecommendationRolloutModeSource = koinInject()
     val selectionScope = rememberCoroutineScope()
-    NavDisplay(
+    NavigationTransitionDisplay(
         modifier = modifier,
         backStack = backStack,
-        onBack = { if (backStack.size > 1) backStack.removeLastOrNull() },
+        motionPolicy = motionPolicy,
+        detailOffsetPx = detailOffsetPx,
         entryDecorators =
             listOf(
                 rememberSaveableStateHolderNavEntryDecorator(),
@@ -251,35 +302,5 @@ fun NavigationHost(
                     )
                 }
             },
-        transitionSpec = {
-            navigationContentTransform(
-                navigationTransitionDescriptor(
-                    family = navigationTransitionFamily(backStack.lastOrNull()),
-                    direction = NavigationTransitionDirection.Forward,
-                    motionPolicy = motionPolicy,
-                    detailOffsetPx = detailOffsetPx,
-                ),
-            )
-        },
-        popTransitionSpec = {
-            navigationContentTransform(
-                navigationTransitionDescriptor(
-                    family = NavigationTransitionFamily.Peer,
-                    direction = NavigationTransitionDirection.Pop,
-                    motionPolicy = motionPolicy,
-                    detailOffsetPx = detailOffsetPx,
-                ),
-            )
-        },
-        predictivePopTransitionSpec = { _ ->
-            navigationContentTransform(
-                navigationTransitionDescriptor(
-                    family = NavigationTransitionFamily.Peer,
-                    direction = NavigationTransitionDirection.Pop,
-                    motionPolicy = motionPolicy,
-                    detailOffsetPx = detailOffsetPx,
-                ),
-            )
-        },
     )
 }
