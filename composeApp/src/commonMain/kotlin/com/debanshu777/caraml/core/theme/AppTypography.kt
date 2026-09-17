@@ -1,6 +1,7 @@
 package com.debanshu777.caraml.core.theme
 
 import androidx.compose.material3.Typography
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -47,10 +48,54 @@ val AppNumericLabel: TextStyle = TextStyle(
     fontFeatureSettings = "tnum",
 )
 
-/** Monospace voice for identifiers, formats, sizes, and other machine data. */
-val AppTechnicalLabel: TextStyle = TextStyle(
-    fontFamily = FontFamily.Monospace,
-    fontWeight = FontWeight.Medium,
-    fontSize = 12.sp,
-    lineHeight = 17.sp,
+/** Semantic type roles for the dense Prism workbench hierarchy. */
+@Immutable
+data class PrismTypography(
+    val screenTitle: TextStyle,
+    val modelTitle: TextStyle,
+    val denseMetadata: TextStyle,
+    val technicalLabel: TextStyle,
+    val detailTitleCompact: TextStyle,
+    val detailTitleExpanded: TextStyle,
 )
+
+val AppPrismTypography: PrismTypography = PrismTypography(
+    screenTitle = TextStyle(
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 28.sp,
+        lineHeight = 34.sp,
+    ),
+    modelTitle = TextStyle(
+        fontWeight = FontWeight.Medium,
+        fontSize = 17.sp,
+        lineHeight = 22.sp,
+    ),
+    denseMetadata = TextStyle(
+        fontWeight = FontWeight.Normal,
+        fontSize = 13.sp,
+        lineHeight = 18.sp,
+    ),
+    technicalLabel = TextStyle(
+        fontFamily = FontFamily.Monospace,
+        fontWeight = FontWeight.Medium,
+        fontSize = 12.sp,
+        lineHeight = 16.sp,
+    ),
+    detailTitleCompact = TextStyle(
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 24.sp,
+        lineHeight = 30.sp,
+    ),
+    detailTitleExpanded = TextStyle(
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 32.sp,
+        lineHeight = 38.sp,
+    ),
+)
+
+/** Semantic Prism roles layered on top of the platform-default Material family. */
+val Typography.prism: PrismTypography
+    get() = AppPrismTypography
+
+/** Source-compatible alias for machine data outside the shared workbench rows. */
+val AppTechnicalLabel: TextStyle = AppPrismTypography.technicalLabel

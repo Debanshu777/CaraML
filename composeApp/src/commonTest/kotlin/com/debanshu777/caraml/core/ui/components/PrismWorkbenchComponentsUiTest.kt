@@ -27,23 +27,176 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class PrismWorkbenchComponentsUiTest {
+
+    @Test
+    fun ordinaryClickableTechnicalRowUsesButtonSemanticsWithoutFalseSelectionState() =
+        runComposeUiTest {
+            var clicks = 0
+            setContent {
+                MaterialTheme {
+                    TechnicalListRow(
+                        title = "Open model",
+                        onClick = { clicks += 1 },
+                        modifier = Modifier
+                            .width(360.dp)
+                            .testTag("ordinary-technical-row"),
+                    )
+                }
+            }
+
+            val node = onNodeWithTag("ordinary-technical-row").fetchSemanticsNode()
+            assertEquals(Role.Button, node.config[SemanticsProperties.Role])
+            assertEquals(null, node.config.getOrNull(SemanticsProperties.Selected))
+            onNodeWithTag("ordinary-technical-row").performClick()
+            runOnIdle { assertEquals(1, clicks) }
+        }
+
+    @Test
+    fun selectableTechnicalRowsExposeRadioStateForSelectedAndUnselectedOptions() =
+        runComposeUiTest {
+            var selectedPath = ""
+            setContent {
+                MaterialTheme {
+                    Column {
+                        TechnicalListRow(
+                            title = "Unselected option",
+                            selected = false,
+                            emphasized = false,
+                            selectionEnabled = true,
+                            onClick = { selectedPath = "unselected" },
+                            modifier = Modifier
+                                .width(360.dp)
+                                .testTag("unselected-option"),
+                        )
+                        TechnicalListRow(
+                            title = "Selected option",
+                            selected = true,
+                            emphasized = true,
+                            selectionEnabled = true,
+                            onClick = {},
+                            modifier = Modifier
+                                .width(360.dp)
+                                .testTag("selected-option"),
+                        )
+                    }
+                }
+            }
+
+            listOf("unselected-option" to false, "selected-option" to true)
+                .forEach { (tag, selected) ->
+                    val node = onNodeWithTag(tag).fetchSemanticsNode()
+                    assertEquals(Role.RadioButton, node.config[SemanticsProperties.Role])
+                    assertEquals(selected, node.config[SemanticsProperties.Selected])
+                }
+            onNodeWithTag("unselected-option").performClick()
+            runOnIdle { assertEquals("unselected", selectedPath) }
+        }
+
+    @Test
+    fun legacyAndEmphasizedPositionalSignaturesRemainCallable() = runComposeUiTest {
+        var legacyClicks = 0
+        var emphasizedClicks = 0
+        setContent {
+            MaterialTheme {
+                Column {
+                    TechnicalListRow(
+                        "Legacy positional",
+                        Modifier.testTag("legacy-positional-row"),
+                        "legacy-owner",
+                        "legacy-metadata",
+                        "Legacy positional row",
+                        false,
+                        SignalTone.Neutral,
+                        { legacyClicks += 1 },
+                        null,
+                        null,
+                    ) {
+                        Text("Legacy trailing")
+                    }
+                    TechnicalListRow(
+                        "Emphasized positional",
+                        Modifier.testTag("emphasized-positional-row"),
+                        "current-owner",
+                        "current-metadata",
+                        "Emphasized positional row",
+                        false,
+                        true,
+                        SignalTone.Accent,
+                        { emphasizedClicks += 1 },
+                        null,
+                        null,
+                    ) {
+                        Text("Emphasized trailing")
+                    }
+                }
+            }
+        }
+
+        onNodeWithTag("legacy-positional-row").performClick()
+        onNodeWithTag("emphasized-positional-row").performClick()
+        runOnIdle {
+            assertEquals(1, legacyClicks)
+            assertEquals(1, emphasizedClicks)
+        }
+    }
+
+    @Test
+    fun productionTechnicalRowUsesExactModelMetadataAndTechnicalRoles() = runComposeUiTest {
+        setContent {
+            MaterialTheme {
+                TechnicalListRow(
+                    title = "Semantic model title",
+                    eyebrow = "ORG / FAMILY",
+                    metadata = "Q4_K_M · 4.7 GB",
+                    modifier = Modifier.width(360.dp),
+                )
+            }
+        }
+
+        textStyleFor("Semantic model title").let { style ->
+            assertEquals(17.sp, style.fontSize)
+            assertEquals(22.sp, style.lineHeight)
+            assertEquals(FontWeight.Medium, style.fontWeight)
+        }
+        textStyleFor("Q4_K_M · 4.7 GB").let { style ->
+            assertEquals(13.sp, style.fontSize)
+            assertEquals(18.sp, style.lineHeight)
+            assertEquals(FontWeight.Normal, style.fontWeight)
+        }
+        textStyleFor("ORG / FAMILY").let { style ->
+            assertEquals(12.sp, style.fontSize)
+            assertEquals(16.sp, style.lineHeight)
+            assertEquals(FontWeight.Medium, style.fontWeight)
+            assertEquals(FontFamily.Monospace, style.fontFamily)
+        }
+    }
 
     @Test
     fun commandSurfaceFillMaxWidthWrapsContentAndLeavesFollowingSiblingVisible() =
@@ -260,6 +413,15 @@ class PrismWorkbenchComponentsUiTest {
             )
         }
 }
+
+private fun ComposeUiTest.textStyleFor(text: String) =
+    mutableListOf<TextLayoutResult>().also { results ->
+        onNodeWithText(text, useUnmergedTree = true)
+            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action ->
+                assertTrue(action(results), "Expected a text layout result for $text")
+            }
+        assertEquals(1, results.size)
+    }.single().layoutInput.style
 
 private fun hasStateDescription(description: String) =
     SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, description)

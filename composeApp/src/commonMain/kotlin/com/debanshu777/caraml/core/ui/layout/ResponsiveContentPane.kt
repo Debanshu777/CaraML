@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.debanshu777.caraml.core.drawer.LocalAppWindowWidth
 
 @Composable
 fun ResponsiveContentPane(
@@ -27,7 +28,7 @@ fun ResponsiveContentPane(
         modifier = outerModifier,
         contentAlignment = Alignment.TopCenter,
     ) {
-        val policy = adaptiveLayoutPolicy(maxWidth, kind)
+        val policy = adaptiveLayoutPolicy(LocalAppWindowWidth.current ?: maxWidth, kind)
         val innerModifier = Modifier
             .widthIn(max = policy.maxContentWidth)
             .then(if (fillMaxHeight) Modifier.fillMaxSize() else Modifier.fillMaxWidth())

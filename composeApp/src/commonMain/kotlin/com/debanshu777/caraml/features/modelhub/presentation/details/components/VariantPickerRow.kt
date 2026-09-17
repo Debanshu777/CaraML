@@ -2,6 +2,7 @@ package com.debanshu777.caraml.features.modelhub.presentation.details.components
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.Text
@@ -40,7 +41,9 @@ fun VariantPickerRow(
     if (variants.isEmpty()) return
 
     Column(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .selectableGroup(),
     ) {
         variants.forEach { variant ->
             val isSelected = variant.path == selectedVariantPath
@@ -79,6 +82,7 @@ fun VariantPickerRow(
                 contentDescription = "Artifact ${variant.filename}",
                 selected = isSelected,
                 emphasized = isSelected || isRecommended,
+                selectionEnabled = true,
                 signalTone = if (isSelected || isRecommended) SignalTone.Accent else null,
                 onClick = if (variant.isDownloaded) null else {
                     { onVariantSelected(variant.path) }

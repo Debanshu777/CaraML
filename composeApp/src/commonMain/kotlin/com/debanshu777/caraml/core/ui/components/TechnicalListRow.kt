@@ -1,6 +1,7 @@
 package com.debanshu777.caraml.core.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,12 +24,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.debanshu777.caraml.core.theme.AppTechnicalLabel
 import com.debanshu777.caraml.core.theme.auroraColors
+import com.debanshu777.caraml.core.theme.prism
 
 @Composable
 fun TechnicalListRow(
@@ -38,25 +38,131 @@ fun TechnicalListRow(
     metadata: String? = null,
     contentDescription: String? = null,
     selected: Boolean = false,
-    emphasized: Boolean = selected,
     signalTone: SignalTone? = null,
     onClick: (() -> Unit)? = null,
     leading: (@Composable () -> Unit)? = null,
     status: (@Composable () -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
 ) {
+    TechnicalListRowImpl(
+        title = title,
+        modifier = modifier,
+        eyebrow = eyebrow,
+        metadata = metadata,
+        contentDescription = contentDescription,
+        selected = selected,
+        emphasized = selected,
+        selectionEnabled = selected,
+        signalTone = signalTone,
+        onClick = onClick,
+        leading = leading,
+        status = status,
+        trailing = trailing,
+    )
+}
+
+/**
+ * Source-compatible emphasized-row overload. [emphasized] is intentionally required so calls
+ * using the original positional parameter order continue to resolve to the overload above.
+ */
+@Composable
+fun TechnicalListRow(
+    title: String,
+    modifier: Modifier = Modifier,
+    eyebrow: String? = null,
+    metadata: String? = null,
+    contentDescription: String? = null,
+    selected: Boolean = false,
+    emphasized: Boolean,
+    signalTone: SignalTone? = null,
+    onClick: (() -> Unit)? = null,
+    leading: (@Composable () -> Unit)? = null,
+    status: (@Composable () -> Unit)? = null,
+    trailing: (@Composable () -> Unit)? = null,
+) {
+    TechnicalListRowImpl(
+        title = title,
+        modifier = modifier,
+        eyebrow = eyebrow,
+        metadata = metadata,
+        contentDescription = contentDescription,
+        selected = selected,
+        emphasized = emphasized,
+        selectionEnabled = selected,
+        signalTone = signalTone,
+        onClick = onClick,
+        leading = leading,
+        status = status,
+        trailing = trailing,
+    )
+}
+
+/** A row participating in a meaningful single-selection group. */
+@Composable
+fun TechnicalListRow(
+    title: String,
+    modifier: Modifier = Modifier,
+    eyebrow: String? = null,
+    metadata: String? = null,
+    contentDescription: String? = null,
+    selected: Boolean = false,
+    emphasized: Boolean,
+    selectionEnabled: Boolean,
+    signalTone: SignalTone? = null,
+    onClick: (() -> Unit)? = null,
+    leading: (@Composable () -> Unit)? = null,
+    status: (@Composable () -> Unit)? = null,
+    trailing: (@Composable () -> Unit)? = null,
+) {
+    TechnicalListRowImpl(
+        title = title,
+        modifier = modifier,
+        eyebrow = eyebrow,
+        metadata = metadata,
+        contentDescription = contentDescription,
+        selected = selected,
+        emphasized = emphasized,
+        selectionEnabled = selectionEnabled,
+        signalTone = signalTone,
+        onClick = onClick,
+        leading = leading,
+        status = status,
+        trailing = trailing,
+    )
+}
+
+@Composable
+private fun TechnicalListRowImpl(
+    title: String,
+    modifier: Modifier,
+    eyebrow: String?,
+    metadata: String?,
+    contentDescription: String?,
+    selected: Boolean,
+    emphasized: Boolean,
+    selectionEnabled: Boolean,
+    signalTone: SignalTone?,
+    onClick: (() -> Unit)?,
+    leading: (@Composable () -> Unit)?,
+    status: (@Composable () -> Unit)?,
+    trailing: (@Composable () -> Unit)?,
+) {
     val colors = MaterialTheme.auroraColors
     val showSignal = emphasized || signalTone != null
     val stackAccessories = LocalDensity.current.fontScale >= 1.5f ||
         (status != null && trailing != null)
-    val interactionModifier = if (onClick != null) {
-        Modifier.selectable(
+    val interactionModifier = when {
+        selectionEnabled -> Modifier.selectable(
             selected = selected,
+            enabled = onClick != null,
+            role = Role.RadioButton,
+            onClick = onClick ?: {},
+        )
+        onClick != null -> Modifier.clickable(
             role = Role.Button,
             onClick = onClick,
         )
-    } else {
-        Modifier
+        else -> Modifier
     }
 
     Row(
@@ -66,7 +172,6 @@ fun TechnicalListRow(
             .background(if (emphasized) colors.selectedSurface else Color.Transparent)
             .then(interactionModifier)
             .semantics(mergeDescendants = true) {
-                this.selected = selected
                 contentDescription?.let { this.contentDescription = it }
             },
     ) {
@@ -96,7 +201,7 @@ fun TechnicalListRow(
                     eyebrow?.let {
                         Text(
                             text = it,
-                            style = AppTechnicalLabel,
+                            style = MaterialTheme.typography.prism.technicalLabel,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -104,7 +209,7 @@ fun TechnicalListRow(
                     }
                     Text(
                         text = title,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.prism.modelTitle,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
@@ -112,7 +217,7 @@ fun TechnicalListRow(
                     metadata?.let {
                         Text(
                             text = it,
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.prism.denseMetadata,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,

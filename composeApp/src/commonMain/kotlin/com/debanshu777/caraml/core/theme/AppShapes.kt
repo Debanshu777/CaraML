@@ -13,7 +13,7 @@ import androidx.compose.ui.unit.dp
  * | `small`          | 12dp   | Inputs, buttons, selectable controls       |
  * | `medium`         | 18dp   | Command surfaces and meaningful panels     |
  * | `large`          | 24dp   | Sheets and large surfaces                  |
- * | `extraLarge`     | 28dp   | Dialogs, modal bottom sheets               |
+ * | `extraLarge`     | 24dp   | Dialogs, modal bottom sheets               |
  *
  * Use these via `MaterialTheme.shapes.medium` instead of literal
  * `RoundedCornerShape(12.dp)` so radii stay consistent and respond to any
@@ -24,5 +24,5 @@ val AppShapes: Shapes = Shapes(
     small = RoundedCornerShape(12.dp),
     medium = RoundedCornerShape(18.dp),
     large = RoundedCornerShape(24.dp),
-    extraLarge = RoundedCornerShape(28.dp),
+    extraLarge = RoundedCornerShape(24.dp),
 )

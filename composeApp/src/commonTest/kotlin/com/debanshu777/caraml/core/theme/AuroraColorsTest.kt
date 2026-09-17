@@ -10,6 +10,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 class AuroraColorsTest {
     @Test
@@ -73,9 +74,30 @@ class AuroraColorsTest {
         assertEquals(RoundedCornerShape(8.dp), AppShapes.extraSmall)
         assertEquals(RoundedCornerShape(12.dp), AppShapes.small)
         assertEquals(RoundedCornerShape(18.dp), AppShapes.medium)
+        assertEquals(RoundedCornerShape(24.dp), AppShapes.large)
+        assertEquals(RoundedCornerShape(24.dp), AppShapes.extraLarge)
         assertEquals(FontFamily.Monospace, AppTechnicalLabel.fontFamily)
         assertEquals(FontWeight.Medium, AppTechnicalLabel.fontWeight)
         assertEquals(12.sp, AppTechnicalLabel.fontSize)
-        assertEquals(17.sp, AppTechnicalLabel.lineHeight)
+        assertEquals(16.sp, AppTechnicalLabel.lineHeight)
+
+        assertEquals(28.sp, AppPrismTypography.screenTitle.fontSize)
+        assertEquals(34.sp, AppPrismTypography.screenTitle.lineHeight)
+        assertEquals(FontWeight.SemiBold, AppPrismTypography.screenTitle.fontWeight)
+        assertNull(AppPrismTypography.screenTitle.fontFamily)
+        assertEquals(17.sp, AppPrismTypography.modelTitle.fontSize)
+        assertEquals(22.sp, AppPrismTypography.modelTitle.lineHeight)
+        assertEquals(FontWeight.Medium, AppPrismTypography.modelTitle.fontWeight)
+        assertNull(AppPrismTypography.modelTitle.fontFamily)
+        assertEquals(13.sp, AppPrismTypography.denseMetadata.fontSize)
+        assertEquals(18.sp, AppPrismTypography.denseMetadata.lineHeight)
+        assertEquals(FontWeight.Normal, AppPrismTypography.denseMetadata.fontWeight)
+        assertNull(AppPrismTypography.denseMetadata.fontFamily)
+        assertEquals(24.sp, AppPrismTypography.detailTitleCompact.fontSize)
+        assertEquals(30.sp, AppPrismTypography.detailTitleCompact.lineHeight)
+        assertNull(AppPrismTypography.detailTitleCompact.fontFamily)
+        assertEquals(32.sp, AppPrismTypography.detailTitleExpanded.fontSize)
+        assertEquals(38.sp, AppPrismTypography.detailTitleExpanded.lineHeight)
+        assertNull(AppPrismTypography.detailTitleExpanded.fontFamily)
     }
 }

@@ -53,6 +53,7 @@ import com.debanshu777.caraml.core.rating.ui.RecommendationStatusChip
 import com.debanshu777.caraml.core.theme.AppTechnicalLabel
 import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.theme.auroraColors
+import com.debanshu777.caraml.core.theme.prism
 import com.debanshu777.caraml.core.ui.components.CaraMLSectionHeader
 import com.debanshu777.caraml.core.ui.components.SignalRail
 import com.debanshu777.caraml.core.ui.components.SignalTone
@@ -105,7 +106,8 @@ fun ModelDetailContent(
     val spacing = LocalSpacing.current
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        if (modelDetailsUseSupportingPane(windowWidth ?: maxWidth)) {
+        val useSupportingPane = modelDetailsUseSupportingPane(windowWidth ?: maxWidth)
+        if (useSupportingPane) {
             Row(
                 modifier = Modifier
                     .fillMaxSize()
@@ -117,7 +119,11 @@ fun ModelDetailContent(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(spacing.xl),
                 ) {
-                    ModelOverviewSection(model, modelSetup?.description)
+                    ModelOverviewSection(
+                        model = model,
+                        description = modelSetup?.description,
+                        expanded = true,
+                    )
                     ModelMetadataSection(model)
                     if (!showInstallBundle) {
                         ModelFileVariantsSection(
@@ -166,7 +172,11 @@ fun ModelDetailContent(
                         .padding(top = spacing.s),
                     verticalArrangement = Arrangement.spacedBy(spacing.xl),
                 ) {
-                    ModelOverviewSection(model, modelSetup?.description)
+                    ModelOverviewSection(
+                        model = model,
+                        description = modelSetup?.description,
+                        expanded = false,
+                    )
                     ModelMetadataSection(model)
                     ModelRecommendationSection(
                         recommendationState = recommendationState,
@@ -224,7 +234,11 @@ fun ModelDetailContent(
 }
 
 @Composable
-private fun ModelOverviewSection(model: ModelDetailResponse, description: String?) {
+private fun ModelOverviewSection(
+    model: ModelDetailResponse,
+    description: String?,
+    expanded: Boolean,
+) {
     val spacing = LocalSpacing.current
     val heading = splitRepositoryId(model.modelId ?: model.id.orEmpty())
     val owner = heading.owner ?: model.author?.trim()?.takeIf { it.isNotEmpty() }
@@ -260,7 +274,11 @@ private fun ModelOverviewSection(model: ModelDetailResponse, description: String
             }
             Text(
                 text = heading.name,
-                style = MaterialTheme.typography.titleLarge,
+                style = if (expanded) {
+                    MaterialTheme.typography.prism.detailTitleExpanded
+                } else {
+                    MaterialTheme.typography.prism.detailTitleCompact
+                },
                 color = MaterialTheme.colorScheme.onSurface,
             )
             val technicalSummary = listOfNotNull(

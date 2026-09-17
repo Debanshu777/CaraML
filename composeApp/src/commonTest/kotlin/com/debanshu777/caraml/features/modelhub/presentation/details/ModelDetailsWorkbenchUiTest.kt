@@ -10,12 +10,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
@@ -30,10 +33,14 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.debanshu777.caraml.core.rating.SdArchitecture
 import com.debanshu777.caraml.core.recommendation.DiffusionComponentDescriptor
 import com.debanshu777.caraml.core.recommendation.DiffusionMode
@@ -56,6 +63,71 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class ModelDetailsWorkbenchUiTest {
+
+    @Test
+    fun productionDetailTitleUsesCompactAndExpandedSemanticRolesAtTheExactBreakpoint() =
+        runComposeUiTest {
+            var windowWidth by mutableStateOf(839.dp)
+            setContent {
+                MaterialTheme {
+                    Box(Modifier.width(900.dp).height(560.dp)) {
+                        ModelDetailContent(
+                            model = ModelDetailResponse(modelId = "org/focal-artifact"),
+                            ggufFiles = emptyList(),
+                            isDownloading = false,
+                            onDownloadClick = { _, _, _ -> },
+                            windowWidth = windowWidth,
+                        )
+                    }
+                }
+            }
+
+            textStyleFor("focal-artifact").let { style ->
+                assertEquals(24.sp, style.fontSize)
+                assertEquals(30.sp, style.lineHeight)
+                assertEquals(FontWeight.SemiBold, style.fontWeight)
+            }
+
+            runOnIdle { windowWidth = 840.dp }
+            waitForIdle()
+
+            textStyleFor("focal-artifact").let { style ->
+                assertEquals(32.sp, style.fontSize)
+                assertEquals(38.sp, style.lineHeight)
+                assertEquals(FontWeight.SemiBold, style.fontWeight)
+            }
+        }
+
+    @Test
+    fun compactDetailTitleWrapsWithoutClippingAtTwoHundredPercentText() = runComposeUiTest {
+        val repositoryId =
+            "org/a-very-long-artifact-name-that-needs-multiple-lines-at-large-text"
+        setContent {
+            CompositionLocalProvider(LocalDensity provides Density(1f, fontScale = 2f)) {
+                MaterialTheme {
+                    Box(Modifier.width(360.dp).height(640.dp)) {
+                        ModelDetailContent(
+                            model = ModelDetailResponse(modelId = repositoryId),
+                            ggufFiles = emptyList(),
+                            isDownloading = false,
+                            onDownloadClick = { _, _, _ -> },
+                            windowWidth = 360.dp,
+                        )
+                    }
+                }
+            }
+        }
+
+        val results = mutableListOf<TextLayoutResult>()
+        onNodeWithText(repositoryId.substringAfter('/'), useUnmergedTree = true)
+            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action ->
+                assertTrue(action(results))
+            }
+        val result = results.single()
+        assertTrue(result.lineCount > 1, "Large detail titles should wrap")
+        assertTrue(!result.didOverflowWidth, "Wrapped detail title must not overflow width")
+        assertTrue(!result.didOverflowHeight, "Wrapped detail title must not be clipped")
+    }
 
     @Test
     fun compactDetailsUsesSectionsAndDividersInsteadOfStackedOutlinedCards() =
@@ -431,6 +503,15 @@ class ModelDetailsWorkbenchUiTest {
         )
     }
 }
+
+private fun ComposeUiTest.textStyleFor(text: String) =
+    mutableListOf<TextLayoutResult>().also { results ->
+        onNodeWithText(text, useUnmergedTree = true)
+            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action ->
+                assertTrue(action(results), "Expected a text layout result for $text")
+            }
+        assertEquals(1, results.size)
+    }.single().layoutInput.style
 
 private data class WorkbenchGgufFixture(
     val repositoryId: String,

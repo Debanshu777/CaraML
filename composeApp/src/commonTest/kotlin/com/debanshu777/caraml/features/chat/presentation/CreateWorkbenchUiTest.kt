@@ -45,9 +45,11 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import com.debanshu777.caraml.core.drawer.AppDrawerShell
@@ -74,6 +76,7 @@ import com.debanshu777.caraml.features.chat.data.InferenceMetrics
 import com.debanshu777.caraml.features.chat.data.MessageRole
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
 import com.debanshu777.caraml.features.chat.presentation.components.MessageBubble
+import com.debanshu777.caraml.features.chat.presentation.components.ModelSelectorTopBar
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 import kotlinx.collections.immutable.persistentListOf
 import kotlin.math.abs
@@ -82,6 +85,79 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class CreateWorkbenchUiTest {
+
+    @Test
+    fun productionCreateHeaderUsesTheExactScreenTitleRole() = runComposeUiTest {
+        setContent {
+            MaterialTheme {
+                ModelSelectorTopBar(title = "Create workspace")
+            }
+        }
+
+        val layoutResults = mutableListOf<TextLayoutResult>()
+        onNodeWithText("Create workspace", useUnmergedTree = true)
+            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action ->
+                assertTrue(action(layoutResults))
+            }
+        val style = layoutResults.single().layoutInput.style
+        assertEquals(28.sp, style.fontSize)
+        assertEquals(34.sp, style.lineHeight)
+        assertEquals(FontWeight.SemiBold, style.fontWeight)
+    }
+
+    @Test
+    fun exactShellBoundariesKeepCreateHeaderAndComposerOnOneGutter() = runComposeUiTest {
+        var width by mutableStateOf(599.dp)
+
+        setContent {
+            CompositionLocalProvider(LocalDensity provides Density(1f)) {
+                MaterialTheme {
+                    val backStack = remember { NavBackStack<NavKey>(AppScreen.Home) }
+                    AppDrawerShell(
+                        modifier = Modifier
+                            .requiredSize(width = width, height = 720.dp)
+                            .testTag("app-shell"),
+                        backStack = backStack,
+                    ) {
+                        ReadyCreateScreen(
+                            mode = GenerationMode.Text,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                }
+            }
+        }
+
+        listOf(
+            599.dp to 16f,
+            600.dp to 104f,
+            1199.dp to 243.5f,
+            1200.dp to 332f,
+        ).forEach { (windowWidth, expectedLeadingEdge) ->
+            runOnIdle { width = windowWidth }
+            waitForIdle()
+
+            val shellLeft = onNodeWithTag("app-shell")
+                .fetchSemanticsNode().boundsInRoot.left
+            val header = onAllNodesWithText("Create", useUnmergedTree = true)
+                .fetchSemanticsNodes()
+                .maxBy { it.boundsInRoot.width }
+                .boundsInRoot
+            val composer = onNodeWithTag("create-command", useUnmergedTree = true)
+                .fetchSemanticsNode().boundsInRoot
+
+            assertTrue(
+                abs(header.left - shellLeft - expectedLeadingEdge) <= 1f,
+                "Create header at $windowWidth expected x=$expectedLeadingEdge " +
+                    "but was ${header.left - shellLeft}",
+            )
+            assertTrue(
+                abs(composer.left - shellLeft - expectedLeadingEdge) <= 1f,
+                "Create composer at $windowWidth expected x=$expectedLeadingEdge " +
+                    "but was ${composer.left - shellLeft}",
+            )
+        }
+    }
 
     @Test
     fun createShellSelectionStaysSelectedAcrossTextImageAndVideoModes() = runComposeUiTest {

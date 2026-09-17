@@ -17,20 +17,41 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class CaraMLTopBarUiTest {
+
+    @Test
+    fun productionTopBarUsesTheExactScreenTitleRole() = runComposeUiTest {
+        setContent {
+            MaterialTheme {
+                CaraMLPrimaryTopBar(title = "Models workspace")
+            }
+        }
+
+        val style = textStyleFor("Models workspace")
+        assertEquals(28.sp, style.fontSize)
+        assertEquals(34.sp, style.lineHeight)
+        assertEquals(FontWeight.SemiBold, style.fontWeight)
+    }
 
     @Test
     fun legacyPositionalModifierAndTrailingActionsRemainCallable() = runComposeUiTest {
@@ -127,6 +148,15 @@ class CaraMLTopBarUiTest {
         )
     }
 }
+
+private fun ComposeUiTest.textStyleFor(text: String) =
+    mutableListOf<TextLayoutResult>().also { results ->
+        onNodeWithText(text, useUnmergedTree = true)
+            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action ->
+                assertTrue(action(results), "Expected a text layout result for $text")
+            }
+        assertEquals(1, results.size)
+    }.single().layoutInput.style
 
 @androidx.compose.runtime.Composable
 private fun HeaderTransparencyFixture(backdrop: Color) {

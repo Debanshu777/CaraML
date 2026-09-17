@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.prism
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
 
 @Preview
@@ -81,7 +82,7 @@ fun ModelSelectorTopBar(
 private fun QuietHeaderTitle(title: String) {
     Text(
         text = title,
-        style = MaterialTheme.typography.titleLarge,
+        style = MaterialTheme.typography.prism.screenTitle,
         color = MaterialTheme.colorScheme.onSurface,
     )
 }
