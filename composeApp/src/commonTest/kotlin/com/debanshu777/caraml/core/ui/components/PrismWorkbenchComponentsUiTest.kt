@@ -5,13 +5,17 @@ package com.debanshu777.caraml.core.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
@@ -40,6 +44,43 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class PrismWorkbenchComponentsUiTest {
+
+    @Test
+    fun commandSurfaceFillMaxWidthWrapsContentAndLeavesFollowingSiblingVisible() =
+        runComposeUiTest {
+            setContent {
+                CompositionLocalProvider(LocalDensity provides Density(1f)) {
+                    MaterialTheme {
+                        Column(
+                            modifier = Modifier.requiredSize(width = 360.dp, height = 180.dp),
+                        ) {
+                            CommandSurface(
+                                focused = false,
+                                active = false,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("content-height-command"),
+                            ) {
+                                Text("Run locally")
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                                    .testTag("following-content"),
+                            )
+                        }
+                    }
+                }
+            }
+
+            val command = onNodeWithTag("content-height-command").fetchSemanticsNode()
+            assertTrue(
+                command.boundsInRoot.height <= 72f,
+                "Command surface must wrap its content; height was ${command.boundsInRoot.height}dp",
+            )
+            onNodeWithTag("following-content").assertHeightIsAtLeast(48.dp)
+        }
 
     @Test
     fun commandSurfaceShowsSeedDerivedFocusAtBothEdgesWithoutFillingItsContent() =

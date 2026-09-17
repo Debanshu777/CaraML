@@ -5,7 +5,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -48,9 +47,9 @@ fun CommandSurface(
         modifier = modifier
             .then(outerTreatment)
             .padding(2.dp),
+        propagateMinConstraints = true,
     ) {
         Surface(
-            modifier = Modifier.fillMaxSize(),
             shape = shape,
             color = colors.commandSurface,
             contentColor = MaterialTheme.colorScheme.onSurface,
