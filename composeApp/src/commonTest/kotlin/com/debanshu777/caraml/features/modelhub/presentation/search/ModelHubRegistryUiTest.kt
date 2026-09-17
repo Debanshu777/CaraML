@@ -32,6 +32,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -49,6 +50,7 @@ import com.debanshu777.caraml.features.modelhub.presentation.search.components.M
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelResultCard
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchBar
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchModelListItem
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.selectedVariantLabel
 import com.debanshu777.huggingfacemanager.model.ListModelsResponse
 import com.debanshu777.huggingfacemanager.model.ModelSort
 import com.debanshu777.huggingfacemanager.model.ParameterRange
@@ -115,10 +117,8 @@ class ModelHubRegistryUiTest {
     }
 
     @Test
-    fun mixedMetadataAndVariantProseUseBodyTypographyWhileOwnerStaysTechnical() =
+    fun mixedMetadataUsesBodyTypographyWhileOwnerStaysTechnical() =
         runComposeUiTest {
-            val narrowModel = ListModelsResponse.Model(id = "org/narrow", author = "org")
-            val wideModel = ListModelsResponse.Model(id = "org/wide", author = "org")
             setContent {
                 AtDensityOne {
                     MaterialTheme {
@@ -136,22 +136,6 @@ class ModelHubRegistryUiTest {
                                 metadata = "WWWWWWWW downloads",
                                 status = {},
                                 onClick = {},
-                            )
-                            ModelListItem(
-                                model = narrowModel,
-                                onClick = {},
-                                recommendationState = recommendedState(
-                                    model = narrowModel,
-                                    selectedVariantName = "iiiiiiii",
-                                ),
-                            )
-                            ModelListItem(
-                                model = wideModel,
-                                onClick = {},
-                                recommendationState = recommendedState(
-                                    model = wideModel,
-                                    selectedVariantName = "WWWWWWWW",
-                                ),
                             )
                         }
                     }
@@ -177,21 +161,23 @@ class ModelHubRegistryUiTest {
                 "Mixed prose metadata must use proportional body typography; " +
                     "narrow=$narrowMetadataWidth wide=$wideMetadataWidth",
             )
-
-            val narrowVariantWidth = onNodeWithText(
-                "Selected variant: iiiiiiii",
-                useUnmergedTree = true,
-            ).fetchSemanticsNode().boundsInRoot.width
-            val wideVariantWidth = onNodeWithText(
-                "Selected variant: WWWWWWWW",
-                useUnmergedTree = true,
-            ).fetchSemanticsNode().boundsInRoot.width
-            assertTrue(
-                wideVariantWidth >= narrowVariantWidth + 12f,
-                "Selected-variant prose must use proportional body typography; " +
-                    "narrow=$narrowVariantWidth wide=$wideVariantWidth",
-            )
         }
+
+    @Test
+    fun selectedVariantLabelStylesOnlyArtifactTokenAsTechnical() {
+        val label = selectedVariantLabel("model-Q4_K_M.gguf")
+
+        assertEquals("Selected variant: model-Q4_K_M.gguf", label.text)
+        assertEquals(
+            1,
+            label.spanStyles.size,
+            "The artifact token needs one explicit technical span",
+        )
+        val technicalSpan = label.spanStyles.single()
+        assertEquals(18, technicalSpan.start, "Body-styled prose must remain outside the span")
+        assertEquals(label.length, technicalSpan.end)
+        assertEquals(FontFamily.Monospace, technicalSpan.item.fontFamily)
+    }
 
     @Test
     fun summaryAndResultStateExposeStableRegionsAndAction() = runComposeUiTest {
@@ -353,6 +339,46 @@ class ModelHubRegistryUiTest {
     }
 
     @Test
+    fun simpleProductionStatusRowDoesNotReserveAnEmptyAccessoryBand() = runComposeUiTest {
+        setContent {
+            AtDensityOne {
+                MaterialTheme {
+                    Box(Modifier.width(360.dp)) {
+                        SearchModelListItem(
+                            model = SearchModelsResponse.Model(
+                                id = "org/compact-model",
+                                trendingWeight = 42,
+                            ),
+                            onClick = {},
+                        )
+                    }
+                }
+            }
+        }
+
+        val row = onNodeWithTag("model-row:org/compact-model")
+        val title = onNodeWithText("compact-model", useUnmergedTree = true)
+        val metadata = onNodeWithText("Trending weight: 42", useUnmergedTree = true)
+        val status = onNodeWithText("Needs information", useUnmergedTree = true)
+        row.assertIsDisplayed()
+        title.assertIsDisplayed()
+        metadata.assertIsDisplayed()
+        status.assertIsDisplayed()
+        onNodeWithText("Selected variant:", substring = true).assertDoesNotExist()
+
+        val rowBounds = row.fetchSemanticsNode().boundsInRoot
+        val identityBounds = title.fetchSemanticsNode().boundsInRoot
+            .expandToInclude(metadata.fetchSemanticsNode().boundsInRoot)
+        val statusBounds = status.fetchSemanticsNode().boundsInRoot
+        assertTrue(rowBounds.height <= 148f, "Simple status row was ${rowBounds.height}dp tall")
+        assertTrue(
+            statusBounds.center.y in identityBounds.top..identityBounds.bottom,
+            "An absent trailing accessory must not push status below identity; " +
+                "identity=$identityBounds status=$statusBounds",
+        )
+    }
+
+    @Test
     fun longModelNameKeepsOwnerTitleStatusAndMetadataReadable() = runComposeUiTest {
         setContent {
             AtDensityOne {
@@ -478,6 +504,15 @@ private fun colorsNear(expected: Color, actual: Color, tolerance: Float = 0.02f)
         abs(expected.green - actual.green) <= tolerance &&
         abs(expected.blue - actual.blue) <= tolerance &&
         abs(expected.alpha - actual.alpha) <= tolerance
+
+private fun androidx.compose.ui.geometry.Rect.expandToInclude(
+    other: androidx.compose.ui.geometry.Rect,
+): androidx.compose.ui.geometry.Rect = androidx.compose.ui.geometry.Rect(
+    left = minOf(left, other.left),
+    top = minOf(top, other.top),
+    right = maxOf(right, other.right),
+    bottom = maxOf(bottom, other.bottom),
+)
 
 private fun recommendedState(
     model: ListModelsResponse.Model,

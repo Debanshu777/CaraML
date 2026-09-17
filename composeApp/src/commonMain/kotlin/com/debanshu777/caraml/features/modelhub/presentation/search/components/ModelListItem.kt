@@ -1,7 +1,6 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search.components
 
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.debanshu777.caraml.core.recommendation.RecommendationCategory
@@ -18,6 +17,12 @@ fun ModelListItem(
     onRecommendationInfoClick: (() -> Unit)? = null,
 ) {
     if (model == null) return
+    val trailingContent: (@Composable RowScope.() -> Unit)? =
+        recommendationState?.selectedVariantName?.let { selectedVariantName ->
+            {
+                SelectedVariantLabel(selectedVariantName)
+            }
+        }
     ModelResultCard(
         title = model.id ?: "Unknown",
         author = model.author?.let { "by $it" },
@@ -39,11 +44,7 @@ fun ModelListItem(
         modifier = modifier,
         highlighted = recommendationState?.personalizedResult?.category ==
             RecommendationCategory.RECOMMENDED,
-        trailing = {
-            recommendationState?.selectedVariantName?.let {
-                Text("Selected variant: $it", style = MaterialTheme.typography.bodySmall)
-            }
-        },
+        trailing = trailingContent,
     )
 }
 

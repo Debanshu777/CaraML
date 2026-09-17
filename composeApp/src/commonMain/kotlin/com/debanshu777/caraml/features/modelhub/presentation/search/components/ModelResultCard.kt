@@ -42,9 +42,12 @@ fun ModelResultCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     highlighted: Boolean = false,
-    trailing: @Composable RowScope.() -> Unit = {},
+    trailing: (@Composable RowScope.() -> Unit)? = null,
 ) {
     val identity = remember(title, author) { repositoryIdentity(title, author) }
+    val trailingContent: (@Composable () -> Unit)? = trailing?.let { content ->
+        { Row(content = content) }
+    }
     TechnicalListRow(
         title = identity.title,
         eyebrow = identity.owner,
@@ -55,9 +58,7 @@ fun ModelResultCard(
         onClick = onClick,
         modifier = modifier.testTag("model-row:$title"),
         status = status,
-        trailing = {
-            Row(content = trailing)
-        },
+        trailing = trailingContent,
     )
 }
 
