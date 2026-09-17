@@ -106,10 +106,10 @@ fun MessageBubble(
             .padding(vertical = LocalSpacing.current.m),
         horizontalAlignment = alignment
     ) {
-        if (!isUser && (thinkingText.isNotEmpty() || isStreaming)) {
+        if (!isUser && (thinkingText.isNotEmpty() || (isStreaming && !showMediaPending))) {
             ThoughtsDisclosure(
                 thinking = thinkingText,
-                isStreaming = isStreaming,
+                isStreaming = isStreaming && !showMediaPending,
                 outputIsEmpty = output.isEmpty(),
             )
         }
@@ -157,11 +157,18 @@ fun MessageBubble(
             val elapsed = imageGenElapsedSeconds
 
             val statusText = when {
-                isFinalizing -> "Finalizing image…  (${elapsed}s)"
-                isSampling   -> "Step $imageGenStep / $imageGenTotalSteps  ·  ${elapsed}s"
+                isFinalizing -> "Finalizing local output · ${elapsed}s"
+                isSampling   -> "Step $imageGenStep / $imageGenTotalSteps · ${elapsed}s"
                 else         -> if (imageGenRequestedSteps > 0)
-                                    "Preparing model…  ($imageGenRequestedSteps steps queued, ${elapsed}s)"
-                                else "Preparing model…  (${elapsed}s)"
+                                    "Preparing local generation · " +
+                                        "$imageGenRequestedSteps planned steps · ${elapsed}s"
+                                else "Preparing local generation · ${elapsed}s"
+            }
+
+            val phase = when {
+                isFinalizing -> GenerationActivityPhase.Finalizing
+                isSampling -> GenerationActivityPhase.Generating
+                else -> GenerationActivityPhase.Preparing
             }
 
             GenerationActivity(
@@ -171,6 +178,7 @@ fun MessageBubble(
                 } else {
                     null
                 },
+                phase = phase,
                 modifier = Modifier
                     .padding(top = LocalSpacing.current.s)
                     .fillMaxWidth(),

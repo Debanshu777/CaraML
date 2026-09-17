@@ -11,12 +11,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import com.debanshu777.caraml.core.theme.AppNumericLabel
+import com.debanshu777.caraml.core.theme.AppTechnicalLabel
 import com.debanshu777.caraml.core.theme.LocalSpacing
-import com.debanshu777.caraml.core.ui.components.CaraMLStatusPill
-import com.debanshu777.caraml.core.ui.components.StatusTone
 import com.debanshu777.caraml.features.chat.data.LiveGenerationStats
 import com.debanshu777.caraml.features.chat.presentation.components.providers.LiveGenerationStatsPreviewProvider
 
@@ -40,12 +41,12 @@ fun GenerationStatsBar(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = LocalSpacing.current.l, vertical = LocalSpacing.current.s),
+            .padding(vertical = LocalSpacing.current.s),
         horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.s),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = "Output",
+            text = "Live output",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -57,10 +58,13 @@ fun GenerationStatsBar(
         Spacer(modifier = Modifier.weight(1f))
 
         val formattedSpeed = ((stats.tokensPerSecond * 10).toInt() / 10.0)
-        CaraMLStatusPill(
-            label = "$formattedSpeed tok/s",
-            contentDescription = "Generation speed $formattedSpeed tokens per second",
-            tone = StatusTone.Neutral,
+        Text(
+            text = "$formattedSpeed tok/s",
+            modifier = Modifier.semantics {
+                contentDescription = "Generation speed $formattedSpeed tokens per second"
+            },
+            style = AppTechnicalLabel,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

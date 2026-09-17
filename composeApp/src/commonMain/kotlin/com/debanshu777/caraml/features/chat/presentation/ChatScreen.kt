@@ -1,5 +1,7 @@
 package com.debanshu777.caraml.features.chat.presentation
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,9 +16,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.Button
@@ -35,6 +37,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -45,10 +49,12 @@ import com.debanshu777.caraml.core.drawer.LocalGenerationModeController
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
-import com.debanshu777.caraml.core.ui.components.CaraMLEmptyState
 import com.debanshu777.caraml.core.ui.components.CaraMLPane
 import com.debanshu777.caraml.core.ui.layout.AppContentKind
+import com.debanshu777.caraml.core.ui.layout.AppNavigationLayout
+import com.debanshu777.caraml.core.ui.layout.LocalAppNavigationLayout
 import com.debanshu777.caraml.core.ui.layout.ResponsiveContentPane
+import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
 import com.debanshu777.caraml.features.chat.presentation.components.providers.ChatMessageListPreviewProvider
 import com.debanshu777.caraml.features.chat.presentation.components.providers.LiveGenerationStatsPreviewProvider
@@ -125,7 +131,9 @@ fun ChatScreen(
         contextIndicator = {
             ContextStatsIndicator(liveStats = streamingState.liveStats)
         },
-        modifier = modifier
+        modifier = modifier,
+        onGenerationModeSelected = modeController::setState,
+        controlledGenerationMode = modeController.mode,
     )
 }
 
@@ -144,23 +152,16 @@ fun ChatScreenContent(
     onNavigateToSearch: () -> Unit,
     onNavigateToModelDetail: (modelId: String, mode: ModelHubBrowseMode) -> Unit = { _, _ -> },
     contextIndicator: @Composable RowScope.() -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onGenerationModeSelected: (GenerationMode) -> Unit = {},
+    controlledGenerationMode: GenerationMode? = null,
 ) {
     val listState = rememberLazyListState()
-    val drawerController = LocalDrawerController.current
-
-    val topBarTitle = when (val s = uiState) {
-        is ChatUiState.Ready -> when (s.generationMode) {
-            GenerationMode.Text -> "Chat"
-            GenerationMode.Image -> "Image"
-            GenerationMode.Video -> "Video"
-        }
-        is ChatUiState.NoModelsForMode -> when (s.mode) {
-            GenerationMode.Text -> "Chat"
-            GenerationMode.Image -> "Image"
-            GenerationMode.Video -> "Video"
-        }
-        else -> "Assistant"
+    val navigationLayout = LocalAppNavigationLayout.current
+    val generationMode = controlledGenerationMode ?: when (val state = uiState) {
+        is ChatUiState.Ready -> state.generationMode
+        is ChatUiState.NoModelsForMode -> state.mode
+        else -> GenerationMode.Text
     }
 
     val messageCount = (uiState as? ChatUiState.Ready)?.messages?.size ?: 0
@@ -174,10 +175,30 @@ fun ChatScreenContent(
         modifier = modifier,
         containerColor = Color.Transparent,
         topBar = {
-            ModelSelectorTopBar(
-                title = topBarTitle,
-                onMenuClick = { drawerController.toggle() }
-            )
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                ModelSelectorTopBar(
+                    title = "Create",
+                    modifier = Modifier
+                        .widthIn(max = 840.dp)
+                        .fillMaxWidth()
+                        .padding(
+                            horizontal = if (navigationLayout == AppNavigationLayout.BottomBar) {
+                                16.dp
+                            } else {
+                                24.dp
+                            },
+                        ),
+                    generationMode = generationMode.takeUnless {
+                        navigationLayout == AppNavigationLayout.Sidebar
+                    },
+                    onGenerationModeSelected = onGenerationModeSelected.takeIf {
+                        navigationLayout != AppNavigationLayout.Sidebar
+                    },
+                )
+            }
         },
         bottomBar = {
             if (uiState is ChatUiState.Ready) {
@@ -281,11 +302,8 @@ fun ChatScreenContent(
                             modifier = Modifier.fillMaxSize(),
                         )
                         if (uiState.messages.isEmpty()) {
-                            val copy = emptyStateCopy(uiState.generationMode)
-                            CaraMLEmptyState(
-                                icon = Icons.Default.AutoAwesome,
-                                title = copy.title,
-                                supportingText = copy.supportingText,
+                            AnimatedCreateEmptyState(
+                                mode = uiState.generationMode,
                                 modifier = Modifier
                                     .align(Alignment.Center)
                                     .padding(bottom = paddingValues.calculateBottomPadding()),
@@ -294,6 +312,49 @@ fun ChatScreenContent(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun AnimatedCreateEmptyState(
+    mode: GenerationMode,
+    modifier: Modifier = Modifier,
+) {
+    val motion = LocalAuroraMotionPolicy.current
+    Crossfade(
+        targetState = mode,
+        modifier = modifier,
+        animationSpec = tween(
+            durationMillis = if (motion.spatialTransitionsEnabled) {
+                180
+            } else {
+                minOf(90, motion.opacityDurationMillis)
+            },
+        ),
+        label = "create mode statement",
+    ) { targetMode ->
+        val copy = emptyStateCopy(targetMode)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("create-empty-state")
+                .padding(horizontal = LocalSpacing.current.l, vertical = LocalSpacing.current.xl),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.s),
+        ) {
+            Text(
+                text = copy.title,
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                text = copy.supportingText,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
         }
     }
 }
