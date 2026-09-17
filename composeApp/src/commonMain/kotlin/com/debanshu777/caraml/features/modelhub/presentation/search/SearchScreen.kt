@@ -41,6 +41,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -353,7 +354,7 @@ internal fun ModelHubTabLayout(
 }
 
 @Composable
-private fun SearchTabContent(
+internal fun SearchTabContent(
     viewModel: ModelViewModel,
     storageInfo: StorageInfoUiState,
     onNavigateToDetails: (modelId: String, hubBrowseMode: ModelHubBrowseMode) -> Unit,
@@ -375,6 +376,9 @@ private fun SearchTabContent(
     val modelOrdering by viewModel.modelOrdering.collectAsState()
     val recommendedModels by viewModel.recommendedModels.collectAsState()
 
+    var imageQuery by rememberSaveable { mutableStateOf("") }
+    var videoQuery by rememberSaveable { mutableStateOf("") }
+
     val isLlmHub = browseMode == ModelHubBrowseMode.LanguageModels
     val isSearchMode = isLlmHub && (searchQuery.isNotEmpty() || searchResponse != null)
 
@@ -384,18 +388,33 @@ private fun SearchTabContent(
     } else {
         listResponse?.models?.filterNotNull() ?: emptyList()
     }
+    val curatedQuery = when (browseMode) {
+        ModelHubBrowseMode.LanguageModels -> ""
+        ModelHubBrowseMode.DiffusionImage -> imageQuery
+        ModelHubBrowseMode.DiffusionVideo -> videoQuery
+    }
+    val normalizedCuratedQuery = curatedQuery.trim()
+    val visibleBrowseModels = if (isLlmHub || normalizedCuratedQuery.isEmpty()) {
+        browseModels
+    } else {
+        browseModels.filter { model ->
+            model.id.orEmpty().contains(normalizedCuratedQuery, ignoreCase = true)
+        }
+    }
     val activeFilterCount = listOf(
         listParams.sort != com.debanshu777.huggingfacemanager.model.ModelSort.TRENDING,
         listParams.minParams != com.debanshu777.huggingfacemanager.model.ParameterRange.ZERO,
         listParams.maxParams != com.debanshu777.huggingfacemanager.model.ParameterRange.SIX_B,
     ).count { it }
-    val visibleActiveFilterCount = if (isSearchMode) 0 else activeFilterCount
+    val visibleActiveFilterCount = if (isLlmHub && !isSearchMode) activeFilterCount else 0
     val visibleResultCount = if (isSearchMode) {
         searchResponse?.modelsCount ?: searchResponse?.models?.filterNotNull()?.size ?: 0
+    } else if (!isLlmHub) {
+        visibleBrowseModels.size
     } else if (modelOrdering is ModelOrdering.Personalized) {
-        browseModels.size
+        visibleBrowseModels.size
     } else {
-        listResponse?.numTotalItems ?: browseModels.size
+        listResponse?.numTotalItems ?: visibleBrowseModels.size
     }
     val resetFilters = {
         viewModel.updateParams(
@@ -412,24 +431,36 @@ private fun SearchTabContent(
     ModelHubTabLayout(
         modifier = modifier,
         windowWidth = LocalAppWindowWidth.current,
-        command = if (isLlmHub) {
-            {
-                SearchBar(
+        command = {
+            when (browseMode) {
+                ModelHubBrowseMode.LanguageModels -> SearchBar(
                     query = searchQuery,
                     onQueryChange = viewModel::updateSearchQuery,
                     onSearch = {
-                        if (searchQuery.isNotEmpty()) {
-                            viewModel.performSearch()
-                        } else {
-                            viewModel.loadModels()
+                        when {
+                            searchQuery.isNotBlank() -> viewModel.performSearch()
+                            searchResponse != null || searchError != null -> viewModel.clearSearch()
+                            else -> viewModel.loadModels()
                         }
                     },
                     onClear = viewModel::clearSearch,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                ModelHubBrowseMode.DiffusionImage -> SearchBar(
+                    query = imageQuery,
+                    onQueryChange = { imageQuery = it.take(MAX_LOCAL_MODEL_QUERY_LENGTH) },
+                    onSearch = {},
+                    onClear = { imageQuery = "" },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                ModelHubBrowseMode.DiffusionVideo -> SearchBar(
+                    query = videoQuery,
+                    onQueryChange = { videoQuery = it.take(MAX_LOCAL_MODEL_QUERY_LENGTH) },
+                    onSearch = {},
+                    onClear = { videoQuery = "" },
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
-        } else {
-            null
         },
         context = {
             ModelHubContextStrip(
@@ -470,10 +501,18 @@ private fun SearchTabContent(
             ModelHubResultSummary(
                 resultCount = visibleResultCount,
                 resultNoun = if (isSearchMode) "results" else "models",
-                query = searchQuery.takeIf { isSearchMode },
+                query = if (isSearchMode) {
+                    searchQuery
+                } else {
+                    curatedQuery.takeIf(String::isNotBlank)
+                },
                 activeFilterCount = visibleActiveFilterCount,
-                onClearQuery = viewModel::clearSearch,
-                onResetFilters = resetFilters,
+                onClearQuery = when (browseMode) {
+                    ModelHubBrowseMode.LanguageModels -> viewModel::clearSearch
+                    ModelHubBrowseMode.DiffusionImage -> ({ imageQuery = "" })
+                    ModelHubBrowseMode.DiffusionVideo -> ({ videoQuery = "" })
+                },
+                onResetFilters = if (visibleActiveFilterCount > 0) resetFilters else null,
             )
         },
         results = {
@@ -515,7 +554,7 @@ private fun SearchTabContent(
                     isLoading = isListLoading,
                     hasResponse = listResponse != null,
                     errorMessage = listError,
-                    models = browseModels,
+                    models = visibleBrowseModels,
                     itemKey = { "browse-${it.id ?: it.hashCode()}" },
                     blockingLoadingKey = "list-loading",
                     refreshLoadingKey = "list-refreshing",
@@ -523,7 +562,9 @@ private fun SearchTabContent(
                     emptyKey = "list-empty",
                     blockingLoadingDescription = "Loading models",
                     refreshLoadingDescription = "Refreshing models",
-                    emptyMessage = if (visibleActiveFilterCount > 0) {
+                    emptyMessage = if (!isLlmHub && normalizedCuratedQuery.isNotEmpty()) {
+                        "No curated models match “$curatedQuery”."
+                    } else if (visibleActiveFilterCount > 0) {
                         "No models match the active filters."
                     } else if (isLlmHub) {
                         "No models are available yet."
@@ -768,7 +809,7 @@ private fun RecommendationProfileEditorSheet(
 }
 
 @Composable
-private fun DownloadedTabContent(
+internal fun DownloadedTabContent(
     viewModel: DownloadedModelsViewModel,
     storageInfo: StorageInfoUiState,
     onSelectModelAndGoBack: (LocalModelEntity) -> Unit,
@@ -786,6 +827,7 @@ private fun DownloadedTabContent(
     val scope = rememberCoroutineScope()
     val motion = LocalAuroraMotionPolicy.current
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var libraryQuery by rememberSaveable { mutableStateOf("") }
 
     LaunchedEffect(deleteResultMessage) {
         val message = deleteResultMessage ?: return@LaunchedEffect
@@ -794,9 +836,28 @@ private fun DownloadedTabContent(
     }
 
     val readinessFilterCount = if (readinessFilter == ReadinessFilter.ALL) 0 else 1
+    val normalizedLibraryQuery = libraryQuery.trim()
+    val visibleDownloadedModels = if (normalizedLibraryQuery.isEmpty()) {
+        downloadedModels
+    } else {
+        downloadedModels.filter { model ->
+            model.modelId.contains(normalizedLibraryQuery, ignoreCase = true) ||
+                model.filename.contains(normalizedLibraryQuery, ignoreCase = true) ||
+                model.author?.contains(normalizedLibraryQuery, ignoreCase = true) == true
+        }
+    }
     ModelHubTabLayout(
         modifier = modifier,
         windowWidth = LocalAppWindowWidth.current,
+        command = {
+            SearchBar(
+                query = libraryQuery,
+                onQueryChange = { libraryQuery = it.take(MAX_LOCAL_MODEL_QUERY_LENGTH) },
+                onSearch = {},
+                onClear = { libraryQuery = "" },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
         context = {
             ModelHubContextStrip(
                 storageInfo = storageInfo,
@@ -835,18 +896,22 @@ private fun DownloadedTabContent(
         },
         summary = {
             ModelHubResultSummary(
-                resultCount = downloadedModels.size,
+                resultCount = visibleDownloadedModels.size,
                 resultNoun = "downloaded models",
+                query = libraryQuery.takeIf(String::isNotBlank),
                 activeFilterCount = readinessFilterCount,
+                onClearQuery = { libraryQuery = "" },
                 onResetFilters = { viewModel.setReadinessFilter(ReadinessFilter.ALL) },
             )
         },
         results = {
-            if (downloadedModels.isEmpty()) {
+            if (visibleDownloadedModels.isEmpty()) {
                 item(key = "downloaded-empty") {
                     ModelHubStateView(
                         kind = ModelHubStateKind.Empty,
-                        message = if (readinessFilterCount > 0) {
+                        message = if (normalizedLibraryQuery.isNotEmpty()) {
+                            "No downloaded models match “$libraryQuery”."
+                        } else if (readinessFilterCount > 0) {
                             "No downloaded models match the active filter."
                         } else {
                             "No downloaded models yet. Browse and download models to see them here."
@@ -855,7 +920,7 @@ private fun DownloadedTabContent(
                 }
             } else {
                 itemsIndexed(
-                    items = downloadedModels,
+                    items = visibleDownloadedModels,
                     key = { _, model -> model.id },
                 ) { index, model ->
                     Box(
@@ -978,3 +1043,5 @@ private fun LibraryReadinessToolbar(
         }
     }
 }
+
+private const val MAX_LOCAL_MODEL_QUERY_LENGTH = 200

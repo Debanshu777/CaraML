@@ -13,14 +13,14 @@ class SearchScreenLayoutRegressionTest {
     fun discoverAndLibraryDelegateToTheSharedOneScrollWorkbenchLayout() {
         val source = Files.readString(searchScreenSource())
         val discoverTab = source
-            .substringAfter("private fun SearchTabContent(")
+            .substringAfter("internal fun SearchTabContent(")
             .substringBefore("internal fun ModelHubResultSummary(")
         val libraryTab = source
-            .substringAfter("private fun DownloadedTabContent(")
+            .substringAfter("internal fun DownloadedTabContent(")
             .substringBefore("private fun LibraryReadinessToolbar(")
         val sharedLayout = source
             .substringAfter("internal fun ModelHubTabLayout(")
-            .substringBefore("private fun SearchTabContent(")
+            .substringBefore("internal fun SearchTabContent(")
 
         assertFalse(
             discoverTab.contains("RecommendationProfileSection("),
@@ -39,7 +39,7 @@ class SearchScreenLayoutRegressionTest {
         val source = Files.readString(searchScreenSource())
         val screen = source
             .substringAfter("fun SearchScreen(")
-            .substringBefore("private fun SearchTabContent(")
+            .substringBefore("internal fun SearchTabContent(")
         val layout = source
             .substringAfter("internal fun ModelHubScreenLayout(")
             .substringBefore("private fun ModelHubTabRow(")

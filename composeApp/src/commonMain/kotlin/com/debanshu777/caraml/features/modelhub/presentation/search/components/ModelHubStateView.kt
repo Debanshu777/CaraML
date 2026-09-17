@@ -52,10 +52,12 @@ fun ModelHubStateView(
             ModelHubStateKind.Empty -> Icon(
                 imageVector = Icons.Outlined.Inventory2,
                 contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             ModelHubStateKind.Error -> Icon(
                 imageVector = Icons.Outlined.CloudOff,
                 contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
             )
         }
         Text(

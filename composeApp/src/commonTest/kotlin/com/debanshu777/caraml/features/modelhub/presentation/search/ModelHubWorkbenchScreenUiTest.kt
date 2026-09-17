@@ -152,12 +152,14 @@ class ModelHubWorkbenchScreenUiTest {
     @Test
     fun width840UsesSupportingContextWithoutShrinkingResultsBelow480Dp() = runComposeUiTest {
         setContent {
-            MaterialTheme {
-                Box(Modifier.requiredSize(width = 840.dp, height = 480.dp)) {
-                    FixtureTab(
-                        modifier = Modifier.fillMaxSize(),
-                        windowWidth = 840.dp,
-                    )
+            CompositionLocalProvider(LocalDensity provides Density(density = 1f, fontScale = 1f)) {
+                MaterialTheme {
+                    Box(Modifier.requiredSize(width = 840.dp, height = 480.dp)) {
+                        FixtureTab(
+                            modifier = Modifier.fillMaxSize(),
+                            windowWidth = 840.dp,
+                        )
+                    }
                 }
             }
         }
