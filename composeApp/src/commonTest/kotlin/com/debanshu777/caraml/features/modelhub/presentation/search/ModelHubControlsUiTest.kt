@@ -12,12 +12,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.hasImeAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.dp
@@ -33,7 +35,7 @@ import kotlin.test.assertTrue
 class ModelHubControlsUiTest {
 
     @Test
-    fun compactBrowseControlsKeepKindsOnOneRowAndPutRangesBehindFilters() = runComposeUiTest {
+    fun compactBrowseControlsUseOneBandAndPutRangesBehindFilters() = runComposeUiTest {
         val controlWidth = 320.dp
         setContent {
             MaterialTheme {
@@ -55,16 +57,14 @@ class ModelHubControlsUiTest {
             }
         }
 
-        val kindPositions = listOf("LLM", "Image", "Video").map {
+        val kindPositions = listOf("Text", "Image", "Video", "Sort", "Filters").map {
             onNodeWithText(it).fetchSemanticsNode().positionInRoot.y
         }
         assertTrue(kindPositions.max() - kindPositions.min() < 1f)
-        onNodeWithText("Server order").assertIsDisplayed()
-        onNodeWithText("Filters").assertIsDisplayed()
         onNodeWithText("Min: 0").assertDoesNotExist()
         onNodeWithText("Max: 6B").assertDoesNotExist()
 
-        onNodeWithText("Filters").performClick()
+        onNodeWithText("Filters").performScrollTo().performClick()
         onNodeWithText("Minimum parameters").assertIsDisplayed()
         onNodeWithText("Maximum parameters")
             .performScrollTo()
@@ -100,7 +100,7 @@ class ModelHubControlsUiTest {
     }
 
     @Test
-    fun searchSubmissionIsAnAccessibleFieldAction() = runComposeUiTest {
+    fun searchSubmissionUsesTheFieldImeActionWithoutADuplicateButton() = runComposeUiTest {
         var submissions = 0
         setContent {
             MaterialTheme {
@@ -112,8 +112,9 @@ class ModelHubControlsUiTest {
             }
         }
 
-        onNodeWithContentDescription("Submit model search").performClick()
+        onNode(hasImeAction(androidx.compose.ui.text.input.ImeAction.Search)).performImeAction()
         runOnIdle { assertEquals(1, submissions) }
+        onAllNodesWithContentDescription("Submit model search").assertCountEquals(0)
     }
 
     @Test
@@ -131,7 +132,7 @@ class ModelHubControlsUiTest {
 
         onAllNodesWithContentDescription("Submit model search").assertCountEquals(0)
         runOnIdle { query = "tinyllama" }
-        onAllNodesWithContentDescription("Submit model search").assertCountEquals(1)
+        onAllNodesWithContentDescription("Submit model search").assertCountEquals(0)
         onNodeWithContentDescription("Clear model search").assertIsDisplayed()
     }
 

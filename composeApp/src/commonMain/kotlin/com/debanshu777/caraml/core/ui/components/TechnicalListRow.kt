@@ -20,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
@@ -37,6 +38,7 @@ fun TechnicalListRow(
     metadata: String? = null,
     contentDescription: String? = null,
     selected: Boolean = false,
+    emphasized: Boolean = selected,
     signalTone: SignalTone? = null,
     onClick: (() -> Unit)? = null,
     leading: (@Composable () -> Unit)? = null,
@@ -44,7 +46,8 @@ fun TechnicalListRow(
     trailing: (@Composable () -> Unit)? = null,
 ) {
     val colors = MaterialTheme.auroraColors
-    val showSignal = selected || signalTone != null
+    val showSignal = emphasized || signalTone != null
+    val stackAccessories = LocalDensity.current.fontScale >= 1.5f
     val interactionModifier = if (onClick != null) {
         Modifier.selectable(
             selected = selected,
@@ -59,7 +62,7 @@ fun TechnicalListRow(
         modifier = modifier
             .fillMaxWidth()
             .height(IntrinsicSize.Min)
-            .background(if (selected) colors.selectedSurface else Color.Transparent)
+            .background(if (emphasized) colors.selectedSurface else Color.Transparent)
             .then(interactionModifier)
             .semantics(mergeDescendants = true) {
                 this.selected = selected
@@ -114,14 +117,28 @@ fun TechnicalListRow(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
+                    if (stackAccessories && (status != null || trailing != null)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            status?.invoke()
+                            trailing?.let {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                it()
+                            }
+                        }
+                    }
                 }
-                status?.let {
-                    Spacer(modifier = Modifier.width(8.dp))
-                    it()
-                }
-                trailing?.let {
-                    Spacer(modifier = Modifier.width(8.dp))
-                    it()
+                if (!stackAccessories) {
+                    status?.let {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        it()
+                    }
+                    trailing?.let {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        it()
+                    }
                 }
             }
             HorizontalDivider(
