@@ -1,10 +1,10 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search.components
 
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.debanshu777.caraml.core.recommendation.RecommendationCategory
-import com.debanshu777.caraml.core.theme.AppTechnicalLabel
 import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
 import com.debanshu777.caraml.features.modelhub.domain.RecommendedModelUiState
 import com.debanshu777.huggingfacemanager.model.ListModelsResponse
@@ -41,7 +41,7 @@ fun ModelListItem(
             RecommendationCategory.RECOMMENDED,
         trailing = {
             recommendationState?.selectedVariantName?.let {
-                Text("Selected variant: $it", style = AppTechnicalLabel)
+                Text("Selected variant: $it", style = MaterialTheme.typography.bodySmall)
             }
         },
     )

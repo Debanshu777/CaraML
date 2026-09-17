@@ -35,15 +35,21 @@ import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.recommendation.PersonalizedRecommendation
+import com.debanshu777.caraml.core.recommendation.RecommendationCategory
 import com.debanshu777.caraml.core.recommendation.RecommendationProfile
+import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
+import com.debanshu777.caraml.features.modelhub.domain.RecommendedModelUiState
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubBrowseControls
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubHeader
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubOverview
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubStateKind
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubStateView
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelListItem
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelResultCard
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchBar
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchModelListItem
+import com.debanshu777.huggingfacemanager.model.ListModelsResponse
 import com.debanshu777.huggingfacemanager.model.ModelSort
 import com.debanshu777.huggingfacemanager.model.ParameterRange
 import com.debanshu777.huggingfacemanager.model.SearchModelsResponse
@@ -53,6 +59,139 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class ModelHubRegistryUiTest {
+
+    @Test
+    fun assessedProductionRowKeepsReadableIdentityWidthWithStatusAndVariant() = runComposeUiTest {
+        val repositoryId =
+            "research-collective/a-very-long-model-name-that-must-remain-readable-on-phone"
+        val model = ListModelsResponse.Model(
+            author = "research-collective",
+            downloads = 12_345,
+            id = repositoryId,
+            likes = 678,
+            numParameters = 7_000_000_000L,
+            pipelineTag = "Text generation",
+        )
+        setContent {
+            AtDensityOne {
+                MaterialTheme {
+                    Box(Modifier.width(360.dp)) {
+                        ModelListItem(
+                            model = model,
+                            onClick = {},
+                            recommendationState = recommendedState(
+                                model = model,
+                                selectedVariantName = "model-Q4_K_M.gguf",
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+
+        val owner = onNodeWithText("research-collective", useUnmergedTree = true)
+        val title = onNodeWithText(
+            "a-very-long-model-name-that-must-remain-readable-on-phone",
+            useUnmergedTree = true,
+        )
+        val metadata = onNodeWithText(
+            "Text generation • 12345 downloads • 678 likes • 7B params",
+            useUnmergedTree = true,
+        )
+        owner.assertIsDisplayed()
+        title.assertIsDisplayed()
+        metadata.assertIsDisplayed()
+        onNodeWithText("Recommended", useUnmergedTree = true).assertIsDisplayed()
+        onNodeWithText("Selected variant: model-Q4_K_M.gguf", useUnmergedTree = true)
+            .assertIsDisplayed()
+
+        val titleWidth = title.fetchSemanticsNode().boundsInRoot.width
+        val metadataWidth = metadata.fetchSemanticsNode().boundsInRoot.width
+        assertTrue(
+            titleWidth >= 180f && metadataWidth >= 180f,
+            "Identity must retain at least half of a 360dp row; " +
+                "titleWidth=$titleWidth metadataWidth=$metadataWidth",
+        )
+    }
+
+    @Test
+    fun mixedMetadataAndVariantProseUseBodyTypographyWhileOwnerStaysTechnical() =
+        runComposeUiTest {
+            val narrowModel = ListModelsResponse.Model(id = "org/narrow", author = "org")
+            val wideModel = ListModelsResponse.Model(id = "org/wide", author = "org")
+            setContent {
+                AtDensityOne {
+                    MaterialTheme {
+                        Column(Modifier.width(360.dp)) {
+                            ModelResultCard(
+                                title = "iiiiiiii/narrow-metadata",
+                                author = "iiiiiiii",
+                                metadata = "iiiiiiii downloads",
+                                status = {},
+                                onClick = {},
+                            )
+                            ModelResultCard(
+                                title = "WWWWWWWW/wide-metadata",
+                                author = "WWWWWWWW",
+                                metadata = "WWWWWWWW downloads",
+                                status = {},
+                                onClick = {},
+                            )
+                            ModelListItem(
+                                model = narrowModel,
+                                onClick = {},
+                                recommendationState = recommendedState(
+                                    model = narrowModel,
+                                    selectedVariantName = "iiiiiiii",
+                                ),
+                            )
+                            ModelListItem(
+                                model = wideModel,
+                                onClick = {},
+                                recommendationState = recommendedState(
+                                    model = wideModel,
+                                    selectedVariantName = "WWWWWWWW",
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+
+            val narrowOwnerWidth = onNodeWithText("iiiiiiii", useUnmergedTree = true)
+                .fetchSemanticsNode().boundsInRoot.width
+            val wideOwnerWidth = onNodeWithText("WWWWWWWW", useUnmergedTree = true)
+                .fetchSemanticsNode().boundsInRoot.width
+            assertTrue(
+                abs(narrowOwnerWidth - wideOwnerWidth) <= 1f,
+                "Technical owner identifiers must remain monospace; " +
+                    "narrow=$narrowOwnerWidth wide=$wideOwnerWidth",
+            )
+
+            val narrowMetadataWidth = onNodeWithText("iiiiiiii downloads", useUnmergedTree = true)
+                .fetchSemanticsNode().boundsInRoot.width
+            val wideMetadataWidth = onNodeWithText("WWWWWWWW downloads", useUnmergedTree = true)
+                .fetchSemanticsNode().boundsInRoot.width
+            assertTrue(
+                wideMetadataWidth >= narrowMetadataWidth + 12f,
+                "Mixed prose metadata must use proportional body typography; " +
+                    "narrow=$narrowMetadataWidth wide=$wideMetadataWidth",
+            )
+
+            val narrowVariantWidth = onNodeWithText(
+                "Selected variant: iiiiiiii",
+                useUnmergedTree = true,
+            ).fetchSemanticsNode().boundsInRoot.width
+            val wideVariantWidth = onNodeWithText(
+                "Selected variant: WWWWWWWW",
+                useUnmergedTree = true,
+            ).fetchSemanticsNode().boundsInRoot.width
+            assertTrue(
+                wideVariantWidth >= narrowVariantWidth + 12f,
+                "Selected-variant prose must use proportional body typography; " +
+                    "narrow=$narrowVariantWidth wide=$wideVariantWidth",
+            )
+        }
 
     @Test
     fun summaryAndResultStateExposeStableRegionsAndAction() = runComposeUiTest {
@@ -339,3 +478,23 @@ private fun colorsNear(expected: Color, actual: Color, tolerance: Float = 0.02f)
         abs(expected.green - actual.green) <= tolerance &&
         abs(expected.blue - actual.blue) <= tolerance &&
         abs(expected.alpha - actual.alpha) <= tolerance
+
+private fun recommendedState(
+    model: ListModelsResponse.Model,
+    selectedVariantName: String,
+): RecommendedModelUiState = RecommendedModelUiState(
+    sourceModel = model,
+    repositoryId = model.id,
+    descriptorState = DescriptorState.ASSESSED,
+    objectiveAssessment = null,
+    personalizedResult = PersonalizedRecommendation(
+        assessmentKey = "test-assessment",
+        category = RecommendationCategory.RECOMMENDED,
+        selectedPlan = null,
+        reasons = emptyList(),
+        profile = RecommendationProfile(),
+    ),
+    selectedVariantName = selectedVariantName,
+    stableModelId = requireNotNull(model.id),
+    sourceIndex = 0,
+)

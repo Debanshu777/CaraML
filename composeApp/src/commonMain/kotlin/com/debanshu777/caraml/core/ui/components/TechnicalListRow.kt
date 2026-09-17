@@ -47,7 +47,8 @@ fun TechnicalListRow(
 ) {
     val colors = MaterialTheme.auroraColors
     val showSignal = emphasized || signalTone != null
-    val stackAccessories = LocalDensity.current.fontScale >= 1.5f
+    val stackAccessories = LocalDensity.current.fontScale >= 1.5f ||
+        (status != null && trailing != null)
     val interactionModifier = if (onClick != null) {
         Modifier.selectable(
             selected = selected,
@@ -111,7 +112,7 @@ fun TechnicalListRow(
                     metadata?.let {
                         Text(
                             text = it,
-                            style = AppTechnicalLabel,
+                            style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -120,6 +121,7 @@ fun TechnicalListRow(
                     if (stackAccessories && (status != null || trailing != null)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             status?.invoke()
