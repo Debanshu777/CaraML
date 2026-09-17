@@ -11,11 +11,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -24,7 +24,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.AppTechnicalLabel
 import com.debanshu777.caraml.core.theme.LocalSpacing
+import com.debanshu777.caraml.core.theme.auroraColors
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 
 @Composable
@@ -61,15 +63,15 @@ fun GgufFileListItem(
         Modifier
     }
 
-    Surface(
-        shape = MaterialTheme.shapes.medium,
-        tonalElevation = 1.dp,
+    Column(
         modifier = modifier
             .fillMaxWidth()
             .then(downloadStateSemantics),
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(LocalSpacing.current.m),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -77,7 +79,7 @@ fun GgufFileListItem(
                 if (directory != null) {
                     Text(
                         text = directory,
-                        style = MaterialTheme.typography.labelSmall,
+                        style = AppTechnicalLabel,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                     )
@@ -85,13 +87,13 @@ fun GgufFileListItem(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = displayName,
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = AppTechnicalLabel,
                         modifier = Modifier.weight(1f)
                     )
                     if (sizeBytes != null) {
                         Text(
                             formatFileSize(sizeBytes),
-                            style = MaterialTheme.typography.labelSmall,
+                            style = AppTechnicalLabel,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -103,7 +105,7 @@ fun GgufFileListItem(
                     )
                     Text(
                         "${(reportedProgress * 100f).toInt()}%",
-                        style = MaterialTheme.typography.labelSmall,
+                        style = AppTechnicalLabel,
                     )
                 }
             }
@@ -123,6 +125,11 @@ fun GgufFileListItem(
                 }
             }
         }
+        HorizontalDivider(
+            modifier = Modifier.padding(start = 16.dp),
+            color = MaterialTheme.auroraColors.divider,
+            thickness = 1.dp,
+        )
     }
 }
 

@@ -152,7 +152,7 @@ class ModelDetailsAuroraUiTest {
         onNodeWithText(modelName).assertExists()
         onNodeWithText("GnLOLot/$modelName").assertDoesNotExist()
         onNodeWithText(createdAt).assertDoesNotExist()
-        onNodeWithText("3 Jul 2026").performScrollTo().assertIsDisplayed()
+        onNodeWithText("3 Jul 2026").assertDoesNotExist()
 
         onNodeWithText(baseModel).performScrollTo().assertIsDisplayed()
         val baseLabelBounds = onNodeWithText("Base model").fetchSemanticsNode().boundsInRoot
@@ -164,7 +164,9 @@ class ModelDetailsAuroraUiTest {
         onNodeWithContentDescription("Tag: text-generation").assertDoesNotExist()
         onNodeWithText("zh").assertDoesNotExist()
         onNodeWithText("Show all").performScrollTo().assertIsDisplayed().performClick()
-        onNodeWithText("zh").performScrollTo().assertIsDisplayed()
+        onNodeWithText("3 Jul 2026").performScrollTo().assertIsDisplayed()
+        onNodeWithContentDescription("Tag: llama.cpp").performScrollTo().assertIsDisplayed()
+        onNodeWithText("zh").assertDoesNotExist()
         onNodeWithText("Show less").assertExists()
     }
 

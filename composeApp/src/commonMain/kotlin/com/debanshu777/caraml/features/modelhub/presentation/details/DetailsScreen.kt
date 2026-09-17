@@ -30,6 +30,7 @@ import com.debanshu777.caraml.core.ui.components.TopBarNavigation
 import com.debanshu777.caraml.core.ui.layout.AppContentKind
 import com.debanshu777.caraml.core.ui.layout.ResponsiveContentPane
 import com.debanshu777.caraml.features.modelhub.presentation.details.components.ModelDetailContent
+import com.debanshu777.caraml.features.modelhub.presentation.details.components.splitRepositoryId
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelViewModel
 
@@ -93,8 +94,9 @@ fun DetailsScreen(
         modifier = modifier.fillMaxSize(),
         containerColor = Color.Transparent,
         topBar = {
+            val repositoryHeading = splitRepositoryId(modelId)
             CaraMLTopBar(
-                title = "Model details",
+                title = repositoryHeading.owner ?: "Artifact",
                 navigation = TopBarNavigation.Back,
                 onNavigationClick = onBack,
             )

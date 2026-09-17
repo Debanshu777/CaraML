@@ -16,20 +16,24 @@ import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.AppTechnicalLabel
 import com.debanshu777.caraml.core.theme.LocalSpacing
-import com.debanshu777.caraml.core.ui.components.CaraMLPane
+import com.debanshu777.caraml.core.theme.auroraColors
 import com.debanshu777.caraml.core.ui.components.CaraMLSectionHeader
-import com.debanshu777.caraml.core.ui.components.CaraMLStatusPill
-import com.debanshu777.caraml.core.ui.components.StatusTone
+import com.debanshu777.caraml.core.ui.components.SignalTone
+import com.debanshu777.caraml.core.ui.components.StatusMark
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.features.modelhub.presentation.search.InstallBundleUiState
 import com.debanshu777.caraml.features.modelhub.presentation.search.SetupComponentUiState
@@ -53,8 +57,8 @@ private fun formatBytes(bytes: Long): String {
 }
 
 /**
- * Unified install card for diffusion models.
- * Shows variant picker, required components, and a single "Smart Install" button.
+ * Unified install workspace for diffusion models.
+ * Shows variant rows, required components, and a single "Smart Install" action.
  */
 @Composable
 fun InstallBundleCard(
@@ -80,6 +84,7 @@ fun InstallBundleCard(
             state = state,
             onInstall = onInstall,
             installEnabled = installEnabled,
+            modifier = Modifier.testTag("detail-action"),
         )
     }
 }
@@ -111,12 +116,21 @@ internal fun InstallBundleActionFooter(
     modifier: Modifier = Modifier,
     installEnabled: Boolean = true,
 ) {
-    InstallBundleContainer(modifier) {
-        InstallBundleActionContent(
-            state = state,
-            onInstall = onInstall,
-            installEnabled = installEnabled,
-        )
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 2.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(LocalSpacing.current.m),
+            verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.s),
+        ) {
+            InstallBundleActionContent(
+                state = state,
+                onInstall = onInstall,
+                installEnabled = installEnabled,
+            )
+        }
     }
 }
 
@@ -126,13 +140,11 @@ private fun InstallBundleContainer(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val spacing = LocalSpacing.current
-    CaraMLPane(modifier = modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(spacing.l),
-            verticalArrangement = Arrangement.spacedBy(spacing.m),
-            content = content,
-        )
-    }
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(spacing.m),
+        content = content,
+    )
 }
 
 @Composable
@@ -167,10 +179,10 @@ private fun ColumnScope.InstallBundleSummaryContent(
             recommendedVariantPath = recommendedVariantPath,
         )
     } else if (state.variants.any { it.isDownloaded }) {
-        CaraMLStatusPill(
+        StatusMark(
             label = "Model downloaded",
             contentDescription = "Model downloaded",
-            tone = StatusTone.Success,
+            tone = SignalTone.Positive,
             icon = Icons.Default.CheckCircle,
         )
     }
@@ -181,10 +193,10 @@ private fun ColumnScope.InstallBundleSummaryContent(
             ComponentRow(component = component)
         }
     } else if (state.isSelfContained && state.components.isEmpty()) {
-        CaraMLStatusPill(
+        StatusMark(
             label = "Self-contained",
             contentDescription = "Self-contained. No extra downloads needed.",
-            tone = StatusTone.Success,
+            tone = SignalTone.Positive,
             icon = Icons.Default.CheckCircle,
         )
     }
@@ -195,6 +207,7 @@ private fun ColumnScope.InstallBundleActionContent(
     state: InstallBundleUiState,
     onInstall: () -> Unit,
     installEnabled: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     val motion = LocalAuroraMotionPolicy.current
     val reportedOverallProgress = state.overallProgress?.coerceIn(0f, 1f)
@@ -208,63 +221,68 @@ private fun ColumnScope.InstallBundleActionContent(
         reportedOverallProgress ?: 0f
     }
 
-    Button(
-        onClick = onInstall,
-        enabled = installEnabled && !state.isInstalling && !state.isReady,
-        modifier = Modifier.fillMaxWidth(),
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.s),
     ) {
-        when {
-            state.isReady -> {
-                Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
-                Text("  Ready to use")
-            }
-            state.isInstalling -> Text("Installing…")
-            state.totalNewDownloadBytes > 0L -> {
-                Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                Text("  Install  ·  ${formatBytes(state.totalNewDownloadBytes)}")
-            }
-            else -> {
-                Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                Text("  Install")
-            }
-        }
-    }
-    if (!installEnabled && !state.isReady && !state.isInstalling) {
-        Text(
-            text = "Select the recommended assessed variant to continue.",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-
-    if (state.isInstalling) {
-        if (reportedOverallProgress != null) {
-            LinearProgressIndicator(
-                progress = { displayedOverallProgress },
-                modifier = Modifier.fillMaxWidth(),
-            )
-        } else {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-        }
-        Row(
+        Button(
+            onClick = onInstall,
+            enabled = installEnabled && !state.isInstalling && !state.isReady,
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (state.currentDownloadLabel != null) {
-                Text(
-                    text = state.currentDownloadLabel,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f),
-                )
+            when {
+                state.isReady -> {
+                    Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text("  Ready to use")
+                }
+                state.isInstalling -> Text("Installing…")
+                state.totalNewDownloadBytes > 0L -> {
+                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text("  Install  ·  ${formatBytes(state.totalNewDownloadBytes)}")
+                }
+                else -> {
+                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text("  Install")
+                }
             }
-            if (state.overallBytesTotal > 0L) {
-                Text(
-                    text = "${formatBytes(state.overallBytesReceived)} / ${formatBytes(state.overallBytesTotal)}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+        }
+        if (!installEnabled && !state.isReady && !state.isInstalling) {
+            Text(
+                text = "Select the recommended assessed variant to continue.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        if (state.isInstalling) {
+            if (reportedOverallProgress != null) {
+                LinearProgressIndicator(
+                    progress = { displayedOverallProgress },
+                    modifier = Modifier.fillMaxWidth(),
                 )
+            } else {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (state.currentDownloadLabel != null) {
+                    Text(
+                        text = state.currentDownloadLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                if (state.overallBytesTotal > 0L) {
+                    Text(
+                        text = "${formatBytes(state.overallBytesReceived)} / ${formatBytes(state.overallBytesTotal)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }
@@ -289,74 +307,89 @@ private fun ComponentRow(
     } else {
         reportedProgress ?: 0f
     }
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        when {
-            component.isDownloaded -> Icon(
-                Icons.Default.CheckCircle,
-                contentDescription = "Downloaded",
-                modifier = Modifier.size(18.dp),
-                tint = MaterialTheme.colorScheme.primary,
-            )
-            reportedProgress != null -> CircularProgressIndicator(
-                progress = { displayedProgress },
-                modifier = Modifier.size(18.dp),
-                strokeWidth = 2.dp,
-            )
-            else -> Icon(
-                Icons.Default.Circle,
-                contentDescription = "Not downloaded",
-                modifier = Modifier.size(18.dp),
-                tint = MaterialTheme.colorScheme.outlineVariant,
-            )
-        }
+    Column(modifier = modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            when {
+                component.isDownloaded -> Icon(
+                    Icons.Default.CheckCircle,
+                    contentDescription = "Downloaded",
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                reportedProgress != null -> CircularProgressIndicator(
+                    progress = { displayedProgress },
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                )
+                else -> Icon(
+                    Icons.Default.Circle,
+                    contentDescription = "Not downloaded",
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.outlineVariant,
+                )
+            }
 
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = component.role.displayLabel,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = component.repoId.substringAfterLast('/'),
-                    style = MaterialTheme.typography.labelSmall,
+                    text = component.role.displayLabel,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = component.filePath,
+                    style = AppTechnicalLabel,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                component.sizeHint?.let { size ->
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     Text(
-                        text = "· $size",
-                        style = MaterialTheme.typography.labelSmall,
+                        text = component.repoId.substringAfterLast('/'),
+                        style = AppTechnicalLabel,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    component.sizeHint?.let { size ->
+                        Text(
+                            text = "· $size",
+                            style = AppTechnicalLabel,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (component.sharedFrom != null) {
+                        StatusMark(
+                            label = "Already have it",
+                            contentDescription = "Already downloaded with another model",
+                            tone = SignalTone.Positive,
+                            icon = Icons.Default.CheckCircle,
+                        )
+                    } else if (component.required && !component.isDownloaded) {
+                        StatusMark(
+                            label = "Required",
+                            contentDescription = "Required component",
+                            tone = SignalTone.Warning,
+                            icon = Icons.Default.Circle,
+                        )
+                    }
                 }
-                // "Already have it" badge for shared components
-                if (component.sharedFrom != null) {
-                    CaraMLStatusPill(
-                        label = "Already have it",
-                        contentDescription = "Already downloaded with another model",
-                        tone = StatusTone.Success,
-                    )
-                } else if (component.required && !component.isDownloaded) {
-                    CaraMLStatusPill(
-                        label = "Required",
-                        contentDescription = "Required component",
-                        tone = StatusTone.Warning,
+                if (reportedProgress != null) {
+                    LinearProgressIndicator(
+                        progress = { displayedProgress },
+                        modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
                     )
                 }
-            }
-            if (reportedProgress != null) {
-                LinearProgressIndicator(
-                    progress = { displayedProgress },
-                    modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
-                )
             }
         }
+        HorizontalDivider(
+            modifier = Modifier.padding(start = 28.dp),
+            thickness = 1.dp,
+            color = MaterialTheme.auroraColors.divider,
+        )
     }
 }

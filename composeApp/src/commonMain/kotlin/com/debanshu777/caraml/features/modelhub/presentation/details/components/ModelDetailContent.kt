@@ -1,20 +1,26 @@
 package com.debanshu777.caraml.features.modelhub.presentation.details.components
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -26,7 +32,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.recommendation.DiffusionModelDescriptor
@@ -34,12 +46,13 @@ import com.debanshu777.caraml.core.recommendation.LlmModelDescriptor
 import com.debanshu777.caraml.core.recommendation.ModelDescriptor
 import com.debanshu777.caraml.core.recommendation.ModelFileIdentity
 import com.debanshu777.caraml.core.rating.ui.RecommendationStatusChip
+import com.debanshu777.caraml.core.theme.AppTechnicalLabel
 import com.debanshu777.caraml.core.theme.LocalSpacing
-import com.debanshu777.caraml.core.ui.components.CaraMLPane
+import com.debanshu777.caraml.core.theme.auroraColors
 import com.debanshu777.caraml.core.ui.components.CaraMLSectionHeader
-import com.debanshu777.caraml.core.ui.components.CaraMLStatusPill
-import com.debanshu777.caraml.core.ui.components.AuroraFocalSurface
-import com.debanshu777.caraml.core.ui.components.StatusTone
+import com.debanshu777.caraml.core.ui.components.SignalRail
+import com.debanshu777.caraml.core.ui.components.SignalTone
+import com.debanshu777.caraml.core.ui.components.StatusMark
 import com.debanshu777.caraml.features.modelhub.presentation.details.modelDetailsUseSupportingPane
 import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
 import com.debanshu777.caraml.features.modelhub.domain.RecommendedModelUiState
@@ -92,7 +105,7 @@ fun ModelDetailContent(
             ) {
                 Column(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(spacing.l),
+                    verticalArrangement = Arrangement.spacedBy(spacing.xl),
                 ) {
                     ModelOverviewSection(model, modelSetup?.description)
                     ModelMetadataSection(model)
@@ -110,8 +123,10 @@ fun ModelDetailContent(
                     }
                 }
                 Column(
-                    modifier = Modifier.width(340.dp),
-                    verticalArrangement = Arrangement.spacedBy(spacing.l),
+                    modifier = Modifier
+                        .width(336.dp)
+                        .testTag("detail-support"),
+                    verticalArrangement = Arrangement.spacedBy(spacing.xl),
                 ) {
                     ModelRecommendationSection(recommendationState, onRecommendationInfoClick)
                     if (showInstallBundle) {
@@ -122,7 +137,9 @@ fun ModelDetailContent(
                             modelDescription = null,
                             onVariantSelected = onVariantSelected,
                             onInstall = onSmartInstall,
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("detail-files"),
                             recommendedVariantPath = recommendedVariant,
                             installEnabled = installEnabled,
                         )
@@ -137,18 +154,24 @@ fun ModelDetailContent(
                         .fillMaxWidth()
                         .verticalScroll(rememberScrollState())
                         .padding(top = spacing.s),
-                    verticalArrangement = Arrangement.spacedBy(spacing.l),
+                    verticalArrangement = Arrangement.spacedBy(spacing.xl),
                 ) {
                     ModelOverviewSection(model, modelSetup?.description)
                     ModelMetadataSection(model)
-                    ModelRecommendationSection(recommendationState, onRecommendationInfoClick)
+                    ModelRecommendationSection(
+                        recommendationState = recommendationState,
+                        onRecommendationInfoClick = onRecommendationInfoClick,
+                        modifier = Modifier.testTag("detail-support"),
+                    )
                     if (showInstallBundle) {
                         InstallBundleSummaryCard(
                             state = installBundleState,
                             familyLabel = modelSetup?.familyLabel,
                             modelDescription = null,
                             onVariantSelected = onVariantSelected,
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("detail-files"),
                             recommendedVariantPath = recommendedVariant,
                         )
                     } else {
@@ -167,7 +190,9 @@ fun ModelDetailContent(
                 if (showInstallBundle) {
                     InstallBundleActionFooter(
                         state = installBundleState,
-                        modifier = Modifier.fillMaxWidth().padding(vertical = spacing.s),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("detail-action"),
                         onInstall = onSmartInstall,
                         installEnabled = installEnabled,
                     )
@@ -182,49 +207,66 @@ private fun ModelOverviewSection(model: ModelDetailResponse, description: String
     val spacing = LocalSpacing.current
     val heading = splitRepositoryId(model.modelId ?: model.id.orEmpty())
     val owner = heading.owner ?: model.author?.trim()?.takeIf { it.isNotEmpty() }
-    AuroraFocalSurface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.medium,
+    val colors = MaterialTheme.auroraColors
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                brush = Brush.horizontalGradient(
+                    colors = listOf(
+                        colors.focusPrimary.copy(alpha = 0.12f),
+                        colors.focusTertiary.copy(alpha = 0.08f),
+                    ),
+                ),
+                shape = MaterialTheme.shapes.large,
+            )
+            .testTag("detail-overview"),
     ) {
-        CaraMLPane(
-            modifier = Modifier.fillMaxWidth().padding(1.dp),
-            shape = MaterialTheme.shapes.medium,
+        Column(
+            modifier = Modifier.padding(spacing.l),
+            verticalArrangement = Arrangement.spacedBy(spacing.s),
         ) {
-            Column(
-                modifier = Modifier.padding(spacing.l),
-                verticalArrangement = Arrangement.spacedBy(spacing.s),
-            ) {
-                CaraMLSectionHeader(title = "Overview")
-                owner?.let {
-                    Text(
-                        text = it,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
+            CaraMLSectionHeader(title = "Overview")
+            owner?.let {
                 Text(
-                    text = heading.name,
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    text = it,
+                    style = AppTechnicalLabel,
+                    color = MaterialTheme.colorScheme.primary,
                 )
-                description?.takeIf { it.isNotBlank() }?.let {
-                    Text(
-                        text = it,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                if (model.downloads != null || model.likes != null) {
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(spacing.l),
-                        verticalArrangement = Arrangement.spacedBy(spacing.xs),
-                    ) {
-                        model.downloads?.let { count ->
-                            ModelMetric(Icons.Default.Download, "$count downloads")
-                        }
-                        model.likes?.let { count ->
-                            ModelMetric(Icons.Default.FavoriteBorder, "$count likes")
-                        }
+            }
+            Text(
+                text = heading.name,
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            val technicalSummary = listOfNotNull(
+                model.pipelineTag?.takeIf { it.isNotBlank() },
+                model.libraryName?.takeIf { it.isNotBlank() },
+            )
+            if (technicalSummary.isNotEmpty()) {
+                Text(
+                    text = technicalSummary.joinToString("  ·  "),
+                    style = AppTechnicalLabel,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            description?.takeIf { it.isNotBlank() }?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (model.downloads != null || model.likes != null) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(spacing.l),
+                    verticalArrangement = Arrangement.spacedBy(spacing.xs),
+                ) {
+                    model.downloads?.let { count ->
+                        ModelMetric(Icons.Default.Download, "$count downloads")
+                    }
+                    model.likes?.let { count ->
+                        ModelMetric(Icons.Default.FavoriteBorder, "$count likes")
                     }
                 }
             }
@@ -253,100 +295,122 @@ private fun ModelMetric(icon: ImageVector, label: String) {
     }
 }
 
+private data class MetadataEntry(
+    val label: String,
+    val value: String,
+)
+
+private fun ModelDetailResponse.metadataEntries(): List<MetadataEntry> = buildList {
+    libraryName?.let { add(MetadataEntry("Library", it)) }
+    pipelineTag?.let { add(MetadataEntry("Pipeline", it)) }
+    cardData?.license?.let { add(MetadataEntry("License", it)) }
+    cardData?.baseModel
+        ?.takeIf { it.isNotEmpty() }
+        ?.joinToString(", ")
+        ?.let { add(MetadataEntry("Base model", it)) }
+    config?.modelType?.let { add(MetadataEntry("Model type", it)) }
+    config?.architectures
+        ?.filterNotNull()
+        ?.takeIf { it.isNotEmpty() }
+        ?.joinToString()
+        ?.let { add(MetadataEntry("Architectures", it)) }
+    formatHubTimestamp(createdAt)?.let { add(MetadataEntry("Created", it)) }
+    formatHubTimestamp(lastModified)?.let { add(MetadataEntry("Last modified", it)) }
+}
+
 @Composable
 private fun ModelMetadataSection(model: ModelDetailResponse) {
+    val entries = model.metadataEntries()
     val tags = visibleModelTags(
         tags = model.tags.orEmpty(),
         pipelineTag = model.pipelineTag,
         libraryName = model.libraryName,
         modelType = model.config?.modelType,
     )
-    val hasInfo = model.libraryName != null || model.pipelineTag != null ||
-        model.config?.modelType != null ||
-        model.config?.architectures?.filterNotNull()?.isNotEmpty() == true ||
-        model.cardData?.license != null ||
-        model.cardData?.baseModel?.takeIf { it.isNotEmpty() } != null ||
-        model.createdAt != null || model.lastModified != null
-    if (!hasInfo && tags.isEmpty()) return
+    if (entries.isEmpty() && tags.isEmpty()) return
 
     val spacing = LocalSpacing.current
-    CaraMLPane(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(spacing.l),
-            verticalArrangement = Arrangement.spacedBy(spacing.s),
-        ) {
-            CaraMLSectionHeader(title = "Metadata")
-            DetailRow("Library", model.libraryName)
-            DetailRow("Pipeline", model.pipelineTag)
-            model.config?.let { config ->
-                DetailRow("Model type", config.modelType)
-                config.architectures?.filterNotNull()?.joinToString()?.let { arch ->
-                    DetailRow("Architectures", arch)
+    var expanded by rememberSaveable(model.modelId, model.id) { mutableStateOf(false) }
+    val primaryEntries = entries.take(PRIMARY_METADATA_COUNT)
+    val displayedEntries = if (expanded) entries else primaryEntries
+    val hasDisclosure = entries.size > PRIMARY_METADATA_COUNT || tags.isNotEmpty()
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("detail-metadata"),
+        verticalArrangement = Arrangement.spacedBy(spacing.s),
+    ) {
+        CaraMLSectionHeader(title = "Metadata")
+        displayedEntries.forEach { entry ->
+            DetailRow(entry.label, entry.value)
+            HorizontalDivider(
+                color = MaterialTheme.auroraColors.divider,
+                thickness = 1.dp,
+            )
+        }
+        if (expanded && tags.isNotEmpty()) {
+            Text(
+                text = "Tags",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(spacing.s),
+                verticalArrangement = Arrangement.spacedBy(spacing.xs),
+            ) {
+                tags.take(MAX_VISIBLE_DETAIL_TAGS).forEach { tag ->
+                    Text(
+                        text = tag,
+                        style = AppTechnicalLabel,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.semantics {
+                            contentDescription = "Tag: $tag"
+                        },
+                    )
                 }
             }
-            model.cardData?.let { card ->
-                DetailRow("License", card.license)
-                card.baseModel?.takeIf { it.isNotEmpty() }?.let { models ->
-                    DetailRow("Base model", models.joinToString(", "))
-                }
-            }
-            DetailRow("Created", formatHubTimestamp(model.createdAt))
-            DetailRow("Last modified", formatHubTimestamp(model.lastModified))
-            if (tags.isNotEmpty()) {
-                var expanded by rememberSaveable(model.modelId, model.id) { mutableStateOf(false) }
-                val displayedTags = if (expanded) tags else tags.take(4)
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(spacing.s),
-                    verticalArrangement = Arrangement.spacedBy(spacing.s),
-                ) {
-                    displayedTags.forEach { tag ->
-                        CaraMLStatusPill(
-                            label = tag,
-                            contentDescription = "Tag: $tag",
-                            tone = StatusTone.Neutral,
-                        )
-                    }
-                }
-                if (tags.size > 4) {
-                    TextButton(
-                        onClick = { expanded = !expanded },
-                        modifier = Modifier.align(Alignment.Start),
-                    ) {
-                        Text(if (expanded) "Show less" else "Show all")
-                    }
-                }
+        }
+        if (hasDisclosure) {
+            TextButton(
+                onClick = { expanded = !expanded },
+                modifier = Modifier.align(Alignment.Start),
+            ) {
+                Text(if (expanded) "Show less" else "Show all")
             }
         }
     }
 }
 
+private const val PRIMARY_METADATA_COUNT = 4
+private const val MAX_VISIBLE_DETAIL_TAGS = 4
+
 @Composable
 private fun ModelRecommendationSection(
     recommendationState: RecommendedModelUiState?,
     onRecommendationInfoClick: (() -> Unit)?,
+    modifier: Modifier = Modifier,
 ) {
     val spacing = LocalSpacing.current
-    CaraMLPane(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(spacing.l),
-            verticalArrangement = Arrangement.spacedBy(spacing.s),
-        ) {
-            CaraMLSectionHeader(
-                title = "Device fit",
-                supportingText = "Recommendation evidence for this device",
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(spacing.s),
+    ) {
+        CaraMLSectionHeader(
+            title = "Device fit",
+            supportingText = "Recommendation evidence for this device",
+        )
+        RecommendationStatusChip(
+            state = recommendationState?.descriptorState ?: DescriptorState.NEEDS_INFORMATION,
+            recommendation = recommendationState?.personalizedResult,
+            onInfoClick = onRecommendationInfoClick,
+        )
+        recommendationState?.selectedVariantName?.let { variant ->
+            StatusMark(
+                label = variant,
+                contentDescription = "Selected variant: $variant",
+                tone = SignalTone.Accent,
+                icon = Icons.Default.CheckCircle,
             )
-            RecommendationStatusChip(
-                state = recommendationState?.descriptorState ?: DescriptorState.NEEDS_INFORMATION,
-                recommendation = recommendationState?.personalizedResult,
-                onInfoClick = onRecommendationInfoClick,
-            )
-            recommendationState?.selectedVariantName?.let { variant ->
-                CaraMLStatusPill(
-                    label = variant,
-                    contentDescription = "Selected variant: $variant",
-                    tone = StatusTone.Accent,
-                )
-            }
         }
     }
 }
@@ -363,57 +427,98 @@ private fun ModelFileVariantsSection(
     recommendationState: RecommendedModelUiState?,
 ) {
     val spacing = LocalSpacing.current
-    CaraMLPane(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(spacing.l),
-            verticalArrangement = Arrangement.spacedBy(spacing.s),
-        ) {
-            CaraMLSectionHeader(
-                title = heading,
-                supportingText = "Choose an assessed model weight to download",
+    val selectedDescriptor = recommendationState?.selectedDescriptor
+    val primaryDescriptorFile = primaryDescriptorFile(selectedDescriptor)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("detail-files"),
+        verticalArrangement = Arrangement.spacedBy(spacing.s),
+    ) {
+        CaraMLSectionHeader(
+            title = heading,
+            supportingText = "Choose an assessed model weight to download",
+        )
+        if (ggufFiles.isEmpty()) {
+            Text(
+                text = emptyLabel,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            if (ggufFiles.isEmpty()) {
-                Text(
-                    text = emptyLabel,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+        } else {
+            ggufFiles.forEach { item ->
+                val matchesSelectedDescriptor = item.artifact?.let { artifact ->
+                    artifactMatches(selectedDescriptor, artifact)
+                } == true
+                val isRecommendedArtifact = item.artifact?.let { artifact ->
+                    primaryDescriptorFile?.matches(artifact) == true
+                } == true
+                val isActiveDownload = isDownloading &&
+                    activeDownloadArtifact != null &&
+                    item.artifact == activeDownloadArtifact
+                ArtifactFileRow(
+                    item = item,
+                    recommended = isRecommendedArtifact,
+                    isActiveDownload = isActiveDownload,
+                    interactionLocked = isDownloading,
+                    downloadEnabled = matchesSelectedDescriptor,
+                    onDownloadClick = {
+                        val artifact = item.artifact ?: return@ArtifactFileRow
+                        onDownloadClick(
+                            model.modelId ?: model.id ?: "",
+                            item.path,
+                            DownloadMetadataDTO(
+                                artifact = artifact,
+                                logicalRole = "model",
+                                sizeBytes = artifact.expectedBytes,
+                                author = model.author,
+                                libraryName = model.libraryName,
+                                pipelineTag = model.pipelineTag,
+                                contextLength = model.gguf?.contextLength,
+                            ),
+                        )
+                    },
                 )
-            } else {
-                ggufFiles.forEach { item ->
-                    val matchesSelectedDescriptor = item.artifact?.let { artifact ->
-                        artifactMatches(recommendationState?.selectedDescriptor, artifact)
-                    } == true
-                    val isActiveDownload = isDownloading &&
-                        activeDownloadArtifact != null &&
-                        item.artifact == activeDownloadArtifact
-                    GgufFileListItem(
-                        filename = item.path.ifEmpty { item.filename },
-                        sizeBytes = item.sizeBytes,
-                        isDownloaded = item.isDownloaded,
-                        progress = item.progress,
-                        isDownloading = isActiveDownload,
-                        onDownloadClick = {
-                            val artifact = item.artifact ?: return@GgufFileListItem
-                            onDownloadClick(
-                                model.modelId ?: model.id ?: "",
-                                item.path,
-                                DownloadMetadataDTO(
-                                    artifact = artifact,
-                                    logicalRole = "model",
-                                    sizeBytes = artifact.expectedBytes,
-                                    author = model.author,
-                                    libraryName = model.libraryName,
-                                    pipelineTag = model.pipelineTag,
-                                    contextLength = model.gguf?.contextLength,
-                                ),
-                            )
-                        },
-                        downloadEnabled = matchesSelectedDescriptor,
-                        interactionLocked = isDownloading,
-                    )
-                }
             }
         }
+    }
+}
+
+@Composable
+private fun ArtifactFileRow(
+    item: GgufFileUiState,
+    recommended: Boolean,
+    isActiveDownload: Boolean,
+    interactionLocked: Boolean,
+    downloadEnabled: Boolean,
+    onDownloadClick: () -> Unit,
+) {
+    val colors = MaterialTheme.auroraColors
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min)
+            .background(if (recommended) colors.selectedSurface else MaterialTheme.colorScheme.surface)
+            .semantics {
+                selected = recommended
+                if (recommended) stateDescription = "Recommended artifact"
+            }
+            .testTag("detail-artifact:${item.path}"),
+    ) {
+        if (recommended) {
+            SignalRail(tone = SignalTone.Accent)
+        }
+        GgufFileListItem(
+            filename = item.path.ifEmpty { item.filename },
+            sizeBytes = item.sizeBytes,
+            isDownloaded = item.isDownloaded,
+            progress = item.progress,
+            isDownloading = isActiveDownload,
+            onDownloadClick = onDownloadClick,
+            modifier = Modifier.weight(1f),
+            downloadEnabled = downloadEnabled,
+            interactionLocked = interactionLocked,
+        )
     }
 }
 
@@ -425,17 +530,25 @@ private fun descriptorFiles(descriptor: ModelDescriptor?): List<ModelFileIdentit
     null -> emptyList()
 }
 
+private fun primaryDescriptorFile(descriptor: ModelDescriptor?): ModelFileIdentity? = when (descriptor) {
+    is LlmModelDescriptor -> descriptor.file
+    is DiffusionModelDescriptor -> descriptor.components.singleOrNull { it.isPrimary }?.file
+    null -> null
+}
+
+private fun ModelFileIdentity.matches(artifact: DownloadArtifactIdentity): Boolean {
+    val remoteObjectId = lfsOid?.let { "sha256:$it" } ?: xetHash ?: gitOid
+    return repositoryId == artifact.repositoryId &&
+        revision.lowercase() == artifact.immutableRevision &&
+        path == artifact.relativePath &&
+        sizeBytes == artifact.expectedBytes &&
+        remoteObjectId?.lowercase() == artifact.remoteObjectId
+}
+
 private fun artifactMatches(
     descriptor: ModelDescriptor?,
     artifact: DownloadArtifactIdentity,
-): Boolean = descriptorFiles(descriptor).singleOrNull { file ->
-    val remoteObjectId = file.lfsOid?.let { "sha256:$it" } ?: file.xetHash ?: file.gitOid
-    file.repositoryId == artifact.repositoryId &&
-        file.revision.lowercase() == artifact.immutableRevision &&
-        file.path == artifact.relativePath &&
-        file.sizeBytes == artifact.expectedBytes &&
-        remoteObjectId?.lowercase() == artifact.remoteObjectId
-} != null
+): Boolean = descriptorFiles(descriptor).singleOrNull { file -> file.matches(artifact) } != null
 
 private fun recommendedVariantPath(
     descriptor: ModelDescriptor?,
@@ -448,12 +561,7 @@ private fun recommendedVariantPath(
     } ?: return null
     return variants.singleOrNull { variant ->
         val artifact = variant.artifact ?: return@singleOrNull false
-        val remoteObjectId = primary.lfsOid?.let { "sha256:$it" } ?: primary.xetHash ?: primary.gitOid
-        primary.repositoryId == artifact.repositoryId &&
-            primary.revision.lowercase() == artifact.immutableRevision &&
-            primary.path == artifact.relativePath &&
-            primary.sizeBytes == artifact.expectedBytes &&
-            remoteObjectId?.lowercase() == artifact.remoteObjectId
+        primary.matches(artifact)
     }?.path
 }
 
@@ -500,7 +608,7 @@ private fun DetailLabel(label: String, modifier: Modifier = Modifier) {
 private fun DetailValue(value: String, modifier: Modifier = Modifier) {
     Text(
         text = value,
-        style = MaterialTheme.typography.bodyMedium,
+        style = AppTechnicalLabel,
         color = MaterialTheme.colorScheme.onSurface,
         modifier = modifier,
     )
