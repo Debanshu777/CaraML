@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -45,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -169,6 +172,13 @@ fun ChatScreenContent(
     val listState = rememberLazyListState()
     val navigationLayout = LocalAppNavigationLayout.current
     val safeDrawingInsets = LocalCreateSafeDrawingInsetsOverride.current ?: WindowInsets.safeDrawing
+    val scaffoldContentInsets = safeDrawingInsets.only(
+        if (navigationLayout == AppNavigationLayout.BottomBar) {
+            WindowInsetsSides.Horizontal
+        } else {
+            WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom
+        },
+    )
     val generationMode = controlledGenerationMode ?: when (val state = uiState) {
         is ChatUiState.Ready -> state.generationMode
         is ChatUiState.NoModelsForMode -> state.mode
@@ -177,19 +187,19 @@ fun ChatScreenContent(
 
     val messageCount = (uiState as? ChatUiState.Ready)?.messages?.size ?: 0
     val imeBottomPadding = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
-    LaunchedEffect(messageCount, imeBottomPadding) {
-        if (messageCount > 0) {
-            listState.animateScrollToItem(messageCount - 1)
-        }
-    }
     Scaffold(
         modifier = modifier,
         containerColor = Color.Transparent,
+        contentWindowInsets = scaffoldContentInsets,
         topBar = {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .windowInsetsPadding(safeDrawingInsets.only(WindowInsetsSides.Top)),
+                    .windowInsetsPadding(
+                        safeDrawingInsets.only(
+                            WindowInsetsSides.Top + WindowInsetsSides.Horizontal,
+                        ),
+                    ),
                 contentAlignment = Alignment.TopCenter,
             ) {
                 ModelSelectorTopBar(
@@ -219,15 +229,7 @@ fun ChatScreenContent(
                     kind = AppContentKind.Chat,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .then(
-                            if (navigationLayout == AppNavigationLayout.BottomBar) {
-                                Modifier
-                            } else {
-                                Modifier.windowInsetsPadding(
-                                    safeDrawingInsets.only(WindowInsetsSides.Bottom),
-                                )
-                            },
-                        ),
+                        .windowInsetsPadding(scaffoldContentInsets),
                     fillMaxHeight = false,
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
@@ -254,22 +256,22 @@ fun ChatScreenContent(
             }
         }
     ) { paddingValues ->
+        val layoutDirection = LocalLayoutDirection.current
+        val bottomPadding = paddingValues.calculateBottomPadding()
+        LaunchedEffect(messageCount, imeBottomPadding, bottomPadding) {
+            if (messageCount > 0) {
+                listState.animateScrollToItem(messageCount - 1)
+            }
+        }
         ResponsiveContentPane(
             kind = AppContentKind.Chat,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = paddingValues.calculateTopPadding())
-                .then(
-                    if (
-                        uiState !is ChatUiState.Ready &&
-                        navigationLayout != AppNavigationLayout.BottomBar
-                    ) {
-                        Modifier.windowInsetsPadding(
-                            safeDrawingInsets.only(WindowInsetsSides.Bottom),
-                        )
-                    } else {
-                        Modifier
-                    },
+                .padding(
+                    start = paddingValues.calculateStartPadding(layoutDirection),
+                    top = paddingValues.calculateTopPadding(),
+                    end = paddingValues.calculateEndPadding(layoutDirection),
+                    bottom = if (uiState is ChatUiState.Ready) 0.dp else bottomPadding,
                 ),
         ) {
             when (uiState) {
@@ -347,13 +349,14 @@ fun ChatScreenContent(
                             streamingState = streamingState,
                             loadMedia = loadMedia,
                             modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(bottom = bottomPadding),
                         )
                         if (uiState.messages.isEmpty()) {
                             AnimatedCreateEmptyState(
                                 mode = uiState.generationMode,
                                 modifier = Modifier
                                     .align(Alignment.Center)
-                                    .padding(bottom = paddingValues.calculateBottomPadding()),
+                                    .padding(bottom = bottomPadding),
                             )
                         }
                     }

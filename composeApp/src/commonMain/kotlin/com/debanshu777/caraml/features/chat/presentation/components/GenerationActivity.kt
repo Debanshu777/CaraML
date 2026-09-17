@@ -1,9 +1,6 @@
 package com.debanshu777.caraml.features.chat.presentation.components
 
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -22,7 +19,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
@@ -56,10 +52,18 @@ fun GenerationActivity(
     },
 ) {
     val motion = LocalAuroraMotionPolicy.current
-    val signalAlpha = if (progress != null && motion.pulseEnabled) {
-        rememberGenerationPulse(motion.generationPulseMillis)
+    val reportedProgress = progress?.coerceIn(0f, 1f)
+    val animatedProgress by animateFloatAsState(
+        targetValue = reportedProgress ?: 0f,
+        animationSpec = tween(
+            durationMillis = if (motion.spatialTransitionsEnabled) 180 else 0,
+        ),
+        label = "generation activity progress",
+    )
+    val displayedProgress = if (motion.spatialTransitionsEnabled) {
+        animatedProgress
     } else {
-        1f
+        reportedProgress ?: 0f
     }
 
     Column(
@@ -77,7 +81,6 @@ fun GenerationActivity(
                 contentDescription = null,
                 modifier = Modifier
                     .size(20.dp)
-                    .alpha(signalAlpha)
                     .testTag("generation-activity-signal"),
                 tint = MaterialTheme.colorScheme.primary,
             )
@@ -99,26 +102,11 @@ fun GenerationActivity(
         }
         if (progress != null) {
             LinearProgressIndicator(
-                progress = { progress.coerceIn(0f, 1f) },
+                progress = { displayedProgress },
                 modifier = Modifier.fillMaxWidth(),
             )
         } else {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
     }
-}
-
-@Composable
-private fun rememberGenerationPulse(durationMillis: Int): Float {
-    val transition = rememberInfiniteTransition(label = "generation activity signal")
-    val alpha by transition.animateFloat(
-        initialValue = 0.62f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = durationMillis),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "generation activity signal alpha",
-    )
-    return alpha
 }

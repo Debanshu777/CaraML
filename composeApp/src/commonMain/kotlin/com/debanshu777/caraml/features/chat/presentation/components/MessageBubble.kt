@@ -35,6 +35,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,6 +44,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
@@ -320,7 +324,7 @@ private fun ThoughtsDisclosure(
     modifier: Modifier = Modifier,
 ) {
     val motion = LocalAuroraMotionPolicy.current
-    var override by remember { mutableStateOf<Boolean?>(null) }
+    var override by rememberSaveable { mutableStateOf<Boolean?>(null) }
     val autoExpanded = isStreaming || outputIsEmpty
     val expanded = override ?: autoExpanded
     val showSpinner = isStreaming && outputIsEmpty
@@ -333,8 +337,16 @@ private fun ThoughtsDisclosure(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(min = 48.dp)
                 .clip(MaterialTheme.shapes.small)
-                .clickable { override = !expanded }
+                .clickable(
+                    onClickLabel = if (expanded) "Collapse thoughts" else "Expand thoughts",
+                    role = Role.Button,
+                    onClick = { override = !expanded },
+                )
+                .semantics {
+                    stateDescription = if (expanded) "Expanded" else "Collapsed"
+                }
                 .padding(horizontal = LocalSpacing.current.s, vertical = LocalSpacing.current.xs),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.s),
@@ -361,7 +373,7 @@ private fun ThoughtsDisclosure(
             )
             Icon(
                 imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                contentDescription = if (expanded) "Collapse thoughts" else "Expand thoughts",
+                contentDescription = null,
                 modifier = Modifier.size(16.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )

@@ -161,7 +161,7 @@ class ChatAuroraUiTest {
         }
 
     @Test
-    fun determinateGenerationProgressKeepsThePolicyAwareContainerPulse() = runComposeUiTest {
+    fun determinateGenerationDoesNotRunASecondContinuousSignalAnimation() = runComposeUiTest {
         mainClock.autoAdvance = false
         setContent {
             GenerationActivityTestHost(progress = 0.4f, tag = "known-generation")
@@ -174,8 +174,9 @@ class ChatAuroraUiTest {
         val after = generationSignalAverage()
 
         assertTrue(
-            abs(before - after) >= 0.01f,
-            "The frame probe must detect the allowed determinate pulse; before=$before after=$after",
+            abs(before - after) <= 0.01f,
+            "Determinate progress must not run a second continuous signal animation; " +
+                "before=$before after=$after",
         )
     }
 

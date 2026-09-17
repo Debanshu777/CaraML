@@ -8,10 +8,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -80,7 +79,8 @@ fun ChatMessageList(
     streamingMessageId: String? = null,
     streamingState: StreamingState? = null,
     loadMedia: suspend (String) -> ByteArray? = { null },
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues(),
 ) {
     val initialMessageIds = remember { messages.mapTo(mutableSetOf()) { it.id } }
     val completedEntryIds = remember { mutableStateMapOf<String, Boolean>() }
@@ -97,6 +97,7 @@ fun ChatMessageList(
     LazyColumn(
         modifier = modifier.fillMaxWidth(),
         state = listState,
+        contentPadding = contentPadding,
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
             items(
@@ -158,9 +159,6 @@ fun ChatMessageList(
                         )
                     }
                 }
-            }
-            item{
-                Spacer(modifier = Modifier.height(150.dp))
             }
     }
 }
