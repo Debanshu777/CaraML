@@ -1,6 +1,6 @@
 package com.debanshu777.caraml.features.settings.presentation
 
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.FilterChip
@@ -34,6 +34,6 @@ internal fun SettingFilterChip(
             null
         },
         enabled = enabled,
-        modifier = modifier.heightIn(min = 48.dp),
+        modifier = modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
     )
 }

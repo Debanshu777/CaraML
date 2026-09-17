@@ -136,7 +136,7 @@ class SettingsAuroraUiTest {
             }
         }
 
-        onNodeWithText("Vibrant")
+        onNodeWithContentDescription("Palette Vibrant, not selected")
             .assertIsNotSelected()
             .assertHeightIsAtLeast(48.dp)
         onNodeWithContentDescription(
@@ -144,9 +144,9 @@ class SettingsAuroraUiTest {
             useUnmergedTree = true,
         ).assertDoesNotExist()
 
-        onNodeWithText("Vibrant").performClick()
+        onNodeWithContentDescription("Palette Vibrant, not selected").performClick()
 
-        onNodeWithText("Vibrant").assertIsSelected()
+        onNodeWithContentDescription("Palette Vibrant, selected").assertIsSelected()
         onNodeWithContentDescription(
             "Selected palette Vibrant",
             useUnmergedTree = true,

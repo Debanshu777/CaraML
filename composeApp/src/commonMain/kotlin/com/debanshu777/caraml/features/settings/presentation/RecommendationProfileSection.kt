@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -37,6 +38,7 @@ fun RecommendationProfileSection(
     onOptimizationPriorityChange: (OptimizationPriority) -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    listStyle: Boolean = false,
 ) {
     val spacing = LocalSpacing.current
     Column(
@@ -46,17 +48,23 @@ fun RecommendationProfileSection(
                 contentDescription = "Selected risk: ${profile.riskTolerance.label()}. " +
                     "Selected priority: ${profile.optimizationPriority.label()}."
             },
-        verticalArrangement = Arrangement.spacedBy(spacing.m),
+        verticalArrangement = if (listStyle) {
+            Arrangement.Top
+        } else {
+            Arrangement.spacedBy(spacing.m)
+        },
     ) {
-        Text(
-            text = "Recommendation profile",
-            style = MaterialTheme.typography.titleMedium,
-        )
-        Text(
-            text = "Choose how cautiously CaraML rates device fit and what it optimizes for.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (!listStyle) {
+            Text(
+                text = "Recommendation profile",
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                text = "Choose how cautiously CaraML rates device fit and what it optimizes for.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
 
         ChoiceGroup(
             title = "Risk tolerance",
@@ -67,6 +75,8 @@ fun RecommendationProfileSection(
             enabled = enabled,
             accessibilityPrefix = "Risk tolerance",
             onSelect = onRiskToleranceChange,
+            listStyle = listStyle,
+            dividerTag = "settings-divider-recommendation-risk",
         )
 
         ChoiceGroup(
@@ -78,6 +88,8 @@ fun RecommendationProfileSection(
             enabled = enabled,
             accessibilityPrefix = "Optimization priority",
             onSelect = onOptimizationPriorityChange,
+            listStyle = listStyle,
+            dividerTag = "settings-divider-recommendation-priority",
         )
     }
 }
@@ -93,38 +105,54 @@ private fun <T> ChoiceGroup(
     enabled: Boolean,
     accessibilityPrefix: String,
     onSelect: (T) -> Unit,
+    listStyle: Boolean,
+    dividerTag: String,
 ) {
     val spacing = LocalSpacing.current
-    Column(verticalArrangement = Arrangement.spacedBy(spacing.s)) {
-        Text(text = title, style = MaterialTheme.typography.labelLarge)
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(spacing.s),
-            verticalArrangement = Arrangement.spacedBy(spacing.xs),
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = if (listStyle) {
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = spacing.l)
+            } else {
+                Modifier.fillMaxWidth()
+            },
+            verticalArrangement = Arrangement.spacedBy(spacing.s),
         ) {
-            choices.forEach { choice ->
-                val isSelected = choice == selected
-                SettingFilterChip(
-                    selected = isSelected,
-                    onClick = { onSelect(choice) },
-                    label = label(choice),
-                    selectedIndicatorContentDescription =
-                        "Selected ${accessibilityPrefix.lowercase()} ${label(choice)}",
-                    enabled = enabled,
-                    modifier = Modifier
-                        .semantics {
-                            contentDescription = "$accessibilityPrefix ${label(choice)}, " +
-                                if (isSelected) "selected" else "not selected"
-                            stateDescription = if (isSelected) "Selected" else "Not selected"
-                        },
-                )
+            Text(text = title, style = MaterialTheme.typography.labelLarge)
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(spacing.s),
+                verticalArrangement = Arrangement.spacedBy(spacing.s),
+            ) {
+                choices.forEach { choice ->
+                    val isSelected = choice == selected
+                    SettingFilterChip(
+                        selected = isSelected,
+                        onClick = { onSelect(choice) },
+                        label = label(choice),
+                        selectedIndicatorContentDescription =
+                            "Selected ${accessibilityPrefix.lowercase()} ${label(choice)}",
+                        enabled = enabled,
+                        modifier = Modifier
+                            .semantics {
+                                contentDescription = "$accessibilityPrefix ${label(choice)}, " +
+                                    if (isSelected) "selected" else "not selected"
+                                stateDescription = if (isSelected) "Selected" else "Not selected"
+                            },
+                    )
+                }
             }
+            Text(
+                text = description(selected),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
-        Text(
-            text = description(selected),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (listStyle) {
+            SettingsRowDivider(tag = dividerTag)
+        }
     }
 }
 
