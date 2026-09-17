@@ -24,13 +24,13 @@ fun AuroraBackdrop(
             .drawWithCache {
                 val primaryWash = Brush.radialGradient(
                     colors = listOf(colors.primaryGlow, Color.Transparent),
-                    center = Offset(size.width * 0.08f, size.height * 0.04f),
-                    radius = size.maxDimension * 1.08f,
+                    center = Offset(size.width * 0.04f, size.height * 0.02f),
+                    radius = size.maxDimension * 1.28f,
                 )
                 val tertiaryWash = Brush.radialGradient(
                     colors = listOf(colors.tertiaryGlow, Color.Transparent),
-                    center = Offset(size.width * 0.94f, size.height * 0.82f),
-                    radius = size.maxDimension * 0.88f,
+                    center = Offset(size.width * 0.97f, size.height * 0.90f),
+                    radius = size.maxDimension * 0.46f,
                 )
                 onDrawBehind {
                     drawRect(color = colors.canvas)

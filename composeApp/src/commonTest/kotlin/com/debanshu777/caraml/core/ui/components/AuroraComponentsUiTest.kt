@@ -17,6 +17,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
@@ -96,39 +97,84 @@ class AuroraComponentsUiTest {
     }
 
     @Test
-    fun standardPaneKeepsTheAuroraBackdropVisiblyNonUniform() = runComposeUiTest {
+    fun backdropHasOneBroadNonUniformFieldAndReadableDarkAndLightContent() = runComposeUiTest {
         setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f)) {
-                MaterialTheme(
-                    colorScheme = darkColorScheme(
-                        surface = Color(0xFF0E1118),
-                        surfaceContainer = Color(0xFF1B202B),
-                        primary = Color(0xFF9CB9FF),
-                        tertiary = Color(0xFFFFA9D8),
-                    ),
-                ) {
-                    AuroraBackdrop(
-                        modifier = Modifier
-                            .requiredSize(width = 320.dp, height = 180.dp)
-                            .testTag("aurora-pane-host"),
+                Column {
+                    MaterialTheme(
+                        colorScheme = darkColorScheme(
+                            surface = Color(0xFF0E1118),
+                            onSurface = Color.White,
+                            primary = Color(0xFF4F83FF),
+                            tertiary = Color(0xFFFF5AA5),
+                        ),
                     ) {
-                        CaraMLPane(Modifier.fillMaxSize()) {}
+                        BackdropReadabilityFixture(
+                            tag = "dark-backdrop-host",
+                            label = "Dark readable",
+                        )
+                    }
+                    MaterialTheme(
+                        colorScheme = lightColorScheme(
+                            surface = Color(0xFFF9FAFF),
+                            onSurface = Color(0xFF11131A),
+                            primaryContainer = Color(0xFFB8CAFF),
+                            tertiaryContainer = Color(0xFFFFC0DC),
+                        ),
+                    ) {
+                        BackdropReadabilityFixture(
+                            tag = "light-backdrop-host",
+                            label = "Light readable",
+                        )
                     }
                 }
             }
         }
 
-        val pixels = onNodeWithTag("aurora-pane-host").captureToImage().toPixelMap()
-        val leading = pixels[24, 24]
-        val trailing = pixels[296, 156]
-        val channelDelta = kotlin.math.abs(leading.red - trailing.red) +
-            kotlin.math.abs(leading.green - trailing.green) +
-            kotlin.math.abs(leading.blue - trailing.blue)
+        listOf(
+            "dark-backdrop-host" to "Dark readable",
+            "light-backdrop-host" to "Light readable",
+        ).forEach { (tag, label) ->
+            val host = onNodeWithTag(tag).fetchSemanticsNode()
+            val pixels = onNodeWithTag(tag).captureToImage().toPixelMap()
+            val leading = pixels[24, 24]
+            val center = pixels[180, 48]
+            val opposing = pixels[336, 156]
+            val fieldDelta = leading.colorDistance(center) + center.colorDistance(opposing)
 
-        assertTrue(
-            channelDelta >= 0.035f,
-            "A standard pane must preserve a visible Aurora color field; delta was $channelDelta",
-        )
+            assertTrue(
+                fieldDelta >= 0.12f,
+                "The ambient field must stay visibly non-uniform; delta was $fieldDelta",
+            )
+            assertTrue(
+                leading.blue - leading.red > center.blue - center.red,
+                "The broad primary wash must remain strongest near the top-leading edge",
+            )
+            assertTrue(
+                center.blue - center.red >= (leading.blue - leading.red) * 0.55f,
+                "The broad primary wash must carry through the center without tertiary intrusion",
+            )
+            assertTrue(
+                opposing.red - opposing.blue > center.red - center.blue,
+                "The smaller tertiary wash must remain strongest at the opposing edge",
+            )
+
+            val textBounds = onNodeWithText(label).fetchSemanticsNode().boundsInRoot
+            val relativeTextBounds = Rect(
+                left = textBounds.left - host.boundsInRoot.left,
+                top = textBounds.top - host.boundsInRoot.top,
+                right = textBounds.right - host.boundsInRoot.left,
+                bottom = textBounds.bottom - host.boundsInRoot.top,
+            )
+            val localBackground = pixels[
+                (relativeTextBounds.left - 6f).toInt().coerceIn(0, pixels.width - 1),
+                relativeTextBounds.center.y.toInt().coerceIn(0, pixels.height - 1),
+            ]
+            assertTrue(
+                pixels.maximumContrastAgainst(localBackground, relativeTextBounds) >= 4.5f,
+                "$label content must keep at least 4.5:1 local contrast",
+            )
+        }
     }
 
     @Test
@@ -369,6 +415,24 @@ class AuroraComponentsUiTest {
 }
 
 @Composable
+private fun BackdropReadabilityFixture(
+    tag: String,
+    label: String,
+) {
+    AuroraBackdrop(
+        modifier = Modifier
+            .requiredSize(width = 360.dp, height = 180.dp)
+            .testTag(tag),
+    ) {
+        androidx.compose.material3.Text(
+            text = label,
+            modifier = Modifier.align(Alignment.Center),
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
+@Composable
 private fun LocalModelStatusFixture(
     id: String,
     filename: String,
@@ -476,6 +540,11 @@ private fun contrastRatio(first: Color, second: Color): Float {
     return (maxOf(firstLuminance, secondLuminance) + 0.05f) /
         (minOf(firstLuminance, secondLuminance) + 0.05f)
 }
+
+private fun Color.colorDistance(other: Color): Float =
+    kotlin.math.abs(red - other.red) +
+        kotlin.math.abs(green - other.green) +
+        kotlin.math.abs(blue - other.blue)
 
 @Composable
 private fun AtTwoHundredPercentFontScale(content: @Composable () -> Unit) {

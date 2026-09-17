@@ -2,6 +2,7 @@ package com.debanshu777.caraml.core.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
@@ -44,4 +45,12 @@ val AppNumericLabel: TextStyle = TextStyle(
     fontSize = 12.sp,
     lineHeight = 16.sp,
     fontFeatureSettings = "tnum",
+)
+
+/** Monospace voice for identifiers, formats, sizes, and other machine data. */
+val AppTechnicalLabel: TextStyle = TextStyle(
+    fontFamily = FontFamily.Monospace,
+    fontWeight = FontWeight.Medium,
+    fontSize = 12.sp,
+    lineHeight = 17.sp,
 )

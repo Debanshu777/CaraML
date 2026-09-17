@@ -1,8 +1,13 @@
 package com.debanshu777.caraml.core.theme
 
-import androidx.compose.material3.lightColorScheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -22,6 +27,11 @@ class AuroraColorsTest {
         assertEquals(scheme.primaryContainer.copy(alpha = 0.46f), colors.primaryGlow)
         assertEquals(scheme.tertiaryContainer.copy(alpha = 0.34f), colors.tertiaryGlow)
         assertEquals(scheme.outlineVariant.copy(alpha = 0.72f), colors.paneBorder)
+        assertEquals(scheme.surfaceContainer, colors.commandSurface)
+        assertEquals(scheme.surfaceContainerHigh, colors.selectedSurface)
+        assertEquals(scheme.outlineVariant.copy(alpha = 0.48f), colors.divider)
+        assertEquals(scheme.primary.copy(alpha = 0.78f), colors.focusPrimary)
+        assertEquals(scheme.tertiary.copy(alpha = 0.70f), colors.focusTertiary)
     }
 
     @Test
@@ -56,5 +66,16 @@ class AuroraColorsTest {
         assertEquals(0.76f, AuroraSurfaceLevel.Recessed.containerAlpha)
         assertEquals(0.82f, AuroraSurfaceLevel.Pane.containerAlpha)
         assertEquals(0.94f, AuroraSurfaceLevel.Floating.containerAlpha)
+    }
+
+    @Test
+    fun prismShapeAndTechnicalTypeTokensMatchTheSharedVocabulary() {
+        assertEquals(RoundedCornerShape(8.dp), AppShapes.extraSmall)
+        assertEquals(RoundedCornerShape(12.dp), AppShapes.small)
+        assertEquals(RoundedCornerShape(18.dp), AppShapes.medium)
+        assertEquals(FontFamily.Monospace, AppTechnicalLabel.fontFamily)
+        assertEquals(FontWeight.Medium, AppTechnicalLabel.fontWeight)
+        assertEquals(12.sp, AppTechnicalLabel.fontSize)
+        assertEquals(17.sp, AppTechnicalLabel.lineHeight)
     }
 }

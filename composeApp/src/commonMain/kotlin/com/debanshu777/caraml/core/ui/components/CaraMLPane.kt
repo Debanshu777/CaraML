@@ -12,6 +12,10 @@ import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
 import com.debanshu777.caraml.core.theme.auroraColors
 
+/**
+ * A meaningful tonal group. Prism panes are borderless by default; [showBorder]
+ * remains as a source-compatible escape hatch for feature-owned migrations.
+ */
 @Composable
 fun CaraMLPane(
     modifier: Modifier = Modifier,
