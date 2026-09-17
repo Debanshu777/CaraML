@@ -30,6 +30,7 @@ import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -139,7 +140,7 @@ class SettingsAuroraUiTest {
         onNodeWithContentDescription("Palette Vibrant, not selected")
             .assertIsNotSelected()
             .assertHeightIsAtLeast(48.dp)
-        onNodeWithContentDescription(
+        onNodeWithTag(
             "Selected palette Vibrant",
             useUnmergedTree = true,
         ).assertDoesNotExist()
@@ -147,7 +148,7 @@ class SettingsAuroraUiTest {
         onNodeWithContentDescription("Palette Vibrant, not selected").performClick()
 
         onNodeWithContentDescription("Palette Vibrant, selected").assertIsSelected()
-        onNodeWithContentDescription(
+        onNodeWithTag(
             "Selected palette Vibrant",
             useUnmergedTree = true,
         ).assertIsDisplayed()
@@ -177,7 +178,7 @@ class SettingsAuroraUiTest {
             onNodeWithText("Experimental")
                 .assertIsNotSelected()
                 .assertHeightIsAtLeast(48.dp)
-            onNodeWithContentDescription(
+            onNodeWithTag(
                 "Selected risk tolerance Experimental",
                 useUnmergedTree = true,
             ).assertDoesNotExist()
@@ -185,7 +186,7 @@ class SettingsAuroraUiTest {
             onNodeWithText("Experimental").performClick()
 
             onNodeWithText("Experimental").assertIsSelected()
-            onNodeWithContentDescription(
+            onNodeWithTag(
                 "Selected risk tolerance Experimental",
                 useUnmergedTree = true,
             ).assertIsDisplayed()
@@ -211,7 +212,7 @@ class SettingsAuroraUiTest {
         onNodeWithText("Q8/Q8")
             .assertIsNotSelected()
             .assertHeightIsAtLeast(48.dp)
-        onNodeWithContentDescription(
+        onNodeWithTag(
             "Selected KV cache Q8/Q8",
             useUnmergedTree = true,
         ).assertDoesNotExist()
@@ -219,7 +220,7 @@ class SettingsAuroraUiTest {
         onNodeWithText("Q8/Q8").performClick()
 
         onNodeWithText("Q8/Q8").assertIsSelected()
-        onNodeWithContentDescription(
+        onNodeWithTag(
             "Selected KV cache Q8/Q8",
             useUnmergedTree = true,
         ).assertIsDisplayed()
@@ -285,10 +286,14 @@ class SettingsAuroraUiTest {
 
                 onNodeWithContentDescription("Seed color ${index + 1}")
                     .assertIsSelected()
-                onNodeWithContentDescription(
+                onNodeWithTag(
                     "Selected seed color ${index + 1}",
                     useUnmergedTree = true,
                 ).assertIsDisplayed()
+                onNodeWithContentDescription(
+                    "Selected seed color ${index + 1}",
+                    useUnmergedTree = true,
+                ).assertDoesNotExist()
             }
         }
     }

@@ -19,6 +19,8 @@ import androidx.compose.ui.graphics.PixelMap
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
@@ -26,6 +28,8 @@ import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -130,40 +134,159 @@ class SettingsWorkbenchUiTest {
             }
 
             onNodeWithContentDescription("Theme System, selected").performScrollTo()
-            onNodeWithContentDescription(
+            onNodeWithTag(
                 "Selected theme System",
                 useUnmergedTree = true,
             ).assertIsDisplayed()
-            onNodeWithContentDescription("Seed color 1").performScrollTo()
             onNodeWithContentDescription(
+                "Selected theme System",
+                useUnmergedTree = true,
+            ).assertDoesNotExist()
+            onNodeWithContentDescription("Seed color 1").performScrollTo()
+            onNodeWithTag(
                 "Selected seed color 1",
                 useUnmergedTree = true,
             ).assertIsDisplayed()
-            onNodeWithContentDescription("Palette Tonal Spot, selected").performScrollTo()
             onNodeWithContentDescription(
+                "Selected seed color 1",
+                useUnmergedTree = true,
+            ).assertDoesNotExist()
+            onNodeWithContentDescription("Palette Tonal Spot, selected").performScrollTo()
+            onNodeWithTag(
                 "Selected palette Tonal Spot",
                 useUnmergedTree = true,
             ).assertIsDisplayed()
             onNodeWithContentDescription("Risk tolerance Balanced, selected")
                 .performScrollTo()
-            onNodeWithContentDescription(
+            onNodeWithTag(
                 "Selected risk tolerance Balanced",
                 useUnmergedTree = true,
             ).assertIsDisplayed()
             onNodeWithContentDescription("Optimization priority Balanced, selected")
                 .performScrollTo()
-            onNodeWithContentDescription(
+            onNodeWithTag(
                 "Selected optimization priority Balanced",
                 useUnmergedTree = true,
             ).assertIsDisplayed()
             onNodeWithContentDescription("KV cache Auto, selected").performScrollTo()
-            onNodeWithContentDescription(
+            onNodeWithTag(
                 "Selected KV cache Auto",
                 useUnmergedTree = true,
             ).assertIsDisplayed()
             onNodeWithContentDescription("GPU acceleration (Vulkan)")
                 .performScrollTo()
                 .assertIsOn()
+        }
+
+    @Test
+    fun exclusiveSettingsChoicesExposeOneRadioActionAndRemainExclusive() =
+        runComposeUiTest {
+            val fixture = SettingsFixture()
+            setContent {
+                FixedDensity {
+                    MaterialTheme {
+                        Surface(Modifier.width(760.dp).height(1_000.dp)) {
+                            fixture.Screen()
+                        }
+                    }
+                }
+            }
+
+            onAllNodes(
+                SemanticsMatcher.keyIsDefined(SemanticsProperties.SelectableGroup),
+                useUnmergedTree = true,
+            ).assertCountEquals(6)
+
+            listOf(
+                "Theme System, selected" to true,
+                "Theme Light, not selected" to false,
+                "Seed color 1" to true,
+                "Seed color 2" to false,
+                "Palette Tonal Spot, selected" to true,
+                "Palette Vibrant, not selected" to false,
+                "Risk tolerance Balanced, selected" to true,
+                "Risk tolerance Experimental, not selected" to false,
+                "Optimization priority Balanced, selected" to true,
+                "Optimization priority Quality & context, not selected" to false,
+                "KV cache Auto, selected" to true,
+                "KV cache Q8/Q8, not selected" to false,
+            ).forEach { (description, selected) ->
+                val node = onNodeWithContentDescription(
+                    description,
+                    useUnmergedTree = true,
+                ).performScrollTo().fetchSemanticsNode()
+                assertEquals(Role.RadioButton, node.config[SemanticsProperties.Role])
+                assertEquals(selected, node.config[SemanticsProperties.Selected])
+                val optionBounds = node.boundsInRoot
+                val actionCount = onAllNodes(
+                    SemanticsMatcher.keyIsDefined(SemanticsActions.OnClick),
+                    useUnmergedTree = true,
+                ).fetchSemanticsNodes().count { actionNode ->
+                    val center = actionNode.boundsInRoot.center
+                    center.x >= optionBounds.left && center.x <= optionBounds.right &&
+                        center.y >= optionBounds.top && center.y <= optionBounds.bottom
+                }
+                assertEquals(
+                    1,
+                    actionCount,
+                    "$description must expose exactly one click action",
+                )
+            }
+
+            listOf(
+                "Theme Light" to listOf("Theme System", "Theme Light", "Theme Dark"),
+                "Palette Vibrant" to listOf(
+                    "Palette Tonal Spot",
+                    "Palette Neutral",
+                    "Palette Vibrant",
+                    "Palette Expressive",
+                    "Palette Content",
+                    "Palette Fidelity",
+                    "Palette Monochrome",
+                    "Palette Rainbow",
+                    "Palette Fruit Salad",
+                ),
+                "Risk tolerance Experimental" to listOf(
+                    "Risk tolerance Conservative",
+                    "Risk tolerance Balanced",
+                    "Risk tolerance Experimental",
+                ),
+                "Optimization priority Quality & context" to listOf(
+                    "Optimization priority Speed & efficiency",
+                    "Optimization priority Balanced",
+                    "Optimization priority Quality & context",
+                ),
+                "KV cache Q8/Q8" to listOf(
+                    "KV cache Auto",
+                    "KV cache Q4/F16",
+                    "KV cache Q8/Q8",
+                    "KV cache F16/F16",
+                ),
+            ).forEach { (nextSelection, group) ->
+                onNodeWithContentDescription("$nextSelection, not selected")
+                    .performScrollTo()
+                    .performClick()
+                group.forEach { option ->
+                    if (option == nextSelection) {
+                        onNodeWithContentDescription("$option, selected").assertIsSelected()
+                    } else {
+                        onNodeWithContentDescription("$option, not selected").assertIsNotSelected()
+                    }
+                }
+            }
+
+            onNodeWithContentDescription("Seed color 2")
+                .performScrollTo()
+                .performClick()
+                .assertIsSelected()
+            onNodeWithContentDescription("Seed color 1").assertIsNotSelected()
+            onAllNodes(
+                SemanticsMatcher.expectValue(SemanticsProperties.Selected, true) and
+                    SemanticsMatcher.expectValue(
+                        SemanticsProperties.Role,
+                        Role.RadioButton,
+                    ),
+            ).assertCountEquals(6)
         }
 
     @Test
@@ -302,6 +425,36 @@ class SettingsWorkbenchUiTest {
                         }
                     }
                 }
+            }
+
+            val preview = onNodeWithContentDescription("Current Aurora theme preview")
+                .performScrollTo()
+                .assertIsDisplayed()
+                .fetchSemanticsNode()
+            val previewLeft = preview.positionInRoot.x
+            val previewTop = preview.positionInRoot.y
+            val previewRight = previewLeft + preview.size.width
+            val previewBottom = previewTop + preview.size.height
+            val previewContentInset = 15.5f
+            assertTrue(
+                preview.size.height >= 113.5f,
+                "200% text preview must grow beyond the 104dp normal-density minimum",
+            )
+
+            listOf("Prism workbench", "Current workspace atmosphere").forEach { label ->
+                val labelNode = onNodeWithText(label, useUnmergedTree = true)
+                    .fetchSemanticsNode()
+                val labelLeft = labelNode.positionInRoot.x
+                val labelTop = labelNode.positionInRoot.y
+                val labelRight = labelLeft + labelNode.size.width
+                val labelBottom = labelTop + labelNode.size.height
+                assertTrue(
+                    labelLeft >= previewLeft + previewContentInset &&
+                        labelTop >= previewTop + previewContentInset &&
+                        labelRight <= previewRight - previewContentInset &&
+                        labelBottom <= previewBottom - previewContentInset,
+                    "$label bounds must stay inside the 200% text preview safe inset",
+                )
             }
 
             onNodeWithContentDescription("GPU acceleration (Vulkan)")

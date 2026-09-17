@@ -9,10 +9,11 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -81,7 +82,7 @@ fun AppearanceSection(
                     selected = selected,
                     onClick = { viewModel.updateThemeMode(mode) },
                     label = mode.displayName(),
-                    selectedIndicatorContentDescription =
+                    selectedIndicatorTestTag =
                         "Selected theme ${mode.displayName()}",
                     modifier = Modifier.semantics {
                         contentDescription = "Theme ${mode.displayName()}, " +
@@ -106,7 +107,7 @@ fun AppearanceSection(
                     color = color,
                     selected = color.argbInt() == preferences.seedColor.argbInt(),
                     label = "Seed color ${index + 1}",
-                    selectedIndicatorContentDescription = "Selected seed color ${index + 1}",
+                    selectedIndicatorTestTag = "Selected seed color ${index + 1}",
                     onClick = { viewModel.updateSeedColor(color) },
                 )
             }
@@ -124,7 +125,7 @@ fun AppearanceSection(
                     selected = selected,
                     onClick = { viewModel.updatePaletteStyle(style) },
                     label = style.displayName(),
-                    selectedIndicatorContentDescription =
+                    selectedIndicatorTestTag =
                         "Selected palette ${style.displayName()}",
                     modifier = Modifier.semantics {
                         contentDescription = "Palette ${style.displayName()}, " +
@@ -170,7 +171,9 @@ private fun SettingsChoiceBlock(
             )
         }
         FlowRow(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .selectableGroup(),
             horizontalArrangement = Arrangement.spacedBy(spacing.s),
             verticalArrangement = Arrangement.spacedBy(spacing.s),
         ) {
@@ -192,7 +195,7 @@ internal fun AuroraThemePreview(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(104.dp)
+            .heightIn(min = 104.dp)
             .clip(MaterialTheme.shapes.large)
             .drawWithCache {
                 val field = Brush.linearGradient(
@@ -234,7 +237,7 @@ private fun SeedSwatch(
     color: Color,
     selected: Boolean,
     label: String,
-    selectedIndicatorContentDescription: String,
+    selectedIndicatorTestTag: String,
     onClick: () -> Unit,
 ) {
     val borderColor = if (selected) {
@@ -265,9 +268,7 @@ private fun SeedSwatch(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .size(20.dp)
-                    .semantics {
-                        contentDescription = selectedIndicatorContentDescription
-                    },
+                    .testTag(selectedIndicatorTestTag),
                 shape = CircleShape,
                 color = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,

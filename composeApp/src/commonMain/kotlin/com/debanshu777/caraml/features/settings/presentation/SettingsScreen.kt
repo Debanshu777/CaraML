@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -414,7 +415,9 @@ internal fun KvCacheSection(
             color = MaterialTheme.colorScheme.primary,
         )
         FlowRow(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .selectableGroup(),
             horizontalArrangement = Arrangement.spacedBy(spacing.s),
             verticalArrangement = Arrangement.spacedBy(spacing.s),
         ) {
@@ -424,7 +427,7 @@ internal fun KvCacheSection(
                     selected = isSelected,
                     onClick = { onSelect(preset) },
                     label = preset.chipLabel(),
-                    selectedIndicatorContentDescription =
+                    selectedIndicatorTestTag =
                         "Selected KV cache ${preset.chipLabel()}",
                     modifier = Modifier.semantics {
                         contentDescription = "KV cache ${preset.chipLabel()}, " +

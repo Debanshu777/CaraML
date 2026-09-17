@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -122,7 +123,9 @@ private fun <T> ChoiceGroup(
         ) {
             Text(text = title, style = MaterialTheme.typography.labelLarge)
             FlowRow(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .selectableGroup(),
                 horizontalArrangement = Arrangement.spacedBy(spacing.s),
                 verticalArrangement = Arrangement.spacedBy(spacing.s),
             ) {
@@ -132,7 +135,7 @@ private fun <T> ChoiceGroup(
                         selected = isSelected,
                         onClick = { onSelect(choice) },
                         label = label(choice),
-                        selectedIndicatorContentDescription =
+                        selectedIndicatorTestTag =
                             "Selected ${accessibilityPrefix.lowercase()} ${label(choice)}",
                         enabled = enabled,
                         modifier = Modifier
