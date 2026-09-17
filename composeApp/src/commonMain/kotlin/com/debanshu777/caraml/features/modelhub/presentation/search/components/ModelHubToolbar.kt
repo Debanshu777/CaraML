@@ -11,8 +11,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -36,6 +38,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
@@ -90,22 +94,48 @@ fun ModelHubToolbar(
 }
 
 @Composable
-private fun RowScope.ModelKindControls(
+private fun ModelKindControls(
     browseMode: ModelHubBrowseMode,
     onBrowseModeChange: (ModelHubBrowseMode) -> Unit,
 ) {
-    listOf(
-        ModelHubBrowseMode.LanguageModels to "Text",
-        ModelHubBrowseMode.DiffusionImage to "Image",
-        ModelHubBrowseMode.DiffusionVideo to "Video",
-    ).forEach { (mode, label) ->
-        FilterChip(
-            selected = browseMode == mode,
-            onClick = { onBrowseModeChange(mode) },
-            label = { Text(label) },
-            modifier = Modifier.heightIn(min = 48.dp),
-            shape = MaterialTheme.shapes.extraSmall,
-        )
+    Row(
+        modifier = Modifier
+            .selectableGroup()
+            .testTag("model-kind-group"),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        listOf(
+            ModelHubBrowseMode.LanguageModels to "Text",
+            ModelHubBrowseMode.DiffusionImage to "Image",
+            ModelHubBrowseMode.DiffusionVideo to "Video",
+        ).forEach { (mode, label) ->
+            val selected = browseMode == mode
+            FilterChip(
+                selected = selected,
+                onClick = { onBrowseModeChange(mode) },
+                label = { Text(label) },
+                leadingIcon = if (selected) {
+                    {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .size(18.dp)
+                                .testTag("Selected model kind $label"),
+                        )
+                    }
+                } else {
+                    null
+                },
+                modifier = Modifier
+                    .heightIn(min = 48.dp)
+                    .semantics {
+                        this.selected = selected
+                        role = Role.RadioButton
+                    },
+                shape = MaterialTheme.shapes.extraSmall,
+            )
+        }
     }
 }
 

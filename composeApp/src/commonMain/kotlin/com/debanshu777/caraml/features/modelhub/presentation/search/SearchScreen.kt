@@ -22,11 +22,15 @@ import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
@@ -50,6 +54,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.Dp
@@ -730,13 +736,13 @@ internal fun <T> LazyListScope.modelHubResultItems(
                 modifier = Modifier
                     .fillMaxWidth()
                     .animateItem(
-                        fadeInSpec = tween(motion.opacityDurationMillis),
+                        fadeInSpec = null,
                         placementSpec = if (motion.spatialTransitionsEnabled) {
                             tween(motion.peerTransitionMillis)
                         } else {
                             null
                         },
-                        fadeOutSpec = tween(motion.opacityDurationMillis),
+                        fadeOutSpec = null,
                     )
                     .then(
                         if (index == 0) {
@@ -934,13 +940,13 @@ internal fun DownloadedTabContent(
                         modifier = Modifier
                             .fillMaxWidth()
                             .animateItem(
-                                fadeInSpec = tween(motion.opacityDurationMillis),
+                                fadeInSpec = null,
                                 placementSpec = if (motion.spatialTransitionsEnabled) {
                                     tween(motion.peerTransitionMillis)
                                 } else {
                                     null
                                 },
-                                fadeOutSpec = tween(motion.opacityDurationMillis),
+                                fadeOutSpec = null,
                             )
                             .then(
                                 if (index == 0) {
@@ -1031,6 +1037,7 @@ private fun LibraryReadinessToolbar(
         modifier = Modifier
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState())
+            .selectableGroup()
             .testTag("model-toolbar"),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -1044,7 +1051,25 @@ private fun LibraryReadinessToolbar(
                 selected = selected == filter,
                 onClick = { onSelected(filter) },
                 label = { Text(label) },
-                modifier = Modifier.heightIn(min = 48.dp),
+                leadingIcon = if (selected == filter) {
+                    {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .size(18.dp)
+                                .testTag("Selected library readiness $label"),
+                        )
+                    }
+                } else {
+                    null
+                },
+                modifier = Modifier
+                    .heightIn(min = 48.dp)
+                    .semantics {
+                        this.selected = selected == filter
+                        role = Role.RadioButton
+                    },
                 shape = MaterialTheme.shapes.extraSmall,
             )
         }

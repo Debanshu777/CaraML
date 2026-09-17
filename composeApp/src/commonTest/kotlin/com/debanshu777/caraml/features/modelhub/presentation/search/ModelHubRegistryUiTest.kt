@@ -18,11 +18,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasImeAction
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -447,7 +448,11 @@ class ModelHubRegistryUiTest {
         val pixels = onNodeWithTag("model-row:org/recommended")
             .captureToImage()
             .toPixelMap()
-        onNodeWithTag("model-row:org/recommended").assertIsNotSelected()
+        val rowSemantics = onNodeWithTag("model-row:org/recommended")
+            .fetchSemanticsNode()
+            .config
+        assertEquals(Role.Button, rowSemantics[SemanticsProperties.Role])
+        assertEquals(null, rowSemantics.getOrNull(SemanticsProperties.Selected))
         val middleY = pixels.height / 2
         var matchingLeadingPixels = 0
         for (x in 0 until minOf(12, pixels.width)) {

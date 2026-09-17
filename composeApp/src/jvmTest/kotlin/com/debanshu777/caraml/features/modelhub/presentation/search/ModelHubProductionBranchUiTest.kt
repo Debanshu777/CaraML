@@ -15,7 +15,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasImeAction
@@ -64,6 +70,7 @@ import com.debanshu777.caraml.features.modelhub.domain.RecommendationSnapshotSou
 import com.debanshu777.caraml.features.modelhub.domain.RecommendationVariantEvaluator
 import com.debanshu777.caraml.features.modelhub.domain.RepositoryVariantSet
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.DownloadedModelsViewModel
+import com.debanshu777.caraml.features.modelhub.presentation.downloaded.ReadinessFilter
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubStateKind
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubStateView
 import com.debanshu777.huggingfacemanager.HuggingFaceApi
@@ -346,6 +353,80 @@ class ModelHubProductionBranchUiTest {
         onNodeWithText("Delete (1)").assertIsDisplayed()
         runOnIdle { assertEquals(setOf(alpha.id), viewModel.selectedIds.value) }
     }
+
+    @Test
+    fun libraryReadinessIsOneRadioGroupWithOneActionAndExactFilterCallback() =
+        runComposeUiTest {
+            val ready = localModel(
+                id = 1,
+                modelId = "org/ready-model",
+                filename = "ready.gguf",
+                componentStatus = LocalModelEntity.STATUS_READY,
+            )
+            val partial = localModel(
+                id = 2,
+                modelId = "org/partial-model",
+                filename = "partial.gguf",
+                componentStatus = LocalModelEntity.STATUS_PARTIAL,
+            )
+            val viewModel = DownloadedModelsViewModel(
+                LocalModelRepository(TestLocalModelDao(listOf(ready, partial))),
+                TestStoragePathProvider(),
+            )
+            setContent {
+                DensityOne {
+                    MaterialTheme {
+                        Box(Modifier.requiredSize(width = 360.dp, height = 760.dp)) {
+                            DownloadedTabContent(
+                                viewModel = viewModel,
+                                storageInfo = testStorageInfo(),
+                                onSelectModelAndGoBack = {},
+                                onNavigateToDetails = { _, _ -> },
+                                snackbarHostState = SnackbarHostState(),
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    }
+                }
+            }
+
+            onNodeWithText("org/ready-model").performScrollTo().assertIsDisplayed()
+            onNodeWithTag("model-toolbar", useUnmergedTree = true)
+                .performScrollTo()
+                .assert(
+                    SemanticsMatcher.keyIsDefined(SemanticsProperties.SelectableGroup),
+                )
+            listOf(
+                "All" to true,
+                "Ready" to false,
+                "Needs setup" to false,
+            ).forEach { (label, selected) ->
+                val option = onNode(
+                    hasText(label) and isSelectable(),
+                ).performScrollTo().fetchSemanticsNode()
+                assertEquals(Role.RadioButton, option.config[SemanticsProperties.Role])
+                assertEquals(selected, option.config[SemanticsProperties.Selected])
+                val actionCount = onAllNodes(
+                    SemanticsMatcher.keyIsDefined(SemanticsActions.OnClick),
+                    useUnmergedTree = true,
+                ).fetchSemanticsNodes().count { actionNode ->
+                    option.boundsInRoot.contains(actionNode.boundsInRoot.center)
+                }
+                assertEquals(1, actionCount, "$label must expose exactly one click action")
+            }
+            onNodeWithTag("Selected library readiness All", useUnmergedTree = true)
+                .assertIsDisplayed()
+
+            onNode(hasText("Needs setup") and isSelectable()).performClick()
+
+            waitUntil { viewModel.readinessFilter.value == ReadinessFilter.PARTIAL }
+            onNode(hasText("All") and isSelectable()).assertIsNotSelected()
+            onNode(hasText("Needs setup") and isSelectable()).assertIsSelected()
+            onNodeWithTag("Selected library readiness Needs setup", useUnmergedTree = true)
+                .assertIsDisplayed()
+            onNodeWithText("org/partial-model").performScrollTo().assertIsDisplayed()
+            onNodeWithText("org/ready-model").assertDoesNotExist()
+        }
 
     @Test
     fun emptyAndErrorIconsMeetThreeToOneContrastOnDarkSurface() = runComposeUiTest {
@@ -650,7 +731,12 @@ private class TestStoragePathProvider : StoragePathProvider {
     override fun deleteDownloadedModelContent(modelId: String, localPath: String): Boolean = true
 }
 
-private fun localModel(id: Long, modelId: String, filename: String) = LocalModelEntity(
+private fun localModel(
+    id: Long,
+    modelId: String,
+    filename: String,
+    componentStatus: String? = null,
+) = LocalModelEntity(
     id = id,
     modelId = modelId,
     filename = filename,
@@ -660,6 +746,7 @@ private fun localModel(id: Long, modelId: String, filename: String) = LocalModel
     author = modelId.substringBefore('/'),
     libraryName = "llama.cpp",
     pipelineTag = "text-generation",
+    componentStatus = componentStatus,
 )
 
 private fun testStorageInfo() = StorageInfoUiState(

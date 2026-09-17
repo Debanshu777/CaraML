@@ -11,7 +11,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasImeAction
@@ -37,6 +43,66 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class ModelHubControlsUiTest {
+
+    @Test
+    fun modelKindsAreOneRadioGroupWithOneActionAndVisibleSelection() = runComposeUiTest {
+        var selectedMode by mutableStateOf(ModelHubBrowseMode.LanguageModels)
+        val selectedModes = mutableListOf<ModelHubBrowseMode>()
+        setContent {
+            MaterialTheme {
+                Box(Modifier.width(360.dp)) {
+                    ModelHubToolbar(
+                        browseMode = selectedMode,
+                        onBrowseModeChange = {
+                            selectedModes += it
+                            selectedMode = it
+                        },
+                        showSortFilters = false,
+                        ordering = ModelOrdering.Server(ModelSort.TRENDING),
+                        sort = ModelSort.TRENDING,
+                        minParams = ParameterRange.ZERO,
+                        maxParams = ParameterRange.SIX_B,
+                        onSortChange = {},
+                        onOrderingChange = {},
+                        onMinParamsChange = {},
+                        onMaxParamsChange = {},
+                    )
+                }
+            }
+        }
+
+        onNodeWithTag("model-kind-group", useUnmergedTree = true).assert(
+            SemanticsMatcher.keyIsDefined(SemanticsProperties.SelectableGroup),
+        )
+        listOf(
+            "Text" to true,
+            "Image" to false,
+            "Video" to false,
+        ).forEach { (label, selected) ->
+            val option = onNode(
+                hasText(label) and isSelectable(),
+            ).fetchSemanticsNode()
+            assertEquals(Role.RadioButton, option.config[SemanticsProperties.Role])
+            assertEquals(selected, option.config[SemanticsProperties.Selected])
+            val actionCount = onAllNodes(
+                SemanticsMatcher.keyIsDefined(SemanticsActions.OnClick),
+                useUnmergedTree = true,
+            ).fetchSemanticsNodes().count { actionNode ->
+                option.boundsInRoot.contains(actionNode.boundsInRoot.center)
+            }
+            assertEquals(1, actionCount, "$label must expose exactly one click action")
+        }
+        onNodeWithTag("Selected model kind Text", useUnmergedTree = true).assertIsDisplayed()
+
+        onNode(hasText("Image") and isSelectable()).performClick()
+
+        runOnIdle {
+            assertEquals(listOf(ModelHubBrowseMode.DiffusionImage), selectedModes)
+        }
+        onNode(hasText("Text") and isSelectable()).assertIsNotSelected()
+        onNode(hasText("Image") and isSelectable()).assertIsSelected()
+        onNodeWithTag("Selected model kind Image", useUnmergedTree = true).assertIsDisplayed()
+    }
 
     @Test
     fun legacyPositionalToolbarSignaturesRemainCallable() = runComposeUiTest {
