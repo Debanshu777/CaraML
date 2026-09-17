@@ -217,7 +217,12 @@ internal fun ModelHubScreenLayout(
         snackbarHost = {
             if (snackbarHostState != null) SnackbarHost(snackbarHostState)
         },
-        topBar = { CaraMLPrimaryTopBar(title = "Models") },
+        topBar = {
+            CaraMLPrimaryTopBar(
+                title = "Models",
+                contentKind = AppContentKind.ModelHub,
+            )
+        },
     ) { paddingValues ->
         ResponsiveContentPane(
             kind = AppContentKind.ModelHub,
@@ -495,6 +500,7 @@ internal fun SearchTabContent(
                 onOrderingChange = viewModel::setModelOrdering,
                 onMinParamsChange = { viewModel.updateParams(minParams = it) },
                 onMaxParamsChange = { viewModel.updateParams(maxParams = it) },
+                onFiltersApplied = viewModel::loadModels,
             )
         },
         summary = {

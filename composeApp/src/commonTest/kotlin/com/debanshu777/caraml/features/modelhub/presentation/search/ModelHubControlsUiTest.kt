@@ -3,12 +3,14 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertCountEquals
@@ -17,6 +19,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
@@ -24,6 +27,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubBrowseControls
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubToolbar
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchBar
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SortFilterChips
 import com.debanshu777.huggingfacemanager.model.ModelSort
@@ -35,8 +39,62 @@ import kotlin.test.assertTrue
 class ModelHubControlsUiTest {
 
     @Test
+    fun legacyPositionalToolbarSignaturesRemainCallable() = runComposeUiTest {
+        setContent {
+            MaterialTheme {
+                Column {
+                    SortFilterChips(
+                        ModelOrdering.Server(ModelSort.TRENDING),
+                        ModelSort.TRENDING,
+                        ParameterRange.ZERO,
+                        ParameterRange.SIX_B,
+                        {},
+                        {},
+                        {},
+                        {},
+                        Modifier.testTag("legacy-sort-filter"),
+                    )
+                    ModelHubBrowseControls(
+                        ModelHubBrowseMode.LanguageModels,
+                        {},
+                        true,
+                        ModelOrdering.Server(ModelSort.TRENDING),
+                        ModelSort.TRENDING,
+                        ParameterRange.ZERO,
+                        ParameterRange.SIX_B,
+                        {},
+                        {},
+                        {},
+                        {},
+                        Modifier.testTag("legacy-browse-controls"),
+                    )
+                    ModelHubToolbar(
+                        ModelHubBrowseMode.LanguageModels,
+                        {},
+                        true,
+                        ModelOrdering.Server(ModelSort.TRENDING),
+                        ModelSort.TRENDING,
+                        ParameterRange.ZERO,
+                        ParameterRange.SIX_B,
+                        {},
+                        {},
+                        {},
+                        {},
+                        Modifier.testTag("legacy-toolbar"),
+                    )
+                }
+            }
+        }
+
+        onNodeWithTag("legacy-sort-filter").assertExists()
+        onNodeWithTag("legacy-browse-controls").assertExists()
+        onNodeWithTag("legacy-toolbar").assertExists()
+    }
+
+    @Test
     fun compactBrowseControlsUseOneBandAndPutRangesBehindFilters() = runComposeUiTest {
         val controlWidth = 320.dp
+        var applyCalls = 0
         setContent {
             MaterialTheme {
                 Box(Modifier.width(controlWidth)) {
@@ -52,6 +110,7 @@ class ModelHubControlsUiTest {
                         onOrderingChange = {},
                         onMinParamsChange = {},
                         onMaxParamsChange = {},
+                        onFiltersApplied = { applyCalls += 1 },
                     )
                 }
             }
@@ -69,11 +128,14 @@ class ModelHubControlsUiTest {
         onNodeWithText("Maximum parameters")
             .performScrollTo()
             .assertIsDisplayed()
+        onNodeWithText("Done").performScrollTo().performClick()
+        runOnIdle { assertEquals(1, applyCalls) }
     }
 
     @Test
-    fun sortSheetExposesSelectionAndDismissesAfterChoice() = runComposeUiTest {
+    fun filterSheetStagesSelectionUntilDone() = runComposeUiTest {
         var selectedSort by mutableStateOf(ModelSort.TRENDING)
+        var applyCalls = 0
         setContent {
             MaterialTheme {
                 SortFilterChips(
@@ -85,6 +147,7 @@ class ModelHubControlsUiTest {
                     onOrderingChange = {},
                     onMinParamsChange = {},
                     onMaxParamsChange = {},
+                    onFiltersApplied = { applyCalls += 1 },
                 )
             }
         }
@@ -93,9 +156,13 @@ class ModelHubControlsUiTest {
         onNode(hasText("Trending") and isSelectable()).assertIsSelected()
         onNodeWithText("Downloads").performClick()
 
-        runOnIdle { assertEquals(ModelSort.DOWNLOADS, selectedSort) }
+        runOnIdle { assertEquals(ModelSort.TRENDING, selectedSort) }
         onNode(hasText("Downloads") and isSelectable()).assertIsSelected()
-        onNodeWithText("Done").performClick()
+        onNodeWithText("Done").performScrollTo().performClick()
+        runOnIdle {
+            assertEquals(ModelSort.DOWNLOADS, selectedSort)
+            assertEquals(1, applyCalls)
+        }
         onNodeWithText("Filters (1)").assertIsDisplayed()
     }
 
@@ -152,5 +219,22 @@ class ModelHubControlsUiTest {
 
         onNodeWithContentDescription("Clear model search").performClick()
         runOnIdle { assertEquals(1, clearCalls) }
+    }
+
+    @Test
+    fun whitespaceSearchStillExposesClearAction() = runComposeUiTest {
+        var query by mutableStateOf("   ")
+        setContent {
+            MaterialTheme {
+                SearchBar(
+                    query = query,
+                    onQueryChange = { query = it },
+                    onSearch = {},
+                )
+            }
+        }
+
+        onNodeWithContentDescription("Clear model search").performClick()
+        runOnIdle { assertEquals("", query) }
     }
 }

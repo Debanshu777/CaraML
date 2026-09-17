@@ -19,10 +19,13 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasImeAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
@@ -152,6 +155,49 @@ class ModelHubProductionBranchUiTest {
                 environment.close()
             }
         }
+
+    @Test
+    fun filterSheetAppliesExactParamsWithOneReloadAndUpdatedRows() = runComposeUiTest {
+        val environment = TestModelHubEnvironment()
+        try {
+            environment.modelViewModel.loadModels()
+            waitUntil {
+                environment.listRequests.size == 1 &&
+                    environment.modelViewModel.listResponse.value != null
+            }
+            setSearchContent(environment.modelViewModel)
+            onNodeWithText("browse-result").performScrollTo().assertIsDisplayed()
+
+            onNodeWithText("Filters").performScrollTo().performClick()
+            onNode(hasText("Likes") and isSelectable()).performClick()
+            onAllNodes(hasText("3B") and isSelectable())[0].performScrollTo().performClick()
+            onAllNodes(hasText("12B") and isSelectable())[1].performScrollTo().performClick()
+            onNodeWithText("Done").performScrollTo().performClick()
+
+            waitUntil {
+                environment.listRequests.size == 2 &&
+                    environment.modelViewModel.listResponse.value
+                        ?.models
+                        .orEmpty()
+                        .filterNotNull()
+                        .singleOrNull()
+                        ?.id == "org/filtered-result"
+            }
+            runOnIdle {
+                assertEquals(
+                    listOf(
+                        RecordedListRequest("trending", "min:0,max:6B"),
+                        RecordedListRequest("likes", "min:3B,max:12B"),
+                    ),
+                    environment.listRequests,
+                )
+            }
+            onNodeWithText("filtered-result").performScrollTo().assertIsDisplayed()
+            onNodeWithText("browse-result").assertDoesNotExist()
+        } finally {
+            environment.close()
+        }
+    }
 
     @Test
     fun imageAndVideoDoNotLeakTextFiltersIntoCuratedResults() = runComposeUiTest {
@@ -397,13 +443,32 @@ private fun DensityOne(content: @Composable () -> Unit) {
     )
 }
 
+private data class RecordedListRequest(
+    val sort: String?,
+    val parameterRange: String?,
+)
+
 private class TestModelHubEnvironment : AutoCloseable {
+    val listRequests = mutableListOf<RecordedListRequest>()
+
     private val client = HttpClient(
         MockEngine { request ->
             val body = if (request.url.encodedPath.contains("quicksearch")) {
                 """{"models":[{"_id":"org/search-result","id":"org/search-result","private":false}],"modelsCount":1,"q":"server"}"""
             } else {
-                """{"models":[{"id":"org/browse-result","private":false}],"numItemsPerPage":1,"numTotalItems":1,"pageIndex":0}"""
+                val recorded = RecordedListRequest(
+                    sort = request.url.parameters["sort"],
+                    parameterRange = request.url.parameters["num_parameters"],
+                )
+                listRequests += recorded
+                val repositoryId = if (
+                    recorded == RecordedListRequest("likes", "min:3B,max:12B")
+                ) {
+                    "org/filtered-result"
+                } else {
+                    "org/browse-result"
+                }
+                """{"models":[{"id":"$repositoryId","private":false}],"numItemsPerPage":1,"numTotalItems":1,"pageIndex":0}"""
             }
             respond(
                 content = body,

@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.v2.runComposeUiTest
@@ -155,6 +156,12 @@ class ModelDetailsRouteUiTest {
                 .fetchSemanticsNode().boundsInRoot
             val compactSupport = onNodeWithTag("detail-support", useUnmergedTree = true)
                 .fetchSemanticsNode().boundsInRoot
+            val compactBack = onNodeWithContentDescription("Navigate back", useUnmergedTree = true)
+                .fetchSemanticsNode().boundsInRoot
+            assertTrue(
+                abs(compactBack.left - compactOverview.left) < 1f,
+                "Back target started at ${compactBack.left}px while workspace started at ${compactOverview.left}px",
+            )
             assertTrue(
                 abs(compactSupport.left - compactOverview.left) < 1f,
                 "Outer 840dp leaves only 712dp after rail and margins, so Details must stay compact",

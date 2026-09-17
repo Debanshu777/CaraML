@@ -59,6 +59,7 @@ fun ModelHubToolbar(
     onMinParamsChange: (ParameterRange) -> Unit,
     onMaxParamsChange: (ParameterRange) -> Unit,
     modifier: Modifier = Modifier,
+    onFiltersApplied: () -> Unit = {},
 ) {
     Row(
         modifier = modifier
@@ -82,6 +83,7 @@ fun ModelHubToolbar(
                 onOrderingChange = onOrderingChange,
                 onMinParamsChange = onMinParamsChange,
                 onMaxParamsChange = onMaxParamsChange,
+                onFiltersApplied = onFiltersApplied,
             )
         }
     }
@@ -117,6 +119,7 @@ internal fun RowScope.ModelSortAndFilterControls(
     onOrderingChange: (ModelOrdering) -> Unit,
     onMinParamsChange: (ParameterRange) -> Unit,
     onMaxParamsChange: (ParameterRange) -> Unit,
+    onFiltersApplied: () -> Unit = {},
 ) {
     var orderingExpanded by remember { mutableStateOf(false) }
     var filtersExpanded by remember { mutableStateOf(false) }
@@ -185,6 +188,7 @@ internal fun RowScope.ModelSortAndFilterControls(
             onSortChange = onSortChange,
             onMinParamsChange = onMinParamsChange,
             onMaxParamsChange = onMaxParamsChange,
+            onFiltersApplied = onFiltersApplied,
             onDismiss = { filtersExpanded = false },
         )
     }
@@ -242,9 +246,13 @@ private fun ModelFilterSheet(
     onSortChange: (ModelSort) -> Unit,
     onMinParamsChange: (ParameterRange) -> Unit,
     onMaxParamsChange: (ParameterRange) -> Unit,
+    onFiltersApplied: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var pendingSort by remember(sort) { mutableStateOf(sort) }
+    var pendingMinParams by remember(minParams) { mutableStateOf(minParams) }
+    var pendingMaxParams by remember(maxParams) { mutableStateOf(maxParams) }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -263,25 +271,34 @@ private fun ModelFilterSheet(
             FilterSelectionGroup(
                 title = "Sort by",
                 options = ModelSort.entries.filter { it != ModelSort.SIMILAR },
-                selected = sort,
+                selected = pendingSort,
                 label = { it.displayName },
-                onSelect = onSortChange,
+                onSelect = { pendingSort = it },
             )
             FilterSelectionGroup(
                 title = "Minimum parameters",
                 options = ParameterRange.entries,
-                selected = minParams,
+                selected = pendingMinParams,
                 label = { it.displayName },
-                onSelect = onMinParamsChange,
+                onSelect = { pendingMinParams = it },
             )
             FilterSelectionGroup(
                 title = "Maximum parameters",
                 options = ParameterRange.entries,
-                selected = maxParams,
+                selected = pendingMaxParams,
                 label = { it.displayName },
-                onSelect = onMaxParamsChange,
+                onSelect = { pendingMaxParams = it },
             )
-            TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
+            TextButton(
+                onClick = {
+                    onSortChange(pendingSort)
+                    onMinParamsChange(pendingMinParams)
+                    onMaxParamsChange(pendingMaxParams)
+                    onFiltersApplied()
+                    onDismiss()
+                },
+                modifier = Modifier.align(Alignment.End),
+            ) {
                 Text("Done")
             }
         }

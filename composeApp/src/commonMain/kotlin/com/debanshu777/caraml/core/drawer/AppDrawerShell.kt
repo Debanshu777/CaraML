@@ -80,6 +80,7 @@ fun AppDrawerShell(
         val selectedItemId = when (currentScreen) {
             AppScreen.Home -> "create"
             AppScreen.Search -> "models"
+            is AppScreen.Details -> "models"
             AppScreen.Settings -> "settings"
             else -> null
         }

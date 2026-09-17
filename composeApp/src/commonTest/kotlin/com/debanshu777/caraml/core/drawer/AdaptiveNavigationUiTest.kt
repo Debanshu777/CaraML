@@ -205,6 +205,46 @@ class AdaptiveNavigationUiTest {
     }
 
     @Test
+    fun detailsKeepsModelsSelectedWhileBackReturnsToSearch() = runComposeUiTest {
+        lateinit var backStack: NavBackStack<NavKey>
+
+        setContent {
+            MaterialTheme {
+                backStack = remember {
+                    NavBackStack<NavKey>(
+                        AppScreen.Search,
+                        AppScreen.Details("org/model"),
+                    )
+                }
+                AppDrawerShell(
+                    modifier = Modifier.requiredSize(width = 599.dp, height = 720.dp),
+                    backStack = backStack,
+                ) {
+                    val visibleRoute = requireNotNull(backStack.lastOrNull())
+                    androidx.compose.material3.Text(
+                        text = visibleRoute.routeLabel(),
+                        modifier = Modifier.testTag("visible-route"),
+                    )
+                }
+            }
+        }
+
+        onNodeWithTag("visible-route").assertTextEquals("Details route")
+        onAllNodesWithContentDescription("Models, selected").assertCountEquals(1)
+        runOnIdle {
+            assertEquals(2, backStack.size)
+            backStack.removeLastOrNull()
+        }
+
+        onNodeWithTag("visible-route").assertTextEquals("Models route")
+        onAllNodesWithContentDescription("Models, selected").assertCountEquals(1)
+        runOnIdle {
+            assertEquals(1, backStack.size)
+            assertEquals(AppScreen.Search, backStack.last())
+        }
+    }
+
+    @Test
     fun peerDestinationTransitionNeverMovesTheRouteBounds() = runComposeUiTest {
         lateinit var backStack: NavBackStack<NavKey>
         mainClock.autoAdvance = false

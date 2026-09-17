@@ -25,6 +25,7 @@ fun SortFilterChips(
     onMinParamsChange: (ParameterRange) -> Unit,
     onMaxParamsChange: (ParameterRange) -> Unit,
     modifier: Modifier = Modifier,
+    onFiltersApplied: () -> Unit = {},
 ) {
     Row(
         modifier = modifier
@@ -41,6 +42,7 @@ fun SortFilterChips(
             onOrderingChange = onOrderingChange,
             onMinParamsChange = onMinParamsChange,
             onMaxParamsChange = onMaxParamsChange,
+            onFiltersApplied = onFiltersApplied,
         )
     }
 }
@@ -60,6 +62,7 @@ fun ModelHubBrowseControls(
     onMinParamsChange: (ParameterRange) -> Unit,
     onMaxParamsChange: (ParameterRange) -> Unit,
     modifier: Modifier = Modifier,
+    onFiltersApplied: () -> Unit = {},
 ) {
     ModelHubToolbar(
         browseMode = browseMode,
@@ -74,5 +77,6 @@ fun ModelHubBrowseControls(
         onMinParamsChange = onMinParamsChange,
         onMaxParamsChange = onMaxParamsChange,
         modifier = modifier,
+        onFiltersApplied = onFiltersApplied,
     )
 }

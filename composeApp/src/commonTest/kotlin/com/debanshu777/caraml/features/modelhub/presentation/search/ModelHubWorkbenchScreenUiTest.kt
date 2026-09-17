@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
@@ -18,6 +19,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -25,12 +27,17 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.navigation3.runtime.NavBackStack
+import androidx.navigation3.runtime.NavKey
+import com.debanshu777.caraml.core.drawer.AppDrawerShell
+import com.debanshu777.caraml.core.navigation.AppScreen
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubContextStrip
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubToolbar
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelResultCard
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchBar
 import com.debanshu777.huggingfacemanager.model.ModelSort
 import com.debanshu777.huggingfacemanager.model.ParameterRange
+import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -71,6 +78,46 @@ class ModelHubWorkbenchScreenUiTest {
             summary.top < 800f || results.top < 800f,
             "The result summary or first result must begin in the first 360x800dp viewport",
         )
+    }
+
+    @Test
+    fun productionModelsHeaderAlignsWithWorkspaceAcrossShellLayouts() = runComposeUiTest {
+        var windowWidth by mutableStateOf(599.dp)
+        setContent {
+            CompositionLocalProvider(LocalDensity provides Density(density = 1f, fontScale = 1f)) {
+                MaterialTheme {
+                    val backStack = remember { NavBackStack<NavKey>(AppScreen.Search) }
+                    Box(Modifier.requiredSize(width = windowWidth, height = 760.dp)) {
+                        AppDrawerShell(
+                            modifier = Modifier.fillMaxSize(),
+                            backStack = backStack,
+                        ) {
+                            WorkbenchFixture(modifier = Modifier.fillMaxSize())
+                        }
+                    }
+                }
+            }
+        }
+
+        fun assertHeaderAligned(layout: String) {
+            val header = onAllNodesWithText("Models")
+                .fetchSemanticsNodes()
+                .maxBy { it.boundsInRoot.width }
+                .boundsInRoot
+            val tabs = onNodeWithTag("model-tabs").fetchSemanticsNode().boundsInRoot
+            assertTrue(
+                abs(header.left - tabs.left) <= 1f,
+                "$layout header started at ${header.left}px while workspace started at ${tabs.left}px",
+            )
+        }
+
+        assertHeaderAligned("Bottom bar")
+        runOnIdle { windowWidth = 600.dp }
+        waitForIdle()
+        assertHeaderAligned("Rail")
+        runOnIdle { windowWidth = 1300.dp }
+        waitForIdle()
+        assertHeaderAligned("Sidebar")
     }
 
     @Test

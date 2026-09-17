@@ -89,7 +89,7 @@ fun SearchBar(
                     }
                 },
             )
-            if (query.isNotBlank()) {
+            if (query.isNotEmpty()) {
                 IconButton(onClick = onClear) {
                     Icon(
                         imageVector = Icons.Default.Clear,

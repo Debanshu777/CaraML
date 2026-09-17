@@ -94,6 +94,7 @@ fun DetailsScreen(
                 title = "Artifact",
                 navigation = TopBarNavigation.Back,
                 onNavigationClick = onBack,
+                contentKind = AppContentKind.Details,
             )
         },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
