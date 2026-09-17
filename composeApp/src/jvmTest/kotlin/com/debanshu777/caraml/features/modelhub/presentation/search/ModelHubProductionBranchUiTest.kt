@@ -15,14 +15,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasImeAction
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.text.input.ImeAction
@@ -89,6 +92,7 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -118,6 +122,32 @@ class ModelHubProductionBranchUiTest {
                 runOnIdle { assertNull(environment.modelViewModel.searchResponse.value) }
                 onNodeWithText("browse-result").performScrollTo().assertIsDisplayed()
                 onNodeWithText("1 model").assertIsDisplayed()
+            } finally {
+                environment.close()
+            }
+        }
+
+    @Test
+    fun textBranchWhitespaceSubmitUsesExistingValidationInsteadOfBrowseLoad() =
+        runComposeUiTest {
+            val environment = TestModelHubEnvironment()
+            try {
+                setSearchContent(environment.modelViewModel)
+
+                onNode(hasImeAction(ImeAction.Search)).performTextReplacement("   ")
+                onNode(hasImeAction(ImeAction.Search)).performImeAction()
+
+                runOnIdle {
+                    assertEquals(
+                        "Please enter a search query",
+                        environment.modelViewModel.searchError.value,
+                    )
+                    assertNull(environment.modelViewModel.searchResponse.value)
+                }
+                onNodeWithText("Please enter a search query")
+                    .performScrollTo()
+                    .assertIsDisplayed()
+                onNodeWithText("No models match “   ”.").assertDoesNotExist()
             } finally {
                 environment.close()
             }
@@ -227,6 +257,51 @@ class ModelHubProductionBranchUiTest {
     }
 
     @Test
+    fun libraryFilteringKeepsSelectedIdentityVisible() = runComposeUiTest {
+        val alpha = localModel(1, "org/alpha-model", "alpha.gguf")
+        val dao = TestLocalModelDao(
+            listOf(
+                alpha,
+                localModel(2, "org/beta-model", "beta.gguf"),
+            ),
+        )
+        val viewModel = DownloadedModelsViewModel(
+            LocalModelRepository(dao),
+            TestStoragePathProvider(),
+        )
+        setContent {
+            DensityOne {
+                MaterialTheme {
+                    Box(Modifier.requiredSize(width = 360.dp, height = 760.dp)) {
+                        DownloadedTabContent(
+                            viewModel = viewModel,
+                            storageInfo = testStorageInfo(),
+                            onSelectModelAndGoBack = {},
+                            onNavigateToDetails = { _, _ -> },
+                            snackbarHostState = SnackbarHostState(),
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                }
+            }
+        }
+
+        onNodeWithContentDescription("Open model org/alpha-model")
+            .performScrollTo()
+            .performSemanticsAction(SemanticsActions.OnLongClick)
+        onNodeWithText("Delete (1)").assertIsDisplayed()
+
+        onNode(hasImeAction(ImeAction.Search)).performTextReplacement("beta")
+
+        onNodeWithText("org/alpha-model").performScrollTo().assertIsDisplayed()
+        onNodeWithText("org/beta-model").performScrollTo().assertIsDisplayed()
+        onNodeWithContentDescription("Selected org/alpha-model, tap to deselect")
+            .assertIsDisplayed()
+        onNodeWithText("Delete (1)").assertIsDisplayed()
+        runOnIdle { assertEquals(setOf(alpha.id), viewModel.selectedIds.value) }
+    }
+
+    @Test
     fun emptyAndErrorIconsMeetThreeToOneContrastOnDarkSurface() = runComposeUiTest {
         val surface = Color(0xFF10131A)
         val semantic = Color(0xFFC7CAD4)
@@ -299,12 +374,18 @@ class ModelHubProductionBranchUiTest {
         val image = stateNode.captureToImage().toPixelMap()
         val iconBottom = (messageBounds.top - stateBounds.top).toInt().coerceIn(1, image.height)
         var strongest = 1f
+        var contrastingPixelCount = 0
         for (y in 0 until iconBottom) {
             for (x in 0 until image.width) {
-                strongest = max(strongest, contrastRatio(surface, image[x, y]))
+                val contrast = contrastRatio(surface, image[x, y])
+                strongest = max(strongest, contrast)
+                if (contrast >= 3f) contrastingPixelCount += 1
             }
         }
-        assertTrue(strongest >= 3f, "$message icon contrast was $strongest:1")
+        assertTrue(
+            contrastingPixelCount >= MIN_CONTRASTING_ICON_PIXELS,
+            "$message icon had $contrastingPixelCount contrasting pixels; strongest was $strongest:1",
+        )
     }
 }
 
@@ -538,3 +619,5 @@ private fun relativeLuminance(color: Color): Float {
         0.7152f * channel(color.green) +
         0.0722f * channel(color.blue)
 }
+
+private const val MIN_CONTRASTING_ICON_PIXELS = 24

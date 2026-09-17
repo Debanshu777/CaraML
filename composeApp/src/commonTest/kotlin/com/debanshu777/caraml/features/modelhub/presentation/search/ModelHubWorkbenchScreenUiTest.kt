@@ -40,12 +40,14 @@ class ModelHubWorkbenchScreenUiTest {
     @Test
     fun compactModelsPlacesCommandBeforeContextAndResultsInFirstViewport() = runComposeUiTest {
         setContent {
-            MaterialTheme {
-                Box(Modifier.requiredSize(width = 360.dp, height = 800.dp)) {
-                    WorkbenchFixture(
-                        modifier = Modifier.fillMaxSize(),
-                        result = FixtureResult.Content,
-                    )
+            CompositionLocalProvider(LocalDensity provides Density(density = 1f, fontScale = 1f)) {
+                MaterialTheme {
+                    Box(Modifier.requiredSize(width = 360.dp, height = 800.dp)) {
+                        WorkbenchFixture(
+                            modifier = Modifier.fillMaxSize(),
+                            result = FixtureResult.Content,
+                        )
+                    }
                 }
             }
         }

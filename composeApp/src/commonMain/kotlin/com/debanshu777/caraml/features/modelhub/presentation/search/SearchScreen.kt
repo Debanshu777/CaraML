@@ -438,7 +438,7 @@ internal fun SearchTabContent(
                     onQueryChange = viewModel::updateSearchQuery,
                     onSearch = {
                         when {
-                            searchQuery.isNotBlank() -> viewModel.performSearch()
+                            searchQuery.isNotEmpty() -> viewModel.performSearch()
                             searchResponse != null || searchError != null -> viewModel.clearSearch()
                             else -> viewModel.loadModels()
                         }
@@ -841,7 +841,8 @@ internal fun DownloadedTabContent(
         downloadedModels
     } else {
         downloadedModels.filter { model ->
-            model.modelId.contains(normalizedLibraryQuery, ignoreCase = true) ||
+            model.id in selectedIds ||
+                model.modelId.contains(normalizedLibraryQuery, ignoreCase = true) ||
                 model.filename.contains(normalizedLibraryQuery, ignoreCase = true) ||
                 model.author?.contains(normalizedLibraryQuery, ignoreCase = true) == true
         }
