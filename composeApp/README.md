@@ -204,6 +204,8 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 
 <!-- Updated at end of each AI-assisted development session -->
 
+- Model Details now renders durable queue state and pause/resume/cancel/retry actions; Android uses UIDT/foreground WorkManager notifications, iOS uses a stable background URLSession with app-delegate reconnection and completion notifications, and Desktop recovers checkpoints at startup
+- Model Details now keeps `Needs information` informational, allows exact identity-validated downloads, and distinguishes unavailable model storage from network failures
 - Refined the shared Aurora system with visible semantic gradients, translucent borderless panes, restrained focal surfaces, and consistent compact spacing across Chat, Model Hub, Details, and Settings
 - Model Hub and Model Details now use a denser hierarchy, one advanced-filter surface, readable repository metadata, compact status treatments, and large-text-safe scrolling
 - Navigation now keeps route content stationary beneath the modal drawer, crossfades peer destinations, uses a shallow fixed axis for Details, and preserves reduced-motion behavior

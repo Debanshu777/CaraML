@@ -42,6 +42,7 @@ import com.debanshu777.caraml.core.storage.localmodel.ModelType
 import com.debanshu777.caraml.core.domain.ModelReadinessReconciler
 import com.debanshu777.caraml.features.modelhub.domain.ModelMetadataSource
 import com.debanshu777.caraml.features.modelhub.domain.ModelRecommendationService
+import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
 import com.debanshu777.caraml.features.modelhub.domain.RecommendationSnapshotSource
 import com.debanshu777.caraml.features.modelhub.domain.RecommendationVariantEvaluator
 import com.debanshu777.caraml.features.modelhub.domain.RepositoryVariant
@@ -105,6 +106,245 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ModelViewModelRecommendationTest {
+    @Test
+    fun freshDetailLoadAssessesExactFilesForDownloadAdmission() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val repositoryId = "org/detail-download"
+        val revision = "a".repeat(40)
+        val path = "weights/model-Q4_K_M.gguf"
+        val objectId = "b".repeat(64)
+        val sizeBytes = 100L
+        val descriptorFile = ModelFileIdentity(
+            repositoryId = repositoryId,
+            revision = revision,
+            path = path,
+            sizeBytes = sizeBytes,
+            gitOid = null,
+            lfsOid = objectId,
+            xetHash = null,
+            evidence = emptyList(),
+        )
+        val requestDispatcher = dispatcher
+        val engine = object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler { request ->
+                when {
+                    request.url.encodedPath.contains("/tree/") -> respondJson(
+                        """[{"path":"$path","type":"file","size":$sizeBytes,"lfs":{"oid":"$objectId","size":$sizeBytes}}]""",
+                    )
+                    request.url.encodedPath.endsWith("/$repositoryId") -> respondJson(
+                        """{"id":"$repositoryId","modelId":"$repositoryId","sha":"$revision","private":false} """,
+                    )
+                    else -> error("Unexpected request ${request.url}")
+                }
+            }
+        }) {
+            override val dispatcher: CoroutineDispatcher = requestDispatcher
+        }
+        val client = HttpClient(engine)
+        try {
+            val viewModel = viewModel(
+                client = client,
+                dispatcher = dispatcher,
+                recommendationService = recommendationService(
+                    dispatcher = dispatcher,
+                    descriptorFiles = listOf(descriptorFile),
+                    recommendationStorageFit = FitBand.COMFORTABLE,
+                ),
+            )
+
+            viewModel.loadDetail(repositoryId, ModelHubBrowseMode.LanguageModels)
+            advanceUntilIdle()
+
+            val recommendation = viewModel.recommendedModels.value.single()
+            val descriptor = recommendation.selectedDescriptor as LlmModelDescriptor
+            assertEquals(repositoryId, recommendation.repositoryId)
+            assertEquals(listOf(descriptorFile), descriptor.files)
+            assertEquals(path, viewModel.ggufFiles.value.single().artifact?.relativePath)
+        } finally {
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun needsInformationAllowsDownloadOnlyForAnExactCurrentDetailArtifact() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val repositoryId = "org/detail-needs-information"
+        val revision = "a".repeat(40)
+        val path = "weights/model-Q4_K_M.gguf"
+        val body = "exact model bytes".encodeToByteArray()
+        val objectId = body.sha256()
+        val requestDispatcher = dispatcher
+        val engine = object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler { request ->
+                when {
+                    request.url.encodedPath.contains("/tree/") -> respondJson(
+                        """[{"path":"$path","type":"file","size":${body.size},"lfs":{"oid":"$objectId","size":${body.size}}}]""",
+                    )
+                    request.url.encodedPath.endsWith("/$repositoryId") -> respondJson(
+                        """{"id":"$repositoryId","modelId":"$repositoryId","sha":"$revision","private":false}""",
+                    )
+                    else -> error("Unexpected request ${request.url}")
+                }
+            }
+        }) {
+            override val dispatcher: CoroutineDispatcher = requestDispatcher
+        }
+        val client = HttpClient(engine)
+        val trusted = Files.createTempDirectory("caraml-needs-information-").toRealPath().toFile()
+        val storage = FakeStoragePathProvider(
+            trusted,
+            realFileAccess = true,
+            availableStorageBytes = 1024L * 1024 * 1024,
+        )
+        val server = ControlledDownloadServer(body)
+        try {
+            val viewModel = viewModel(
+                client = client,
+                dispatcher = dispatcher,
+                storagePathProvider = storage,
+                downloadManager = DownloadManager(storage, server.baseUrl),
+                recommendationService = recommendationService(
+                    dispatcher = dispatcher,
+                    variantSet = { id -> RepositoryVariantSet.NeedsInformation(id) },
+                ),
+            )
+
+            viewModel.loadDetail(repositoryId, ModelHubBrowseMode.LanguageModels)
+            advanceUntilIdle()
+
+            val file = viewModel.ggufFiles.value.single()
+            val artifact = requireNotNull(file.artifact)
+            assertEquals(DescriptorState.NEEDS_INFORMATION, viewModel.recommendedModels.value.single().descriptorState)
+
+            val forgedArtifact = requireNotNull(
+                DownloadArtifactIdentity.create(
+                    repositoryId = repositoryId,
+                    immutableRevision = revision,
+                    relativePath = path,
+                    remoteObjectId = "sha256:${"f".repeat(64)}",
+                    expectedBytes = body.size.toLong(),
+                ),
+            )
+            viewModel.startDownload(
+                repositoryId,
+                path,
+                DownloadMetadataDTO(
+                    artifact = forgedArtifact,
+                    logicalRole = "model",
+                    sizeBytes = forgedArtifact.expectedBytes,
+                    author = null,
+                    libraryName = null,
+                    pipelineTag = null,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertFalse(viewModel.isDownloading.value)
+            assertTrue(viewModel.downloadError.value != null)
+
+            viewModel.startDownload(
+                repositoryId,
+                path,
+                DownloadMetadataDTO(
+                    artifact = artifact,
+                    logicalRole = "model",
+                    sizeBytes = artifact.expectedBytes,
+                    author = null,
+                    libraryName = null,
+                    pipelineTag = null,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertTrue(
+                viewModel.isDownloading.value,
+                "A validated detail artifact should download while recommendation info is incomplete: ${viewModel.downloadError.value}",
+            )
+            server.requestStarted.await()
+            server.releaseResponse.complete(Unit)
+            advanceUntilIdle()
+        } finally {
+            server.close()
+            client.close()
+            trusted.deleteRecursively()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun unavailableArtifactStorageIsNotReportedAsAConnectionFailure() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val repositoryId = "org/unavailable-storage"
+        val revision = "a".repeat(40)
+        val path = "model-Q4_K_M.gguf"
+        val objectId = "b".repeat(64)
+        val requestDispatcher = dispatcher
+        val engine = object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler { request ->
+                when {
+                    request.url.encodedPath.contains("/tree/") -> respondJson(
+                        """[{"path":"$path","type":"file","size":100,"lfs":{"oid":"$objectId","size":100}}]""",
+                    )
+                    request.url.encodedPath.endsWith("/$repositoryId") -> respondJson(
+                        """{"id":"$repositoryId","modelId":"$repositoryId","sha":"$revision","private":false}""",
+                    )
+                    else -> error("Unexpected request ${request.url}")
+                }
+            }
+        }) {
+            override val dispatcher: CoroutineDispatcher = requestDispatcher
+        }
+        val client = HttpClient(engine)
+        val storage = FakeStoragePathProvider(File("/caraml-unwritable-storage"), realFileAccess = true)
+        try {
+            val viewModel = viewModel(
+                client = client,
+                dispatcher = dispatcher,
+                storagePathProvider = storage,
+                downloadManager = DownloadManager(storage, "http://127.0.0.1:1"),
+                recommendationService = recommendationService(
+                    dispatcher = dispatcher,
+                    variantSet = { id -> RepositoryVariantSet.NeedsInformation(id) },
+                ),
+            )
+
+            viewModel.loadDetail(repositoryId, ModelHubBrowseMode.LanguageModels)
+            advanceUntilIdle()
+            val artifact = requireNotNull(viewModel.ggufFiles.value.single().artifact)
+
+            val observedError = async { viewModel.downloadError.first { it != null } }
+            viewModel.startDownload(
+                repositoryId,
+                path,
+                DownloadMetadataDTO(
+                    artifact = artifact,
+                    logicalRole = "model",
+                    sizeBytes = artifact.expectedBytes,
+                    author = null,
+                    libraryName = null,
+                    pipelineTag = null,
+                ),
+            )
+
+            assertEquals(
+                "Model storage is unavailable. Please check storage access and try again.",
+                observedError.await(),
+            )
+            runCurrent()
+            assertFalse(viewModel.isDownloading.value)
+        } finally {
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
     @Test
     fun confirmedLanguageDownloadPublishesExactPathBeforeProgressAndClearsAfterCompletion() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -721,8 +961,10 @@ private fun recommendationService(
     descriptorFiles: List<ModelFileIdentity>? = null,
     recommendationCategory: RecommendationCategory = RecommendationCategory.RECOMMENDED,
     recommendationStorageFit: FitBand? = null,
+    variantSet: ((String) -> RepositoryVariantSet)? = null,
 ) = ModelRecommendationService(
     metadataSource = ModelMetadataSource { repositoryId, _ ->
+        variantSet?.invoke(repositoryId)?.let { return@ModelMetadataSource it }
         val identities = descriptorFiles ?: listOf(
             ModelFileIdentity(
                 repositoryId = repositoryId,

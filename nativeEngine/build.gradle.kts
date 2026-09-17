@@ -501,6 +501,56 @@ val verifyArtifactFsDesktopLibrary by tasks.registering {
     }
 }
 
+val compileArtifactFsAndroidRootTestDesktop by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Build the Android-safe artifact root regression"
+    dependsOn(buildLlamaRunnerDesktop)
+    commandLine(
+        desktopCmakePath,
+        "--build", desktopJniBuildDir.absolutePath,
+        "--target", "artifact_fs_android_root_test",
+        "--config", "Release",
+    )
+}
+
+val testArtifactFsAndroidRootDesktop by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Run the Android-safe artifact root regression"
+    dependsOn(compileArtifactFsAndroidRootTestDesktop)
+    commandLine(
+        findTool("ctest"),
+        "--test-dir", desktopJniBuildDir.absolutePath,
+        "--build-config", "Release",
+        "--output-on-failure",
+        "--tests-regex", "^artifact_fs_android_root_test$",
+    )
+}
+
+val compileArtifactFsAppendTestDesktop by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Build the secure artifact append regression"
+    dependsOn(buildLlamaRunnerDesktop)
+    commandLine(
+        desktopCmakePath,
+        "--build", desktopJniBuildDir.absolutePath,
+        "--target", "artifact_fs_append_test",
+        "--config", "Release",
+    )
+}
+
+val testArtifactFsAppendDesktop by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Run the secure artifact append regression"
+    dependsOn(compileArtifactFsAppendTestDesktop)
+    commandLine(
+        findTool("ctest"),
+        "--test-dir", desktopJniBuildDir.absolutePath,
+        "--build-config", "Release",
+        "--output-on-failure",
+        "--tests-regex", "^artifact_fs_append_test$",
+    )
+}
+
 // ----------------------------------------------------------------------------
 // License-reviewed, digest-addressed native parity fixtures.
 //

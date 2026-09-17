@@ -45,6 +45,7 @@ import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
 import com.debanshu777.caraml.features.modelhub.domain.RecommendedModelUiState
 import com.debanshu777.caraml.features.modelhub.presentation.search.GgufFileUiState
 import com.debanshu777.caraml.features.modelhub.presentation.search.InstallBundleUiState
+import com.debanshu777.caraml.core.download.DownloadBatchSnapshot
 import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
 import com.debanshu777.huggingfacemanager.model.ModelDetailResponse
@@ -68,6 +69,11 @@ fun ModelDetailContent(
     onRecommendationInfoClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     windowWidth: Dp? = null,
+    downloadBatches: List<DownloadBatchSnapshot> = emptyList(),
+    onPauseDownload: (String) -> Unit = {},
+    onResumeDownload: (String) -> Unit = {},
+    onCancelDownload: (String) -> Unit = {},
+    onRetryDownload: (String) -> Unit = {},
 ) {
     if (model == null) return
 
@@ -106,6 +112,11 @@ fun ModelDetailContent(
                             heading = weightFilesHeading,
                             emptyLabel = weightFilesEmptyLabel,
                             recommendationState = recommendationState,
+                            downloadBatches = downloadBatches,
+                            onPauseDownload = onPauseDownload,
+                            onResumeDownload = onResumeDownload,
+                            onCancelDownload = onCancelDownload,
+                            onRetryDownload = onRetryDownload,
                         )
                     }
                 }
@@ -125,6 +136,11 @@ fun ModelDetailContent(
                             modifier = Modifier.fillMaxWidth(),
                             recommendedVariantPath = recommendedVariant,
                             installEnabled = installEnabled,
+                            durableBatch = downloadBatches.firstOrNull(),
+                            onPause = { downloadBatches.firstOrNull()?.batchId?.let(onPauseDownload) },
+                            onResume = { downloadBatches.firstOrNull()?.batchId?.let(onResumeDownload) },
+                            onCancel = { downloadBatches.firstOrNull()?.batchId?.let(onCancelDownload) },
+                            onRetry = { downloadBatches.firstOrNull()?.batchId?.let(onRetryDownload) },
                         )
                     }
                 }
@@ -161,6 +177,11 @@ fun ModelDetailContent(
                             heading = weightFilesHeading,
                             emptyLabel = weightFilesEmptyLabel,
                             recommendationState = recommendationState,
+                            downloadBatches = downloadBatches,
+                            onPauseDownload = onPauseDownload,
+                            onResumeDownload = onResumeDownload,
+                            onCancelDownload = onCancelDownload,
+                            onRetryDownload = onRetryDownload,
                         )
                     }
                 }
@@ -170,6 +191,11 @@ fun ModelDetailContent(
                         modifier = Modifier.fillMaxWidth().padding(vertical = spacing.s),
                         onInstall = onSmartInstall,
                         installEnabled = installEnabled,
+                        durableBatch = downloadBatches.firstOrNull(),
+                        onPause = { downloadBatches.firstOrNull()?.batchId?.let(onPauseDownload) },
+                        onResume = { downloadBatches.firstOrNull()?.batchId?.let(onResumeDownload) },
+                        onCancel = { downloadBatches.firstOrNull()?.batchId?.let(onCancelDownload) },
+                        onRetry = { downloadBatches.firstOrNull()?.batchId?.let(onRetryDownload) },
                     )
                 }
             }
@@ -361,6 +387,11 @@ private fun ModelFileVariantsSection(
     heading: String,
     emptyLabel: String,
     recommendationState: RecommendedModelUiState?,
+    downloadBatches: List<DownloadBatchSnapshot>,
+    onPauseDownload: (String) -> Unit,
+    onResumeDownload: (String) -> Unit,
+    onCancelDownload: (String) -> Unit,
+    onRetryDownload: (String) -> Unit,
 ) {
     val spacing = LocalSpacing.current
     CaraMLPane(modifier = Modifier.fillMaxWidth()) {
@@ -370,7 +401,7 @@ private fun ModelFileVariantsSection(
         ) {
             CaraMLSectionHeader(
                 title = heading,
-                supportingText = "Choose an assessed model weight to download",
+                supportingText = "Choose a model weight to download",
             )
             if (ggufFiles.isEmpty()) {
                 Text(
@@ -380,6 +411,12 @@ private fun ModelFileVariantsSection(
                 )
             } else {
                 ggufFiles.forEach { item ->
+                    val durableTask = downloadBatches.asSequence()
+                        .flatMap { batch -> batch.artifacts.asSequence().map { batch.batchId to it } }
+                        .firstOrNull { (_, artifact) -> artifact.request.metadata.artifact == item.artifact }
+                    val hasExactArtifact = item.artifact != null
+                    val needsInformationOnly = recommendationState == null ||
+                        recommendationState.descriptorState == DescriptorState.NEEDS_INFORMATION
                     val matchesSelectedDescriptor = item.artifact?.let { artifact ->
                         artifactMatches(recommendationState?.selectedDescriptor, artifact)
                     } == true
@@ -408,8 +445,13 @@ private fun ModelFileVariantsSection(
                                 ),
                             )
                         },
-                        downloadEnabled = matchesSelectedDescriptor,
-                        interactionLocked = isDownloading,
+                        downloadEnabled = hasExactArtifact && (needsInformationOnly || matchesSelectedDescriptor),
+                        interactionLocked = isDownloading && downloadBatches.isEmpty(),
+                        durableState = durableTask?.second?.state,
+                        onPause = { durableTask?.first?.let(onPauseDownload) },
+                        onResume = { durableTask?.first?.let(onResumeDownload) },
+                        onCancel = { durableTask?.first?.let(onCancelDownload) },
+                        onRetry = { durableTask?.first?.let(onRetryDownload) },
                     )
                 }
             }

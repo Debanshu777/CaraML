@@ -311,6 +311,45 @@ class ModelDetailsAuroraUiTest {
         }
 
     @Test
+    fun needsInformationRemainsVisibleWithoutDisablingExactArtifactDownloads() =
+        runComposeUiTest {
+            val fixture = ggufDownloadFixture()
+            var requestedModelId = ""
+            var requestedPath = ""
+            var requestedMetadata: DownloadMetadataDTO? = null
+            setContent {
+                MaterialTheme {
+                    Box(Modifier.width(620.dp).height(720.dp)) {
+                        ModelDetailContent(
+                            model = fixture.model,
+                            ggufFiles = fixture.files,
+                            isDownloading = false,
+                            onDownloadClick = { modelId, path, metadata ->
+                                requestedModelId = modelId
+                                requestedPath = path
+                                requestedMetadata = metadata
+                            },
+                            recommendationState = null,
+                        )
+                    }
+                }
+            }
+
+            onNodeWithText("Needs information").assertIsDisplayed()
+            onNodeWithContentDescription(
+                "Download weights/model-q4-00001-of-00002.gguf",
+            )
+                .assertIsEnabled()
+                .performClick()
+
+            runOnIdle {
+                assertEquals(fixture.model.modelId, requestedModelId)
+                assertEquals(fixture.activeArtifact.relativePath, requestedPath)
+                assertEquals(fixture.activeArtifact, requestedMetadata?.artifact)
+            }
+        }
+
+    @Test
     fun expandedLargeTextUsesOneScrollOwnerAcrossPrimaryAndSupportingColumns() =
         runComposeUiTest {
             val fixture = ggufDownloadFixture()

@@ -23,6 +23,57 @@ import kotlin.test.assertTrue
 
 class DownloadManagerJvmTest {
     @Test
+    fun validPartialResponseAppendsFromPersistedCheckpoint() = withTemporaryRoot { root ->
+        val expected = "0123456789".encodeToByteArray()
+        val finalFile = modelFile(root, "org/model", "model.gguf")
+        finalFile.parentFile.mkdirs()
+        File(finalFile.path + ".part").writeBytes(expected.copyOfRange(0, 4))
+        withServer { exchange ->
+            assertEquals("bytes=4-", exchange.requestHeaders.getFirst("Range"))
+            assertEquals("etag-1", exchange.requestHeaders.getFirst("If-Range"))
+            exchange.responseHeaders.add("Content-Range", "bytes 4-9/10")
+            exchange.responseHeaders.add("ETag", "etag-1")
+            exchange.respond(status = 206, declaredLength = 6L, body = expected.copyOfRange(4, 10))
+        }.use { server ->
+            val manager = DownloadManager(TestStoragePathProvider(root), server.baseUrl)
+            runBlocking {
+                manager.download(
+                    "org/model",
+                    "model.gguf",
+                    metadata("model.gguf", expected.size.toLong(), expected.sha256Hex()),
+                    DownloadResumeMetadata(bytesReceived = 4L, entityTag = "etag-1", lastModified = null),
+                ).toList()
+            }
+        }
+
+        assertContentEquals(expected, finalFile.readBytes())
+    }
+
+    @Test
+    fun fullResponseToRangeRequestSafelyRestartsStaging() = withTemporaryRoot { root ->
+        val expected = "replacement".encodeToByteArray()
+        val finalFile = modelFile(root, "org/model", "model.gguf")
+        finalFile.parentFile.mkdirs()
+        File(finalFile.path + ".part").writeBytes("stale".encodeToByteArray())
+        withServer { exchange ->
+            assertEquals("bytes=5-", exchange.requestHeaders.getFirst("Range"))
+            exchange.respond(status = 200, declaredLength = expected.size.toLong(), body = expected)
+        }.use { server ->
+            val manager = DownloadManager(TestStoragePathProvider(root), server.baseUrl)
+            runBlocking {
+                manager.download(
+                    "org/model",
+                    "model.gguf",
+                    metadata("model.gguf", expected.size.toLong(), expected.sha256Hex()),
+                    DownloadResumeMetadata(bytesReceived = 5L, entityTag = "etag-old", lastModified = null),
+                ).toList()
+            }
+        }
+
+        assertContentEquals(expected, finalFile.readBytes())
+    }
+
+    @Test
     fun nonSuccessResponseDoesNotReplaceExistingModel() = withTemporaryRoot { root ->
         val original = byteArrayOf(1, 2, 3)
         val finalFile = modelFile(root, "org/model", "weights/model.gguf")

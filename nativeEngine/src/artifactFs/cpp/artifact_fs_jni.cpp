@@ -22,6 +22,7 @@ constexpr std::size_t kMaxPathBytes = 4096;
 constexpr jint kReadOnly = 0;
 constexpr jint kCreateNew = 1;
 constexpr jint kCreateTruncate = 2;
+constexpr jint kAppendExisting = 3;
 
 struct RootHandle {
     int descriptor = -1;
@@ -117,7 +118,33 @@ int duplicate_descriptor(int descriptor) {
 #endif
 }
 
+#if defined(__ANDROID__) || defined(ARTIFACT_FS_ANDROID_DIRECT_OPEN_TEST)
+int open_trusted_app_directory(const std::string& path, bool create) {
+    std::vector<std::string> segments;
+    if (!split_absolute(path, &segments) || segments.empty()) return -1;
+    constexpr int flags = O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC;
+    int descriptor = open(path.c_str(), flags);
+    if (descriptor < 0 && create && errno == ENOENT) {
+        if (mkdir(path.c_str(), 0700) != 0 && errno != EEXIST) return -1;
+        descriptor = open(path.c_str(), flags);
+    }
+    if (descriptor < 0) return -1;
+    struct stat metadata {};
+    if (fstat(descriptor, &metadata) != 0 || !S_ISDIR(metadata.st_mode)) {
+        close(descriptor);
+        return -1;
+    }
+    return descriptor;
+}
+#endif
+
 int open_absolute_directory(const std::string& path, bool create = false) {
+#if defined(__ANDROID__) || defined(ARTIFACT_FS_ANDROID_DIRECT_OPEN_TEST)
+    // Android SELinux permits access to the app-owned directory but denies opening
+    // the filesystem root for directory reads. The trusted app root is still pinned
+    // with O_NOFOLLOW; all model paths below it continue to use descriptor-relative walks.
+    return open_trusted_app_directory(path, create);
+#else
     std::vector<std::string> segments;
     if (!split_absolute(path, &segments)) return -1;
     int current = open("/", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
@@ -136,6 +163,7 @@ int open_absolute_directory(const std::string& path, bool create = false) {
         current = next;
     }
     return current;
+#endif
 }
 
 int walk_directory(int root, const std::vector<std::string>& segments, bool create) {
@@ -279,6 +307,7 @@ Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_openFile(
     int flags = O_RDONLY;
     if (mode == kCreateNew) flags = O_WRONLY | O_CREAT | O_EXCL;
     else if (mode == kCreateTruncate) flags = O_WRONLY | O_CREAT | O_TRUNC;
+    else if (mode == kAppendExisting) flags = O_WRONLY | O_APPEND;
     else if (mode != kReadOnly) return -1;
     return static_cast<jlong>(open_file(root, relative, flags, 0600));
 }

@@ -224,12 +224,31 @@ class ArtifactManifestStore(
                 it.contentSha256 == entry.contentSha256 && it.byteCount == entry.byteCount
         } != null
 
-    internal fun prepareStaged(relativePath: String): Sink {
+    internal fun prepareStaged(relativePath: String, expectedOffset: Long = 0L): Sink {
         val target = validatedTarget(relativePath) ?: throw IllegalArgumentException("Invalid model file path")
         val staged = target.sibling(PART_SUFFIX)
         ensureParent(staged)
-        durableDelete(staged)
-        return openSink(staged, mustCreate = true)
+        if (expectedOffset == 0L) {
+            durableDelete(staged)
+            return openSink(staged, mustCreate = true)
+        }
+        if (expectedOffset < 0L || fileSystem.metadataOrNull(staged)?.size != expectedOffset) {
+            throw ArtifactFileAccessException()
+        }
+        return secureRoot?.appendSink(relativeToRoot(staged), expectedOffset)
+            ?: fileSystem.appendingSink(staged, mustExist = true)
+    }
+
+    internal fun stagedSize(relativePath: String): Long? {
+        val target = validatedTarget(relativePath) ?: throw IllegalArgumentException("Invalid model file path")
+        return fileSystem.metadataOrNull(target.sibling(PART_SUFFIX))?.takeIf { it.isRegularFile }?.size
+    }
+
+    internal fun stagedSha256(relativePath: String, expectedBytes: Long): String? {
+        val target = validatedTarget(relativePath) ?: throw IllegalArgumentException("Invalid model file path")
+        val staged = target.sibling(PART_SUFFIX)
+        return secureRoot?.sha256(relativeToRoot(staged), expectedBytes)
+            ?: sha256(staged).takeIf { fileSystem.metadataOrNull(staged)?.size == expectedBytes }
     }
 
     internal fun syncStaged(relativePath: String) {

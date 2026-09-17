@@ -23,7 +23,8 @@ actual class DownloadManager actual constructor(
     actual fun download(
         modelId: String,
         path: String,
-        metadata: DownloadMetadataDTO
+        metadata: DownloadMetadataDTO,
+        resumeMetadata: DownloadResumeMetadata?,
     ): Flow<DownloadProgressDTO> {
         val request = validateDownloadArguments(modelId, path, metadata)
         val dirPath = pathProvider.getModelsStorageDirectory(request.modelId).trimEnd('/')
@@ -39,6 +40,7 @@ actual class DownloadManager actual constructor(
             dirPath.toPath(normalize = true),
             filePath.toPath(normalize = true),
             filePath,
+            resumeMetadata,
         ).flowOn(Dispatchers.Default)
     }
 
@@ -53,6 +55,12 @@ actual class DownloadManager actual constructor(
 
     actual suspend fun validatedArtifacts(modelId: String): ArtifactManifest? =
         readValidatedArtifactManifest(pathProvider, modelId)
+
+    actual suspend fun discardCheckpoint(metadata: DownloadMetadataDTO) =
+        discardArtifactCheckpoint(pathProvider, metadata)
+
+    actual suspend fun isPublished(metadata: DownloadMetadataDTO): Boolean =
+        isArtifactPublished(pathProvider, metadata)
 }
 
 private fun isPathWithinRoot(root: String, target: String): Boolean {

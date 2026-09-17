@@ -6,6 +6,13 @@ import com.debanshu777.caraml.core.storage.getRoomDatabase
 import com.debanshu777.caraml.core.recommendation.storage.RecommendationDatabaseOwner
 import com.debanshu777.caraml.core.recommendation.storage.getRecommendationDatabaseBuilder
 import com.debanshu777.caraml.core.recommendation.storage.getRecommendationRoomDatabase
+import com.debanshu777.caraml.core.download.DesktopDownloadNotificationPermissionController
+import com.debanshu777.caraml.core.download.DesktopDownloadScheduler
+import com.debanshu777.caraml.core.download.DownloadNotificationPermissionController
+import com.debanshu777.caraml.core.download.PlatformDownloadScheduler
+import com.debanshu777.caraml.core.download.storage.DownloadDatabase
+import com.debanshu777.caraml.core.download.storage.getDownloadDatabaseBuilder
+import com.debanshu777.caraml.core.download.storage.getDownloadRoomDatabase
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import com.debanshu777.huggingfacemanager.download.JvmStoragePathProvider
 import org.koin.dsl.module
@@ -19,6 +26,12 @@ actual val platformHuggingFaceModule = module {
         val builder = getDatabaseBuilder(dbPath)
         getRoomDatabase(builder)
     }
+
+    single<DownloadDatabase> {
+        getDownloadRoomDatabase(getDownloadDatabaseBuilder(get<StoragePathProvider>().getDownloadDatabasePath()))
+    }
+    single<PlatformDownloadScheduler> { DesktopDownloadScheduler(get(), get<DownloadRuntimeScope>().scope) }
+    single<DownloadNotificationPermissionController> { DesktopDownloadNotificationPermissionController }
 
     single {
         val dbPath = get<StoragePathProvider>().getRecommendationDatabasePath()

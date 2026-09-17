@@ -20,6 +20,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -33,6 +34,8 @@ import com.debanshu777.caraml.core.ui.components.StatusTone
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.features.modelhub.presentation.search.InstallBundleUiState
 import com.debanshu777.caraml.features.modelhub.presentation.search.SetupComponentUiState
+import com.debanshu777.caraml.core.download.DownloadBatchSnapshot
+import com.debanshu777.caraml.core.download.DownloadBatchState
 
 private fun formatBytes(bytes: Long): String {
     if (bytes <= 0L) return "0 B"
@@ -67,6 +70,11 @@ fun InstallBundleCard(
     modifier: Modifier = Modifier,
     recommendedVariantPath: String? = null,
     installEnabled: Boolean = true,
+    durableBatch: DownloadBatchSnapshot? = null,
+    onPause: () -> Unit = {},
+    onResume: () -> Unit = {},
+    onCancel: () -> Unit = {},
+    onRetry: () -> Unit = {},
 ) {
     InstallBundleContainer(modifier) {
         InstallBundleSummaryContent(
@@ -80,6 +88,11 @@ fun InstallBundleCard(
             state = state,
             onInstall = onInstall,
             installEnabled = installEnabled,
+            durableBatch = durableBatch,
+            onPause = onPause,
+            onResume = onResume,
+            onCancel = onCancel,
+            onRetry = onRetry,
         )
     }
 }
@@ -110,12 +123,22 @@ internal fun InstallBundleActionFooter(
     onInstall: () -> Unit,
     modifier: Modifier = Modifier,
     installEnabled: Boolean = true,
+    durableBatch: DownloadBatchSnapshot? = null,
+    onPause: () -> Unit = {},
+    onResume: () -> Unit = {},
+    onCancel: () -> Unit = {},
+    onRetry: () -> Unit = {},
 ) {
     InstallBundleContainer(modifier) {
         InstallBundleActionContent(
             state = state,
             onInstall = onInstall,
             installEnabled = installEnabled,
+            durableBatch = durableBatch,
+            onPause = onPause,
+            onResume = onResume,
+            onCancel = onCancel,
+            onRetry = onRetry,
         )
     }
 }
@@ -195,6 +218,11 @@ private fun ColumnScope.InstallBundleActionContent(
     state: InstallBundleUiState,
     onInstall: () -> Unit,
     installEnabled: Boolean,
+    durableBatch: DownloadBatchSnapshot?,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
+    onCancel: () -> Unit,
+    onRetry: () -> Unit,
 ) {
     val motion = LocalAuroraMotionPolicy.current
     val reportedOverallProgress = state.overallProgress?.coerceIn(0f, 1f)
@@ -208,12 +236,22 @@ private fun ColumnScope.InstallBundleActionContent(
         reportedOverallProgress ?: 0f
     }
 
+    val command = when (durableBatch?.state) {
+        DownloadBatchState.QUEUED,
+        DownloadBatchState.RUNNING,
+        DownloadBatchState.WAITING_FOR_NETWORK,
+        -> "Pause" to onPause
+        DownloadBatchState.PAUSED -> "Resume" to onResume
+        DownloadBatchState.FAILED_RETRYABLE -> "Retry" to onRetry
+        else -> null
+    }
     Button(
-        onClick = onInstall,
-        enabled = installEnabled && !state.isInstalling && !state.isReady,
+        onClick = command?.second ?: onInstall,
+        enabled = command != null || (installEnabled && !state.isInstalling && !state.isReady),
         modifier = Modifier.fillMaxWidth(),
     ) {
         when {
+            command != null -> Text(command.first)
             state.isReady -> {
                 Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
                 Text("  Ready to use")
@@ -228,6 +266,15 @@ private fun ColumnScope.InstallBundleActionContent(
                 Text("  Install")
             }
         }
+    }
+    if (durableBatch?.state in setOf(
+            DownloadBatchState.QUEUED,
+            DownloadBatchState.RUNNING,
+            DownloadBatchState.PAUSED,
+            DownloadBatchState.WAITING_FOR_NETWORK,
+        )
+    ) {
+        TextButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) { Text("Cancel download") }
     }
     if (!installEnabled && !state.isReady && !state.isInstalling) {
         Text(

@@ -55,6 +55,14 @@ internal actual class SecureArtifactRoot private constructor(private var handle:
         return NativeDescriptorSink(activeHandle(), descriptor)
     }
 
+    actual fun appendSink(relativePath: String, expectedOffset: Long): Sink {
+        checkedRelative(relativePath)
+        if (expectedOffset <= 0L || size(relativePath) != expectedOffset) throw ArtifactFileAccessException()
+        val descriptor = NativeArtifactFs.openFile(activeHandle(), relativePath.nativeUtf8(), 3)
+        if (descriptor < 0L) throw ArtifactFileAccessException()
+        return NativeDescriptorSink(activeHandle(), descriptor)
+    }
+
     actual fun existsRegularFile(relativePath: String): Boolean = size(relativePath) != null
 
     actual fun size(relativePath: String): Long? {

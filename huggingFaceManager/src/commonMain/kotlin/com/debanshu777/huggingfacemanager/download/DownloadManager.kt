@@ -11,7 +11,8 @@ expect class DownloadManager(
     fun download(
         modelId: String,
         path: String,
-        metadata: DownloadMetadataDTO
+        metadata: DownloadMetadataDTO,
+        resumeMetadata: DownloadResumeMetadata? = null,
     ): Flow<DownloadProgressDTO>
 
     suspend fun publishBundle(ownerModelId: String, artifacts: List<DownloadMetadataDTO>): Boolean
@@ -21,4 +22,8 @@ expect class DownloadManager(
     suspend fun validatedBundle(ownerModelId: String): ArtifactManifest?
 
     suspend fun validatedArtifacts(modelId: String): ArtifactManifest?
+
+    suspend fun discardCheckpoint(metadata: DownloadMetadataDTO)
+
+    suspend fun isPublished(metadata: DownloadMetadataDTO): Boolean
 }

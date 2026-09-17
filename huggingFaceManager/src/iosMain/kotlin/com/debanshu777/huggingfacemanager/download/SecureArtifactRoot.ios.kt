@@ -24,6 +24,7 @@ import platform.posix.O_EXCL
 import platform.posix.O_NOFOLLOW
 import platform.posix.O_NONBLOCK
 import platform.posix.O_RDONLY
+import platform.posix.O_APPEND
 import platform.posix.O_TRUNC
 import platform.posix.O_WRONLY
 import platform.posix.S_IFMT
@@ -41,6 +42,25 @@ import platform.posix.renameat
 import platform.posix.stat
 import platform.posix.unlinkat
 import platform.posix.write
+
+internal fun secureRegularFileSource(path: String, expectedBytes: Long): Source {
+    val descriptor = open(path, O_RDONLY or O_CLOEXEC or O_NOFOLLOW or O_NONBLOCK)
+    if (descriptor < 0) throw ArtifactFileAccessException()
+    try {
+        if (externalDescriptorSizeIfRegular(descriptor) != expectedBytes) throw ArtifactVerificationException()
+        return DescriptorSource(descriptor, ownsDescriptor = true)
+    } catch (error: Exception) {
+        close(descriptor)
+        throw error
+    }
+}
+
+private fun externalDescriptorSizeIfRegular(descriptor: Int): Long? = memScoped {
+    val metadata = alloc<stat>()
+    if (fstat(descriptor, metadata.ptr) != 0) return@memScoped null
+    if (metadata.st_mode.toInt() and S_IFMT != S_IFREG) return@memScoped null
+    metadata.st_size
+}
 
 internal actual class SecureArtifactRoot actual constructor(modelRoot: Path) {
     private val rootPath = modelRoot.normalized().toString().trimEnd('/')
@@ -81,6 +101,11 @@ internal actual class SecureArtifactRoot actual constructor(modelRoot: Path) {
             createMode = 384u,
         )
         return DescriptorSink(opened)
+    }
+
+    actual fun appendSink(relativePath: String, expectedOffset: Long): Sink {
+        if (expectedOffset <= 0L || size(relativePath) != expectedOffset) throw ArtifactFileAccessException()
+        return DescriptorSink(openFile(relativePath, O_WRONLY or O_APPEND or O_CLOEXEC or O_NOFOLLOW))
     }
 
     actual fun existsRegularFile(relativePath: String): Boolean {

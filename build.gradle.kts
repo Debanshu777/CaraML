@@ -17,5 +17,6 @@ tasks.register("verifyProject") {
         ":runner:jvmTest",
         ":diffusionRunner:jvmTest",
         ":nativeEngine:testDiffusionRunnerNativeDesktop",
+        ":nativeEngine:testArtifactFsAndroidRootDesktop",
     )
 }

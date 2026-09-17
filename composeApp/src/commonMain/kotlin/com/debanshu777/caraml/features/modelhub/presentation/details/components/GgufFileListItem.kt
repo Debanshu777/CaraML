@@ -11,6 +11,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -26,6 +30,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
+import com.debanshu777.caraml.core.download.DownloadArtifactState
 
 @Composable
 fun GgufFileListItem(
@@ -38,6 +43,11 @@ fun GgufFileListItem(
     modifier: Modifier = Modifier,
     downloadEnabled: Boolean = true,
     interactionLocked: Boolean = false,
+    durableState: DownloadArtifactState? = null,
+    onPause: () -> Unit = {},
+    onResume: () -> Unit = {},
+    onCancel: () -> Unit = {},
+    onRetry: () -> Unit = {},
 ) {
     val hasDirectory = filename.contains('/')
     val displayName = filename.substringAfterLast('/')
@@ -53,9 +63,21 @@ fun GgufFileListItem(
     } else {
         reportedProgress ?: 0f
     }
-    val downloadStateSemantics = if (isDownloading) {
+    val stateText = when (durableState) {
+        DownloadArtifactState.QUEUED -> "Queued"
+        DownloadArtifactState.RUNNING -> reportedProgress?.let { "Downloading ${(it * 100).toInt()} percent" } ?: "Downloading"
+        DownloadArtifactState.PAUSED -> "Paused"
+        DownloadArtifactState.WAITING_FOR_NETWORK -> "Waiting for network"
+        DownloadArtifactState.VERIFYING -> "Verifying download"
+        DownloadArtifactState.FAILED_RETRYABLE -> "Download failed; retry available"
+        DownloadArtifactState.COMPLETED -> "Downloaded"
+        DownloadArtifactState.FAILED_TERMINAL -> "Download failed"
+        DownloadArtifactState.CANCELLED -> "Download cancelled"
+        null -> if (isDownloading) "Downloading" else null
+    }
+    val downloadStateSemantics = if (stateText != null) {
         Modifier.semantics(mergeDescendants = true) {
-            stateDescription = "Downloading"
+            stateDescription = stateText
         }
     } else {
         Modifier
@@ -107,12 +129,37 @@ fun GgufFileListItem(
                     )
                 }
             }
-            if (isDownloaded) {
+            if (isDownloaded || durableState == DownloadArtifactState.COMPLETED) {
                 Icon(
                     Icons.Default.Check,
                     contentDescription = "Downloaded",
                     tint = MaterialTheme.colorScheme.primary
                 )
+            } else if (durableState != null && durableState != DownloadArtifactState.CANCELLED &&
+                durableState != DownloadArtifactState.FAILED_TERMINAL
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    when (durableState) {
+                        DownloadArtifactState.RUNNING,
+                        DownloadArtifactState.QUEUED,
+                        DownloadArtifactState.WAITING_FOR_NETWORK,
+                        -> IconButton(onClick = onPause, modifier = Modifier.size(48.dp)) {
+                            Icon(Icons.Default.Pause, contentDescription = "Pause download")
+                        }
+                        DownloadArtifactState.PAUSED -> IconButton(onClick = onResume, modifier = Modifier.size(48.dp)) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = "Resume download")
+                        }
+                        DownloadArtifactState.FAILED_RETRYABLE -> IconButton(onClick = onRetry, modifier = Modifier.size(48.dp)) {
+                            Icon(Icons.Default.Refresh, contentDescription = "Retry download")
+                        }
+                        else -> Unit
+                    }
+                    if (durableState !in setOf(DownloadArtifactState.VERIFYING, DownloadArtifactState.FAILED_RETRYABLE)) {
+                        IconButton(onClick = onCancel, modifier = Modifier.size(48.dp)) {
+                            Icon(Icons.Default.Close, contentDescription = "Cancel download")
+                        }
+                    }
+                }
             } else {
                 IconButton(
                     onClick = onDownloadClick,

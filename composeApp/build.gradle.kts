@@ -60,6 +60,8 @@ kotlin {
                 "Accelerate",
                 "-framework",
                 "Foundation",
+                "-framework",
+                "UserNotifications",
                 "-Wl,-no_implicit_dylibs",
             )
         }
@@ -72,6 +74,8 @@ kotlin {
             implementation(libs.compose.uiToolingPreview)
             implementation(project.dependencies.platform(libs.koin.bom))
             implementation(libs.koin.core)
+            implementation(libs.androidx.core.ktx)
+            implementation(libs.androidx.work.runtime.ktx)
         }
         commonMain.dependencies {
             implementation(project.dependencies.platform(libs.koin.bom))
@@ -99,6 +103,7 @@ kotlin {
             implementation(libs.kotlinx.collections.immutable)
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.materialkolor)
+            implementation(libs.okio)
             implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.27.0")
         }
         commonTest.dependencies {

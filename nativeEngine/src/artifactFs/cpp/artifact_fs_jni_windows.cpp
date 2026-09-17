@@ -15,6 +15,7 @@ constexpr std::size_t kMaxPathChars = 4096;
 constexpr jint kReadOnly = 0;
 constexpr jint kCreateNew = 1;
 constexpr jint kCreateTruncate = 2;
+constexpr jint kAppendExisting = 3;
 
 using NtCreateFileFunction = NTSTATUS(NTAPI*)(
     PHANDLE, ACCESS_MASK, POBJECT_ATTRIBUTES, PIO_STATUS_BLOCK, PLARGE_INTEGER,
@@ -336,6 +337,7 @@ Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_openFile(
     ULONG disposition = FILE_OPEN;
     if (mode == kCreateNew) { access = FILE_GENERIC_WRITE; disposition = FILE_CREATE; }
     else if (mode == kCreateTruncate) { access = FILE_GENERIC_WRITE; disposition = FILE_OVERWRITE_IF; }
+    else if (mode == kAppendExisting) { access = FILE_APPEND_DATA; disposition = FILE_OPEN; }
     else if (mode != kReadOnly) return -1;
     HANDLE file = open_file(as_root(value), path, access, disposition);
     return file == INVALID_HANDLE_VALUE ? -1 : static_cast<jlong>(reinterpret_cast<intptr_t>(file));

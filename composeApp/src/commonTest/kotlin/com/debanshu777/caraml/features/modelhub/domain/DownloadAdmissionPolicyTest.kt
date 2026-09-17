@@ -86,6 +86,30 @@ class DownloadAdmissionPolicyTest {
     }
 
     @Test
+    fun needsInformationIsAdvisoryUnlessStorageIsKnownNotToFit() {
+        val unknownStorage = policy.decide(
+            recommendation(
+                category = RecommendationCategory.NEEDS_INFORMATION,
+                storageFit = null,
+            ),
+            allowForLater = false,
+        )
+        val insufficientStorage = policy.decide(
+            recommendation(
+                category = RecommendationCategory.NEEDS_INFORMATION,
+                storageFit = FitBand.NO_FIT,
+            ),
+            allowForLater = false,
+        )
+
+        assertIs<DownloadAdmission.Allowed>(unknownStorage)
+        assertEquals(
+            AssessmentReason.INSUFFICIENT_STORAGE,
+            assertIs<DownloadAdmission.Blocked>(insufficientStorage).reason,
+        )
+    }
+
+    @Test
     fun runnableRecommendationsFailClosedWhenAnyCoherentProjectionIsMissing() {
         val cases = listOf(
             recommendation(RecommendationCategory.RECOMMENDED, memoryFit = null),

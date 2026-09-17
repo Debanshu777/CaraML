@@ -25,6 +25,12 @@ import com.debanshu777.caraml.core.storage.localmodel.ModelType
 import com.debanshu777.caraml.core.platform.DeviceCapabilities
 import com.debanshu777.caraml.core.platform.DeviceHints
 import com.debanshu777.caraml.core.rating.parseSizeHintToBytes
+import com.debanshu777.caraml.core.download.DownloadArtifactRequest
+import com.debanshu777.caraml.core.download.DownloadArtifactState
+import com.debanshu777.caraml.core.download.DownloadBatchRequest
+import com.debanshu777.caraml.core.download.DownloadBatchSnapshot
+import com.debanshu777.caraml.core.download.DownloadBatchState
+import com.debanshu777.caraml.core.download.DownloadCoordinator
 import com.debanshu777.caraml.features.modelhub.domain.ModelRecommendationService
 import com.debanshu777.caraml.features.modelhub.domain.RecommendationOrdering
 import com.debanshu777.caraml.features.modelhub.domain.RecommendationQuerySession
@@ -33,6 +39,7 @@ import com.debanshu777.caraml.features.modelhub.domain.QuerySupersededCancellati
 import com.debanshu777.caraml.features.modelhub.domain.DownloadAdmission
 import com.debanshu777.caraml.features.modelhub.domain.DownloadAdmissionPolicy
 import com.debanshu777.caraml.features.modelhub.domain.DownloadAdmissionRejected
+import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
 import com.debanshu777.caraml.features.modelhub.domain.downloadAdmissionErrorMessage
 import com.debanshu777.caraml.features.modelhub.domain.requireForComponent
 import com.debanshu777.caraml.features.modelhub.domain.ArtifactStorageKey
@@ -53,6 +60,7 @@ import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
 import com.debanshu777.huggingfacemanager.download.DownloadProgressDTO
 import com.debanshu777.huggingfacemanager.download.ArtifactVerificationException
+import com.debanshu777.huggingfacemanager.download.ArtifactFileAccessException
 import com.debanshu777.huggingfacemanager.download.ArtifactManifest
 import com.debanshu777.huggingfacemanager.download.ArtifactManifestEntry
 import com.debanshu777.huggingfacemanager.download.artifactBundleId
@@ -354,6 +362,7 @@ class ModelViewModel(
     private val settingsRepository: SettingsRepository,
     private val quickCalibrationRunner: QuickCalibrationRunner? = null,
     private val calibrationSource: CalibrationSource = NoCalibrationSource,
+    private val downloadCoordinator: DownloadCoordinator? = null,
 ) : ViewModel() {
 
     private val downloadAdmissionPolicy = DownloadAdmissionPolicy()
@@ -487,6 +496,10 @@ class ModelViewModel(
 
     private val _downloadError = MutableStateFlow<String?>(null)
     val downloadError: StateFlow<String?> = _downloadError.asStateFlow()
+    private val _downloadBatches = MutableStateFlow<List<DownloadBatchSnapshot>>(emptyList())
+    val downloadBatches: StateFlow<List<DownloadBatchSnapshot>> = _downloadBatches.asStateFlow()
+    private var downloadObservationJob: Job? = null
+    private var refreshedCompletedBatchId: String? = null
 
     private var pendingDownloadForLater: PendingDownloadForLater? = null
     private val _showDownloadForLaterConfirmation = MutableStateFlow(false)
@@ -680,7 +693,13 @@ class ModelViewModel(
         hubBrowseMode: ModelHubBrowseMode = ModelHubBrowseMode.LanguageModels,
     ) {
         if (modelId.isBlank()) return
+        observeDurableDownloads(modelId)
         _browseMode.value = hubBrowseMode
+        startRecommendations(
+            models = listOf(ListModelsResponse.Model(id = modelId)),
+            workload = defaultRecommendationWorkload(hubBrowseMode),
+            source = "details",
+        )
         viewModelScope.launch {
             _isDetailLoading.update { true }
             _detailError.update { null }
@@ -854,6 +873,24 @@ class ModelViewModel(
                     }
                 }
 
+                downloadCoordinator?.let { coordinator ->
+                    coordinator.enqueue(
+                        DownloadBatchRequest(
+                            ownerModelId = modelId,
+                            modelType = modelType,
+                            artifacts = ownedArtifacts.map { metadata ->
+                                DownloadArtifactRequest(
+                                    metadata = metadata,
+                                    primary = metadata.artifact.repositoryId == modelId,
+                                )
+                            },
+                            downloadForLaterConfirmed = downloadForLaterConfirmed,
+                            displayName = modelId,
+                        ),
+                    )
+                    return@launch
+                }
+
                 downloadDiffusionBundle(
                     modelId = modelId,
                     triggeredPath = variantPath,
@@ -887,13 +924,17 @@ class ModelViewModel(
                 _downloadError.update { "Download was interrupted and the file is incomplete. Please try again." }
                 _ggufFiles.update { list -> list.map { it.copy(progress = null) } }
                 _setupComponents.update { list -> list.map { it.copy(progress = null) } }
+            } catch (_: ArtifactFileAccessException) {
+                _downloadError.update { "Model storage is unavailable. Please check storage access and try again." }
+                _ggufFiles.update { list -> list.map { it.copy(progress = null) } }
+                _setupComponents.update { list -> list.map { it.copy(progress = null) } }
             } catch (_: Exception) {
                 _downloadError.update { "Install failed. Please check your connection and try again." }
                 _ggufFiles.update { list -> list.map { it.copy(progress = null) } }
                 _setupComponents.update { list -> list.map { it.copy(progress = null) } }
             } finally {
                 _activeDownloadArtifact.value = null
-                _isDownloading.update { false }
+                if (downloadCoordinator == null) _isDownloading.update { false }
                 _installProgress.update { InstallProgress() }
             }
         }
@@ -940,6 +981,18 @@ class ModelViewModel(
                         return@launch
                     }
                 }
+                downloadCoordinator?.let { coordinator ->
+                    coordinator.enqueue(
+                        DownloadBatchRequest(
+                            ownerModelId = modelId,
+                            modelType = ModelType.TEXT,
+                            artifacts = listOf(DownloadArtifactRequest(metadata, primary = true)),
+                            downloadForLaterConfirmed = downloadForLaterConfirmed,
+                            displayName = modelId,
+                        ),
+                    )
+                    return@launch
+                }
                 downloadSingleWeight(modelId, path, metadata, modelType = ModelType.TEXT)
                 refreshGgufFilesDownloadState(modelId, isDiffusion = false)
             } catch (e: CancellationException) {
@@ -954,12 +1007,106 @@ class ModelViewModel(
             } catch (_: IncompleteDownloadException) {
                 _downloadError.update { "Download was interrupted and the file is incomplete. Please try again." }
                 _ggufFiles.update { list -> list.map { it.copy(progress = null) } }
+            } catch (_: ArtifactFileAccessException) {
+                _downloadError.update { "Model storage is unavailable. Please check storage access and try again." }
+                _ggufFiles.update { list -> list.map { it.copy(progress = null) } }
             } catch (_: Exception) {
                 _downloadError.update { "Download failed. Please check your connection and try again." }
                 _ggufFiles.update { list -> list.map { it.copy(progress = null) } }
             } finally {
                 _activeDownloadArtifact.value = null
-                _isDownloading.update { false }
+                if (downloadCoordinator == null) _isDownloading.update { false }
+            }
+        }
+    }
+
+    fun pauseDownload(batchId: String) {
+        viewModelScope.launch { downloadCoordinator?.pause(batchId) }
+    }
+
+    fun resumeDownload(batchId: String) {
+        viewModelScope.launch { downloadCoordinator?.resume(batchId) }
+    }
+
+    fun cancelDownload(batchId: String) {
+        viewModelScope.launch { downloadCoordinator?.cancel(batchId) }
+    }
+
+    fun retryDownload(batchId: String) {
+        viewModelScope.launch { downloadCoordinator?.retry(batchId) }
+    }
+
+    private fun observeDurableDownloads(modelId: String) {
+        val coordinator = downloadCoordinator ?: return
+        downloadObservationJob?.cancel()
+        refreshedCompletedBatchId = null
+        downloadObservationJob = viewModelScope.launch {
+            coordinator.observeForModel(modelId).collectLatest { batches ->
+                _downloadBatches.value = batches
+                val current = batches.firstOrNull { it.state !in setOf(
+                    DownloadBatchState.COMPLETED,
+                    DownloadBatchState.CANCELLED,
+                    DownloadBatchState.FAILED_TERMINAL,
+                ) } ?: batches.firstOrNull()
+                _isDownloading.value = current?.state in setOf(
+                    DownloadBatchState.QUEUED,
+                    DownloadBatchState.RUNNING,
+                    DownloadBatchState.WAITING_FOR_NETWORK,
+                    DownloadBatchState.VERIFYING,
+                )
+                _activeDownloadArtifact.value = current?.artifacts
+                    ?.firstOrNull { it.state == DownloadArtifactState.RUNNING }
+                    ?.request?.metadata?.artifact
+                current?.let { batch ->
+                    _ggufFiles.update { files ->
+                        files.map { file ->
+                            val task = batch.artifacts.firstOrNull { it.request.metadata.artifact == file.artifact }
+                            file.copy(
+                                isDownloaded = file.isDownloaded || task?.state == DownloadArtifactState.COMPLETED,
+                                progress = task?.takeIf { it.state == DownloadArtifactState.RUNNING }
+                                    ?.let { it.bytesReceived.toFloat() * 100f / it.expectedBytes.toFloat() },
+                            )
+                        }
+                    }
+                    _setupComponents.update { components ->
+                        components.map { component ->
+                            val task = batch.artifacts.firstOrNull { artifact ->
+                                artifact.request.metadata.artifact.let { identity ->
+                                    identity.repositoryId == component.repoId &&
+                                        identity.relativePath == component.filePath
+                                }
+                            }
+                            component.copy(
+                                isDownloaded = component.isDownloaded ||
+                                    task?.state == DownloadArtifactState.COMPLETED,
+                                progress = task?.takeIf { it.state == DownloadArtifactState.RUNNING }
+                                    ?.let { it.bytesReceived.toFloat() * 100f / it.expectedBytes.toFloat() },
+                            )
+                        }
+                    }
+                    _installProgress.value = InstallProgress(
+                        fraction = batch.expectedBytes.takeIf { it > 0L }
+                            ?.let { batch.bytesReceived.toFloat() / it.toFloat() },
+                        bytesReceived = batch.bytesReceived,
+                        bytesTotal = batch.expectedBytes,
+                        label = batch.artifacts.firstOrNull { it.state == DownloadArtifactState.RUNNING }
+                            ?.request?.metadata?.artifact?.relativePath?.substringAfterLast('/'),
+                    )
+                    _downloadError.value = when (batch.state) {
+                        DownloadBatchState.FAILED_RETRYABLE -> "Download paused after a problem. Retry when ready."
+                        DownloadBatchState.FAILED_TERMINAL -> "Download could not be verified. Please start it again."
+                        else -> null
+                    }
+                    if (batch.state == DownloadBatchState.COMPLETED &&
+                        refreshedCompletedBatchId != batch.batchId
+                    ) {
+                        refreshGgufFilesDownloadState(
+                            modelId = modelId,
+                            isDiffusion = _browseMode.value != ModelHubBrowseMode.LanguageModels,
+                        )
+                        refreshedCompletedBatchId = batch.batchId
+                    }
+                }
             }
         }
     }
@@ -1002,9 +1149,15 @@ class ModelViewModel(
         metadata: DownloadMetadataDTO,
         offerDownloadForLater: Boolean = true,
     ): DownloadAdmission {
-        val session = recommendationSession
-            ?: return DownloadAdmission.Blocked(com.debanshu777.caraml.core.recommendation.AssessmentReason.MEMORY_BOUNDS_UNKNOWN)
         val state = _recommendedModels.value.firstOrNull { it.repositoryId == modelId }
+        if (state == null || state.descriptorState == DescriptorState.NEEDS_INFORMATION) {
+            return if (isExactCurrentDetailArtifact(modelId, metadata.artifact)) {
+                DownloadAdmission.Allowed
+            } else {
+                DownloadAdmission.Blocked(com.debanshu777.caraml.core.recommendation.AssessmentReason.INVALID_METADATA)
+            }
+        }
+        val session = recommendationSession
             ?: return DownloadAdmission.Blocked(com.debanshu777.caraml.core.recommendation.AssessmentReason.MEMORY_BOUNDS_UNKNOWN)
         val descriptor = state.selectedDescriptor
             ?: return DownloadAdmission.Blocked(com.debanshu777.caraml.core.recommendation.AssessmentReason.MEMORY_BOUNDS_UNKNOWN)
@@ -1029,13 +1182,29 @@ class ModelViewModel(
             is StorageRequirement.Blocked -> return DownloadAdmission.Blocked(
                 com.debanshu777.caraml.core.recommendation.AssessmentReason.INSUFFICIENT_STORAGE,
             )
-            is StorageRequirement.NeedsInformation -> return DownloadAdmission.Blocked(
-                com.debanshu777.caraml.core.recommendation.AssessmentReason.STORAGE_BOUNDS_UNKNOWN,
-            )
+            is StorageRequirement.NeedsInformation -> if (
+                refreshed.personalizedResult?.category !=
+                com.debanshu777.caraml.core.recommendation.RecommendationCategory.NEEDS_INFORMATION
+            ) {
+                return DownloadAdmission.Blocked(
+                    com.debanshu777.caraml.core.recommendation.AssessmentReason.STORAGE_BOUNDS_UNKNOWN,
+                )
+            }
         }
         val recommendation = refreshed.personalizedResult
             ?: return DownloadAdmission.Blocked(com.debanshu777.caraml.core.recommendation.AssessmentReason.MEMORY_BOUNDS_UNKNOWN)
         return downloadAdmissionPolicy.decide(recommendation, offerDownloadForLater)
+    }
+
+    private fun isExactCurrentDetailArtifact(
+        modelId: String,
+        artifact: DownloadArtifactIdentity,
+    ): Boolean {
+        val detailModelId = _modelDetail.value?.let { it.modelId ?: it.id }
+        if (detailModelId != modelId || artifact.repositoryId != modelId) return false
+        return _ggufFiles.value.singleOrNull { file ->
+            file.path == artifact.relativePath && file.artifact == artifact
+        } != null
     }
 
     private fun findExactTarget(
@@ -1769,6 +1938,9 @@ class ModelViewModel(
                 _downloadError.update {
                     "Not enough storage space. Need $required but only $available is available."
                 }
+                _setupComponents.update { list -> list.map { it.copy(progress = null) } }
+            } catch (_: ArtifactFileAccessException) {
+                _downloadError.update { "Model storage is unavailable. Please check storage access and try again." }
                 _setupComponents.update { list -> list.map { it.copy(progress = null) } }
             } catch (_: Exception) {
                 _downloadError.update { "Download failed. Please check your connection and try again." }

@@ -33,6 +33,23 @@ import com.debanshu777.caraml.core.storage.AppDatabase
 import com.debanshu777.caraml.core.recommendation.storage.RecommendationDatabaseOwner
 import com.debanshu777.caraml.core.storage.component.ComponentRepository
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
+import com.debanshu777.caraml.core.download.ArtifactTransfer
+import com.debanshu777.caraml.core.download.BatchFinalizer
+import com.debanshu777.caraml.core.download.BundlePublisher
+import com.debanshu777.caraml.core.download.DownloadBatchRunner
+import com.debanshu777.caraml.core.download.DownloadCoordinator
+import com.debanshu777.caraml.core.download.DownloadCheckpointCleaner
+import com.debanshu777.caraml.core.download.DownloadManagerCheckpointCleaner
+import com.debanshu777.caraml.core.download.DownloadManagerArtifactTransfer
+import com.debanshu777.caraml.core.download.DownloadManagerBundlePublisher
+import com.debanshu777.caraml.core.download.DownloadReconciler
+import com.debanshu777.caraml.core.download.DownloadRuntime
+import com.debanshu777.caraml.core.download.DownloadTaskStore
+import com.debanshu777.caraml.core.download.ModelCatalogPublisher
+import com.debanshu777.caraml.core.download.ModelDownloadFinalizer
+import com.debanshu777.caraml.core.download.RepositoryModelCatalogPublisher
+import com.debanshu777.caraml.core.download.storage.DownloadDatabase
+import com.debanshu777.caraml.core.download.storage.RoomDownloadTaskStore
 import com.debanshu777.caraml.core.data.settings.DefaultSettingsRepository
 import com.debanshu777.caraml.core.data.settings.SettingsRepository
 import com.debanshu777.caraml.core.data.theme.DefaultThemeRepository
@@ -77,6 +94,17 @@ val appModule = module {
     single { ComponentRepository(get()) }
     single { RecommendedModelLoadRequestResolver(get(), get()) }
     single { DownloadManager(get()) }
+    single<DownloadTaskStore> { RoomDownloadTaskStore(get<DownloadDatabase>().downloadTaskDao()) }
+    single<ArtifactTransfer> { DownloadManagerArtifactTransfer(get()) }
+    single<DownloadCheckpointCleaner> { DownloadManagerCheckpointCleaner(get()) }
+    single<BundlePublisher> { DownloadManagerBundlePublisher(get()) }
+    single<ModelCatalogPublisher> { RepositoryModelCatalogPublisher(get(), get(), get()) }
+    single<BatchFinalizer> { ModelDownloadFinalizer(get(), get(), get()) }
+    single { DownloadBatchRunner(get(), get(), get(), { Clock.System.now().toEpochMilliseconds() }) }
+    single { DownloadRuntimeScope(CoroutineScope(SupervisorJob() + Dispatchers.Default)) }
+    single { DownloadReconciler(get(), get(), { Clock.System.now().toEpochMilliseconds() }) }
+    single { DownloadRuntime(get(), get(), get<DownloadRuntimeScope>().scope) }
+    single { DownloadCoordinator(get(), get(), get(), get(), { Clock.System.now().toEpochMilliseconds() }) }
 
     single { createHuggingFaceApi() }
 
@@ -248,6 +276,7 @@ val appModule = module {
             settingsRepository = get(),
             quickCalibrationRunner = get(),
             calibrationSource = get(),
+            downloadCoordinator = get(),
         )
     }
     viewModel {
@@ -285,3 +314,4 @@ val appModule = module {
 private const val NATIVE_LOAD_ENGINE_VERSION = "native-engine-v1"
 
 private class RecommendationCalibrationScope(val scope: CoroutineScope)
+class DownloadRuntimeScope(val scope: CoroutineScope)

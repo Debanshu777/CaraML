@@ -42,6 +42,9 @@ class DownloadAdmissionPolicy {
         if (result.storageFit == FitBand.NO_FIT) {
             return DownloadAdmission.Blocked(AssessmentReason.INSUFFICIENT_STORAGE)
         }
+        if (result.category == RecommendationCategory.NEEDS_INFORMATION) {
+            return DownloadAdmission.Allowed
+        }
         if (result.category in runnableCategories && !result.hasCoherentRunnableProjection()) {
             return DownloadAdmission.Blocked(AssessmentReason.RECOMMENDATION_EVIDENCE_INCOMPLETE)
         }
@@ -56,8 +59,7 @@ class DownloadAdmissionPolicy {
             } else {
                 DownloadAdmission.Blocked(AssessmentReason.NO_RUN_PLAN)
             }
-            RecommendationCategory.NEEDS_INFORMATION ->
-                DownloadAdmission.Blocked(result.reasons.firstOrNull() ?: AssessmentReason.MEMORY_BOUNDS_UNKNOWN)
+            RecommendationCategory.NEEDS_INFORMATION -> DownloadAdmission.Allowed
             else -> DownloadAdmission.Allowed
         }
     }

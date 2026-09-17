@@ -219,6 +219,8 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 
 <!-- This section is updated at the end of each AI-assisted development session -->
 
+- Model downloads now use a persistent resumable queue with exact-artifact verification and pause/resume/cancel/retry controls; Android uses UIDT/foreground notifications, iOS uses a relaunch-capable background URLSession with completion notifications, and Desktop resumes on relaunch
+- Model Details now keeps `Needs information` advisory and starts exact identity-validated Android downloads without forbidden filesystem-root reads, while preserving incompatibility, storage, and artifact-safety checks
 - Refined CaraML Aurora with visible seed-derived gradients, translucent borderless panes, restrained focal surfaces, and consistent compact spacing in light and dark themes
 - Compacted Model Hub and Model Details with clearer information hierarchy, human-readable metadata, one advanced-filter surface, and accessible large-text layouts
 - Calmed navigation with an overlay drawer above stationary content, opacity-only peer changes, shallow fixed-axis detail transitions, and reduced-motion fallbacks

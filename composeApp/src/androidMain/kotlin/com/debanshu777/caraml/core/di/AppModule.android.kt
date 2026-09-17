@@ -8,6 +8,13 @@ import com.debanshu777.caraml.core.storage.getRoomDatabase
 import com.debanshu777.caraml.core.recommendation.storage.RecommendationDatabaseOwner
 import com.debanshu777.caraml.core.recommendation.storage.getRecommendationDatabaseBuilder
 import com.debanshu777.caraml.core.recommendation.storage.getRecommendationRoomDatabase
+import com.debanshu777.caraml.core.download.AndroidDownloadNotificationPermissionController
+import com.debanshu777.caraml.core.download.AndroidDownloadScheduler
+import com.debanshu777.caraml.core.download.DownloadNotificationPermissionController
+import com.debanshu777.caraml.core.download.PlatformDownloadScheduler
+import com.debanshu777.caraml.core.download.storage.DownloadDatabase
+import com.debanshu777.caraml.core.download.storage.getDownloadDatabaseBuilder
+import com.debanshu777.caraml.core.download.storage.getDownloadRoomDatabase
 import com.debanshu777.huggingfacemanager.download.AndroidStoragePathProvider
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import org.koin.core.module.Module
@@ -23,6 +30,16 @@ actual val platformHuggingFaceModule: Module = module {
         val builder = getDatabaseBuilder(KoinPlatform.getKoin().get<Context>(), dbPath)
         getRoomDatabase(builder)
     }
+
+    single<DownloadDatabase> {
+        val context = KoinPlatform.getKoin().get<Context>()
+        getDownloadRoomDatabase(
+            getDownloadDatabaseBuilder(context, get<StoragePathProvider>().getDownloadDatabasePath()),
+        )
+    }
+    single<PlatformDownloadScheduler> { AndroidDownloadScheduler(KoinPlatform.getKoin().get()) }
+    single { AndroidDownloadNotificationPermissionController() }
+    single<DownloadNotificationPermissionController> { get<AndroidDownloadNotificationPermissionController>() }
 
     single {
         val context = KoinPlatform.getKoin().get<Context>()
