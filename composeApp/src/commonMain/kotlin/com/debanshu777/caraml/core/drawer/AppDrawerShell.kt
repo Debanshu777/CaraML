@@ -38,6 +38,9 @@ private val primaryNavigationItems = listOf(
         title = "Models",
         icon = Icons.Default.Storage,
     ),
+)
+
+private val utilityNavigationItems = listOf(
     DrawerItem(
         id = "settings",
         title = "Settings",
@@ -69,11 +72,11 @@ fun AppDrawerShell(
     backStack: NavBackStack<NavKey>,
     content: @Composable () -> Unit,
 ) {
-    val compatibilityDrawerController = remember { DrawerController() }
+    val drawerController = remember { DrawerController() }
     val modeController = remember { GenerationModeController() }
 
     CompositionLocalProvider(
-        LocalDrawerController provides compatibilityDrawerController,
+        LocalDrawerController provides drawerController,
         LocalGenerationModeController provides modeController,
     ) {
         val currentScreen = backStack.lastOrNull()
@@ -118,10 +121,13 @@ fun AppDrawerShell(
             AdaptiveNavigation(
                 navigation = navigation,
                 items = primaryNavigationItems,
+                footerItems = utilityNavigationItems,
                 selectedItemId = selectedItemId,
                 onItemClick = navigateToItem,
+                onFooterItemClick = navigateToItem,
+                drawerController = drawerController,
                 contextualItems = if (
-                    navigation == AppNavigationLayout.Sidebar && currentScreen == AppScreen.Home
+                    navigation != AppNavigationLayout.Rail && currentScreen == AppScreen.Home
                 ) {
                     generationModeItems
                 } else {
@@ -133,6 +139,14 @@ fun AppDrawerShell(
                     CompositionLocalProvider(
                         LocalAppWindowWidth provides appWindowWidth,
                         LocalAppNavigationLayout provides navigation,
+                        LocalNavigationMenuAction provides if (
+                            navigation == AppNavigationLayout.ModalSidebar &&
+                            currentScreen !is AppScreen.Details
+                        ) {
+                            drawerController::toggle
+                        } else {
+                            null
+                        },
                     ) {
                         content()
                     }

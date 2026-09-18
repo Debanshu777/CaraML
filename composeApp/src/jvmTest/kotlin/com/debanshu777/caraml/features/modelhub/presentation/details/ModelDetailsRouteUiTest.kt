@@ -5,6 +5,7 @@ package com.debanshu777.caraml.features.modelhub.presentation.details
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
@@ -131,7 +132,7 @@ class ModelDetailsRouteUiTest {
                         val backStack = remember {
                             NavBackStack<NavKey>(AppScreen.Details(environment.repositoryId))
                         }
-                        Box(Modifier.width(windowWidth).height(720.dp)) {
+                        Box(Modifier.requiredWidth(windowWidth).height(720.dp)) {
                             AppDrawerShell(
                                 modifier = Modifier.fillMaxSize(),
                                 backStack = backStack,
@@ -164,17 +165,20 @@ class ModelDetailsRouteUiTest {
             )
             assertTrue(
                 abs(compactSupport.left - compactOverview.left) < 1f,
-                "Outer 840dp leaves only 712dp after rail and margins, so Details must stay compact",
+                "Outer 840dp leaves only 536dp after sidebar and margins, so Details must stay compact",
             )
 
-            runOnIdle { windowWidth = 968.dp }
+            runOnIdle { windowWidth = 1_144.dp }
             waitForIdle()
 
             val expandedOverview = onNodeWithTag("detail-overview", useUnmergedTree = true)
                 .fetchSemanticsNode().boundsInRoot
             val expandedSupport = onNodeWithTag("detail-support", useUnmergedTree = true)
                 .fetchSemanticsNode().boundsInRoot
-            assertTrue(expandedSupport.left >= expandedOverview.right)
+            assertTrue(
+                expandedSupport.left >= expandedOverview.right,
+                "Supporting pane started at ${expandedSupport.left}px while the primary pane ended at ${expandedOverview.right}px",
+            )
             assertTrue(
                 expandedOverview.width >= 480f,
                 "Expanded primary pane must retain at least 480dp; it was ${expandedOverview.width}",

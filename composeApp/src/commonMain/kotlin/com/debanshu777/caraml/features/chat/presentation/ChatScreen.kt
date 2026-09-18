@@ -56,6 +56,7 @@ import com.debanshu777.caraml.core.drawer.DrawerController
 import com.debanshu777.caraml.core.drawer.GenerationModeController
 import com.debanshu777.caraml.core.drawer.LocalDrawerController
 import com.debanshu777.caraml.core.drawer.LocalGenerationModeController
+import com.debanshu777.caraml.core.drawer.LocalNavigationMenuAction
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
@@ -171,13 +172,10 @@ fun ChatScreenContent(
 ) {
     val listState = rememberLazyListState()
     val navigationLayout = LocalAppNavigationLayout.current
+    val navigationMenuAction = LocalNavigationMenuAction.current
     val safeDrawingInsets = LocalCreateSafeDrawingInsetsOverride.current ?: WindowInsets.safeDrawing
     val scaffoldContentInsets = safeDrawingInsets.only(
-        if (navigationLayout == AppNavigationLayout.BottomBar) {
-            WindowInsetsSides.Horizontal
-        } else {
-            WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom
-        },
+        WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom,
     )
     val generationMode = controlledGenerationMode ?: when (val state = uiState) {
         is ChatUiState.Ready -> state.generationMode
@@ -204,11 +202,14 @@ fun ChatScreenContent(
             ) {
                 ModelSelectorTopBar(
                     title = "Create",
+                    onMenuClick = navigationMenuAction,
                     modifier = Modifier
                         .widthIn(max = 840.dp)
                         .fillMaxWidth()
                         .padding(
-                            horizontal = if (navigationLayout == AppNavigationLayout.BottomBar) {
+                            horizontal = if (
+                                navigationLayout == AppNavigationLayout.ModalSidebar
+                            ) {
                                 16.dp
                             } else {
                                 24.dp

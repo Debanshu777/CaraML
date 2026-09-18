@@ -39,13 +39,12 @@ class ShellGutterContractUiTest {
     fun shellKeepsOuterWindowGuttersAcrossModelsSettingsAndDetails() = runComposeUiTest {
         var width by mutableStateOf(599.dp)
         var contentKind by mutableStateOf(AppContentKind.ModelHub)
+        lateinit var backStack: NavBackStack<NavKey>
 
         setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f)) {
                 MaterialTheme {
-                    val backStack = remember {
-                        NavBackStack<NavKey>(AppScreen.Details("org/model"))
-                    }
+                    backStack = remember { NavBackStack<NavKey>(AppScreen.Search) }
                     AppDrawerShell(
                         modifier = Modifier
                             .requiredSize(width = width, height = 720.dp)
@@ -85,15 +84,21 @@ class ShellGutterContractUiTest {
         val cases = listOf(
             GutterCase(AppContentKind.ModelHub, 599.dp, 16f),
             GutterCase(AppContentKind.ModelHub, 600.dp, 104f),
-            GutterCase(AppContentKind.ModelHub, 1199.dp, 143.5f),
+            GutterCase(AppContentKind.ModelHub, 839.dp, 104f),
+            GutterCase(AppContentKind.ModelHub, 840.dp, 280f),
+            GutterCase(AppContentKind.ModelHub, 1199.dp, 280f),
             GutterCase(AppContentKind.ModelHub, 1200.dp, 280f),
             GutterCase(AppContentKind.Settings, 599.dp, 16f),
             GutterCase(AppContentKind.Settings, 600.dp, 104f),
-            GutterCase(AppContentKind.Settings, 1199.dp, 283.5f),
+            GutterCase(AppContentKind.Settings, 839.dp, 104f),
+            GutterCase(AppContentKind.Settings, 840.dp, 280f),
+            GutterCase(AppContentKind.Settings, 1199.dp, 371.5f),
             GutterCase(AppContentKind.Settings, 1200.dp, 372f),
             GutterCase(AppContentKind.Details, 599.dp, 16f),
             GutterCase(AppContentKind.Details, 600.dp, 104f),
-            GutterCase(AppContentKind.Details, 1199.dp, 143.5f),
+            GutterCase(AppContentKind.Details, 839.dp, 104f),
+            GutterCase(AppContentKind.Details, 840.dp, 280f),
+            GutterCase(AppContentKind.Details, 1199.dp, 280f),
             GutterCase(AppContentKind.Details, 1200.dp, 280f),
         )
 
@@ -101,6 +106,15 @@ class ShellGutterContractUiTest {
             runOnIdle {
                 width = case.windowWidth
                 contentKind = case.contentKind
+                backStack.clear()
+                backStack.add(
+                    when (case.contentKind) {
+                        AppContentKind.Chat -> AppScreen.Home
+                        AppContentKind.ModelHub -> AppScreen.Search
+                        AppContentKind.Settings -> AppScreen.Settings
+                        AppContentKind.Details -> AppScreen.Details("org/model")
+                    },
+                )
             }
             waitForIdle()
 
@@ -108,11 +122,18 @@ class ShellGutterContractUiTest {
                 .fetchSemanticsNode().boundsInRoot.left
             val bodyLeft = onNodeWithTag("workspace-body")
                 .fetchSemanticsNode().boundsInRoot.left - shellLeft
-            val headerLeft = if (case.contentKind == AppContentKind.Details) {
-                onNodeWithContentDescription("Navigate back")
-                    .fetchSemanticsNode().boundsInRoot.left
+            val headerLeft = if (
+                case.contentKind == AppContentKind.Details || case.windowWidth >= 600.dp
+            ) {
+                if (case.contentKind == AppContentKind.Details) {
+                    onNodeWithContentDescription("Navigate back")
+                        .fetchSemanticsNode().boundsInRoot.left
+                } else {
+                    onNodeWithText("${case.contentKind.name} workspace")
+                        .fetchSemanticsNode().boundsInRoot.left
+                }
             } else {
-                onNodeWithText("${case.contentKind.name} workspace")
+                onNodeWithContentDescription("Open navigation menu")
                     .fetchSemanticsNode().boundsInRoot.left
             } - shellLeft
 

@@ -219,12 +219,12 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 
 <!-- This section is updated at the end of each AI-assisted development session -->
 
-- Rebuilt CaraML as the Prism workbench: an adaptive three-destination shell with seed-derived ambient light, semantic type and shape roles, stationary peer fades, shallow Details motion, and a zero-offset reduced-motion fallback
+- Rebuilt CaraML as a sidebar-first Prism workbench: compact windows use a stationary-content modal panel, tablets use a compact rail, and wider workspaces use a labeled sidebar with contextual generation modes
 - Reframed Create around one focused command composer and explicit activity states; generation modes remain local state while the Create destination stays selected
 - Reworked Model Hub as a compact registry and made Details artifact-first with reachable metadata, exact artifact actions, and durable pause/resume/cancel/retry state
 - Model downloads now use a persistent resumable queue with exact-artifact verification; Android uses UIDT/foreground notifications, iOS reconnects to a background URLSession, and Desktop resumes on relaunch
 - Reorganized Settings as a dense, accessible list with exclusive selections, disclosure rows, and the app's single contextual appearance preview
-- Verified the Prism source boundary with focused and repository-wide JVM/native gates, Android debug assembly, and iOS simulator compilation; the final Pixel visual matrix remains unverified because the connected device was securely locked
+- Verified the sidebar shell with focused and repository-wide JVM/native gates, Android debug assembly, and iOS simulator compilation; the fresh physical-device visual and animation matrix remains unverified because the Pixel was no longer attached at the final checkpoint
 - Added versioned recommendation/native fixture gates, opt-in real-runner parity, pinned CI jobs, and exact artifact-bound model selection; production remains on the legacy display path until measured physical-device and pinned-runner release evidence exists
 - Added opt-in device calibration with byte-bound descriptor identity, phase-specific raw memory baselines, full run-plan fingerprints, real process-memory provenance, and fail-closed quarantine after unresponsive native probes
 - Model loads now derive typed directory targets only from verified storage roots, bind every native-consumed path to revalidated bytes, and keep multi-sequence plans analytical until strict native admission

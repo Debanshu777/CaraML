@@ -127,7 +127,7 @@ App preferences: theme mode (light/dark/system), color palette style, other infe
 
 ### Navigation (Navigation3)
 
-Sealed class `AppScreen` defines all routes. `AppNavigation.kt` builds the `NavHost`. Animated drawer (`AnimatedDrawerScaffold`) provides side-panel navigation on all platforms.
+Sealed class `AppScreen` defines all routes. `AppNavigation.kt` builds the `NavHost`. `AppDrawerShell` keeps navigation sidebar-first on every platform: a modal left panel below 600dp, a compact rail from 600–839dp, and a persistent labeled sidebar from 840dp.
 
 ### Database (Room)
 
@@ -204,12 +204,12 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 
 <!-- Updated at end of each AI-assisted development session -->
 
-- Rebuilt the shared UI as the Prism workbench with an adaptive Create, Models, and Settings shell; peer routes use stationary fades, Details uses a fixed shallow axis, and reduced motion removes spatial travel
+- Rebuilt the shared UI as a sidebar-first Prism workbench: compact windows reveal a modal left panel without moving content, tablets use a compact rail, and wider workspaces use a labeled sidebar with contextual generation modes
 - Create now centers one focused command composer, keeps Text, Image, and Video as local modes, and exposes explicit empty, preparation, generation, completion, and failure states
 - Model Hub now uses one compact registry hierarchy, while Details prioritizes exact artifacts and renders durable pause/resume/cancel/retry state without sacrificing compact or large-text reachability
 - Android uses UIDT/foreground WorkManager notifications, iOS reconnects to a stable background URLSession, and Desktop recovers persisted download checkpoints at startup
 - Settings now uses a dense list hierarchy with exclusive selections and disclosure rows; gradient ownership is bounded to the shared ambient field plus one contextual focus surface
-- Final Prism verification covers focused and repository-wide JVM/native gates, Android debug assembly, and iOS simulator compilation; the connected Pixel remained securely locked, so the device visual matrix is explicitly unverified
+- Final sidebar verification covers focused and repository-wide JVM/native gates, Android debug assembly, and iOS simulator compilation; the fresh physical-device visual and animation matrix is explicitly unverified because the Pixel was no longer attached at the final checkpoint
 - Added a strict 16-case recommendation corpus, analytical timing coverage, exact assessed-artifact selection handoff, and explicit release gating; unmeasured outcomes remain null and production remains `LEGACY`
 - Recommendations now learn only from byte-bound descriptors, phase-specific raw memory evidence, full run-plan fingerprints, and trustworthy process-memory counters; stale identities and unresponsive native probes fail closed
 - Exact model selections now derive directory targets only from verified storage roots, bind every native-consumed component path, keep multi-sequence planning analytical, and reject it at native admission

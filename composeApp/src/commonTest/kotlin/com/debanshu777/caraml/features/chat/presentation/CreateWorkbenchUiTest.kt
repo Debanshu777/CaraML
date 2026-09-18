@@ -131,7 +131,9 @@ class CreateWorkbenchUiTest {
         listOf(
             599.dp to 16f,
             600.dp to 104f,
-            1199.dp to 243.5f,
+            839.dp to 104f,
+            840.dp to 280f,
+            1199.dp to 331.5f,
             1200.dp to 332f,
         ).forEach { (windowWidth, expectedLeadingEdge) ->
             runOnIdle { width = windowWidth }
@@ -139,10 +141,15 @@ class CreateWorkbenchUiTest {
 
             val shellLeft = onNodeWithTag("app-shell")
                 .fetchSemanticsNode().boundsInRoot.left
-            val header = onAllNodesWithText("Create", useUnmergedTree = true)
-                .fetchSemanticsNodes()
-                .maxBy { it.boundsInRoot.width }
-                .boundsInRoot
+            val header = if (windowWidth < 600.dp) {
+                onNodeWithContentDescription("Open navigation menu")
+                    .fetchSemanticsNode().boundsInRoot
+            } else {
+                onAllNodesWithText("Create", useUnmergedTree = true)
+                    .fetchSemanticsNodes()
+                    .maxBy { it.boundsInRoot.width }
+                    .boundsInRoot
+            }
             val composer = onNodeWithTag("create-command", useUnmergedTree = true)
                 .fetchSemanticsNode().boundsInRoot
 
@@ -180,19 +187,24 @@ class CreateWorkbenchUiTest {
             }
         }
 
+        onNodeWithContentDescription("Open navigation menu").performClick()
         onAllNodesWithContentDescription("Create, selected").assertCountEquals(1)
-        onNodeWithContentDescription("Image mode").performClick()
+        onNodeWithContentDescription("Image").performClick()
         runOnIdle {
             assertEquals(GenerationMode.Image, modeController.mode)
             assertEquals(AppScreen.Home, backStack.last())
         }
+        onNodeWithContentDescription("Open navigation menu").performClick()
         onAllNodesWithContentDescription("Create, selected").assertCountEquals(1)
-        onNodeWithContentDescription("Video mode").performClick()
+        onAllNodesWithContentDescription("Image, selected").assertCountEquals(1)
+        onNodeWithContentDescription("Video").performClick()
         runOnIdle {
             assertEquals(GenerationMode.Video, modeController.mode)
             assertEquals(AppScreen.Home, backStack.last())
         }
+        onNodeWithContentDescription("Open navigation menu").performClick()
         onAllNodesWithContentDescription("Create, selected").assertCountEquals(1)
+        onAllNodesWithContentDescription("Video, selected").assertCountEquals(1)
     }
 
     @Test
@@ -505,7 +517,7 @@ class CreateWorkbenchUiTest {
     @Test
     fun createChromeRespectsInjectedTopInsetAcrossNavigationLayoutsAtTwoHundredPercent() =
         runComposeUiTest {
-            var navigation by mutableStateOf(AppNavigationLayout.BottomBar)
+            var navigation by mutableStateOf(AppNavigationLayout.ModalSidebar)
             var width by mutableStateOf(420.dp)
             val safeDrawing = WindowInsets(top = 24.dp, bottom = 32.dp)
 
@@ -527,9 +539,9 @@ class CreateWorkbenchUiTest {
             }
 
             listOf(
-                AppNavigationLayout.BottomBar to 420.dp,
+                AppNavigationLayout.ModalSidebar to 420.dp,
                 AppNavigationLayout.Rail to 600.dp,
-                AppNavigationLayout.Sidebar to 1_200.dp,
+                AppNavigationLayout.Sidebar to 840.dp,
             ).forEach { (layout, layoutWidth) ->
                 setNavigationLayout(layout, layoutWidth) { nextLayout, nextWidth ->
                     navigation = nextLayout
@@ -552,9 +564,9 @@ class CreateWorkbenchUiTest {
         }
 
     @Test
-    fun composerOwnsBottomInsetOnlyForRailAndSidebarAtTwoHundredPercent() =
+    fun composerOwnsBottomInsetForEverySidebarLayoutAtTwoHundredPercent() =
         runComposeUiTest {
-            var navigation by mutableStateOf(AppNavigationLayout.BottomBar)
+            var navigation by mutableStateOf(AppNavigationLayout.ModalSidebar)
             var width by mutableStateOf(420.dp)
             val hostHeight = 360f
             val safeBottom = 32f
@@ -578,9 +590,9 @@ class CreateWorkbenchUiTest {
             }
 
             listOf(
-                AppNavigationLayout.BottomBar to 420.dp,
+                AppNavigationLayout.ModalSidebar to 420.dp,
                 AppNavigationLayout.Rail to 600.dp,
-                AppNavigationLayout.Sidebar to 1_200.dp,
+                AppNavigationLayout.Sidebar to 840.dp,
             ).forEach { (layout, layoutWidth) ->
                 setNavigationLayout(layout, layoutWidth) { nextLayout, nextWidth ->
                     navigation = nextLayout
@@ -592,18 +604,10 @@ class CreateWorkbenchUiTest {
                     .assertHeightIsAtLeast(48.dp)
                     .fetchSemanticsNode()
                 val bottomGap = hostHeight - action.boundsInRoot.bottom
-                if (layout == AppNavigationLayout.BottomBar) {
-                    assertTrue(
-                        bottomGap < safeBottom,
-                        "BottomBar shell already constrains content and must not duplicate its " +
-                            "32dp safe bottom; gap=$bottomGap",
-                    )
-                } else {
-                    assertTrue(
-                        bottomGap >= safeBottom,
-                        "$layout composer must remain above the 32dp safe bottom; gap=$bottomGap",
-                    )
-                }
+                assertTrue(
+                    bottomGap >= safeBottom,
+                    "$layout composer must remain above the 32dp safe bottom; gap=$bottomGap",
+                )
             }
         }
 

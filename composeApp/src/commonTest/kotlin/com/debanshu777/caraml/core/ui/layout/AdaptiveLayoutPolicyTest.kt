@@ -6,9 +6,9 @@ import kotlin.test.assertEquals
 
 class AdaptiveLayoutPolicyTest {
     @Test
-    fun navigationChangesAtPrismShellBoundaries() {
+    fun navigationUsesModalSidebarBelow600RailThrough839AndSidebarFrom840() {
         assertEquals(
-            AppNavigationLayout.BottomBar,
+            AppNavigationLayout.ModalSidebar,
             adaptiveLayoutPolicy(599.dp, AppContentKind.Chat).navigation,
         )
         assertEquals(
@@ -17,11 +17,11 @@ class AdaptiveLayoutPolicyTest {
         )
         assertEquals(
             AppNavigationLayout.Rail,
-            adaptiveLayoutPolicy(1199.dp, AppContentKind.Chat).navigation,
+            adaptiveLayoutPolicy(839.dp, AppContentKind.Chat).navigation,
         )
         assertEquals(
             AppNavigationLayout.Sidebar,
-            adaptiveLayoutPolicy(1200.dp, AppContentKind.Chat).navigation,
+            adaptiveLayoutPolicy(840.dp, AppContentKind.Chat).navigation,
         )
     }
 

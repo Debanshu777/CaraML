@@ -20,6 +20,7 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -99,11 +100,16 @@ class ModelHubWorkbenchScreenUiTest {
             }
         }
 
-        fun assertHeaderAligned(layout: String) {
-            val header = onAllNodesWithText("Models")
-                .fetchSemanticsNodes()
-                .maxBy { it.boundsInRoot.width }
-                .boundsInRoot
+        fun assertHeaderAligned(layout: String, modal: Boolean = false) {
+            val header = if (modal) {
+                onNodeWithContentDescription("Open navigation menu")
+                    .fetchSemanticsNode().boundsInRoot
+            } else {
+                onAllNodesWithText("Models")
+                    .fetchSemanticsNodes()
+                    .maxBy { it.boundsInRoot.width }
+                    .boundsInRoot
+            }
             val tabs = onNodeWithTag("model-tabs").fetchSemanticsNode().boundsInRoot
             assertTrue(
                 abs(header.left - tabs.left) <= 1f,
@@ -111,11 +117,11 @@ class ModelHubWorkbenchScreenUiTest {
             )
         }
 
-        assertHeaderAligned("Bottom bar")
+        assertHeaderAligned("Modal sidebar", modal = true)
         runOnIdle { windowWidth = 600.dp }
         waitForIdle()
         assertHeaderAligned("Rail")
-        runOnIdle { windowWidth = 1300.dp }
+        runOnIdle { windowWidth = 840.dp }
         waitForIdle()
         assertHeaderAligned("Sidebar")
     }

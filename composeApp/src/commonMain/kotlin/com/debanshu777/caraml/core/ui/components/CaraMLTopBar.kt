@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.ui.layout.AppContentKind
 import com.debanshu777.caraml.core.ui.layout.ResponsiveContentPane
 import com.debanshu777.caraml.core.theme.prism
+import com.debanshu777.caraml.core.drawer.LocalNavigationMenuAction
 
 enum class TopBarNavigation {
     None,
@@ -134,10 +135,11 @@ fun CaraMLPrimaryTopBar(
     modifier: Modifier = Modifier,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
+    val menuAction = LocalNavigationMenuAction.current
     CaraMLTopBar(
         title = title,
-        navigation = TopBarNavigation.None,
-        onNavigationClick = null,
+        navigation = if (menuAction == null) TopBarNavigation.None else TopBarNavigation.Menu,
+        onNavigationClick = menuAction,
         modifier = modifier,
         contentKind = contentKind,
         actions = actions,

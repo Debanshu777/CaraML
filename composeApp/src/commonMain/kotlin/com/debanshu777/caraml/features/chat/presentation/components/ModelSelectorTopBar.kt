@@ -8,11 +8,18 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.prism
@@ -32,8 +39,7 @@ private fun ModelSelectorTopBarPreview() {
 fun ModelSelectorTopBar(
     title: String = "Create",
     modifier: Modifier = Modifier,
-    @Suppress("UNUSED_PARAMETER")
-    onMenuClick: () -> Unit = {},
+    onMenuClick: (() -> Unit)? = null,
     generationMode: GenerationMode? = null,
     onGenerationModeSelected: ((GenerationMode) -> Unit)? = null,
 ) {
@@ -42,37 +48,42 @@ fun ModelSelectorTopBar(
     BoxWithConstraints(
         modifier = modifier.fillMaxWidth(),
     ) {
-        if (
+        val useCompactLargeTextLayout =
             generationMode != null &&
             onGenerationModeSelected != null &&
             maxWidth < 600.dp &&
             LocalDensity.current.fontScale >= 1.5f
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 64.dp)
+                .padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            GenerationModeSwitcher(
-                mode = generationMode,
-                onModeSelected = onGenerationModeSelected,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 64.dp)
-                    .padding(vertical = 4.dp),
-            )
-        } else {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 64.dp)
-                    .padding(vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                QuietHeaderTitle(title)
-                if (generationMode != null && onGenerationModeSelected != null) {
-                    GenerationModeSwitcher(
-                        mode = generationMode,
-                        onModeSelected = onGenerationModeSelected,
-                        modifier = Modifier.weight(1f),
+            if (onMenuClick != null) {
+                IconButton(
+                    onClick = onMenuClick,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .semantics { contentDescription = "Open navigation menu" },
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Menu,
+                        contentDescription = null,
                     )
                 }
+            }
+            if (!useCompactLargeTextLayout) {
+                QuietHeaderTitle(title)
+            }
+            if (generationMode != null && onGenerationModeSelected != null) {
+                GenerationModeSwitcher(
+                    mode = generationMode,
+                    onModeSelected = onGenerationModeSelected,
+                    modifier = Modifier.weight(1f),
+                )
             }
         }
     }

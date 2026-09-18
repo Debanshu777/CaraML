@@ -3,6 +3,7 @@
 package com.debanshu777.caraml.core.drawer
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -44,11 +45,11 @@ import androidx.navigation3.runtime.NavKey
 import com.debanshu777.caraml.core.navigation.AppScreen
 import com.debanshu777.caraml.core.navigation.NavigationTransitionDisplay
 import com.debanshu777.caraml.core.theme.auroraColors
+import com.debanshu777.caraml.core.ui.components.CaraMLPrimaryTopBar
 import com.debanshu777.caraml.core.ui.layout.AppNavigationLayout
 import com.debanshu777.caraml.core.ui.layout.LocalAppNavigationLayout
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
-import com.debanshu777.caraml.features.chat.presentation.components.ModelSelectorTopBar
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -57,7 +58,7 @@ import kotlin.test.assertTrue
 class AdaptiveNavigationUiTest {
 
     @Test
-    fun width599UsesBottomBarWithExactlyCreateModelsAndSettings() = runComposeUiTest {
+    fun width599UsesClosedModalSidebarWithOneMenuAction() = runComposeUiTest {
         lateinit var observedLayout: AppNavigationLayout
 
         setContent {
@@ -68,23 +69,25 @@ class AdaptiveNavigationUiTest {
                     modifier = Modifier.requiredSize(width = 599.dp, height = 720.dp),
                 ) {
                     observedLayout = LocalAppNavigationLayout.current
-                    ModelSelectorTopBar()
+                    CaraMLPrimaryTopBar(title = "Create")
                 }
             }
         }
 
-        runOnIdle { assertEquals(AppNavigationLayout.BottomBar, observedLayout) }
+        runOnIdle { assertEquals(AppNavigationLayout.ModalSidebar, observedLayout) }
+        onAllNodesWithContentDescription("Open navigation menu").assertCountEquals(1)
+        onAllNodesWithContentDescription("Create, selected").assertCountEquals(0)
+        onNodeWithContentDescription("Open navigation menu").performClick()
         onAllNodesWithContentDescription("Create, selected").assertCountEquals(1)
         onAllNodesWithContentDescription("Models").assertCountEquals(1)
         onAllNodesWithContentDescription("Settings").assertCountEquals(1)
-        onAllNodesWithText("Chat").assertCountEquals(0)
-        onAllNodesWithText("Image").assertCountEquals(0)
-        onAllNodesWithText("Video").assertCountEquals(0)
-        onAllNodesWithContentDescription("Open navigation menu").assertCountEquals(0)
+        onAllNodesWithContentDescription("Text, selected").assertCountEquals(1)
+        onAllNodesWithContentDescription("Image").assertCountEquals(1)
+        onAllNodesWithContentDescription("Video").assertCountEquals(1)
     }
 
     @Test
-    fun width600UsesRailAndWidth1199StillUsesRail() = runComposeUiTest {
+    fun width600UsesRailAndWidth839StillUsesRail() = runComposeUiTest {
         var windowWidth by mutableStateOf(600.dp)
         lateinit var observedLayout: AppNavigationLayout
 
@@ -107,21 +110,21 @@ class AdaptiveNavigationUiTest {
         onAllNodesWithContentDescription("Create, selected").assertCountEquals(1)
         onAllNodesWithText("CaraML").assertCountEquals(0)
 
-        runOnIdle { windowWidth = 1199.dp }
+        runOnIdle { windowWidth = 839.dp }
         runOnIdle { assertEquals(AppNavigationLayout.Rail, observedLayout) }
         onAllNodesWithContentDescription("Create, selected").assertCountEquals(1)
         onAllNodesWithText("CaraML").assertCountEquals(0)
     }
 
     @Test
-    fun width1200UsesContextualSidebar() = runComposeUiTest {
+    fun width840UsesContextualSidebar() = runComposeUiTest {
         lateinit var observedLayout: AppNavigationLayout
 
         setContent {
             MaterialTheme {
                 val backStack = remember { NavBackStack<NavKey>(AppScreen.Home) }
                 AppDrawerShell(
-                    modifier = Modifier.requiredSize(width = 1200.dp, height = 720.dp),
+                    modifier = Modifier.requiredSize(width = 840.dp, height = 720.dp),
                     backStack = backStack,
                 ) {
                     observedLayout = LocalAppNavigationLayout.current
@@ -148,7 +151,7 @@ class AdaptiveNavigationUiTest {
             MaterialTheme {
                 backStack = remember { NavBackStack(AppScreen.Home) }
                 AppDrawerShell(
-                    modifier = Modifier.requiredSize(width = 1200.dp, height = 720.dp),
+                    modifier = Modifier.requiredSize(width = 840.dp, height = 720.dp),
                     backStack = backStack,
                 ) {
                     modeController = LocalGenerationModeController.current
@@ -184,18 +187,23 @@ class AdaptiveNavigationUiTest {
                     backStack = backStack,
                 ) {
                     val visibleRoute = requireNotNull(backStack.lastOrNull())
-                    androidx.compose.material3.Text(
-                        text = visibleRoute.routeLabel(),
-                        modifier = Modifier.testTag("visible-route"),
-                    )
+                    Column {
+                        CaraMLPrimaryTopBar(title = visibleRoute.routeLabel())
+                        androidx.compose.material3.Text(
+                            text = visibleRoute.routeLabel(),
+                            modifier = Modifier.testTag("visible-route"),
+                        )
+                    }
                 }
             }
         }
 
         onNodeWithTag("visible-route").assertTextEquals("Create route")
+        onNodeWithContentDescription("Open navigation menu").performClick()
         onNodeWithContentDescription("Models").performClick()
 
         onNodeWithTag("visible-route").assertTextEquals("Models route")
+        onNodeWithContentDescription("Open navigation menu").performClick()
         onAllNodesWithContentDescription("Models, selected").assertCountEquals(1)
         onAllNodesWithContentDescription("Create").assertCountEquals(1)
         runOnIdle {
@@ -217,7 +225,7 @@ class AdaptiveNavigationUiTest {
                     )
                 }
                 AppDrawerShell(
-                    modifier = Modifier.requiredSize(width = 599.dp, height = 720.dp),
+                    modifier = Modifier.requiredSize(width = 600.dp, height = 720.dp),
                     backStack = backStack,
                 ) {
                     val visibleRoute = requireNotNull(backStack.lastOrNull())
@@ -253,7 +261,7 @@ class AdaptiveNavigationUiTest {
             MaterialTheme {
                 backStack = remember { NavBackStack(AppScreen.Home) }
                 AppDrawerShell(
-                    modifier = Modifier.requiredSize(width = 599.dp, height = 720.dp),
+                    modifier = Modifier.requiredSize(width = 600.dp, height = 720.dp),
                     backStack = backStack,
                 ) {
                     NavigationTransitionDisplay(
@@ -293,9 +301,10 @@ class AdaptiveNavigationUiTest {
     }
 
     @Test
-    fun bottomBarAndRailRespectSafeDrawingInsetsAtTwoHundredPercentFontScale() =
+    fun modalSidebarAndRailRespectSafeDrawingInsetsAtTwoHundredPercentFontScale() =
         runComposeUiTest {
-            var navigation by mutableStateOf(AppNavigationLayout.BottomBar)
+            var navigation by mutableStateOf(AppNavigationLayout.ModalSidebar)
+            val drawerController = DrawerController()
             val height = 260.dp
 
             setContent {
@@ -305,9 +314,11 @@ class AdaptiveNavigationUiTest {
                     MaterialTheme {
                         AdaptiveNavigation(
                             navigation = navigation,
-                            items = primaryNavigationItems(),
+                            items = primaryNavigationItems().dropLast(1),
+                            footerItems = primaryNavigationItems().takeLast(1),
                             selectedItemId = "create",
                             onItemClick = {},
+                            drawerController = drawerController,
                             navigationInsets = WindowInsets(top = 48.dp, bottom = 56.dp),
                             modifier = Modifier.requiredSize(width = 420.dp, height = height),
                             content = { Box(Modifier.fillMaxSize()) },
@@ -316,7 +327,10 @@ class AdaptiveNavigationUiTest {
                 }
             }
 
+            runOnIdle { drawerController.open() }
+            waitForIdle()
             val compactCreate = onNodeWithContentDescription("Create, selected")
+                .performScrollTo()
                 .assertIsDisplayed()
                 .fetchSemanticsNode().boundsInRoot
             val compactSettings = onNodeWithContentDescription("Settings")
@@ -332,7 +346,6 @@ class AdaptiveNavigationUiTest {
                 .fetchSemanticsNode().boundsInRoot
             assertTrue(railCreate.top >= 48f)
             onNodeWithContentDescription("Settings")
-                .performScrollTo()
                 .assertIsDisplayed()
             val railSettings = onNodeWithContentDescription("Settings")
                 .fetchSemanticsNode().boundsInRoot
