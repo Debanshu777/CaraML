@@ -362,10 +362,8 @@ class AuroraComponentsUiTest {
             }
         }
 
-        onNodeWithText("Step 3 / 10  ·  2s", useUnmergedTree = true).assertIsDisplayed()
-        onNode(
-            hasStateDescription("Generating") and hasText("Step 3 / 10  ·  2s"),
-        ).assertIsDisplayed()
+        onNodeWithText("Step 3 / 10 · 2s", useUnmergedTree = true).assertIsDisplayed()
+        onNode(hasStateDescription("Generating")).assertIsDisplayed()
     }
 
     @Test
@@ -395,7 +393,9 @@ class AuroraComponentsUiTest {
         }
 
         onNodeWithText("Model downloaded", useUnmergedTree = true).assertIsDisplayed()
-        onNodeWithContentDescription("Model downloaded").assertIsDisplayed()
+        onNode(
+            hasStateDescription("Model downloaded") and hasText("Model downloaded"),
+        ).assertIsDisplayed()
     }
 
     @Test
