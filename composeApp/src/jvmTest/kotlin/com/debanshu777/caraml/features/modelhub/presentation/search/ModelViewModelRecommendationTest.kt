@@ -1,6 +1,19 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search
 
 import com.debanshu777.caraml.core.data.settings.SettingsRepository
+import com.debanshu777.caraml.core.download.DownloadArtifactRequest
+import com.debanshu777.caraml.core.download.DownloadArtifactSnapshot
+import com.debanshu777.caraml.core.download.DownloadArtifactState
+import com.debanshu777.caraml.core.download.DownloadBatchRequest
+import com.debanshu777.caraml.core.download.DownloadBatchSnapshot
+import com.debanshu777.caraml.core.download.DownloadBatchState
+import com.debanshu777.caraml.core.download.DownloadCheckpointCleaner
+import com.debanshu777.caraml.core.download.DownloadCoordinator
+import com.debanshu777.caraml.core.download.DownloadFailureCode
+import com.debanshu777.caraml.core.download.DownloadNotificationPermissionController
+import com.debanshu777.caraml.core.download.DownloadTaskStore
+import com.debanshu777.caraml.core.download.DownloadUserIntent
+import com.debanshu777.caraml.core.download.PlatformDownloadScheduler
 import com.debanshu777.caraml.core.platform.DeviceCapabilities
 import com.debanshu777.caraml.core.platform.DeviceSnapshot
 import com.debanshu777.caraml.core.platform.HardwareProfile
@@ -164,6 +177,295 @@ class ModelViewModelRecommendationTest {
             assertEquals(path, viewModel.ggufFiles.value.single().artifact?.relativePath)
         } finally {
             client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun durableProjectionUsesExactSelectedTaskAcrossMultipleBatches() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val repositoryId = "org/multi-batch-diffusion"
+        val revision = "a".repeat(40)
+        val selectedPath = "unet/model-q4.safetensors"
+        val otherPath = "unet/model-q8.safetensors"
+        val selectedObjectId = "b".repeat(64)
+        val otherObjectId = "c".repeat(64)
+        val selectedArtifact = requireNotNull(
+            DownloadArtifactIdentity.create(
+                repositoryId = repositoryId,
+                immutableRevision = revision,
+                relativePath = selectedPath,
+                remoteObjectId = "sha256:$selectedObjectId",
+                expectedBytes = 100L,
+            ),
+        )
+        val otherArtifact = requireNotNull(
+            DownloadArtifactIdentity.create(
+                repositoryId = repositoryId,
+                immutableRevision = revision,
+                relativePath = otherPath,
+                remoteObjectId = "sha256:$otherObjectId",
+                expectedBytes = 200L,
+            ),
+        )
+        val selectedPaused = durableSnapshot(
+            batchId = "selected-paused",
+            artifact = selectedArtifact,
+            artifactState = DownloadArtifactState.PAUSED,
+            batchState = DownloadBatchState.PAUSED,
+            bytesReceived = 40L,
+        )
+        val otherRunning = durableSnapshot(
+            batchId = "other-running",
+            artifact = otherArtifact,
+            artifactState = DownloadArtifactState.RUNNING,
+            batchState = DownloadBatchState.RUNNING,
+            bytesReceived = 100L,
+        )
+        val requestDispatcher = dispatcher
+        val engine = object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler { request ->
+                when {
+                    request.url.encodedPath.contains("/tree/") -> respondJson(
+                        """[{"path":"$selectedPath","type":"file","size":100,"lfs":{"oid":"$selectedObjectId","size":100}},{"path":"$otherPath","type":"file","size":200,"lfs":{"oid":"$otherObjectId","size":200}}]""",
+                    )
+                    request.url.encodedPath.endsWith("/$repositoryId") -> respondJson(
+                        """{"id":"$repositoryId","modelId":"$repositoryId","sha":"$revision","private":false}""",
+                    )
+                    else -> error("Unexpected request ${request.url}")
+                }
+            }
+        }) {
+            override val dispatcher: CoroutineDispatcher = requestDispatcher
+        }
+        val client = HttpClient(engine)
+        val store = ObservingDownloadTaskStore().apply {
+            snapshots.value = listOf(selectedPaused, otherRunning)
+        }
+        try {
+            val viewModel = viewModel(
+                client = client,
+                dispatcher = dispatcher,
+                downloadCoordinator = observingDownloadCoordinator(store),
+            )
+            backgroundScope.launch { viewModel.installBundleState.collect {} }
+            viewModel.loadDetail(repositoryId, ModelHubBrowseMode.DiffusionImage)
+            advanceUntilIdle()
+
+            assertTrue(viewModel.isDownloading.value)
+            assertEquals(otherArtifact, viewModel.activeDownloadArtifact.value)
+            assertEquals(
+                selectedArtifact,
+                viewModel.ggufFiles.value.single { it.path == selectedPath }.artifact,
+            )
+            assertEquals(
+                otherArtifact,
+                viewModel.ggufFiles.value.single { it.path == otherPath }.artifact,
+            )
+            assertEquals(
+                null,
+                viewModel.ggufFiles.value.single { it.path == selectedPath }.progress,
+            )
+            assertEquals(
+                50f,
+                viewModel.ggufFiles.value.single { it.path == otherPath }.progress,
+            )
+            assertEquals(40L, viewModel.installBundleState.value.overallBytesReceived)
+            assertEquals(100L, viewModel.installBundleState.value.overallBytesTotal)
+            assertEquals(0.4f, viewModel.installBundleState.value.overallProgress)
+
+            val selectedRetryable = durableSnapshot(
+                batchId = "selected-retryable",
+                artifact = selectedArtifact,
+                artifactState = DownloadArtifactState.FAILED_RETRYABLE,
+                batchState = DownloadBatchState.FAILED_RETRYABLE,
+                bytesReceived = 40L,
+            )
+            store.snapshots.value = listOf(otherRunning, selectedRetryable)
+            advanceUntilIdle()
+
+            assertTrue(viewModel.isDownloading.value)
+            assertEquals(otherArtifact, viewModel.activeDownloadArtifact.value)
+            assertEquals(40L, viewModel.installBundleState.value.overallBytesReceived)
+            assertEquals(100L, viewModel.installBundleState.value.overallBytesTotal)
+            assertEquals(0.4f, viewModel.installBundleState.value.overallProgress)
+            assertEquals(
+                "Download paused after a problem. Retry when ready.",
+                viewModel.downloadError.value,
+            )
+
+            viewModel.selectVariant(otherPath)
+            advanceUntilIdle()
+
+            assertEquals(100L, viewModel.installBundleState.value.overallBytesReceived)
+            assertEquals(200L, viewModel.installBundleState.value.overallBytesTotal)
+            assertEquals(0.5f, viewModel.installBundleState.value.overallProgress)
+            assertEquals(null, viewModel.downloadError.value)
+
+            viewModel.selectVariant(selectedPath)
+            advanceUntilIdle()
+
+            assertEquals(40L, viewModel.installBundleState.value.overallBytesReceived)
+            assertEquals(100L, viewModel.installBundleState.value.overallBytesTotal)
+            assertEquals(
+                "Download paused after a problem. Retry when ready.",
+                viewModel.downloadError.value,
+            )
+        } finally {
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun durableCompletionRefreshesRepositoryStateOutsideSelectedBatch() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val repositoryId = "org/multi-batch-completion"
+        val revision = "d".repeat(40)
+        val selectedPath = "weights/model-q4.gguf"
+        val completedPath = "weights/model-q8.gguf"
+        val selectedObjectId = "e".repeat(64)
+        val completedObjectId = "f".repeat(64)
+        val requestDispatcher = dispatcher
+        val engine = object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler { request ->
+                when {
+                    request.url.encodedPath.contains("/tree/") -> respondJson(
+                        """[{"path":"$selectedPath","type":"file","size":100,"lfs":{"oid":"$selectedObjectId","size":100}},{"path":"$completedPath","type":"file","size":200,"lfs":{"oid":"$completedObjectId","size":200}}]""",
+                    )
+                    request.url.encodedPath.endsWith("/$repositoryId") -> respondJson(
+                        """{"id":"$repositoryId","modelId":"$repositoryId","sha":"$revision","private":false}""",
+                    )
+                    else -> error("Unexpected request ${request.url}")
+                }
+            }
+        }) {
+            override val dispatcher: CoroutineDispatcher = requestDispatcher
+        }
+        val client = HttpClient(engine)
+        val store = ObservingDownloadTaskStore()
+        val localModelDao = FakeLocalModelDao()
+        try {
+            val viewModel = viewModel(
+                client = client,
+                dispatcher = dispatcher,
+                localModelDao = localModelDao,
+                downloadCoordinator = observingDownloadCoordinator(store),
+            )
+            viewModel.loadDetail(repositoryId, ModelHubBrowseMode.LanguageModels)
+            advanceUntilIdle()
+            viewModel.selectVariant(selectedPath)
+            advanceUntilIdle()
+            val initialQueries = localModelDao.filenameQueryCount
+            val selectedArtifact = requireNotNull(
+                viewModel.ggufFiles.value.single { it.path == selectedPath }.artifact,
+            )
+            val completedArtifact = requireNotNull(
+                viewModel.ggufFiles.value.single { it.path == completedPath }.artifact,
+            )
+
+            store.snapshots.value = listOf(
+                durableSnapshot(
+                    batchId = "selected-paused",
+                    artifact = selectedArtifact,
+                    artifactState = DownloadArtifactState.PAUSED,
+                    batchState = DownloadBatchState.PAUSED,
+                    bytesReceived = 40L,
+                ),
+                durableSnapshot(
+                    batchId = "other-completed",
+                    artifact = completedArtifact,
+                    artifactState = DownloadArtifactState.COMPLETED,
+                    batchState = DownloadBatchState.COMPLETED,
+                    bytesReceived = completedArtifact.expectedBytes,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals(initialQueries + 1, localModelDao.filenameQueryCount)
+        } finally {
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun restoredCompletedDiffusionBatchRefreshesAfterDetailHydration() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val repositoryId = "org/restored-diffusion"
+        val revision = "1".repeat(40)
+        val path = "checkpoint.safetensors"
+        val bytes = "verified diffusion checkpoint".encodeToByteArray()
+        val objectId = bytes.sha256()
+        val artifact = requireNotNull(
+            DownloadArtifactIdentity.create(
+                repositoryId = repositoryId,
+                immutableRevision = revision,
+                relativePath = path,
+                remoteObjectId = "sha256:$objectId",
+                expectedBytes = bytes.size.toLong(),
+            ),
+        )
+        val requestDispatcher = dispatcher
+        val engine = object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler { request ->
+                when {
+                    request.url.encodedPath.contains("/tree/") -> respondJson(
+                        """[{"path":"$path","type":"file","size":${bytes.size},"lfs":{"oid":"$objectId","size":${bytes.size}}}]""",
+                    )
+                    request.url.encodedPath.endsWith("/$repositoryId") -> respondJson(
+                        """{"id":"$repositoryId","modelId":"$repositoryId","sha":"$revision","private":false}""",
+                    )
+                    else -> error("Unexpected request ${request.url}")
+                }
+            }
+        }) {
+            override val dispatcher: CoroutineDispatcher = requestDispatcher
+        }
+        val client = HttpClient(engine)
+        val trusted = Files.createTempDirectory("caraml-restored-complete-").toRealPath().toFile()
+        val storage = FakeStoragePathProvider(trusted, realFileAccess = true)
+        val store = ObservingDownloadTaskStore().apply {
+            snapshots.value = listOf(
+                durableSnapshot(
+                    batchId = "restored-completed",
+                    artifact = artifact,
+                    artifactState = DownloadArtifactState.COMPLETED,
+                    batchState = DownloadBatchState.COMPLETED,
+                    bytesReceived = artifact.expectedBytes,
+                ),
+            )
+        }
+        try {
+            writeVerifiedBundle(
+                storage = storage,
+                repositoryId = repositoryId,
+                revision = revision,
+                files = listOf(Triple(path, "model", bytes)),
+            )
+            val viewModel = viewModel(
+                client = client,
+                dispatcher = dispatcher,
+                storagePathProvider = storage,
+                downloadManager = DownloadManager(storage),
+                downloadCoordinator = observingDownloadCoordinator(store),
+            )
+            backgroundScope.launch { viewModel.installBundleState.collect {} }
+
+            viewModel.loadDetail(repositoryId, ModelHubBrowseMode.DiffusionImage)
+            advanceUntilIdle()
+
+            assertTrue(viewModel.ggufFiles.value.single().isDownloaded)
+            assertTrue(viewModel.installBundleState.value.isReady)
+        } finally {
+            client.close()
+            trusted.deleteRecursively()
             Dispatchers.resetMain()
         }
     }
@@ -852,6 +1154,7 @@ class ModelViewModelRecommendationTest {
         downloadManager: DownloadManager = DownloadManager(storagePathProvider),
         recommendationService: ModelRecommendationService = recommendationService(dispatcher),
         calibrationSource: CalibrationSource = NoCalibrationSource,
+        downloadCoordinator: DownloadCoordinator? = null,
     ): ModelViewModel {
         return ModelViewModel(
             api = huggingFaceApi(client),
@@ -863,8 +1166,107 @@ class ModelViewModelRecommendationTest {
             recommendationService = recommendationService,
             settingsRepository = FakeSettingsRepository(),
             calibrationSource = calibrationSource,
+            downloadCoordinator = downloadCoordinator,
         )
     }
+}
+
+private class ObservingDownloadTaskStore : DownloadTaskStore {
+    val snapshots = MutableStateFlow<List<DownloadBatchSnapshot>>(emptyList())
+
+    override suspend fun create(request: DownloadBatchRequest, nowEpochMs: Long): String = "unused"
+    override fun observeForModel(modelId: String): Flow<List<DownloadBatchSnapshot>> = snapshots
+    override suspend fun getBatch(batchId: String): DownloadBatchSnapshot? =
+        snapshots.value.singleOrNull { it.batchId == batchId }
+    override suspend fun recoverableBatches(): List<DownloadBatchSnapshot> = snapshots.value
+    override suspend fun claim(
+        artifactId: String,
+        owner: String,
+        nowEpochMs: Long,
+        expiresAtEpochMs: Long,
+    ): Boolean = false
+    override suspend fun updateProgress(
+        artifactId: String,
+        bytesReceived: Long,
+        entityTag: String?,
+        lastModified: String?,
+        nowEpochMs: Long,
+    ): Boolean = false
+    override suspend fun transitionArtifact(
+        artifactId: String,
+        state: DownloadArtifactState,
+        failureCode: DownloadFailureCode?,
+        nowEpochMs: Long,
+    ): Boolean = false
+    override suspend fun setUserIntent(
+        batchId: String,
+        intent: DownloadUserIntent,
+        nowEpochMs: Long,
+    ): Boolean = false
+    override suspend fun setPlatformTaskId(
+        artifactId: String,
+        platformTaskId: String?,
+        nowEpochMs: Long,
+    ): Boolean = false
+    override suspend fun releaseLease(
+        artifactId: String,
+        owner: String,
+        nowEpochMs: Long,
+    ): Boolean = false
+    override suspend fun clearAll() = Unit
+}
+
+private fun observingDownloadCoordinator(store: DownloadTaskStore): DownloadCoordinator =
+    DownloadCoordinator(
+        store = store,
+        scheduler = object : PlatformDownloadScheduler {
+            override suspend fun enqueue(batchId: String) = Unit
+            override suspend fun pause(batchId: String) = Unit
+            override suspend fun cancel(batchId: String) = Unit
+            override suspend fun reconcile(liveBatchIds: Set<String>) = Unit
+        },
+        notifications = DownloadNotificationPermissionController {},
+        checkpointCleaner = DownloadCheckpointCleaner {},
+        nowEpochMs = { 0L },
+    )
+
+private fun durableSnapshot(
+    batchId: String,
+    artifact: DownloadArtifactIdentity,
+    artifactState: DownloadArtifactState,
+    batchState: DownloadBatchState,
+    bytesReceived: Long,
+): DownloadBatchSnapshot {
+    val request = DownloadArtifactRequest(
+        metadata = DownloadMetadataDTO(
+            artifact = artifact,
+            logicalRole = "model",
+            sizeBytes = artifact.expectedBytes,
+            author = null,
+            libraryName = null,
+            pipelineTag = null,
+        ),
+        primary = true,
+    )
+    return DownloadBatchSnapshot(
+        batchId = batchId,
+        ownerModelId = artifact.repositoryId,
+        modelType = "image",
+        displayName = artifact.relativePath.substringAfterLast('/'),
+        state = batchState,
+        userIntent = DownloadUserIntent.RUN,
+        artifacts = listOf(
+            DownloadArtifactSnapshot(
+                artifactId = "$batchId-artifact",
+                batchId = batchId,
+                request = request,
+                state = artifactState,
+                userIntent = DownloadUserIntent.RUN,
+                bytesReceived = bytesReceived,
+                expectedBytes = artifact.expectedBytes,
+            ),
+        ),
+    )
 }
 
 private fun unknownDiffusionModel(
@@ -1174,7 +1576,12 @@ private class FakeLocalModelDao(
     private val mainModels: List<LocalModelEntity> = emptyList(),
 ) : LocalModelDao {
     val updatedStatuses = mutableMapOf<String, String>()
-    override suspend fun getFilenamesByModelId(modelId: String): List<String> = filenames
+    var filenameQueryCount: Int = 0
+        private set
+    override suspend fun getFilenamesByModelId(modelId: String): List<String> {
+        filenameQueryCount += 1
+        return filenames
+    }
     override suspend fun deleteByModelIdAndFilename(modelId: String, filename: String) = Unit
     override suspend fun deleteAllForModelId(modelId: String) = Unit
     override suspend fun insert(entity: LocalModelEntity) = Unit

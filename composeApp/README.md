@@ -204,11 +204,12 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 
 <!-- Updated at end of each AI-assisted development session -->
 
-- Model Details now renders durable queue state and pause/resume/cancel/retry actions; Android uses UIDT/foreground WorkManager notifications, iOS uses a stable background URLSession with app-delegate reconnection and completion notifications, and Desktop recovers checkpoints at startup
-- Model Details now keeps `Needs information` informational, allows exact identity-validated downloads, and distinguishes unavailable model storage from network failures
-- Refined the shared Aurora system with visible semantic gradients, translucent borderless panes, restrained focal surfaces, and consistent compact spacing across Chat, Model Hub, Details, and Settings
-- Model Hub and Model Details now use a denser hierarchy, one advanced-filter surface, readable repository metadata, compact status treatments, and large-text-safe scrolling
-- Navigation now keeps route content stationary beneath the modal drawer, crossfades peer destinations, uses a shallow fixed axis for Details, and preserves reduced-motion behavior
+- Rebuilt the shared UI as the Prism workbench with an adaptive Create, Models, and Settings shell; peer routes use stationary fades, Details uses a fixed shallow axis, and reduced motion removes spatial travel
+- Create now centers one focused command composer, keeps Text, Image, and Video as local modes, and exposes explicit empty, preparation, generation, completion, and failure states
+- Model Hub now uses one compact registry hierarchy, while Details prioritizes exact artifacts and renders durable pause/resume/cancel/retry state without sacrificing compact or large-text reachability
+- Android uses UIDT/foreground WorkManager notifications, iOS reconnects to a stable background URLSession, and Desktop recovers persisted download checkpoints at startup
+- Settings now uses a dense list hierarchy with exclusive selections and disclosure rows; gradient ownership is bounded to the shared ambient field plus one contextual focus surface
+- Final Prism verification covers focused and repository-wide JVM/native gates, Android debug assembly, and iOS simulator compilation; the connected Pixel remained securely locked, so the device visual matrix is explicitly unverified
 - Added a strict 16-case recommendation corpus, analytical timing coverage, exact assessed-artifact selection handoff, and explicit release gating; unmeasured outcomes remain null and production remains `LEGACY`
 - Recommendations now learn only from byte-bound descriptors, phase-specific raw memory evidence, full run-plan fingerprints, and trustworthy process-memory counters; stale identities and unresponsive native probes fail closed
 - Exact model selections now derive directory targets only from verified storage roots, bind every native-consumed component path, keep multi-sequence planning analytical, and reject it at native admission

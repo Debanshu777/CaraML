@@ -1,20 +1,17 @@
 package com.debanshu777.caraml.core.drawer
 
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Videocam
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
@@ -30,21 +27,11 @@ import com.debanshu777.caraml.features.chat.domain.GenerationMode
 /** Full app-window width before persistent navigation consumes horizontal space. */
 internal val LocalAppWindowWidth = compositionLocalOf<Dp?> { null }
 
-private val primaryDrawerItems = listOf(
+private val primaryNavigationItems = listOf(
     DrawerItem(
-        id = "chat",
-        title = "Chat",
-        icon = Icons.Default.ChatBubbleOutline,
-    ),
-    DrawerItem(
-        id = "image",
-        title = "Image",
-        icon = Icons.Default.Image,
-    ),
-    DrawerItem(
-        id = "video",
-        title = "Video",
-        icon = Icons.Default.Videocam,
+        id = "create",
+        title = "Create",
+        icon = Icons.Default.AutoAwesome,
     ),
     DrawerItem(
         id = "models",
@@ -58,10 +45,22 @@ private val primaryDrawerItems = listOf(
     ),
 )
 
-private val primaryScreens = setOf<NavKey>(
-    AppScreen.Home,
-    AppScreen.Search,
-    AppScreen.Settings,
+private val generationModeItems = listOf(
+    DrawerItem(
+        id = "mode-text",
+        title = "Text",
+        icon = Icons.Default.ChatBubbleOutline,
+    ),
+    DrawerItem(
+        id = "mode-image",
+        title = "Image",
+        icon = Icons.Default.Image,
+    ),
+    DrawerItem(
+        id = "mode-video",
+        title = "Video",
+        icon = Icons.Default.Videocam,
+    ),
 )
 
 @Composable
@@ -70,104 +69,66 @@ fun AppDrawerShell(
     backStack: NavBackStack<NavKey>,
     content: @Composable () -> Unit,
 ) {
-    val controller = remember { DrawerController() }
+    val compatibilityDrawerController = remember { DrawerController() }
     val modeController = remember { GenerationModeController() }
 
     CompositionLocalProvider(
-        LocalDrawerController provides controller,
+        LocalDrawerController provides compatibilityDrawerController,
         LocalGenerationModeController provides modeController,
     ) {
         val currentScreen = backStack.lastOrNull()
-        val gestureEnabled = currentScreen in primaryScreens
-
-        val selectedItemId = when {
-            currentScreen is AppScreen.Home -> when (modeController.mode) {
-                GenerationMode.Text -> "chat"
-                GenerationMode.Image -> "image"
-                GenerationMode.Video -> "video"
-            }
-            currentScreen is AppScreen.Search -> "models"
-            currentScreen is AppScreen.Settings -> "settings"
+        val selectedItemId = when (currentScreen) {
+            AppScreen.Home -> "create"
+            AppScreen.Search -> "models"
+            is AppScreen.Details -> "models"
+            AppScreen.Settings -> "settings"
             else -> null
         }
-        var pendingDrawerItem by remember { mutableStateOf<DrawerItem?>(null) }
+        val selectedModeItemId = when (modeController.mode) {
+            GenerationMode.Text -> "mode-text"
+            GenerationMode.Image -> "mode-image"
+            GenerationMode.Video -> "mode-video"
+        }
 
         val navigateToItem: (DrawerItem) -> Unit = { item ->
-            when (item.id) {
-                "chat" -> {
-                    modeController.setState(GenerationMode.Text)
-                    if (currentScreen != AppScreen.Home) {
-                        Snapshot.withMutableSnapshot {
-                            backStack.clear()
-                            backStack.add(AppScreen.Home)
-                        }
-                    }
-                }
-                "image" -> {
-                    modeController.setState(GenerationMode.Image)
-                    if (currentScreen != AppScreen.Home) {
-                        Snapshot.withMutableSnapshot {
-                            backStack.clear()
-                            backStack.add(AppScreen.Home)
-                        }
-                    }
-                }
-                "video" -> {
-                    modeController.setState(GenerationMode.Video)
-                    if (currentScreen != AppScreen.Home) {
-                        Snapshot.withMutableSnapshot {
-                            backStack.clear()
-                            backStack.add(AppScreen.Home)
-                        }
-                    }
-                }
-                "models" -> {
-                    if (currentScreen != AppScreen.Search) {
-                        Snapshot.withMutableSnapshot {
-                            backStack.clear()
-                            backStack.add(AppScreen.Search)
-                        }
-                    }
-                }
-                "settings" -> {
-                    if (currentScreen != AppScreen.Settings) {
-                        Snapshot.withMutableSnapshot {
-                            backStack.clear()
-                            backStack.add(AppScreen.Settings)
-                        }
-                    }
+            val target = when (item.id) {
+                "create" -> AppScreen.Home
+                "models" -> AppScreen.Search
+                "settings" -> AppScreen.Settings
+                else -> null
+            }
+            if (target != null && currentScreen != target) {
+                Snapshot.withMutableSnapshot {
+                    backStack.clear()
+                    backStack.add(target)
                 }
             }
         }
-        val onItemClick: (DrawerItem) -> Unit = { item ->
-            if (controller.drawerState.isOpened()) {
-                pendingDrawerItem = item
-                controller.close()
-            } else {
-                navigateToItem(item)
+        val selectGenerationMode: (DrawerItem) -> Unit = { item ->
+            when (item.id) {
+                "mode-text" -> modeController.setState(GenerationMode.Text)
+                "mode-image" -> modeController.setState(GenerationMode.Image)
+                "mode-video" -> modeController.setState(GenerationMode.Video)
             }
         }
 
         BoxWithConstraints(modifier = modifier) {
             val appWindowWidth = maxWidth
             val navigation = adaptiveLayoutPolicy(maxWidth, AppContentKind.Chat).navigation
-            LaunchedEffect(navigation) {
-                if (navigation != AppNavigationLayout.ModalDrawer) {
-                    controller.close()
-                }
-            }
             AdaptiveNavigation(
                 navigation = navigation,
-                items = primaryDrawerItems,
+                items = primaryNavigationItems,
                 selectedItemId = selectedItemId,
-                drawerState = controller.drawerState,
-                onDrawerStateChange = controller::setState,
-                onDrawerClosed = {
-                    pendingDrawerItem?.let(navigateToItem)
-                    pendingDrawerItem = null
+                onItemClick = navigateToItem,
+                contextualItems = if (
+                    navigation == AppNavigationLayout.Sidebar && currentScreen == AppScreen.Home
+                ) {
+                    generationModeItems
+                } else {
+                    emptyList()
                 },
-                gestureEnabled = gestureEnabled,
-                onItemClick = onItemClick,
+                selectedContextualItemId = selectedModeItemId,
+                onContextualItemClick = selectGenerationMode,
                 content = {
                     CompositionLocalProvider(
                         LocalAppWindowWidth provides appWindowWidth,

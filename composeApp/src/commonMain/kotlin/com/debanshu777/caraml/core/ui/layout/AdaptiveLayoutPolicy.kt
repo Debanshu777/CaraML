@@ -6,14 +6,14 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 enum class AppNavigationLayout {
-    ModalDrawer,
+    BottomBar,
     Rail,
     Sidebar,
 }
 
 /** Presentation-only shell mode used by primary destination chrome. */
 val LocalAppNavigationLayout = staticCompositionLocalOf {
-    AppNavigationLayout.ModalDrawer
+    AppNavigationLayout.BottomBar
 }
 
 enum class AppContentKind {
@@ -32,8 +32,8 @@ data class AdaptiveLayoutPolicy(
 
 fun adaptiveLayoutPolicy(width: Dp, contentKind: AppContentKind): AdaptiveLayoutPolicy {
     val navigation = when {
-        width < 600.dp -> AppNavigationLayout.ModalDrawer
-        width < 840.dp -> AppNavigationLayout.Rail
+        width < 600.dp -> AppNavigationLayout.BottomBar
+        width < 1200.dp -> AppNavigationLayout.Rail
         else -> AppNavigationLayout.Sidebar
     }
     val horizontalMargin = if (width < 600.dp) 16.dp else 24.dp

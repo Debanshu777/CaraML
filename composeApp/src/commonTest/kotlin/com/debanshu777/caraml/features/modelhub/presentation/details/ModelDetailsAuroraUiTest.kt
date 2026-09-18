@@ -42,6 +42,12 @@ import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import com.debanshu777.caraml.core.drawer.AppDrawerShell
 import com.debanshu777.caraml.core.drawer.LocalAppWindowWidth
+import com.debanshu777.caraml.core.download.DownloadArtifactRequest
+import com.debanshu777.caraml.core.download.DownloadArtifactSnapshot
+import com.debanshu777.caraml.core.download.DownloadArtifactState
+import com.debanshu777.caraml.core.download.DownloadBatchSnapshot
+import com.debanshu777.caraml.core.download.DownloadBatchState
+import com.debanshu777.caraml.core.download.DownloadUserIntent
 import com.debanshu777.caraml.core.navigation.AppScreen
 import com.debanshu777.caraml.core.rating.SdArchitecture
 import com.debanshu777.caraml.core.recommendation.DiffusionComponentDescriptor
@@ -57,6 +63,7 @@ import com.debanshu777.caraml.features.modelhub.domain.RecommendedModelUiState
 import com.debanshu777.caraml.features.modelhub.presentation.details.components.ModelDetailContent
 import com.debanshu777.caraml.features.modelhub.presentation.details.components.RepositoryHeading
 import com.debanshu777.caraml.features.modelhub.presentation.details.components.formatHubTimestamp
+import com.debanshu777.caraml.features.modelhub.presentation.details.components.GgufFileAction
 import com.debanshu777.caraml.features.modelhub.presentation.details.components.GgufFileListItem
 import com.debanshu777.caraml.features.modelhub.presentation.details.components.InstallBundleCard
 import com.debanshu777.caraml.features.modelhub.presentation.details.components.splitRepositoryId
@@ -152,7 +159,7 @@ class ModelDetailsAuroraUiTest {
         onNodeWithText(modelName).assertExists()
         onNodeWithText("GnLOLot/$modelName").assertDoesNotExist()
         onNodeWithText(createdAt).assertDoesNotExist()
-        onNodeWithText("3 Jul 2026").performScrollTo().assertIsDisplayed()
+        onNodeWithText("3 Jul 2026").assertDoesNotExist()
 
         onNodeWithText(baseModel).performScrollTo().assertIsDisplayed()
         val baseLabelBounds = onNodeWithText("Base model").fetchSemanticsNode().boundsInRoot
@@ -164,7 +171,9 @@ class ModelDetailsAuroraUiTest {
         onNodeWithContentDescription("Tag: text-generation").assertDoesNotExist()
         onNodeWithText("zh").assertDoesNotExist()
         onNodeWithText("Show all").performScrollTo().assertIsDisplayed().performClick()
-        onNodeWithText("zh").performScrollTo().assertIsDisplayed()
+        onNodeWithText("3 Jul 2026").performScrollTo().assertIsDisplayed()
+        onNodeWithContentDescription("Tag: llama.cpp").performScrollTo().assertIsDisplayed()
+        onNodeWithText("zh").assertDoesNotExist()
         onNodeWithText("Show less").assertExists()
     }
 
@@ -535,6 +544,216 @@ class ModelDetailsAuroraUiTest {
     }
 
     @Test
+    fun durableTransferLocksOtherRowsWhileExactTaskControlsRemainAvailable() =
+        runComposeUiTest {
+            val fixture = ggufDownloadFixture()
+            val activeBatch = durableBatch(
+                batchId = "active-batch",
+                artifact = fixture.activeArtifact,
+                artifactState = DownloadArtifactState.RUNNING,
+                batchState = DownloadBatchState.RUNNING,
+                bytesReceived = fixture.activeArtifact.expectedBytes / 2,
+            )
+            var pausedBatch = ""
+            var cancelledBatch = ""
+            setContent {
+                MaterialTheme {
+                    Box(Modifier.width(900.dp).height(720.dp)) {
+                        ModelDetailContent(
+                            model = fixture.model,
+                            ggufFiles = fixture.files,
+                            isDownloading = true,
+                            activeDownloadArtifact = fixture.activeArtifact,
+                            onDownloadClick = { _, _, _ -> },
+                            recommendationState = fixture.recommendation,
+                            windowWidth = 900.dp,
+                            downloadBatches = listOf(
+                                activeBatch,
+                                durableBatch(
+                                    batchId = "idle-cancelled",
+                                    artifact = fixture.idleArtifact,
+                                    artifactState = DownloadArtifactState.CANCELLED,
+                                    batchState = DownloadBatchState.CANCELLED,
+                                ),
+                            ),
+                            onPauseDownload = { pausedBatch = it },
+                            onCancelDownload = { cancelledBatch = it },
+                        )
+                    }
+                }
+            }
+
+            onNodeWithContentDescription(
+                "Pause download ${fixture.activeArtifact.relativePath}",
+            ).performScrollTo().assertIsEnabled().performClick()
+            onNodeWithContentDescription(
+                "Cancel download ${fixture.activeArtifact.relativePath}",
+            ).performScrollTo().assertIsEnabled().performClick()
+            onNodeWithContentDescription(
+                "Download ${fixture.idleArtifact.relativePath}",
+            ).performScrollTo().assertIsNotEnabled()
+
+            runOnIdle {
+                assertEquals("active-batch", pausedBatch)
+                assertEquals("active-batch", cancelledBatch)
+            }
+        }
+
+    @Test
+    fun durableFileActionsNameTheirArtifactAndRetryableTaskCanStillBeCancelled() =
+        runComposeUiTest {
+            val callbacks = mutableListOf<String>()
+            setContent {
+                MaterialTheme {
+                    Column {
+                        GgufFileAction(
+                            filename = "running.gguf",
+                            isDownloaded = false,
+                            isDownloading = true,
+                            downloadEnabled = true,
+                            interactionLocked = false,
+                            durableState = DownloadArtifactState.RUNNING,
+                            onDownloadClick = {},
+                            onPause = { callbacks += "pause" },
+                            onResume = {},
+                            onCancel = { callbacks += "cancel-running" },
+                            onRetry = {},
+                        )
+                        GgufFileAction(
+                            filename = "paused.gguf",
+                            isDownloaded = false,
+                            isDownloading = false,
+                            downloadEnabled = true,
+                            interactionLocked = false,
+                            durableState = DownloadArtifactState.PAUSED,
+                            onDownloadClick = {},
+                            onPause = {},
+                            onResume = { callbacks += "resume" },
+                            onCancel = { callbacks += "cancel-paused" },
+                            onRetry = {},
+                        )
+                        GgufFileAction(
+                            filename = "failed.gguf",
+                            isDownloaded = false,
+                            isDownloading = false,
+                            downloadEnabled = true,
+                            interactionLocked = false,
+                            durableState = DownloadArtifactState.FAILED_RETRYABLE,
+                            onDownloadClick = {},
+                            onPause = {},
+                            onResume = {},
+                            onCancel = { callbacks += "cancel-failed" },
+                            onRetry = { callbacks += "retry" },
+                        )
+                    }
+                }
+            }
+
+            onNodeWithContentDescription("Pause download running.gguf").performClick()
+            onNodeWithContentDescription("Resume download paused.gguf").performClick()
+            onNodeWithContentDescription("Retry download failed.gguf").performClick()
+            onNodeWithContentDescription("Cancel download failed.gguf").performClick()
+
+            runOnIdle {
+                assertEquals(listOf("pause", "resume", "retry", "cancel-failed"), callbacks)
+            }
+        }
+
+    @Test
+    fun retryableInstallOffersIndependentRetryAndCancelActions() = runComposeUiTest {
+        val fixture = realisticInstallFixture()
+        val artifact = requireNotNull(fixture.installState.variants.first().artifact)
+        var retries = 0
+        var cancellations = 0
+        setContent {
+            MaterialTheme {
+                InstallBundleCard(
+                    modelId = artifact.repositoryId,
+                    state = fixture.installState,
+                    familyLabel = "Model family",
+                    modelDescription = null,
+                    onVariantSelected = {},
+                    onInstall = {},
+                    durableBatch = durableBatch(
+                        batchId = "retryable-batch",
+                        artifact = artifact,
+                        artifactState = DownloadArtifactState.FAILED_RETRYABLE,
+                        batchState = DownloadBatchState.FAILED_RETRYABLE,
+                    ),
+                    onRetry = { retries++ },
+                    onCancel = { cancellations++ },
+                )
+            }
+        }
+
+        onNodeWithText("Retry").performClick()
+        onNodeWithText("Cancel download").performClick()
+        runOnIdle {
+            assertEquals(1, retries)
+            assertEquals(1, cancellations)
+        }
+    }
+
+    @Test
+    fun selectedInstallArtifactControlsWinOverEarlierDifferentVariantBatch() =
+        runComposeUiTest {
+            val fixture = realisticInstallFixture()
+            val selected = requireNotNull(fixture.installState.variants.first().artifact)
+            val other = requireNotNull(
+                DownloadArtifactIdentity.create(
+                    repositoryId = selected.repositoryId,
+                    immutableRevision = selected.immutableRevision,
+                    relativePath = "unet/model-q8.safetensors",
+                    remoteObjectId = "sha256:${"f".repeat(64)}",
+                    expectedBytes = selected.expectedBytes * 2,
+                ),
+            )
+            var resumedBatch = ""
+            var cancelledBatch = ""
+            setContent {
+                MaterialTheme {
+                    Box(Modifier.width(420.dp).height(640.dp)) {
+                        ModelDetailContent(
+                            model = ModelDetailResponse(modelId = fixture.recommendation.repositoryId),
+                            ggufFiles = emptyList(),
+                            isDownloading = true,
+                            onDownloadClick = { _, _, _ -> },
+                            installBundleState = fixture.installState.copy(isInstalling = true),
+                            onVariantSelected = {},
+                            onSmartInstall = {},
+                            showInstallBundle = true,
+                            recommendationState = fixture.recommendation,
+                            downloadBatches = listOf(
+                                durableBatch(
+                                    batchId = "other-running",
+                                    artifact = other,
+                                    artifactState = DownloadArtifactState.RUNNING,
+                                    batchState = DownloadBatchState.RUNNING,
+                                ),
+                                durableBatch(
+                                    batchId = "selected-paused",
+                                    artifact = selected,
+                                    artifactState = DownloadArtifactState.PAUSED,
+                                    batchState = DownloadBatchState.PAUSED,
+                                ),
+                            ),
+                            onResumeDownload = { resumedBatch = it },
+                            onCancelDownload = { cancelledBatch = it },
+                        )
+                    }
+                }
+            }
+
+            onNodeWithText("Resume").assertIsDisplayed().performClick()
+            onNodeWithText("Cancel download").assertIsDisplayed().performClick()
+            onNodeWithText("Pause").assertDoesNotExist()
+            runOnIdle {
+                assertEquals("selected-paused", resumedBatch)
+                assertEquals("selected-paused", cancelledBatch)
+            }
+        }
+
+    @Test
     fun determinateFileProgressAnimatesOnlyTowardTheReportedValue() = runComposeUiTest {
         var progress by mutableStateOf(0f)
         mainClock.autoAdvance = false
@@ -684,6 +903,45 @@ private data class GgufDownloadFixture(
     val idleArtifact: DownloadArtifactIdentity,
     val recommendation: RecommendedModelUiState,
 )
+
+private fun durableBatch(
+    batchId: String,
+    artifact: DownloadArtifactIdentity,
+    artifactState: DownloadArtifactState,
+    batchState: DownloadBatchState,
+    bytesReceived: Long = 0L,
+): DownloadBatchSnapshot {
+    val request = DownloadArtifactRequest(
+        metadata = DownloadMetadataDTO(
+            artifact = artifact,
+            logicalRole = "model",
+            sizeBytes = artifact.expectedBytes,
+            author = null,
+            libraryName = null,
+            pipelineTag = null,
+        ),
+        primary = true,
+    )
+    return DownloadBatchSnapshot(
+        batchId = batchId,
+        ownerModelId = artifact.repositoryId,
+        modelType = "text",
+        displayName = artifact.relativePath.substringAfterLast('/'),
+        state = batchState,
+        userIntent = DownloadUserIntent.RUN,
+        artifacts = listOf(
+            DownloadArtifactSnapshot(
+                artifactId = "$batchId-artifact",
+                batchId = batchId,
+                request = request,
+                state = artifactState,
+                userIntent = DownloadUserIntent.RUN,
+                bytesReceived = bytesReceived,
+                expectedBytes = artifact.expectedBytes,
+            ),
+        ),
+    )
+}
 
 private fun ggufDownloadFixture(): GgufDownloadFixture {
     val repositoryId = "org/gguf-model"

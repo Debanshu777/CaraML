@@ -66,14 +66,14 @@ class ChatAuroraUiTest {
 
     @Test
     fun wideChatAlignsConversationComposerAndGenerationStatsToOneReadableWidth() =
-        assertChatSurfaceAlignment(viewportWidth = 1200.dp, expectedBodyWidth = 760f)
+        assertChatSurfaceAlignment(viewportWidth = 1200.dp, expectedBodyWidth = 792f)
 
     @Test
     fun compactChatKeepsConversationComposerAndGenerationStatsOnTheSameMargins() =
-        assertChatSurfaceAlignment(viewportWidth = 360.dp, expectedBodyWidth = 296f)
+        assertChatSurfaceAlignment(viewportWidth = 360.dp, expectedBodyWidth = 328f)
 
     @Test
-    fun generatingComposerUsesOneSolidSemanticBoundaryInsteadOfAHorizontalHalo() =
+    fun focusedComposerUsesOneSeedDerivedGradientLens() =
         runComposeUiTest {
             val host = Color.White
             setContent {
@@ -95,7 +95,7 @@ class ChatAuroraUiTest {
                         ) {
                             ChatInputBar(
                                 generationMode = GenerationMode.Text,
-                                isGenerating = true,
+                                isGenerating = false,
                                 selectedModel = null,
                                 topModels = persistentListOf(),
                                 onSelectModel = {},
@@ -108,14 +108,25 @@ class ChatAuroraUiTest {
                 }
             }
 
+            val restingPixels = onNodeWithTag("generating-composer-host")
+                .captureToImage()
+                .toPixelMap()
+            assertTrue(
+                colorDistance(restingPixels[2, 70], restingPixels[357, 70]) <= 0.01f,
+                "The resting composer must remain a neutral command surface",
+            )
+
+            onNode(hasSetTextAction()).performClick()
+
             val image = onNodeWithTag("generating-composer-host").captureToImage()
             val pixels = image.toPixelMap()
-            val leftBoundary = pixels[17, 70]
-            val rightBoundary = pixels[342, 70]
+            val leftBoundary = pixels[2, 70]
+            val rightBoundary = pixels[357, 70]
 
             assertTrue(
-                colorDistance(leftBoundary, rightBoundary) <= 0.01f,
-                "Active composer boundary must be solid; left=$leftBoundary right=$rightBoundary",
+                colorDistance(leftBoundary, rightBoundary) >= 0.25f,
+                "The focused command lens must visibly carry both seed endpoints; " +
+                    "left=$leftBoundary right=$rightBoundary",
             )
             assertTrue(
                 colorDistance(leftBoundary, host) >= 0.05f,
@@ -138,33 +149,34 @@ class ChatAuroraUiTest {
             ).fetchSemanticsNodes().single().config[SemanticsProperties.ProgressBarRangeInfo]
             assertEquals(ProgressBarRangeInfo.Indeterminate, progressInfo)
 
-            val before = generationContainerProbe("unknown-generation")
+            val before = generationSignalAverage()
             mainClock.advanceTimeBy(800)
             mainClock.advanceTimeByFrame()
-            val after = generationContainerProbe("unknown-generation")
+            val after = generationSignalAverage()
 
             assertTrue(
-                colorDistance(before, after) <= 0.01f,
+                abs(before - after) <= 0.01f,
                 "Unknown progress must not pulse its container; before=$before after=$after",
             )
         }
 
     @Test
-    fun determinateGenerationProgressKeepsThePolicyAwareContainerPulse() = runComposeUiTest {
+    fun determinateGenerationDoesNotRunASecondContinuousSignalAnimation() = runComposeUiTest {
         mainClock.autoAdvance = false
         setContent {
             GenerationActivityTestHost(progress = 0.4f, tag = "known-generation")
         }
         mainClock.advanceTimeByFrame()
 
-        val before = generationContainerProbe("known-generation")
+        val before = generationSignalAverage()
         mainClock.advanceTimeBy(800)
         mainClock.advanceTimeByFrame()
-        val after = generationContainerProbe("known-generation")
+        val after = generationSignalAverage()
 
         assertTrue(
-            colorDistance(before, after) >= 0.05f,
-            "The frame probe must detect the allowed determinate pulse; before=$before after=$after",
+            abs(before - after) <= 0.01f,
+            "Determinate progress must not run a second continuous signal animation; " +
+                "before=$before after=$after",
         )
     }
 
@@ -180,13 +192,13 @@ class ChatAuroraUiTest {
         }
         mainClock.advanceTimeByFrame()
 
-        val before = generationContainerProbe("reduced-generation")
+        val before = generationSignalAverage()
         mainClock.advanceTimeBy(800)
         mainClock.advanceTimeByFrame()
-        val after = generationContainerProbe("reduced-generation")
+        val after = generationSignalAverage()
 
         assertTrue(
-            colorDistance(before, after) <= 0.01f,
+            abs(before - after) <= 0.01f,
             "Reduced motion must keep the generation container static; before=$before after=$after",
         )
     }
@@ -499,8 +511,19 @@ private fun GenerationActivityTestHost(progress: Float?, tag: String) {
     }
 }
 
-private fun androidx.compose.ui.test.ComposeUiTest.generationContainerProbe(tag: String): Color =
-    onNodeWithTag(tag).captureToImage().toPixelMap()[300, 18]
+private fun androidx.compose.ui.test.ComposeUiTest.generationSignalAverage(): Float {
+    val pixels = onNodeWithTag("generation-activity-signal", useUnmergedTree = true)
+        .captureToImage()
+        .toPixelMap()
+    var sum = 0f
+    for (y in 0 until pixels.height) {
+        for (x in 0 until pixels.width) {
+            val color = pixels[x, y]
+            sum += color.red + color.green + color.blue
+        }
+    }
+    return sum / (pixels.width * pixels.height * 3f)
+}
 
 @Composable
 private fun AtTwoHundredPercentFontScale(content: @Composable () -> Unit) {

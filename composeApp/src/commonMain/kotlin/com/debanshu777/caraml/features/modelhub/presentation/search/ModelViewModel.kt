@@ -26,6 +26,7 @@ import com.debanshu777.caraml.core.platform.DeviceCapabilities
 import com.debanshu777.caraml.core.platform.DeviceHints
 import com.debanshu777.caraml.core.rating.parseSizeHintToBytes
 import com.debanshu777.caraml.core.download.DownloadArtifactRequest
+import com.debanshu777.caraml.core.download.DownloadArtifactSnapshot
 import com.debanshu777.caraml.core.download.DownloadArtifactState
 import com.debanshu777.caraml.core.download.DownloadBatchRequest
 import com.debanshu777.caraml.core.download.DownloadBatchSnapshot
@@ -103,6 +104,70 @@ import kotlin.concurrent.Volatile
 import kotlin.math.round
 
 private const val MODELS_VOLUME = "models"
+
+internal data class RelevantDownloadTask(
+    val batch: DownloadBatchSnapshot,
+    val task: DownloadArtifactSnapshot,
+)
+
+internal fun relevantDownloadTask(
+    batches: List<DownloadBatchSnapshot>,
+    artifact: DownloadArtifactIdentity?,
+): RelevantDownloadTask? {
+    if (artifact == null) return null
+    return relevantDownloadTask(batches) { task ->
+        task.request.metadata.artifact == artifact
+    }
+}
+
+private fun relevantDownloadTask(
+    batches: List<DownloadBatchSnapshot>,
+    matches: (DownloadArtifactSnapshot) -> Boolean,
+): RelevantDownloadTask? = batches.asSequence()
+    .flatMap { batch ->
+        batch.artifacts.asSequence().map { task -> RelevantDownloadTask(batch, task) }
+    }
+    .filter { selection -> matches(selection.task) }
+    .minWithOrNull(
+        compareBy<RelevantDownloadTask>(
+            { downloadArtifactProjectionPriority(it.task.state) },
+            { it.batch.batchId },
+            { it.task.artifactId },
+        ),
+    )
+
+private fun relevantDownloadBatch(
+    batches: List<DownloadBatchSnapshot>,
+): DownloadBatchSnapshot? = batches.minWithOrNull(
+    compareBy<DownloadBatchSnapshot>(
+        { downloadBatchProjectionPriority(it.state) },
+        DownloadBatchSnapshot::batchId,
+    ),
+)
+
+private fun downloadArtifactProjectionPriority(state: DownloadArtifactState): Int = when (state) {
+    DownloadArtifactState.RUNNING -> 0
+    DownloadArtifactState.VERIFYING -> 1
+    DownloadArtifactState.QUEUED -> 2
+    DownloadArtifactState.WAITING_FOR_NETWORK -> 3
+    DownloadArtifactState.PAUSED -> 4
+    DownloadArtifactState.FAILED_RETRYABLE -> 5
+    DownloadArtifactState.COMPLETED -> 6
+    DownloadArtifactState.FAILED_TERMINAL -> 7
+    DownloadArtifactState.CANCELLED -> 8
+}
+
+private fun downloadBatchProjectionPriority(state: DownloadBatchState): Int = when (state) {
+    DownloadBatchState.RUNNING -> 0
+    DownloadBatchState.VERIFYING -> 1
+    DownloadBatchState.QUEUED -> 2
+    DownloadBatchState.WAITING_FOR_NETWORK -> 3
+    DownloadBatchState.PAUSED -> 4
+    DownloadBatchState.FAILED_RETRYABLE -> 5
+    DownloadBatchState.COMPLETED -> 6
+    DownloadBatchState.FAILED_TERMINAL -> 7
+    DownloadBatchState.CANCELLED -> 8
+}
 
 data class GgufFileUiState(
     val path: String,
@@ -499,7 +564,7 @@ class ModelViewModel(
     private val _downloadBatches = MutableStateFlow<List<DownloadBatchSnapshot>>(emptyList())
     val downloadBatches: StateFlow<List<DownloadBatchSnapshot>> = _downloadBatches.asStateFlow()
     private var downloadObservationJob: Job? = null
-    private var refreshedCompletedBatchId: String? = null
+    private val refreshedCompletedBatchIds = mutableSetOf<String>()
 
     private var pendingDownloadForLater: PendingDownloadForLater? = null
     private val _showDownloadForLaterConfirmation = MutableStateFlow(false)
@@ -758,6 +823,10 @@ class ModelViewModel(
                                 _selectedVariantPath.update { _ggufFiles.value.firstOrNull()?.path }
                                 loadSetupComponentsForModel(modelId)
                             }
+                            if (downloadCoordinator != null) {
+                                projectDurableDownloadState(_downloadBatches.value)
+                                refreshNewlyCompletedBatches(modelId, _downloadBatches.value)
+                            }
                         }
                         is Result.Error -> {
                         }
@@ -793,6 +862,9 @@ class ModelViewModel(
     /** Called when the user taps a different quantization variant in the detail page. */
     fun selectVariant(path: String) {
         _selectedVariantPath.update { path }
+        if (downloadCoordinator != null) {
+            projectDurableDownloadState(_downloadBatches.value)
+        }
     }
 
     /**
@@ -1039,75 +1111,134 @@ class ModelViewModel(
     private fun observeDurableDownloads(modelId: String) {
         val coordinator = downloadCoordinator ?: return
         downloadObservationJob?.cancel()
-        refreshedCompletedBatchId = null
+        refreshedCompletedBatchIds.clear()
+        _downloadBatches.value = emptyList()
+        projectDurableDownloadState(emptyList())
         downloadObservationJob = viewModelScope.launch {
             coordinator.observeForModel(modelId).collectLatest { batches ->
                 _downloadBatches.value = batches
-                val current = batches.firstOrNull { it.state !in setOf(
-                    DownloadBatchState.COMPLETED,
-                    DownloadBatchState.CANCELLED,
-                    DownloadBatchState.FAILED_TERMINAL,
-                ) } ?: batches.firstOrNull()
-                _isDownloading.value = current?.state in setOf(
-                    DownloadBatchState.QUEUED,
-                    DownloadBatchState.RUNNING,
-                    DownloadBatchState.WAITING_FOR_NETWORK,
-                    DownloadBatchState.VERIFYING,
-                )
-                _activeDownloadArtifact.value = current?.artifacts
-                    ?.firstOrNull { it.state == DownloadArtifactState.RUNNING }
-                    ?.request?.metadata?.artifact
-                current?.let { batch ->
-                    _ggufFiles.update { files ->
-                        files.map { file ->
-                            val task = batch.artifacts.firstOrNull { it.request.metadata.artifact == file.artifact }
-                            file.copy(
-                                isDownloaded = file.isDownloaded || task?.state == DownloadArtifactState.COMPLETED,
-                                progress = task?.takeIf { it.state == DownloadArtifactState.RUNNING }
-                                    ?.let { it.bytesReceived.toFloat() * 100f / it.expectedBytes.toFloat() },
-                            )
-                        }
-                    }
-                    _setupComponents.update { components ->
-                        components.map { component ->
-                            val task = batch.artifacts.firstOrNull { artifact ->
-                                artifact.request.metadata.artifact.let { identity ->
-                                    identity.repositoryId == component.repoId &&
-                                        identity.relativePath == component.filePath
-                                }
-                            }
-                            component.copy(
-                                isDownloaded = component.isDownloaded ||
-                                    task?.state == DownloadArtifactState.COMPLETED,
-                                progress = task?.takeIf { it.state == DownloadArtifactState.RUNNING }
-                                    ?.let { it.bytesReceived.toFloat() * 100f / it.expectedBytes.toFloat() },
-                            )
-                        }
-                    }
-                    _installProgress.value = InstallProgress(
-                        fraction = batch.expectedBytes.takeIf { it > 0L }
-                            ?.let { batch.bytesReceived.toFloat() / it.toFloat() },
-                        bytesReceived = batch.bytesReceived,
-                        bytesTotal = batch.expectedBytes,
-                        label = batch.artifacts.firstOrNull { it.state == DownloadArtifactState.RUNNING }
-                            ?.request?.metadata?.artifact?.relativePath?.substringAfterLast('/'),
-                    )
-                    _downloadError.value = when (batch.state) {
-                        DownloadBatchState.FAILED_RETRYABLE -> "Download paused after a problem. Retry when ready."
-                        DownloadBatchState.FAILED_TERMINAL -> "Download could not be verified. Please start it again."
-                        else -> null
-                    }
-                    if (batch.state == DownloadBatchState.COMPLETED &&
-                        refreshedCompletedBatchId != batch.batchId
-                    ) {
-                        refreshGgufFilesDownloadState(
-                            modelId = modelId,
-                            isDiffusion = _browseMode.value != ModelHubBrowseMode.LanguageModels,
-                        )
-                        refreshedCompletedBatchId = batch.batchId
+                projectDurableDownloadState(batches)
+                refreshNewlyCompletedBatches(modelId, batches)
+            }
+        }
+    }
+
+    private suspend fun refreshNewlyCompletedBatches(
+        modelId: String,
+        batches: List<DownloadBatchSnapshot>,
+    ) {
+        val hydratedModelId = _modelDetail.value?.let { it.modelId ?: it.id }
+        if (hydratedModelId != modelId || _ggufFiles.value.isEmpty()) return
+
+        val newlyCompletedBatchIds = batches.asSequence()
+            .filter { it.state == DownloadBatchState.COMPLETED }
+            .map(DownloadBatchSnapshot::batchId)
+            .filterNot(refreshedCompletedBatchIds::contains)
+            .toSet()
+        if (newlyCompletedBatchIds.isEmpty()) return
+
+        refreshGgufFilesDownloadState(
+            modelId = modelId,
+            isDiffusion = _browseMode.value != ModelHubBrowseMode.LanguageModels,
+        )
+        refreshedCompletedBatchIds += newlyCompletedBatchIds
+        projectDurableDownloadState(batches)
+    }
+
+    private fun projectDurableDownloadState(batches: List<DownloadBatchSnapshot>) {
+        val activeBatchStates = setOf(
+            DownloadBatchState.QUEUED,
+            DownloadBatchState.RUNNING,
+            DownloadBatchState.WAITING_FOR_NETWORK,
+            DownloadBatchState.VERIFYING,
+        )
+        _isDownloading.value = batches.any { it.state in activeBatchStates }
+
+        val selectedArtifact = _selectedVariantPath.value?.let { selectedPath ->
+            _ggufFiles.value.singleOrNull { it.path == selectedPath }?.artifact
+        }
+        val selectedTask = relevantDownloadTask(batches, selectedArtifact)
+        val runningTask = selectedTask?.takeIf {
+            it.task.state == DownloadArtifactState.RUNNING
+        } ?: batches.asSequence()
+            .flatMap { batch ->
+                batch.artifacts.asSequence().map { task -> RelevantDownloadTask(batch, task) }
+            }
+            .filter { it.task.state == DownloadArtifactState.RUNNING }
+            .minWithOrNull(
+                compareBy<RelevantDownloadTask>(
+                    { it.batch.batchId },
+                    { it.task.artifactId },
+                ),
+            )
+        _activeDownloadArtifact.value = runningTask?.task?.request?.metadata?.artifact
+
+        _ggufFiles.update { files ->
+            files.map { file ->
+                val task = relevantDownloadTask(batches, file.artifact)?.task
+                val completed = file.artifact != null && batches.any { batch ->
+                    batch.artifacts.any { artifact ->
+                        artifact.request.metadata.artifact == file.artifact &&
+                            artifact.state == DownloadArtifactState.COMPLETED
                     }
                 }
+                file.copy(
+                    isDownloaded = file.isDownloaded || completed,
+                    progress = task?.takeIf {
+                        it.state == DownloadArtifactState.RUNNING && it.expectedBytes > 0L
+                    }?.let {
+                        it.bytesReceived.toFloat() * 100f / it.expectedBytes.toFloat()
+                    },
+                )
             }
+        }
+        _setupComponents.update { components ->
+            components.map { component ->
+                fun DownloadArtifactSnapshot.matchesComponent(): Boolean =
+                    request.metadata.artifact.let { identity ->
+                        identity.repositoryId == component.repoId &&
+                            identity.relativePath == component.filePath
+                    }
+                val task = relevantDownloadTask(batches) { it.matchesComponent() }?.task
+                val completed = batches.any { batch ->
+                    batch.artifacts.any { artifact ->
+                        artifact.matchesComponent() &&
+                            artifact.state == DownloadArtifactState.COMPLETED
+                    }
+                }
+                component.copy(
+                    isDownloaded = component.isDownloaded || completed,
+                    progress = task?.takeIf {
+                        it.state == DownloadArtifactState.RUNNING && it.expectedBytes > 0L
+                    }?.let {
+                        it.bytesReceived.toFloat() * 100f / it.expectedBytes.toFloat()
+                    },
+                )
+            }
+        }
+
+        val projectionBatch = if (selectedArtifact != null) {
+            selectedTask?.batch
+        } else {
+            relevantDownloadBatch(batches)
+        }
+        _installProgress.value = projectionBatch?.let { batch ->
+            InstallProgress(
+                fraction = batch.expectedBytes.takeIf { it > 0L }
+                    ?.let { batch.bytesReceived.toFloat() / it.toFloat() },
+                bytesReceived = batch.bytesReceived,
+                bytesTotal = batch.expectedBytes,
+                label = batch.artifacts.firstOrNull {
+                    it.state == DownloadArtifactState.RUNNING
+                }?.request?.metadata?.artifact?.relativePath?.substringAfterLast('/'),
+            )
+        } ?: InstallProgress()
+        _downloadError.value = when (projectionBatch?.state) {
+            DownloadBatchState.FAILED_RETRYABLE ->
+                "Download paused after a problem. Retry when ready."
+            DownloadBatchState.FAILED_TERMINAL ->
+                "Download could not be verified. Please start it again."
+            else -> null
         }
     }
 

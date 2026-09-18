@@ -1,9 +1,9 @@
 package com.debanshu777.caraml.features.chat.presentation.components
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -89,18 +89,14 @@ fun NoCompatibleModelsScreen(
         GenerationMode.Video ->
             "No video models downloaded" to "Download a diffusion checkpoint that supports video"
     }
-    Box(
-        modifier = modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center,
-    ) {
-        CaraMLEmptyState(
-            icon = Icons.Default.AutoAwesome,
-            title = title,
-            supportingText = subtitle,
-            actionLabel = "Browse models",
-            onAction = onDownloadModelClick,
-        )
-    }
+    CaraMLEmptyState(
+        icon = Icons.Default.AutoAwesome,
+        title = title,
+        supportingText = subtitle,
+        actionLabel = "Browse models",
+        onAction = onDownloadModelClick,
+        modifier = modifier,
+    )
 }
 
 @Composable
@@ -108,37 +104,31 @@ fun NoModelsScreen(
     onDownloadModelClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Box(
-        modifier = modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center,
-    ) {
-        CaraMLEmptyState(
-            icon = Icons.Default.Download,
-            title = "No models downloaded yet",
-            supportingText = "Download a model to start chatting",
-            actionLabel = "Download Model",
-            onAction = onDownloadModelClick,
-        )
-    }
+    CaraMLEmptyState(
+        icon = Icons.Default.Download,
+        title = "No models downloaded yet",
+        supportingText = "Download a model to start chatting",
+        actionLabel = "Download Model",
+        onAction = onDownloadModelClick,
+        modifier = modifier,
+    )
 }
 
 @Composable
 fun ModelLoadingScreen(
     modifier: Modifier = Modifier
 ) {
-    Box(
-        modifier = modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center,
+    CaraMLPane(
+        modifier = modifier.fillMaxWidth(),
+        level = AuroraSurfaceLevel.Pane,
     ) {
-        CaraMLPane(level = AuroraSurfaceLevel.Pane) {
-            Row(
-                modifier = Modifier.padding(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                CircularProgressIndicator()
-                Text("Loading model...")
-            }
+        Row(
+            modifier = Modifier.padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CircularProgressIndicator()
+            Text("Loading model...")
         }
     }
 }
@@ -149,18 +139,12 @@ fun ModelErrorScreen(
     onTryAnotherModelClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .semantics(mergeDescendants = true) { stateDescription = "Error" },
-        contentAlignment = Alignment.Center,
-    ) {
-        CaraMLEmptyState(
-            icon = Icons.Default.Error,
-            title = "Unable to load model",
-            supportingText = errorMessage,
-            actionLabel = "Try Another Model",
-            onAction = onTryAnotherModelClick,
-        )
-    }
+    CaraMLEmptyState(
+        icon = Icons.Default.Error,
+        title = "Unable to load model",
+        supportingText = errorMessage,
+        actionLabel = "Try Another Model",
+        onAction = onTryAnotherModelClick,
+        modifier = modifier.semantics(mergeDescendants = true) { stateDescription = "Error" },
+    )
 }

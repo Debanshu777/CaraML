@@ -1,22 +1,32 @@
 package com.debanshu777.caraml.features.chat.presentation
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.Button
@@ -32,9 +42,13 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -45,10 +59,12 @@ import com.debanshu777.caraml.core.drawer.LocalGenerationModeController
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
-import com.debanshu777.caraml.core.ui.components.CaraMLEmptyState
 import com.debanshu777.caraml.core.ui.components.CaraMLPane
 import com.debanshu777.caraml.core.ui.layout.AppContentKind
+import com.debanshu777.caraml.core.ui.layout.AppNavigationLayout
+import com.debanshu777.caraml.core.ui.layout.LocalAppNavigationLayout
 import com.debanshu777.caraml.core.ui.layout.ResponsiveContentPane
+import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
 import com.debanshu777.caraml.features.chat.presentation.components.providers.ChatMessageListPreviewProvider
 import com.debanshu777.caraml.features.chat.presentation.components.providers.LiveGenerationStatsPreviewProvider
@@ -65,6 +81,9 @@ import com.debanshu777.caraml.features.chat.presentation.components.ModelSelecto
 import com.debanshu777.caraml.features.chat.presentation.components.NoCompatibleModelsScreen
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 import com.debanshu777.caraml.features.chat.presentation.components.NoModelsScreen
+
+internal val LocalCreateSafeDrawingInsetsOverride =
+    staticCompositionLocalOf<WindowInsets?> { null }
 
 @Immutable
 data class ChatEmptyStateCopy(
@@ -125,7 +144,9 @@ fun ChatScreen(
         contextIndicator = {
             ContextStatsIndicator(liveStats = streamingState.liveStats)
         },
-        modifier = modifier
+        modifier = modifier,
+        onGenerationModeSelected = modeController::setState,
+        controlledGenerationMode = modeController.mode,
     )
 }
 
@@ -144,46 +165,71 @@ fun ChatScreenContent(
     onNavigateToSearch: () -> Unit,
     onNavigateToModelDetail: (modelId: String, mode: ModelHubBrowseMode) -> Unit = { _, _ -> },
     contextIndicator: @Composable RowScope.() -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onGenerationModeSelected: (GenerationMode) -> Unit = {},
+    controlledGenerationMode: GenerationMode? = null,
 ) {
     val listState = rememberLazyListState()
-    val drawerController = LocalDrawerController.current
-
-    val topBarTitle = when (val s = uiState) {
-        is ChatUiState.Ready -> when (s.generationMode) {
-            GenerationMode.Text -> "Chat"
-            GenerationMode.Image -> "Image"
-            GenerationMode.Video -> "Video"
-        }
-        is ChatUiState.NoModelsForMode -> when (s.mode) {
-            GenerationMode.Text -> "Chat"
-            GenerationMode.Image -> "Image"
-            GenerationMode.Video -> "Video"
-        }
-        else -> "Assistant"
+    val navigationLayout = LocalAppNavigationLayout.current
+    val safeDrawingInsets = LocalCreateSafeDrawingInsetsOverride.current ?: WindowInsets.safeDrawing
+    val scaffoldContentInsets = safeDrawingInsets.only(
+        if (navigationLayout == AppNavigationLayout.BottomBar) {
+            WindowInsetsSides.Horizontal
+        } else {
+            WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom
+        },
+    )
+    val generationMode = controlledGenerationMode ?: when (val state = uiState) {
+        is ChatUiState.Ready -> state.generationMode
+        is ChatUiState.NoModelsForMode -> state.mode
+        else -> GenerationMode.Text
     }
 
     val messageCount = (uiState as? ChatUiState.Ready)?.messages?.size ?: 0
     val imeBottomPadding = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
-    LaunchedEffect(messageCount, imeBottomPadding) {
-        if (messageCount > 0) {
-            listState.animateScrollToItem(messageCount - 1)
-        }
-    }
     Scaffold(
         modifier = modifier,
         containerColor = Color.Transparent,
+        contentWindowInsets = scaffoldContentInsets,
         topBar = {
-            ModelSelectorTopBar(
-                title = topBarTitle,
-                onMenuClick = { drawerController.toggle() }
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .windowInsetsPadding(
+                        safeDrawingInsets.only(
+                            WindowInsetsSides.Top + WindowInsetsSides.Horizontal,
+                        ),
+                    ),
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                ModelSelectorTopBar(
+                    title = "Create",
+                    modifier = Modifier
+                        .widthIn(max = 840.dp)
+                        .fillMaxWidth()
+                        .padding(
+                            horizontal = if (navigationLayout == AppNavigationLayout.BottomBar) {
+                                16.dp
+                            } else {
+                                24.dp
+                            },
+                        ),
+                    generationMode = generationMode.takeUnless {
+                        navigationLayout == AppNavigationLayout.Sidebar
+                    },
+                    onGenerationModeSelected = onGenerationModeSelected.takeIf {
+                        navigationLayout != AppNavigationLayout.Sidebar
+                    },
+                )
+            }
         },
         bottomBar = {
             if (uiState is ChatUiState.Ready) {
                 ResponsiveContentPane(
                     kind = AppContentKind.Chat,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .windowInsetsPadding(scaffoldContentInsets),
                     fillMaxHeight = false,
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
@@ -210,64 +256,88 @@ fun ChatScreenContent(
             }
         }
     ) { paddingValues ->
+        val layoutDirection = LocalLayoutDirection.current
+        val bottomPadding = paddingValues.calculateBottomPadding()
+        LaunchedEffect(messageCount, imeBottomPadding, bottomPadding) {
+            if (messageCount > 0) {
+                listState.animateScrollToItem(messageCount - 1)
+            }
+        }
         ResponsiveContentPane(
             kind = AppContentKind.Chat,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = paddingValues.calculateTopPadding()),
+                .padding(
+                    start = paddingValues.calculateStartPadding(layoutDirection),
+                    top = paddingValues.calculateTopPadding(),
+                    end = paddingValues.calculateEndPadding(layoutDirection),
+                    bottom = if (uiState is ChatUiState.Ready) 0.dp else bottomPadding,
+                ),
         ) {
             when (uiState) {
                 is ChatUiState.NoModels -> {
-                    NoModelsScreen(
-                        onDownloadModelClick = onNavigateToSearch,
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                    CreateStateViewport {
+                        NoModelsScreen(
+                            onDownloadModelClick = onNavigateToSearch,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
 
                 is ChatUiState.NoModelsForMode -> {
-                    NoCompatibleModelsScreen(
-                        mode = uiState.mode,
-                        onDownloadModelClick = onNavigateToSearch,
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                    CreateStateViewport {
+                        NoCompatibleModelsScreen(
+                            mode = uiState.mode,
+                            onDownloadModelClick = onNavigateToSearch,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
 
                 is ChatUiState.ModelLoading -> {
-                    ModelLoadingScreen(Modifier.fillMaxSize())
+                    CreateStateViewport {
+                        ModelLoadingScreen(Modifier.fillMaxWidth())
+                    }
                 }
 
                 is ChatUiState.ModelError -> {
-                    ModelErrorScreen(
-                        errorMessage = uiState.message,
-                        onTryAnotherModelClick = onNavigateToSearch,
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                    CreateStateViewport {
+                        ModelErrorScreen(
+                            errorMessage = uiState.message,
+                            onTryAnotherModelClick = onNavigateToSearch,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
 
                 is ChatUiState.MissingComponents -> {
-                    MissingComponentsScreen(
-                        missingComponentLabels = uiState.missingComponentLabels,
-                        modelName = uiState.modelName,
-                        onGoToModelHubClick = onNavigateToSearch,
-                        onFixComponentsClick = {
-                            onNavigateToModelDetail(
-                                uiState.modelId,
-                                ModelHubBrowseMode.DiffusionImage,
-                            )
-                        },
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                    CreateStateViewport {
+                        MissingComponentsScreen(
+                            missingComponentLabels = uiState.missingComponentLabels,
+                            modelName = uiState.modelName,
+                            onGoToModelHubClick = onNavigateToSearch,
+                            onFixComponentsClick = {
+                                onNavigateToModelDetail(
+                                    uiState.modelId,
+                                    ModelHubBrowseMode.DiffusionImage,
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
 
                 is ChatUiState.LoadActionRequired -> {
-                    LoadActionRequiredScreen(
-                        action = uiState.action,
-                        onConfirmLoad = onConfirmLoad,
-                        onAcceptAlternative = onAcceptAlternative,
-                        onRetryLoad = onRetryLoad,
-                        onCancelLoad = onCancelLoad,
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                    CreateStateViewport {
+                        LoadActionRequiredScreen(
+                            action = uiState.action,
+                            onConfirmLoad = onConfirmLoad,
+                            onAcceptAlternative = onAcceptAlternative,
+                            onRetryLoad = onRetryLoad,
+                            onCancelLoad = onCancelLoad,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
 
                 is ChatUiState.Ready -> {
@@ -279,21 +349,84 @@ fun ChatScreenContent(
                             streamingState = streamingState,
                             loadMedia = loadMedia,
                             modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(bottom = bottomPadding),
                         )
                         if (uiState.messages.isEmpty()) {
-                            val copy = emptyStateCopy(uiState.generationMode)
-                            CaraMLEmptyState(
-                                icon = Icons.Default.AutoAwesome,
-                                title = copy.title,
-                                supportingText = copy.supportingText,
+                            AnimatedCreateEmptyState(
+                                mode = uiState.generationMode,
                                 modifier = Modifier
                                     .align(Alignment.Center)
-                                    .padding(bottom = paddingValues.calculateBottomPadding()),
+                                    .padding(bottom = bottomPadding),
                             )
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun CreateStateViewport(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(vertical = LocalSpacing.current.l),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(
+            space = LocalSpacing.current.m,
+            alignment = Alignment.CenterVertically,
+        ),
+    ) {
+        item {
+            Box(modifier = Modifier.fillParentMaxWidth()) {
+                content()
+            }
+        }
+    }
+}
+
+@Composable
+private fun AnimatedCreateEmptyState(
+    mode: GenerationMode,
+    modifier: Modifier = Modifier,
+) {
+    val motion = LocalAuroraMotionPolicy.current
+    Crossfade(
+        targetState = mode,
+        modifier = modifier,
+        animationSpec = tween(
+            durationMillis = if (motion.spatialTransitionsEnabled) {
+                180
+            } else {
+                minOf(90, motion.opacityDurationMillis)
+            },
+        ),
+        label = "create mode statement",
+    ) { targetMode ->
+        val copy = emptyStateCopy(targetMode)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("create-empty-state")
+                .padding(horizontal = LocalSpacing.current.l, vertical = LocalSpacing.current.xl),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.s),
+        ) {
+            Text(
+                text = copy.title,
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                text = copy.supportingText,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
         }
     }
 }
@@ -321,8 +454,7 @@ private fun LoadActionRequiredScreen(
         is PendingLoadAction.RetryQuarantined -> action.request.plan.compromises
     }
     Column(
-        modifier = modifier.fillMaxSize().padding(LocalSpacing.current.xl),
-        verticalArrangement = Arrangement.Center,
+        modifier = modifier.fillMaxWidth().padding(LocalSpacing.current.xl),
     ) {
         CaraMLPane(
             modifier = Modifier.fillMaxWidth(),
@@ -376,9 +508,8 @@ private fun MissingComponentsScreen(
 ) {
     Column(
         modifier = modifier
-            .fillMaxSize()
+            .fillMaxWidth()
             .padding(LocalSpacing.current.xl),
-        verticalArrangement = Arrangement.Center,
         horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
     ) {
         Icon(

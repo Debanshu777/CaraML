@@ -15,6 +15,11 @@ data class AuroraColors(
     val primaryGlow: Color,
     val tertiaryGlow: Color,
     val paneBorder: Color,
+    val commandSurface: Color,
+    val selectedSurface: Color,
+    val divider: Color,
+    val focusPrimary: Color,
+    val focusTertiary: Color,
 )
 
 enum class AuroraSurfaceLevel(val containerAlpha: Float) {
@@ -39,6 +44,11 @@ internal fun ColorScheme.toAuroraColors(
     primaryGlow = if (isDark) primary.copy(alpha = 0.38f) else primaryContainer.copy(alpha = 0.46f),
     tertiaryGlow = if (isDark) tertiary.copy(alpha = 0.28f) else tertiaryContainer.copy(alpha = 0.34f),
     paneBorder = outlineVariant.copy(alpha = 0.72f),
+    commandSurface = surfaceContainer,
+    selectedSurface = surfaceContainerHigh,
+    divider = outlineVariant.copy(alpha = 0.48f),
+    focusPrimary = primary.copy(alpha = 0.78f),
+    focusTertiary = tertiary.copy(alpha = 0.70f),
 )
 
 internal val LocalAuroraColors = staticCompositionLocalOf<AuroraColors?> { null }

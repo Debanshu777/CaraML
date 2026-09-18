@@ -1,7 +1,6 @@
 package com.debanshu777.caraml.features.modelhub.presentation.details
 
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
@@ -22,7 +21,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.debanshu777.caraml.core.drawer.LocalAppWindowWidth
 import com.debanshu777.caraml.core.rating.ui.RecommendationDetailsSheet
 import com.debanshu777.caraml.core.rating.ui.recommendationPresentation
 import com.debanshu777.caraml.core.ui.components.CaraMLTopBar
@@ -55,7 +53,6 @@ fun DetailsScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val hostedWindowWidth = LocalAppWindowWidth.current
     val modelDetail by viewModel.modelDetail.collectAsState()
     val isDetailLoading by viewModel.isDetailLoading.collectAsState()
     val detailError by viewModel.detailError.collectAsState()
@@ -95,19 +92,19 @@ fun DetailsScreen(
         containerColor = Color.Transparent,
         topBar = {
             CaraMLTopBar(
-                title = "Model details",
+                title = "Artifact",
                 navigation = TopBarNavigation.Back,
                 onNavigationClick = onBack,
+                contentKind = AppContentKind.Details,
             )
         },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
     ) { innerPadding ->
-        BoxWithConstraints(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
-            val detailsWindowWidth = hostedWindowWidth ?: maxWidth
             ResponsiveContentPane(
                 kind = AppContentKind.Details,
                 modifier = Modifier.fillMaxSize(),
@@ -150,7 +147,6 @@ fun DetailsScreen(
                                 recommendationState = recommendationState,
                                 onRecommendationInfoClick = { recommendationSheetVisible = true },
                                 modifier = Modifier.fillMaxSize(),
-                                windowWidth = detailsWindowWidth,
                                 downloadBatches = downloadBatches,
                                 onPauseDownload = viewModel::pauseDownload,
                                 onResumeDownload = viewModel::resumeDownload,

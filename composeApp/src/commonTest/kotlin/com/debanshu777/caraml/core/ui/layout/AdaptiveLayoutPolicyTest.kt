@@ -6,11 +6,23 @@ import kotlin.test.assertEquals
 
 class AdaptiveLayoutPolicyTest {
     @Test
-    fun navigationChangesAtMaterialWidthBoundaries() {
-        assertEquals(AppNavigationLayout.ModalDrawer, adaptiveLayoutPolicy(599.dp, AppContentKind.Chat).navigation)
-        assertEquals(AppNavigationLayout.Rail, adaptiveLayoutPolicy(600.dp, AppContentKind.Chat).navigation)
-        assertEquals(AppNavigationLayout.Rail, adaptiveLayoutPolicy(839.dp, AppContentKind.Chat).navigation)
-        assertEquals(AppNavigationLayout.Sidebar, adaptiveLayoutPolicy(840.dp, AppContentKind.Chat).navigation)
+    fun navigationChangesAtPrismShellBoundaries() {
+        assertEquals(
+            AppNavigationLayout.BottomBar,
+            adaptiveLayoutPolicy(599.dp, AppContentKind.Chat).navigation,
+        )
+        assertEquals(
+            AppNavigationLayout.Rail,
+            adaptiveLayoutPolicy(600.dp, AppContentKind.Chat).navigation,
+        )
+        assertEquals(
+            AppNavigationLayout.Rail,
+            adaptiveLayoutPolicy(1199.dp, AppContentKind.Chat).navigation,
+        )
+        assertEquals(
+            AppNavigationLayout.Sidebar,
+            adaptiveLayoutPolicy(1200.dp, AppContentKind.Chat).navigation,
+        )
     }
 
     @Test

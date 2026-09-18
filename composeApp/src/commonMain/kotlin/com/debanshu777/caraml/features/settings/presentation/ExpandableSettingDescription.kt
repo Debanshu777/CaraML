@@ -15,6 +15,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 
@@ -26,6 +28,11 @@ fun ExpandableSettingDescription(
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     val motion = LocalAuroraMotionPolicy.current
+    val fadeDurationMillis = if (motion.spatialTransitionsEnabled) {
+        motion.opacityDurationMillis
+    } else {
+        motion.opacityDurationMillis.coerceAtMost(90)
+    }
 
     Column(modifier = modifier) {
         Text(
@@ -35,19 +42,19 @@ fun ExpandableSettingDescription(
         )
         TextButton(
             onClick = { expanded = !expanded },
-            modifier = Modifier.heightIn(min = 48.dp),
+            modifier = Modifier
+                .heightIn(min = 48.dp)
+                .semantics {
+                    stateDescription = if (expanded) "Expanded" else "Collapsed"
+                },
         ) {
             Text(if (expanded) "Hide details" else "Show details")
         }
-        if (motion.spatialTransitionsEnabled) {
-            AnimatedVisibility(
-                visible = expanded,
-                enter = fadeIn(tween(motion.opacityDurationMillis)),
-                exit = fadeOut(tween(motion.opacityDurationMillis)),
-            ) {
-                DetailText(details)
-            }
-        } else if (expanded) {
+        AnimatedVisibility(
+            visible = expanded,
+            enter = fadeIn(tween(fadeDurationMillis)),
+            exit = fadeOut(tween(fadeDurationMillis)),
+        ) {
             DetailText(details)
         }
     }

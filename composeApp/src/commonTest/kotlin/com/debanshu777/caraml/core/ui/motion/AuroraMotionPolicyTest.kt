@@ -23,7 +23,7 @@ class AuroraMotionPolicyTest {
         assertFalse(policy.spatialTransitionsEnabled)
         assertFalse(policy.pulseEnabled)
         assertFalse(policy.shapeMorphEnabled)
-        assertEquals(100, policy.opacityDurationMillis)
+        assertEquals(90, policy.opacityDurationMillis)
     }
 
     @Test

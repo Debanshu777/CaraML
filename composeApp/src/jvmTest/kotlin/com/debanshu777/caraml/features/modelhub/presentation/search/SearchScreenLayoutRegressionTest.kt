@@ -10,31 +10,28 @@ import kotlin.test.assertTrue
 class SearchScreenLayoutRegressionTest {
 
     @Test
-    fun searchTabUsesOneVerticalScrollOwnerForControlsAndResults() {
+    fun discoverAndLibraryDelegateToTheSharedOneScrollWorkbenchLayout() {
         val source = Files.readString(searchScreenSource())
-        val searchTab = source
-            .substringAfter("private fun SearchTabContent(")
-            .substringBefore("internal fun <T> LazyListScope.modelHubResultItems(")
+        val discoverTab = source
+            .substringAfter("internal fun SearchTabContent(")
+            .substringBefore("internal fun ModelHubResultSummary(")
+        val libraryTab = source
+            .substringAfter("internal fun DownloadedTabContent(")
+            .substringBefore("private fun LibraryReadinessToolbar(")
+        val sharedLayout = source
+            .substringAfter("internal fun ModelHubTabLayout(")
+            .substringBefore("internal fun SearchTabContent(")
 
         assertFalse(
-            searchTab.contains("RecommendationProfileSection("),
+            discoverTab.contains("RecommendationProfileSection("),
             "The full profile editor must not consume fixed height above the results list.",
         )
-        assertEquals(
-            1,
-            Regex("\\bLazyColumn\\(").findAll(searchTab).count(),
-            "Search controls and results must share one LazyColumn instead of competing scroll regions.",
-        )
-        assertTrue(
-            searchTab.indexOf("LazyColumn(") < searchTab.indexOf("ModelHubOverview("),
-            "Storage and device context must be list content so it can scroll away from results.",
-        )
-        assertFalse(
-            searchTab.contains(
-                "modifier = Modifier\n                .fillMaxWidth()\n                .weight(1f)",
-            ),
-            "A weighted inner results viewport recreates the broken nested-scroll experience.",
-        )
+        assertTrue(discoverTab.contains("ModelHubTabLayout("))
+        assertTrue(libraryTab.contains("ModelHubTabLayout("))
+        assertFalse(discoverTab.contains("LazyColumn("))
+        assertFalse(libraryTab.contains("LazyColumn("))
+        assertEquals(1, Regex("\\bLazyColumn\\(").findAll(sharedLayout).count())
+        assertFalse(sharedLayout.contains("verticalScroll("))
     }
 
     @Test
@@ -42,13 +39,18 @@ class SearchScreenLayoutRegressionTest {
         val source = Files.readString(searchScreenSource())
         val screen = source
             .substringAfter("fun SearchScreen(")
-            .substringBefore("private fun SearchTabContent(")
+            .substringBefore("internal fun SearchTabContent(")
+        val layout = source
+            .substringAfter("internal fun ModelHubScreenLayout(")
+            .substringBefore("private fun ModelHubTabRow(")
 
-        assertTrue(screen.indexOf("ModelHubTabRow(") < screen.indexOf("SearchTabContent("))
+        assertTrue(screen.contains("ModelHubScreenLayout("))
+        assertTrue(layout.indexOf("ModelHubTabRow(") < layout.indexOf("discoverContent()"))
         assertFalse(
             screen.substringBefore("ModelHubTabRow(").contains("ModelHubOverview("),
             "The large overview cards must not push the primary tabs below the fold.",
         )
+        assertTrue(screen.contains("listOf(\"Discover\", \"Library\")"))
     }
 
     private fun searchScreenSource(): Path {

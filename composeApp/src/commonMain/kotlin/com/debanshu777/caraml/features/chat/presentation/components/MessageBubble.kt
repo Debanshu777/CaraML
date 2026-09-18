@@ -35,6 +35,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,6 +44,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
@@ -106,10 +110,10 @@ fun MessageBubble(
             .padding(vertical = LocalSpacing.current.m),
         horizontalAlignment = alignment
     ) {
-        if (!isUser && (thinkingText.isNotEmpty() || isStreaming)) {
+        if (!isUser && (thinkingText.isNotEmpty() || (isStreaming && !showMediaPending))) {
             ThoughtsDisclosure(
                 thinking = thinkingText,
-                isStreaming = isStreaming,
+                isStreaming = isStreaming && !showMediaPending,
                 outputIsEmpty = output.isEmpty(),
             )
         }
@@ -157,11 +161,18 @@ fun MessageBubble(
             val elapsed = imageGenElapsedSeconds
 
             val statusText = when {
-                isFinalizing -> "Finalizing image…  (${elapsed}s)"
-                isSampling   -> "Step $imageGenStep / $imageGenTotalSteps  ·  ${elapsed}s"
+                isFinalizing -> "Finalizing local output · ${elapsed}s"
+                isSampling   -> "Step $imageGenStep / $imageGenTotalSteps · ${elapsed}s"
                 else         -> if (imageGenRequestedSteps > 0)
-                                    "Preparing model…  ($imageGenRequestedSteps steps queued, ${elapsed}s)"
-                                else "Preparing model…  (${elapsed}s)"
+                                    "Preparing local generation · " +
+                                        "$imageGenRequestedSteps planned steps · ${elapsed}s"
+                                else "Preparing local generation · ${elapsed}s"
+            }
+
+            val phase = when {
+                isFinalizing -> GenerationActivityPhase.Finalizing
+                isSampling -> GenerationActivityPhase.Generating
+                else -> GenerationActivityPhase.Preparing
             }
 
             GenerationActivity(
@@ -171,6 +182,7 @@ fun MessageBubble(
                 } else {
                     null
                 },
+                phase = phase,
                 modifier = Modifier
                     .padding(top = LocalSpacing.current.s)
                     .fillMaxWidth(),
@@ -236,6 +248,7 @@ fun MessageBubble(
         }
 
         if (!isUser && message.inferenceMetrics != null) {
+            val inferenceStatsColor = MaterialTheme.colorScheme.onSurfaceVariant
             Row(
                 modifier = Modifier.padding(top = LocalSpacing.current.s),
                 horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.s)
@@ -243,7 +256,7 @@ fun MessageBubble(
                 Text(
                     text = "Statistics:",
                     style = MaterialTheme.typography.labelSmall,
-                    color = textColor.copy(alpha = 0.5f)
+                    color = inferenceStatsColor,
                 )
 
                 val tokensPerSec =
@@ -251,20 +264,20 @@ fun MessageBubble(
                 StatItem(
                     icon = Icons.Default.Speed,
                     text = "$tokensPerSec tokens/s",
-                    textColor = textColor
+                    textColor = inferenceStatsColor,
                 )
 
                 StatItem(
                     icon = Icons.Default.DataUsage,
                     text = "${message.inferenceMetrics.tokenCount} tokens",
-                    textColor = textColor
+                    textColor = inferenceStatsColor,
                 )
 
                 val timeSec = ((message.inferenceMetrics.generationTimeMs / 10.0).toInt() / 100.0)
                 StatItem(
                     icon = Icons.Default.AccessTime,
                     text = "${timeSec}s",
-                    textColor = textColor
+                    textColor = inferenceStatsColor,
                 )
             }
         }
@@ -311,7 +324,7 @@ private fun ThoughtsDisclosure(
     modifier: Modifier = Modifier,
 ) {
     val motion = LocalAuroraMotionPolicy.current
-    var override by remember { mutableStateOf<Boolean?>(null) }
+    var override by rememberSaveable { mutableStateOf<Boolean?>(null) }
     val autoExpanded = isStreaming || outputIsEmpty
     val expanded = override ?: autoExpanded
     val showSpinner = isStreaming && outputIsEmpty
@@ -324,8 +337,16 @@ private fun ThoughtsDisclosure(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(min = 48.dp)
                 .clip(MaterialTheme.shapes.small)
-                .clickable { override = !expanded }
+                .clickable(
+                    onClickLabel = if (expanded) "Collapse thoughts" else "Expand thoughts",
+                    role = Role.Button,
+                    onClick = { override = !expanded },
+                )
+                .semantics {
+                    stateDescription = if (expanded) "Expanded" else "Collapsed"
+                }
                 .padding(horizontal = LocalSpacing.current.s, vertical = LocalSpacing.current.xs),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.s),
@@ -352,7 +373,7 @@ private fun ThoughtsDisclosure(
             )
             Icon(
                 imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                contentDescription = if (expanded) "Collapse thoughts" else "Expand thoughts",
+                contentDescription = null,
                 modifier = Modifier.size(16.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -403,13 +424,13 @@ private fun StatItem(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = textColor.copy(alpha = 0.5f),
+            tint = textColor,
             modifier = Modifier.size(12.dp)
         )
         Text(
             text = text,
             style = MaterialTheme.typography.labelSmall,
-            color = textColor.copy(alpha = 0.5f)
+            color = textColor,
         )
     }
 }

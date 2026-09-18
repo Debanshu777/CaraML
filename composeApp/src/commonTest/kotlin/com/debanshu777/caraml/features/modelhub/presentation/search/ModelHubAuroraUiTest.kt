@@ -86,7 +86,7 @@ class ModelHubAuroraUiTest {
     }
 
     @Test
-    fun modelResultCardKeepsTitleStatusMetadataAndActionOrder() = runComposeUiTest {
+    fun modelResultRowKeepsTechnicalHierarchyAndTrailingState() = runComposeUiTest {
         var opened = 0
         setContent {
             MaterialTheme {
@@ -110,16 +110,16 @@ class ModelHubAuroraUiTest {
             .fetchSemanticsNode().positionInRoot.y
         val authorY = onNodeWithText("org", useUnmergedTree = true)
             .fetchSemanticsNode().positionInRoot.y
-        val statusY = onNodeWithText("Recommended", useUnmergedTree = true)
-            .fetchSemanticsNode().positionInRoot.y
+        val titleBounds = onNodeWithText("tiny-model", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        val statusBounds = onNodeWithText("Recommended", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
         val metadataY = onNodeWithText("Text generation · 1.2 GB", useUnmergedTree = true)
             .fetchSemanticsNode().positionInRoot.y
-        val actionY = onNodeWithText("Download", useUnmergedTree = true)
-            .fetchSemanticsNode().positionInRoot.y
         assertTrue(authorY < titleY)
-        assertTrue(titleY < statusY)
-        assertTrue(statusY < metadataY)
-        assertTrue(metadataY < actionY)
+        assertTrue(titleY < metadataY)
+        assertTrue(statusBounds.left > titleBounds.left)
+        assertTrue(titleBounds.right <= statusBounds.left || titleBounds.bottom <= statusBounds.top)
         onNodeWithContentDescription("Open model org/tiny-model")
             .assertWidthIsAtLeast(48.dp)
             .assertHeightIsAtLeast(48.dp)
@@ -163,7 +163,7 @@ class ModelHubAuroraUiTest {
     }
 
     @Test
-    fun modelHubCardAndProgressRemainReachableAtTwoHundredPercentFontScale() =
+    fun modelHubContextAndRegistryRowRemainReachableAtTwoHundredPercentFontScale() =
         runComposeUiTest {
             setContent {
                 AtTwoHundredPercentFontScale {
@@ -201,9 +201,8 @@ class ModelHubAuroraUiTest {
                 }
             }
 
-            onNodeWithText("Models: 2 GB")
-                .performScrollTo()
-                .assertIsDisplayed()
+            onNodeWithTag("model-context").performScrollTo().assertIsDisplayed()
+            onNodeWithText("Storage").assertIsDisplayed()
             val title = onNodeWithText("large-text-model", useUnmergedTree = true)
             val status = onNodeWithText("Recommended", useUnmergedTree = true)
             val action = onNodeWithText("Download", useUnmergedTree = true)

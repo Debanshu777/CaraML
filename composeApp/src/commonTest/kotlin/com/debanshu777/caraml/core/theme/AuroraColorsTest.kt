@@ -1,10 +1,16 @@
 package com.debanshu777.caraml.core.theme
 
-import androidx.compose.material3.lightColorScheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 class AuroraColorsTest {
     @Test
@@ -22,6 +28,11 @@ class AuroraColorsTest {
         assertEquals(scheme.primaryContainer.copy(alpha = 0.46f), colors.primaryGlow)
         assertEquals(scheme.tertiaryContainer.copy(alpha = 0.34f), colors.tertiaryGlow)
         assertEquals(scheme.outlineVariant.copy(alpha = 0.72f), colors.paneBorder)
+        assertEquals(scheme.surfaceContainer, colors.commandSurface)
+        assertEquals(scheme.surfaceContainerHigh, colors.selectedSurface)
+        assertEquals(scheme.outlineVariant.copy(alpha = 0.48f), colors.divider)
+        assertEquals(scheme.primary.copy(alpha = 0.78f), colors.focusPrimary)
+        assertEquals(scheme.tertiary.copy(alpha = 0.70f), colors.focusTertiary)
     }
 
     @Test
@@ -56,5 +67,41 @@ class AuroraColorsTest {
         assertEquals(0.76f, AuroraSurfaceLevel.Recessed.containerAlpha)
         assertEquals(0.82f, AuroraSurfaceLevel.Pane.containerAlpha)
         assertEquals(0.94f, AuroraSurfaceLevel.Floating.containerAlpha)
+    }
+
+    @Test
+    fun prismShapeAndTechnicalTypeTokensMatchTheSharedVocabulary() {
+        assertEquals(RoundedCornerShape(8.dp), AppShapes.extraSmall)
+        assertEquals(RoundedCornerShape(12.dp), AppShapes.small)
+        assertEquals(RoundedCornerShape(18.dp), AppShapes.medium)
+        assertEquals(RoundedCornerShape(24.dp), AppShapes.large)
+        assertEquals(RoundedCornerShape(24.dp), AppShapes.extraLarge)
+        assertEquals(FontFamily.Monospace, AppTechnicalLabel.fontFamily)
+        assertEquals(FontWeight.Medium, AppTechnicalLabel.fontWeight)
+        assertEquals(12.sp, AppTechnicalLabel.fontSize)
+        assertEquals(17.sp, AppTechnicalLabel.lineHeight)
+
+        assertEquals(28.sp, AppPrismTypography.screenTitle.fontSize)
+        assertEquals(34.sp, AppPrismTypography.screenTitle.lineHeight)
+        assertEquals(FontWeight.SemiBold, AppPrismTypography.screenTitle.fontWeight)
+        assertNull(AppPrismTypography.screenTitle.fontFamily)
+        assertEquals(16.sp, AppPrismTypography.sectionTitle.fontSize)
+        assertEquals(22.sp, AppPrismTypography.sectionTitle.lineHeight)
+        assertEquals(FontWeight.SemiBold, AppPrismTypography.sectionTitle.fontWeight)
+        assertNull(AppPrismTypography.sectionTitle.fontFamily)
+        assertEquals(17.sp, AppPrismTypography.modelTitle.fontSize)
+        assertEquals(22.sp, AppPrismTypography.modelTitle.lineHeight)
+        assertEquals(FontWeight.Medium, AppPrismTypography.modelTitle.fontWeight)
+        assertNull(AppPrismTypography.modelTitle.fontFamily)
+        assertEquals(14.sp, AppPrismTypography.denseMetadata.fontSize)
+        assertEquals(20.sp, AppPrismTypography.denseMetadata.lineHeight)
+        assertEquals(FontWeight.Normal, AppPrismTypography.denseMetadata.fontWeight)
+        assertNull(AppPrismTypography.denseMetadata.fontFamily)
+        assertEquals(24.sp, AppPrismTypography.detailTitleCompact.fontSize)
+        assertEquals(30.sp, AppPrismTypography.detailTitleCompact.lineHeight)
+        assertNull(AppPrismTypography.detailTitleCompact.fontFamily)
+        assertEquals(32.sp, AppPrismTypography.detailTitleExpanded.fontSize)
+        assertEquals(38.sp, AppPrismTypography.detailTitleExpanded.lineHeight)
+        assertNull(AppPrismTypography.detailTitleExpanded.fontFamily)
     }
 }
