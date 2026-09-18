@@ -24,7 +24,11 @@ fun CaraMLSectionHeader(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, style = MaterialTheme.typography.prism.sectionTitle)
+            Text(
+                text = title,
+                style = MaterialTheme.typography.prism.sectionTitle,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
             supportingText?.let {
                 Text(
                     text = it,

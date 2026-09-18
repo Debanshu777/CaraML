@@ -72,6 +72,7 @@ fun ModelSelectorTopBar(
                     Icon(
                         imageVector = Icons.Default.Menu,
                         contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface,
                     )
                 }
             }

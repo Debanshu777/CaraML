@@ -27,9 +27,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -42,7 +39,7 @@ import com.debanshu777.caraml.core.theme.ThemeDefaults
 import com.debanshu777.caraml.core.theme.ThemeMode
 import com.debanshu777.caraml.core.theme.ThemePaletteStyle
 import com.debanshu777.caraml.core.theme.ThemeViewModel
-import com.debanshu777.caraml.core.theme.auroraColors
+import com.debanshu777.caraml.core.ui.components.AuroraFocalSurface
 
 /** Appearance preferences hosted in [SettingsScreen]. */
 @OptIn(ExperimentalLayoutApi::class)
@@ -162,6 +159,7 @@ private fun SettingsChoiceBlock(
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f),
             )
             Text(
@@ -191,26 +189,14 @@ private fun SettingsChoiceBlock(
 
 @Composable
 internal fun AuroraThemePreview(modifier: Modifier = Modifier) {
-    val colors = MaterialTheme.auroraColors
-    Box(
+    AuroraFocalSurface(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 104.dp)
-            .clip(MaterialTheme.shapes.large)
-            .drawWithCache {
-                val field = Brush.linearGradient(
-                    colors = listOf(colors.primaryGlow, colors.tertiaryGlow),
-                    start = Offset.Zero,
-                    end = Offset(size.width, size.height),
-                )
-                onDrawBehind {
-                    drawRect(colors.canvas)
-                    drawRect(field)
-                }
-            }
             .semantics(mergeDescendants = true) {
                 contentDescription = "Current Aurora theme preview"
             },
+        shape = MaterialTheme.shapes.large,
     ) {
         Column(
             modifier = Modifier

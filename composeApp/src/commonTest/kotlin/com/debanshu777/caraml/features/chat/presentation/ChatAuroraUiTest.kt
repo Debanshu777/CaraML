@@ -73,7 +73,7 @@ class ChatAuroraUiTest {
         assertChatSurfaceAlignment(viewportWidth = 360.dp, expectedBodyWidth = 328f)
 
     @Test
-    fun focusedComposerUsesOneSeedDerivedGradientLens() =
+    fun focusedComposerUsesOneSolidSemanticBoundary() =
         runComposeUiTest {
             val host = Color.White
             setContent {
@@ -124,8 +124,8 @@ class ChatAuroraUiTest {
             val rightBoundary = pixels[357, 70]
 
             assertTrue(
-                colorDistance(leftBoundary, rightBoundary) >= 0.25f,
-                "The focused command lens must visibly carry both seed endpoints; " +
+                colorDistance(leftBoundary, rightBoundary) <= 0.01f,
+                "The focused composer must use one solid boundary instead of a gradient; " +
                     "left=$leftBoundary right=$rightBoundary",
             )
             assertTrue(

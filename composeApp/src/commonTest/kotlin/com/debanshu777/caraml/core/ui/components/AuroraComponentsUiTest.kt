@@ -97,7 +97,7 @@ class AuroraComponentsUiTest {
     }
 
     @Test
-    fun backdropHasOneBroadNonUniformFieldAndReadableDarkAndLightContent() = runComposeUiTest {
+    fun backdropKeepsFaintThreeAnchorAtmosphereAndReadableDarkAndLightContent() = runComposeUiTest {
         setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f)) {
                 Column {
@@ -106,6 +106,7 @@ class AuroraComponentsUiTest {
                             surface = Color(0xFF0E1118),
                             onSurface = Color.White,
                             primary = Color(0xFF4F83FF),
+                            secondary = Color(0xFF00D59C),
                             tertiary = Color(0xFFFF5AA5),
                         ),
                     ) {
@@ -119,6 +120,7 @@ class AuroraComponentsUiTest {
                             surface = Color(0xFFF9FAFF),
                             onSurface = Color(0xFF11131A),
                             primaryContainer = Color(0xFFB8CAFF),
+                            secondaryContainer = Color(0xFF9BEBD4),
                             tertiaryContainer = Color(0xFFFFC0DC),
                         ),
                     ) {
@@ -137,26 +139,24 @@ class AuroraComponentsUiTest {
         ).forEach { (tag, label) ->
             val host = onNodeWithTag(tag).fetchSemanticsNode()
             val pixels = onNodeWithTag(tag).captureToImage().toPixelMap()
-            val leading = pixels[24, 24]
-            val center = pixels[180, 48]
-            val opposing = pixels[336, 156]
-            val fieldDelta = leading.colorDistance(center) + center.colorDistance(opposing)
+            val primary = pixels.averagePatch(36, 22)
+            val secondary = pixels.averagePatch(324, 36)
+            val tertiary = pixels.averagePatch(270, 158)
+            val fieldDelta = primary.colorDistance(secondary) +
+                secondary.colorDistance(tertiary) +
+                tertiary.colorDistance(primary)
 
             assertTrue(
-                fieldDelta >= 0.12f,
-                "The ambient field must stay visibly non-uniform; delta was $fieldDelta",
+                fieldDelta in 0.05f..0.22f,
+                "The ambient field must stay faint rather than become a full-screen hero; " +
+                    "delta was $fieldDelta",
             )
             assertTrue(
-                leading.blue - leading.red > center.blue - center.red,
-                "The broad primary wash must remain strongest near the top-leading edge",
-            )
-            assertTrue(
-                center.blue - center.red >= (leading.blue - leading.red) * 0.55f,
-                "The broad primary wash must carry through the center without tertiary intrusion",
-            )
-            assertTrue(
-                opposing.red - opposing.blue > center.red - center.blue,
-                "The smaller tertiary wash must remain strongest at the opposing edge",
+                primary.colorDistance(secondary) >= 0.01f &&
+                    secondary.colorDistance(tertiary) >= 0.01f &&
+                    tertiary.colorDistance(primary) >= 0.01f,
+                "The three faint anchors must remain spatially distinct without becoming " +
+                    "saturated panels; primary=$primary secondary=$secondary tertiary=$tertiary",
             )
 
             val textBounds = onNodeWithText(label).fetchSemanticsNode().boundsInRoot
@@ -468,6 +468,27 @@ private fun recommendation(category: RecommendationCategory) = PersonalizedRecom
 
 private fun hasStateDescription(description: String) =
     SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, description)
+
+private fun PixelMap.averagePatch(
+    centerX: Int,
+    centerY: Int,
+    radius: Int = 4,
+): Color {
+    var red = 0f
+    var green = 0f
+    var blue = 0f
+    var count = 0
+    for (y in (centerY - radius).coerceAtLeast(0)..(centerY + radius).coerceAtMost(height - 1)) {
+        for (x in (centerX - radius).coerceAtLeast(0)..(centerX + radius).coerceAtMost(width - 1)) {
+            val color = this[x, y]
+            red += color.red
+            green += color.green
+            blue += color.blue
+            count += 1
+        }
+    }
+    return Color(red / count, green / count, blue / count)
+}
 
 private fun assertEmptyStateIconAndTitleContrast(
     background: Color,

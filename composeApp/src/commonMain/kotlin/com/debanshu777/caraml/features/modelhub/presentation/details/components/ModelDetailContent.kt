@@ -29,12 +29,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -55,6 +53,7 @@ import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.theme.auroraColors
 import com.debanshu777.caraml.core.theme.prism
 import com.debanshu777.caraml.core.ui.components.CaraMLSectionHeader
+import com.debanshu777.caraml.core.ui.components.AuroraFocalSurface
 import com.debanshu777.caraml.core.ui.components.SignalRail
 import com.debanshu777.caraml.core.ui.components.SignalTone
 import com.debanshu777.caraml.core.ui.components.StatusMark
@@ -289,23 +288,11 @@ private fun ModelOverviewSection(
     val spacing = LocalSpacing.current
     val heading = splitRepositoryId(model.modelId ?: model.id.orEmpty())
     val owner = heading.owner ?: model.author?.trim()?.takeIf { it.isNotEmpty() }
-    val colors = MaterialTheme.auroraColors
-    val overviewBrush = remember(colors.focusPrimary, colors.focusTertiary) {
-        Brush.horizontalGradient(
-            colors = listOf(
-                colors.focusPrimary.copy(alpha = 0.12f),
-                colors.focusTertiary.copy(alpha = 0.08f),
-            ),
-        )
-    }
-    Box(
+    AuroraFocalSurface(
         modifier = Modifier
             .fillMaxWidth()
-            .background(
-                brush = overviewBrush,
-                shape = MaterialTheme.shapes.large,
-            )
             .testTag("detail-overview"),
+        shape = MaterialTheme.shapes.large,
     ) {
         Column(
             modifier = Modifier.padding(spacing.l),

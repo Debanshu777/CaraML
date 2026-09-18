@@ -17,7 +17,10 @@ class AuroraColorsTest {
     fun auroraColorsComeFromSemanticSchemeRoles() {
         val scheme = lightColorScheme(
             surface = Color(0xFF101010),
+            onSurface = Color(0xFFEFEFEF),
+            scrim = Color(0xFF080808),
             primaryContainer = Color(0xFF223344),
+            secondaryContainer = Color(0xFF334455),
             tertiaryContainer = Color(0xFF556677),
             outlineVariant = Color(0xFF8899AA),
         )
@@ -25,8 +28,11 @@ class AuroraColorsTest {
         val colors = scheme.toAuroraColors(isDark = false)
 
         assertEquals(scheme.surface, colors.canvas)
-        assertEquals(scheme.primaryContainer.copy(alpha = 0.46f), colors.primaryGlow)
+        assertEquals(scheme.primaryContainer.copy(alpha = 0.38f), colors.primaryGlow)
+        assertEquals(scheme.secondaryContainer.copy(alpha = 0.32f), colors.secondaryGlow)
         assertEquals(scheme.tertiaryContainer.copy(alpha = 0.34f), colors.tertiaryGlow)
+        assertEquals(scheme.onSurface.copy(alpha = 0.035f), colors.grainTint)
+        assertEquals(scheme.scrim.copy(alpha = 0.06f), colors.edgeVignette)
         assertEquals(scheme.outlineVariant.copy(alpha = 0.72f), colors.paneBorder)
         assertEquals(scheme.surfaceContainer, colors.commandSurface)
         assertEquals(scheme.surfaceContainerHigh, colors.selectedSurface)
@@ -39,7 +45,10 @@ class AuroraColorsTest {
     fun darkAuroraUsesVisibleSeedRolesInsteadOfDarkContainerRoles() {
         val scheme = darkColorScheme(
             surface = Color(0xFF101010),
+            onSurface = Color(0xFFEFEFEF),
+            scrim = Color(0xFF080808),
             primary = Color(0xFF99BBFF),
+            secondary = Color(0xFF99FFCC),
             tertiary = Color(0xFFFFAADD),
             primaryContainer = Color(0xFF182030),
             tertiaryContainer = Color(0xFF301824),
@@ -47,8 +56,11 @@ class AuroraColorsTest {
 
         val colors = scheme.toAuroraColors(isDark = true)
 
-        assertEquals(scheme.primary.copy(alpha = 0.38f), colors.primaryGlow)
-        assertEquals(scheme.tertiary.copy(alpha = 0.28f), colors.tertiaryGlow)
+        assertEquals(scheme.primary.copy(alpha = 0.28f), colors.primaryGlow)
+        assertEquals(scheme.secondary.copy(alpha = 0.26f), colors.secondaryGlow)
+        assertEquals(scheme.tertiary.copy(alpha = 0.24f), colors.tertiaryGlow)
+        assertEquals(scheme.onSurface.copy(alpha = 0.05f), colors.grainTint)
+        assertEquals(scheme.scrim.copy(alpha = 0.18f), colors.edgeVignette)
     }
 
     @Test

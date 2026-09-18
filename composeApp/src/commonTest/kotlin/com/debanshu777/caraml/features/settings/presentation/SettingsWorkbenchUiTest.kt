@@ -2,6 +2,8 @@
 
 package com.debanshu777.caraml.features.settings.presentation
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
@@ -16,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PixelMap
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -92,7 +95,7 @@ class SettingsWorkbenchUiTest {
         }
 
     @Test
-    fun appearancePreviewIsTheOnlyContextualGradient() = runComposeUiTest {
+    fun appearancePreviewUsesSharedGradientAndGrainTreatment() = runComposeUiTest {
         val fixture = SettingsFixture()
         setContent {
             FixedDensity {
@@ -113,6 +116,10 @@ class SettingsWorkbenchUiTest {
             firstWash.rgbDistance(opposingWash) > 0.05f,
             "Appearance preview must visibly render the contextual gradient",
         )
+        assertTrue(
+            pixels.highFrequencyEnergy(bottom = pixels.height / 2) >= 0.0025f,
+            "Appearance preview must render the shared deterministic grain",
+        )
         onAllNodes(
             SemanticsMatcher.expectValue(
                 SemanticsProperties.ContentDescription,
@@ -120,6 +127,48 @@ class SettingsWorkbenchUiTest {
             ),
         ).assertCountEquals(1)
     }
+
+    @Test
+    fun appearanceChoiceTitlesRemainReadableWithoutAnOpaqueParentSurface() =
+        runComposeUiTest {
+            val background = Color(0xFF0C100C)
+            val foreground = Color(0xFFF4F5ED)
+            val viewModel = ThemeViewModel(WorkbenchThemeRepository())
+            setContent {
+                FixedDensity {
+                    MaterialTheme(
+                        colorScheme = darkColorScheme(
+                            surface = background,
+                            onSurface = foreground,
+                            primary = Color(0xFFF0D048),
+                            secondary = Color(0xFF72CFA3),
+                            tertiary = Color(0xFFC9A5FF),
+                        ),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(760.dp)
+                                .height(1_000.dp)
+                                .background(background),
+                        ) {
+                            AppearanceSection(viewModel = viewModel)
+                        }
+                    }
+                }
+            }
+
+            listOf("Theme", "Seed color", "Palette style").forEach { title ->
+                val contrast = onNodeWithText(title)
+                    .assertIsDisplayed()
+                    .captureToImage()
+                    .toPixelMap()
+                    .internalContrast()
+                assertTrue(
+                    contrast >= 4.5f,
+                    "$title must not inherit an unreadable root content color; contrast was $contrast",
+                )
+            }
+        }
 
     @Test
     fun paletteRecommendationKvGpuThemeAndSeedSelectionsHaveNonColorIndicators() =
@@ -548,3 +597,35 @@ private fun PixelMap.differsFrom(other: PixelMap): Boolean {
     }
     return false
 }
+
+private fun PixelMap.highFrequencyEnergy(
+    top: Int = 1,
+    bottom: Int = height - 1,
+): Float {
+    var total = 0f
+    var count = 0
+    for (y in top.coerceAtLeast(1) until bottom.coerceAtMost(height - 1)) {
+        for (x in 1 until width - 1) {
+            val center = this[x, y].signal()
+            total += abs((2f * center) - this[x - 1, y].signal() - this[x + 1, y].signal())
+            total += abs((2f * center) - this[x, y - 1].signal() - this[x, y + 1].signal())
+            count += 1
+        }
+    }
+    return total / count
+}
+
+private fun PixelMap.internalContrast(): Float {
+    var minimum = 1f
+    var maximum = 0f
+    for (y in 0 until height) {
+        for (x in 0 until width) {
+            val luminance = this[x, y].luminance()
+            minimum = min(minimum, luminance)
+            maximum = maxOf(maximum, luminance)
+        }
+    }
+    return (maximum + 0.05f) / (minimum + 0.05f)
+}
+
+private fun Color.signal(): Float = (red + green + blue) / 3f

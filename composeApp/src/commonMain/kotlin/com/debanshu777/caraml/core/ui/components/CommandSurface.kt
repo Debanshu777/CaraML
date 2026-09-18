@@ -9,9 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.auroraColors
 
@@ -26,19 +24,8 @@ fun CommandSurface(
     val colors = MaterialTheme.auroraColors
     val emphasized = focused || active
     val shape = MaterialTheme.shapes.medium
-    val focusBoundary = remember(colors.focusPrimary, colors.focusTertiary) {
-        Brush.horizontalGradient(listOf(colors.focusPrimary, colors.focusTertiary))
-    }
-    val outerGlow = remember(colors.focusPrimary, colors.focusTertiary) {
-        Brush.horizontalGradient(
-            listOf(
-                colors.focusPrimary.copy(alpha = 0.22f),
-                colors.focusTertiary.copy(alpha = 0.18f),
-            ),
-        )
-    }
     val outerTreatment = if (emphasized) {
-        Modifier.background(brush = outerGlow, shape = shape)
+        Modifier.background(color = colors.focusPrimary.copy(alpha = 0.20f), shape = shape)
     } else {
         Modifier.background(color = colors.commandSurface, shape = shape)
     }
@@ -53,7 +40,7 @@ fun CommandSurface(
             shape = shape,
             color = colors.commandSurface,
             contentColor = MaterialTheme.colorScheme.onSurface,
-            border = if (emphasized) BorderStroke(1.dp, focusBoundary) else null,
+            border = if (emphasized) BorderStroke(1.dp, colors.focusPrimary) else null,
         ) {
             Box(
                 modifier = Modifier.padding(contentPadding),

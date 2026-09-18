@@ -271,7 +271,7 @@ class PrismWorkbenchComponentsUiTest {
         }
 
     @Test
-    fun commandSurfaceShowsSeedDerivedFocusAtBothEdgesWithoutFillingItsContent() =
+    fun commandSurfaceUsesOneSolidFocusBoundaryWithoutFillingItsContent() =
         runComposeUiTest {
             val scheme = darkColorScheme(
                 surface = Color(0xFF0E1118),
@@ -304,19 +304,19 @@ class PrismWorkbenchComponentsUiTest {
 
             assertTrue(
                 leadingEdge.colorDistance(scheme.surface) >= 0.05f,
-                "Focused command surface must show its primary-derived leading edge",
+                "Focused command surface must show its semantic focus boundary",
             )
             assertTrue(
                 trailingEdge.colorDistance(scheme.surface) >= 0.05f,
-                "Focused command surface must show its tertiary-derived trailing edge",
+                "Focused command surface must show the same focus boundary at both edges",
             )
             assertTrue(
                 center.colorDistance(scheme.surfaceContainer) <= 0.025f,
                 "Focus treatment must not fill the command content; center was $center",
             )
             assertTrue(
-                leadingEdge.blue - leadingEdge.red > trailingEdge.blue - trailingEdge.red,
-                "The two edges must preserve distinct primary and tertiary seed roles",
+                leadingEdge.colorDistance(trailingEdge) <= 0.01f,
+                "Focused command controls must use one solid semantic boundary, not a gradient",
             )
         }
 

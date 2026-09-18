@@ -162,12 +162,18 @@ class ModelDetailsWorkbenchUiTest {
             val overviewLeading = overviewPixels[8, 8]
             val overviewTrailing = overviewPixels[overviewPixels.width - 9, 8]
             assertTrue(
-                overviewLeading.colorDistance(scheme.surface) in 0.01f..0.22f,
-                "Overview should own a restrained contextual field, got $overviewLeading",
+                overviewLeading.colorDistance(scheme.surface) in 0.01f..0.55f,
+                "Overview should own a bold but bounded contextual field, got $overviewLeading",
             )
             assertTrue(
                 overviewLeading.colorDistance(overviewTrailing) >= 0.01f,
                 "Overview field should retain two distinct seed-derived endpoints",
+            )
+            val overviewSecondary = overviewPixels[overviewPixels.width - 20, 20]
+            assertTrue(
+                overviewSecondary.green > overviewSecondary.red &&
+                    overviewSecondary.green > overviewSecondary.blue,
+                "Overview should expose the shared secondary spectral region",
             )
 
             val metadataNode = onNodeWithTag("detail-metadata")
@@ -696,6 +702,7 @@ private fun workbenchColorScheme() = darkColorScheme(
     onSurface = Color(0xFFF2F3F7),
     onSurfaceVariant = Color(0xFFC6CBD6),
     primary = Color(0xFF4F83FF),
+    secondary = Color(0xFF00D59C),
     tertiary = Color(0xFFFF5AA5),
     outlineVariant = Color(0xFF7A8190),
 )

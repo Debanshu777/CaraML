@@ -88,6 +88,7 @@ fun CaraMLTopBar(
                     Icon(
                         imageVector = Icons.Default.Menu,
                         contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface,
                     )
                 }
                 TopBarNavigation.Back -> HeaderNavigationButton(
@@ -97,6 +98,7 @@ fun CaraMLTopBar(
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface,
                     )
                 }
             }
