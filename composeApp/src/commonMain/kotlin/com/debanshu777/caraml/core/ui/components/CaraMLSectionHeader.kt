@@ -9,6 +9,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.debanshu777.caraml.core.theme.prism
 
 @Composable
 fun CaraMLSectionHeader(
@@ -23,7 +24,7 @@ fun CaraMLSectionHeader(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, style = MaterialTheme.typography.titleMedium)
+            Text(text = title, style = MaterialTheme.typography.prism.sectionTitle)
             supportingText?.let {
                 Text(
                     text = it,

@@ -48,12 +48,47 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.debanshu777.caraml.core.theme.AppTypography
+import com.debanshu777.caraml.features.settings.presentation.SettingsSectionHeader
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class PrismWorkbenchComponentsUiTest {
+
+    @Test
+    fun productionSectionHeaderUsesExactSectionTitleRole() = runComposeUiTest {
+        setContent {
+            MaterialTheme(typography = AppTypography) {
+                CaraMLSectionHeader(title = "Section heading")
+            }
+        }
+
+        textStyleFor("Section heading").let { style ->
+            assertEquals(16.sp, style.fontSize)
+            assertEquals(22.sp, style.lineHeight)
+            assertEquals(FontWeight.SemiBold, style.fontWeight)
+        }
+    }
+
+    @Test
+    fun productionSettingsSectionHeaderUsesExactSectionTitleRole() = runComposeUiTest {
+        setContent {
+            MaterialTheme(typography = AppTypography) {
+                SettingsSectionHeader(
+                    title = "Appearance",
+                    supportingText = "Theme and color preferences",
+                )
+            }
+        }
+
+        textStyleFor("Appearance").let { style ->
+            assertEquals(16.sp, style.fontSize)
+            assertEquals(22.sp, style.lineHeight)
+            assertEquals(FontWeight.SemiBold, style.fontWeight)
+        }
+    }
 
     @Test
     fun ordinaryClickableTechnicalRowUsesButtonSemanticsWithoutFalseSelectionState() =
@@ -186,13 +221,13 @@ class PrismWorkbenchComponentsUiTest {
             assertEquals(FontWeight.Medium, style.fontWeight)
         }
         textStyleFor("Q4_K_M · 4.7 GB").let { style ->
-            assertEquals(13.sp, style.fontSize)
-            assertEquals(18.sp, style.lineHeight)
+            assertEquals(14.sp, style.fontSize)
+            assertEquals(20.sp, style.lineHeight)
             assertEquals(FontWeight.Normal, style.fontWeight)
         }
         textStyleFor("ORG / FAMILY").let { style ->
             assertEquals(12.sp, style.fontSize)
-            assertEquals(16.sp, style.lineHeight)
+            assertEquals(17.sp, style.lineHeight)
             assertEquals(FontWeight.Medium, style.fontWeight)
             assertEquals(FontFamily.Monospace, style.fontFamily)
         }

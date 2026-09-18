@@ -133,7 +133,7 @@ private fun ModelKindControls(
                         this.selected = selected
                         role = Role.RadioButton
                     },
-                shape = MaterialTheme.shapes.extraSmall,
+                shape = MaterialTheme.shapes.small,
             )
         }
     }
@@ -171,7 +171,7 @@ internal fun RowScope.ModelSortAndFilterControls(
                 contentDescription = "Sort models"
                 stateDescription = orderingLabel
             },
-        shape = MaterialTheme.shapes.extraSmall,
+        shape = MaterialTheme.shapes.small,
     ) {
         Text("Sort")
         Icon(
@@ -192,7 +192,7 @@ internal fun RowScope.ModelSortAndFilterControls(
                 }
                 stateDescription = "$activeFilterCount active filters"
             },
-        shape = MaterialTheme.shapes.extraSmall,
+        shape = MaterialTheme.shapes.small,
     ) {
         Icon(
             imageVector = Icons.Default.Tune,
@@ -368,7 +368,7 @@ private fun SelectionRow(
                 role = Role.RadioButton,
                 onClick = onClick,
             ),
-        shape = MaterialTheme.shapes.extraSmall,
+        shape = MaterialTheme.shapes.small,
         color = if (selected) {
             MaterialTheme.colorScheme.secondaryContainer
         } else {

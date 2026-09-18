@@ -1070,7 +1070,7 @@ private fun LibraryReadinessToolbar(
                         this.selected = selected == filter
                         role = Role.RadioButton
                     },
-                shape = MaterialTheme.shapes.extraSmall,
+                shape = MaterialTheme.shapes.small,
             )
         }
     }

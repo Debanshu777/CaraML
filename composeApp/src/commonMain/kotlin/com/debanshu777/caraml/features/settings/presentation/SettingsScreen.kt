@@ -45,6 +45,7 @@ import com.debanshu777.caraml.core.settings.KvQuantPreset
 import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.theme.ThemeViewModel
 import com.debanshu777.caraml.core.theme.auroraColors
+import com.debanshu777.caraml.core.theme.prism
 import com.debanshu777.caraml.core.ui.components.CaraMLPrimaryTopBar
 import com.debanshu777.caraml.core.ui.layout.AppContentKind
 import com.debanshu777.caraml.core.ui.layout.ResponsiveContentPane
@@ -185,7 +186,7 @@ internal fun SettingsSectionHeader(
     ) {
         Text(
             text = title,
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.prism.sectionTitle,
             color = MaterialTheme.colorScheme.onSurface,
         )
         Text(

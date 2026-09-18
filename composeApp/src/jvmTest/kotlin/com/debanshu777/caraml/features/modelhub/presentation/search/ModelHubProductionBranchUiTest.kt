@@ -40,6 +40,7 @@ import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.AppShapes
 import com.debanshu777.caraml.core.data.settings.SettingsRepository
 import com.debanshu777.caraml.core.platform.DeviceCapabilities
 import com.debanshu777.caraml.core.platform.DeviceSnapshot
@@ -375,7 +376,7 @@ class ModelHubProductionBranchUiTest {
             )
             setContent {
                 DensityOne {
-                    MaterialTheme {
+                    MaterialTheme(shapes = AppShapes) {
                         Box(Modifier.requiredSize(width = 360.dp, height = 760.dp)) {
                             DownloadedTabContent(
                                 viewModel = viewModel,
@@ -406,6 +407,7 @@ class ModelHubProductionBranchUiTest {
                 ).performScrollTo().fetchSemanticsNode()
                 assertEquals(Role.RadioButton, option.config[SemanticsProperties.Role])
                 assertEquals(selected, option.config[SemanticsProperties.Selected])
+                assertEquals(AppShapes.small, option.config[SemanticsProperties.Shape])
                 val actionCount = onAllNodes(
                     SemanticsMatcher.keyIsDefined(SemanticsActions.OnClick),
                     useUnmergedTree = true,

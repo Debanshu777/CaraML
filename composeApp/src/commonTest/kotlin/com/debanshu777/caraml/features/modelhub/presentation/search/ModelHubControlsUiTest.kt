@@ -32,6 +32,7 @@ import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.AppShapes
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubBrowseControls
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubToolbar
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchBar
@@ -49,7 +50,7 @@ class ModelHubControlsUiTest {
         var selectedMode by mutableStateOf(ModelHubBrowseMode.LanguageModels)
         val selectedModes = mutableListOf<ModelHubBrowseMode>()
         setContent {
-            MaterialTheme {
+            MaterialTheme(shapes = AppShapes) {
                 Box(Modifier.width(360.dp)) {
                     ModelHubToolbar(
                         browseMode = selectedMode,
@@ -84,6 +85,7 @@ class ModelHubControlsUiTest {
             ).fetchSemanticsNode()
             assertEquals(Role.RadioButton, option.config[SemanticsProperties.Role])
             assertEquals(selected, option.config[SemanticsProperties.Selected])
+            assertEquals(AppShapes.small, option.config[SemanticsProperties.Shape])
             val actionCount = onAllNodes(
                 SemanticsMatcher.keyIsDefined(SemanticsActions.OnClick),
                 useUnmergedTree = true,
@@ -162,7 +164,7 @@ class ModelHubControlsUiTest {
         val controlWidth = 320.dp
         var applyCalls = 0
         setContent {
-            MaterialTheme {
+            MaterialTheme(shapes = AppShapes) {
                 Box(Modifier.width(controlWidth)) {
                     ModelHubBrowseControls(
                         browseMode = ModelHubBrowseMode.LanguageModels,
@@ -186,6 +188,10 @@ class ModelHubControlsUiTest {
             onNodeWithText(it).fetchSemanticsNode().positionInRoot.y
         }
         assertTrue(kindPositions.max() - kindPositions.min() < 1f)
+        listOf("Sort models", "Filters").forEach { description ->
+            val control = onNodeWithContentDescription(description).fetchSemanticsNode()
+            assertEquals(AppShapes.small, control.config[SemanticsProperties.Shape])
+        }
         onNodeWithText("Min: 0").assertDoesNotExist()
         onNodeWithText("Max: 6B").assertDoesNotExist()
 
@@ -203,7 +209,7 @@ class ModelHubControlsUiTest {
         var selectedSort by mutableStateOf(ModelSort.TRENDING)
         var applyCalls = 0
         setContent {
-            MaterialTheme {
+            MaterialTheme(shapes = AppShapes) {
                 SortFilterChips(
                     ordering = ModelOrdering.Server(selectedSort),
                     sort = selectedSort,
@@ -219,7 +225,12 @@ class ModelHubControlsUiTest {
         }
 
         onNodeWithText("Filters").performClick()
-        onNode(hasText("Trending") and isSelectable()).assertIsSelected()
+        onNode(hasText("Trending") and isSelectable())
+            .assertIsSelected()
+            .fetchSemanticsNode()
+            .also { option ->
+                assertEquals(AppShapes.small, option.config[SemanticsProperties.Shape])
+            }
         onNodeWithText("Downloads").performClick()
 
         runOnIdle { assertEquals(ModelSort.TRENDING, selectedSort) }
