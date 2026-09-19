@@ -223,10 +223,9 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 - Reframed Create around one focused command composer and explicit activity states; generation modes remain local state while the Create destination stays selected
 - Reworked Model Hub as a compact registry and made Details artifact-first with reachable metadata, exact artifact actions, and durable pause/resume/cancel/retry state
 - Model downloads now use a persistent resumable queue with exact-artifact verification; Android uses UIDT/foreground notifications, iOS reconnects to a background URLSession, and Desktop resumes on relaunch
-- Durable download batches now persist codec-validated model evidence, include its digest in batch identity, and migrate v1 rows without data loss; legacy rows synthesize enrichment-only evidence only from exact stored object identities
-- Model Hub durable enqueues now retain complete descriptors only for exact full artifact-set matches; Needs information and stale/mismatched descriptors still download with enrichment-only evidence
-- Ready installs now repair missing descriptor evidence through one serialized exact Hugging Face lookup, reuse strict complete evidence offline, and reject ambiguous identities without touching model files
-- Installed selections now rebuild exact V2 load requests from manifest-only artifacts, fresh device/settings state, and newly personalized plans; explicit KV presets and GPU opt-out remain authoritative
+- Durable downloads now retain codec-validated exact descriptor evidence for complete artifact-set matches and bind its digest into batch identity; uncertain descriptors remain enrichment-only
+- Existing Ready installs repair missing descriptor metadata once through an exact serialized lookup, persist the complete evidence for offline reuse, and reject ambiguous identities without touching model files
+- Inference loading now accepts only a freshly assessed exact `LoadRequest` rebuilt from manifest artifacts, current device/settings state, and a newly personalized plan; explicit KV presets and GPU opt-out remain authoritative
 - Reorganized Settings as a dense, accessible list with exclusive selections, disclosure rows, and the app's single contextual appearance preview
 - Added a restrained static ambient field and two deliberate grain-backed focal gradients—Details overview and the Settings appearance preview—while keeping navigation, lists, filters, cards, and the composer matte
 - Verified the sidebar shell with focused and repository-wide JVM/native gates, Android debug assembly, and iOS simulator compilation; the fresh physical-device visual and animation matrix remains unverified because the Pixel was no longer attached at the final checkpoint
