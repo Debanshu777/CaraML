@@ -4,6 +4,7 @@ import com.debanshu777.caraml.core.recommendation.DiffusionModelDescriptor
 import com.debanshu777.caraml.core.recommendation.LlmModelDescriptor
 import com.debanshu777.caraml.core.recommendation.ModelDescriptor
 import com.debanshu777.caraml.core.recommendation.ModelFileIdentity
+import com.debanshu777.caraml.core.recommendation.canonicalDownloadRemoteObjectId
 import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 
 data class ArtifactStorageKey(val repositoryId: String, val relativePath: String)
@@ -124,7 +125,7 @@ class DownloadStorageEstimator {
         }
 
     private fun fileIsValid(descriptor: ModelDescriptor, file: ModelFileIdentity): Boolean {
-        val remoteObjectId = file.lfsOid?.let { "sha256:$it" } ?: file.xetHash ?: file.gitOid
+        val remoteObjectId = file.canonicalDownloadRemoteObjectId()
         if (DownloadArtifactIdentity.create(
                 repositoryId = file.repositoryId,
                 immutableRevision = file.revision,

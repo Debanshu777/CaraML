@@ -1,6 +1,7 @@
 package com.debanshu777.caraml.core.download
 
 import com.debanshu777.caraml.core.recommendation.ModelFileIdentity
+import com.debanshu777.caraml.core.recommendation.canonicalDownloadRemoteObjectId
 import com.debanshu777.caraml.core.recommendation.storage.EncodedModelEvidence
 import com.debanshu777.caraml.core.recommendation.storage.PersistedModelEvidenceCodec
 import com.debanshu777.caraml.core.storage.catalog.InstalledCatalogRecord
@@ -118,6 +119,12 @@ class ModelDownloadFinalizer(
         } catch (_: IllegalArgumentException) {
             throw ArtifactVerificationException()
         }
+        val primary = batch.artifacts.filter { it.request.primary }
+        if (primary.isEmpty() || primary.any { it.request.metadata.artifact.repositoryId != batch.ownerModelId } ||
+            decoded.descriptor?.repositoryId?.let { it != batch.ownerModelId } == true
+        ) {
+            throw ArtifactVerificationException()
+        }
         val expected = decoded.artifactIdentities.sortedWith(modelIdentityOrder)
         val actual = batch.artifacts
             .map { it.request.metadata.artifact }
@@ -139,15 +146,10 @@ private val downloadIdentityOrder = compareBy<DownloadArtifactIdentity>(
 
 private fun ModelFileIdentity.matches(artifact: DownloadArtifactIdentity): Boolean {
     val remoteObjectId = artifact.remoteObjectId ?: return false
+    val canonicalRemoteObjectId = canonicalDownloadRemoteObjectId() ?: return false
     return repositoryId == artifact.repositoryId &&
         revision.equals(artifact.immutableRevision, ignoreCase = true) &&
         path == artifact.relativePath &&
         sizeBytes == artifact.expectedBytes &&
-        canonicalObjectIds().any { it.equals(remoteObjectId, ignoreCase = true) }
-}
-
-private fun ModelFileIdentity.canonicalObjectIds(): List<String> = buildList(3) {
-    gitOid?.let(::add)
-    lfsOid?.let { add(if (it.startsWith("sha256:")) it else "sha256:$it") }
-    xetHash?.let(::add)
+        canonicalRemoteObjectId.equals(remoteObjectId, ignoreCase = true)
 }

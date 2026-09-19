@@ -13,6 +13,7 @@ import com.debanshu777.caraml.core.recommendation.LlmModelDescriptor
 import com.debanshu777.caraml.core.recommendation.DiffusionModelDescriptor
 import com.debanshu777.caraml.core.recommendation.ModelDescriptor
 import com.debanshu777.caraml.core.recommendation.ModelFileIdentity
+import com.debanshu777.caraml.core.recommendation.canonicalDownloadRemoteObjectId
 import com.debanshu777.caraml.core.recommendation.CalibrationRunResult
 import com.debanshu777.caraml.core.recommendation.CalibrationSource
 import com.debanshu777.caraml.core.recommendation.NoCalibrationSource
@@ -1345,7 +1346,7 @@ class ModelViewModel(
         descriptor: ModelDescriptor,
         artifact: DownloadArtifactIdentity,
     ): ModelFileIdentity? = descriptorFiles(descriptor).singleOrNull { file ->
-        val remoteObjectId = file.lfsOid?.let { "sha256:$it" } ?: file.xetHash ?: file.gitOid
+        val remoteObjectId = file.canonicalDownloadRemoteObjectId()
         file.repositoryId == artifact.repositoryId &&
             file.revision.lowercase() == artifact.immutableRevision &&
             file.path == artifact.relativePath &&
