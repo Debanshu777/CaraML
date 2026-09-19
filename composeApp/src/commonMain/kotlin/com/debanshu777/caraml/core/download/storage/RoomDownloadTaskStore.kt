@@ -10,7 +10,7 @@ import com.debanshu777.caraml.core.download.DownloadFailureCode
 import com.debanshu777.caraml.core.download.DownloadTaskStore
 import com.debanshu777.caraml.core.download.DownloadUserIntent
 import com.debanshu777.caraml.core.download.canTransitionTo
-import com.debanshu777.caraml.core.download.downloadArtifactTaskId
+import com.debanshu777.caraml.core.download.downloadBatchArtifactId
 import com.debanshu777.caraml.core.download.downloadBatchId
 import com.debanshu777.caraml.core.download.pendingEvidence
 import com.debanshu777.caraml.core.recommendation.storage.EncodedModelEvidence
@@ -43,7 +43,7 @@ class RoomDownloadTaskStore(
             updatedAtEpochMs = nowEpochMs,
         )
         val artifacts = request.artifacts.map { artifact ->
-            val artifactId = downloadArtifactTaskId(artifact)
+            val artifactId = downloadBatchArtifactId(batchId, artifact)
             val metadata = artifact.metadata
             DownloadArtifactEntity(
                 artifactId = artifactId,

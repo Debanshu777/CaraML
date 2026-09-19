@@ -127,6 +127,9 @@ fun downloadArtifactTaskId(request: DownloadArtifactRequest): String {
     )
 }
 
+internal fun downloadBatchArtifactId(batchId: String, request: DownloadArtifactRequest): String =
+    canonicalSha256(batchId, downloadArtifactTaskId(request))
+
 fun downloadBatchId(request: DownloadBatchRequest): String = canonicalSha256(
     request.ownerModelId,
     request.modelType,

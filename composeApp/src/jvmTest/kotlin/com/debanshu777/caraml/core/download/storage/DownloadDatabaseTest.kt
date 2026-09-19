@@ -64,6 +64,49 @@ class DownloadDatabaseTest {
     }
 
     @Test
+    fun sameArtifactsWithDistinctEvidenceCoexistAfterReopen() = runTest {
+        val path = Files.createTempDirectory("caraml-evidence-batches").resolve("downloads.db").toString()
+        val first = request()
+        val identity = first.artifacts.single().metadata.artifact
+        val changedIdentity = requireNotNull(
+            DownloadArtifactIdentity.create(
+                repositoryId = identity.repositoryId,
+                immutableRevision = identity.immutableRevision,
+                relativePath = identity.relativePath,
+                remoteObjectId = "f".repeat(64),
+                expectedBytes = identity.expectedBytes,
+            ),
+        )
+        val second = first.copy(evidence = pendingEvidence(changedIdentity))
+        var database = getDownloadRoomDatabase(getDownloadDatabaseBuilder(path))
+        val firstBatchId: String
+        val secondBatchId: String
+        try {
+            val store = RoomDownloadTaskStore(database.downloadTaskDao())
+            firstBatchId = store.create(first, 1L)
+            secondBatchId = store.create(second, 2L)
+        } finally {
+            database.close()
+        }
+
+        database = getDownloadRoomDatabase(getDownloadDatabaseBuilder(path))
+        try {
+            val store = RoomDownloadTaskStore(database.downloadTaskDao())
+            val firstRestored = assertNotNull(store.getBatch(firstBatchId))
+            val secondRestored = assertNotNull(store.getBatch(secondBatchId))
+            assertNotEquals(firstBatchId, secondBatchId)
+            assertEquals(first.evidence, firstRestored.evidence)
+            assertEquals(second.evidence, secondRestored.evidence)
+            assertEquals(first.artifacts.single(), firstRestored.artifacts.single().request)
+            assertEquals(second.artifacts.single(), secondRestored.artifacts.single().request)
+            assertNotEquals(firstRestored.artifacts.single().artifactId, secondRestored.artifacts.single().artifactId)
+            assertEquals(2, database.downloadTaskDao().countBatches())
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun migrationOneToTwoPreservesBatchWithNullableEvidenceColumns() {
         val path = Files.createTempDirectory("caraml-download-migration").resolve("downloads.db").toString()
         BundledSQLiteDriver().open(path).use { connection ->
@@ -74,6 +117,20 @@ class DownloadDatabaseTest {
                     batch_id, owner_model_id, model_type, display_name, state, user_intent, failure_code,
                     download_for_later_confirmed, created_at_epoch_ms, updated_at_epoch_ms
                 ) VALUES ('batch-1', 'owner/model', 'text', 'Example model', 'QUEUED', 'RUN', NULL, 0, 1, 1)
+                """.trimIndent(),
+            )
+            connection.execSQL(
+                """
+                INSERT INTO download_artifact (
+                    artifact_id, batch_id, repository_id, immutable_revision, relative_path,
+                    expected_bytes, logical_role, destination_relative_path, bundle_id, is_primary,
+                    state, bytes_received, retry_count, staging_token, updated_at_epoch_ms
+                ) VALUES (
+                    'legacy-artifact-id', 'batch-1', 'owner/model', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                    'weights/model.gguf', 1024, 'model', 'weights/model.gguf',
+                    'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', 1,
+                    'QUEUED', 0, 0, 'legacy-staging-token', 1
+                )
                 """.trimIndent(),
             )
 
@@ -91,6 +148,10 @@ class DownloadDatabaseTest {
                 assertTrue(statement.isNull(2))
                 assertTrue(statement.isNull(3))
                 assertTrue(statement.isNull(4))
+            }
+            connection.prepare("SELECT artifact_id FROM download_artifact WHERE batch_id = 'batch-1'").use { statement ->
+                assertTrue(statement.step())
+                assertEquals("legacy-artifact-id", statement.getText(0))
             }
         }
     }
