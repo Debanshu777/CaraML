@@ -170,6 +170,17 @@ class LoadAdmissionControllerTest {
         assertEquals(0, preflightCalls)
     }
 
+    @Test
+    fun invalidNativePreflightIsDistinctFromArtifactIdentityFailure() = runTest {
+        val controller = controller(preflight = { NativeLoadPreflight.Invalid }) { _, _ ->
+            recommendation(RecommendationCategory.RECOMMENDED, requestedPlan)
+        }
+
+        val blocked = assertIs<LoadAdmission.Blocked>(controller.evaluate(request(), null))
+
+        assertEquals(LoadAdmissionReason.NATIVE_PREFLIGHT_INVALID, blocked.reason)
+    }
+
     private fun controller(
         snapshot: DeviceSnapshot = snapshot(),
         clock: () -> Long = { 10_000L },

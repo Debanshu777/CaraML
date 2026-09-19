@@ -23,6 +23,7 @@ class InstalledModelEvidenceRepairer(
     private val evidenceRepository: InstalledModelEvidenceRepository,
     private val metadataSource: InstalledDescriptorMetadataSource,
     private val codec: PersistedModelEvidenceCodec = PersistedModelEvidenceCodec(),
+    private val ggufMetadataInspector: GgufMetadataInspector = GgufMetadataInspector(),
     private val clock: () -> Long,
 ) {
     private val repairMutex = Mutex()
@@ -61,14 +62,24 @@ class InstalledModelEvidenceRepairer(
                 decoded.descriptor?.repositoryId == model.modelId &&
                 decoded.descriptor.matchesBrowseMode(mode) &&
                 decoded.descriptor.requiredInstalledIdentities().hasSameExactInstalledIdentities(identities)
-        }?.descriptor?.let { return EvidenceRepairResult.Ready(it) }
+        }?.descriptor?.let { descriptor ->
+            val enriched = ggufMetadataInspector.enrich(descriptor, artifact) ?: return invalidMetadata()
+            return if (enriched == descriptor) {
+                EvidenceRepairResult.Ready(descriptor)
+            } else {
+                persistComplete(model, mode, identities, enriched)
+            }
+        }
 
         return when (val lookup = metadataSource.findExact(model.modelId, mode, identities)) {
             InstalledDescriptorLookup.RetryableUnavailable -> EvidenceRepairResult.NeedsNetwork
             is InstalledDescriptorLookup.Rejected -> EvidenceRepairResult.Rejected(
                 lookup.reasons.ifEmpty { listOf(AssessmentReason.INVALID_METADATA) },
             )
-            is InstalledDescriptorLookup.Ready -> persistComplete(model, mode, identities, lookup.descriptor)
+            is InstalledDescriptorLookup.Ready -> {
+                val enriched = ggufMetadataInspector.enrich(lookup.descriptor, artifact) ?: return invalidMetadata()
+                persistComplete(model, mode, identities, enriched)
+            }
         }
     }
 

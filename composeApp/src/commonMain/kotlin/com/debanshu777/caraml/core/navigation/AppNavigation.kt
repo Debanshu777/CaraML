@@ -8,6 +8,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
@@ -41,6 +42,13 @@ internal enum class NavigationTransitionFamily {
 internal enum class NavigationTransitionDirection {
     Forward,
     Pop,
+}
+
+internal fun returnHomeAfterModelSelection(backStack: NavBackStack<NavKey>) {
+    Snapshot.withMutableSnapshot {
+        backStack.clear()
+        backStack.add(AppScreen.Home)
+    }
 }
 
 internal enum class NavigationTransitionAxis {
@@ -230,9 +238,7 @@ fun NavigationHost(
                         },
                         onSelectModelAndGoBack = { model ->
                             chatViewModel.selectModel(model)
-                            if (backStack.lastOrNull() == AppScreen.Search) {
-                                backStack.removeLastOrNull()
-                            }
+                            returnHomeAfterModelSelection(backStack)
                         }
                     )
                 }

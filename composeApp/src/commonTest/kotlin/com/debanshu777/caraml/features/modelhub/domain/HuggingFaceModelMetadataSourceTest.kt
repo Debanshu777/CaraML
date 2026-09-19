@@ -59,6 +59,20 @@ class HuggingFaceModelMetadataSourceTest {
     }
 
     @Test
+    fun missingOptionalTransformerConfigDoesNotBlockExactLookup() = runTest {
+        val fixture = Fixture()
+        fixture.gateway.configFailure = true
+
+        assertIs<InstalledDescriptorLookup.Ready>(
+            fixture.source().findExact(
+                fixture.repositoryId,
+                ModelHubBrowseMode.LanguageModels,
+                listOf(fixture.identity),
+            ),
+        )
+    }
+
+    @Test
     fun malformedExactIdentitySetIsRejectedBeforeGatewayAccess() = runTest {
         val fixture = Fixture()
         val rejected = assertIs<InstalledDescriptorLookup.Rejected>(
@@ -189,6 +203,7 @@ class HuggingFaceModelMetadataSourceTest {
         var tree: List<ModelFileTreeResponse>,
     ) : HuggingFaceMetadataGateway {
         var detailFailure = false
+        var configFailure = false
         var detailCalls = 0
 
         override suspend fun getStrictDetail(repositoryId: String): Result<ModelDetailResponse, DataError.Network> {
@@ -205,7 +220,11 @@ class HuggingFaceModelMetadataSourceTest {
         override suspend fun getConfig(
             repositoryId: String,
             revision: String,
-        ): Result<TransformerConfigResponse, DataError.Network> = Result.Success(TransformerConfigResponse())
+        ): Result<TransformerConfigResponse, DataError.Network> = if (configFailure) {
+            Result.Error(DataError.Network.Unknown)
+        } else {
+            Result.Success(TransformerConfigResponse())
+        }
     }
 }
 

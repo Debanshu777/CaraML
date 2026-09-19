@@ -30,6 +30,7 @@ enum class LoadAdmissionReason {
     INSUFFICIENT_INFORMATION,
     NO_SAFE_CONFIGURATION,
     INVALID_MODEL,
+    NATIVE_PREFLIGHT_INVALID,
     NATIVE_PREFLIGHT_UNAVAILABLE,
     RISK_ACKNOWLEDGEMENT_REQUIRED,
     SUSPECTED_PREVIOUS_CRASH,
@@ -182,7 +183,10 @@ class LoadAdmissionController(
                 ?.takeUnless { request.matches(it) }
                 ?.let { request.alternative(it, LoadAdmissionReason.NO_SAFE_CONFIGURATION) }
                 ?: LoadAdmission.Blocked(request, LoadAdmissionReason.NO_SAFE_CONFIGURATION)
-            NativeLoadPreflight.Invalid -> LoadAdmission.Blocked(request, LoadAdmissionReason.INVALID_MODEL)
+            NativeLoadPreflight.Invalid -> LoadAdmission.Blocked(
+                request,
+                LoadAdmissionReason.NATIVE_PREFLIGHT_INVALID,
+            )
             NativeLoadPreflight.Unavailable -> LoadAdmission.TemporarilyUnavailable(
                 request,
                 LoadAdmissionReason.NATIVE_PREFLIGHT_UNAVAILABLE,

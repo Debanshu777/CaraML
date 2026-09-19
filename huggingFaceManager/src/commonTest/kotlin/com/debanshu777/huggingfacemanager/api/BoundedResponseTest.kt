@@ -286,6 +286,28 @@ class BoundedResponseTest {
     }
 
     @Test
+    fun recommendationDetailRequestsOnlyVersionedProjectionFields() = runTest {
+        var requestedExpansions: Set<String>? = null
+        val client = HttpClient(MockEngine { request ->
+            requestedExpansions = request.url.parameters.getAll("expand")?.toSet()
+            respond("{\"id\":\"owner/model\",\"sha\":\"$REVISION\"}")
+        })
+        try {
+            val service = RemoteHuggingFaceApiService(client, Json, "https://huggingface.co")
+
+            assertIs<Result.Success<ModelDetailResponse, DataError.Network>>(
+                service.getRecommendationModelDetail("owner/model"),
+            )
+            assertEquals(
+                setOf("library_name", "pipeline_tag", "sha", "tags"),
+                requestedExpansions,
+            )
+        } finally {
+            client.close()
+        }
+    }
+
+    @Test
     fun recommendationDetailRejectsUnknownFields() = runTest {
         val client = HttpClient(MockEngine {
             respond("{\"id\":\"owner/model\",\"sha\":\"$REVISION\",\"unexpected\":true}")

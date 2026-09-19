@@ -99,7 +99,7 @@ class RemoteHuggingFaceApiService private constructor(
     suspend fun getRecommendationModelDetail(
         modelId: String,
     ): Result<ModelDetailResponse, DataError.Network> {
-        val url = modelDetailUrl(modelId) ?: return Result.Error(DataError.Network.Unknown)
+        val url = recommendationModelDetailUrl(modelId) ?: return Result.Error(DataError.Network.Unknown)
 
         return clientWrapper.networkGetUsecase(
             endpoint = url.toString(),
@@ -112,6 +112,13 @@ class RemoteHuggingFaceApiService private constructor(
         return URLBuilder(trustedOrigin).apply {
             appendPathSegments("api", "models")
             appendPathSegments(segments, encodeSlash = true)
+        }.build()
+    }
+
+    private fun recommendationModelDetailUrl(modelId: String): Url? {
+        val url = modelDetailUrl(modelId) ?: return null
+        return URLBuilder(url).apply {
+            RECOMMENDATION_DETAIL_EXPANSIONS.forEach { parameters.append("expand", it) }
         }.build()
     }
 
@@ -272,6 +279,7 @@ class RemoteHuggingFaceApiService private constructor(
             segment.all { it.isLetterOrDigit() || it == '_' || it == '-' || it == '.' }
 
     private companion object {
+        val RECOMMENDATION_DETAIL_EXPANSIONS = listOf("library_name", "pipeline_tag", "sha", "tags")
         val NEXT_LINK = Regex("^<([^<>]+)>;\\s*rel=\\\"?next\\\"?$", RegexOption.IGNORE_CASE)
         const val MAX_MODEL_ID_LENGTH = 193
         const val MAX_REPOSITORY_SEGMENT_LENGTH = 96

@@ -157,7 +157,7 @@ class HuggingFaceModelMetadataSource internal constructor(
             return if (exactIdentities == null) selectVariant(repositoryId) else RepositoryVariantSet.Ready(emptyList())
         }
         if (exactIdentities == null && candidates.size > MAX_RUNNABLE_VARIANTS) return selectVariant(repositoryId)
-        val config = gateway.getConfig(repositoryId, revision).successOrNull(retryNetworkFailure)
+        val config = gateway.getConfig(repositoryId, revision).successOrNull(retryNetworkFailure = false)
         val variants = ArrayList<RepositoryVariant>(candidates.size)
         for (group in candidates) {
             when (val built = descriptorFactory.buildLlm(detail, group, config)) {

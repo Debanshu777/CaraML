@@ -143,6 +143,37 @@ class InstalledModelEvidenceRepairerTest {
     }
 
     @Test
+    fun incompleteLlmHeaderMetadataIsEnrichedLocallyAndPersistedForOfflineReuse() = runTest {
+        withFixture { fixture ->
+            val incomplete = descriptor(fixture.identity, architecture = null, ggufVersion = null)
+            fixture.repository.put(
+                fixture.model.modelId,
+                fixture.codec.encode(listOf(fixture.identity), incomplete),
+                nowEpochMs = 1L,
+            )
+            fixture.dao.upsertCalls = 0
+            var lookups = 0
+            val repairer = fixture.repairer { _, _, _ ->
+                lookups += 1
+                InstalledDescriptorLookup.RetryableUnavailable
+            }
+
+            val first = assertIs<EvidenceRepairResult.Ready>(
+                repairer.requireComplete(fixture.model, emptyList(), GenerationMode.Text),
+            )
+            val second = assertIs<EvidenceRepairResult.Ready>(
+                repairer.requireComplete(fixture.model, emptyList(), GenerationMode.Text),
+            )
+
+            assertEquals("llama", assertIs<LlmModelDescriptor>(first.descriptor).architecture)
+            assertEquals(3, first.descriptor.ggufVersion)
+            assertEquals(first.descriptor, second.descriptor)
+            assertEquals(0, lookups)
+            assertEquals(1, fixture.dao.upsertCalls)
+        }
+    }
+
+    @Test
     fun staleCompleteEvidenceIsNotReusedBlindly() = runTest {
         withFixture { fixture ->
             val staleIdentity = fixture.identity.copyForTest(sizeBytes = fixture.identity.sizeBytes + 1L)
@@ -226,7 +257,7 @@ class InstalledModelEvidenceRepairerTest {
         val root = FileSystem.SYSTEM_TEMPORARY_DIRECTORY / "caraml-repair-${Random.nextLong()}"
         FileSystem.SYSTEM.createDirectories(root)
         try {
-            val bytes = "exact installed model".encodeToByteArray()
+            val bytes = minimalGguf(version = 3, architecture = "llama")
             val modelPath = root / "model.gguf"
             FileSystem.SYSTEM.write(modelPath) { write(bytes) }
             val digest = Buffer().write(bytes).snapshot().sha256().hex()
@@ -356,16 +387,20 @@ class InstalledModelEvidenceRepairerTest {
     }
 }
 
-private fun descriptor(identity: ModelFileIdentity) = LlmModelDescriptor(
+private fun descriptor(
+    identity: ModelFileIdentity,
+    architecture: String? = "llama",
+    ggufVersion: Int? = 3,
+) = LlmModelDescriptor(
     repositoryId = identity.repositoryId,
     revision = identity.revision,
     file = identity,
-    architecture = "llama",
+    architecture = architecture,
     quantization = QuantizationEvidence.Known("Q4_K_M"),
     parameterCount = 1_000_000L,
     contextLimit = 4_096,
     transformerShape = null,
-    ggufVersion = 3,
+    ggufVersion = ggufVersion,
     requiredEngineFeatures = emptyList(),
     evidence = emptyList(),
 )

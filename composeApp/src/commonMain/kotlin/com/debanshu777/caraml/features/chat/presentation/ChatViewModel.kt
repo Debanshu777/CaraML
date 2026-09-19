@@ -419,7 +419,7 @@ class ChatViewModel(
             }
             is LoadAdmission.Blocked -> {
                 _internal.value = InternalChatState.ModelError(
-                    "This model cannot be loaded safely with the available information.",
+                    admission.reason.safeBlockedLoadMessage(),
                 )
             }
             is LoadAdmission.Ready -> resumeExactLoad(admission.request)

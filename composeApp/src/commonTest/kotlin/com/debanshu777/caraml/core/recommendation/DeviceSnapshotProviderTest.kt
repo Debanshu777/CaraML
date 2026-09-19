@@ -235,6 +235,43 @@ class DeviceSnapshotProviderTest {
     }
 
     @Test
+    fun resourceCapturedAfterStaticProbeIsNotRejectedAsFutureDated() = runBlocking {
+        var now = 1_000L
+        val provider = DeviceSnapshotProvider(
+            hardwareProfileSource = {
+                now += 1L
+                hardware(MemoryTopology.UNIFIED)
+            },
+            resourceSnapshotSource = {
+                ResourceSnapshot(
+                    additionalAllocatableHostBytes = 4L * GIB,
+                    additionalAllocatableGpuBytes = null,
+                    currentProcessBytes = 128L * MIB,
+                    freeStorageBytes = null,
+                    osPressureReserveHostBytes = 0L,
+                    observedAppFootprintNoiseP95Bytes = 0L,
+                    platformMinimumReserveHostBytes = 512L * MIB,
+                    lowMemory = false,
+                    thermalState = ThermalState.NOMINAL,
+                    powerPolicyState = PowerPolicyState.NORMAL,
+                    capturedAtEpochMs = now,
+                    evidence = emptyList(),
+                    confidence = ResourcePoolConfidence(host = Confidence.HIGH),
+                )
+            },
+            backendCapabilitySource = { listOf(cpu()) },
+            storageBytesSource = { 8L * GIB },
+            probeDispatcher = ImmediateDispatcher,
+            clock = { now },
+        )
+
+        val snapshot = provider.capture()
+
+        assertTrue(snapshot.isFresh)
+        assertFalse(snapshot.evidence.any { it.reason == AssessmentReason.RESOURCE_SNAPSHOT_STALE })
+    }
+
+    @Test
     fun captureRunsThroughTheInjectedDispatcherAndCopiesBackendCollections() = runBlocking {
         val dispatcher = RecordingDispatcher()
         val mutableBackends = mutableListOf(cpu())

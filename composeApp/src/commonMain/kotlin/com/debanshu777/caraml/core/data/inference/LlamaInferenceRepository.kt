@@ -176,11 +176,17 @@ class LlamaInferenceRepository(
                 }
                     .getOrElse { return@admissionController NativeLoadPreflight.Invalid }
                     ?: return@admissionController NativeLoadPreflight.Invalid
-                when (runner.preflightModel(candidatePath, config)) {
+                when (val preflight = runner.preflightModel(candidatePath, config)) {
                     is LlamaPreflightResult.Fit -> NativeLoadPreflight.Fit
                     is LlamaPreflightResult.NoFit -> NativeLoadPreflight.NoFit
-                    is LlamaPreflightResult.InvalidModel -> NativeLoadPreflight.Invalid
-                    is LlamaPreflightResult.Unavailable -> NativeLoadPreflight.Unavailable
+                    is LlamaPreflightResult.InvalidModel -> {
+                        AppLogger.i(TAG) { "preflight: invalid (${preflight.reason})" }
+                        NativeLoadPreflight.Invalid
+                    }
+                    is LlamaPreflightResult.Unavailable -> {
+                        AppLogger.i(TAG) { "preflight: unavailable (${preflight.reason})" }
+                        NativeLoadPreflight.Unavailable
+                    }
                 }
             } ?: return@exclusive ModelLoadResult.Error("Load admission is unavailable.")
             try {

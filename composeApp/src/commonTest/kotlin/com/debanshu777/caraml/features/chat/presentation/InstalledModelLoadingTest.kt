@@ -12,6 +12,7 @@ import com.debanshu777.caraml.core.recommendation.InstalledModelLoadResolution
 import com.debanshu777.caraml.core.recommendation.KvCacheType
 import com.debanshu777.caraml.core.recommendation.LlmRunPlan
 import com.debanshu777.caraml.core.recommendation.LoadAdmission
+import com.debanshu777.caraml.core.recommendation.LoadAdmissionReason
 import com.debanshu777.caraml.core.recommendation.LoadRequest
 import com.debanshu777.caraml.core.recommendation.ModelFileIdentity
 import com.debanshu777.caraml.core.recommendation.ObservationModelIdentity
@@ -114,7 +115,7 @@ class InstalledModelLoadingTest {
     fun terminalResolutionFailuresUseFixedSafeCopyWithoutCallingInference() = runTest {
         val outcomes = listOf(
             InstalledModelLoadResolution.NotAdmissible(AssessmentReason.INVALID_METADATA) to
-                "This installed model is not admissible on this device.",
+                "This installed model's verified metadata is incomplete.",
             InstalledModelLoadResolution.Rejected(ArtifactIdentityRejection.STALE_MANIFEST) to
                 "The installed model could not be verified.",
             InstalledModelLoadResolution.Failed to
@@ -134,6 +135,68 @@ class InstalledModelLoadingTest {
             assertEquals(0, loadCalls)
             assertEquals(ModelLoadResult.Error(expectedMessage), result)
         }
+    }
+
+    @Test
+    fun memoryInadmissibilityUsesActionableSafeCopy() = runTest {
+        val result = loadInstalledModel(
+            model = model,
+            mode = GenerationMode.Text,
+            resolve = { _, _ -> InstalledModelLoadResolution.NotAdmissible(AssessmentReason.MEMORY_NO_FIT) },
+            loadText = { error("text loader must not run") },
+            loadDiffusion = { error("diffusion loader must not run") },
+        )
+
+        assertEquals(
+            ModelLoadResult.Error(
+                "This model does not fit the current memory headroom. Try Auto KV cache or close other apps.",
+            ),
+            result,
+        )
+    }
+
+    @Test
+    fun terminalReasonCopyGroupsOnlySafeActionableCategories() {
+        assertEquals(
+            "This installed model's verified metadata is incomplete.",
+            AssessmentReason.INVALID_METADATA.safeInstalledModelMessage(),
+        )
+        assertEquals(
+            "Compatibility evidence for this installed model is incomplete.",
+            AssessmentReason.ENGINE_SUPPORT_UNKNOWN.safeInstalledModelMessage(),
+        )
+        assertEquals(
+            "This model is not supported by the installed inference engine.",
+            AssessmentReason.UNSUPPORTED_ARCHITECTURE.safeInstalledModelMessage(),
+        )
+        assertEquals(
+            "No safe runtime plan is available for this installed model.",
+            AssessmentReason.NO_RUN_PLAN.safeInstalledModelMessage(),
+        )
+        assertEquals(
+            "Device resource readings changed before loading. Try again.",
+            AssessmentReason.RESOURCE_SNAPSHOT_STALE.safeInstalledModelMessage(),
+        )
+        assertEquals(
+            "The selected backend's memory capability is unavailable.",
+            AssessmentReason.BACKEND_CAPABILITY_UNKNOWN.safeInstalledModelMessage(),
+        )
+    }
+
+    @Test
+    fun blockedAdmissionCopyIsSafeAndActionable() {
+        assertEquals(
+            "Current device evidence is insufficient for a safe load. Try again.",
+            LoadAdmissionReason.INSUFFICIENT_INFORMATION.safeBlockedLoadMessage(),
+        )
+        assertEquals(
+            "The installed model changed or could not be verified.",
+            LoadAdmissionReason.INVALID_MODEL.safeBlockedLoadMessage(),
+        )
+        assertEquals(
+            "The native engine rejected this model before loading.",
+            LoadAdmissionReason.NATIVE_PREFLIGHT_INVALID.safeBlockedLoadMessage(),
+        )
     }
 
     @Test
