@@ -106,6 +106,17 @@ class LocalArtifactIdentityResolver(
     suspend fun resolve(
         model: LocalModelEntity,
         components: List<DownloadedComponentEntity>,
+    ): ArtifactIdentityResolution = resolve(model, components, allowLegacyFallback = true)
+
+    suspend fun resolvePersistedHub(
+        model: LocalModelEntity,
+        components: List<DownloadedComponentEntity>,
+    ): ArtifactIdentityResolution = resolve(model, components, allowLegacyFallback = false)
+
+    private suspend fun resolve(
+        model: LocalModelEntity,
+        components: List<DownloadedComponentEntity>,
+        allowLegacyFallback: Boolean,
     ): ArtifactIdentityResolution {
         val inputs = validatedInputs(model, components)
             ?: return ArtifactIdentityResolution.Rejected(ArtifactIdentityRejection.INVALID_INPUT)
@@ -122,7 +133,12 @@ class LocalArtifactIdentityResolver(
         } catch (_: Throwable) {
             return ArtifactIdentityResolution.Rejected(ArtifactIdentityRejection.STALE_MANIFEST)
         }
-        return manifest?.let { resolveHubManifest(model, inputs, it) } ?: resolveLegacy(model, inputs)
+        return manifest?.let { resolveHubManifest(model, inputs, it) }
+            ?: if (allowLegacyFallback) {
+                resolveLegacy(model, inputs)
+            } else {
+                ArtifactIdentityResolution.Rejected(ArtifactIdentityRejection.STALE_MANIFEST)
+            }
     }
 
     suspend fun revalidate(artifact: ResolvedLocalArtifact): Boolean {

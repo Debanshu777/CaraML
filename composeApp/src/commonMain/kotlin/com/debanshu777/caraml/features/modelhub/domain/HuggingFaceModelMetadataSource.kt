@@ -4,8 +4,13 @@ import com.debanshu777.caraml.core.recommendation.AssessmentReason
 import com.debanshu777.caraml.core.recommendation.DescriptorBuildResult
 import com.debanshu777.caraml.core.recommendation.DescriptorLimits
 import com.debanshu777.caraml.core.recommendation.DiffusionMode
+import com.debanshu777.caraml.core.recommendation.InstalledDescriptorLookup
+import com.debanshu777.caraml.core.recommendation.InstalledDescriptorMetadataSource
+import com.debanshu777.caraml.core.recommendation.ModelFileIdentity
 import com.debanshu777.caraml.core.recommendation.ModelDescriptorFactory
 import com.debanshu777.caraml.core.recommendation.ResolvedDiffusionComponentMetadata
+import com.debanshu777.caraml.core.recommendation.exactInstalledDescriptorLookup
+import com.debanshu777.caraml.core.recommendation.hasValidExactInstalledIdentitySet
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 import com.debanshu777.huggingfacemanager.HuggingFaceApi
 import com.debanshu777.huggingfacemanager.api.error.DataError
@@ -53,7 +58,7 @@ class HuggingFaceModelMetadataSource internal constructor(
     private val gateway: HuggingFaceMetadataGateway,
     private val descriptorFactory: ModelDescriptorFactory,
     private val setupResolver: (String) -> SdCppModelSetup?,
-) : ModelMetadataSource {
+) : ModelMetadataSource, InstalledDescriptorMetadataSource {
     constructor(
         api: HuggingFaceApi,
         descriptorFactory: ModelDescriptorFactory = ModelDescriptorFactory(),
@@ -65,18 +70,7 @@ class HuggingFaceModelMetadataSource internal constructor(
     ): RepositoryVariantSet {
         if (!isValidRepositoryId(repositoryId)) return needsInformation(repositoryId, AssessmentReason.INVALID_MODEL_ID)
         return try {
-            val detail = gateway.getStrictDetail(repositoryId).successOrNull()
-                ?: return needsInformation(repositoryId)
-            val revision = detail.sha
-            if (revision == null || !isImmutableRevisionValue(revision)) {
-                return needsInformation(repositoryId, AssessmentReason.INVALID_REVISION)
-            }
-            when (mode) {
-                ModelHubBrowseMode.LanguageModels -> describeLlm(repositoryId, detail, revision)
-                ModelHubBrowseMode.DiffusionImage,
-                ModelHubBrowseMode.DiffusionVideo,
-                -> describeDiffusion(repositoryId, detail, revision, mode)
-            }
+            describeVariants(repositoryId, mode, retryNetworkFailure = false, exactIdentities = null)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
@@ -84,19 +78,88 @@ class HuggingFaceModelMetadataSource internal constructor(
         }
     }
 
+    override suspend fun findExact(
+        repositoryId: String,
+        mode: ModelHubBrowseMode,
+        identities: List<ModelFileIdentity>,
+    ): InstalledDescriptorLookup {
+        if (!isValidRepositoryId(repositoryId)) {
+            return InstalledDescriptorLookup.Rejected(listOf(AssessmentReason.INVALID_MODEL_ID))
+        }
+        if (!identities.hasValidExactInstalledIdentitySet()) {
+            return InstalledDescriptorLookup.Rejected(listOf(AssessmentReason.INVALID_METADATA))
+        }
+        return try {
+            exactInstalledDescriptorLookup(
+                repositoryId = repositoryId,
+                mode = mode,
+                identities = identities,
+                variants = describeVariants(
+                    repositoryId,
+                    mode,
+                    retryNetworkFailure = true,
+                    exactIdentities = identities,
+                ),
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: RetryableMetadataUnavailable) {
+            InstalledDescriptorLookup.RetryableUnavailable
+        } catch (_: Exception) {
+            InstalledDescriptorLookup.Rejected(listOf(AssessmentReason.INVALID_METADATA))
+        }
+    }
+
+    private suspend fun describeVariants(
+        repositoryId: String,
+        mode: ModelHubBrowseMode,
+        retryNetworkFailure: Boolean,
+        exactIdentities: List<ModelFileIdentity>?,
+    ): RepositoryVariantSet {
+        val detail = gateway.getStrictDetail(repositoryId).successOrNull(retryNetworkFailure)
+            ?: return needsInformation(repositoryId)
+        val revision = detail.sha
+        if (revision == null || !isImmutableRevisionValue(revision)) {
+            return needsInformation(repositoryId, AssessmentReason.INVALID_REVISION)
+        }
+        return when (mode) {
+            ModelHubBrowseMode.LanguageModels -> describeLlm(
+                repositoryId,
+                detail,
+                revision,
+                retryNetworkFailure,
+                exactIdentities,
+            )
+            ModelHubBrowseMode.DiffusionImage,
+            ModelHubBrowseMode.DiffusionVideo,
+            -> describeDiffusion(repositoryId, detail, revision, mode, retryNetworkFailure, exactIdentities)
+        }
+    }
+
     private suspend fun describeLlm(
         repositoryId: String,
         detail: ModelDetailResponse,
         revision: String,
+        retryNetworkFailure: Boolean,
+        exactIdentities: List<ModelFileIdentity>?,
     ): RepositoryVariantSet {
-        val files = gateway.getTree(repositoryId, revision, ModelFileWeightFilter.GgufOnly).successOrNull()
+        val files = gateway.getTree(repositoryId, revision, ModelFileWeightFilter.GgufOnly)
+            .successOrNull(retryNetworkFailure)
             ?: return needsInformation(repositoryId)
         val grouped = groupGgufFiles(files) ?: return needsInformation(repositoryId)
-        if (grouped.isEmpty()) return selectVariant(repositoryId)
-        if (grouped.size > MAX_RUNNABLE_VARIANTS) return selectVariant(repositoryId)
-        val config = gateway.getConfig(repositoryId, revision).successOrNull()
-        val variants = ArrayList<RepositoryVariant>(grouped.size)
-        for (group in grouped) {
+        val candidates = exactIdentities?.let { requested ->
+            val requestedPaths = requested.asSequence()
+                .filter { it.repositoryId == repositoryId && it.revision.equals(revision, ignoreCase = true) }
+                .mapTo(hashSetOf(), ModelFileIdentity::path)
+            grouped.filter { group -> group.mapTo(hashSetOf()) { it.path } == requestedPaths }
+        } ?: grouped
+        if (candidates.isEmpty()) {
+            return if (exactIdentities == null) selectVariant(repositoryId) else RepositoryVariantSet.Ready(emptyList())
+        }
+        if (exactIdentities == null && candidates.size > MAX_RUNNABLE_VARIANTS) return selectVariant(repositoryId)
+        val config = gateway.getConfig(repositoryId, revision).successOrNull(retryNetworkFailure)
+        val variants = ArrayList<RepositoryVariant>(candidates.size)
+        for (group in candidates) {
             when (val built = descriptorFactory.buildLlm(detail, group, config)) {
                 is DescriptorBuildResult.Ready -> variants += RepositoryVariant(
                     descriptor = built.descriptor,
@@ -114,6 +177,8 @@ class HuggingFaceModelMetadataSource internal constructor(
         detail: ModelDetailResponse,
         revision: String,
         browseMode: ModelHubBrowseMode,
+        retryNetworkFailure: Boolean,
+        exactIdentities: List<ModelFileIdentity>?,
     ): RepositoryVariantSet {
         val setup = setupResolver(repositoryId) ?: return selectVariant(repositoryId)
         if (setup.components.size > DescriptorLimits.MAX_COMPONENTS ||
@@ -125,10 +190,10 @@ class HuggingFaceModelMetadataSource internal constructor(
             repositoryId,
             revision,
             ModelFileWeightFilter.StableDiffusionCppWeights,
-        ).successOrNull() ?: return needsInformation(repositoryId)
+        ).successOrNull(retryNetworkFailure) ?: return needsInformation(repositoryId)
         if (!hasUniqueBoundedPaths(mainFiles)) return needsInformation(repositoryId)
 
-        val resolvedExternal = resolveExternalComponents(repositoryId, setup)
+        val resolvedExternal = resolveExternalComponents(repositoryId, setup, retryNetworkFailure)
             ?: return needsInformation(repositoryId, AssessmentReason.MISSING_REQUIRED_COMPONENT)
         val sameRepositoryComponents = setup.components.filter { it.repoId == repositoryId }
         val mainByPath = mainFiles.associateBy { it.path }
@@ -141,18 +206,28 @@ class HuggingFaceModelMetadataSource internal constructor(
 
         val componentPaths = sameRepositoryComponents.mapTo(hashSetOf()) { it.filePath }
         val primaryFiles = mainFiles.filter { it.path !in componentPaths }
-        if (primaryFiles.isEmpty()) return selectVariant(repositoryId)
-        if (primaryFiles.size > MAX_RUNNABLE_VARIANTS) return selectVariant(repositoryId)
-        if (primaryFiles.any { GGUF_SHARD.matches(it.path.orEmpty()) }) return selectVariant(repositoryId)
-        if (primaryFiles.count { it.path?.contains('/') == true } > 1) return selectVariant(repositoryId)
+        val candidatePrimaryFiles = exactIdentities?.let { requested ->
+            val requestedPaths = requested.asSequence()
+                .filter { it.repositoryId == repositoryId && it.revision.equals(revision, ignoreCase = true) }
+                .mapTo(hashSetOf(), ModelFileIdentity::path)
+            primaryFiles.filter { it.path in requestedPaths }
+        } ?: primaryFiles
+        if (candidatePrimaryFiles.isEmpty()) {
+            return if (exactIdentities == null) selectVariant(repositoryId) else RepositoryVariantSet.Ready(emptyList())
+        }
+        if (exactIdentities == null && candidatePrimaryFiles.size > MAX_RUNNABLE_VARIANTS) {
+            return selectVariant(repositoryId)
+        }
+        if (candidatePrimaryFiles.any { GGUF_SHARD.matches(it.path.orEmpty()) }) return selectVariant(repositoryId)
+        if (candidatePrimaryFiles.count { it.path?.contains('/') == true } > 1) return selectVariant(repositoryId)
 
         val diffusionMode = when (browseMode) {
             ModelHubBrowseMode.DiffusionVideo -> DiffusionMode.VIDEO
             ModelHubBrowseMode.DiffusionImage -> DiffusionMode.IMAGE
             ModelHubBrowseMode.LanguageModels -> return needsInformation(repositoryId)
         }
-        val variants = ArrayList<RepositoryVariant>(primaryFiles.size)
-        for (primary in primaryFiles) {
+        val variants = ArrayList<RepositoryVariant>(candidatePrimaryFiles.size)
+        for (primary in candidatePrimaryFiles) {
             val exactFiles = listOf(primary) + sameRepositoryFiles
             when (
                 val built = descriptorFactory.buildDiffusion(
@@ -177,6 +252,7 @@ class HuggingFaceModelMetadataSource internal constructor(
     private suspend fun resolveExternalComponents(
         primaryRepositoryId: String,
         setup: SdCppModelSetup,
+        retryNetworkFailure: Boolean,
     ): List<ResolvedDiffusionComponentMetadata>? {
         val external = setup.components.filter { it.repoId != primaryRepositoryId }
         if (external.isEmpty()) return emptyList()
@@ -186,14 +262,14 @@ class HuggingFaceModelMetadataSource internal constructor(
         for (component in external) {
             val snapshot = snapshots[component.repoId] ?: run {
                 if (!isValidRepositoryId(component.repoId)) return null
-                val detail = gateway.getStrictDetail(component.repoId).successOrNull() ?: return null
+                val detail = gateway.getStrictDetail(component.repoId).successOrNull(retryNetworkFailure) ?: return null
                 val revision = detail.sha
                 if (revision == null || !isImmutableRevisionValue(revision)) return null
                 val tree = gateway.getTree(
                     component.repoId,
                     revision,
                     ModelFileWeightFilter.StableDiffusionCppWeights,
-                ).successOrNull() ?: return null
+                ).successOrNull(retryNetworkFailure) ?: return null
                 if (!hasUniqueBoundedPaths(tree)) return null
                 (detail to tree.associateBy { it.path }).also { snapshots[component.repoId] = it }
             }
@@ -299,12 +375,14 @@ class HuggingFaceModelMetadataSource internal constructor(
         }
     }
 
-    private fun <T> Result<T, DataError.Network>.successOrNull(): T? = when (this) {
+    private fun <T> Result<T, DataError.Network>.successOrNull(retryNetworkFailure: Boolean): T? = when (this) {
         is Result.Success -> data
-        is Result.Error -> null
+        is Result.Error -> if (retryNetworkFailure) throw RetryableMetadataUnavailable else null
     }
 
     private data class ShardEntry(val index: Int, val file: ModelFileTreeResponse)
+
+    private data object RetryableMetadataUnavailable : Exception()
 
     private companion object {
         val GGUF_SHARD = Regex("^(.+)-(\\d{5})-of-(\\d{5})\\.gguf$", RegexOption.IGNORE_CASE)
