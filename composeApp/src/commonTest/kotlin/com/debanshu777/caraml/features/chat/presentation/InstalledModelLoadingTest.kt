@@ -194,28 +194,73 @@ class InstalledModelLoadingTest {
     }
 
     @Test
-    fun cancelledReplacementWaitsForPreviousNativeJobAndNeverContinues() = runTest {
-        val previousEntered = CompletableDeferred<Unit>()
-        val releasePrevious = CompletableDeferred<Unit>()
-        val previous = launch {
+    fun rapidThirdSelectionCannotOvertakeFirstNativeJobThroughCancelledMiddleJob() = runTest {
+        val firstEntered = CompletableDeferred<Unit>()
+        val releaseFirst = CompletableDeferred<Unit>()
+        val calls = mutableListOf<String>()
+        val first = launch {
             withContext(NonCancellable) {
-                previousEntered.complete(Unit)
-                releasePrevious.await()
+                calls += "first-native-start"
+                firstEntered.complete(Unit)
+                releaseFirst.await()
+                calls += "first-native-end"
             }
         }
-        previousEntered.await()
-        var continued = false
-        val replacement = async {
-            awaitPreviousModelLoad(previous)
-            continued = true
+        firstEntered.await()
+        val middle = async {
+            awaitPreviousModelLoad(first)
+            calls += "middle-resolve"
         }
+        testScheduler.runCurrent()
+
+        middle.cancel()
+        val third = async {
+            awaitPreviousModelLoad(middle)
+            calls += "third-resolve"
+            calls += "third-unload"
+            calls += "third-load"
+        }
+        testScheduler.runCurrent()
+        val callsWhileFirstIsHeld = calls.toList()
+
+        releaseFirst.complete(Unit)
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(listOf("first-native-start"), callsWhileFirstIsHeld)
+        assertEquals(
+            listOf(
+                "first-native-start",
+                "first-native-end",
+                "third-resolve",
+                "third-unload",
+                "third-load",
+            ),
+            calls,
+        )
+        assertEquals(true, middle.isCancelled)
+        assertEquals(true, third.isCompleted)
+    }
+
+    @Test
+    fun externallyCancelledLoadWithoutPredecessorNeverContinues() = runTest {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        var resolveCalls = 0
+        val replacement = launch {
+            withContext(NonCancellable) {
+                entered.complete(Unit)
+                release.await()
+            }
+            awaitPreviousModelLoad(previousJob = null)
+            resolveCalls++
+        }
+        entered.await()
 
         replacement.cancel()
-        assertEquals(false, continued)
-        releasePrevious.complete(Unit)
+        release.complete(Unit)
         replacement.join()
 
-        assertEquals(false, continued)
+        assertEquals(0, resolveCalls)
     }
 
     private companion object {

@@ -6,7 +6,9 @@
 - Commit subject: `refactor(inference): require v2 requests for installed models`
 - Commit SHA: `49009babcfadb39076f5225652751c4faa4afff1`
 - Review-fix commit subject: `fix(inference): preserve cpu-only load plans`
-- Review-fix commit SHA: recorded in the review-fix handoff; this report is included in that commit
+- Review-fix commit SHA: `3e8ee55b612334b4cfbbf2968d494a9e7b922b6f`
+- Lifecycle-fix commit subject: `fix(chat): preserve transitive load serialization`
+- Lifecycle-fix commit SHA: recorded in the lifecycle-fix handoff; this report is included in that commit
 
 ## Files, interfaces, and deletions
 
@@ -27,6 +29,13 @@
 - Extracted the Chat runner-order and prior-job join/cancellation behavior into narrow internal seams used by both normal selection and admission continuation. Tests cover resolver-before-runner behavior, non-Ready no-load/no-unload, opposite-runner order, and cancellation after joining an in-flight non-cancellable native job.
 - `ManageContextUseCaseTest` now returns a deterministic `ModelLoadResult.Success` from its exact fake rather than throwing an unused-path error.
 
+## Lifecycle fix round
+
+- `awaitPreviousModelLoad` now joins a non-null predecessor inside `withContext(NonCancellable)` and immediately checks the replacement job's own cancellation before resolution or runner access.
+- This makes the serialization barrier transitive across rapid A → B → C replacement: cancelled B remains a barrier until A's non-cancellable native work ends, then B stops at `ensureActive`; C cannot resolve, unload, or load until B completes.
+- A null predecessor creates no non-cancellable work. Ordinary external cancellation is still observed by the immediate `ensureActive` check, so a cancelled load cannot continue or leak work.
+- The focused regression holds A in non-cancellable work, queues B, cancels B in favor of C, proves C performs no resolver/runner action while A is held, then proves only C proceeds once in resolve → unload → load order after A releases.
+
 ## RED evidence
 
 Command:
@@ -46,6 +55,14 @@ Review-fix RED commands:
 
 Results: the first command failed compilation because the new exact-config, exact-mode, and previous-job seams did not exist. After the initial implementation, the second command ran 6 tests and failed only `gpuPlanPreservesExplicitlyDisabledKqvOffload`, proving that the first adapter draft incorrectly enabled a base-disabled GPU flag. Narrowing the mapping to force off only for CPU made that regression green.
 
+Lifecycle-fix RED command:
+
+```text
+./gradlew :composeApp:jvmTest --tests '*InstalledModelLoadingTest' --no-daemon
+```
+
+Result: expected test failure, 9 tests run with only `rapidThirdSelectionCannotOvertakeFirstNativeJobThroughCancelledMiddleJob` failing. While A was held, expected calls were `[first-native-start]`, but the cancellable predecessor join allowed C to record `[first-native-start, third-resolve, third-unload, third-load]`.
+
 ## GREEN evidence
 
 Required focused gate:
@@ -64,13 +81,21 @@ Impacted architecture/config gate:
 
 Result: PASS, 33 tests, 0 skipped, 0 failures, 0 errors. Breakdown: native run-plan adapter 6; suitability calculator 27.
 
+Lifecycle/Chat-focused gate:
+
+```text
+./gradlew :composeApp:jvmTest --tests '*InstalledModelLoadingTest' --tests '*InstalledModelLoadRequestResolverTest' --tests '*LlamaInferenceRepositoryTest' --tests '*NativeRunPlanAdapterTest' --tests '*ManageContextUseCaseTest' --no-daemon
+```
+
+Result: PASS, 39 tests across 5 suites, 0 skipped, 0 failures, 0 errors. Breakdown: installed loading 9; installed resolver 20; exact Llama mapping 2; native plan adapter 6; context management 2.
+
 Broader impacted gate:
 
 ```text
 ./gradlew :composeApp:jvmTest --no-daemon
 ```
 
-Result after review fixes: PASS, 859 tests across 110 suites, 0 skipped, 0 failures, 0 errors. Relevant included suites: `InstalledModelLoadingTest` 8, `InstalledModelLoadRequestResolverTest` 20, `LlamaInferenceRepositoryTest` 2, `NativeRunPlanAdapterTest` 6, `LoadAdmissionControllerTest` 8, `LoadSessionCoordinatorTest` 3, and `ManageContextUseCaseTest` 2.
+Result after lifecycle fix: PASS, 860 tests across 110 suites, 0 skipped, 0 failures, 0 errors. Relevant included suites: `InstalledModelLoadingTest` 9, `InstalledModelLoadRequestResolverTest` 20, `LlamaInferenceRepositoryTest` 2, `NativeRunPlanAdapterTest` 6, `LoadAdmissionControllerTest` 8, `LoadSessionCoordinatorTest` 3, and `ManageContextUseCaseTest` 2.
 
 Hygiene:
 
@@ -105,8 +130,8 @@ Result: the complete CPU-only compatibility set is declared only in `LlmArchitec
 - `NeedsNetwork` maps exactly to `Connect once to verify this installed model's metadata, then try again.`
 - `NotAdmissible`, integrity `Rejected`, and unexpected `Failed` states use fixed copy without assessment reasons, paths, payloads, or exception text.
 - Resolver cancellation propagates unchanged. Exact repository `AdmissionRequired` is returned unchanged and its continuation keeps the exact request while adding only the acknowledgement or accepted safer plan.
-- The existing load-job cancellation and previous-job join remain in one shared start path, so a new resolution/native operation waits for an in-flight JNI call to finish before touching either runner.
-- Cancellation is checked immediately after joining the prior job, so a cancelled replacement cannot proceed to resolve, unload, or load after a non-cancellable native operation returns.
+- The existing load-job cancellation and previous-job join remain in one shared start path. The predecessor join is non-cancellable, preserving the whole A → B → C dependency chain while an in-flight JNI call finishes.
+- Cancellation is checked immediately after that barrier in the replacement context, so a cancelled middle job cannot proceed, while its successor cannot overtake the original native operation.
 - Hybrid-SSM GPU incompatibility is represented before assessment; the exact repository validates the admitted architecture/backend pair and never silently rewrites it.
 - CPU admission is enforced losslessly at the native boundary, including disabling K/Q/V offload and automatic GPU fitting.
 - Exact repository admission, artifact revalidation, recovery markers, native preflight, selected-plan alternatives, cancellation cleanup, generation/context APIs, and unload implementations remain on the existing `LoadRequest` paths.
@@ -119,6 +144,8 @@ Result: the complete CPU-only compatibility set is declared only in `LlmArchitec
 - Verified the CPU-only predicate is shared by assessment shaping, suitability messaging, and exact repository validation without a dependency cycle.
 - Verified CPU plan mapping cannot retain GPU layers, K/Q/V offload, or GPU auto-fit, and non-CPU mapping does not enable a base-disabled flag.
 - Verified both the normal selection path and `AdmissionRequired` continuation use the same opposite-runner ordering seam.
+- Verified the A → B → C test fails with the cancellable join, stays blocked while A is held, and permits only C to resolve/unload/load once A releases.
+- Verified cancellation with no predecessor stops at `ensureActive` and creates no detached or non-cancellable work.
 - Verified the interface fake does not reconstruct a request from an entity.
 - Verified `RecommendationRolloutModeSource` remains only in unrelated presentation/recommendation features, not inference or installed loading.
 - Verified no new dependency, secret, PII log, path-bearing error, or exception detail was introduced.

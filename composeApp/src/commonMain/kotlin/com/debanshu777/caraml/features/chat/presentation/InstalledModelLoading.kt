@@ -6,11 +6,17 @@ import com.debanshu777.caraml.core.recommendation.LoadRequest
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 
 internal suspend fun awaitPreviousModelLoad(previousJob: Job?) {
-    previousJob?.join()
+    if (previousJob != null) {
+        withContext(NonCancellable) {
+            previousJob.join()
+        }
+    }
     currentCoroutineContext().ensureActive()
 }
 
