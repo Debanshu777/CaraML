@@ -29,6 +29,55 @@ import kotlin.test.fail
 
 class LocalArtifactIdentityResolverTest {
     @Test
+    fun strictLoadRequestRevalidatesVerifiedArtifactWithoutLegacyResolutionOrSidecar() = runTest {
+        withRoot { storage, root ->
+            val bytes = "model".encodeToByteArray()
+            val digest = bytes.sha256()
+            val path = write(root / "owner/model/model.gguf", bytes)
+            val revision = "a".repeat(40)
+            val model = model(path, bytes.size.toLong())
+            var manifestReads = 0
+            val resolver = resolver(
+                storage = storage,
+                manifest = manifest(
+                    manifestEntry("model", "owner/model", revision, "model.gguf", bytes),
+                ),
+                onManifestRead = { manifestReads += 1 },
+            )
+            val artifact = assertIs<ArtifactIdentityResolution.Verified>(
+                resolver.resolvePersistedHub(model, emptyList()),
+            ).artifact
+            val descriptor = descriptorIdentity(revision, "model.gguf", bytes.size.toLong(), digest)
+            val plan = task6LlmPlan()
+            val planAssessment = task6PlanAssessment(plan = plan)
+            val assessment = task6Assessment(
+                plans = listOf(planAssessment),
+                assessmentKey = "strict-artifact",
+            )
+            val recommendation = PersonalizedRecommendation(
+                assessmentKey = assessment.assessmentKey,
+                category = RecommendationCategory.RECOMMENDED,
+                selectedPlan = plan,
+                reasons = emptyList(),
+                profile = RecommendationProfile(),
+                selectedPlanAssessment = planAssessment,
+            )
+
+            val result = resolver.createLoadRequestFromVerifiedArtifact(
+                model,
+                descriptor,
+                artifact,
+                assessment,
+                recommendation,
+            )
+
+            assertIs<LoadRequestResolution.Ready>(result)
+            assertEquals(1, manifestReads)
+            assertFalse(FileSystem.SYSTEM.exists(root / "owner/model/${LocalArtifactIdentityResolver.MANIFEST_FILE_NAME}"))
+        }
+    }
+
+    @Test
     fun loadRequestRejectsEveryStaleDescriptorIdentityFieldAfterResolvingBytes() = runTest {
         withRoot { storage, root ->
             val bytes = "model".encodeToByteArray()
@@ -542,9 +591,13 @@ class LocalArtifactIdentityResolverTest {
         storage: TestStorage,
         manifest: ArtifactManifest?,
         hashFile: (suspend (String, Long) -> String)? = null,
+        onManifestRead: () -> Unit = {},
     ) = LocalArtifactIdentityResolver(
         storagePathProvider = storage,
-        manifestSource = { manifest },
+        manifestSource = {
+            onManifestRead()
+            manifest
+        },
         hashingDispatcher = StandardTestDispatcher(testScheduler),
         fileSystem = FileSystem.SYSTEM,
         hashFile = hashFile ?: { path, maxBytes ->

@@ -226,6 +226,7 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 - Durable download batches now persist codec-validated model evidence, include its digest in batch identity, and migrate v1 rows without data loss; legacy rows synthesize enrichment-only evidence only from exact stored object identities
 - Model Hub durable enqueues now retain complete descriptors only for exact full artifact-set matches; Needs information and stale/mismatched descriptors still download with enrichment-only evidence
 - Ready installs now repair missing descriptor evidence through one serialized exact Hugging Face lookup, reuse strict complete evidence offline, and reject ambiguous identities without touching model files
+- Installed selections now rebuild exact V2 load requests from manifest-only artifacts, fresh device/settings state, and newly personalized plans; explicit KV presets and GPU opt-out remain authoritative
 - Reorganized Settings as a dense, accessible list with exclusive selections, disclosure rows, and the app's single contextual appearance preview
 - Added a restrained static ambient field and two deliberate grain-backed focal gradients—Details overview and the Settings appearance preview—while keeping navigation, lists, filters, cards, and the composer matte
 - Verified the sidebar shell with focused and repository-wide JVM/native gates, Android debug assembly, and iOS simulator compilation; the fresh physical-device visual and animation matrix remains unverified because the Pixel was no longer attached at the final checkpoint

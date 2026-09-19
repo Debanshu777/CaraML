@@ -4,11 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.debanshu777.caraml.core.data.settings.SettingsRepository
 import com.debanshu777.caraml.core.data.inference.NATIVE_DIFFUSERS_CONSUMED_PATHS
-import com.debanshu777.caraml.core.recommendation.DiffusionMode
-import com.debanshu777.caraml.core.recommendation.DiffusionWorkloadConfig
-import com.debanshu777.caraml.core.recommendation.KvCacheSelection
-import com.debanshu777.caraml.core.recommendation.KvCacheType
-import com.debanshu777.caraml.core.recommendation.LlmWorkloadConfig
+import com.debanshu777.caraml.core.recommendation.InstalledModelWorkloadFactory
 import com.debanshu777.caraml.core.recommendation.LlmModelDescriptor
 import com.debanshu777.caraml.core.recommendation.DiffusionModelDescriptor
 import com.debanshu777.caraml.core.recommendation.ModelDescriptor
@@ -375,49 +371,10 @@ private sealed interface PendingDownloadForLater {
     data class Repair(val modelId: String) : PendingDownloadForLater
 }
 
-private fun defaultRecommendationWorkload(mode: ModelHubBrowseMode): WorkloadConfig = when (mode) {
-    ModelHubBrowseMode.LanguageModels -> LlmWorkloadConfig(
-        userRequestedContextTokens = 4_096,
-        contextTokens = 4_096,
-        minimumContextTokens = 512,
-        promptTokens = 256,
-        generationReserveTokens = 256,
-        batchSize = 256,
-        microBatchSize = 64,
-        sequenceCount = 1,
-        kvCacheSelection = KvCacheSelection.Auto,
-        allowContextFallback = true,
-        allowBatchFallback = true,
-        allowKvCacheFallback = true,
-        allowedKvCacheTypes = KvCacheType.entries,
-        evidence = emptyList(),
-    )
-    ModelHubBrowseMode.DiffusionImage,
-    ModelHubBrowseMode.DiffusionVideo,
-    -> DiffusionWorkloadConfig(
-        mode = if (mode == ModelHubBrowseMode.DiffusionVideo) DiffusionMode.VIDEO else DiffusionMode.IMAGE,
-        width = 1_024,
-        height = if (mode == ModelHubBrowseMode.DiffusionVideo) 576 else 1_024,
-        minimumWidth = 512,
-        minimumHeight = 512,
-        frameCount = if (mode == ModelHubBrowseMode.DiffusionVideo) 16 else 1,
-        minimumFrameCount = 1,
-        batchSize = 1,
-        steps = 20,
-        vaeTiling = false,
-        offloadToCpu = false,
-        keepClipOnCpu = false,
-        keepVaeOnCpu = false,
-        maxVramBytes = null,
-        layerStreaming = false,
-        allowResolutionFallback = true,
-        allowFrameCountFallback = mode == ModelHubBrowseMode.DiffusionVideo,
-        allowVaeTilingFallback = true,
-        allowMaxVramFallback = true,
-        allowLayerStreamingFallback = true,
-        evidence = emptyList(),
-    )
-}
+private val modelWorkloadFactory = InstalledModelWorkloadFactory()
+
+private fun defaultRecommendationWorkload(mode: ModelHubBrowseMode): WorkloadConfig =
+    modelWorkloadFactory.createForBrowse(mode)
 
 class ModelViewModel(
     private val api: HuggingFaceApi,

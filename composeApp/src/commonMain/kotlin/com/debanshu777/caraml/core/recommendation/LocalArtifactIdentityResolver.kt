@@ -211,42 +211,92 @@ class LocalArtifactIdentityResolver(
         assessment: ModelAssessment,
         recommendation: PersonalizedRecommendation,
     ): LoadRequestResolution {
-        val observationIdentity = ObservationModelIdentity.fromDescriptor(descriptor)
-        if (descriptor.repositoryId != model.modelId || observationIdentity == null ||
-            assessment.assessmentKey.isBlank() || assessment.assessmentKey != recommendation.assessmentKey ||
-            assessment.planAssessments.assessmentKey != assessment.assessmentKey
-        ) {
-            return LoadRequestResolution.Rejected(ArtifactIdentityRejection.INVALID_INPUT)
-        }
-        val selected = recommendation.selectedPlan as? RunPlan
-            ?: return LoadRequestResolution.Rejected(ArtifactIdentityRejection.INVALID_INPUT)
-        val selectedAssessment = assessment.planAssessments.values
-            .filter { it.plan.stableKey == selected.stableKey }
-            .singleOrNull()
-        if (selectedAssessment == null || recommendation.selectedPlanAssessment != selectedAssessment) {
+        if (!hasValidRequestBindings(model, descriptor, assessment, recommendation)) {
             return LoadRequestResolution.Rejected(ArtifactIdentityRejection.INVALID_INPUT)
         }
         return when (val resolved = resolve(model, components)) {
             is ArtifactIdentityResolution.Rejected -> LoadRequestResolution.Rejected(resolved.reason)
-            is ArtifactIdentityResolution.Verified -> {
-                if (!descriptorMatchesResolvedArtifact(descriptor, resolved.artifact)) {
-                    LoadRequestResolution.Rejected(ArtifactIdentityRejection.STALE_MANIFEST)
-                } else {
-                    LoadRequestResolution.Ready(
-                        LoadRequest(
-                            model = model,
-                            identity = resolved.artifact.identity,
-                            observationIdentity = observationIdentity,
-                            plan = selected,
-                            assessmentKey = assessment.assessmentKey,
-                            artifact = resolved.artifact,
-                            assessedPlans = assessment.planAssessments,
-                            profile = recommendation.profile,
-                        ),
-                    )
-                }
-            }
+            is ArtifactIdentityResolution.Verified -> buildLoadRequest(
+                model,
+                descriptor,
+                resolved.artifact,
+                assessment,
+                recommendation,
+            )
         }
+    }
+
+    suspend fun createLoadRequestFromVerifiedArtifact(
+        model: LocalModelEntity,
+        descriptor: ModelDescriptor,
+        artifact: ResolvedLocalArtifact,
+        assessment: ModelAssessment,
+        recommendation: PersonalizedRecommendation,
+    ): LoadRequestResolution {
+        if (!hasValidRequestBindings(model, descriptor, assessment, recommendation)) {
+            return LoadRequestResolution.Rejected(ArtifactIdentityRejection.INVALID_INPUT)
+        }
+        if (artifact.revisionIdentity !is RevisionIdentity.HubCommit ||
+            artifact.identity.repositoryId != model.modelId || !artifact.hasOwner(model.modelId) ||
+            !descriptorMatchesResolvedArtifact(descriptor, artifact) || !revalidate(artifact)
+        ) {
+            return LoadRequestResolution.Rejected(ArtifactIdentityRejection.STALE_MANIFEST)
+        }
+        return buildLoadRequest(model, descriptor, artifact, assessment, recommendation)
+    }
+
+    private fun buildLoadRequest(
+        model: LocalModelEntity,
+        descriptor: ModelDescriptor,
+        artifact: ResolvedLocalArtifact,
+        assessment: ModelAssessment,
+        recommendation: PersonalizedRecommendation,
+    ): LoadRequestResolution {
+        val observationIdentity = ObservationModelIdentity.fromDescriptor(descriptor)
+        if (!hasValidRequestBindings(model, descriptor, assessment, recommendation) || observationIdentity == null ||
+            artifact.identity.repositoryId != model.modelId || !artifact.hasOwner(model.modelId)
+        ) {
+            return LoadRequestResolution.Rejected(ArtifactIdentityRejection.INVALID_INPUT)
+        }
+        if (!descriptorMatchesResolvedArtifact(descriptor, artifact)) {
+            return LoadRequestResolution.Rejected(ArtifactIdentityRejection.STALE_MANIFEST)
+        }
+        val selected = recommendation.selectedPlan as RunPlan
+        return LoadRequestResolution.Ready(
+            LoadRequest(
+                model = model,
+                identity = artifact.identity,
+                observationIdentity = observationIdentity,
+                plan = selected,
+                assessmentKey = assessment.assessmentKey,
+                artifact = artifact,
+                assessedPlans = assessment.planAssessments,
+                profile = recommendation.profile,
+            ),
+        )
+    }
+
+    private fun hasValidRequestBindings(
+        model: LocalModelEntity,
+        descriptor: ModelDescriptor,
+        assessment: ModelAssessment,
+        recommendation: PersonalizedRecommendation,
+    ): Boolean {
+        if (descriptor.repositoryId != model.modelId || ObservationModelIdentity.fromDescriptor(descriptor) == null ||
+            assessment.assessmentKey.isBlank() || assessment.assessmentKey != recommendation.assessmentKey ||
+            assessment.planAssessments.assessmentKey != assessment.assessmentKey ||
+            assessment.compatibility != assessment.planAssessments.compatibility
+        ) return false
+        val selected = recommendation.selectedPlan as? RunPlan ?: return false
+        val selectedAssessment = assessment.planAssessments.values
+            .filter { it.plan.stableKey == selected.stableKey }
+            .singleOrNull()
+        return selectedAssessment != null && recommendation.selectedPlanAssessment == selectedAssessment
+    }
+
+    private fun ResolvedLocalArtifact.hasOwner(modelId: String): Boolean = when (val target = loadTarget) {
+        is VerifiedArtifactLoadTarget.File -> target.repositoryId == modelId
+        is VerifiedArtifactLoadTarget.Directory -> target.storageOwner == modelId
     }
 
     private fun descriptorMatchesResolvedArtifact(

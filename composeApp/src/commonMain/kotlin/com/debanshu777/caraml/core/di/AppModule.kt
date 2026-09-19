@@ -18,6 +18,10 @@ import com.debanshu777.caraml.core.recommendation.LocalArtifactIdentityResolver
 import com.debanshu777.caraml.core.recommendation.ModelAssessmentRepository
 import com.debanshu777.caraml.core.recommendation.ModelDescriptorFactory
 import com.debanshu777.caraml.core.recommendation.InferenceObservationRecorder
+import com.debanshu777.caraml.core.recommendation.InstalledDescriptorMetadataSource
+import com.debanshu777.caraml.core.recommendation.InstalledModelEvidenceRepairer
+import com.debanshu777.caraml.core.recommendation.InstalledModelLoadRequestResolver
+import com.debanshu777.caraml.core.recommendation.InstalledModelWorkloadFactory
 import com.debanshu777.caraml.core.recommendation.LlamaBackendCalibrationProbe
 import com.debanshu777.caraml.core.recommendation.QuickCalibrationRunner
 import com.debanshu777.caraml.core.recommendation.ReliableMemoryReading
@@ -31,6 +35,7 @@ import com.debanshu777.caraml.core.platform.DeviceCapabilities
 import com.debanshu777.caraml.core.platform.RunnerBackendCapabilitySource
 import com.debanshu777.caraml.core.storage.AppDatabase
 import com.debanshu777.caraml.core.recommendation.storage.RecommendationDatabaseOwner
+import com.debanshu777.caraml.core.recommendation.storage.PersistedModelEvidenceCodec
 import com.debanshu777.caraml.core.storage.component.ComponentRepository
 import com.debanshu777.caraml.core.storage.evidence.InstalledModelEvidenceRepository
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
@@ -153,7 +158,31 @@ val appModule = module {
             clock = { Clock.System.now().toEpochMilliseconds() },
         )
     }
-    single<ModelMetadataSource> { HuggingFaceModelMetadataSource(get(), get()) }
+    single { HuggingFaceModelMetadataSource(get(), get()) }
+    single<ModelMetadataSource> { get<HuggingFaceModelMetadataSource>() }
+    single<InstalledDescriptorMetadataSource> { get<HuggingFaceModelMetadataSource>() }
+    single { PersistedModelEvidenceCodec() }
+    single {
+        InstalledModelEvidenceRepairer(
+            artifactResolver = get(),
+            evidenceRepository = get(),
+            metadataSource = get(),
+            codec = get(),
+            clock = { Clock.System.now().toEpochMilliseconds() },
+        )
+    }
+    single { InstalledModelWorkloadFactory() }
+    single {
+        InstalledModelLoadRequestResolver(
+            componentRepository = get(),
+            evidenceRepairer = get(),
+            artifactResolver = get(),
+            snapshotProvider = get(),
+            assessmentRepository = get(),
+            settingsRepository = get(),
+            workloadFactory = get(),
+        )
+    }
     single {
         ModelRecommendationService(
             metadataSource = get(),
