@@ -101,6 +101,7 @@ class PersistedModelEvidenceCodec {
         require(envelope.schemaVersion == encoded.schemaVersion && envelope.state == encoded.state) {
             "Evidence transport does not match payload"
         }
+        validateEnvelopeDto(envelope)
 
         val identities = envelope.artifactIdentities.map(IdentityDto::toModelFileIdentity)
         validateIdentities(identities)
@@ -356,12 +357,74 @@ private fun requiredIdentities(descriptor: ModelDescriptor): List<ModelFileIdent
     },
 )
 
+private fun validateEnvelopeDto(envelope: EvidenceEnvelopeDto) {
+    validateIdentityDtos(envelope.artifactIdentities)
+    envelope.descriptor?.let(::validateDescriptorDto)
+}
+
+private fun validateDescriptorDto(descriptor: DescriptorDto) = when (descriptor) {
+    is LlmDescriptorDto -> {
+        validateIdentityDtos(descriptor.files)
+        validateUniqueMetadataStrings(descriptor.requiredEngineFeatures, allowEmpty = false)
+        validateEvidenceDtos(descriptor.evidence)
+        validateQuantizationDto(descriptor.quantization)
+    }
+    is DiffusionDescriptorDto -> {
+        require(descriptor.components.isNotEmpty() && descriptor.components.size <= DescriptorLimits.MAX_COMPONENTS) {
+            "Invalid diffusion component count"
+        }
+        validateUniqueMetadataStrings(descriptor.quantizationDistribution, allowEmpty = false)
+        validateUniqueMetadataStrings(descriptor.requiredEngineFeatures, allowEmpty = false)
+        validateEvidenceDtos(descriptor.evidence)
+        descriptor.components.forEach { component ->
+            validateIdentityDto(component.file)
+            validateQuantizationDto(component.quantization)
+        }
+    }
+}
+
+private fun validateQuantizationDto(quantization: QuantizationDto) = when (quantization) {
+    is KnownQuantizationDto -> require(isSafeMetadataString(quantization.quantization, allowEmpty = false)) {
+        "Invalid quantization"
+    }
+    is MixedQuantizationDto -> {
+        validateUniqueMetadataStrings(quantization.quantizations, allowEmpty = false)
+        require(quantization.quantizations.size >= 2) { "Mixed quantization requires multiple values" }
+    }
+    UnknownQuantizationDto -> Unit
+}
+
+private fun validateIdentityDtos(identities: List<IdentityDto>) {
+    require(identities.isNotEmpty() && identities.size <= DescriptorLimits.MAX_COMPONENTS) { "Invalid artifact count" }
+    identities.forEach(::validateIdentityDto)
+    require(identities.map(::identityKey).distinct().size == identities.size) { "Artifact identities must be unique" }
+}
+
+private fun validateIdentityDto(identity: IdentityDto) {
+    require(isValidRepositoryId(identity.repositoryId) && isValidRevision(identity.revision) &&
+        isValidRelativePath(identity.path) && identity.sizeBytes in 1..DescriptorLimits.MAX_FILE_BYTES
+    ) { "Invalid exact artifact identity" }
+    val objectIdentities = listOf(identity.gitOid, identity.lfsOid, identity.xetHash)
+    require(objectIdentities.any { it != null } && objectIdentities.all(::isSafeObjectIdentity)) {
+        "Invalid exact artifact identity"
+    }
+    validateEvidenceDtos(identity.evidence)
+}
+
+private fun validateEvidenceDtos(evidence: List<EvidenceDto>) {
+    require(evidence.size <= DescriptorLimits.MAX_METADATA_COLLECTION_SIZE && evidence.all {
+        it.detail == null || isSafeMetadataString(it.detail, allowEmpty = true)
+    }) { "Invalid evidence" }
+}
+
 private fun validateIdentities(identities: List<ModelFileIdentity>) {
     require(identities.isNotEmpty() && identities.size <= DescriptorLimits.MAX_COMPONENTS) { "Invalid artifact count" }
     require(identities.all(ModelFileIdentity::hasValidExactIdentity)) { "Invalid exact artifact identity" }
     require(identities.all { identity ->
-        listOf(identity.gitOid, identity.lfsOid, identity.xetHash).none { it?.contains("://") == true }
-    }) { "Artifact identities must not contain URLs" }
+        listOf(identity.gitOid, identity.lfsOid, identity.xetHash).all(::isSafeObjectIdentity) &&
+            isValidRelativePath(identity.path) &&
+            identity.evidence.all { evidence -> evidence.detail == null || isSafeMetadataString(evidence.detail, allowEmpty = true) }
+    }) { "Invalid exact artifact identity" }
     require(identities.map(::identityKey).distinct().size == identities.size) { "Artifact identities must be unique" }
 }
 
@@ -462,9 +525,32 @@ private fun validateMetadataStrings(values: Collection<String>, allowEmpty: Bool
     }) { "Invalid metadata collection" }
 }
 
+private fun validateUniqueMetadataStrings(values: List<String>, allowEmpty: Boolean) {
+    require(values.size <= DescriptorLimits.MAX_METADATA_COLLECTION_SIZE && values.distinct().size == values.size &&
+        values.all { isSafeMetadataString(it, allowEmpty) }
+    ) { "Invalid metadata collection" }
+}
+
 private fun isSafeMetadataString(value: String, allowEmpty: Boolean): Boolean =
     (allowEmpty || value.isNotBlank()) && value.length <= DescriptorLimits.MAX_METADATA_STRING_LENGTH &&
-        value.none(Char::isISOControl) && "://" !in value
+        value.none(::isControlCharacter) && "://" !in value
+
+private fun isSafeObjectIdentity(value: String?): Boolean = value == null ||
+    value.isNotEmpty() && value.length <= DescriptorLimits.MAX_METADATA_STRING_LENGTH &&
+        value.all { it.isAsciiLetterOrDigit() || it in "._+-:" } &&
+        !hasUnsupportedUriScheme(value)
+
+private fun hasUnsupportedUriScheme(value: String): Boolean {
+    val separator = value.indexOf(':')
+    if (separator <= 0 || !value.substring(0, separator).all { it.isAsciiLetterOrDigit() || it in "+-." }) {
+        return false
+    }
+    return !value.startsWith("sha256:")
+}
+
+private fun isControlCharacter(value: Char): Boolean = value.code in 0..31 || value.code in 127..159
+
+private fun Char.isAsciiLetterOrDigit(): Boolean = this in 'a'..'z' || this in 'A'..'Z' || this in '0'..'9'
 
 private fun isSafeArchitecture(value: String): Boolean =
     value.length in 1..MAX_ARCHITECTURE_LENGTH && value.all { it.isLetterOrDigit() || it == '_' || it == '-' || it == '.' }
@@ -485,9 +571,22 @@ private fun isValidRepositoryId(value: String): Boolean {
 private fun isValidRevision(value: String): Boolean =
     value.length in 40..64 && value.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }
 
+private fun isValidRelativePath(value: String): Boolean {
+    if (value.isEmpty() || value != value.trim() || value.length > DescriptorLimits.MAX_RELATIVE_PATH_LENGTH ||
+        value.startsWith('/') || value.startsWith('\\') || '\\' in value
+    ) return false
+    return value.split('/').all { segment ->
+        segment.isNotEmpty() && segment != "." && segment != ".." &&
+            segment.length <= DescriptorLimits.MAX_PATH_SEGMENT_LENGTH &&
+            segment.none { isControlCharacter(it) || it in ":*?\"<>|" }
+    }
+}
+
 private fun identityKey(value: ModelFileIdentity): String =
     "${value.repositoryId}\u0000${value.revision}\u0000${value.path}"
 
 private fun repositoryPathKey(value: ModelFileIdentity): String = "${value.repositoryId}\u0000${value.path}"
+
+private fun identityKey(value: IdentityDto): String = "${value.repositoryId}\u0000${value.revision}\u0000${value.path}"
 
 private val LOWERCASE_SHA256 = Regex("^[0-9a-f]{64}$")
