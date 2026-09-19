@@ -2,7 +2,7 @@ package com.debanshu777.caraml.features.chat.domain.usecase
 
 import com.debanshu777.caraml.core.data.inference.InferenceRepository
 import com.debanshu777.caraml.core.data.inference.ModelLoadResult
-import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
+import com.debanshu777.caraml.core.recommendation.LoadRequest
 import com.debanshu777.caraml.features.chat.data.ChatMessage
 import com.debanshu777.caraml.features.chat.data.MessageRole
 import com.debanshu777.caraml.features.chat.domain.ChatConfig
@@ -58,7 +58,7 @@ private class FakeInferenceRepository(
 ) : InferenceRepository {
     var resetCalls: Int = 0
 
-    override suspend fun loadModel(model: LocalModelEntity): ModelLoadResult =
+    override suspend fun loadModel(request: LoadRequest): ModelLoadResult =
         error("Not used")
 
     override suspend fun unloadModel() = Unit

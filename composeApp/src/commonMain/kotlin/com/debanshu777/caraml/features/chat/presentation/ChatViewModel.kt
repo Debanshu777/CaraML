@@ -9,9 +9,9 @@ import com.debanshu777.caraml.core.data.inference.ModelLoadResult
 import com.debanshu777.caraml.core.data.inference.PromptContextFullException
 import com.debanshu777.caraml.core.media.GeneratedMediaStore
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
+import com.debanshu777.caraml.core.recommendation.InstalledModelLoadRequestResolver
 import com.debanshu777.caraml.core.recommendation.LoadAdmission
 import com.debanshu777.caraml.core.recommendation.LoadRequest
-import com.debanshu777.caraml.core.recommendation.RecommendationRolloutModeSource
 import com.debanshu777.caraml.core.recommendation.RiskAcknowledgement
 import com.debanshu777.caraml.core.recommendation.RunPlan
 import com.debanshu777.caraml.features.chat.data.ChatMessage
@@ -35,9 +35,6 @@ import com.debanshu777.diffusionrunner.SampleMethod
 import com.debanshu777.diffusionrunner.VideoGenParams
 import com.debanshu777.runner.StopReason
 import com.debanshu777.huggingfacemanager.sdcpp.SdCppRecommendedParams
-import com.debanshu777.huggingfacemanager.sdcpp.getModelSetup
-import com.debanshu777.huggingfacemanager.sdcpp.SdCppComponentChecker
-import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
@@ -101,12 +98,9 @@ class ChatViewModel(
     private val trackModelUsage: TrackModelUsageUseCase,
     private val inferenceRepository: InferenceRepository,
     private val diffusionRepository: DiffusionInferenceRepository,
-    private val storagePathProvider: StoragePathProvider,
     private val generatedMediaStore: GeneratedMediaStore,
-    private val recommendationRolloutModeSource: RecommendationRolloutModeSource,
+    private val installedModelLoadRequestResolver: InstalledModelLoadRequestResolver,
 ) : ViewModel() {
-
-    private val componentChecker = SdCppComponentChecker(storagePathProvider)
 
     private val _topModels: StateFlow<ImmutableList<LocalModelEntity>> =
         getAvailableModels()
@@ -171,7 +165,6 @@ class ChatViewModel(
     val currentDiffusionParams: StateFlow<SdCppRecommendedParams?> = _currentDiffusionParams.asStateFlow()
 
     private var modelLoadJob: Job? = null
-    private var selectedLoadRequest: LoadRequest? = null
     private var generationJob: Job? = null
     private val pendingLoadActionGate = PendingLoadActionGate()
 
@@ -192,7 +185,7 @@ class ChatViewModel(
         _selectedModel
             .filterNotNull()
             .distinctUntilChanged { old, new -> old.id == new.id }
-            .onEach { model -> loadModel(model) }
+            .onEach { model -> loadSelectedModel(model) }
             .launchIn(viewModelScope)
 
         // Forward native denoising-step progress into StreamingState so the UI can show "3/20"
@@ -242,7 +235,6 @@ class ChatViewModel(
         if (sel == null || !sel.matchesGenerationMode(mode)) {
             val next = pickRememberedModel(picker, mode) ?: picker.first()
             if (sel?.id != next.id) {
-                selectedLoadRequest = null
                 _internal.value = InternalChatState.ModelLoading
                 _selectedModel.value = next
             }
@@ -250,7 +242,7 @@ class ChatViewModel(
             _internal.value is InternalChatState.NoModels ||
             _internal.value is InternalChatState.NoModelsForMode
         ) {
-            loadModel(sel)
+            loadSelectedModel(sel)
         }
     }
 
@@ -313,22 +305,14 @@ class ChatViewModel(
         _internal.value = InternalChatState.ModelLoading
         _selectedModel.value = next
         if (previous?.id == next.id) {
-            loadModel(next)
+            loadSelectedModel(next)
         }
     }
 
     fun selectModel(model: LocalModelEntity) {
-        selectModel(model, null)
-    }
-
-    /** Carries an already assessed exact selection from Model Hub without reconstructing defaults. */
-    fun selectModel(model: LocalModelEntity, loadRequest: LoadRequest?) {
         val selectionUnchanged = _selectedModel.value?.id == model.id
-        selectedLoadRequest = loadRequest?.takeIf {
-            it.model.id == model.id && it.model.modelId == model.modelId
-        }
         _selectedModel.value = model
-        if (selectionUnchanged) loadModel(model)
+        if (selectionUnchanged) loadSelectedModel(model)
         when (_generationMode.value) {
             GenerationMode.Text -> lastTextModelId = model.id
             GenerationMode.Image,
@@ -338,7 +322,28 @@ class ChatViewModel(
         viewModelScope.launch { trackModelUsage(model) }
     }
 
-    private fun loadModel(model: LocalModelEntity) {
+    private fun loadSelectedModel(model: LocalModelEntity) {
+        startModelLoad(model) { mode ->
+            loadInstalledModel(
+                model = model,
+                mode = mode,
+                resolve = installedModelLoadRequestResolver::resolve,
+                loadText = { request ->
+                    diffusionRepository.release()
+                    inferenceRepository.loadModel(request)
+                },
+                loadDiffusion = { request ->
+                    inferenceRepository.unloadModel()
+                    diffusionRepository.loadModel(request)
+                },
+            )
+        }
+    }
+
+    private fun startModelLoad(
+        model: LocalModelEntity,
+        load: suspend (GenerationMode) -> ModelLoadResult,
+    ) {
         val previousJob = modelLoadJob
         modelLoadJob?.cancel()
         signalGenerationCancellation()
@@ -358,53 +363,7 @@ class ChatViewModel(
             // inside a blocking JNI call races with our unloadModel() → double-free crash.
             previousJob?.join()
 
-            val exactRequest = selectedLoadRequest?.takeIf {
-                it.model.id == model.id &&
-                    it.model.modelId == model.modelId
-            }
-            val result: ModelLoadResult = when (mode) {
-                GenerationMode.Text -> {
-                    diffusionRepository.release()
-                    ModelLoadRouter.route(
-                        recommendationRolloutModeSource.current(),
-                        model,
-                        exactRequest,
-                        inferenceRepository::loadModel,
-                        inferenceRepository::loadModel,
-                        expectedMode = mode,
-                    )
-                }
-                GenerationMode.Image,
-                GenerationMode.Video,
-                -> {
-                    inferenceRepository.unloadModel()
-                    
-                    // Pre-inference validation for diffusion models
-                    val modelSetup = getModelSetup(model.modelId)
-                    if (modelSetup != null && !modelSetup.selfContained) {
-                        val missingComponents = componentChecker.getMissingComponents(modelSetup)
-                        if (missingComponents.isNotEmpty()) {
-                            val missingLabels = missingComponents.map { it.role.displayLabel }
-                            val modelName = modelSetup.familyLabel
-                            _internal.value = InternalChatState.MissingComponents(
-                                missingComponentLabels = missingLabels,
-                                modelName = modelName,
-                                modelId = model.modelId,
-                            )
-                            return@launch
-                        }
-                    }
-                    
-                    ModelLoadRouter.route(
-                        recommendationRolloutModeSource.current(),
-                        model,
-                        exactRequest,
-                        diffusionRepository::loadModel,
-                        diffusionRepository::loadModel,
-                        expectedMode = mode,
-                    )
-                }
-            }
+            val result = load(mode)
             when (result) {
                 is ModelLoadResult.Success -> {
                     if (mode == GenerationMode.Image || mode == GenerationMode.Video) {
@@ -503,13 +462,24 @@ class ChatViewModel(
     fun cancelPendingLoad() {
         if (_internal.value !is InternalChatState.LoadActionRequired) return
         if (!pendingLoadActionGate.tryConsume()) return
-        selectedLoadRequest = null
         _internal.value = InternalChatState.ModelError("Model loading was cancelled.")
     }
 
     private fun resumeExactLoad(request: LoadRequest) {
-        selectedLoadRequest = request
-        loadModel(request.model)
+        startModelLoad(request.model) { mode ->
+            when (mode) {
+                GenerationMode.Text -> {
+                    diffusionRepository.release()
+                    inferenceRepository.loadModel(request)
+                }
+                GenerationMode.Image,
+                GenerationMode.Video,
+                -> {
+                    inferenceRepository.unloadModel()
+                    diffusionRepository.loadModel(request)
+                }
+            }
+        }
     }
 
     fun sendMessage(text: String) {

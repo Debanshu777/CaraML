@@ -73,7 +73,6 @@ import com.debanshu777.caraml.features.modelhub.domain.HuggingFaceModelMetadataS
 import com.debanshu777.caraml.features.modelhub.domain.ModelMetadataSource
 import com.debanshu777.caraml.features.modelhub.domain.ModelRecommendationService
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelViewModel
-import com.debanshu777.caraml.features.modelhub.presentation.search.RecommendedModelLoadRequestResolver
 import com.debanshu777.caraml.features.settings.presentation.SettingsViewModel
 import com.debanshu777.huggingfacemanager.createHuggingFaceApi
 import com.debanshu777.huggingfacemanager.download.DownloadManager
@@ -101,7 +100,6 @@ val appModule = module {
     single { LocalModelRepository(get()) }
     single { ComponentRepository(get()) }
     single { InstalledModelEvidenceRepository(get()) }
-    single { RecommendedModelLoadRequestResolver(get(), get()) }
     single { DownloadManager(get()) }
     single<DownloadTaskStore> { RoomDownloadTaskStore(get<DownloadDatabase>().downloadTaskDao()) }
     single<ArtifactTransfer> { DownloadManagerArtifactTransfer(get()) }
@@ -255,7 +253,6 @@ val appModule = module {
 
     single {
         DiffusionInferenceRepository(
-            storagePathProvider = get(),
             runner = get(),
             deviceCapabilities = get(),
             settingsRepository = get(),
@@ -266,18 +263,15 @@ val appModule = module {
             artifactIdentityResolver = get(),
             loadSessionCoordinator = get(),
             engineVersion = NATIVE_LOAD_ENGINE_VERSION,
-            rolloutModeSource = get(),
             observationRecorder = get(),
         )
     }
 
     single<InferenceRepository> {
         LlamaInferenceRepository(
-            storagePathProvider = get(),
             runner = get(),
             deviceCapabilities = get(),
             settingsRepository = get(),
-            localModelRepository = get(),
             snapshotProvider = get(),
             suitabilityEngine = get(),
             recommendationPolicy = get(),
@@ -285,7 +279,6 @@ val appModule = module {
             artifactIdentityResolver = get(),
             loadSessionCoordinator = get(),
             engineVersion = NATIVE_LOAD_ENGINE_VERSION,
-            rolloutModeSource = get(),
             observationRecorder = get(),
         )
     }
@@ -337,9 +330,8 @@ val appModule = module {
             trackModelUsage = get(),
             inferenceRepository = get(),
             diffusionRepository = get(),
-            storagePathProvider = get(),
             generatedMediaStore = get(),
-            recommendationRolloutModeSource = get(),
+            installedModelLoadRequestResolver = get(),
         )
     }
 }
