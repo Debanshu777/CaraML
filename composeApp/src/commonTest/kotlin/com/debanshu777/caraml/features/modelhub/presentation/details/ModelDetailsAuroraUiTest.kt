@@ -48,6 +48,7 @@ import com.debanshu777.caraml.core.download.DownloadArtifactState
 import com.debanshu777.caraml.core.download.DownloadBatchSnapshot
 import com.debanshu777.caraml.core.download.DownloadBatchState
 import com.debanshu777.caraml.core.download.DownloadUserIntent
+import com.debanshu777.caraml.core.download.pendingEvidence
 import com.debanshu777.caraml.core.navigation.AppScreen
 import com.debanshu777.caraml.core.rating.SdArchitecture
 import com.debanshu777.caraml.core.recommendation.DiffusionComponentDescriptor
@@ -940,6 +941,7 @@ private fun durableBatch(
                 expectedBytes = artifact.expectedBytes,
             ),
         ),
+        evidence = pendingEvidence(artifact),
     )
 }
 

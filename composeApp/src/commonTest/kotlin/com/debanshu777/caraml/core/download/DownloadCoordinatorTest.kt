@@ -98,6 +98,7 @@ class DownloadCoordinatorTest {
                     primary = true,
                 ),
             ),
+            evidence = pendingEvidence(identity),
             downloadForLaterConfirmed = false,
             displayName = "Model",
         )
@@ -139,6 +140,7 @@ private class FakeDownloadTaskStore(
                 expectedBytes = 10L,
             ),
         ),
+        evidence = request.evidence,
     )
 
     override suspend fun create(request: DownloadBatchRequest, nowEpochMs: Long): String {
@@ -181,6 +183,7 @@ private object DownloadCoordinatorTestFixture {
         artifacts = listOf(
             DownloadArtifactRequest(DownloadMetadataDTO(identity, "model", 10L, null, null, null), true),
         ),
+        evidence = pendingEvidence(identity),
         downloadForLaterConfirmed = false,
         displayName = "Model",
     )

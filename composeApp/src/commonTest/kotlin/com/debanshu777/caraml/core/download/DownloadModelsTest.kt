@@ -70,6 +70,31 @@ class DownloadModelsTest {
         }
     }
 
+    @Test
+    fun requestRejectsTamperedEvidenceDigest() {
+        val artifact = artifactRequest(role = "model", path = "weights/model.gguf", primary = true)
+        val request = batchRequest(listOf(artifact))
+
+        assertFailsWith<IllegalArgumentException> {
+            request.copy(evidence = request.evidence.copy(sha256 = "f".repeat(64)))
+        }
+    }
+
+    @Test
+    fun pendingEvidenceRejectsArtifactWithoutRemoteObjectIdentity() {
+        val identity = requireNotNull(
+            DownloadArtifactIdentity.create(
+                repositoryId = "owner/model",
+                immutableRevision = "a".repeat(40),
+                relativePath = "weights/model.gguf",
+                remoteObjectId = null,
+                expectedBytes = 1_024L,
+            ),
+        )
+
+        assertFailsWith<IllegalArgumentException> { pendingEvidence(identity) }
+    }
+
     private fun batchRequest(
         artifacts: List<DownloadArtifactRequest>,
         downloadForLaterConfirmed: Boolean = false,
@@ -82,6 +107,7 @@ class DownloadModelsTest {
             artifacts = artifacts.map { artifact ->
                 artifact.copy(metadata = artifact.metadata.copy(bundleId = bundleId))
             },
+            evidence = pendingEvidence(artifacts.map { it.metadata.artifact }),
             downloadForLaterConfirmed = downloadForLaterConfirmed,
             displayName = displayName,
         )

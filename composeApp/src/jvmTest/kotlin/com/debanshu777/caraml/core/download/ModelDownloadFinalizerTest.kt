@@ -74,5 +74,6 @@ private fun finalizerBatch(): DownloadBatchSnapshot {
                 DownloadUserIntent.RUN, 10L, 10L,
             )
         },
+        pendingEvidence(requests.map { it.metadata.artifact }),
     )
 }

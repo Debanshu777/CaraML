@@ -12,6 +12,10 @@ import com.debanshu777.caraml.core.download.DownloadUserIntent
 import com.debanshu777.caraml.core.download.canTransitionTo
 import com.debanshu777.caraml.core.download.downloadArtifactTaskId
 import com.debanshu777.caraml.core.download.downloadBatchId
+import com.debanshu777.caraml.core.download.pendingEvidence
+import com.debanshu777.caraml.core.recommendation.storage.EncodedModelEvidence
+import com.debanshu777.caraml.core.recommendation.storage.InstalledEvidenceState
+import com.debanshu777.caraml.core.recommendation.storage.PersistedModelEvidenceCodec
 import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
 import kotlinx.coroutines.flow.Flow
@@ -30,6 +34,10 @@ class RoomDownloadTaskStore(
             state = DownloadBatchState.QUEUED.name,
             userIntent = DownloadUserIntent.RUN.name,
             failureCode = null,
+            evidenceState = request.evidence.state.name,
+            evidenceSchemaVersion = request.evidence.schemaVersion,
+            evidencePayload = request.evidence.payload,
+            evidenceSha256 = request.evidence.sha256,
             downloadForLaterConfirmed = request.downloadForLaterConfirmed,
             createdAtEpochMs = nowEpochMs,
             updatedAtEpochMs = nowEpochMs,
@@ -160,6 +168,44 @@ class RoomDownloadTaskStore(
 
 private fun DownloadBatchWithArtifacts.toSnapshot(): DownloadBatchSnapshot {
     val intent = strictEnum<DownloadUserIntent>(batch.userIntent)
+    val artifactSnapshots = artifacts.sortedBy(DownloadArtifactEntity::artifactId).map { artifact ->
+        val identity = requireNotNull(
+            DownloadArtifactIdentity.create(
+                repositoryId = artifact.repositoryId,
+                immutableRevision = artifact.immutableRevision,
+                relativePath = artifact.relativePath,
+                remoteObjectId = artifact.remoteObjectId,
+                expectedBytes = artifact.expectedBytes,
+            ),
+        ) { "Corrupt persisted artifact identity" }
+        DownloadArtifactSnapshot(
+            artifactId = artifact.artifactId,
+            batchId = artifact.batchId,
+            request = DownloadArtifactRequest(
+                metadata = DownloadMetadataDTO(
+                    artifact = identity,
+                    logicalRole = artifact.logicalRole,
+                    sizeBytes = artifact.expectedBytes,
+                    author = artifact.author,
+                    libraryName = artifact.libraryName,
+                    pipelineTag = artifact.pipelineTag,
+                    contextLength = artifact.contextLength,
+                    destinationRelativePath = artifact.destinationRelativePath,
+                    bundleId = artifact.bundleId,
+                ),
+                primary = artifact.isPrimary,
+            ),
+            state = strictEnum(artifact.state),
+            userIntent = intent,
+            bytesReceived = artifact.bytesReceived,
+            expectedBytes = artifact.expectedBytes,
+            entityTag = artifact.entityTag,
+            lastModified = artifact.lastModified,
+            platformTaskId = artifact.platformTaskId,
+            failureCode = artifact.failureCode?.let(::strictEnum),
+            retryCount = artifact.retryCount,
+        )
+    }
     return DownloadBatchSnapshot(
         batchId = batch.batchId,
         ownerModelId = batch.ownerModelId,
@@ -167,46 +213,36 @@ private fun DownloadBatchWithArtifacts.toSnapshot(): DownloadBatchSnapshot {
         displayName = batch.displayName,
         state = strictEnum(batch.state),
         userIntent = intent,
-        artifacts = artifacts.sortedBy(DownloadArtifactEntity::artifactId).map { artifact ->
-            val identity = requireNotNull(
-                DownloadArtifactIdentity.create(
-                    repositoryId = artifact.repositoryId,
-                    immutableRevision = artifact.immutableRevision,
-                    relativePath = artifact.relativePath,
-                    remoteObjectId = artifact.remoteObjectId,
-                    expectedBytes = artifact.expectedBytes,
-                ),
-            ) { "Corrupt persisted artifact identity" }
-            DownloadArtifactSnapshot(
-                artifactId = artifact.artifactId,
-                batchId = artifact.batchId,
-                request = DownloadArtifactRequest(
-                    metadata = DownloadMetadataDTO(
-                        artifact = identity,
-                        logicalRole = artifact.logicalRole,
-                        sizeBytes = artifact.expectedBytes,
-                        author = artifact.author,
-                        libraryName = artifact.libraryName,
-                        pipelineTag = artifact.pipelineTag,
-                        contextLength = artifact.contextLength,
-                        destinationRelativePath = artifact.destinationRelativePath,
-                        bundleId = artifact.bundleId,
-                    ),
-                    primary = artifact.isPrimary,
-                ),
-                state = strictEnum(artifact.state),
-                userIntent = intent,
-                bytesReceived = artifact.bytesReceived,
-                expectedBytes = artifact.expectedBytes,
-                entityTag = artifact.entityTag,
-                lastModified = artifact.lastModified,
-                platformTaskId = artifact.platformTaskId,
-                failureCode = artifact.failureCode?.let(::strictEnum),
-                retryCount = artifact.retryCount,
-            )
-        },
+        artifacts = artifactSnapshots,
+        evidence = batch.restoreEvidence(artifactSnapshots.map { it.request.metadata.artifact }),
         failureCode = batch.failureCode?.let(::strictEnum),
     )
+}
+
+private fun DownloadBatchEntity.restoreEvidence(
+    artifacts: Collection<DownloadArtifactIdentity>,
+): EncodedModelEvidence {
+    val fields = listOf(evidenceState, evidenceSchemaVersion, evidencePayload, evidenceSha256)
+    if (fields.all { it == null }) {
+        return try {
+            pendingEvidence(artifacts)
+        } catch (cause: IllegalArgumentException) {
+            throw IllegalStateException("Corrupt persisted evidence", cause)
+        }
+    }
+    check(fields.none { it == null }) { "Corrupt persisted evidence" }
+    val encoded = EncodedModelEvidence(
+        state = strictEnum<InstalledEvidenceState>(requireNotNull(evidenceState)),
+        schemaVersion = requireNotNull(evidenceSchemaVersion),
+        payload = requireNotNull(evidencePayload),
+        sha256 = requireNotNull(evidenceSha256),
+    )
+    try {
+        PersistedModelEvidenceCodec().decode(encoded)
+    } catch (cause: IllegalArgumentException) {
+        throw IllegalStateException("Corrupt persisted evidence", cause)
+    }
+    return encoded
 }
 
 private fun deriveBatchState(states: List<DownloadArtifactState>): DownloadBatchState = when {

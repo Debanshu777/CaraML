@@ -14,6 +14,7 @@ import com.debanshu777.caraml.core.download.DownloadNotificationPermissionContro
 import com.debanshu777.caraml.core.download.DownloadTaskStore
 import com.debanshu777.caraml.core.download.DownloadUserIntent
 import com.debanshu777.caraml.core.download.PlatformDownloadScheduler
+import com.debanshu777.caraml.core.download.pendingEvidence
 import com.debanshu777.caraml.core.platform.DeviceCapabilities
 import com.debanshu777.caraml.core.platform.DeviceSnapshot
 import com.debanshu777.caraml.core.platform.HardwareProfile
@@ -1266,6 +1267,7 @@ private fun durableSnapshot(
                 expectedBytes = artifact.expectedBytes,
             ),
         ),
+        evidence = pendingEvidence(artifact),
     )
 }
 

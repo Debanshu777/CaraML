@@ -32,6 +32,7 @@ import com.debanshu777.caraml.core.download.DownloadBatchRequest
 import com.debanshu777.caraml.core.download.DownloadBatchSnapshot
 import com.debanshu777.caraml.core.download.DownloadBatchState
 import com.debanshu777.caraml.core.download.DownloadCoordinator
+import com.debanshu777.caraml.core.download.pendingEvidence
 import com.debanshu777.caraml.features.modelhub.domain.ModelRecommendationService
 import com.debanshu777.caraml.features.modelhub.domain.RecommendationOrdering
 import com.debanshu777.caraml.features.modelhub.domain.RecommendationQuerySession
@@ -956,6 +957,7 @@ class ModelViewModel(
                                     primary = metadata.artifact.repositoryId == modelId,
                                 )
                             },
+                            evidence = pendingEvidence(ownedArtifacts.map { it.artifact }),
                             downloadForLaterConfirmed = downloadForLaterConfirmed,
                             displayName = modelId,
                         ),
@@ -1059,6 +1061,7 @@ class ModelViewModel(
                             ownerModelId = modelId,
                             modelType = ModelType.TEXT,
                             artifacts = listOf(DownloadArtifactRequest(metadata, primary = true)),
+                            evidence = pendingEvidence(metadata.artifact),
                             downloadForLaterConfirmed = downloadForLaterConfirmed,
                             displayName = modelId,
                         ),

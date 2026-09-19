@@ -123,6 +123,7 @@ private class RunnerStore : DownloadTaskStore {
                 entityTag = "etag-1",
             ),
         ),
+        evidence = pendingEvidence(identity),
     )
     val transitions = mutableListOf<DownloadArtifactState>()
     var released = false

@@ -1,5 +1,7 @@
 package com.debanshu777.caraml.core.download
 
+import com.debanshu777.caraml.core.recommendation.storage.EncodedModelEvidence
+import com.debanshu777.caraml.core.recommendation.storage.PersistedModelEvidenceCodec
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
 import okio.Buffer
 
@@ -51,6 +53,7 @@ data class DownloadBatchRequest(
     val ownerModelId: String,
     val modelType: String,
     val artifacts: List<DownloadArtifactRequest>,
+    val evidence: EncodedModelEvidence,
     val downloadForLaterConfirmed: Boolean,
     val displayName: String,
 ) {
@@ -67,6 +70,7 @@ data class DownloadBatchRequest(
         }
         require(artifacts.map { it.metadata.bundleId }.distinct().size == 1) { "Mismatched artifact bundle" }
         require(artifacts.map(::downloadArtifactTaskId).distinct().size == artifacts.size) { "Duplicate artifact" }
+        PersistedModelEvidenceCodec().decode(evidence)
         artifacts.forEach { request ->
             require(request.metadata.sizeBytes == request.metadata.artifact.expectedBytes) { "Missing exact artifact size" }
             listOfNotNull(
@@ -101,6 +105,7 @@ data class DownloadBatchSnapshot(
     val state: DownloadBatchState,
     val userIntent: DownloadUserIntent,
     val artifacts: List<DownloadArtifactSnapshot>,
+    val evidence: EncodedModelEvidence,
     val failureCode: DownloadFailureCode? = null,
 ) {
     val bytesReceived: Long get() = artifacts.sumOf(DownloadArtifactSnapshot::bytesReceived)
@@ -125,6 +130,7 @@ fun downloadArtifactTaskId(request: DownloadArtifactRequest): String {
 fun downloadBatchId(request: DownloadBatchRequest): String = canonicalSha256(
     request.ownerModelId,
     request.modelType,
+    request.evidence.sha256,
     *request.artifacts.map(::downloadArtifactTaskId).sorted().toTypedArray(),
 )
 
