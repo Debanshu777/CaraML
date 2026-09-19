@@ -224,6 +224,7 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 - Reworked Model Hub as a compact registry and made Details artifact-first with reachable metadata, exact artifact actions, and durable pause/resume/cancel/retry state
 - Model downloads now use a persistent resumable queue with exact-artifact verification; Android uses UIDT/foreground notifications, iOS reconnects to a background URLSession, and Desktop resumes on relaunch
 - Durable download batches now persist codec-validated model evidence, include its digest in batch identity, and migrate v1 rows without data loss; legacy rows synthesize enrichment-only evidence only from exact stored object identities
+- Model Hub durable enqueues now retain complete descriptors only for exact full artifact-set matches; Needs information and stale/mismatched descriptors still download with enrichment-only evidence
 - Reorganized Settings as a dense, accessible list with exclusive selections, disclosure rows, and the app's single contextual appearance preview
 - Added a restrained static ambient field and two deliberate grain-backed focal gradients—Details overview and the Settings appearance preview—while keeping navigation, lists, filters, cards, and the composer matte
 - Verified the sidebar shell with focused and repository-wide JVM/native gates, Android debug assembly, and iOS simulator compilation; the fresh physical-device visual and animation matrix remains unverified because the Pixel was no longer attached at the final checkpoint

@@ -33,7 +33,8 @@ import com.debanshu777.caraml.core.download.DownloadBatchRequest
 import com.debanshu777.caraml.core.download.DownloadBatchSnapshot
 import com.debanshu777.caraml.core.download.DownloadBatchState
 import com.debanshu777.caraml.core.download.DownloadCoordinator
-import com.debanshu777.caraml.core.download.pendingEvidence
+import com.debanshu777.caraml.core.download.DownloadEvidenceFactory
+import com.debanshu777.caraml.core.recommendation.storage.PersistedModelEvidenceCodec
 import com.debanshu777.caraml.features.modelhub.domain.ModelRecommendationService
 import com.debanshu777.caraml.features.modelhub.domain.RecommendationOrdering
 import com.debanshu777.caraml.features.modelhub.domain.RecommendationQuerySession
@@ -434,6 +435,7 @@ class ModelViewModel(
 
     private val downloadAdmissionPolicy = DownloadAdmissionPolicy()
     private val downloadStorageEstimator = DownloadStorageEstimator()
+    private val downloadEvidenceFactory = DownloadEvidenceFactory(PersistedModelEvidenceCodec())
     private val settings = settingsRepository.getSettings()
         .stateIn(viewModelScope, SharingStarted.Eagerly, com.debanshu777.caraml.core.settings.AppSettings())
 
@@ -948,17 +950,21 @@ class ModelViewModel(
                 }
 
                 downloadCoordinator?.let { coordinator ->
+                    val artifacts = ownedArtifacts.map { metadata ->
+                        DownloadArtifactRequest(
+                            metadata = metadata,
+                            primary = metadata.artifact.repositoryId == modelId,
+                        )
+                    }
                     coordinator.enqueue(
                         DownloadBatchRequest(
                             ownerModelId = modelId,
                             modelType = modelType,
-                            artifacts = ownedArtifacts.map { metadata ->
-                                DownloadArtifactRequest(
-                                    metadata = metadata,
-                                    primary = metadata.artifact.repositoryId == modelId,
-                                )
-                            },
-                            evidence = pendingEvidence(ownedArtifacts.map { it.artifact }),
+                            artifacts = artifacts,
+                            evidence = downloadEvidenceFactory.create(
+                                artifacts = artifacts,
+                                descriptor = selectedDescriptorFor(modelId),
+                            ),
                             downloadForLaterConfirmed = downloadForLaterConfirmed,
                             displayName = modelId,
                         ),
@@ -1057,12 +1063,16 @@ class ModelViewModel(
                     }
                 }
                 downloadCoordinator?.let { coordinator ->
+                    val artifacts = listOf(DownloadArtifactRequest(metadata, primary = true))
                     coordinator.enqueue(
                         DownloadBatchRequest(
                             ownerModelId = modelId,
                             modelType = ModelType.TEXT,
-                            artifacts = listOf(DownloadArtifactRequest(metadata, primary = true)),
-                            evidence = pendingEvidence(metadata.artifact),
+                            artifacts = artifacts,
+                            evidence = downloadEvidenceFactory.create(
+                                artifacts = artifacts,
+                                descriptor = selectedDescriptorFor(modelId),
+                            ),
                             downloadForLaterConfirmed = downloadForLaterConfirmed,
                             displayName = modelId,
                         ),
@@ -1396,6 +1406,9 @@ class ModelViewModel(
                 .filter { it.required || it.isPrimary }
                 .map { it.file }
         }
+
+    private fun selectedDescriptorFor(modelId: String): ModelDescriptor? =
+        _recommendedModels.value.singleOrNull { it.repositoryId == modelId }?.selectedDescriptor
 
     private suspend fun refreshGgufFilesDownloadState(modelId: String, isDiffusion: Boolean) {
         if (isDiffusion) {

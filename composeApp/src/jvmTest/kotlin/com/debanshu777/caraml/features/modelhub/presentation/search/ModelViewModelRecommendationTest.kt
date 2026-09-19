@@ -15,6 +15,7 @@ import com.debanshu777.caraml.core.download.DownloadTaskStore
 import com.debanshu777.caraml.core.download.DownloadUserIntent
 import com.debanshu777.caraml.core.download.PlatformDownloadScheduler
 import com.debanshu777.caraml.core.download.pendingEvidence
+import com.debanshu777.caraml.core.download.toModelFileIdentity
 import com.debanshu777.caraml.core.platform.DeviceCapabilities
 import com.debanshu777.caraml.core.platform.DeviceSnapshot
 import com.debanshu777.caraml.core.platform.HardwareProfile
@@ -32,6 +33,9 @@ import com.debanshu777.caraml.core.recommendation.CalibrationKey
 import com.debanshu777.caraml.core.recommendation.CalibrationSource
 import com.debanshu777.caraml.core.recommendation.BackendPerformanceProfile
 import com.debanshu777.caraml.core.recommendation.Confidence
+import com.debanshu777.caraml.core.recommendation.DiffusionComponentDescriptor
+import com.debanshu777.caraml.core.recommendation.DiffusionMode
+import com.debanshu777.caraml.core.recommendation.DiffusionModelDescriptor
 import com.debanshu777.caraml.core.recommendation.FitBand
 import com.debanshu777.caraml.core.recommendation.LlmModelDescriptor
 import com.debanshu777.caraml.core.recommendation.ModelAssessment
@@ -44,6 +48,8 @@ import com.debanshu777.caraml.core.recommendation.RecommendationCategory
 import com.debanshu777.caraml.core.recommendation.RecommendationProfile
 import com.debanshu777.caraml.core.recommendation.RecommendationSortKey
 import com.debanshu777.caraml.core.recommendation.WorkloadConfig
+import com.debanshu777.caraml.core.recommendation.storage.InstalledEvidenceState
+import com.debanshu777.caraml.core.recommendation.storage.PersistedModelEvidenceCodec
 import com.debanshu777.caraml.core.settings.AppSettings
 import com.debanshu777.caraml.core.storage.component.ComponentRepository
 import com.debanshu777.caraml.core.storage.component.DownloadedComponentDao
@@ -116,10 +122,236 @@ import java.security.MessageDigest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ModelViewModelRecommendationTest {
+    @Test
+    fun assessedLanguageDownloadEnqueuesCompleteDescriptorEvidence() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val repositoryId = "org/evidenced-language"
+        val revision = "a".repeat(40)
+        val path = "weights/model-Q4_K_M.gguf"
+        val objectId = "b".repeat(64)
+        val descriptorFile = modelFileIdentity(repositoryId, revision, path, objectId)
+        val client = exactDetailClient(dispatcher, repositoryId, revision, path, objectId)
+        val store = ObservingDownloadTaskStore()
+        try {
+            val viewModel = viewModel(
+                client = client,
+                dispatcher = dispatcher,
+                storagePathProvider = FakeStoragePathProvider(availableStorageBytes = 4L * 1024 * 1024 * 1024),
+                recommendationService = recommendationService(
+                    dispatcher = dispatcher,
+                    descriptorFiles = listOf(descriptorFile),
+                    recommendationCategory = RecommendationCategory.NEEDS_INFORMATION,
+                ),
+                downloadCoordinator = observingDownloadCoordinator(store),
+            )
+
+            viewModel.loadDetail(repositoryId, ModelHubBrowseMode.LanguageModels)
+            advanceUntilIdle()
+            val file = viewModel.ggufFiles.value.single()
+            val artifact = requireNotNull(file.artifact)
+            viewModel.startDownload(repositoryId, path, metadata(artifact))
+            advanceUntilIdle()
+
+            assertTrue(
+                store.createdRequests.isNotEmpty(),
+                "error=${viewModel.downloadError.value} recommendation=${viewModel.recommendedModels.value}",
+            )
+            val decoded = PersistedModelEvidenceCodec().decode(store.createdRequests.single().evidence)
+            assertEquals(InstalledEvidenceState.COMPLETE, decoded.state)
+            assertEquals(viewModel.recommendedModels.value.single().selectedDescriptor, decoded.descriptor)
+            assertEquals(listOf(descriptorFile), decoded.artifactIdentities)
+        } finally {
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun needsInformationLanguageDownloadStillEnqueuesEnrichmentEvidence() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val repositoryId = "org/unknown-language"
+        val revision = "a".repeat(40)
+        val path = "weights/model-Q4_K_M.gguf"
+        val objectId = "b".repeat(64)
+        val client = exactDetailClient(dispatcher, repositoryId, revision, path, objectId)
+        val store = ObservingDownloadTaskStore()
+        try {
+            val viewModel = viewModel(
+                client = client,
+                dispatcher = dispatcher,
+                storagePathProvider = FakeStoragePathProvider(availableStorageBytes = 4L * 1024 * 1024 * 1024),
+                recommendationService = recommendationService(
+                    dispatcher = dispatcher,
+                    variantSet = { id -> RepositoryVariantSet.NeedsInformation(id) },
+                ),
+                downloadCoordinator = observingDownloadCoordinator(store),
+            )
+
+            viewModel.loadDetail(repositoryId, ModelHubBrowseMode.LanguageModels)
+            advanceUntilIdle()
+            assertEquals(DescriptorState.NEEDS_INFORMATION, viewModel.recommendedModels.value.single().descriptorState)
+            val artifact = requireNotNull(viewModel.ggufFiles.value.single().artifact)
+            viewModel.startDownload(repositoryId, path, metadata(artifact))
+            advanceUntilIdle()
+
+            val decoded = PersistedModelEvidenceCodec().decode(store.createdRequests.single().evidence)
+            assertEquals(InstalledEvidenceState.REQUIRES_ENRICHMENT, decoded.state)
+            assertNull(decoded.descriptor)
+            assertEquals(artifact.toModelFileIdentity(), decoded.artifactIdentities.single())
+        } finally {
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun languageDescriptorWithAnExtraIdentityEnqueuesEnrichmentInsteadOfStaleEvidence() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val repositoryId = "org/stale-language"
+        val revision = "a".repeat(40)
+        val path = "weights/model-Q4_K_M.gguf"
+        val objectId = "b".repeat(64)
+        val selected = modelFileIdentity(repositoryId, revision, path, objectId)
+        val staleExtra = modelFileIdentity(
+            repositoryId,
+            revision,
+            "weights/model-Q8_0.gguf",
+            "c".repeat(64),
+        )
+        val client = exactDetailClient(dispatcher, repositoryId, revision, path, objectId)
+        val store = ObservingDownloadTaskStore()
+        try {
+            val viewModel = viewModel(
+                client = client,
+                dispatcher = dispatcher,
+                storagePathProvider = FakeStoragePathProvider(availableStorageBytes = 4L * 1024 * 1024 * 1024),
+                recommendationService = recommendationService(
+                    dispatcher = dispatcher,
+                    descriptorFiles = listOf(selected, staleExtra),
+                    recommendationCategory = RecommendationCategory.NEEDS_INFORMATION,
+                ),
+                downloadCoordinator = observingDownloadCoordinator(store),
+            )
+
+            viewModel.loadDetail(repositoryId, ModelHubBrowseMode.LanguageModels)
+            advanceUntilIdle()
+            val artifact = requireNotNull(viewModel.ggufFiles.value.single().artifact)
+            viewModel.startDownload(repositoryId, path, metadata(artifact))
+            advanceUntilIdle()
+
+            val decoded = PersistedModelEvidenceCodec().decode(store.createdRequests.single().evidence)
+            assertEquals(InstalledEvidenceState.REQUIRES_ENRICHMENT, decoded.state)
+            assertNull(decoded.descriptor)
+            assertEquals(artifact.toModelFileIdentity(), decoded.artifactIdentities.single())
+        } finally {
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun diffusionDownloadEnqueuesCompletePrimaryAndComponentEvidence() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val repositoryId = "stabilityai/sd-turbo"
+        val revision = "a".repeat(40)
+        val primaryPath = "model.safetensors"
+        val componentPath = "text_encoder_2/model.safetensors"
+        val primaryObjectId = "b".repeat(64)
+        val componentObjectId = "c".repeat(64)
+        val primary = modelFileIdentity(repositoryId, revision, primaryPath, primaryObjectId)
+        val component = modelFileIdentity(repositoryId, revision, componentPath, componentObjectId)
+        val descriptor = DiffusionModelDescriptor(
+            repositoryId = repositoryId,
+            revision = revision,
+            components = listOf(
+                DiffusionComponentDescriptor(
+                    file = primary,
+                    role = null,
+                    required = true,
+                    isPrimary = true,
+                    quantization = QuantizationEvidence.Known("F16"),
+                ),
+                DiffusionComponentDescriptor(
+                    file = component,
+                    role = com.debanshu777.huggingfacemanager.sdcpp.ComponentRole.CLIP_G,
+                    required = true,
+                    isPrimary = false,
+                    quantization = QuantizationEvidence.Known("F16"),
+                ),
+            ),
+            mode = DiffusionMode.IMAGE,
+            family = "SDXL",
+            architecture = null,
+            width = 512,
+            height = 512,
+            quantizationDistribution = listOf("F16"),
+            requiredComponentsPresent = true,
+            requiredEngineFeatures = emptyList(),
+            evidence = emptyList(),
+        )
+        val requestDispatcher = dispatcher
+        val engine = object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler { request ->
+                when {
+                    request.url.encodedPath.contains("/tree/") -> respondJson(
+                        """[{"path":"$primaryPath","type":"file","size":100,"lfs":{"oid":"$primaryObjectId","size":100}},{"path":"$componentPath","type":"file","size":100,"lfs":{"oid":"$componentObjectId","size":100}}]""",
+                    )
+                    request.url.encodedPath.endsWith("/$repositoryId") -> respondJson(
+                        """{"id":"$repositoryId","modelId":"$repositoryId","sha":"$revision","private":false}""",
+                    )
+                    else -> error("Unexpected request ${request.url}")
+                }
+            }
+        }) {
+            override val dispatcher: CoroutineDispatcher = requestDispatcher
+        }
+        val client = HttpClient(engine)
+        val store = ObservingDownloadTaskStore()
+        try {
+            val viewModel = viewModel(
+                client = client,
+                dispatcher = dispatcher,
+                storagePathProvider = FakeStoragePathProvider(availableStorageBytes = 4L * 1024 * 1024 * 1024),
+                recommendationService = recommendationService(
+                    dispatcher = dispatcher,
+                    descriptor = descriptor,
+                    recommendationCategory = RecommendationCategory.NEEDS_INFORMATION,
+                ),
+                downloadCoordinator = observingDownloadCoordinator(store),
+            )
+
+            viewModel.loadDetail(repositoryId, ModelHubBrowseMode.DiffusionImage)
+            advanceUntilIdle()
+            val artifact = requireNotNull(viewModel.ggufFiles.value.single { it.path == primaryPath }.artifact)
+            viewModel.startDownload(repositoryId, primaryPath, metadata(artifact))
+            advanceUntilIdle()
+
+            assertTrue(
+                store.createdRequests.isNotEmpty(),
+                "error=${viewModel.downloadError.value} recommendation=${viewModel.recommendedModels.value}",
+            )
+            val request = store.createdRequests.single()
+            val decoded = PersistedModelEvidenceCodec().decode(request.evidence)
+            assertEquals(setOf(primaryPath, componentPath), request.artifacts.map { it.metadata.artifact.relativePath }.toSet())
+            assertEquals(InstalledEvidenceState.COMPLETE, decoded.state)
+            assertEquals(descriptor, decoded.descriptor)
+            assertEquals(setOf(primary, component), decoded.artifactIdentities.toSet())
+        } finally {
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
     @Test
     fun freshDetailLoadAssessesExactFilesForDownloadAdmission() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -1174,8 +1406,12 @@ class ModelViewModelRecommendationTest {
 
 private class ObservingDownloadTaskStore : DownloadTaskStore {
     val snapshots = MutableStateFlow<List<DownloadBatchSnapshot>>(emptyList())
+    val createdRequests = mutableListOf<DownloadBatchRequest>()
 
-    override suspend fun create(request: DownloadBatchRequest, nowEpochMs: Long): String = "unused"
+    override suspend fun create(request: DownloadBatchRequest, nowEpochMs: Long): String {
+        createdRequests += request
+        return "created-${createdRequests.size}"
+    }
     override fun observeForModel(modelId: String): Flow<List<DownloadBatchSnapshot>> = snapshots
     override suspend fun getBatch(batchId: String): DownloadBatchSnapshot? =
         snapshots.value.singleOrNull { it.batchId == batchId }
@@ -1358,11 +1594,63 @@ private fun huggingFaceApi(client: HttpClient): HuggingFaceApi {
     }
 }
 
+private fun exactDetailClient(
+    dispatcher: CoroutineDispatcher,
+    repositoryId: String,
+    revision: String,
+    path: String,
+    objectId: String,
+): HttpClient {
+    val engine = object : MockEngine(MockEngineConfig().apply {
+        reuseHandlers = true
+        addHandler { request ->
+            when {
+                request.url.encodedPath.contains("/tree/") -> respondJson(
+                    """[{"path":"$path","type":"file","size":100,"lfs":{"oid":"$objectId","size":100}}]""",
+                )
+                request.url.encodedPath.endsWith("/$repositoryId") -> respondJson(
+                    """{"id":"$repositoryId","modelId":"$repositoryId","sha":"$revision","private":false}""",
+                )
+                else -> error("Unexpected request ${request.url}")
+            }
+        }
+    }) {
+        override val dispatcher: CoroutineDispatcher = dispatcher
+    }
+    return HttpClient(engine)
+}
+
+private fun metadata(artifact: DownloadArtifactIdentity) = DownloadMetadataDTO(
+    artifact = artifact,
+    logicalRole = "model",
+    sizeBytes = artifact.expectedBytes,
+    author = null,
+    libraryName = null,
+    pipelineTag = null,
+)
+
+private fun modelFileIdentity(
+    repositoryId: String,
+    revision: String,
+    path: String,
+    objectId: String,
+) = ModelFileIdentity(
+    repositoryId = repositoryId,
+    revision = revision,
+    path = path,
+    sizeBytes = 100L,
+    gitOid = null,
+    lfsOid = objectId,
+    xetHash = null,
+    evidence = emptyList(),
+)
+
 private fun recommendationService(
     dispatcher: CoroutineDispatcher,
     onAssess: () -> Unit = {},
     onReassess: () -> Unit = {},
     descriptorFiles: List<ModelFileIdentity>? = null,
+    descriptor: ModelDescriptor? = null,
     recommendationCategory: RecommendationCategory = RecommendationCategory.RECOMMENDED,
     recommendationStorageFit: FitBand? = null,
     variantSet: ((String) -> RepositoryVariantSet)? = null,
@@ -1385,7 +1673,7 @@ private fun recommendationService(
         RepositoryVariantSet.Ready(
             listOf(
                 RepositoryVariant(
-                    descriptor = LlmModelDescriptor(
+                    descriptor = descriptor ?: LlmModelDescriptor(
                         repositoryId = repositoryId,
                         revision = identity.revision,
                         files = identities,
