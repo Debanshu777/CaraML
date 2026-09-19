@@ -14,7 +14,7 @@ internal fun pendingEvidence(identities: Collection<DownloadArtifactIdentity>): 
         descriptor = null,
     )
 
-private fun DownloadArtifactIdentity.toModelFileIdentity(): ModelFileIdentity {
+internal fun DownloadArtifactIdentity.toModelFileIdentity(): ModelFileIdentity {
     val objectId = requireNotNull(remoteObjectId) { "Missing exact artifact object identity" }
     return ModelFileIdentity(
         repositoryId = repositoryId,

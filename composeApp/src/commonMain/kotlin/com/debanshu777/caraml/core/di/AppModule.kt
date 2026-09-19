@@ -32,6 +32,7 @@ import com.debanshu777.caraml.core.platform.RunnerBackendCapabilitySource
 import com.debanshu777.caraml.core.storage.AppDatabase
 import com.debanshu777.caraml.core.recommendation.storage.RecommendationDatabaseOwner
 import com.debanshu777.caraml.core.storage.component.ComponentRepository
+import com.debanshu777.caraml.core.storage.evidence.InstalledModelEvidenceRepository
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
 import com.debanshu777.caraml.core.download.ArtifactTransfer
 import com.debanshu777.caraml.core.download.BatchFinalizer
@@ -90,15 +91,18 @@ val appModule = module {
 
     single { get<AppDatabase>().localModelDao() }
     single { get<AppDatabase>().downloadedComponentDao() }
+    single { get<AppDatabase>().installedModelEvidenceDao() }
+    single { get<AppDatabase>().installedModelCatalogDao() }
     single { LocalModelRepository(get()) }
     single { ComponentRepository(get()) }
+    single { InstalledModelEvidenceRepository(get()) }
     single { RecommendedModelLoadRequestResolver(get(), get()) }
     single { DownloadManager(get()) }
     single<DownloadTaskStore> { RoomDownloadTaskStore(get<DownloadDatabase>().downloadTaskDao()) }
     single<ArtifactTransfer> { DownloadManagerArtifactTransfer(get()) }
     single<DownloadCheckpointCleaner> { DownloadManagerCheckpointCleaner(get()) }
     single<BundlePublisher> { DownloadManagerBundlePublisher(get()) }
-    single<ModelCatalogPublisher> { RepositoryModelCatalogPublisher(get(), get(), get()) }
+    single<ModelCatalogPublisher> { RepositoryModelCatalogPublisher(get(), get()) }
     single<BatchFinalizer> { ModelDownloadFinalizer(get(), get(), get()) }
     single { DownloadBatchRunner(get(), get(), get(), { Clock.System.now().toEpochMilliseconds() }) }
     single { DownloadRuntimeScope(CoroutineScope(SupervisorJob() + Dispatchers.Default)) }
