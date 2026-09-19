@@ -258,6 +258,174 @@ class ModelViewModelRecommendationTest {
     }
 
     @Test
+    fun selectVariantWithoutDescriptorEnqueuesExactArtifactWithEnrichmentEvidence() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val repositoryId = "org/select-variant"
+        val revision = "a".repeat(40)
+        val path = "weights/model-Q4_K_M.gguf"
+        val objectId = "b".repeat(64)
+        val client = exactDetailClient(dispatcher, repositoryId, revision, path, objectId)
+        val store = ObservingDownloadTaskStore()
+        try {
+            val viewModel = viewModel(
+                client = client,
+                dispatcher = dispatcher,
+                recommendationService = recommendationService(
+                    dispatcher = dispatcher,
+                    variantSet = { id -> RepositoryVariantSet.SelectVariant(id) },
+                ),
+                downloadCoordinator = observingDownloadCoordinator(store),
+            )
+
+            viewModel.loadDetail(repositoryId, ModelHubBrowseMode.LanguageModels)
+            advanceUntilIdle()
+            assertEquals(DescriptorState.SELECT_VARIANT, viewModel.recommendedModels.value.single().descriptorState)
+            assertNull(viewModel.recommendedModels.value.single().selectedDescriptor)
+            val artifact = requireNotNull(viewModel.ggufFiles.value.single().artifact)
+            viewModel.startDownload(repositoryId, path, metadata(artifact))
+            advanceUntilIdle()
+
+            val decoded = PersistedModelEvidenceCodec().decode(store.createdRequests.single().evidence)
+            assertEquals(InstalledEvidenceState.REQUIRES_ENRICHMENT, decoded.state)
+            assertNull(decoded.descriptor)
+            assertEquals(artifact.toModelFileIdentity(), decoded.artifactIdentities.single())
+        } finally {
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun descriptorMissingRequestedIdentityEnqueuesExactArtifactWithEnrichmentEvidence() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val repositoryId = "org/missing-requested-identity"
+        val revision = "a".repeat(40)
+        val path = "weights/model-Q4_K_M.gguf"
+        val objectId = "b".repeat(64)
+        val staleDescriptorFile = modelFileIdentity(
+            repositoryId,
+            revision,
+            "weights/model-Q8_0.gguf",
+            "c".repeat(64),
+        )
+        val client = exactDetailClient(dispatcher, repositoryId, revision, path, objectId)
+        val store = ObservingDownloadTaskStore()
+        try {
+            val viewModel = viewModel(
+                client = client,
+                dispatcher = dispatcher,
+                storagePathProvider = FakeStoragePathProvider(availableStorageBytes = 4L * 1024 * 1024 * 1024),
+                recommendationService = recommendationService(
+                    dispatcher = dispatcher,
+                    descriptorFiles = listOf(staleDescriptorFile),
+                    recommendationCategory = RecommendationCategory.NEEDS_INFORMATION,
+                ),
+                downloadCoordinator = observingDownloadCoordinator(store),
+            )
+
+            viewModel.loadDetail(repositoryId, ModelHubBrowseMode.LanguageModels)
+            advanceUntilIdle()
+            val artifact = requireNotNull(viewModel.ggufFiles.value.single().artifact)
+            viewModel.startDownload(repositoryId, path, metadata(artifact))
+            advanceUntilIdle()
+
+            val decoded = PersistedModelEvidenceCodec().decode(store.createdRequests.single().evidence)
+            assertEquals(InstalledEvidenceState.REQUIRES_ENRICHMENT, decoded.state)
+            assertNull(decoded.descriptor)
+            assertEquals(artifact.toModelFileIdentity(), decoded.artifactIdentities.single())
+        } finally {
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun descriptorRemoteIdentityMismatchEnqueuesExactArtifactWithEnrichmentEvidence() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val repositoryId = "org/remote-id-mismatch"
+        val revision = "a".repeat(40)
+        val path = "weights/model-Q4_K_M.gguf"
+        val exactObjectId = "b".repeat(64)
+        val staleDescriptorFile = modelFileIdentity(repositoryId, revision, path, "c".repeat(64))
+        val client = exactDetailClient(dispatcher, repositoryId, revision, path, exactObjectId)
+        val store = ObservingDownloadTaskStore()
+        try {
+            val viewModel = viewModel(
+                client = client,
+                dispatcher = dispatcher,
+                storagePathProvider = FakeStoragePathProvider(availableStorageBytes = 4L * 1024 * 1024 * 1024),
+                recommendationService = recommendationService(
+                    dispatcher = dispatcher,
+                    descriptorFiles = listOf(staleDescriptorFile),
+                    recommendationCategory = RecommendationCategory.NEEDS_INFORMATION,
+                ),
+                downloadCoordinator = observingDownloadCoordinator(store),
+            )
+
+            viewModel.loadDetail(repositoryId, ModelHubBrowseMode.LanguageModels)
+            advanceUntilIdle()
+            val artifact = requireNotNull(viewModel.ggufFiles.value.single().artifact)
+            viewModel.startDownload(repositoryId, path, metadata(artifact))
+            advanceUntilIdle()
+
+            val decoded = PersistedModelEvidenceCodec().decode(store.createdRequests.single().evidence)
+            assertEquals(InstalledEvidenceState.REQUIRES_ENRICHMENT, decoded.state)
+            assertNull(decoded.descriptor)
+            assertEquals(artifact.toModelFileIdentity(), decoded.artifactIdentities.single())
+        } finally {
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun nonExactCurrentDetailArtifactIsRejectedBeforeInformationalFallback() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val repositoryId = "org/reject-forged-artifact"
+        val revision = "a".repeat(40)
+        val path = "weights/model-Q4_K_M.gguf"
+        val objectId = "b".repeat(64)
+        val client = exactDetailClient(dispatcher, repositoryId, revision, path, objectId)
+        val store = ObservingDownloadTaskStore()
+        try {
+            val viewModel = viewModel(
+                client = client,
+                dispatcher = dispatcher,
+                recommendationService = recommendationService(
+                    dispatcher = dispatcher,
+                    variantSet = { id -> RepositoryVariantSet.SelectVariant(id) },
+                ),
+                downloadCoordinator = observingDownloadCoordinator(store),
+            )
+
+            viewModel.loadDetail(repositoryId, ModelHubBrowseMode.LanguageModels)
+            advanceUntilIdle()
+            val exact = requireNotNull(viewModel.ggufFiles.value.single().artifact)
+            val forged = requireNotNull(
+                DownloadArtifactIdentity.create(
+                    repositoryId = exact.repositoryId,
+                    immutableRevision = exact.immutableRevision,
+                    relativePath = exact.relativePath,
+                    remoteObjectId = "sha256:${"f".repeat(64)}",
+                    expectedBytes = exact.expectedBytes,
+                ),
+            )
+            viewModel.startDownload(repositoryId, path, metadata(forged))
+            advanceUntilIdle()
+
+            assertTrue(store.createdRequests.isEmpty())
+            assertTrue(viewModel.downloadError.value != null)
+        } finally {
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
     fun diffusionDownloadEnqueuesCompletePrimaryAndComponentEvidence() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
@@ -919,7 +1087,17 @@ class ModelViewModelRecommendationTest {
         val requestDispatcher = dispatcher
         val engine = object : MockEngine(MockEngineConfig().apply {
             reuseHandlers = true
-            addHandler { respondJson(searchResponse("download", repositoryId)) }
+            addHandler { request ->
+                when {
+                    request.url.encodedPath.contains("/tree/") -> respondJson(
+                        """[{"path":"$path","type":"file","size":100,"oid":"$objectId"}]""",
+                    )
+                    request.url.encodedPath.endsWith("/$repositoryId") -> respondJson(
+                        """{"id":"$repositoryId","modelId":"$repositoryId","sha":"$revision","private":false}""",
+                    )
+                    else -> error("Unexpected request ${request.url}")
+                }
+            }
         }) {
             override val dispatcher: CoroutineDispatcher = requestDispatcher
         }
@@ -944,8 +1122,7 @@ class ModelViewModelRecommendationTest {
                     recommendationStorageFit = FitBand.COMFORTABLE,
                 ),
             )
-            viewModel.updateSearchQuery("download")
-            viewModel.performSearch()
+            viewModel.loadDetail(repositoryId, ModelHubBrowseMode.LanguageModels)
             advanceUntilIdle()
 
             viewModel.startDownload(repositoryId, path, metadata)

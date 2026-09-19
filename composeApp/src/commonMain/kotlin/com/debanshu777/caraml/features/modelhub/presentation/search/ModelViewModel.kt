@@ -1294,33 +1294,34 @@ class ModelViewModel(
         metadata: DownloadMetadataDTO,
         offerDownloadForLater: Boolean = true,
     ): DownloadAdmission {
+        if (!isExactCurrentDetailArtifact(modelId, metadata.artifact)) {
+            return DownloadAdmission.Blocked(
+                com.debanshu777.caraml.core.recommendation.AssessmentReason.INVALID_METADATA,
+            )
+        }
         val state = _recommendedModels.value.firstOrNull { it.repositoryId == modelId }
         if (state == null || state.descriptorState == DescriptorState.NEEDS_INFORMATION) {
-            return if (isExactCurrentDetailArtifact(modelId, metadata.artifact)) {
-                DownloadAdmission.Allowed
-            } else {
-                DownloadAdmission.Blocked(com.debanshu777.caraml.core.recommendation.AssessmentReason.INVALID_METADATA)
-            }
+            return DownloadAdmission.Allowed
+        }
+        val descriptor = state.selectedDescriptor
+            ?: return DownloadAdmission.Allowed
+        if (findExactTarget(descriptor, metadata.artifact) == null) {
+            return DownloadAdmission.Allowed
         }
         val session = recommendationSession
             ?: return DownloadAdmission.Blocked(com.debanshu777.caraml.core.recommendation.AssessmentReason.MEMORY_BOUNDS_UNKNOWN)
-        val descriptor = state.selectedDescriptor
-            ?: return DownloadAdmission.Blocked(com.debanshu777.caraml.core.recommendation.AssessmentReason.MEMORY_BOUNDS_UNKNOWN)
-        if (findExactTarget(descriptor, metadata.artifact) == null) {
-            return DownloadAdmission.Blocked(com.debanshu777.caraml.core.recommendation.AssessmentReason.INVALID_METADATA)
-        }
         val refreshed = recommendationService.refreshForAdmission(
             session,
             state,
             settings.value.recommendationProfile,
         ) ?: return DownloadAdmission.Blocked(com.debanshu777.caraml.core.recommendation.AssessmentReason.RESOURCE_READING_UNAVAILABLE)
-        val refreshedDescriptor = refreshed.selectedDescriptor
-            ?: return DownloadAdmission.Blocked(com.debanshu777.caraml.core.recommendation.AssessmentReason.MEMORY_BOUNDS_UNKNOWN)
-        if (findExactTarget(refreshedDescriptor, metadata.artifact) == null) {
-            return DownloadAdmission.Blocked(com.debanshu777.caraml.core.recommendation.AssessmentReason.INVALID_METADATA)
-        }
         _recommendedModels.update { current ->
             current.map { if (it.sourceIndex == refreshed.sourceIndex) refreshed else it }
+        }
+        val refreshedDescriptor = refreshed.selectedDescriptor
+            ?: return DownloadAdmission.Allowed
+        if (findExactTarget(refreshedDescriptor, metadata.artifact) == null) {
+            return DownloadAdmission.Allowed
         }
         when (estimateCurrentStorage(refreshedDescriptor)) {
             is StorageRequirement.Ready -> Unit
