@@ -135,8 +135,11 @@ class InstalledModelLoadRequestResolver internal constructor(
         if (recommendation.assessmentKey != assessment.assessmentKey) {
             return InstalledModelLoadResolution.Rejected(ArtifactIdentityRejection.INVALID_INPUT)
         }
+        recommendation.nonAdmissibleReason(assessment)?.let { reason ->
+            return InstalledModelLoadResolution.NotAdmissible(reason)
+        }
         val selected = recommendation.selectedPlan as? RunPlan
-            ?: return InstalledModelLoadResolution.NotAdmissible(recommendation.notAdmissibleReason(assessment))
+            ?: return InstalledModelLoadResolution.NotAdmissible(AssessmentReason.NO_RUN_PLAN)
         if (!selected.matches(expectedMode) || !selected.matches(workload) ||
             !settings.useGpu && selected.backend != BackendKind.CPU
         ) {
@@ -160,15 +163,32 @@ class InstalledModelLoadRequestResolver internal constructor(
         assessmentKey.isNotBlank() && assessmentKey == planAssessments.assessmentKey &&
             compatibility == planAssessments.compatibility
 
-    private fun PersonalizedRecommendation.notAdmissibleReason(
+    private fun PersonalizedRecommendation.nonAdmissibleReason(
         assessment: ModelAssessment,
+    ): AssessmentReason? = when (category) {
+        RecommendationCategory.RECOMMENDED,
+        RecommendationCategory.USABLE,
+        RecommendationCategory.RISKY,
+        -> null
+        RecommendationCategory.NEEDS_INFORMATION -> reasonFrom(
+            assessment,
+            AssessmentReason.RECOMMENDATION_EVIDENCE_INCOMPLETE,
+        )
+        RecommendationCategory.NOT_SUITABLE -> reasonFrom(assessment, AssessmentReason.NO_RUN_PLAN)
+        RecommendationCategory.INCOMPATIBLE -> reasonFrom(assessment, AssessmentReason.INCOMPATIBLE_MODEL)
+    }
+
+    private fun PersonalizedRecommendation.reasonFrom(
+        assessment: ModelAssessment,
+        fallback: AssessmentReason,
     ): AssessmentReason = reasons.firstOrNull()
         ?: assessment.planAssessments.reasons.firstOrNull()
-        ?: when (assessment.compatibility) {
-            is Compatibility.Incompatible -> AssessmentReason.INCOMPATIBLE_MODEL
-            is Compatibility.Unknown -> AssessmentReason.RECOMMENDATION_EVIDENCE_INCOMPLETE
-            Compatibility.Compatible -> AssessmentReason.NO_RUN_PLAN
+        ?: when (val compatibility = assessment.compatibility) {
+            is Compatibility.Incompatible -> compatibility.reasons.firstOrNull()
+            is Compatibility.Unknown -> compatibility.reasons.firstOrNull()
+            Compatibility.Compatible -> null
         }
+        ?: fallback
 
     private fun ModelDescriptor.matches(mode: GenerationMode): Boolean = when (this) {
         is LlmModelDescriptor -> mode == GenerationMode.Text

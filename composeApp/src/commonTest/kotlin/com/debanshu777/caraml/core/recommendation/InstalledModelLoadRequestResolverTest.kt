@@ -269,6 +269,51 @@ class InstalledModelLoadRequestResolverTest {
     }
 
     @Test
+    fun needsInformationWithSelectedPlanIsNotAdmissible() = runTest {
+        val fixture = Fixture().apply {
+            recommendationCategory = RecommendationCategory.NEEDS_INFORMATION
+            recommendationReasons = listOf(AssessmentReason.RECOMMENDATION_EVIDENCE_INCOMPLETE)
+        }
+
+        val result = fixture.resolver().resolve(fixture.model, GenerationMode.Text)
+
+        assertEquals(
+            InstalledModelLoadResolution.NotAdmissible(AssessmentReason.RECOMMENDATION_EVIDENCE_INCOMPLETE),
+            result,
+        )
+        assertEquals(0, fixture.strictRequestCalls)
+    }
+
+    @Test
+    fun notSuitableWithSelectedPlanIsNotAdmissible() = runTest {
+        val fixture = Fixture().apply {
+            recommendationCategory = RecommendationCategory.NOT_SUITABLE
+            recommendationReasons = listOf(AssessmentReason.MEMORY_NO_FIT)
+        }
+
+        val result = fixture.resolver().resolve(fixture.model, GenerationMode.Text)
+
+        assertEquals(
+            InstalledModelLoadResolution.NotAdmissible(AssessmentReason.MEMORY_NO_FIT),
+            result,
+        )
+        assertEquals(0, fixture.strictRequestCalls)
+    }
+
+    @Test
+    fun riskyWithSelectedPlanRemainsAdmissible() = runTest {
+        val fixture = Fixture().apply {
+            recommendationCategory = RecommendationCategory.RISKY
+            recommendationReasons = listOf(AssessmentReason.TIGHT_MEMORY_FIT)
+        }
+
+        val result = fixture.resolver().resolve(fixture.model, GenerationMode.Text)
+
+        assertIs<InstalledModelLoadResolution.Ready>(result)
+        assertEquals(1, fixture.strictRequestCalls)
+    }
+
+    @Test
     fun missingPlanAndInconsistentAssessmentKeysFailClosed() = runTest {
         val noPlan = Fixture().apply { omitSelectedPlan = true }
         val badKey = Fixture().apply { inconsistentAssessmentKey = true }
@@ -362,6 +407,8 @@ class InstalledModelLoadRequestResolverTest {
         var strictRequestCalls = 0
         var omitSelectedPlan = false
         var inconsistentAssessmentKey = false
+        var recommendationCategory = RecommendationCategory.RECOMMENDED
+        var recommendationReasons: List<AssessmentReason> = emptyList()
         var cancellationStage: ResolverStage? = null
         var planForSnapshot: (DeviceSnapshot) -> RunPlan = { installedLlmPlan() }
 
@@ -406,9 +453,9 @@ class InstalledModelLoadRequestResolverTest {
                 val selected = assessment.planAssessments.values.single()
                 PersonalizedRecommendation(
                     assessmentKey = assessment.assessmentKey,
-                    category = if (omitSelectedPlan) RecommendationCategory.NOT_SUITABLE else RecommendationCategory.RECOMMENDED,
+                    category = if (omitSelectedPlan) RecommendationCategory.NOT_SUITABLE else recommendationCategory,
                     selectedPlan = selected.plan.takeUnless { omitSelectedPlan },
-                    reasons = if (omitSelectedPlan) listOf(AssessmentReason.NO_RUN_PLAN) else emptyList(),
+                    reasons = if (omitSelectedPlan) listOf(AssessmentReason.NO_RUN_PLAN) else recommendationReasons,
                     profile = profile,
                     selectedPlanAssessment = selected.takeUnless { omitSelectedPlan },
                 )

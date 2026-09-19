@@ -4,7 +4,8 @@
 
 - Status: complete
 - Commit subject: `feat(models): resolve installed v2 load requests`
-- Commit SHA: recorded in the Task 6 handoff; this report is included in that commit
+- Initial commit: `ca9abbb55ecde15487ffe2d63240d0f34c896eae feat(models): resolve installed v2 load requests`
+- Review-fix commit: `fix(models): reject non-admissible installed plans` (this report is updated in that commit)
 
 ## Files and interfaces
 
@@ -24,13 +25,16 @@
    - `explicitKvPresetRejectsAPlanWithDifferentCacheTypes` failed because a selected plan could disagree with the explicit workload KV types.
 4. Focused no-legacy regression
    - `legacyContentArtifactIsRejectedBeforeAssessment` failed because the orchestration boundary did not yet explicitly reject `LocalContent` artifacts.
+5. Review-fix category regression
+   - `needsInformationWithSelectedPlanIsNotAdmissible` and `notSuitableWithSelectedPlanIsNotAdmissible` failed because a non-null selected plan bypassed the personalized recommendation category.
+   - `riskyWithSelectedPlanRemainsAdmissible` passed in the RED run, preserving the intended Task 7 acknowledgement boundary.
 
 ## GREEN evidence
 
 - Required gate:
   - Command: `./gradlew :composeApp:jvmTest --tests '*InstalledModelLoadRequestResolverTest' --tests '*LocalArtifactIdentityResolverTest' --tests '*ModelAssessmentRepositoryTest' --no-daemon`
-  - Result: PASS, 52 tests, 0 skipped, 0 failures, 0 errors.
-  - Breakdown: resolver 16, artifact identity 16, assessment repository 20.
+  - Result after review fix: PASS, 55 tests, 0 skipped, 0 failures, 0 errors.
+  - Breakdown: resolver 19, artifact identity 16, assessment repository 20.
 - Impacted evidence/metadata/Model Hub/Koin gate:
   - Command: `./gradlew :composeApp:jvmTest --tests '*InstalledModelEvidenceRepairerTest' --tests '*HuggingFaceModelMetadataSourceTest' --tests '*LegacySuitabilityAdapterTest*' --tests '*ModelViewModelRecommendationTest' --no-daemon`
   - Result: PASS, 50 tests, 0 skipped, 0 failures, 0 errors.
@@ -61,12 +65,14 @@
 - Repair network retry: `NeedsNetwork`.
 - Terminal repair/assessment reason: `NotAdmissible(reason)`.
 - Manifest, artifact, owner, identity, mode-plan, key, or selected-plan binding failure: `Rejected(reason)`.
+- Only `RECOMMENDED`, `USABLE`, and `RISKY` personalized categories are admissible. `NEEDS_INFORMATION`, `NOT_SUITABLE`, and `INCOMPATIBLE` return `NotAdmissible` even if a plan is present, using only bounded enum reasons.
 - Unexpected non-cancellation exception: `Failed`, without exception text, paths, or payloads.
 - Cancellation from component lookup, repair, artifact resolution, snapshot, settings, assessment, or strict request construction escapes unchanged.
 
 ## Self-review
 
 - Verified exact descriptor/artifact owner, kind, generation mode, identity-set, assessment-key, plan-key, selected assessment, workload, KV, and CPU-only bindings.
+- Verified personalized category admission exhaustively and before request construction; `RISKY` remains loadable for downstream acknowledgement handling.
 - Verified each call obtains fresh resources and settings before assessment/personalization; only immutable assessment estimates may be reused through existing complete cache keys.
 - Preserved existing legacy request behavior for pre-Task-7 callers while preventing invalid bindings from triggering legacy resolution.
 - No new dependency, logs, exception text, path disclosure, or persisted side effect was introduced.
