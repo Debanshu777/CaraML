@@ -70,6 +70,32 @@ class NativeRunPlanAdapterTest {
     }
 
     @Test
+    fun cpuSaferPlanDisablesEveryGpuOnlyNativeFlag() {
+        val cpu = llmPlan(gpuLayers = 0, backend = BackendKind.CPU)
+
+        val mapped = NativeRunPlanAdapter.toLlamaConfig(
+            cpu,
+            NativeRunnerConfig(nGpuLayers = -1, offloadKqv = true, autoFit = true),
+        )
+
+        assertEquals(0, mapped.nGpuLayers)
+        assertFalse(mapped.offloadKqv)
+        assertFalse(mapped.autoFit)
+    }
+
+    @Test
+    fun gpuPlanPreservesExplicitlyDisabledKqvOffload() {
+        val gpu = llmPlan(gpuLayers = 12, backend = BackendKind.VULKAN)
+
+        val mapped = NativeRunPlanAdapter.toLlamaConfig(
+            gpu,
+            NativeRunnerConfig(offloadKqv = false),
+        )
+
+        assertFalse(mapped.offloadKqv)
+    }
+
+    @Test
     fun multipleLlmSequencesAreRejectedUntilTheNativeAbiCanCarryThem() {
         val unsupported = LlmRunPlan(
             contextTokens = 4_096,

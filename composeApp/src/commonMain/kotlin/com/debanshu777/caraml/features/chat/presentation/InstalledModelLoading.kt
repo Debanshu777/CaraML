@@ -5,6 +5,34 @@ import com.debanshu777.caraml.core.recommendation.InstalledModelLoadResolution
 import com.debanshu777.caraml.core.recommendation.LoadRequest
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+
+internal suspend fun awaitPreviousModelLoad(previousJob: Job?) {
+    previousJob?.join()
+    currentCoroutineContext().ensureActive()
+}
+
+internal suspend fun loadExactModelForMode(
+    mode: GenerationMode,
+    request: LoadRequest,
+    unloadText: suspend () -> Unit,
+    releaseDiffusion: suspend () -> Unit,
+    loadText: suspend (LoadRequest) -> ModelLoadResult,
+    loadDiffusion: suspend (LoadRequest) -> ModelLoadResult,
+): ModelLoadResult = when (mode) {
+    GenerationMode.Text -> {
+        releaseDiffusion()
+        loadText(request)
+    }
+    GenerationMode.Image,
+    GenerationMode.Video,
+    -> {
+        unloadText()
+        loadDiffusion(request)
+    }
+}
 
 internal suspend fun loadInstalledModel(
     model: LocalModelEntity,

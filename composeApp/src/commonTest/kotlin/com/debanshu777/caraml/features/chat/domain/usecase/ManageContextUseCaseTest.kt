@@ -59,7 +59,7 @@ private class FakeInferenceRepository(
     var resetCalls: Int = 0
 
     override suspend fun loadModel(request: LoadRequest): ModelLoadResult =
-        error("Not used")
+        ModelLoadResult.Success(contextSize = 0)
 
     override suspend fun unloadModel() = Unit
     override fun generateResponse(userPrompt: String): Flow<InferenceChunk> = emptyFlow()

@@ -2,6 +2,7 @@ package com.debanshu777.caraml.core.data.inference
 
 import com.debanshu777.caraml.core.benchmark.BenchmarkUtils
 import com.debanshu777.caraml.core.platform.AppLogger
+import com.debanshu777.caraml.core.platform.BackendKind
 import com.debanshu777.caraml.core.platform.DeviceCapabilities
 import com.debanshu777.caraml.core.platform.PlatformPaths
 import com.debanshu777.caraml.core.recommendation.DeviceSnapshotProvider
@@ -15,6 +16,7 @@ import com.debanshu777.caraml.core.recommendation.LoadAdmissionController
 import com.debanshu777.caraml.core.recommendation.LoadRecoveryRepository
 import com.debanshu777.caraml.core.recommendation.LoadRequest
 import com.debanshu777.caraml.core.recommendation.LoadSessionCoordinator
+import com.debanshu777.caraml.core.recommendation.LlmRunPlan
 import com.debanshu777.caraml.core.recommendation.LocalArtifactIdentityResolver
 import com.debanshu777.caraml.core.recommendation.NativeLoadPreflight
 import com.debanshu777.caraml.core.recommendation.NativeLoadOutcome
@@ -24,8 +26,9 @@ import com.debanshu777.caraml.core.recommendation.RecommendationCategory
 import com.debanshu777.caraml.core.recommendation.RecommendationPolicy
 import com.debanshu777.caraml.core.recommendation.StableLoadFailure
 import com.debanshu777.caraml.core.recommendation.SuitabilityEngine
-import com.debanshu777.caraml.core.recommendation.toInferenceObservationPlan
 import com.debanshu777.caraml.core.recommendation.VerifiedArtifactLoadTarget
+import com.debanshu777.caraml.core.recommendation.requiresCpuOnlyLlmExecution
+import com.debanshu777.caraml.core.recommendation.toInferenceObservationPlan
 import com.debanshu777.caraml.core.settings.AppSettings
 import com.debanshu777.caraml.core.settings.KvQuantPreset
 import com.debanshu777.caraml.core.data.settings.SettingsRepository
@@ -76,9 +79,6 @@ class LlamaInferenceRepository(
          */
         private const val AUTO_FIT_CONTEXT_CAP = 16384
 
-        /** When true, skip GPU attempt on first load for hybrid-SSM archs (they always fail on Vulkan).
-         *  Task 1 self-learns after runtime failure regardless; disable if ggml-vulkan adds qwen35 support. */
-        private const val DENYLIST_HYBRID_SSM_VULKAN = true
     }
 
     /**
@@ -88,6 +88,7 @@ class LlamaInferenceRepository(
 
     private fun archFamily(arch: String?): ArchFamily = when {
         arch == null -> ArchFamily.UNKNOWN
+        arch.requiresCpuOnlyLlmExecution() -> ArchFamily.HYBRID_SSM
         arch in listOf(
             "qwen2", "llama", "gemma", "mistral", "phi3",
             "qwen3", "phi2", "stablelm", "falcon", "smollm3"
@@ -95,10 +96,6 @@ class LlamaInferenceRepository(
         arch in listOf(
             "qwen3moe", "deepseek2", "mixtral", "qwen2_moe"
         ) -> ArchFamily.MOE
-        arch in listOf(
-            "qwen3next", "qwen35", "jamba", "mamba", "ssm",
-            "recurrent_gemma", "granite_hybrid"
-        ) -> ArchFamily.HYBRID_SSM
         else -> ArchFamily.UNKNOWN
     }
 
@@ -128,7 +125,7 @@ class LlamaInferenceRepository(
             if (artifact.identity != request.identity) {
                 return@exclusive ModelLoadResult.Error("The installed model identity is invalid.")
             }
-            val plan = request.plan as? com.debanshu777.caraml.core.recommendation.LlmRunPlan
+            val plan = request.plan as? LlmRunPlan
                 ?: return@exclusive ModelLoadResult.Error("The selected model configuration is invalid.")
             val resolver = artifactIdentityResolver
                 ?: return@exclusive ModelLoadResult.Error("Load admission is unavailable.")
@@ -141,9 +138,13 @@ class LlamaInferenceRepository(
                 return@exclusive ModelLoadResult.Error("Failed to initialize. Please restart the app.")
             }
             val settings = currentSettings()
-            val base = buildRunnerConfig(request.model, settings.temperature, settings)
-            val exactConfig = runCatching { NativeRunPlanAdapter.toLlamaConfig(plan, base) }
+            val architecture = request.observationIdentity.architectureFamily
+            val base = buildRunnerConfig(request.model, architecture, settings.temperature, settings)
+            val exactConfig = runCatching {
+                exactLlamaRunnerConfig(architecture, plan, base)
+            }
                 .getOrElse { return@exclusive ModelLoadResult.Error("The selected model configuration is invalid.") }
+                ?: return@exclusive ModelLoadResult.Error("The selected model configuration is invalid.")
             val loadObservation = request.toInferenceObservationPlan(engineVersion, InferenceObservationPhase.LOAD)
             val nextGenerationObservation =
                 request.toInferenceObservationPlan(engineVersion, InferenceObservationPhase.GENERATION)
@@ -166,12 +167,15 @@ class LlamaInferenceRepository(
                 return@exclusive ModelLoadResult.Error("Failed to initialize. Please restart the app.")
             }
             val controller = admissionController { candidate ->
-                val candidatePlan = candidate.plan as? com.debanshu777.caraml.core.recommendation.LlmRunPlan
+                val candidatePlan = candidate.plan as? LlmRunPlan
                     ?: return@admissionController NativeLoadPreflight.Invalid
                 val candidatePath = (candidate.artifact?.loadTarget as? VerifiedArtifactLoadTarget.File)?.path
                     ?: return@admissionController NativeLoadPreflight.Invalid
-                val config = runCatching { NativeRunPlanAdapter.toLlamaConfig(candidatePlan, base) }
+                val config = runCatching {
+                    exactLlamaRunnerConfig(candidate.observationIdentity.architectureFamily, candidatePlan, base)
+                }
                     .getOrElse { return@admissionController NativeLoadPreflight.Invalid }
+                    ?: return@admissionController NativeLoadPreflight.Invalid
                 when (runner.preflightModel(candidatePath, config)) {
                     is LlamaPreflightResult.Fit -> NativeLoadPreflight.Fit
                     is LlamaPreflightResult.NoFit -> NativeLoadPreflight.NoFit
@@ -290,6 +294,7 @@ class LlamaInferenceRepository(
 
     private fun buildRunnerConfig(
         model: LocalModelEntity,
+        architecture: String?,
         temperature: Float,
         settings: AppSettings,
     ): NativeRunnerConfig {
@@ -299,7 +304,7 @@ class LlamaInferenceRepository(
             "memMB=${hints.memoryBudgetMB}, gpu=${hints.gpuBackendAvailable}"
         }
         val gpuActive = hints.gpuBackendAvailable
-        val archDenied = DENYLIST_HYBRID_SSM_VULKAN && archFamily(model.arch) == ArchFamily.HYBRID_SSM
+        val archDenied = architecture.requiresCpuOnlyLlmExecution()
         val gpuEnabled = settings.useGpu && gpuActive && !archDenied
         if (archDenied) {
             AppLogger.i(TAG) { "buildRunnerConfig: GPU disabled for this model (archDenied=true)" }
@@ -323,8 +328,8 @@ class LlamaInferenceRepository(
         }
 
         // Phase 08: per-architecture adaptive batch size and flash attention.
-        val archFam = archFamily(model.arch)
-        AppLogger.i(TAG) { "buildRunnerConfig: arch='${model.arch}', family=$archFam" }
+        val archFam = archFamily(architecture)
+        AppLogger.i(TAG) { "buildRunnerConfig: arch='$architecture', family=$archFam" }
         val batchSize = when (archFam) {
             ArchFamily.DENSE -> if (hints.memoryBudgetMB >= 4096) 512 else 256
             ArchFamily.MOE -> 256
@@ -559,4 +564,15 @@ class LlamaInferenceRepository(
 
     private suspend fun currentSystemPrompt(): String =
         currentSettings().systemPrompt.ifBlank { FALLBACK_SYSTEM_PROMPT }
+}
+
+internal fun exactLlamaRunnerConfig(
+    architecture: String?,
+    plan: LlmRunPlan,
+    base: NativeRunnerConfig,
+): NativeRunnerConfig? {
+    if (architecture.requiresCpuOnlyLlmExecution() && plan.backend != BackendKind.CPU) {
+        return null
+    }
+    return NativeRunPlanAdapter.toLlamaConfig(plan, base)
 }

@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.core.recommendation
 
+import com.debanshu777.caraml.core.platform.BackendKind
 import com.debanshu777.diffusionrunner.DiffusionModelConfig
 import com.debanshu777.runner.NativeRunnerConfig
 
@@ -17,15 +18,17 @@ data class DiffusionExecutionConfig(
 object NativeRunPlanAdapter {
     fun toLlamaConfig(plan: LlmRunPlan, base: NativeRunnerConfig): NativeRunnerConfig {
         requireValid(plan)
+        val cpuOnly = plan.backend == BackendKind.CPU
         return base.copy(
             nCtx = plan.contextTokens,
             nBatch = plan.batchSize,
             nUbatch = plan.microBatchSize,
             typeK = plan.keyCacheType.nativeValue,
             typeV = plan.valueCacheType.nativeValue,
-            nGpuLayers = plan.gpuLayerCount ?: -1,
+            nGpuLayers = if (cpuOnly) 0 else plan.gpuLayerCount ?: -1,
+            offloadKqv = !cpuOnly && base.offloadKqv,
             useMmap = plan.useMmap,
-            autoFit = plan.gpuLayerCount == null,
+            autoFit = !cpuOnly && plan.gpuLayerCount == null,
         )
     }
 

@@ -173,6 +173,32 @@ class InstalledModelLoadRequestResolverTest {
     }
 
     @Test
+    fun hybridSsmArchitectureIsAssessedWithCpuCapabilityBeforePlanSelection() = runTest {
+        val fixture = Fixture().apply {
+            descriptor = descriptor.copyForResolverTest(architecture = "qwen35")
+            evidenceResult = EvidenceRepairResult.Ready(descriptor)
+            snapshots += acceleratedSnapshot()
+            planForSnapshot = { snapshot ->
+                if (snapshot.hardwareProfile.backends.any { it.kind != BackendKind.CPU }) {
+                    installedLlmPlan(backend = BackendKind.METAL, topology = MemoryTopology.UNIFIED)
+                } else {
+                    installedLlmPlan(backend = BackendKind.CPU, topology = MemoryTopology.UNIFIED)
+                }
+            }
+        }
+
+        val request = assertIs<InstalledModelLoadResolution.Ready>(
+            fixture.resolver().resolve(fixture.model, GenerationMode.Text),
+        ).request
+
+        assertEquals(BackendKind.CPU, request.plan.backend)
+        assertEquals(
+            listOf(BackendKind.CPU),
+            fixture.assessmentSnapshots.single().hardwareProfile.backends.map { it.kind },
+        )
+    }
+
+    @Test
     fun wrongGenerationModeIsNotAdmissible() = runTest {
         val fixture = Fixture()
 
@@ -361,7 +387,7 @@ class InstalledModelLoadRequestResolverTest {
             pipelineTag = "text-generation",
             componentStatus = LocalModelEntity.STATUS_READY,
         )
-        val descriptor = task6LlmDescriptor()
+        var descriptor = task6LlmDescriptor()
         val identity = descriptor.file
         var artifact = ResolvedLocalArtifact(
             identity = ModelFileIdentity(
@@ -506,7 +532,10 @@ private fun installedLlmPlan(
     compromises = emptyList(),
 )
 
-private fun LlmModelDescriptor.copyForResolverTest(contextLimit: Int?) = LlmModelDescriptor(
+private fun LlmModelDescriptor.copyForResolverTest(
+    contextLimit: Int? = this.contextLimit,
+    architecture: String? = this.architecture,
+) = LlmModelDescriptor(
     repositoryId = repositoryId,
     revision = revision,
     files = files,

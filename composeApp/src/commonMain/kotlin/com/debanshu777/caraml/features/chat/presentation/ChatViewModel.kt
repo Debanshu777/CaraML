@@ -329,12 +329,24 @@ class ChatViewModel(
                 mode = mode,
                 resolve = installedModelLoadRequestResolver::resolve,
                 loadText = { request ->
-                    diffusionRepository.release()
-                    inferenceRepository.loadModel(request)
+                    loadExactModelForMode(
+                        mode = GenerationMode.Text,
+                        request = request,
+                        unloadText = inferenceRepository::unloadModel,
+                        releaseDiffusion = diffusionRepository::release,
+                        loadText = inferenceRepository::loadModel,
+                        loadDiffusion = diffusionRepository::loadModel,
+                    )
                 },
                 loadDiffusion = { request ->
-                    inferenceRepository.unloadModel()
-                    diffusionRepository.loadModel(request)
+                    loadExactModelForMode(
+                        mode = mode,
+                        request = request,
+                        unloadText = inferenceRepository::unloadModel,
+                        releaseDiffusion = diffusionRepository::release,
+                        loadText = inferenceRepository::loadModel,
+                        loadDiffusion = diffusionRepository::loadModel,
+                    )
                 },
             )
         }
@@ -361,7 +373,7 @@ class ChatViewModel(
             // Wait for the previous job to fully complete (including any in-progress JNI call)
             // before we start new native operations. Without this, a cancelled job that is still
             // inside a blocking JNI call races with our unloadModel() → double-free crash.
-            previousJob?.join()
+            awaitPreviousModelLoad(previousJob)
 
             val result = load(mode)
             when (result) {
@@ -467,18 +479,14 @@ class ChatViewModel(
 
     private fun resumeExactLoad(request: LoadRequest) {
         startModelLoad(request.model) { mode ->
-            when (mode) {
-                GenerationMode.Text -> {
-                    diffusionRepository.release()
-                    inferenceRepository.loadModel(request)
-                }
-                GenerationMode.Image,
-                GenerationMode.Video,
-                -> {
-                    inferenceRepository.unloadModel()
-                    diffusionRepository.loadModel(request)
-                }
-            }
+            loadExactModelForMode(
+                mode = mode,
+                request = request,
+                unloadText = inferenceRepository::unloadModel,
+                releaseDiffusion = diffusionRepository::release,
+                loadText = inferenceRepository::loadModel,
+                loadDiffusion = diffusionRepository::loadModel,
+            )
         }
     }
 

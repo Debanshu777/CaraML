@@ -120,7 +120,14 @@ class InstalledModelLoadRequestResolver internal constructor(
 
         val capturedSnapshot = captureSnapshot()
         val settings = currentSettings()
-        val assessmentSnapshot = if (settings.useGpu) capturedSnapshot else capturedSnapshot.cpuOnly()
+        val assessmentSnapshot = if (
+            !settings.useGpu ||
+            descriptor is LlmModelDescriptor && descriptor.architecture.requiresCpuOnlyLlmExecution()
+        ) {
+            capturedSnapshot.cpuOnly()
+        } else {
+            capturedSnapshot
+        }
         val workload = workloadFactory.create(descriptor, expectedMode, settings)
             ?: return InstalledModelLoadResolution.NotAdmissible(AssessmentReason.INVALID_WORKLOAD)
         val assessment = assess(descriptor, assessmentSnapshot, workload)
@@ -141,7 +148,9 @@ class InstalledModelLoadRequestResolver internal constructor(
         val selected = recommendation.selectedPlan as? RunPlan
             ?: return InstalledModelLoadResolution.NotAdmissible(AssessmentReason.NO_RUN_PLAN)
         if (!selected.matches(expectedMode) || !selected.matches(workload) ||
-            !settings.useGpu && selected.backend != BackendKind.CPU
+            (!settings.useGpu ||
+                descriptor is LlmModelDescriptor && descriptor.architecture.requiresCpuOnlyLlmExecution()) &&
+            selected.backend != BackendKind.CPU
         ) {
             return InstalledModelLoadResolution.Rejected(ArtifactIdentityRejection.INVALID_INPUT)
         }

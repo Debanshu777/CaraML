@@ -23,6 +23,11 @@ import com.debanshu777.caraml.core.recommendation.task6LlmDescriptor
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -161,6 +166,56 @@ class InstalledModelLoadingTest {
         )
 
         assertSame(admission, assertIs<ModelLoadResult.AdmissionRequired>(result).admission)
+    }
+
+    @Test
+    fun exactModeLoaderReleasesOnlyTheOppositeRunnerBeforeLoading() = runTest {
+        val textCalls = mutableListOf<String>()
+        loadExactModelForMode(
+            mode = GenerationMode.Text,
+            request = request,
+            unloadText = { textCalls += "unload-text" },
+            releaseDiffusion = { textCalls += "release-diffusion" },
+            loadText = { textCalls += "load-text"; ModelLoadResult.Success(1) },
+            loadDiffusion = { textCalls += "load-diffusion"; ModelLoadResult.Success(0) },
+        )
+        assertEquals(listOf("release-diffusion", "load-text"), textCalls)
+
+        val diffusionCalls = mutableListOf<String>()
+        loadExactModelForMode(
+            mode = GenerationMode.Image,
+            request = request,
+            unloadText = { diffusionCalls += "unload-text" },
+            releaseDiffusion = { diffusionCalls += "release-diffusion" },
+            loadText = { diffusionCalls += "load-text"; ModelLoadResult.Success(1) },
+            loadDiffusion = { diffusionCalls += "load-diffusion"; ModelLoadResult.Success(0) },
+        )
+        assertEquals(listOf("unload-text", "load-diffusion"), diffusionCalls)
+    }
+
+    @Test
+    fun cancelledReplacementWaitsForPreviousNativeJobAndNeverContinues() = runTest {
+        val previousEntered = CompletableDeferred<Unit>()
+        val releasePrevious = CompletableDeferred<Unit>()
+        val previous = launch {
+            withContext(NonCancellable) {
+                previousEntered.complete(Unit)
+                releasePrevious.await()
+            }
+        }
+        previousEntered.await()
+        var continued = false
+        val replacement = async {
+            awaitPreviousModelLoad(previous)
+            continued = true
+        }
+
+        replacement.cancel()
+        assertEquals(false, continued)
+        releasePrevious.complete(Unit)
+        replacement.join()
+
+        assertEquals(false, continued)
     }
 
     private companion object {
