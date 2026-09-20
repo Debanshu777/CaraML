@@ -28,6 +28,12 @@ internal data class IosBackgroundTaskKey(
     }
 }
 
+/** Only active descriptions own a platform download slot or block replacement scheduling. */
+internal fun iosActiveTaskKey(taskDescription: String?): IosBackgroundTaskKey? =
+    IosBackgroundTaskDescriptor.decode(taskDescription)
+        ?.takeIf { it.disposition == IosBackgroundTaskDisposition.ACTIVE }
+        ?.key
+
 /**
  * Exact download identity and terminal disposition persisted by
  * `NSURLSessionTask.taskDescription`.
@@ -127,6 +133,15 @@ internal enum class IosDownloadBoundCompletion {
     MISSING,
 }
 
+/**
+ * Opaque point-in-time token for URLSession task restoration.
+ *
+ * The response-bound owner compares this token by identity. A completion replaces the current
+ * token, invalidating every task snapshot captured before that completion without retaining an
+ * unbounded set of completed platform task identifiers.
+ */
+internal class IosRestoreRegistrationGeneration internal constructor()
+
 /** Adapter used by the Foundation delegate to make the durable reason observable before cancel. */
 internal fun persistIosRejectionBeforeCancellation(
     descriptor: IosBackgroundTaskDescriptor,
@@ -147,8 +162,24 @@ internal fun persistIosRejectionBeforeCancellation(
  */
 internal class IosDownloadResponseBound {
     private val tasks = mutableMapOf<String, TaskState>()
+    private var restoreRegistrationGeneration = IosRestoreRegistrationGeneration()
 
-    fun register(taskId: String, persistedTaskDescription: String?): Boolean {
+    fun captureRestoreRegistrationGeneration(): IosRestoreRegistrationGeneration =
+        restoreRegistrationGeneration
+
+    fun registerRestored(
+        taskId: String,
+        persistedTaskDescription: String?,
+        generation: IosRestoreRegistrationGeneration,
+    ): Boolean {
+        if (generation !== restoreRegistrationGeneration) return false
+        return registerCurrent(taskId, persistedTaskDescription)
+    }
+
+    fun registerNewTask(taskId: String, persistedTaskDescription: String?): Boolean =
+        registerCurrent(taskId, persistedTaskDescription)
+
+    private fun registerCurrent(taskId: String, persistedTaskDescription: String?): Boolean {
         if (!taskId.isPlatformTaskId()) return false
         val descriptor = IosBackgroundTaskDescriptor.decode(persistedTaskDescription) ?: return false
         if (descriptor.disposition != IosBackgroundTaskDisposition.ACTIVE) return false
@@ -241,6 +272,9 @@ internal class IosDownloadResponseBound {
         taskId: String,
         persistedTaskDescription: String? = null,
     ): IosDownloadBoundCompletion {
+        if (taskId.isPlatformTaskId()) {
+            restoreRegistrationGeneration = IosRestoreRegistrationGeneration()
+        }
         val state = tasks.remove(taskId)
         val persistedDescriptor = IosBackgroundTaskDescriptor.decode(persistedTaskDescription)
         val persistedDisposition = persistedDescriptor?.disposition

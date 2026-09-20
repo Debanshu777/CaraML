@@ -2,6 +2,7 @@ package com.debanshu777.caraml.core.download
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -170,7 +171,7 @@ class IosDownloadResponseBoundTest {
     fun durableRejectedSnapshotOverridesStaleActiveMemoryAtCompletion() {
         val subject = IosDownloadResponseBound()
         val active = descriptor(expectedBytes = 10L)
-        assertTrue(subject.register("52", active.encode()))
+        assertTrue(subject.registerNewTask("52", active.encode()))
 
         assertEquals(
             IosDownloadBoundCompletion.REJECTED,
@@ -185,7 +186,7 @@ class IosDownloadResponseBoundTest {
     fun invalidDurableSnapshotFailsClosedDespiteStaleActiveMemory() {
         val subject = IosDownloadResponseBound()
         val active = descriptor(expectedBytes = 10L)
-        assertTrue(subject.register("54", active.encode()))
+        assertTrue(subject.registerNewTask("54", active.encode()))
 
         assertEquals(
             IosDownloadBoundCompletion.INVALID,
@@ -198,7 +199,7 @@ class IosDownloadResponseBoundTest {
         val subject = IosDownloadResponseBound()
         val active = descriptor(expectedBytes = 10L)
         repeat(256) {
-            assertTrue(subject.register("50", active.encode()))
+            assertTrue(subject.registerNewTask("50", active.encode()))
             assertEquals(IosDownloadBoundCompletion.ACTIVE, subject.complete("50", active.encode()))
 
             val stoppedSnapshot = subject.stop("50", active.encode())
@@ -283,6 +284,102 @@ class IosDownloadResponseBoundTest {
         )
 
         assertEquals(listOf("persist", "cancel"), events)
+    }
+
+    @Test
+    fun stoppedTaskStillEnumeratedByUrlSessionDoesNotOwnOrBlockResume() {
+        val active = descriptor(expectedBytes = 10L)
+        val stopped = active.withDisposition(IosBackgroundTaskDisposition.STOPPED)
+        val enumeratedDescriptions = listOf(stopped.encode())
+
+        assertFalse(
+            enumeratedDescriptions.any { description ->
+                iosActiveTaskKey(description)?.batchId == active.batchId
+            },
+        )
+        assertEquals(active.key, iosActiveTaskKey(active.encode()))
+        assertNull(
+            iosActiveTaskKey(
+                active.withDisposition(IosBackgroundTaskDisposition.REJECTED).encode(),
+            ),
+        )
+    }
+
+    @Test
+    fun relaunchCompletesOldStoppedTaskBeforeRegisteringFreshReplacement() {
+        val restoredProcess = IosDownloadResponseBound()
+        val active = descriptor(expectedBytes = 10L)
+        val stopped = active.withDisposition(IosBackgroundTaskDisposition.STOPPED)
+
+        assertEquals(IosDownloadBoundCompletion.STOPPED, restoredProcess.complete("60", stopped.encode()))
+        assertTrue(restoredProcess.registerNewTask("61", active.encode()))
+        assertIs<IosDownloadBoundDecision.Progress>(
+            restoredProcess.inspect("61", active.encode(), totalBytesWritten = 1L, declaredExpectedBytes = 10L),
+        )
+    }
+
+    @Test
+    fun oldStoppedCompletionAfterResumeCannotMutateActiveReplacement() {
+        val subject = IosDownloadResponseBound()
+        val active = descriptor(expectedBytes = 10L)
+        val stopped = active.withDisposition(IosBackgroundTaskDisposition.STOPPED)
+        assertTrue(subject.registerNewTask("63", active.encode()))
+
+        assertEquals(IosDownloadBoundCompletion.STOPPED, subject.complete("62", stopped.encode()))
+
+        assertEquals(
+            IosDownloadBoundDecision.Progress(active, 2L),
+            subject.inspect("63", active.encode(), totalBytesWritten = 2L, declaredExpectedBytes = 10L),
+        )
+    }
+
+    @Test
+    fun activeSnapshotCompletionMakesItsLaterRestoreRegistrationStale() {
+        val subject = IosDownloadResponseBound()
+        val active = descriptor(expectedBytes = 10L)
+        val capturedBeforeGetAllTasks = subject.captureRestoreRegistrationGeneration()
+
+        assertEquals(IosDownloadBoundCompletion.ACTIVE, subject.complete("70", active.encode()))
+        assertFalse(subject.registerRestored("70", active.encode(), capturedBeforeGetAllTasks))
+        assertNull(subject.stop("70"))
+    }
+
+    @Test
+    fun completionGenerationRemainsBoundedAcrossManyTasksAndFreshIdsStillRegister() {
+        val subject = IosDownloadResponseBound()
+        val active = descriptor(expectedBytes = 10L)
+        val staleGeneration = subject.captureRestoreRegistrationGeneration()
+        repeat(10_000) { index ->
+            subject.complete((1_000 + index).toString(), active.encode())
+        }
+
+        assertFalse(subject.registerRestored("80", active.encode(), staleGeneration))
+        assertTrue(
+            subject.registerRestored(
+                "11000",
+                active.encode(),
+                subject.captureRestoreRegistrationGeneration(),
+            ),
+        )
+    }
+
+    @Test
+    fun freshProcessCanRegisterRestoredActiveTaskWithFreshGeneration() {
+        val priorProcess = IosDownloadResponseBound()
+        val active = descriptor(expectedBytes = 10L)
+        val staleGeneration = priorProcess.captureRestoreRegistrationGeneration()
+        priorProcess.complete("90", active.encode())
+        assertFalse(priorProcess.registerRestored("90", active.encode(), staleGeneration))
+
+        val restoredProcess = IosDownloadResponseBound()
+
+        assertTrue(
+            restoredProcess.registerRestored(
+                "91",
+                active.encode(),
+                restoredProcess.captureRestoreRegistrationGeneration(),
+            ),
+        )
     }
 
     private fun descriptor(expectedBytes: Long) = IosBackgroundTaskDescriptor(

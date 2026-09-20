@@ -76,7 +76,10 @@ class IosDownloadScheduler(
 
     private suspend fun enqueue(batchId: String, ignoredTaskId: ULong?) {
         requireBatchId(batchId)
-        if (activeTasks().any { it.taskIdentifier != ignoredTaskId && it.taskKey()?.first == batchId }) return
+        val batchAlreadyOwned = activeTasks().any { task ->
+            task.taskIdentifier != ignoredTaskId && task.activeTaskKey()?.batchId == batchId
+        }
+        if (batchAlreadyOwned) return
         val batch = store.getBatch(batchId) ?: return
         if (batch.userIntent != DownloadUserIntent.RUN) return
         val artifact = batch.artifacts.firstOrNull {
@@ -130,7 +133,7 @@ class IosDownloadScheduler(
             artifactId = artifact.artifactId,
             expectedBytes = artifact.expectedBytes,
         ).encode()
-        withResponseBoundLock { responseBound.register(platformTaskId, task.taskDescription) }
+        withResponseBoundLock { responseBound.registerNewTask(platformTaskId, task.taskDescription) }
         store.setPlatformTaskId(artifact.artifactId, platformTaskId, nowEpochMs())
         val claimed = store.claim(
             artifactId = artifact.artifactId,
@@ -150,8 +153,8 @@ class IosDownloadScheduler(
 
     override suspend fun pause(batchId: String) {
         requireBatchId(batchId)
-        activeTasks().filter { it.taskKey()?.first == batchId }.forEach { task ->
-            val artifactId = task.taskKey()?.second ?: return@forEach
+        activeTasks().filter { it.activeTaskKey()?.batchId == batchId }.forEach { task ->
+            val artifactId = task.activeTaskKey()?.artifactId ?: return@forEach
             persistStoppedDisposition(task)
             suspendCancellableCoroutine { continuation ->
                 task.cancelByProducingResumeData { data ->
@@ -166,8 +169,8 @@ class IosDownloadScheduler(
 
     override suspend fun cancel(batchId: String) {
         requireBatchId(batchId)
-        activeTasks().filter { it.taskKey()?.first == batchId }.forEach { task ->
-            task.taskKey()?.second?.let(resumeDataStore::delete)
+        activeTasks().filter { it.activeTaskKey()?.batchId == batchId }.forEach { task ->
+            task.activeTaskKey()?.artifactId?.let(resumeDataStore::delete)
             persistStoppedDisposition(task)
             task.cancel()
         }
@@ -179,6 +182,9 @@ class IosDownloadScheduler(
 
     override suspend fun reconcile(liveBatchIds: Set<String>) {
         liveBatchIds.forEach(::requireBatchId)
+        val restoreGeneration = withResponseBoundLock {
+            responseBound.captureRestoreRegistrationGeneration()
+        }
         activeTasks().forEach { task ->
             val descriptor = task.taskDescriptor()
             val taskId = task.taskIdentifier.toString()
@@ -221,15 +227,23 @@ class IosDownloadScheduler(
                     failBoundedResponse(descriptor.key)
                 }
             } else {
-                withResponseBoundLock { responseBound.register(taskId, task.taskDescription) }
-                store.setPlatformTaskId(descriptor.artifactId, taskId, nowEpochMs())
+                val registered = withResponseBoundLock {
+                    responseBound.registerRestored(
+                        taskId,
+                        task.taskDescription,
+                        restoreGeneration,
+                    )
+                }
+                if (registered) {
+                    store.setPlatformTaskId(descriptor.artifactId, taskId, nowEpochMs())
+                }
             }
         }
     }
 
     override suspend fun isActive(batchId: String): Boolean {
         requireBatchId(batchId)
-        return activeTasks().any { it.taskKey()?.first == batchId }
+        return activeTasks().any { it.activeTaskKey()?.batchId == batchId }
     }
 
     fun handleBackgroundEvents(identifier: String, completionHandler: () -> Unit) {
@@ -494,10 +508,10 @@ class IosDownloadScheduler(
             -> Unit
         }
         if (error == null) return
-        val key = downloadTask.taskKey() ?: return
+        val key = downloadTask.activeTaskKey() ?: return
         launchTracked tracked@{
-            val batch = store.getBatch(key.first) ?: return@tracked
-            val artifact = batch.artifacts.firstOrNull { it.artifactId == key.second } ?: return@tracked
+            val batch = store.getBatch(key.batchId) ?: return@tracked
+            val artifact = batch.artifacts.firstOrNull { it.artifactId == key.artifactId } ?: return@tracked
             store.setPlatformTaskId(artifact.artifactId, null, nowEpochMs())
             when (batch.userIntent) {
                 DownloadUserIntent.PAUSE, DownloadUserIntent.CANCEL -> Unit
@@ -635,8 +649,8 @@ class IosDownloadScheduler(
     private fun NSURLSessionDownloadTask.taskDescriptor(): IosBackgroundTaskDescriptor? =
         IosBackgroundTaskDescriptor.decode(taskDescription)
 
-    private fun NSURLSessionDownloadTask.taskKey(): Pair<String, String>? =
-        taskDescriptor()?.let { it.batchId to it.artifactId }
+    private fun NSURLSessionDownloadTask.activeTaskKey(): IosBackgroundTaskKey? =
+        iosActiveTaskKey(taskDescription)
 
     private fun <T> withResponseBoundLock(block: () -> T): T {
         responseBoundLock.lock()
