@@ -245,6 +245,7 @@ class DownloadBatchRunner(
 
     private fun failureCode(error: Exception): DownloadFailureCode = when (error) {
         is InsufficientStorageException -> DownloadFailureCode.STORAGE
+        is ReplacementCleanupException -> DownloadFailureCode.PLATFORM
         is ArtifactVerificationException -> DownloadFailureCode.INTEGRITY
         is ArtifactFileAccessException -> DownloadFailureCode.SECURE_PATH
         is DownloadHttpException -> DownloadFailureCode.HTTP

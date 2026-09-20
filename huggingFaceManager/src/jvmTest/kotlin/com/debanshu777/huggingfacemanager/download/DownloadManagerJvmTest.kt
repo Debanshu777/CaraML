@@ -30,6 +30,62 @@ import kotlin.test.assertTrue
 
 class DownloadManagerJvmTest {
     @Test
+    fun storageInspectionUsesOnlyCanonicalDestinationAndManifestCheckpoint() = withTemporaryRoot { root ->
+        val publishedBytes = "published".encodeToByteArray()
+        val published = scopedMetadata("weights/model.gguf", "a".repeat(40), publishedBytes)
+        val paths = TestStoragePathProvider(root)
+        withServer { exchange ->
+            exchange.respond(200, publishedBytes.size.toLong(), publishedBytes)
+        }.use { server ->
+            val manager = DownloadManager(paths, server.baseUrl)
+            runBlocking { manager.download("org/model", published.artifact.relativePath, published).toList() }
+
+            val installed = requireNotNull(runBlocking { manager.inspectStorage(listOf(published)) }).single()
+            assertTrue(installed.exactPublished)
+            assertEquals(publishedBytes.size.toLong(), installed.targetBytes)
+            assertEquals(null, installed.stagedBytes)
+
+            val pendingBytes = "pending".encodeToByteArray()
+            val pending = scopedMetadata("weights/model.gguf", "b".repeat(40), pendingBytes)
+            modelFile(root, "org/model", pending.artifact.relativePath).apply {
+                parentFile.mkdirs()
+                writeBytes(pendingBytes)
+            }
+            modelFile(root, "org/model", pending.destinationRelativePath + ".part").apply {
+                parentFile.mkdirs()
+                writeBytes(pendingBytes.copyOf(2))
+            }
+
+            val inspected = requireNotNull(runBlocking { manager.inspectStorage(listOf(pending)) }).single()
+            assertFalse(inspected.exactPublished)
+            assertEquals(null, inspected.targetBytes)
+            assertEquals(2L, inspected.stagedBytes)
+        }
+    }
+
+    @Test
+    fun cleanupRetryAfterManifestPruneDeletesTheRemainingUnreferencedBytes() = withTemporaryRoot { root ->
+        val bytes = "cleanup-retry".encodeToByteArray()
+        val metadata = scopedMetadata("model.gguf", "a".repeat(40), bytes)
+        val paths = TestStoragePathProvider(root)
+        withServer { exchange -> exchange.respond(200, bytes.size.toLong(), bytes) }.use { server ->
+            val manager = DownloadManager(paths, server.baseUrl)
+            runBlocking { manager.download("org/model", metadata.artifact.relativePath, metadata).toList() }
+            val entry = requireNotNull(runBlocking { manager.validatedArtifacts("org/model") }).entries.single()
+            val modelRoot = modelFile(root, "org/model", "")
+            val store = ArtifactManifestStore(modelRoot.absolutePath.toOkioPath())
+            try {
+                assertTrue(store.pruneValidated(listOf(entry)))
+            } finally {
+                store.close()
+            }
+
+            assertTrue(runBlocking { deleteValidatedArtifactEntries(paths, listOf(entry)) })
+            assertFalse(modelFile(root, "org/model", metadata.destinationRelativePath).exists())
+        }
+    }
+
+    @Test
     fun currentBundleLifetimeReturnsValidatedOwnerManifestUnderTheRootLease() = withTemporaryRoot { root ->
         val storage = TestStoragePathProvider(root)
         val installed = installArtifact(root)

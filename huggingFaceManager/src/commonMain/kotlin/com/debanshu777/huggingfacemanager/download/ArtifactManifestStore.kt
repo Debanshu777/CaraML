@@ -151,7 +151,7 @@ data class ArtifactManifest private constructor(
     }
 }
 
-private const val MAX_MANIFEST_ENTRIES = 64
+private const val MAX_MANIFEST_ENTRIES = 128
 private const val MAX_LOGICAL_ROLE_LENGTH = 64
 
 private val manifestEntryComparator = compareBy<ArtifactManifestEntry>(
@@ -268,6 +268,11 @@ class ArtifactManifestStore(
     internal fun stagedSize(relativePath: String): Long? {
         val target = validatedTarget(relativePath) ?: throw IllegalArgumentException("Invalid model file path")
         return fileSystem.metadataOrNull(target.sibling(PART_SUFFIX))?.takeIf { it.isRegularFile }?.size
+    }
+
+    internal fun targetSize(relativePath: String): Long? {
+        val target = validatedTarget(relativePath) ?: throw IllegalArgumentException("Invalid model file path")
+        return fileSystem.metadataOrNull(target)?.takeIf { it.isRegularFile }?.size
     }
 
     internal fun stagedSha256(relativePath: String, expectedBytes: Long): String? {

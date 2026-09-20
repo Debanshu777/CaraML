@@ -204,6 +204,7 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 
 <!-- Updated at end of each AI-assisted development session -->
 
+- LLM and diffusion admission now reuse one final exact artifact request set for storage checks, evidence, and enqueue; successful same-owner revision replacement publishes the new Ready catalog before retryable cleanup and preserves externally referenced components
 - iOS registers its background URLSession handoff before startup reconciliation, treats an exact validated captured completion as active, and single-flights callback/relaunch import plus batch finalization
 - Android UIDT and WorkManager workers now await one startup-reconciliation barrier, prefer and preserve the exact UIDT when duplicate owners exist, and use generation-bound completion and Task Manager stop markers; user-stopped or orphaned UIDT transfers become resumable pauses while cancellation checkpoints atomically release exact leases
 - Exact native loading now acquires every expected plus current-candidate repository root on the download subsystem's shared lock, recovery-validates and exactly compares the authoritative owner bundle, then retains the lifetime through byte validation, marker cleanup, and native open/load; Git, LFS, and Xet bindings fail closed

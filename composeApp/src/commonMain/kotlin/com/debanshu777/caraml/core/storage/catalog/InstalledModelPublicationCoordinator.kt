@@ -310,7 +310,7 @@ class InstalledModelPublicationCoordinator(
         const val DEFAULT_STRIPE_COUNT = 64
         const val MAX_STRIPE_COUNT = 256
         const val MAX_OPERATION_KEY_LENGTH = 64
-        const val MAX_ARTIFACT_STORAGE_KEYS = 64
+        const val MAX_ARTIFACT_STORAGE_KEYS = 128
         const val MAX_ARTIFACT_STORAGE_KEY_LENGTH = 1_256
         const val MAX_OUTCOMES_PER_GENERATION = 2
     }

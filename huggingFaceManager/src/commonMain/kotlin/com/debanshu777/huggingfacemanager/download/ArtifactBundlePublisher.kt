@@ -77,6 +77,129 @@ internal suspend fun readValidatedArtifactManifest(
     null
 }
 
+internal suspend fun inspectArtifactStorage(
+    pathProvider: StoragePathProvider,
+    artifacts: List<DownloadMetadataDTO>,
+): List<DownloadArtifactStorageSnapshot>? = try {
+    if (artifacts.isEmpty() || artifacts.size > 64 || artifacts.any { !it.usesImmutableStorageLayout }) return null
+    if (artifacts.distinctBy { it.artifact.repositoryId to it.destinationRelativePath }.size != artifacts.size) return null
+    val rootsByRepository = artifacts.associate { metadata ->
+        metadata.artifact.repositoryId to artifactMetadataRoot(pathProvider, metadata.artifact.repositoryId)
+    }
+    val existingRoots = rootsByRepository.filterValues { root -> pathProvider.fileExists(root.toString()) }
+    if (existingRoots.isEmpty()) {
+        return artifacts.map { metadata ->
+            DownloadArtifactStorageSnapshot(
+                metadata.artifact.repositoryId,
+                metadata.destinationRelativePath,
+                targetBytes = null,
+                stagedBytes = null,
+                exactPublished = false,
+            )
+        }
+    }
+    ArtifactRootLockCoordinator.withRoots(existingRoots.values.map(::artifactRootKey)) {
+        val stores = existingRoots.mapValues { (_, root) -> ArtifactManifestStore(root) }
+        try {
+            if (stores.values.any { it.recover() == ArtifactManifestRecoveryResult.QUARANTINED }) {
+                return@withRoots null
+            }
+            artifacts.map { metadata ->
+                val store = stores[metadata.artifact.repositoryId]
+                val exactPublished = store?.readValidated()?.entries?.any { entry ->
+                    entry.logicalRole == metadata.logicalRole &&
+                        entry.identity == metadata.artifact &&
+                        entry.bundleId == metadata.bundleId &&
+                        entry.localRelativePath == metadata.destinationRelativePath
+                } == true
+                DownloadArtifactStorageSnapshot(
+                    repositoryId = metadata.artifact.repositoryId,
+                    destinationRelativePath = metadata.destinationRelativePath,
+                    targetBytes = store?.targetSize(metadata.destinationRelativePath),
+                    stagedBytes = store?.stagedSize(metadata.destinationRelativePath),
+                    exactPublished = exactPublished,
+                )
+            }
+        } finally {
+            stores.values.forEach(ArtifactManifestStore::close)
+        }
+    }
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (_: Exception) {
+    null
+}
+
+internal suspend fun pendingArtifactBundleReplacement(
+    pathProvider: StoragePathProvider,
+    ownerModelId: String,
+    artifacts: List<DownloadMetadataDTO>,
+): ArtifactManifest? = withReplacementBundleStore(pathProvider, ownerModelId, artifacts) { store, digest ->
+    store.pendingPrevious(digest)
+}
+
+internal suspend fun acknowledgeArtifactBundleReplacement(
+    pathProvider: StoragePathProvider,
+    ownerModelId: String,
+    artifacts: List<DownloadMetadataDTO>,
+): Boolean = withReplacementBundleStore(pathProvider, ownerModelId, artifacts) { store, digest ->
+    store.acknowledgeReplacement(digest)
+} ?: false
+
+private suspend fun <T> withReplacementBundleStore(
+    pathProvider: StoragePathProvider,
+    ownerModelId: String,
+    artifacts: List<DownloadMetadataDTO>,
+    block: (ArtifactBundleManifestStore, String) -> T,
+): T? = try {
+    val ownerRoot = artifactMetadataRoot(pathProvider, validateModelId(ownerModelId))
+    if (artifacts.isEmpty() || artifacts.size > 64 || artifacts.any { !it.usesImmutableStorageLayout } ||
+        artifacts.map { it.bundleId }.toSet().size != 1
+    ) return null
+    val candidates = readOwnerManifestCandidates(ownerRoot)
+    val roots = (candidates.flatMap { manifest ->
+        manifest.entries.map { artifactMetadataRoot(pathProvider, it.identity.repositoryId) }
+    } + artifacts.map { artifactMetadataRoot(pathProvider, it.artifact.repositoryId) } + ownerRoot).distinct()
+    if (roots.size > MAX_BUNDLE_ROOTS) return null
+    val allowedRoots = roots.mapTo(mutableSetOf(), ::artifactRootKey)
+    ArtifactRootLockCoordinator.withRoots(allowedRoots) {
+        if (!recoverArtifactStores(roots)) return@withRoots null
+        val store = artifactBundleStore(pathProvider, ownerRoot, allowedRoots)
+        try {
+            store.recover()
+            val current = store.readValidated() ?: return@withRoots null
+            val expectedKeys = artifacts.mapTo(mutableSetOf()) { metadata ->
+                listOf(
+                    metadata.logicalRole,
+                    metadata.artifact.repositoryId,
+                    metadata.artifact.immutableRevision,
+                    metadata.artifact.relativePath,
+                    metadata.destinationRelativePath,
+                    metadata.bundleId,
+                )
+            }
+            val currentKeys = current.entries.mapTo(mutableSetOf()) { entry ->
+                listOf(
+                    entry.logicalRole,
+                    entry.identity.repositoryId,
+                    entry.identity.immutableRevision,
+                    entry.identity.relativePath,
+                    entry.localRelativePath,
+                    entry.bundleId,
+                )
+            }
+            if (expectedKeys != currentKeys) return@withRoots null
+            block(store, current.bundleDigest)
+        } finally {
+            store.close()
+        }
+    }
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (_: Exception) {
+    null
+}
+
 private suspend fun withBundleStore(
     pathProvider: StoragePathProvider,
     ownerModelId: String,

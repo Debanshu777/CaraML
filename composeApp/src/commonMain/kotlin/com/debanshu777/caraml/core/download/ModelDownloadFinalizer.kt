@@ -5,6 +5,7 @@ import com.debanshu777.caraml.core.recommendation.canonicalDownloadRemoteObjectI
 import com.debanshu777.caraml.core.recommendation.storage.EncodedModelEvidence
 import com.debanshu777.caraml.core.recommendation.storage.PersistedModelEvidenceCodec
 import com.debanshu777.caraml.core.storage.catalog.InstalledCatalogRecord
+import com.debanshu777.caraml.core.storage.catalog.InstalledCatalogSnapshot
 import com.debanshu777.caraml.core.storage.catalog.InstalledModelCatalogDao
 import com.debanshu777.caraml.core.storage.catalog.InstalledModelPublicationCoordinator
 import com.debanshu777.caraml.core.storage.catalog.artifactStorageCoordinationKey
@@ -12,16 +13,22 @@ import com.debanshu777.caraml.core.storage.component.DownloadedComponentEntity
 import com.debanshu777.caraml.core.storage.evidence.toEntity
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.huggingfacemanager.download.ArtifactVerificationException
+import com.debanshu777.huggingfacemanager.download.ArtifactManifest
 import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 import com.debanshu777.huggingfacemanager.download.DownloadManager
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
+import com.debanshu777.huggingfacemanager.download.deleteValidatedArtifactEntries
+import com.debanshu777.huggingfacemanager.download.persistedArtifactStorageLocation
 import com.debanshu777.huggingfacemanager.model.DIFFUSERS_BUNDLE_DB_FILENAME
 import kotlin.time.Clock
 
 interface BundlePublisher {
     suspend fun publish(ownerModelId: String, artifacts: List<DownloadMetadataDTO>): Boolean
     suspend fun validate(ownerModelId: String, artifacts: List<DownloadMetadataDTO>): Boolean
+    suspend fun pendingReplacement(ownerModelId: String, artifacts: List<DownloadMetadataDTO>): ArtifactManifest? = null
+    suspend fun acknowledgeReplacement(ownerModelId: String, artifacts: List<DownloadMetadataDTO>): Boolean = true
+    suspend fun current(ownerModelId: String): ArtifactManifest? = null
 }
 
 class DownloadManagerBundlePublisher(
@@ -32,10 +39,21 @@ class DownloadManagerBundlePublisher(
 
     override suspend fun validate(ownerModelId: String, artifacts: List<DownloadMetadataDTO>): Boolean =
         downloadManager.validateBundle(ownerModelId, artifacts)
+
+    override suspend fun pendingReplacement(ownerModelId: String, artifacts: List<DownloadMetadataDTO>) =
+        downloadManager.pendingBundleReplacement(ownerModelId, artifacts)
+
+    override suspend fun acknowledgeReplacement(ownerModelId: String, artifacts: List<DownloadMetadataDTO>) =
+        downloadManager.acknowledgeBundleReplacement(ownerModelId, artifacts)
+
+    override suspend fun current(ownerModelId: String): ArtifactManifest? =
+        downloadManager.validatedBundle(ownerModelId)
 }
 
 fun interface ModelCatalogPublisher {
     suspend fun publish(batch: DownloadBatchSnapshot, evidence: EncodedModelEvidence)
+    suspend fun snapshot(ownerModelId: String): InstalledCatalogSnapshot? = null
+    suspend fun cleanupPrior(previous: ArtifactManifest, current: List<DownloadMetadataDTO>): Boolean = true
 }
 
 class RepositoryModelCatalogPublisher(
@@ -43,6 +61,8 @@ class RepositoryModelCatalogPublisher(
     private val paths: StoragePathProvider,
     private val nowEpochMs: () -> Long = { Clock.System.now().toEpochMilliseconds() },
 ) : ModelCatalogPublisher {
+    override suspend fun snapshot(ownerModelId: String): InstalledCatalogSnapshot? = catalog.snapshotReady(ownerModelId)
+
     override suspend fun publish(batch: DownloadBatchSnapshot, evidence: EncodedModelEvidence) {
         require(evidence == batch.evidence) { "Catalog evidence does not belong to the download batch" }
         val primary = batch.artifacts.filter { it.request.primary }
@@ -104,6 +124,44 @@ class RepositoryModelCatalogPublisher(
         )
     }
 
+    override suspend fun cleanupPrior(
+        previous: ArtifactManifest,
+        current: List<DownloadMetadataDTO>,
+    ): Boolean {
+        val retained = current.mapTo(mutableSetOf()) { metadata ->
+            listOf(
+                metadata.logicalRole,
+                metadata.artifact.repositoryId,
+                metadata.artifact.immutableRevision,
+                metadata.artifact.relativePath,
+                metadata.destinationRelativePath,
+                metadata.bundleId,
+            )
+        }
+        val candidates = previous.entries.filterNot { entry ->
+            listOf(
+                entry.logicalRole,
+                entry.identity.repositoryId,
+                entry.identity.immutableRevision,
+                entry.identity.relativePath,
+                entry.localRelativePath,
+                entry.bundleId,
+            ) in retained
+        }
+        val unreferenced = candidates.filter { entry ->
+            val root = paths.getModelsStorageDirectory(entry.identity.repositoryId).trimEnd('/')
+            val target = "$root/${entry.localRelativePath}"
+            val generation = persistedArtifactStorageLocation(
+                entry.identity,
+                entry.bundleId,
+                entry.localRelativePath,
+            )?.generationRootRelativePath?.let { "$root/$it" }
+            catalog.countCatalogStorageReferences(target) == 0L &&
+                (generation == null || catalog.countCatalogStorageReferences(generation) == 0L)
+        }
+        return unreferenced.isEmpty() || deleteValidatedArtifactEntries(paths, unreferenced)
+    }
+
     private fun localPath(metadata: DownloadMetadataDTO): String =
         "${paths.getModelsStorageDirectory(metadata.artifact.repositoryId)}/${metadata.destinationRelativePath}"
 
@@ -125,19 +183,31 @@ class ModelDownloadFinalizer(
         val evidence = validateEvidence(batch)
         val artifacts = batch.artifacts.map { it.request.metadata }
         if (artifacts.any { !it.usesImmutableStorageLayout }) throw ArtifactVerificationException()
-        val storageKeys = artifacts.map { metadata ->
+        val observedBundle = bundlePublisher.current(batch.ownerModelId)
+        val pendingBundle = bundlePublisher.pendingReplacement(batch.ownerModelId, artifacts)
+        val storageKeys = (artifacts.map { metadata ->
             artifactStorageCoordinationKey(
                 metadata.artifact.repositoryId,
                 metadata.destinationRelativePath,
             )
-        }
+        } + (observedBundle?.entries.orEmpty() + pendingBundle?.entries.orEmpty()).map { entry ->
+            artifactStorageCoordinationKey(entry.identity.repositoryId, entry.localRelativePath)
+        }).distinct()
         publicationCoordinator.withArtifactPublication(batch.ownerModelId, storageKeys) {
+            catalogPublisher.snapshot(batch.ownerModelId)
             if (!bundlePublisher.publish(batch.ownerModelId, artifacts) ||
                 !bundlePublisher.validate(batch.ownerModelId, artifacts)
             ) {
                 throw ArtifactVerificationException()
             }
+            val previous = bundlePublisher.pendingReplacement(batch.ownerModelId, artifacts)
             catalogPublisher.publish(batch, evidence)
+            if (previous != null && !catalogPublisher.cleanupPrior(previous, artifacts)) {
+                throw ReplacementCleanupException()
+            }
+            if (!bundlePublisher.acknowledgeReplacement(batch.ownerModelId, artifacts)) {
+                throw ReplacementCleanupException()
+            }
         }
     }
 
@@ -163,6 +233,8 @@ class ModelDownloadFinalizer(
         return batch.evidence
     }
 }
+
+class ReplacementCleanupException : Exception("Previous model revision cleanup is pending")
 
 private val modelIdentityOrder = compareBy<ModelFileIdentity>({ it.repositoryId }, { it.revision.lowercase() }, { it.path })
 

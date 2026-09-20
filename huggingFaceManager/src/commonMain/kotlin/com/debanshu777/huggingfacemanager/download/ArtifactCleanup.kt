@@ -41,11 +41,19 @@ suspend fun deleteValidatedArtifactEntries(
         try {
             val allBound = stores.all { (group, store) ->
                 store.recover()
-                val manifest = store.readValidated() ?: return@all false
-                group.entries.map(BoundCleanupEntry::entry).all(manifest.entries::contains)
+                val manifest = store.readValidated()
+                group.entries.all { bound ->
+                    manifest?.entries?.contains(bound.entry) == true ||
+                        manifest?.entries?.none { it.localRelativePath == bound.entry.localRelativePath } != false
+                }
             }
             if (!allBound) return@withRoots false
-            if (!stores.all { (group, store) -> store.pruneValidated(group.entries.map(BoundCleanupEntry::entry)) }) {
+            if (!stores.all { (group, store) ->
+                    val present = store.readValidated()?.entries.orEmpty()
+                    val requestedPresent = group.entries.map(BoundCleanupEntry::entry).filter(present::contains)
+                    requestedPresent.isEmpty() || store.pruneValidated(requestedPresent)
+                }
+            ) {
                 return@withRoots false
             }
             groups.all { group ->

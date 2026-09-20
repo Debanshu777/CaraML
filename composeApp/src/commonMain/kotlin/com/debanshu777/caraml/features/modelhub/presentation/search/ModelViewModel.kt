@@ -989,7 +989,14 @@ class ModelViewModel(
                 val selectedMetadata = primaryMetadata.singleOrNull { it.artifact.relativePath == variantPath }
                     ?: throw IllegalStateException("Exact artifact identity is unavailable")
 
-                when (val admission = refreshDownloadAdmission(modelId, selectedMetadata)) {
+                val artifacts = ownedArtifacts.map { metadata ->
+                    DownloadArtifactRequest(
+                        metadata = metadata,
+                        primary = metadata.artifact.repositoryId == modelId,
+                    )
+                }
+
+                when (val admission = refreshDownloadAdmission(modelId, selectedMetadata, artifacts)) {
                     DownloadAdmission.Allowed -> Unit
                     is DownloadAdmission.ConfirmationRequired -> {
                         if (!downloadForLaterConfirmed) {
@@ -1005,12 +1012,6 @@ class ModelViewModel(
                     }
                 }
 
-                val artifacts = ownedArtifacts.map { metadata ->
-                    DownloadArtifactRequest(
-                        metadata = metadata,
-                        primary = metadata.artifact.repositoryId == modelId,
-                    )
-                }
                 downloadCoordinator.enqueue(
                     DownloadBatchRequest(
                         ownerModelId = modelId,
@@ -1091,7 +1092,8 @@ class ModelViewModel(
             _downloadError.update { null }
             var enqueued = false
             try {
-                when (val admission = refreshDownloadAdmission(modelId, metadata)) {
+                val artifacts = listOf(DownloadArtifactRequest(metadata, primary = true))
+                when (val admission = refreshDownloadAdmission(modelId, metadata, artifacts)) {
                     DownloadAdmission.Allowed -> Unit
                     is DownloadAdmission.ConfirmationRequired -> {
                         if (!downloadForLaterConfirmed) {
@@ -1106,7 +1108,6 @@ class ModelViewModel(
                         return@launch
                     }
                 }
-                val artifacts = listOf(DownloadArtifactRequest(metadata, primary = true))
                 downloadCoordinator.enqueue(
                     DownloadBatchRequest(
                         ownerModelId = modelId,
@@ -1422,6 +1423,7 @@ class ModelViewModel(
     private suspend fun refreshDownloadAdmission(
         modelId: String,
         metadata: DownloadMetadataDTO,
+        requests: List<DownloadArtifactRequest>,
         offerDownloadForLater: Boolean = true,
     ): DownloadAdmission {
         if (!isExactCurrentDetailArtifact(modelId, metadata.artifact)) {
@@ -1453,7 +1455,7 @@ class ModelViewModel(
         if (findExactTarget(refreshedDescriptor, metadata.artifact) == null) {
             return DownloadAdmission.Allowed
         }
-        when (estimateCurrentStorage(refreshedDescriptor)) {
+        when (estimateCurrentStorage(requests)) {
             is StorageRequirement.Ready -> Unit
             is StorageRequirement.Blocked -> return DownloadAdmission.Blocked(
                 com.debanshu777.caraml.core.recommendation.AssessmentReason.INSUFFICIENT_STORAGE,
@@ -1495,28 +1497,28 @@ class ModelViewModel(
             remoteObjectId?.lowercase() == artifact.remoteObjectId
     }
 
-    private fun estimateCurrentStorage(descriptor: ModelDescriptor): StorageRequirement {
-        val files = descriptorFiles(descriptor)
+    private suspend fun estimateCurrentStorage(requests: List<DownloadArtifactRequest>): StorageRequirement {
         return try {
-            fun existingBytes(path: String): Long? =
-                if (storagePathProvider.fileExists(path)) storagePathProvider.getFileSize(path) else null
-            val inventory = files.map { file ->
-                val root = storagePathProvider.getModelsStorageDirectory(file.repositoryId)
-                val finalPath = "$root/${file.path}"
-                val partPath = "$finalPath.part"
+            val snapshots = downloadManager.inspectStorage(requests.map { it.metadata })
+                ?: return StorageRequirement.NeedsInformation()
+            val inventory = snapshots.map { snapshot ->
                 LocalDownloadArtifact(
-                    repositoryId = file.repositoryId,
-                    relativePath = file.path,
-                    finalBytes = existingBytes(finalPath),
-                    partBytes = existingBytes(partPath),
+                    repositoryId = snapshot.repositoryId,
+                    relativePath = snapshot.destinationRelativePath,
+                    finalBytes = snapshot.targetBytes,
+                    partBytes = snapshot.stagedBytes,
+                    exactPublished = snapshot.exactPublished,
                 )
             }
-            val locations = files.associate { file ->
-                ArtifactStorageKey(file.repositoryId, file.path) to
+            val locations = requests.associate { request ->
+                ArtifactStorageKey(
+                    request.metadata.artifact.repositoryId,
+                    request.metadata.destinationRelativePath,
+                ) to
                     ArtifactStorageLocation(finalVolume = MODELS_VOLUME, temporaryVolume = MODELS_VOLUME)
             }
             downloadStorageEstimator.estimate(
-                descriptor = descriptor,
+                requests = requests,
                 localInventory = LocalDownloadInventory(inventory),
                 layout = DownloadStorageLayout(
                     volumes = mapOf(

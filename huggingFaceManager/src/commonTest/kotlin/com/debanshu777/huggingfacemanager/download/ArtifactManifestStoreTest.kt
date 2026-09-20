@@ -19,6 +19,45 @@ import kotlin.test.assertTrue
 
 class ArtifactManifestStoreTest {
     @Test
+    fun fullSixtyFourEntryRevisionCanBeReplacedAndPrunedRepeatedly() = withStore { fs, root, store ->
+        fun installRevision(revision: Char, bundle: Char): List<ArtifactManifestEntry> = (0 until 64).map { index ->
+            val bytes = byteArrayOf(revision.code.toByte(), index.toByte())
+            val artifact = identity(
+                revision = revision.toString().repeat(40),
+                relativePath = "part-$index.gguf",
+                expectedBytes = bytes.size.toLong(),
+            )
+            val entry = requireNotNull(
+                ArtifactManifestEntry.create(
+                    logicalRole = "part-$index",
+                    identity = artifact,
+                    byteCount = bytes.size.toLong(),
+                    contentSha256 = bytes.sha256Hex(),
+                    bundleId = bundle.toString().repeat(64),
+                    localRelativePath = immutableArtifactStorageLocation(
+                        artifact,
+                        bundle.toString().repeat(64),
+                    ).localRelativePath,
+                    layoutRelativePath = artifact.relativePath,
+                ),
+            )
+            installScopedEntry(fs, root, store, entry, bytes)
+            entry
+        }
+
+        val first = installRevision('a', '1')
+        assertEquals(64, store.readValidated()?.entries?.size)
+        val second = installRevision('b', '2')
+        assertEquals(128, store.readValidated()?.entries?.size)
+        assertTrue(store.pruneValidated(first))
+        assertEquals(64, store.readValidated()?.entries?.size)
+        val third = installRevision('c', '3')
+        assertEquals(128, store.readValidated()?.entries?.size)
+        assertTrue(store.pruneValidated(second))
+        assertEquals(third.toSet(), store.readValidated()?.entries?.toSet())
+    }
+
+    @Test
     fun pruningOneImmutableGenerationKeepsTheOtherRevisionValidAfterReopen() =
         withStore { fs, root, store ->
             val firstBytes = "first-revision".encodeToByteArray()
@@ -305,7 +344,7 @@ class ArtifactManifestStoreTest {
 
     @Test
     fun manifestRejectsTooManyEntriesDuplicateRolesAndDuplicatePaths() {
-        val entries = (0 until 65).map { index ->
+        val entries = (0 until 129).map { index ->
             entry(
                 identity(relativePath = "part-$index.gguf"),
                 logicalRole = "part-$index",

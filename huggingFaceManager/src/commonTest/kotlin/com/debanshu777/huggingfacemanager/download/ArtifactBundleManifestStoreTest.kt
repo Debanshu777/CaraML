@@ -10,8 +10,25 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class ArtifactBundleManifestStoreTest {
+    @Test
+    fun replacementPlanSurvivesRestartUntilCleanupIsAcknowledged() {
+        val fixture = BundleFixture("replacement-plan")
+        val old = fixture.installBundle("a".repeat(40), "old-main", "old-vae")
+        val replacement = fixture.installBundle("b".repeat(40), "new-main", "new-vae")
+        fixture.bundleStore().publish(old)
+
+        fixture.bundleStore().publish(replacement)
+
+        val reopened = fixture.bundleStore()
+        val currentDigest = requireNotNull(reopened.readValidated()).bundleDigest
+        assertEquals(old.toSet(), reopened.pendingPrevious(currentDigest)?.entries?.toSet())
+        assertTrue(reopened.acknowledgeReplacement(currentDigest))
+        assertNull(fixture.bundleStore().pendingPrevious(currentDigest))
+    }
+
     @Test
     fun crossRepositoryBundleRequiresEveryExactComponentBeforeAndAfterRestart() {
         val fixture = BundleFixture()
@@ -47,10 +64,11 @@ class ArtifactBundleManifestStoreTest {
         val fixture = BundleFixture("preserve-valid")
         val old = fixture.installBundle("a".repeat(40), "old-main", "old-vae")
         fixture.bundleStore().publish(old)
+        val replacement = fixture.installBundle("b".repeat(40), "new-main", "new-vae")
         val crashing = fixture.bundleStore { phase ->
             if (phase == ManifestJournalPhase.PREPARED) throw BundleCrash()
         }
-        assertFailsWith<BundleCrash> { crashing.publish(old) }
+        assertFailsWith<BundleCrash> { crashing.publish(replacement) }
         fixture.fs.write(fixture.mainRoot / "${ArtifactBundleManifestStore.MANIFEST_FILE_NAME}.part") {
             writeUtf8("invalid")
         }

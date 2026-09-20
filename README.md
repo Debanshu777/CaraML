@@ -219,6 +219,7 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 
 <!-- This section is updated at the end of each AI-assisted development session -->
 
+- Download admission now evaluates the final immutable request set against canonical published targets and real manifest checkpoints; revision replacement has bounded headroom plus durable, reference-aware, retryable cleanup so repeated installs do not leak superseded generations
 - iOS background completions now validate the actual HTTPS response before capture, persist a bounded exact-task provenance envelope for crash recovery, and coalesce callback/startup import and finalization behind URLSession restoration
 - Android download startup now has one reconciliation barrier shared by UIDT and WorkManager, collapses duplicate owners in favor of the exact UIDT, persists generation-bound Task Manager stops as resumable pauses, and checkpoints cancelled artifact leases atomically
 - Exact model loads now recover and compare the authoritative current owner bundle while holding every expected and candidate repository root on the download subsystem's shared lock, then retain that lifetime through byte revalidation, recovery-marker cleanup, and native open/load; exact Git, LFS, and Xet object IDs are preserved

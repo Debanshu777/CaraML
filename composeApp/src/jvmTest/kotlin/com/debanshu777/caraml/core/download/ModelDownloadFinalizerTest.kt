@@ -15,12 +15,16 @@ import com.debanshu777.caraml.core.storage.getRoomDatabase
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 import com.debanshu777.huggingfacemanager.download.ArtifactVerificationException
+import com.debanshu777.huggingfacemanager.download.ArtifactManifest
+import com.debanshu777.huggingfacemanager.download.ArtifactManifestEntry
+import com.debanshu777.huggingfacemanager.download.ArtifactManifestStore
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import com.debanshu777.huggingfacemanager.download.artifactBundleId
 import com.debanshu777.huggingfacemanager.download.immutableArtifactGenerationRoot
 import com.debanshu777.huggingfacemanager.model.DIFFUSERS_BUNDLE_DB_FILENAME
 import java.nio.file.Files
+import java.io.File
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
@@ -33,8 +37,125 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import okio.ByteString.Companion.toByteString
+import okio.Path.Companion.toOkioPath
 
 class ModelDownloadFinalizerTest {
+    @Test
+    fun replacementCleanupRetainsAnExternalComponentStillReferencedByAnotherCatalog() = runTest {
+        val storageRoot = Files.createTempDirectory("caraml-shared-replacement")
+        val databasePath = storageRoot.resolve("caraml.db").toString()
+        val database = getRoomDatabase(getDatabaseBuilder(databasePath))
+        val paths = TempFinalizerStoragePathProvider(storageRoot.toFile().canonicalFile)
+        val publisher = RepositoryModelCatalogPublisher(database.installedModelCatalogDao(), paths)
+        val previousBatch = finalizerBatch("old")
+        val replacement = finalizerBatch("new")
+        val previousEntries = previousBatch.artifacts.map { artifact ->
+            val metadata = artifact.request.metadata
+            val bytes = ByteArray(metadata.artifact.expectedBytes.toInt()) { metadata.logicalRole.first().code.toByte() }
+            val entry = requireNotNull(
+                ArtifactManifestEntry.create(
+                    metadata.logicalRole,
+                    metadata.artifact,
+                    metadata.artifact.expectedBytes,
+                    bytes.toByteString().sha256().hex(),
+                    metadata.bundleId,
+                    metadata.destinationRelativePath,
+                    metadata.layoutRelativePath,
+                ),
+            )
+            val root = File(paths.getModelsStorageDirectory(metadata.artifact.repositoryId))
+            File(root, metadata.destinationRelativePath + ".part").apply {
+                parentFile.mkdirs()
+                writeBytes(bytes)
+            }
+            ArtifactManifestStore(root.toOkioPath()).commit(metadata.destinationRelativePath, entry)
+            entry
+        }
+        val previousManifest = requireNotNull(ArtifactManifest.create(previousEntries))
+        val shared = previousBatch.artifacts.single { !it.request.primary }
+        val otherBase = finalizerBatch("other", ownerModelId = "other/model")
+        val otherOwner = otherBase.copy(
+            artifacts = otherBase.artifacts.map { artifact ->
+                if (artifact.request.primary) artifact else artifact.copy(request = shared.request)
+            },
+        )
+        try {
+            publisher.publish(previousBatch, previousBatch.evidence)
+            publisher.publish(otherOwner, otherOwner.evidence)
+            publisher.publish(replacement, replacement.evidence)
+
+            assertTrue(publisher.cleanupPrior(previousManifest, replacement.artifacts.map { it.request.metadata }))
+
+            val oldPrimary = previousEntries.single { it.logicalRole == "model" }
+            val sharedEntry = previousEntries.single { it.logicalRole == "clip" }
+            assertFalse(File(paths.getModelsStorageDirectory(oldPrimary.identity.repositoryId), oldPrimary.localRelativePath).exists())
+            assertTrue(File(paths.getModelsStorageDirectory(sharedEntry.identity.repositoryId), sharedEntry.localRelativePath).exists())
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun cleanupFailureIsRetryableWithoutInvalidatingThePublishedReplacement() = runTest {
+        val oldBatch = finalizerBatch("old")
+        val replacement = finalizerBatch("new")
+        val oldManifest = manifest(oldBatch)
+        val replacementManifest = manifest(replacement)
+        var current = oldManifest
+        var pending: ArtifactManifest? = null
+        var cleanupAttempts = 0
+        var acknowledgements = 0
+        var catalogPublications = 0
+        val publisher = object : BundlePublisher {
+            override suspend fun current(ownerModelId: String) = current
+            override suspend fun publish(ownerModelId: String, artifacts: List<DownloadMetadataDTO>): Boolean {
+                if (current.bundleDigest != replacementManifest.bundleDigest) pending = current
+                current = replacementManifest
+                return true
+            }
+            override suspend fun validate(ownerModelId: String, artifacts: List<DownloadMetadataDTO>) =
+                current.bundleDigest == replacementManifest.bundleDigest
+            override suspend fun pendingReplacement(ownerModelId: String, artifacts: List<DownloadMetadataDTO>) = pending
+            override suspend fun acknowledgeReplacement(
+                ownerModelId: String,
+                artifacts: List<DownloadMetadataDTO>,
+            ): Boolean = true.also {
+                acknowledgements += 1
+                pending = null
+            }
+        }
+        val catalog = object : ModelCatalogPublisher {
+            override suspend fun publish(batch: DownloadBatchSnapshot, evidence: EncodedModelEvidence) {
+                catalogPublications += 1
+            }
+            override suspend fun cleanupPrior(
+                previous: ArtifactManifest,
+                current: List<DownloadMetadataDTO>,
+            ): Boolean {
+                cleanupAttempts += 1
+                return cleanupAttempts > 1
+            }
+        }
+        val finalizer = finalizer(
+            replacement,
+            publisher,
+            catalog,
+            InstalledModelPublicationCoordinator(),
+        )
+
+        assertFailsWith<ReplacementCleanupException> { finalizer.finalize(replacement.batchId) }
+        assertEquals(replacementManifest.bundleDigest, current.bundleDigest)
+        assertEquals(oldManifest.bundleDigest, pending?.bundleDigest)
+
+        finalizer.finalize(replacement.batchId)
+
+        assertEquals(2, catalogPublications)
+        assertEquals(2, cleanupAttempts)
+        assertEquals(1, acknowledgements)
+        assertEquals(null, pending)
+    }
+
     @Test
     fun typedArtifactRejectsUnscopedDestinationBeforeFinalization() = runTest {
         val scoped = finalizerBatch()
@@ -452,6 +573,26 @@ private class FinalizerStoragePathProvider : StoragePathProvider {
     override fun deleteDownloadedModelContent(modelId: String, localPath: String): Boolean = false
 }
 
+private class TempFinalizerStoragePathProvider(private val root: File) : StoragePathProvider {
+    override fun getModelsStorageDirectory(modelId: String): String = File(root, modelId).absolutePath
+    override fun getDatabasePath(): String = File(root, "caraml.db").absolutePath
+    override fun fileExists(path: String): Boolean = File(path).exists()
+    override fun getAvailableStorageBytes(): Long = root.usableSpace
+    override fun getTotalStorageBytes(): Long = root.totalSpace
+    override fun isModelFileReadable(path: String): Boolean = File(path).isFile
+    override fun isDirectoryReadable(path: String): Boolean = File(path).isDirectory
+    override fun getFileSize(path: String): Long = File(path).length()
+    override fun renameFile(from: String, to: String): Boolean = File(from).renameTo(File(to))
+    override fun deleteDownloadedModelContent(modelId: String, localPath: String): Boolean {
+        val modelRoot = File(getModelsStorageDirectory(modelId)).canonicalFile
+        val target = File(localPath).canonicalFile
+        if (!target.path.startsWith(modelRoot.path + File.separator)) return false
+        if (!target.exists()) return true
+        target.deleteRecursively()
+        return !target.exists()
+    }
+}
+
 private fun DownloadBatchSnapshot.primaryVariant(): String =
     artifacts.single { it.request.primary }.request.metadata.destinationRelativePath
         .substringAfter("model-")
@@ -471,4 +612,23 @@ private fun finalizerEvidence(modelPath: String): EncodedModelEvidence = pending
 
 private fun finalizerIdentity(repo: String, path: String): DownloadArtifactIdentity = requireNotNull(
     DownloadArtifactIdentity.create(repo, "a".repeat(40), path, "b".repeat(64), 10L),
+)
+
+private fun manifest(batch: DownloadBatchSnapshot): ArtifactManifest = requireNotNull(
+    ArtifactManifest.create(
+        batch.artifacts.map { artifact ->
+            val metadata = artifact.request.metadata
+            requireNotNull(
+                ArtifactManifestEntry.create(
+                    logicalRole = metadata.logicalRole,
+                    identity = metadata.artifact,
+                    byteCount = metadata.artifact.expectedBytes,
+                    contentSha256 = "d".repeat(64),
+                    bundleId = metadata.bundleId,
+                    localRelativePath = metadata.destinationRelativePath,
+                    layoutRelativePath = metadata.layoutRelativePath,
+                ),
+            )
+        },
+    ),
 )

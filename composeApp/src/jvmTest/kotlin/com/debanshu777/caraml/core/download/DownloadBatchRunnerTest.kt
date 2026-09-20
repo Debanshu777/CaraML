@@ -31,6 +31,24 @@ import kotlin.test.assertTrue
 
 class DownloadBatchRunnerTest {
     @Test
+    fun replacementCleanupFailureRemainsRetryable() = runTest {
+        val store = RunnerStore(initialArtifactState = DownloadArtifactState.VERIFYING)
+        val runner = DownloadBatchRunner(
+            store = store,
+            transfer = RecordingTransfer(published = true),
+            finalizer = BatchFinalizer { throw ReplacementCleanupException() },
+            clock = { 10L },
+            leaseOwner = { "cleanup-owner" },
+        )
+
+        assertEquals(
+            DownloadRunResult.Retry(DownloadFailureCode.PLATFORM),
+            runner.run("batch") {},
+        )
+        assertEquals(DownloadArtifactState.FAILED_RETRYABLE, store.transitions.last())
+    }
+
+    @Test
     fun corruptBatchFilteredByTheStoreNeverClaimsTransfersOrFinalizes() = runTest {
         val store = RunnerStore(batchAvailable = false)
         val transfer = RecordingTransfer(published = true)
