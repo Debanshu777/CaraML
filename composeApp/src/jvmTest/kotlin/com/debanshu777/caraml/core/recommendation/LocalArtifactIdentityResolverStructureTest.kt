@@ -5,20 +5,23 @@ import java.nio.file.Path
 import kotlin.io.path.readText
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class LocalArtifactIdentityResolverStructureTest {
     @Test
-    fun sanitizerBlanksCodeShapedSyntaxInEveryNonCodeRegion() {
+    fun plainStringsCharsAndCommentsDoNotExposeLegacySyntax() {
         val source = """
             private val normal = "https://example.invalid/resolveLegacy() \" private fun readSidecar() = Unit"
-            private val template = "ignored ${'$'}{ resolvePersistedHub() } const val MAX_MANIFEST_BYTES = 1"
-            private val escapedSlash = "ignored \\\\ writeSidecar()"
-            private val raw = ${"\"\"\""}
+            private val escapedDollar = "literal \${DOLLAR}{resolvePersistedHub()}"
+            private val literalDollar = "${DOLLAR}{'${DOLLAR}'}resolveLegacy()"
+            private val pathProse = "old file .caraml-local-identity-v1.json is not executable"
+            private val raw = ${TRIPLE_QUOTE}
                 private fun deletePart() = reuseUnchanged()
                 private data class LegacyIdentitySidecar(val component: SidecarComponent)
                 private const val MANIFEST_FILE_NAME = ".caraml-local-identity-v1.json"
-            ${"\"\"\""}
+                ${DOLLAR}{'${DOLLAR}'}resolveLegacy()
+            ${TRIPLE_QUOTE}
             private val escapedQuote = '\''
             private val escapedBackslash = '\\'
             private val doubleQuote = '"'
@@ -33,6 +36,7 @@ class LocalArtifactIdentityResolverStructureTest {
 
         val lexicalView = source.kotlinLexicalView()
 
+        assertTrue(source.contains("\${'$'}resolveLegacy()"))
         assertEquals(source.length, lexicalView.code.length)
         assertEquals(
             source.indices.filter { source[it] == '\n' },
@@ -43,23 +47,82 @@ class LocalArtifactIdentityResolverStructureTest {
     }
 
     @Test
-    fun sanitizerConservativelyBlanksUnterminatedNonCodeAtEof() {
-        val unterminatedSources = listOf(
+    fun normalAndRawStringTemplatesExposeExecutableLegacySyntax() {
+        val source = """
+            private val normal = "normal ${DOLLAR}{ run {
+                val nestedRaw = ${TRIPLE_QUOTE}nested raw ${DOLLAR}{deletePart()}${TRIPLE_QUOTE}
+                resolvePersistedHub()
+            } }"
+            private val shorthand = "short ${DOLLAR}resolveLegacy"
+            private val raw = ${TRIPLE_QUOTE}
+                raw ${DOLLAR}{ run {
+                    val nested = "nested ${DOLLAR}{writeSidecar()}"
+                    val plain = "deletePart()"
+                    val brace = '}'
+                    // sidecarPath()
+                    /* outer reuseUnchanged() /* nested readBounded() */ */
+                    fun toSidecar() = readBounded()
+                    toSidecar()
+                } }
+            ${TRIPLE_QUOTE}
+        """.trimIndent()
+
+        assertTrue(source.contains("\${deletePart()}"))
+        assertTrue(source.contains("\$resolveLegacy"))
+        assertFalse(source.contains("\${'$'}"))
+        assertTrue(
+            forbiddenResolverSyntaxIn(source).containsAll(
+                setOf(
+                    "resolveLegacy code identifier",
+                    "resolvePersistedHub code identifier",
+                    "deletePart code identifier",
+                    "writeSidecar code identifier",
+                    "toSidecar code identifier",
+                    "readBounded code identifier",
+                ),
+            ),
+        )
+        assertFalse(forbiddenResolverSyntaxIn(source).contains("readSidecar code identifier"))
+        assertFalse(forbiddenResolverSyntaxIn(source).contains("reuseUnchanged code identifier"))
+        assertFalse(forbiddenResolverSyntaxIn(source).contains("sidecarPath code identifier"))
+    }
+
+    @Test
+    fun exactLegacySidecarPathIsDetectedInNormalAndRawCodeValues() {
+        val normalSource = """private val path = "$LEGACY_SIDECAR_PATH""""
+        val rawSource = "private val path = $TRIPLE_QUOTE$LEGACY_SIDECAR_PATH$TRIPLE_QUOTE"
+        val returnSource = """private fun legacyPath(): String { return "$LEGACY_SIDECAR_PATH" }"""
+
+        assertTrue(LEGACY_SIDECAR_PATH_LABEL in forbiddenResolverSyntaxIn(normalSource))
+        assertTrue(LEGACY_SIDECAR_PATH_LABEL in forbiddenResolverSyntaxIn(rawSource))
+        assertTrue(LEGACY_SIDECAR_PATH_LABEL in forbiddenResolverSyntaxIn(returnSource))
+    }
+
+    @Test
+    fun unterminatedNonCodeStaysBlankButUnclosedTemplatesFailClosed() {
+        val ignoredAtEof = listOf(
             "private val value = \"private fun readSidecar()",
             "private val value = \"\"\"private fun writeSidecar()",
             "private val value = 'x private fun deletePart()",
             "// private fun resolveLegacy()",
             "/* outer /* resolvePersistedHub() */ private fun reuseUnchanged()",
         )
-
-        unterminatedSources.forEach { source ->
+        ignoredAtEof.forEach { source ->
             assertTrue(forbiddenResolverSyntaxIn(source).isEmpty(), source)
             assertEquals(source.length, source.kotlinLexicalView().code.length)
         }
+
+        val unclosedNormalTemplate =
+            "private val value = \"prefix " + DOLLAR + "{run { resolveLegacy()"
+        val unclosedRawTemplate =
+            "private val value = \"\"\"prefix " + DOLLAR + "{run { readSidecar()"
+
+        assertTrue("resolveLegacy code identifier" in forbiddenResolverSyntaxIn(unclosedNormalTemplate))
+        assertTrue("readSidecar code identifier" in forbiddenResolverSyntaxIn(unclosedRawTemplate))
     }
 
     @Test
-    fun matcherDetectsEveryRemovedDeclarationCallTypeAndConstant() {
+    fun matcherDetectsEveryRemovedCodeIdentifierAndPath() {
         val source = """
             private suspend fun resolvePersistedHub() = resolveLegacy()
             private suspend fun resolveLegacy(allowLegacyFallback: Boolean) = readSidecar(sidecarPath())
@@ -93,17 +156,18 @@ class LocalArtifactIdentityResolverStructureTest {
     fun productionArtifactResolutionHasNoLegacyLocalIdentityPath() {
         val commonMain = commonMainSourceRoot()
         val resolverSource = resolverSource(commonMain).readText()
+        val lexicalView = resolverSource.kotlinLexicalView()
         val forbiddenSyntax = forbiddenResolverSyntaxIn(resolverSource)
         assertTrue(
             forbiddenSyntax.isEmpty(),
             "Legacy artifact syntax remains in LocalArtifactIdentityResolver: $forbiddenSyntax",
         )
         assertTrue(
-            Regex("""suspend\s+fun\s+resolve\s*\(""").containsMatchIn(resolverSource),
+            Regex("""suspend\s+fun\s+resolve\s*\(""").containsMatchIn(lexicalView.code),
             "The canonical manifest-backed resolve entrypoint is missing",
         )
         assertTrue(
-            resolverSource.contains("suspend fun createLoadRequestFromVerifiedArtifact("),
+            lexicalView.code.contains("suspend fun createLoadRequestFromVerifiedArtifact("),
             "The verified-artifact request constructor must remain",
         )
     }
@@ -127,11 +191,7 @@ class LocalArtifactIdentityResolverStructureTest {
             .filter { it.pattern.containsMatchIn(lexicalView.code) }
             .mapTo(linkedSetOf(), ForbiddenResolverSyntax::label)
             .apply {
-                if (lexicalView.normalStringLiterals.any { literal ->
-                        literal.content == LEGACY_SIDECAR_PATH &&
-                            LEGACY_PATH_PREFIX.containsMatchIn(lexicalView.code.substring(0, literal.startOffset))
-                    }
-                ) {
+                if (LEGACY_SIDECAR_PATH in lexicalView.stringLiterals) {
                     add(LEGACY_SIDECAR_PATH_LABEL)
                 }
             }
@@ -139,122 +199,206 @@ class LocalArtifactIdentityResolverStructureTest {
 
     private fun String.kotlinLexicalView(): KotlinLexicalView {
         val code = StringBuilder(length)
-        val normalStringLiterals = mutableListOf<NormalStringLiteral>()
-        var state = KotlinLexicalState.CODE
+        val stringLiterals = mutableListOf<String>()
+        val contexts = ArrayDeque<KotlinLexicalContext>()
+        contexts.addLast(KotlinLexicalContext.Code)
         var index = 0
-        var escaped = false
-        var blockCommentDepth = 0
-        var normalStringStartOffset = -1
-        var normalStringContentStart = -1
 
         while (index < length) {
-            when (state) {
-                KotlinLexicalState.CODE -> when {
+            when (val context = contexts.last()) {
+                KotlinLexicalContext.Code,
+                is KotlinLexicalContext.TemplateCode,
+                -> when {
                     startsWith("//", index) -> {
                         code.append("  ")
-                        state = KotlinLexicalState.LINE_COMMENT
+                        contexts.addLast(KotlinLexicalContext.LineComment)
                         index += 2
                     }
 
                     startsWith("/*", index) -> {
                         code.append("  ")
-                        state = KotlinLexicalState.BLOCK_COMMENT
-                        blockCommentDepth = 1
+                        contexts.addLast(KotlinLexicalContext.BlockComment())
                         index += 2
                     }
 
-                    startsWith("\"\"\"", index) -> {
+                    startsWith(TRIPLE_QUOTE, index) -> {
                         code.append("   ")
-                        state = KotlinLexicalState.RAW_STRING
-                        index += 3
+                        contexts.addLast(
+                            KotlinLexicalContext.RawString(
+                                contentStart = index + TRIPLE_QUOTE.length,
+                            ),
+                        )
+                        index += TRIPLE_QUOTE.length
                     }
 
                     this[index] == '"' -> {
                         code.append(' ')
-                        state = KotlinLexicalState.NORMAL_STRING
-                        escaped = false
-                        normalStringStartOffset = index
-                        normalStringContentStart = index + 1
+                        contexts.addLast(
+                            KotlinLexicalContext.NormalString(
+                                contentStart = index + 1,
+                            ),
+                        )
                         index++
                     }
 
                     this[index] == '\'' -> {
                         code.append(' ')
-                        state = KotlinLexicalState.CHARACTER
-                        escaped = false
+                        contexts.addLast(KotlinLexicalContext.Character())
+                        index++
+                    }
+
+                    context is KotlinLexicalContext.TemplateCode && this[index] == '{' -> {
+                        code.append('{')
+                        context.braceDepth++
+                        index++
+                    }
+
+                    context is KotlinLexicalContext.TemplateCode && this[index] == '}' -> {
+                        context.braceDepth--
+                        if (context.braceDepth == 0) {
+                            code.append(' ')
+                            contexts.removeLast()
+                        } else {
+                            code.append('}')
+                        }
                         index++
                     }
 
                     else -> code.append(this[index++])
                 }
 
-                KotlinLexicalState.NORMAL_STRING -> {
+                is KotlinLexicalContext.NormalString -> {
                     val character = this[index]
-                    code.appendNonCode(character)
                     when {
-                        escaped -> escaped = false
-                        character == '\\' -> escaped = true
+                        context.escaped -> {
+                            code.appendNonCode(character)
+                            context.escaped = false
+                            index++
+                        }
+
+                        character == '\\' -> {
+                            code.append(' ')
+                            context.escaped = true
+                            index++
+                        }
+
                         character == '"' -> {
-                            normalStringLiterals += NormalStringLiteral(
-                                startOffset = normalStringStartOffset,
-                                content = substring(normalStringContentStart, index),
-                            )
-                            state = KotlinLexicalState.CODE
+                            code.append(' ')
+                            if (!context.hasTemplate) {
+                                stringLiterals += substring(context.contentStart, index)
+                            }
+                            contexts.removeLast()
+                            index++
+                        }
+
+                        startsTemplateExpression(index) -> {
+                            code.append("  ")
+                            context.hasTemplate = true
+                            contexts.addLast(KotlinLexicalContext.TemplateCode())
+                            index += 2
+                        }
+
+                        startsTemplateIdentifier(index) -> {
+                            context.hasTemplate = true
+                            index = copyTemplateIdentifier(code, index)
+                        }
+
+                        else -> {
+                            code.appendNonCode(character)
+                            index++
                         }
                     }
-                    index++
                 }
 
-                KotlinLexicalState.RAW_STRING -> {
-                    if (startsWith("\"\"\"", index)) {
+                is KotlinLexicalContext.RawString -> when {
+                    startsWith(TRIPLE_QUOTE, index) -> {
                         code.append("   ")
-                        state = KotlinLexicalState.CODE
-                        index += 3
-                    } else {
-                        code.appendNonCode(this[index++])
+                        if (!context.hasTemplate) {
+                            stringLiterals += substring(context.contentStart, index)
+                        }
+                        contexts.removeLast()
+                        index += TRIPLE_QUOTE.length
+                    }
+
+                    startsTemplateExpression(index) -> {
+                        code.append("  ")
+                        context.hasTemplate = true
+                        contexts.addLast(KotlinLexicalContext.TemplateCode())
+                        index += 2
+                    }
+
+                    startsTemplateIdentifier(index) -> {
+                        context.hasTemplate = true
+                        index = copyTemplateIdentifier(code, index)
+                    }
+
+                    else -> {
+                        code.appendNonCode(this[index])
+                        index++
                     }
                 }
 
-                KotlinLexicalState.CHARACTER -> {
+                is KotlinLexicalContext.Character -> {
                     val character = this[index]
                     code.appendNonCode(character)
                     when {
-                        escaped -> escaped = false
-                        character == '\\' -> escaped = true
-                        character == '\'' -> state = KotlinLexicalState.CODE
+                        context.escaped -> context.escaped = false
+                        character == '\\' -> context.escaped = true
+                        character == '\'' -> contexts.removeLast()
                     }
                     index++
                 }
 
-                KotlinLexicalState.LINE_COMMENT -> {
+                KotlinLexicalContext.LineComment -> {
                     val character = this[index]
                     code.appendNonCode(character)
-                    if (character == '\n' || character == '\r') {
-                        state = KotlinLexicalState.CODE
-                    }
+                    if (character == '\n' || character == '\r') contexts.removeLast()
                     index++
                 }
 
-                KotlinLexicalState.BLOCK_COMMENT -> when {
+                is KotlinLexicalContext.BlockComment -> when {
                     startsWith("/*", index) -> {
                         code.append("  ")
-                        blockCommentDepth++
+                        context.depth++
                         index += 2
                     }
 
                     startsWith("*/", index) -> {
                         code.append("  ")
-                        blockCommentDepth--
-                        if (blockCommentDepth == 0) state = KotlinLexicalState.CODE
+                        context.depth--
+                        if (context.depth == 0) contexts.removeLast()
                         index += 2
                     }
 
-                    else -> code.appendNonCode(this[index++])
+                    else -> {
+                        code.appendNonCode(this[index])
+                        index++
+                    }
                 }
             }
         }
-        return KotlinLexicalView(code.toString(), normalStringLiterals)
+        return KotlinLexicalView(code.toString(), stringLiterals)
     }
+
+    private fun String.startsTemplateExpression(index: Int): Boolean =
+        startsWith(DOLLAR.toString() + "{", index)
+
+    private fun String.startsTemplateIdentifier(index: Int): Boolean =
+        this[index] == DOLLAR && getOrNull(index + 1)?.isKotlinIdentifierStart() == true
+
+    private fun String.copyTemplateIdentifier(code: StringBuilder, dollarOffset: Int): Int {
+        code.append(' ')
+        var index = dollarOffset + 1
+        while (index < length && this[index].isKotlinIdentifierPart()) {
+            code.append(this[index])
+            index++
+        }
+        return index
+    }
+
+    private fun Char.isKotlinIdentifierStart(): Boolean = this == '_' || isLetter()
+
+    private fun Char.isKotlinIdentifierPart(): Boolean = isKotlinIdentifierStart() || isDigit()
 
     private fun StringBuilder.appendNonCode(character: Char) {
         append(if (character == '\n' || character == '\r') character else ' ')
@@ -267,75 +411,63 @@ class LocalArtifactIdentityResolverStructureTest {
 
     private data class KotlinLexicalView(
         val code: String,
-        val normalStringLiterals: List<NormalStringLiteral>,
+        val stringLiterals: List<String>,
     )
 
-    private data class NormalStringLiteral(
-        val startOffset: Int,
-        val content: String,
-    )
+    private sealed interface KotlinLexicalContext {
+        data object Code : KotlinLexicalContext
 
-    private enum class KotlinLexicalState {
-        CODE,
-        NORMAL_STRING,
-        RAW_STRING,
-        CHARACTER,
-        LINE_COMMENT,
-        BLOCK_COMMENT,
+        data class TemplateCode(var braceDepth: Int = 1) : KotlinLexicalContext
+
+        data class NormalString(
+            val contentStart: Int,
+            var escaped: Boolean = false,
+            var hasTemplate: Boolean = false,
+        ) : KotlinLexicalContext
+
+        data class RawString(
+            val contentStart: Int,
+            var hasTemplate: Boolean = false,
+        ) : KotlinLexicalContext
+
+        data class Character(var escaped: Boolean = false) : KotlinLexicalContext
+
+        data object LineComment : KotlinLexicalContext
+
+        data class BlockComment(var depth: Int = 1) : KotlinLexicalContext
     }
 
     private companion object {
         val FORBIDDEN_CODE_SYNTAX = listOf(
-            ForbiddenResolverSyntax(
-                "allowLegacyFallback parameter or argument",
-                Regex("""\ballowLegacyFallback\s*(?::\s*Boolean\b|=\s*(?:true|false)\b)"""),
-            ),
-            forbiddenFunction("resolvePersistedHub"),
-            forbiddenFunction("resolveLegacy"),
-            forbiddenFunction("readSidecar"),
-            forbiddenFunction("writeSidecar"),
-            forbiddenFunction("deletePart"),
-            forbiddenFunction("sidecarPath"),
-            forbiddenFunction("reuseUnchanged"),
-            forbiddenFunction("toSidecar"),
-            forbiddenFunction("readBounded"),
-            forbiddenType("LegacyIdentitySidecar"),
-            forbiddenType("SidecarComponent"),
-            ForbiddenResolverSyntax(
-                "RevisionIdentity.LocalContent type or reference",
-                Regex(
-                    """(?:\b(?:data\s+)?(?:class|object)\s+LocalContent\b|""" +
-                        """\bRevisionIdentity\s*\.\s*LocalContent\b)""",
-                ),
-            ),
-            forbiddenValue("MANIFEST_FILE_NAME"),
-            forbiddenValue("LEGACY_MANIFEST_VERSION"),
-            forbiddenValue("MAX_MANIFEST_BYTES"),
-            forbiddenValue("MAX_CHANGE_STAMP_LENGTH"),
-            forbiddenFunction("createLoadRequest"),
+            forbiddenIdentifier("allowLegacyFallback"),
+            forbiddenIdentifier("resolvePersistedHub"),
+            forbiddenIdentifier("resolveLegacy"),
+            forbiddenIdentifier("readSidecar"),
+            forbiddenIdentifier("writeSidecar"),
+            forbiddenIdentifier("deletePart"),
+            forbiddenIdentifier("sidecarPath"),
+            forbiddenIdentifier("reuseUnchanged"),
+            forbiddenIdentifier("toSidecar"),
+            forbiddenIdentifier("readBounded"),
+            forbiddenIdentifier("LegacyIdentitySidecar"),
+            forbiddenIdentifier("SidecarComponent"),
+            forbiddenIdentifier("LocalContent"),
+            forbiddenIdentifier("MANIFEST_FILE_NAME"),
+            forbiddenIdentifier("LEGACY_MANIFEST_VERSION"),
+            forbiddenIdentifier("MAX_MANIFEST_BYTES"),
+            forbiddenIdentifier("MAX_CHANGE_STAMP_LENGTH"),
+            forbiddenIdentifier("createLoadRequest"),
         )
 
-        private fun forbiddenFunction(name: String) = ForbiddenResolverSyntax(
-            "$name declaration or call",
-            Regex("""\b${Regex.escape(name)}\s*\("""),
+        private fun forbiddenIdentifier(name: String) = ForbiddenResolverSyntax(
+            "$name code identifier",
+            Regex("""\b${Regex.escape(name)}\b"""),
         )
 
-        private fun forbiddenType(name: String) = ForbiddenResolverSyntax(
-            "$name type or constructor",
-            Regex(
-                """(?:\b(?:data\s+)?(?:class|object)\s+${Regex.escape(name)}\b|""" +
-                    """\b${Regex.escape(name)}\s*\()""",
-            ),
-        )
-
-        private fun forbiddenValue(name: String) = ForbiddenResolverSyntax(
-            "$name constant",
-            Regex("""\b(?:const\s+)?val\s+${Regex.escape(name)}\s*="""),
-        )
-
+        const val DOLLAR = '$'
+        const val TRIPLE_QUOTE = "\"\"\""
         const val LEGACY_SIDECAR_PATH = ".caraml-local-identity-v1.json"
         const val LEGACY_SIDECAR_PATH_LABEL = "$LEGACY_SIDECAR_PATH path literal"
-        val LEGACY_PATH_PREFIX = Regex("""(?:=|/|\()\s*$""")
         const val COMMON_MAIN_FROM_ROOT = "composeApp/src/commonMain/kotlin"
         const val COMMON_MAIN_FROM_MODULE = "src/commonMain/kotlin"
     }
