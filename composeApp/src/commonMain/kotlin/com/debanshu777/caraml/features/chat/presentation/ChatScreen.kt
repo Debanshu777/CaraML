@@ -29,8 +29,10 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -38,14 +40,18 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.style.TextAlign
@@ -55,12 +61,15 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.debanshu777.caraml.core.drawer.DrawerController
 import com.debanshu777.caraml.core.drawer.GenerationModeController
 import com.debanshu777.caraml.core.drawer.LocalDrawerController
+import com.debanshu777.caraml.core.drawer.LocalFocusModeController
 import com.debanshu777.caraml.core.drawer.LocalGenerationModeController
 import com.debanshu777.caraml.core.drawer.LocalNavigationMenuAction
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
 import com.debanshu777.caraml.core.ui.components.CaraMLPane
+import com.debanshu777.caraml.core.ui.components.AuroraFocalSurface
+import com.debanshu777.caraml.core.ui.components.FocalEntrance
 import com.debanshu777.caraml.core.ui.layout.AppContentKind
 import com.debanshu777.caraml.core.ui.layout.AppNavigationLayout
 import com.debanshu777.caraml.core.ui.layout.LocalAppNavigationLayout
@@ -173,10 +182,8 @@ fun ChatScreenContent(
     val listState = rememberLazyListState()
     val navigationLayout = LocalAppNavigationLayout.current
     val navigationMenuAction = LocalNavigationMenuAction.current
+    val focusModeController = LocalFocusModeController.current
     val safeDrawingInsets = LocalCreateSafeDrawingInsetsOverride.current ?: WindowInsets.safeDrawing
-    val scaffoldContentInsets = safeDrawingInsets.only(
-        WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom,
-    )
     val generationMode = controlledGenerationMode ?: when (val state = uiState) {
         is ChatUiState.Ready -> state.generationMode
         is ChatUiState.NoModelsForMode -> state.mode
@@ -184,44 +191,67 @@ fun ChatScreenContent(
     }
 
     val messageCount = (uiState as? ChatUiState.Ready)?.messages?.size ?: 0
+    val focusModeEnabled = messageCount > 0 && focusModeController != null
+    val composerInsets = safeDrawingInsets.only(
+        WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom,
+    )
+    val scaffoldContentInsets = if (focusModeEnabled) {
+        safeDrawingInsets
+    } else {
+        composerInsets
+    }
     val imeBottomPadding = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
-    Scaffold(
+
+    SideEffect {
+        focusModeController?.update(focusModeEnabled)
+    }
+    DisposableEffect(focusModeController) {
+        onDispose { focusModeController?.update(false) }
+    }
+
+    CreateRouteCanvas(
+        focal = uiState is ChatUiState.Ready && uiState.messages.isEmpty(),
         modifier = modifier,
+    ) {
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
         containerColor = Color.Transparent,
         contentWindowInsets = scaffoldContentInsets,
         topBar = {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .windowInsetsPadding(
-                        safeDrawingInsets.only(
-                            WindowInsetsSides.Top + WindowInsetsSides.Horizontal,
-                        ),
-                    ),
-                contentAlignment = Alignment.TopCenter,
-            ) {
-                ModelSelectorTopBar(
-                    title = "Create",
-                    onMenuClick = navigationMenuAction,
+            if (!focusModeEnabled) {
+                Box(
                     modifier = Modifier
-                        .widthIn(max = 840.dp)
                         .fillMaxWidth()
-                        .padding(
-                            horizontal = if (
-                                navigationLayout == AppNavigationLayout.ModalSidebar
-                            ) {
-                                16.dp
-                            } else {
-                                24.dp
-                            },
+                        .windowInsetsPadding(
+                            safeDrawingInsets.only(
+                                WindowInsetsSides.Top + WindowInsetsSides.Horizontal,
+                            ),
                         ),
-                    generationMode = generationMode.takeUnless {
-                        navigationLayout == AppNavigationLayout.Sidebar
-                    },
-                    onGenerationModeSelected = onGenerationModeSelected.takeIf {
-                        navigationLayout != AppNavigationLayout.Sidebar
-                    },
-                )
+                    contentAlignment = Alignment.TopCenter,
+                ) {
+                    ModelSelectorTopBar(
+                        title = "Create",
+                        onMenuClick = navigationMenuAction,
+                        modifier = Modifier
+                            .widthIn(max = 840.dp)
+                            .fillMaxWidth()
+                            .padding(
+                                horizontal = if (
+                                    navigationLayout == AppNavigationLayout.ModalSidebar
+                                ) {
+                                    16.dp
+                                } else {
+                                    24.dp
+                                },
+                            ),
+                        generationMode = generationMode.takeUnless {
+                            navigationLayout == AppNavigationLayout.Sidebar
+                        },
+                        onGenerationModeSelected = onGenerationModeSelected.takeIf {
+                            navigationLayout != AppNavigationLayout.Sidebar
+                        },
+                    )
+                }
             }
         },
         bottomBar = {
@@ -230,7 +260,7 @@ fun ChatScreenContent(
                     kind = AppContentKind.Chat,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .windowInsetsPadding(scaffoldContentInsets),
+                        .windowInsetsPadding(composerInsets),
                     fillMaxHeight = false,
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
@@ -350,7 +380,10 @@ fun ChatScreenContent(
                             streamingState = streamingState,
                             loadMedia = loadMedia,
                             modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(bottom = bottomPadding),
+                            contentPadding = PaddingValues(
+                                top = if (focusModeEnabled) 72.dp else 0.dp,
+                                bottom = bottomPadding,
+                            ),
                         )
                         if (uiState.messages.isEmpty()) {
                             AnimatedCreateEmptyState(
@@ -360,10 +393,46 @@ fun ChatScreenContent(
                                     .padding(bottom = bottomPadding),
                             )
                         }
+
+                        if (focusModeEnabled && navigationMenuAction != null) {
+                            IconButton(
+                                onClick = navigationMenuAction,
+                                modifier = Modifier
+                                    .align(Alignment.TopStart)
+                                    .padding(LocalSpacing.current.s)
+                                    .size(48.dp)
+                                    .testTag("focus-navigation-action"),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Menu,
+                                    contentDescription = "Open navigation menu",
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
+    }
+    }
+}
+
+@Composable
+private fun CreateRouteCanvas(
+    focal: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    if (focal) {
+        AuroraFocalSurface(
+            modifier = modifier.testTag("create-focal-canvas"),
+            shape = RectangleShape,
+            entrance = FocalEntrance.OneShot,
+            content = content,
+        )
+    } else {
+        Box(modifier = modifier, content = content)
     }
 }
 

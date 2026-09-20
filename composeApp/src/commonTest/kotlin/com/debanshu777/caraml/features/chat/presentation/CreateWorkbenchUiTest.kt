@@ -309,13 +309,146 @@ class CreateWorkbenchUiTest {
             .assertCountEquals(1)
         onNodeWithTag("create-command").assertIsDisplayed()
 
-        val emptyState = onNodeWithTag("create-empty-state").captureToImage().toPixelMap()
+        val emptyStateNode = onNodeWithTag("create-empty-state")
+        val emptyStateBounds = emptyStateNode.fetchSemanticsNode().boundsInRoot
+        val emptyState = emptyStateNode.captureToImage().toPixelMap()
+        val focalNode = onNodeWithTag("create-focal-canvas", useUnmergedTree = true)
+        val focalBounds = focalNode.fetchSemanticsNode().boundsInRoot
+        val focalCanvas = focalNode.captureToImage().toPixelMap()
+        val focalX = (emptyStateBounds.left - focalBounds.left).toInt() + 1
+        val focalY = (emptyStateBounds.top - focalBounds.top).toInt() + 1
         assertEquals(
-            backdrop,
+            focalCanvas[focalX, focalY],
             emptyState[1, 1],
-            "The empty statement must sit directly on the ambient canvas without an outer card",
+            "The empty statement must reveal the focal canvas without an opaque outer card",
         )
     }
+
+    @Test
+    fun emptyCreateFocalAtmosphereOwnsTheFullRouteCanvasWithoutSessionClutter() =
+        runComposeUiTest {
+            setContent {
+                MaterialTheme {
+                    Box(
+                        Modifier
+                            .requiredSize(width = 420.dp, height = 800.dp)
+                            .testTag("create-host"),
+                    ) {
+                        CreateTestLocals {
+                            ReadyCreateScreen(
+                                mode = GenerationMode.Text,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    }
+                }
+            }
+
+            val hostBounds = onNodeWithTag("create-host", useUnmergedTree = true)
+                .fetchSemanticsNode().boundsInRoot
+            val bounds = onNodeWithTag("create-focal-canvas", useUnmergedTree = true)
+                .assertIsDisplayed()
+                .fetchSemanticsNode().boundsInRoot
+            assertEquals(hostBounds, bounds)
+            onNodeWithTag("create-command", useUnmergedTree = true).assertIsDisplayed()
+            onAllNodesWithText("Continue working").assertCountEquals(0)
+            onAllNodesWithText("Last session").assertCountEquals(0)
+            onAllNodesWithText("Recent local sessions").assertCountEquals(0)
+            onAllNodesWithText("Local only").assertCountEquals(0)
+        }
+
+    @Test
+    fun settledConversationHidesPersistentChromeAndKeepsOneFocusNavigationAction() =
+        runComposeUiTest {
+            var messages by mutableStateOf(persistentListOf<ChatMessage>())
+            lateinit var backStack: NavBackStack<NavKey>
+            var observedLayout: AppNavigationLayout? = null
+
+            setContent {
+                MaterialTheme {
+                    backStack = remember { NavBackStack(AppScreen.Home) }
+                    AppDrawerShell(
+                        modifier = Modifier.requiredSize(width = 900.dp, height = 720.dp),
+                        backStack = backStack,
+                    ) {
+                        observedLayout = LocalAppNavigationLayout.current
+                        ChatScreenContent(
+                            uiState = readyState(
+                                mode = GenerationMode.Text,
+                                messages = messages,
+                            ),
+                            streamingState = StreamingState(),
+                            onSelectModel = {},
+                            onSendMessage = {},
+                            onCancelGeneration = {},
+                            onNavigateToSearch = {},
+                        )
+                    }
+                }
+            }
+
+            onAllNodesWithText("CaraML").assertCountEquals(1)
+            onAllNodesWithContentDescription("Open navigation menu").assertCountEquals(0)
+            val emptyComposerLeft = onNodeWithTag("create-command", useUnmergedTree = true)
+                .fetchSemanticsNode().boundsInRoot.left
+
+            runOnIdle {
+                messages = persistentListOf(
+                    ChatMessage(
+                        id = "user-focus",
+                        role = MessageRole.User,
+                        text = "Make the first milestone measurable.",
+                    ),
+                    ChatMessage(
+                        id = "assistant-focus",
+                        role = MessageRole.Assistant,
+                        text = "Start with one observable outcome.",
+                        thinking = "I compared the available local evidence.",
+                        inferenceMetrics = InferenceMetrics(
+                            tpotMs = 400.0,
+                            tokenCount = 42,
+                            generationTimeMs = 1_230L,
+                        ),
+                    ),
+                )
+            }
+            waitForIdle()
+
+            onAllNodesWithText("CaraML").assertCountEquals(0)
+            onAllNodesWithText("Create").assertCountEquals(0)
+            onNodeWithText("Start with one observable outcome.").assertIsDisplayed()
+            onNodeWithText("Thoughts").assertIsDisplayed()
+            onAllNodesWithText("Reasoning").assertCountEquals(0)
+            onAllNodesWithText("Local", substring = true).assertCountEquals(0)
+            onNodeWithText("Statistics:").assertIsDisplayed()
+            onNodeWithContentDescription("Select model").assertIsDisplayed()
+            onNodeWithTag("create-command", useUnmergedTree = true).assertIsDisplayed()
+            val focusedComposerLeft = onNodeWithTag("create-command", useUnmergedTree = true)
+                .fetchSemanticsNode().boundsInRoot.left
+            assertTrue(
+                focusedComposerLeft < emptyComposerLeft,
+                "Focus mode must reclaim the persistent sidebar width; " +
+                    "empty=$emptyComposerLeft focused=$focusedComposerLeft",
+            )
+
+            onAllNodesWithContentDescription("Open navigation menu").assertCountEquals(1)
+            onNodeWithContentDescription("Open navigation menu")
+                .assertWidthIsAtLeast(48.dp)
+                .assertHeightIsAtLeast(48.dp)
+                .performClick()
+            onNodeWithTag("modal-sidebar-panel").assertIsDisplayed()
+            onAllNodesWithText("CaraML").assertCountEquals(1)
+
+            runOnIdle {
+                backStack.clear()
+                backStack.add(AppScreen.Search)
+            }
+            waitForIdle()
+
+            runOnIdle { assertEquals(AppNavigationLayout.Sidebar, observedLayout) }
+            onAllNodesWithContentDescription("Open navigation menu").assertCountEquals(0)
+            onAllNodesWithText("CaraML").assertCountEquals(1)
+        }
 
     @Test
     fun assistantOutputRendersDirectlyOnCanvasWhileUserMessageRemainsTonal() =
