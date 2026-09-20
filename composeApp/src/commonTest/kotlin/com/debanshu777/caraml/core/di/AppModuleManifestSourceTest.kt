@@ -125,7 +125,7 @@ class AppModuleManifestSourceTest {
 
         val resolver = LocalArtifactIdentityResolver(
             storagePathProvider = storage,
-            manifestSource = source,
+            manifestSource = source::invoke,
             hashingDispatcher = StandardTestDispatcher(testScheduler),
         )
         val verified = assertIs<ArtifactIdentityResolution.Verified>(

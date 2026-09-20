@@ -16,8 +16,38 @@ data class InstalledCatalogRecord(
     val evidence: InstalledModelEvidenceEntity,
 )
 
+data class InstalledCatalogSnapshot(
+    val model: LocalModelEntity,
+    val components: List<DownloadedComponentEntity>,
+    val evidence: InstalledModelEvidenceEntity?,
+)
+
 @Dao
 interface InstalledModelCatalogDao {
+    @Query(
+        """
+        SELECT * FROM local_model
+        WHERE model_id = :modelId AND is_main_model = 1
+        ORDER BY id DESC
+        LIMIT 2
+        """,
+    )
+    suspend fun snapshotModels(modelId: String): List<LocalModelEntity>
+
+    @Query(
+        """
+        SELECT dc.* FROM downloaded_component dc
+        INNER JOIN model_component_link mcl ON dc.id = mcl.component_id
+        WHERE mcl.model_id = :modelId
+        ORDER BY dc.repo_id, dc.file_path, dc.id
+        LIMIT 65
+        """,
+    )
+    suspend fun snapshotComponents(modelId: String): List<DownloadedComponentEntity>
+
+    @Query("SELECT * FROM installed_model_evidence WHERE model_id = :modelId")
+    suspend fun snapshotEvidence(modelId: String): InstalledModelEvidenceEntity?
+
     @Query("DELETE FROM model_component_link WHERE model_id = :modelId")
     suspend fun deleteLinks(modelId: String)
 
@@ -41,6 +71,16 @@ interface InstalledModelCatalogDao {
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertEvidence(evidence: InstalledModelEvidenceEntity)
+
+    @Transaction
+    suspend fun snapshotReady(modelId: String): InstalledCatalogSnapshot? {
+        val model = snapshotModels(modelId).singleOrNull()
+            ?.takeIf { it.componentStatus == LocalModelEntity.STATUS_READY }
+            ?: return null
+        val components = snapshotComponents(modelId).takeIf { it.size <= MAX_SNAPSHOT_COMPONENTS }
+            ?: return null
+        return InstalledCatalogSnapshot(model, components, snapshotEvidence(modelId))
+    }
 
     @Transaction
     suspend fun replaceReady(record: InstalledCatalogRecord) {
@@ -73,5 +113,9 @@ interface InstalledModelCatalogDao {
         }
         insertModel(record.model.copy(id = 0L))
         insertEvidence(record.evidence)
+    }
+
+    private companion object {
+        const val MAX_SNAPSHOT_COMPONENTS = 64
     }
 }

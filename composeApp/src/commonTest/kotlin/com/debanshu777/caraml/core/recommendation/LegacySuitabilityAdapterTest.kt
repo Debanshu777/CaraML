@@ -1,6 +1,7 @@
 package com.debanshu777.caraml.core.recommendation
 
 import com.debanshu777.caraml.core.di.appModule
+import com.debanshu777.caraml.core.storage.catalog.InstalledModelPublicationCoordinator
 import com.debanshu777.caraml.core.rating.SuitabilityRating
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -132,6 +133,10 @@ class LegacySuitabilityAdapterTest {
                 application.koin.get<RecommendationRolloutModeSource>().current(),
             )
             assertNotNull(application.koin.get<LegacySuitabilityAdapter>())
+            assertSame(
+                application.koin.get<InstalledModelPublicationCoordinator>(),
+                application.koin.get<InstalledModelPublicationCoordinator>(),
+            )
         } finally {
             application.close()
         }

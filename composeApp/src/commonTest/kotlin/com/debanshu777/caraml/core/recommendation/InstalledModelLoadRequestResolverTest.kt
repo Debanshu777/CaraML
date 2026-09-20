@@ -475,7 +475,7 @@ class InstalledModelLoadRequestResolverTest {
                 cancelAt(ResolverStage.COMPONENTS)
                 emptyList<DownloadedComponentEntity>()
             },
-            requireComplete = { _, _, _ ->
+            requireComplete = { _, _ ->
                 cancelAt(ResolverStage.REPAIR)
                 evidenceResult
             },

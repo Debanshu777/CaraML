@@ -29,11 +29,7 @@ fun interface InstalledModelLoadResolver {
 
 class InstalledModelLoadRequestResolver internal constructor(
     private val componentsForModel: suspend (String) -> List<DownloadedComponentEntity>,
-    private val requireComplete: suspend (
-        LocalModelEntity,
-        List<DownloadedComponentEntity>,
-        GenerationMode,
-    ) -> EvidenceRepairResult,
+    private val requireComplete: suspend (String, GenerationMode) -> EvidenceRepairResult,
     private val resolvePersistedHub: suspend (
         LocalModelEntity,
         List<DownloadedComponentEntity>,
@@ -91,7 +87,7 @@ class InstalledModelLoadRequestResolver internal constructor(
         expectedMode: GenerationMode,
     ): InstalledModelLoadResolution {
         val components = componentsForModel(model.modelId)
-        val descriptor = when (val evidence = requireComplete(model, components, expectedMode)) {
+        val descriptor = when (val evidence = requireComplete(model.modelId, expectedMode)) {
             is EvidenceRepairResult.Ready -> evidence.descriptor
             EvidenceRepairResult.NeedsNetwork -> return InstalledModelLoadResolution.NeedsNetwork
             is EvidenceRepairResult.Rejected -> {

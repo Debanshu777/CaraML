@@ -21,6 +21,7 @@ import com.debanshu777.caraml.core.recommendation.InferenceObservationRecorder
 import com.debanshu777.caraml.core.recommendation.InstalledDescriptorMetadataSource
 import com.debanshu777.caraml.core.recommendation.InstalledModelEvidenceRepairer
 import com.debanshu777.caraml.core.recommendation.InstalledModelLoadRequestResolver
+import com.debanshu777.caraml.core.recommendation.InstalledModelManifestSource
 import com.debanshu777.caraml.core.recommendation.InstalledModelWorkloadFactory
 import com.debanshu777.caraml.core.recommendation.LlamaBackendCalibrationProbe
 import com.debanshu777.caraml.core.recommendation.QuickCalibrationRunner
@@ -37,6 +38,7 @@ import com.debanshu777.caraml.core.storage.AppDatabase
 import com.debanshu777.caraml.core.recommendation.storage.RecommendationDatabaseOwner
 import com.debanshu777.caraml.core.recommendation.storage.PersistedModelEvidenceCodec
 import com.debanshu777.caraml.core.storage.component.ComponentRepository
+import com.debanshu777.caraml.core.storage.catalog.InstalledModelPublicationCoordinator
 import com.debanshu777.caraml.core.storage.evidence.InstalledModelEvidenceRepository
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
 import com.debanshu777.caraml.core.download.ArtifactTransfer
@@ -101,12 +103,14 @@ val appModule = module {
     single { ComponentRepository(get()) }
     single { InstalledModelEvidenceRepository(get()) }
     single { DownloadManager(get()) }
+    single { InstalledModelPublicationCoordinator() }
+    single { installedModelManifestSource(get<DownloadManager>()::validatedBundle) }
     single<DownloadTaskStore> { RoomDownloadTaskStore(get<DownloadDatabase>().downloadTaskDao()) }
     single<ArtifactTransfer> { DownloadManagerArtifactTransfer(get()) }
     single<DownloadCheckpointCleaner> { DownloadManagerCheckpointCleaner(get()) }
     single<BundlePublisher> { DownloadManagerBundlePublisher(get()) }
     single<ModelCatalogPublisher> { RepositoryModelCatalogPublisher(get(), get()) }
-    single<BatchFinalizer> { ModelDownloadFinalizer(get(), get(), get()) }
+    single<BatchFinalizer> { ModelDownloadFinalizer(get(), get(), get(), get()) }
     single { DownloadBatchRunner(get(), get(), get(), { Clock.System.now().toEpochMilliseconds() }) }
     single { DownloadRuntimeScope(CoroutineScope(SupervisorJob() + Dispatchers.Default)) }
     single { DownloadReconciler(get(), get(), { Clock.System.now().toEpochMilliseconds() }) }
@@ -163,8 +167,11 @@ val appModule = module {
     single {
         InstalledModelEvidenceRepairer(
             artifactResolver = get(),
+            catalog = get(),
             evidenceRepository = get(),
             metadataSource = get(),
+            manifestSource = get(),
+            publicationCoordinator = get(),
             codec = get(),
             clock = { Clock.System.now().toEpochMilliseconds() },
         )
@@ -231,7 +238,7 @@ val appModule = module {
     single {
         LocalArtifactIdentityResolver(
             storagePathProvider = get(),
-            manifestSource = installedModelManifestSource(get<DownloadManager>()::validatedBundle),
+            manifestSource = get<InstalledModelManifestSource>()::invoke,
             hashingDispatcher = Dispatchers.Default,
         )
     }
@@ -325,9 +332,7 @@ private const val NATIVE_LOAD_ENGINE_VERSION = "native-engine-v1"
 
 internal fun installedModelManifestSource(
     validatedBundle: suspend (String) -> ArtifactManifest?,
-): suspend (String) -> ArtifactManifest? = { ownerModelId ->
-    validatedBundle(ownerModelId)
-}
+): InstalledModelManifestSource = InstalledModelManifestSource(validatedBundle)
 
 private class RecommendationCalibrationScope(val scope: CoroutineScope)
 class DownloadRuntimeScope(val scope: CoroutineScope)

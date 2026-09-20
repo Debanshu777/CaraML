@@ -4,6 +4,10 @@ import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import androidx.sqlite.execSQL
 import com.debanshu777.caraml.core.download.pendingEvidence
+import com.debanshu777.caraml.core.recommendation.LlmModelDescriptor
+import com.debanshu777.caraml.core.recommendation.ModelFileIdentity
+import com.debanshu777.caraml.core.recommendation.QuantizationEvidence
+import com.debanshu777.caraml.core.recommendation.storage.PersistedModelEvidenceCodec
 import com.debanshu777.caraml.core.storage.catalog.InstalledCatalogRecord
 import com.debanshu777.caraml.core.storage.component.DownloadedComponentEntity
 import com.debanshu777.caraml.core.storage.evidence.InstalledModelEvidenceEntity
@@ -113,9 +117,102 @@ class AppDatabaseMigrationTest {
             database.close()
         }
     }
+
+    @Test
+    fun evidenceCompareAndSetInsertsMissingRowAndSurvivesReopen() = runTest {
+        val path = Files.createTempDirectory("caraml-evidence-cas-reopen").resolve("caraml.db").toString()
+        val expected = catalogRecord("missing", publishedAtEpochMs = 1L).evidence
+        var database = getRoomDatabase(getDatabaseBuilder(path))
+        try {
+            assertTrue(database.installedModelEvidenceDao().compareAndSet(expected = null, replacement = expected))
+        } finally {
+            database.close()
+        }
+
+        database = getRoomDatabase(getDatabaseBuilder(path))
+        try {
+            assertEquals(expected, database.installedModelEvidenceDao().get(MODEL_ID))
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun evidenceCompareAndSetReplacesObservedIncompleteAndCorruptRows() = runTest {
+        val path = Files.createTempDirectory("caraml-evidence-cas-replace").resolve("caraml.db").toString()
+        val database = getRoomDatabase(getDatabaseBuilder(path))
+        val incomplete = catalogRecord("incomplete", publishedAtEpochMs = 1L).evidence
+        val complete = completeEvidenceEntity(publishedAtEpochMs = 2L)
+        val corrupt = complete.copy(payload = "{corrupt", publishedAtEpochMs = 3L)
+        val repaired = complete.copy(publishedAtEpochMs = 4L)
+        try {
+            database.installedModelEvidenceDao().upsert(incomplete)
+            assertTrue(database.installedModelEvidenceDao().compareAndSet(incomplete, complete))
+            assertEquals(complete, database.installedModelEvidenceDao().get(MODEL_ID))
+
+            database.installedModelEvidenceDao().upsert(corrupt)
+            assertTrue(database.installedModelEvidenceDao().compareAndSet(corrupt, repaired))
+            assertEquals(repaired, database.installedModelEvidenceDao().get(MODEL_ID))
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun evidenceCompareAndSetCannotOverwriteChangedNewerRow() = runTest {
+        val path = Files.createTempDirectory("caraml-evidence-cas-newer").resolve("caraml.db").toString()
+        val database = getRoomDatabase(getDatabaseBuilder(path))
+        val observed = catalogRecord("observed", publishedAtEpochMs = 1L).evidence
+        val newer = completeEvidenceEntity(publishedAtEpochMs = 3L)
+        val staleReplacement = catalogRecord("stale", publishedAtEpochMs = 2L).evidence
+        try {
+            database.installedModelEvidenceDao().upsert(observed)
+            database.installedModelEvidenceDao().upsert(newer)
+
+            assertFalse(database.installedModelEvidenceDao().compareAndSet(observed, staleReplacement))
+            assertEquals(newer, database.installedModelEvidenceDao().get(MODEL_ID))
+        } finally {
+            database.close()
+        }
+    }
 }
 
 private const val MODEL_ID = "owner/model"
+
+private fun completeEvidenceEntity(publishedAtEpochMs: Long): InstalledModelEvidenceEntity {
+    val identity = ModelFileIdentity(
+        repositoryId = MODEL_ID,
+        revision = "a".repeat(40),
+        path = "model-complete.gguf",
+        sizeBytes = 10L,
+        gitOid = null,
+        lfsOid = "sha256:${"b".repeat(64)}",
+        xetHash = null,
+        evidence = emptyList(),
+    )
+    val descriptor = LlmModelDescriptor(
+        repositoryId = MODEL_ID,
+        revision = identity.revision,
+        file = identity,
+        architecture = "llama",
+        quantization = QuantizationEvidence.Known("Q4_K_M"),
+        parameterCount = 1_000_000L,
+        contextLimit = 4_096,
+        transformerShape = null,
+        ggufVersion = 3,
+        requiredEngineFeatures = emptyList(),
+        evidence = emptyList(),
+    )
+    val encoded = PersistedModelEvidenceCodec().encode(listOf(identity), descriptor)
+    return InstalledModelEvidenceEntity(
+        modelId = MODEL_ID,
+        evidenceState = encoded.state.name,
+        schemaVersion = encoded.schemaVersion,
+        payload = encoded.payload,
+        sha256 = encoded.sha256,
+        publishedAtEpochMs = publishedAtEpochMs,
+    )
+}
 
 private fun catalogRecord(suffix: String, publishedAtEpochMs: Long): InstalledCatalogRecord {
     val evidence = pendingEvidence(

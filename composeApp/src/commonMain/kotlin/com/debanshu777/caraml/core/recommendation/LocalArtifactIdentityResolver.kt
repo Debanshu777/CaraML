@@ -113,6 +113,22 @@ class LocalArtifactIdentityResolver(
         components: List<DownloadedComponentEntity>,
     ): ArtifactIdentityResolution = resolve(model, components, allowLegacyFallback = false)
 
+    internal suspend fun resolvePersistedHub(
+        model: LocalModelEntity,
+        components: List<DownloadedComponentEntity>,
+        manifest: ArtifactManifest,
+    ): ArtifactIdentityResolution {
+        val inputs = validatedInputs(model, components)
+            ?: return ArtifactIdentityResolution.Rejected(ArtifactIdentityRejection.INVALID_INPUT)
+        if (inputs.size > MAX_COMPONENTS) {
+            return ArtifactIdentityResolution.Rejected(ArtifactIdentityRejection.TOO_MANY_COMPONENTS)
+        }
+        if (hasDuplicateInputs(inputs)) {
+            return ArtifactIdentityResolution.Rejected(ArtifactIdentityRejection.DUPLICATE_COMPONENT)
+        }
+        return resolveHubManifest(model, inputs, manifest)
+    }
+
     private suspend fun resolve(
         model: LocalModelEntity,
         components: List<DownloadedComponentEntity>,

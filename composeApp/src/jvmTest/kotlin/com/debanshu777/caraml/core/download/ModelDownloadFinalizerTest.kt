@@ -7,14 +7,21 @@ import com.debanshu777.caraml.core.recommendation.ModelFileIdentity
 import com.debanshu777.caraml.core.recommendation.QuantizationEvidence
 import com.debanshu777.caraml.core.recommendation.storage.EncodedModelEvidence
 import com.debanshu777.caraml.core.recommendation.storage.PersistedModelEvidenceCodec
+import com.debanshu777.caraml.core.storage.catalog.InstalledModelPublicationCoordinator
 import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 import com.debanshu777.huggingfacemanager.download.ArtifactVerificationException
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class ModelDownloadFinalizerTest {
     @Test
@@ -36,6 +43,95 @@ class ModelDownloadFinalizerTest {
     }
 
     @Test
+    fun sameOwnerFinalizersHoldPublicationThroughCatalogCommit() = runTest {
+        val coordinator = InstalledModelPublicationCoordinator()
+        val calls = mutableListOf<String>()
+        val catalogEntered = CompletableDeferred<Unit>()
+        val releaseFirstCatalog = CompletableDeferred<Unit>()
+        val secondManifestEntered = CompletableDeferred<Unit>()
+        val manifests = mutableMapOf<String, String>()
+        val catalogs = mutableMapOf<String, String>()
+        val publisher = object : BundlePublisher {
+            override suspend fun publish(ownerModelId: String, artifacts: List<DownloadMetadataDTO>): Boolean {
+                val variant = artifacts.primaryVariant()
+                calls += "manifest:$variant"
+                manifests[ownerModelId] = variant
+                if (variant == "b") secondManifestEntered.complete(Unit)
+                return true
+            }
+
+            override suspend fun validate(ownerModelId: String, artifacts: List<DownloadMetadataDTO>): Boolean {
+                val variant = artifacts.primaryVariant()
+                calls += "validate:$variant"
+                return manifests[ownerModelId] == variant
+            }
+        }
+        val catalog = ModelCatalogPublisher { batch, evidence ->
+            val variant = batch.primaryVariant()
+            calls += "catalog:$variant:enter"
+            if (variant == "a") {
+                catalogEntered.complete(Unit)
+                releaseFirstCatalog.await()
+            }
+            assertEquals(batch.evidence, evidence)
+            assertEquals(variant, manifests[batch.ownerModelId])
+            catalogs[batch.ownerModelId] = variant
+            calls += "catalog:$variant:done"
+        }
+        val first = finalizer(finalizerBatch("a"), publisher, catalog, coordinator)
+        val second = finalizer(finalizerBatch("b"), publisher, catalog, coordinator)
+
+        val firstJob = async(start = CoroutineStart.UNDISPATCHED) { first.finalize("batch-a") }
+        catalogEntered.await()
+        val secondJob = async(start = CoroutineStart.UNDISPATCHED) { second.finalize("batch-b") }
+
+        assertFalse(secondManifestEntered.isCompleted)
+        releaseFirstCatalog.complete(Unit)
+        awaitAll(firstJob, secondJob)
+
+        assertTrue(secondManifestEntered.isCompleted)
+        assertEquals("b", manifests["owner/model"])
+        assertEquals("b", catalogs["owner/model"])
+        assertEquals(
+            listOf(
+                "manifest:a", "validate:a", "catalog:a:enter", "catalog:a:done",
+                "manifest:b", "validate:b", "catalog:b:enter", "catalog:b:done",
+            ),
+            calls,
+        )
+    }
+
+    @Test
+    fun differentOwnerFinalizersCanPublishConcurrently() = runTest {
+        val coordinator = InstalledModelPublicationCoordinator()
+        val bothPublishing = CompletableDeferred<Unit>()
+        var activePublishers = 0
+        var maxActivePublishers = 0
+        val publisher = object : BundlePublisher {
+            override suspend fun publish(ownerModelId: String, artifacts: List<DownloadMetadataDTO>): Boolean {
+                activePublishers += 1
+                maxActivePublishers = maxOf(maxActivePublishers, activePublishers)
+                if (activePublishers == 2) bothPublishing.complete(Unit)
+                bothPublishing.await()
+                activePublishers -= 1
+                return true
+            }
+
+            override suspend fun validate(ownerModelId: String, artifacts: List<DownloadMetadataDTO>) = true
+        }
+        val catalog = ModelCatalogPublisher { _, _ -> }
+        val first = finalizer(finalizerBatch("a", ownerModelId = "owner/alpha"), publisher, catalog, coordinator)
+        val second = finalizer(finalizerBatch("b", ownerModelId = "owner/beta"), publisher, catalog, coordinator)
+
+        awaitAll(
+            async { first.finalize("batch-a") },
+            async { second.finalize("batch-b") },
+        )
+
+        assertEquals(2, maxActivePublishers)
+    }
+
+    @Test
     fun malformedEvidenceNeverPublishesReadyCatalogEntry() = runTest {
         val calls = mutableListOf<String>()
         val valid = finalizerBatch()
@@ -45,7 +141,7 @@ class ModelDownloadFinalizerTest {
             finalizer(valid.copy(evidence = malformed), calls).finalize("batch")
         }
 
-        assertEquals(listOf("manifest:publish", "manifest:validate"), calls)
+        assertEquals(emptyList(), calls)
     }
 
     @Test
@@ -57,7 +153,7 @@ class ModelDownloadFinalizerTest {
             finalizer(finalizerBatch(evidence = mismatched), calls).finalize("batch")
         }
 
-        assertEquals(listOf("manifest:publish", "manifest:validate"), calls)
+        assertEquals(emptyList(), calls)
     }
 
     @Test
@@ -82,7 +178,7 @@ class ModelDownloadFinalizerTest {
         }
         val conflicting = PersistedModelEvidenceCodec().encode(identities, descriptor = null)
 
-        assertRejectedAfterManifest(batch.copy(evidence = conflicting))
+        assertRejectedBeforeManifest(batch.copy(evidence = conflicting))
     }
 
     @Test
@@ -94,14 +190,14 @@ class ModelDownloadFinalizerTest {
             },
         )
 
-        assertRejectedAfterManifest(withoutPrimary)
+        assertRejectedBeforeManifest(withoutPrimary)
     }
 
     @Test
     fun restoredSnapshotWithPrimaryForDifferentOwnerNeverPublishesReadyCatalogEntry() = runTest {
         val batch = finalizerBatch().copy(ownerModelId = "other/owner")
 
-        assertRejectedAfterManifest(batch)
+        assertRejectedBeforeManifest(batch)
     }
 
     @Test
@@ -138,18 +234,18 @@ class ModelDownloadFinalizerTest {
         )
         val complete = PersistedModelEvidenceCodec().encode(identities, descriptor)
 
-        assertRejectedAfterManifest(batch.copy(evidence = complete))
+        assertRejectedBeforeManifest(batch.copy(evidence = complete))
     }
 }
 
-private suspend fun assertRejectedAfterManifest(batch: DownloadBatchSnapshot) {
+private suspend fun assertRejectedBeforeManifest(batch: DownloadBatchSnapshot) {
     val calls = mutableListOf<String>()
 
     assertFailsWith<ArtifactVerificationException> {
         finalizer(batch, calls).finalize(batch.batchId)
     }
 
-    assertEquals(listOf("manifest:publish", "manifest:validate"), calls)
+    assertEquals(emptyList(), calls)
 }
 
 private fun finalizer(
@@ -168,6 +264,19 @@ private fun finalizer(
         assertEquals(snapshot.evidence, evidence)
         calls += "catalog:${snapshot.artifacts.count { !it.request.primary }}"
     },
+    publicationCoordinator = InstalledModelPublicationCoordinator(),
+)
+
+private fun finalizer(
+    batch: DownloadBatchSnapshot,
+    bundlePublisher: BundlePublisher,
+    catalogPublisher: ModelCatalogPublisher,
+    publicationCoordinator: InstalledModelPublicationCoordinator,
+) = ModelDownloadFinalizer(
+    store = FinalizerStore(batch),
+    bundlePublisher = bundlePublisher,
+    catalogPublisher = catalogPublisher,
+    publicationCoordinator = publicationCoordinator,
 )
 
 private class FinalizerStore(private val batch: DownloadBatchSnapshot) : DownloadTaskStore {
@@ -184,7 +293,11 @@ private class FinalizerStore(private val batch: DownloadBatchSnapshot) : Downloa
     override suspend fun clearAll() = Unit
 }
 
-private fun finalizerBatch(evidence: EncodedModelEvidence? = null): DownloadBatchSnapshot {
+private fun finalizerBatch(
+    variant: String = "v1",
+    ownerModelId: String = "owner/model",
+    evidence: EncodedModelEvidence? = null,
+): DownloadBatchSnapshot {
     fun artifact(repo: String, path: String, role: String, primary: Boolean): DownloadArtifactRequest {
         val identity = finalizerIdentity(repo, path)
         return DownloadArtifactRequest(
@@ -193,11 +306,11 @@ private fun finalizerBatch(evidence: EncodedModelEvidence? = null): DownloadBatc
         )
     }
     val requests = listOf(
-        artifact("owner/model", "model.gguf", "model", true),
-        artifact("owner/component", "clip.gguf", "clip", false),
+        artifact(ownerModelId, "model-$variant.gguf", "model", true),
+        artifact("$ownerModelId-component", "clip-$variant.gguf", "clip", false),
     )
     return DownloadBatchSnapshot(
-        "batch", "owner/model", "text", "Model", DownloadBatchState.VERIFYING, DownloadUserIntent.RUN,
+        "batch-$variant", ownerModelId, "text", "Model", DownloadBatchState.VERIFYING, DownloadUserIntent.RUN,
         requests.mapIndexed { index, request ->
             DownloadArtifactSnapshot(
                 "artifact-$index", "batch", request, DownloadArtifactState.VERIFYING,
@@ -207,6 +320,16 @@ private fun finalizerBatch(evidence: EncodedModelEvidence? = null): DownloadBatc
         evidence ?: pendingEvidence(requests.map { it.metadata.artifact }),
     )
 }
+
+private fun DownloadBatchSnapshot.primaryVariant(): String =
+    artifacts.single { it.request.primary }.request.metadata.destinationRelativePath
+        .substringAfter("model-")
+        .substringBefore(".gguf")
+
+private fun List<DownloadMetadataDTO>.primaryVariant(): String =
+    single { it.logicalRole == "model" }.destinationRelativePath
+        .substringAfter("model-")
+        .substringBefore(".gguf")
 
 private fun finalizerEvidence(modelPath: String): EncodedModelEvidence = pendingEvidence(
     listOf(

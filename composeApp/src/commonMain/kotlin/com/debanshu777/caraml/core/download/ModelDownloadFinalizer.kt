@@ -6,6 +6,7 @@ import com.debanshu777.caraml.core.recommendation.storage.EncodedModelEvidence
 import com.debanshu777.caraml.core.recommendation.storage.PersistedModelEvidenceCodec
 import com.debanshu777.caraml.core.storage.catalog.InstalledCatalogRecord
 import com.debanshu777.caraml.core.storage.catalog.InstalledModelCatalogDao
+import com.debanshu777.caraml.core.storage.catalog.InstalledModelPublicationCoordinator
 import com.debanshu777.caraml.core.storage.component.DownloadedComponentEntity
 import com.debanshu777.caraml.core.storage.evidence.toEntity
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
@@ -99,18 +100,21 @@ class ModelDownloadFinalizer(
     private val store: DownloadTaskStore,
     private val bundlePublisher: BundlePublisher,
     private val catalogPublisher: ModelCatalogPublisher,
+    private val publicationCoordinator: InstalledModelPublicationCoordinator,
     private val evidenceCodec: PersistedModelEvidenceCodec = PersistedModelEvidenceCodec(),
 ) : BatchFinalizer {
     override suspend fun finalize(batchId: String) {
         val batch = store.getBatch(batchId) ?: throw ArtifactVerificationException()
-        val artifacts = batch.artifacts.map { it.request.metadata }
-        if (!bundlePublisher.publish(batch.ownerModelId, artifacts) ||
-            !bundlePublisher.validate(batch.ownerModelId, artifacts)
-        ) {
-            throw ArtifactVerificationException()
-        }
         val evidence = validateEvidence(batch)
-        catalogPublisher.publish(batch, evidence)
+        publicationCoordinator.withOwnerPublication(batch.ownerModelId) {
+            val artifacts = batch.artifacts.map { it.request.metadata }
+            if (!bundlePublisher.publish(batch.ownerModelId, artifacts) ||
+                !bundlePublisher.validate(batch.ownerModelId, artifacts)
+            ) {
+                throw ArtifactVerificationException()
+            }
+            catalogPublisher.publish(batch, evidence)
+        }
     }
 
     private fun validateEvidence(batch: DownloadBatchSnapshot): EncodedModelEvidence {

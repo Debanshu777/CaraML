@@ -19,6 +19,18 @@ class InstalledModelEvidenceRepository(
         dao.upsert(evidence.toEntity(modelId, nowEpochMs))
     }
 
+    suspend fun compareAndSet(
+        modelId: String,
+        expected: InstalledModelEvidenceEntity?,
+        evidence: EncodedModelEvidence,
+        nowEpochMs: Long,
+    ): Boolean {
+        validateModelId(modelId)
+        require(expected == null || expected.modelId == modelId) { "Evidence owner mismatch" }
+        codec.decode(evidence)
+        return dao.compareAndSet(expected, evidence.toEntity(modelId, nowEpochMs))
+    }
+
     private fun InstalledModelEvidenceEntity.toEncodedEvidence(): EncodedModelEvidence {
         val encoded = try {
             EncodedModelEvidence(
