@@ -50,4 +50,19 @@ class ClientWrapperTest {
             client.close()
         }
     }
+
+    @Test
+    fun rateLimitStatusHasAnExplicitTransientCategory() = runTest {
+        val client = HttpClient(MockEngine { respond("", status = HttpStatusCode.TooManyRequests) })
+        val wrapper = ClientWrapper(client, Json)
+
+        try {
+            assertEquals(
+                Result.Error(DataError.Network.RateLimited),
+                wrapper.networkGetUsecase<Map<String, String>>("https://huggingface.co"),
+            )
+        } finally {
+            client.close()
+        }
+    }
 }

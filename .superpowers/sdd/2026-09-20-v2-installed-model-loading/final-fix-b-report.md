@@ -9,7 +9,9 @@ Commit subject: `fix(models): repair installed revisions exactly`
 
 Installed evidence repair now resolves strict owner and external-component metadata at each installed repository's validated immutable revision. It never asks current HEAD for exact repair, rejects ambiguous repository/path or conflicting revision inputs before gateway access, and requires the returned detail SHA to match the requested revision before fetching trees, config, or building a descriptor.
 
-Normal browse/search continues to use unqualified current-repository detail. Exact config lookup distinguishes an absent optional `config.json` from network, authentication, and server failures: 404 is non-blocking, while retryable failures return `InstalledDescriptorLookup.RetryableUnavailable`. Cancellation still escapes unchanged.
+Normal browse/search continues to use unqualified current-repository detail. Exact config lookup follows at most one 307 only when its bounded `Location` is the HTTPS `huggingface.co:443` resolve-cache path for the same repository, requested commit, and `config.json`; global redirects remain disabled. Cross-origin, credentialed, fragmented, missing, oversized, substituted, or chained redirects are rejected.
+
+Exact repair now retries only transport, authentication, rate-limit, server, and timeout categories. Deterministic serialization, size, protocol/redirect, conflict, unknown-status, and missing required detail/tree failures reject with `INVALID_METADATA`; only an optional config 404 remains non-blocking. Cancellation still escapes unchanged.
 
 ## Implementation
 
@@ -19,6 +21,8 @@ Normal browse/search continues to use unqualified current-repository detail. Exa
 - Routed exact owner detail/tree/config and every external diffusion detail/tree request through its own installed revision.
 - Compared every returned detail SHA with the requested revision before accepting metadata; accepted case-only normalization is rewritten to the requested installed representation before descriptor construction.
 - Added a narrowly emitted `DataError.Network.NotFound` category for optional config requests. Default list/search/detail 404 behavior remains `Unknown`, preserving ordinary browse behavior and user copy.
+- Added `DataError.Network.RateLimited`, mapped HTTP 429 explicitly, and classified only transport/auth/rate/server/timeout failures as retryable during exact repair.
+- Added a config-only manual redirect step that accepts one bounded 307 after validating HTTPS, exact Hub origin and port, no userinfo/fragment, exact repository/revision/config path, and a bounded `Location`; a second redirect is never followed.
 - Updated root, `composeApp`, and `huggingFaceManager` Recent Changes documentation.
 
 ## Public API and documentation impact
@@ -26,6 +30,8 @@ Normal browse/search continues to use unqualified current-repository detail. Exa
 - `GetRecommendationModelDetailUseCase` now has `invoke(modelId, revision)` in addition to the existing current-HEAD overload.
 - `HuggingFaceRepository` and `RemoteHuggingFaceApiService` expose the matching revision-qualified overload.
 - `DataError.Network` adds `NotFound`; the manager emits it only when a request explicitly opts into distinguishing optional-resource 404 responses. Existing Hub list/search/detail calls retain their previous 404 mapping.
+- `DataError.Network` also adds `RateLimited` for HTTP 429. Existing result shape and cancellation behavior are unchanged.
+- `huggingFaceManager/README.md` now records the exact revision-qualified detail/tree/config use-case signatures and the config-only `NotFound` compatibility boundary.
 - No database, persisted evidence, download manifest, or inference API changed.
 
 ## RED evidence
@@ -48,6 +54,25 @@ Optional-config category regression command:
 
 The RED run failed compilation because `DataError.Network.NotFound` did not exist. No category-mapping production code had been changed before this run.
 
+Review-follow-up redirect regression command:
+
+```text
+./gradlew :huggingFaceManager:jvmTest \
+  --tests 'com.debanshu777.huggingfacemanager.api.BoundedResponseTest' --no-daemon
+```
+
+Result: RED, 21 tests executed, with the new realistic 307 success, substituted/cross-origin redirect rejection, and second-redirect rejection cases failing against the redirect-disabled client.
+
+Review-follow-up classification regression command:
+
+```text
+./gradlew :composeApp:jvmTest \
+  --tests 'com.debanshu777.caraml.features.modelhub.domain.HuggingFaceModelMetadataSourceTest' \
+  --no-daemon
+```
+
+Result: RED at test compilation because the explicit `DataError.Network.RateLimited` category did not exist. Production classification had not been changed before either follow-up RED run.
+
 ## GREEN evidence
 
 Focused exact lookup and URL regression:
@@ -58,6 +83,19 @@ Focused exact lookup and URL regression:
 ```
 
 Result: PASS.
+
+Final focused config redirect and exact error-classification gate:
+
+```text
+./gradlew :huggingFaceManager:jvmTest \
+  --tests 'com.debanshu777.huggingfacemanager.api.BoundedResponseTest' \
+  --tests 'com.debanshu777.huggingfacemanager.api.ClientWrapperTest' \
+  :composeApp:jvmTest \
+  --tests 'com.debanshu777.caraml.features.modelhub.domain.HuggingFaceModelMetadataSourceTest' \
+  --no-daemon
+```
+
+Result: PASS, 41/41 tests across three suites, zero skipped/failures/errors.
 
 Focused optional-config/default-404 regression after the final narrowing:
 
@@ -87,15 +125,21 @@ Final impacted metadata, repair, bounded gateway, diffusion setup, and Model Hub
   --no-daemon
 ```
 
-Result: PASS, 93/93 tests across eight suites, zero skipped/failures/errors.
+Result: PASS, 102/102 tests across eight suites, zero skipped/failures/errors.
 
 ## Repository gate
 
 `git diff --check` passes.
 
-An initial `./gradlew verifyProject --no-daemon` run before the final default-404 narrowing passed with 1,025/1,025 JVM tests across 138 suites and 5/5 native CTests. After the final narrowing, two fresh full-gate attempts both stopped in `:composeApp:jvmTest` after 892 passing tests because the unrelated `ChatViewModelRetryTest.retryCurrentModelResolvesFreshRequestAndNeverReusesTerminalRequest` observed the initial `ChatUiState.NoModels` instead of waiting for model initialization. The exact failing test passed 1/1 immediately in isolation, and the bounded `*ChatViewModel*Test` run also passed. No chat production or test file is changed by this fix.
+Final repository command:
 
-The final full repository gate is therefore not green; the scoped impacted gate is green, and the remaining failure is recorded rather than treated as product evidence for this patch.
+```text
+./gradlew verifyProject --no-daemon
+```
+
+Result: PASS, 1,034/1,034 JVM tests across 138 suites plus 5/5 native CTests, zero failures.
+
+The previously observed `ChatViewModelRetryTest.retryCurrentModelResolvesFreshRequestAndNeverReusesTerminalRequest` full-suite failure was reassessed in this fresh full run and passed in normal suite order. Its earlier two failures still appear scheduler/test-order-sensitive: the exact test and bounded Chat suite had already passed independently, the fresh full suite now passes, and no Chat source or test file changed in this fix.
 
 ## Self-review
 
@@ -104,13 +148,14 @@ The final full repository gate is therefore not green; the scoped impacted gate 
 - Confirmed exact owner and external repositories use qualified detail and tree requests, and exact LLM config uses the installed owner revision.
 - Confirmed returned SHA mismatch blocks before tree/config for the owner and before external tree construction for components.
 - Confirmed current-HEAD browse still calls only the unqualified detail overload and retains its bounded-variant behavior.
-- Confirmed optional config 404 is non-blocking only for the opt-in config request; no-internet, unauthorized, and server errors remain retryable for installed repair.
-- Confirmed cancellation is rethrown, redirects remain disabled, the Hugging Face origin remains allowlisted, and no arbitrary URL input was introduced.
+- Confirmed optional config 404 is non-blocking only for the opt-in config request; transport, unauthorized, timeout, rate-limit, and server failures remain retryable, while deterministic detail/tree/config failures reject.
+- Confirmed cancellation is rethrown, global redirects remain disabled, and the one config redirect requires a bounded same-Hub same-repository same-revision target before the second request is issued.
+- Confirmed missing/malformed/cross-origin/insecure/credentialed/fragmented/substituted/chained config redirects return deterministic `Serialization` and are never fetched as arbitrary URLs.
 - Confirmed no secret, local path, response payload, or exception detail is logged.
 - Confirmed `git diff --check` passes.
 
 ## Concerns and verification boundary
 
-- The scheduler/test-order-sensitive `ChatViewModelRetryTest` prevents a final green `verifyProject` result even though it passes alone and no chat code changed. This remains the only unresolved verification concern.
+- The scheduler/test-order-sensitive Chat retry test passed in the final full gate; its prior intermittent full-suite failures remain recorded as a non-causal flake concern. No Chat code was changed.
 - Existing expect/actual, CMake architecture, and deprecated Compose test API warnings remain; no new warning is attributable to this fix.
 - Physical-device acceptance was not repeated because this patch changes remote metadata request qualification and is covered at the gateway/source/repair boundaries.

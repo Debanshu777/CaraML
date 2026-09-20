@@ -186,13 +186,99 @@ class HuggingFaceModelMetadataSourceTest {
     }
 
     @Test
-    fun gatewayFailureIsRetryableForRepairButBrowseBehaviorRemainsNeedsInformation() = runTest {
+    fun transientDetailFailuresAreRetryableForRepairButBrowseBehaviorRemainsNeedsInformation() = runTest {
+        val transientErrors = listOf(
+            DataError.Network.NoInternet,
+            DataError.Network.Unauthorized,
+            DataError.Network.RequestTimeout,
+            DataError.Network.RateLimited,
+            DataError.Network.ServerError,
+        )
+        transientErrors.forEach { error ->
+            val fixture = Fixture()
+            fixture.gateway.detailError = error
+            val source = fixture.source()
+
+            assertEquals(
+                InstalledDescriptorLookup.RetryableUnavailable,
+                source.findExact(fixture.repositoryId, ModelHubBrowseMode.LanguageModels, listOf(fixture.identity)),
+                error.toString(),
+            )
+            assertIs<RepositoryVariantSet.NeedsInformation>(
+                source.describeVariants(fixture.repositoryId, ModelHubBrowseMode.LanguageModels),
+                error.toString(),
+            )
+        }
+    }
+
+    @Test
+    fun deterministicDetailFailuresRejectExactRepair() = runTest {
+        val deterministicErrors = listOf(
+            DataError.Network.Serialization,
+            DataError.Network.NotFound,
+            DataError.Network.Conflict,
+            DataError.Network.PayloadTooLarge,
+            DataError.Network.Unknown,
+        )
+        deterministicErrors.forEach { error ->
+            val fixture = Fixture()
+            fixture.gateway.detailError = error
+
+            val rejected = assertIs<InstalledDescriptorLookup.Rejected>(
+                fixture.source().findExact(
+                    fixture.repositoryId,
+                    ModelHubBrowseMode.LanguageModels,
+                    listOf(fixture.identity),
+                ),
+                error.toString(),
+            )
+            assertEquals(listOf(AssessmentReason.INVALID_METADATA), rejected.reasons, error.toString())
+        }
+    }
+
+    @Test
+    fun requiredTreeFailuresUseTransientVersusDeterministicClassification() = runTest {
+        listOf(DataError.Network.NoInternet, DataError.Network.RateLimited).forEach { error ->
+            val fixture = Fixture()
+            fixture.gateway.treeError = error
+
+            assertEquals(
+                InstalledDescriptorLookup.RetryableUnavailable,
+                fixture.source().findExact(
+                    fixture.repositoryId,
+                    ModelHubBrowseMode.LanguageModels,
+                    listOf(fixture.identity),
+                ),
+                error.toString(),
+            )
+        }
+        listOf(
+            DataError.Network.Serialization,
+            DataError.Network.NotFound,
+            DataError.Network.PayloadTooLarge,
+        ).forEach { error ->
+            val fixture = Fixture()
+            fixture.gateway.treeError = error
+
+            val rejected = assertIs<InstalledDescriptorLookup.Rejected>(
+                fixture.source().findExact(
+                    fixture.repositoryId,
+                    ModelHubBrowseMode.LanguageModels,
+                    listOf(fixture.identity),
+                ),
+                error.toString(),
+            )
+            assertEquals(listOf(AssessmentReason.INVALID_METADATA), rejected.reasons, error.toString())
+        }
+    }
+
+    @Test
+    fun unknownDetailFailureIsNotRetriedForRepairButBrowseBehaviorRemainsNeedsInformation() = runTest {
         val fixture = Fixture()
-        fixture.gateway.detailFailure = true
+        fixture.gateway.detailError = DataError.Network.Unknown
         val source = fixture.source()
 
-        assertEquals(
-            InstalledDescriptorLookup.RetryableUnavailable,
+        assertIs<InstalledDescriptorLookup.Rejected>(
             source.findExact(fixture.repositoryId, ModelHubBrowseMode.LanguageModels, listOf(fixture.identity)),
         )
         assertIs<RepositoryVariantSet.NeedsInformation>(
@@ -220,10 +306,12 @@ class HuggingFaceModelMetadataSourceTest {
     }
 
     @Test
-    fun transformerConfigNetworkAuthAndServerFailuresAreRetryableForExactLookup() = runTest {
+    fun transformerConfigTransientFailuresAreRetryableForExactLookup() = runTest {
         listOf(
             DataError.Network.NoInternet,
             DataError.Network.Unauthorized,
+            DataError.Network.RequestTimeout,
+            DataError.Network.RateLimited,
             DataError.Network.ServerError,
         ).forEach { error ->
             val fixture = Fixture()
@@ -237,6 +325,29 @@ class HuggingFaceModelMetadataSourceTest {
                     listOf(fixture.identity),
                 ),
             )
+        }
+    }
+
+    @Test
+    fun transformerConfigDeterministicFailuresRejectExactLookup() = runTest {
+        listOf(
+            DataError.Network.Serialization,
+            DataError.Network.Conflict,
+            DataError.Network.PayloadTooLarge,
+            DataError.Network.Unknown,
+        ).forEach { error ->
+            val fixture = Fixture()
+            fixture.gateway.configError = error
+
+            val rejected = assertIs<InstalledDescriptorLookup.Rejected>(
+                fixture.source().findExact(
+                    fixture.repositoryId,
+                    ModelHubBrowseMode.LanguageModels,
+                    listOf(fixture.identity),
+                ),
+                error.toString(),
+            )
+            assertEquals(listOf(AssessmentReason.INVALID_METADATA), rejected.reasons, error.toString())
         }
     }
 
@@ -372,7 +483,8 @@ class HuggingFaceModelMetadataSourceTest {
         var tree: List<ModelFileTreeResponse>,
     ) : HuggingFaceMetadataGateway {
         var pinnedDetail: ModelDetailResponse = currentDetail
-        var detailFailure = false
+        var detailError: DataError.Network? = null
+        var treeError: DataError.Network? = null
         var configError: DataError.Network? = null
         var detailThrowable: Throwable? = null
         val unqualifiedDetailRequests = mutableListOf<String>()
@@ -383,7 +495,7 @@ class HuggingFaceModelMetadataSourceTest {
         override suspend fun getStrictDetail(repositoryId: String): Result<ModelDetailResponse, DataError.Network> {
             unqualifiedDetailRequests += repositoryId
             detailThrowable?.let { throw it }
-            return if (detailFailure) Result.Error(DataError.Network.Unknown) else Result.Success(currentDetail)
+            return detailError?.let { Result.Error(it) } ?: Result.Success(currentDetail)
         }
 
         override suspend fun getStrictDetail(
@@ -392,7 +504,7 @@ class HuggingFaceModelMetadataSourceTest {
         ): Result<ModelDetailResponse, DataError.Network> {
             qualifiedDetailRequests += repositoryId to revision
             detailThrowable?.let { throw it }
-            return if (detailFailure) Result.Error(DataError.Network.Unknown) else Result.Success(pinnedDetail)
+            return detailError?.let { Result.Error(it) } ?: Result.Success(pinnedDetail)
         }
 
         override suspend fun getTree(
@@ -401,7 +513,7 @@ class HuggingFaceModelMetadataSourceTest {
             filter: ModelFileWeightFilter,
         ): Result<List<ModelFileTreeResponse>, DataError.Network> {
             treeRequests += repositoryId to revision
-            return Result.Success(tree)
+            return treeError?.let { Result.Error(it) } ?: Result.Success(tree)
         }
 
         override suspend fun getConfig(

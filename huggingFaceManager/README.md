@@ -73,8 +73,13 @@ val results = api.searchModels(SearchModelsParams(query = "llama", filter = Pipe
 // Get model detail
 val detail = api.getModelDetail("bartowski/Meta-Llama-3.1-8B-Instruct-GGUF")
 
-// Get file tree (GGUF files + sizes)
-val files = api.getModelFileTree("bartowski/Meta-Llama-3.1-8B-Instruct-GGUF")
+// Get the strict recommendation projection at current HEAD or at one immutable commit
+val currentRecommendationDetail = api.getRecommendationModelDetail(modelId)
+val installedRecommendationDetail = api.getRecommendationModelDetail(modelId, revision)
+
+// Get the file tree and optional transformer config at the same immutable commit
+val files = api.getModelFileTree(modelId, revision, ModelFileWeightFilter.GgufOnly)
+val config = api.getModelConfig(modelId, revision)
 
 // Download a file
 api.downloadFile(
@@ -83,6 +88,31 @@ api.downloadFile(
     onProgress = { dto -> /* DownloadProgressDTO */ }
 )
 ```
+
+The revision-qualified use-case signatures exposed by `HuggingFaceApi` are:
+
+```kotlin
+// GetRecommendationModelDetailUseCase
+suspend operator fun invoke(
+    modelId: String,
+    revision: String,
+): Result<ModelDetailResponse, DataError.Network>
+
+// GetModelFileTreeUseCase
+suspend operator fun invoke(
+    modelId: String,
+    revision: String,
+    weightFilter: ModelFileWeightFilter = ModelFileWeightFilter.GgufOnly,
+): Result<List<ModelFileTreeResponse>, DataError.Network>
+
+// GetModelConfigUseCase
+suspend operator fun invoke(
+    modelId: String,
+    revision: String,
+): Result<TransformerConfigResponse, DataError.Network>
+```
+
+`revision` must be a validated 40–64 character hexadecimal commit. Revision-qualified detail, tree, and config requests are built from encoded path segments. Config retrieval may follow one bounded 307 only when it targets `https://huggingface.co:443/api/resolve-cache/models/{same repository}/{same revision}/config.json`; all other redirects are rejected.
 
 ### DownloadProgressDTO
 
@@ -111,14 +141,16 @@ data class DownloadProgressDTO(
 
 ## Error Handling
 
-All API calls return `Result<T, HuggingFaceError>` (not thrown exceptions):
+All API calls return `Result<T, DataError.Network>`; coroutine cancellation is still thrown and must not be converted into a result:
 
 ```kotlin
 when (val result = api.searchModels(params)) {
     is Result.Success -> result.data  // List<Model>
-    is Result.Error -> result.error   // HuggingFaceError (network, parse, auth)
+    is Result.Error -> result.error   // DataError.Network
 }
 ```
+
+Network categories are `NoInternet`, `Unauthorized`, `RequestTimeout`, `RateLimited`, `ServerError`, `Serialization`, `Conflict`, `PayloadTooLarge`, `NotFound`, and `Unknown`. `NotFound` is compatibility-scoped: only the optional revision-qualified `getModelConfig(modelId, revision)` call maps HTTP 404 to `NotFound`, allowing callers to continue without `config.json`. Existing list, search, detail, and tree calls retain their previous 404 mapping. Invalid redirects and malformed or oversized deterministic responses are not transient failures.
 
 ---
 
@@ -135,7 +167,7 @@ when (val result = api.searchModels(params)) {
 - Downloads now validate repository/file paths, prevent storage-root escape, stage into `.part` files, verify HTTP status and byte counts, sync/close before commit, and preserve existing files on failure across JVM, Android, and iOS
 - Native iOS background-session results are imported from a no-follow regular-file descriptor, re-hashed, and committed through the same exact-artifact manifest transaction before becoming visible
 - Progress emissions are coalesced to percentage changes (or 1 MiB for unknown lengths), avoiding channel/UI pressure during multi-gigabyte downloads
-- Recommendation detail supports validated immutable-revision lookups, and detail/tree/config URLs are built from safe path segments; 404 remains distinct from retryable network failures and cancellation is propagated
+- Recommendation detail supports validated immutable-revision lookups; pinned config follows at most one exact same-Hub resolve-cache redirect, while deterministic metadata failures are rejected and only transport/auth/rate/server/timeout failures remain retryable
 - Added JVM loopback integration tests for success, HTTP failure, truncation, traversal, and final-file preservation
 - `nota-ai/bk-sdm-tiny` registry now sets `prediction=0` (EPS) — skips `is_using_v_parameterization_for_sd2()` probe; `offloadToCpu` reverted (moot since Vulkan is now disabled for diffusion at build level via `SD_VULKAN=OFF`)
 - `nota-ai/bk-sdm-tiny` registry entry now sets `prediction=0` (EPS) — prevents `is_using_v_parameterization_for_sd2()` probe from running a test UNet forward pass; SD1.x is always EPS, never V-pred

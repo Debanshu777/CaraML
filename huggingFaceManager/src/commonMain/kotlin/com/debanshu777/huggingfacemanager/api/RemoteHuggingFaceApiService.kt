@@ -18,6 +18,7 @@ private const val MAX_TREE_PAGES = 64
 private const val MAX_TREE_ENTRIES = 4_096
 private const val MAX_CURSOR_LENGTH = 2_048
 private const val MAX_LINK_HEADER_LENGTH = 4_096
+private const val MAX_CONFIG_REDIRECT_LENGTH = 4_096
 private const val CONFIG_RESPONSE_LIMIT_BYTES = 1L * 1024L * 1024L
 
 internal const val RECOMMENDATION_METADATA_SCHEMA_VERSION = 1
@@ -161,8 +162,44 @@ class RemoteHuggingFaceApiService private constructor(
             endpoint = url.toString(),
             maxResponseBytes = CONFIG_RESPONSE_LIMIT_BYTES,
             distinguishNotFound = true,
+            trustedSingleRedirect = { location ->
+                trustedConfigRedirect(location, segments, revision)
+            },
             decode = { body -> strictJson.decodeFromString<TransformerConfigResponse>(body) },
         )
+    }
+
+    private fun trustedConfigRedirect(
+        location: String,
+        modelSegments: List<String>,
+        revision: String,
+    ): String? {
+        if (location.isEmpty() || location.length > MAX_CONFIG_REDIRECT_LENGTH || '#' in location ||
+            location.any { it.code < 32 || it.code == 127 }
+        ) {
+            return null
+        }
+        val target = try {
+            when {
+                location.startsWith("//") -> return null
+                location.startsWith('/') -> Url("$HUGGING_FACE_ORIGIN$location")
+                else -> Url(location)
+            }
+        } catch (_: IllegalArgumentException) {
+            return null
+        }
+        val expectedPath = URLBuilder(HUGGING_FACE_ORIGIN).apply {
+            appendPathSegments("api", "resolve-cache", "models")
+            appendPathSegments(modelSegments, encodeSlash = true)
+            appendPathSegments(revision, "config.json")
+        }.build().encodedPath
+        return target.toString().takeIf {
+            target.protocol == URLProtocol.HTTPS &&
+                target.host.equals(HUGGING_FACE_HOST, ignoreCase = true) &&
+                target.port == HUGGING_FACE_HTTPS_PORT &&
+                target.user == null && target.password == null && target.fragment.isEmpty() &&
+                target.encodedPath == expectedPath
+        }
     }
 
     suspend fun getModelFileTree(
@@ -310,6 +347,9 @@ class RemoteHuggingFaceApiService private constructor(
         const val MAX_REPOSITORY_SEGMENT_LENGTH = 96
         const val MAX_RELATIVE_PATH_LENGTH = 1_024
         const val MAX_PATH_SEGMENT_LENGTH = 255
+        const val HUGGING_FACE_HOST = "huggingface.co"
+        const val HUGGING_FACE_HTTPS_PORT = 443
+        const val HUGGING_FACE_ORIGIN = "https://huggingface.co"
     }
 }
 

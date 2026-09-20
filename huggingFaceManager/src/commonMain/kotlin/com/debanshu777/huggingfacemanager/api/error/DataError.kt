@@ -8,6 +8,7 @@ sealed interface DataError : RootError {
         data object NotFound : Network
         data object Conflict : Network
         data object RequestTimeout : Network
+        data object RateLimited : Network
         data object PayloadTooLarge : Network
         data object ServerError : Network
         data object Unknown : Network

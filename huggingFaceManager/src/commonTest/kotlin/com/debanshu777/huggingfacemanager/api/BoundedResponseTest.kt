@@ -265,6 +265,128 @@ class BoundedResponseTest {
     }
 
     @Test
+    fun configFollowsOneExactSameHubResolveCacheRedirect() = runTest {
+        val seenPaths = mutableListOf<String>()
+        val redirectPath = "/api/resolve-cache/models/owner/model/$REVISION/config.json"
+        val client = HttpClient(MockEngine { request ->
+            seenPaths += request.url.encodedPath
+            when (seenPaths.size) {
+                1 -> respond(
+                    content = "",
+                    status = HttpStatusCode.TemporaryRedirect,
+                    headers = headersOf(
+                        HttpHeaders.Location,
+                        "$redirectPath?download=true&etag=exact",
+                    ),
+                )
+                else -> respond("{\"num_hidden_layers\":32}")
+            }
+        })
+        try {
+            val service = RemoteHuggingFaceApiService(client, Json, "https://huggingface.co")
+
+            assertIs<Result.Success<*, *>>(service.getModelConfig("owner/model", REVISION))
+            assertEquals(
+                listOf(
+                    "/owner/model/resolve/$REVISION/config.json",
+                    redirectPath,
+                ),
+                seenPaths,
+            )
+        } finally {
+            client.close()
+        }
+    }
+
+    @Test
+    fun configRejectsCrossOriginAndSubstitutedResolveCacheRedirects() = runTest {
+        val invalidLocations = listOf(
+            "https://attacker.invalid/api/resolve-cache/models/owner/model/$REVISION/config.json",
+            "http://huggingface.co/api/resolve-cache/models/owner/model/$REVISION/config.json",
+            "https://user@huggingface.co/api/resolve-cache/models/owner/model/$REVISION/config.json",
+            "https://huggingface.co/api/resolve-cache/models/owner/model/$REVISION/config.json#fragment",
+            "https://huggingface.co/api/resolve-cache/models/owner/model/${"b".repeat(40)}/config.json",
+            "https://huggingface.co/api/resolve-cache/models/other/model/$REVISION/config.json",
+        )
+
+        invalidLocations.forEach { location ->
+            var requests = 0
+            val client = HttpClient(MockEngine {
+                requests++
+                respond(
+                    content = "",
+                    status = HttpStatusCode.TemporaryRedirect,
+                    headers = headersOf(HttpHeaders.Location, location),
+                )
+            })
+            try {
+                val service = RemoteHuggingFaceApiService(client, Json, "https://huggingface.co")
+
+                assertEquals(
+                    Result.Error(DataError.Network.Serialization),
+                    service.getModelConfig("owner/model", REVISION),
+                    location,
+                )
+                assertEquals(1, requests, location)
+            } finally {
+                client.close()
+            }
+        }
+    }
+
+    @Test
+    fun configRejectsMissingOrOversizedRedirectLocation() = runTest {
+        val locations = listOf<String?>(null, "x".repeat(4_097))
+        locations.forEach { location ->
+            var requests = 0
+            val client = HttpClient(MockEngine {
+                requests++
+                respond(
+                    content = "",
+                    status = HttpStatusCode.TemporaryRedirect,
+                    headers = location?.let { headersOf(HttpHeaders.Location, it) } ?: headersOf(),
+                )
+            })
+            try {
+                val service = RemoteHuggingFaceApiService(client, Json, "https://huggingface.co")
+
+                assertEquals(
+                    Result.Error(DataError.Network.Serialization),
+                    service.getModelConfig("owner/model", REVISION),
+                )
+                assertEquals(1, requests)
+            } finally {
+                client.close()
+            }
+        }
+    }
+
+    @Test
+    fun configRejectsASecondRedirectWithoutFollowingIt() = runTest {
+        var requests = 0
+        val redirect = "https://huggingface.co/api/resolve-cache/models/owner/model/$REVISION/config.json"
+        val client = HttpClient(MockEngine {
+            requests++
+            respond(
+                content = "",
+                status = HttpStatusCode.TemporaryRedirect,
+                headers = headersOf(HttpHeaders.Location, redirect),
+            )
+        })
+        try {
+            val service = RemoteHuggingFaceApiService(client, Json, "https://huggingface.co")
+
+            assertEquals(
+                Result.Error(DataError.Network.Serialization),
+                service.getModelConfig("owner/model", REVISION),
+            )
+            assertEquals(2, requests)
+        } finally {
+            client.close()
+        }
+    }
+
+    @Test
     fun ordinaryDetailAcceptsUnknownHarmlessFields() = runTest {
         val client = HttpClient(MockEngine {
             respond("{\"id\":\"owner/model\",\"sha\":\"$REVISION\",\"futureDisplayField\":true}")

@@ -225,6 +225,7 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 - Model downloads now use a persistent resumable queue with exact-artifact verification; Android uses UIDT/foreground notifications, iOS reconnects to a background URLSession, and Desktop resumes on relaunch
 - Durable downloads now retain codec-validated exact descriptor evidence for complete artifact-set matches and bind its digest into batch identity; uncertain descriptors remain enrichment-only
 - Existing Ready installs repair missing descriptor metadata once through revision-qualified owner/component lookups pinned to each installed commit, persist the complete evidence for offline reuse, and reject ambiguous identities without touching model files
+- Exact repair follows only the Hub's one validated same-repository/same-commit config redirect and rejects deterministic detail/tree/config failures instead of retrying them
 - Inference loading now accepts only a freshly assessed exact `LoadRequest` rebuilt from the complete published bundle, including external-repository artifacts, plus current device/settings state and a newly personalized plan; explicit KV presets and GPU opt-out remain authoritative
 - Restored-model native-preflight failures now offer an explicit same-model retry that captures fresh device/settings evidence, revalidates the exact artifact, and requires approval before using a safer CPU plan
 - Reorganized Settings as a dense, accessible list with exclusive selections, disclosure rows, and the app's single contextual appearance preview

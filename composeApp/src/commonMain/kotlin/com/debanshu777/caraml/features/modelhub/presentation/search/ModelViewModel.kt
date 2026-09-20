@@ -681,6 +681,8 @@ class ModelViewModel(
                                 "An unexpected error occurred. Please try again."
                             DataError.Network.RequestTimeout ->
                                 "Request timed out. The server took too long to respond."
+                            DataError.Network.RateLimited ->
+                                "Too many requests. Please try again later."
                             DataError.Network.Conflict ->
                                 "Request conflict. Please refresh and try again."
                             DataError.Network.PayloadTooLarge ->
@@ -808,6 +810,8 @@ class ModelViewModel(
                                 "Could not load model details. Please try again."
                             DataError.Network.RequestTimeout ->
                                 "Request timed out. The server took too long to respond."
+                            DataError.Network.RateLimited ->
+                                "Too many requests. Please try again later."
                             DataError.Network.Conflict ->
                                 "Request conflict. Please refresh and try again."
                             DataError.Network.PayloadTooLarge ->
@@ -1675,6 +1679,8 @@ class ModelViewModel(
                                 "An unexpected error occurred. Please try again."
                             DataError.Network.RequestTimeout ->
                                 "Request timed out. The server took too long to respond."
+                            DataError.Network.RateLimited ->
+                                "Too many requests. Please try again later."
                             DataError.Network.Conflict ->
                                 "Request conflict. Please refresh and try again."
                             DataError.Network.PayloadTooLarge ->

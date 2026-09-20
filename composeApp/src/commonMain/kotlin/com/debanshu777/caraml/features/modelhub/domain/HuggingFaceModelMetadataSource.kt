@@ -444,14 +444,31 @@ class HuggingFaceModelMetadataSource internal constructor(
         is Result.Success -> data
         is Result.Error -> when {
             allowNotFound && error == DataError.Network.NotFound -> null
-            retryNetworkFailure -> throw RetryableMetadataUnavailable
-            else -> null
+            !retryNetworkFailure -> null
+            error.isRetryableMetadataFailure() -> throw RetryableMetadataUnavailable
+            else -> throw InvalidMetadataResponse
         }
+    }
+
+    private fun DataError.Network.isRetryableMetadataFailure(): Boolean = when (this) {
+        DataError.Network.NoInternet,
+        DataError.Network.Unauthorized,
+        DataError.Network.RequestTimeout,
+        DataError.Network.RateLimited,
+        DataError.Network.ServerError,
+        -> true
+        DataError.Network.Serialization,
+        DataError.Network.NotFound,
+        DataError.Network.Conflict,
+        DataError.Network.PayloadTooLarge,
+        DataError.Network.Unknown,
+        -> false
     }
 
     private data class ShardEntry(val index: Int, val file: ModelFileTreeResponse)
 
     private data object RetryableMetadataUnavailable : Exception()
+    private data object InvalidMetadataResponse : Exception()
 
     private companion object {
         val GGUF_SHARD = Regex("^(.+)-(\\d{5})-of-(\\d{5})\\.gguf$", RegexOption.IGNORE_CASE)
