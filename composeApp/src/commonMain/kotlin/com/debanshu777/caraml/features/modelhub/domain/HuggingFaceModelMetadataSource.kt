@@ -41,6 +41,11 @@ internal interface HuggingFaceMetadataGateway {
         repositoryId: String,
         revision: String,
     ): Result<TransformerConfigResponse, DataError.Network>
+
+    suspend fun getExactConfig(
+        repositoryId: String,
+        revision: String,
+    ): Result<TransformerConfigResponse, DataError.Network>
 }
 
 private class ApiHuggingFaceMetadataGateway(
@@ -60,6 +65,9 @@ private class ApiHuggingFaceMetadataGateway(
 
     override suspend fun getConfig(repositoryId: String, revision: String) =
         api.getModelConfig(repositoryId, revision)
+
+    override suspend fun getExactConfig(repositoryId: String, revision: String) =
+        api.getModelConfig.forExactInstalledRepair(repositoryId, revision)
 }
 
 class HuggingFaceModelMetadataSource internal constructor(
@@ -191,7 +199,12 @@ class HuggingFaceModelMetadataSource internal constructor(
             return if (exactIdentities == null) selectVariant(repositoryId) else RepositoryVariantSet.Ready(emptyList())
         }
         if (exactIdentities == null && candidates.size > MAX_RUNNABLE_VARIANTS) return selectVariant(repositoryId)
-        val config = gateway.getConfig(repositoryId, revision).successOrNull(
+        val configResult = if (exactIdentities == null) {
+            gateway.getConfig(repositoryId, revision)
+        } else {
+            gateway.getExactConfig(repositoryId, revision)
+        }
+        val config = configResult.successOrNull(
             retryNetworkFailure = retryNetworkFailure,
             allowNotFound = true,
         )

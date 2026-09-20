@@ -811,6 +811,12 @@ private class FakeMetadataGateway : HuggingFaceMetadataGateway {
         revision: String,
     ): Result<TransformerConfigResponse, DataError.Network> =
         configs[repositoryId]?.let { Result.Success(it) } ?: Result.Error(DataError.Network.Unknown)
+
+    override suspend fun getExactConfig(
+        repositoryId: String,
+        revision: String,
+    ): Result<TransformerConfigResponse, DataError.Network> =
+        configs[repositoryId]?.let { Result.Success(it) } ?: Result.Error(DataError.Network.Unknown)
 }
 
 private fun models(count: Int): List<ListModelsResponse.Model> =

@@ -13,4 +13,10 @@ class GetModelConfigUseCase(
         revision: String,
     ): Result<TransformerConfigResponse, DataError.Network> =
         repository.getModelConfig(modelId, revision)
+
+    suspend fun forExactInstalledRepair(
+        modelId: String,
+        revision: String,
+    ): Result<TransformerConfigResponse, DataError.Network> =
+        repository.getExactModelConfig(modelId, revision)
 }

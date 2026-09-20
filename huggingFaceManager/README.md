@@ -65,10 +65,10 @@ com.debanshu777.huggingfacemanager/
 Main entry point. Instantiated once and injected via Koin.
 
 ```kotlin
-val api = HuggingFaceApi(token = "hf_...")  // token optional for public models
+val api = createHuggingFaceApi()
 
 // Search models
-val results = api.searchModels(SearchModelsParams(query = "llama", filter = PipelineTag.TEXT_GENERATION))
+val results = api.searchModels(SearchModelsParams(query = "llama"))
 
 // Get model detail
 val detail = api.getModelDetail("bartowski/Meta-Llama-3.1-8B-Instruct-GGUF")
@@ -77,16 +77,13 @@ val detail = api.getModelDetail("bartowski/Meta-Llama-3.1-8B-Instruct-GGUF")
 val currentRecommendationDetail = api.getRecommendationModelDetail(modelId)
 val installedRecommendationDetail = api.getRecommendationModelDetail(modelId, revision)
 
-// Get the file tree and optional transformer config at the same immutable commit
+// Get the file tree and optional transformer config at the same immutable commit.
+// The ordinary config call preserves no-redirect browse behavior.
 val files = api.getModelFileTree(modelId, revision, ModelFileWeightFilter.GgufOnly)
 val config = api.getModelConfig(modelId, revision)
 
-// Download a file
-api.downloadFile(
-    url = "https://huggingface.co/…/model.gguf",
-    destPath = "/path/to/model.gguf",
-    onProgress = { dto -> /* DownloadProgressDTO */ }
-)
+// Exact installed-evidence repair alone may follow the validated Hub config redirect.
+val exactConfig = api.getModelConfig.forExactInstalledRepair(modelId, revision)
 ```
 
 The revision-qualified use-case signatures exposed by `HuggingFaceApi` are:
@@ -110,9 +107,14 @@ suspend operator fun invoke(
     modelId: String,
     revision: String,
 ): Result<TransformerConfigResponse, DataError.Network>
+
+suspend fun forExactInstalledRepair(
+    modelId: String,
+    revision: String,
+): Result<TransformerConfigResponse, DataError.Network>
 ```
 
-`revision` must be a validated 40–64 character hexadecimal commit. Revision-qualified detail, tree, and config requests are built from encoded path segments. Config retrieval may follow one bounded 307 only when it targets `https://huggingface.co:443/api/resolve-cache/models/{same repository}/{same revision}/config.json`; all other redirects are rejected.
+`revision` must be a validated 40–64 character hexadecimal commit. Revision-qualified detail, tree, and config requests are built from encoded path segments. Ordinary `getModelConfig(modelId, revision)` retains no-redirect browse semantics. Only `forExactInstalledRepair(modelId, revision)` may follow one bounded 307, and only when it targets `https://huggingface.co:443/api/resolve-cache/models/{same repository}/{same revision}/config.json`; all other redirects are rejected.
 
 ### DownloadProgressDTO
 
@@ -150,7 +152,7 @@ when (val result = api.searchModels(params)) {
 }
 ```
 
-Network categories are `NoInternet`, `Unauthorized`, `RequestTimeout`, `RateLimited`, `ServerError`, `Serialization`, `Conflict`, `PayloadTooLarge`, `NotFound`, and `Unknown`. `NotFound` is compatibility-scoped: only the optional revision-qualified `getModelConfig(modelId, revision)` call maps HTTP 404 to `NotFound`, allowing callers to continue without `config.json`. Existing list, search, detail, and tree calls retain their previous 404 mapping. Invalid redirects and malformed or oversized deterministic responses are not transient failures.
+Network categories are `NoInternet`, `Unauthorized`, `RequestTimeout`, `RateLimited`, `ServerError`, `Serialization`, `Conflict`, `PayloadTooLarge`, `NotFound`, and `Unknown`. `NotFound` is compatibility-scoped: only optional revision-qualified config calls map HTTP 404 to `NotFound`, allowing callers to continue without `config.json`. Existing list, search, detail, and tree calls retain their previous 404 mapping. Invalid exact-repair redirects and malformed or oversized deterministic responses are not transient failures.
 
 ---
 
@@ -167,7 +169,7 @@ Network categories are `NoInternet`, `Unauthorized`, `RequestTimeout`, `RateLimi
 - Downloads now validate repository/file paths, prevent storage-root escape, stage into `.part` files, verify HTTP status and byte counts, sync/close before commit, and preserve existing files on failure across JVM, Android, and iOS
 - Native iOS background-session results are imported from a no-follow regular-file descriptor, re-hashed, and committed through the same exact-artifact manifest transaction before becoming visible
 - Progress emissions are coalesced to percentage changes (or 1 MiB for unknown lengths), avoiding channel/UI pressure during multi-gigabyte downloads
-- Recommendation detail supports validated immutable-revision lookups; pinned config follows at most one exact same-Hub resolve-cache redirect, while deterministic metadata failures are rejected and only transport/auth/rate/server/timeout failures remain retryable
+- Recommendation detail supports validated immutable-revision lookups; exact installed repair alone follows at most one exact same-Hub config redirect, while ordinary browse preserves no-redirect behavior
 - Added JVM loopback integration tests for success, HTTP failure, truncation, traversal, and final-file preservation
 - `nota-ai/bk-sdm-tiny` registry now sets `prediction=0` (EPS) — skips `is_using_v_parameterization_for_sd2()` probe; `offloadToCpu` reverted (moot since Vulkan is now disabled for diffusion at build level via `SD_VULKAN=OFF`)
 - `nota-ai/bk-sdm-tiny` registry entry now sets `prediction=0` (EPS) — prevents `is_using_v_parameterization_for_sd2()` probe from running a test UNet forward pass; SD1.x is always EPS, never V-pred

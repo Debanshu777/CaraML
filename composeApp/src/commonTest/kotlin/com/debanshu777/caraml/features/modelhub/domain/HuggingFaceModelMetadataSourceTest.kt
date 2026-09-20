@@ -52,8 +52,27 @@ class HuggingFaceModelMetadataSourceTest {
         )
         assertEquals(
             listOf(fixture.repositoryId to fixture.identity.revision),
+            fixture.gateway.exactConfigRequests,
+        )
+        assertEquals(emptyList(), fixture.gateway.configRequests)
+    }
+
+    @Test
+    fun browseUsesOnlyTheNonRedirectingConfigPolicy() = runTest {
+        val fixture = Fixture()
+
+        assertIs<RepositoryVariantSet.Ready>(
+            fixture.source().describeVariants(
+                fixture.repositoryId,
+                ModelHubBrowseMode.LanguageModels,
+            ),
+        )
+
+        assertEquals(
+            listOf(fixture.repositoryId to fixture.identity.revision),
             fixture.gateway.configRequests,
         )
+        assertEquals(emptyList(), fixture.gateway.exactConfigRequests)
     }
 
     @Test
@@ -491,6 +510,7 @@ class HuggingFaceModelMetadataSourceTest {
         val qualifiedDetailRequests = mutableListOf<Pair<String, String>>()
         val treeRequests = mutableListOf<Pair<String, String>>()
         val configRequests = mutableListOf<Pair<String, String>>()
+        val exactConfigRequests = mutableListOf<Pair<String, String>>()
 
         override suspend fun getStrictDetail(repositoryId: String): Result<ModelDetailResponse, DataError.Network> {
             unqualifiedDetailRequests += repositoryId
@@ -521,6 +541,15 @@ class HuggingFaceModelMetadataSourceTest {
             revision: String,
         ): Result<TransformerConfigResponse, DataError.Network> {
             configRequests += repositoryId to revision
+            return configError?.let { Result.Error(it) }
+                ?: Result.Success(TransformerConfigResponse())
+        }
+
+        override suspend fun getExactConfig(
+            repositoryId: String,
+            revision: String,
+        ): Result<TransformerConfigResponse, DataError.Network> {
+            exactConfigRequests += repositoryId to revision
             return configError?.let { Result.Error(it) }
                 ?: Result.Success(TransformerConfigResponse())
         }
@@ -562,6 +591,11 @@ private class RevisionGateway(
     }
 
     override suspend fun getConfig(
+        repositoryId: String,
+        revision: String,
+    ): Result<TransformerConfigResponse, DataError.Network> = Result.Error(DataError.Network.Unknown)
+
+    override suspend fun getExactConfig(
         repositoryId: String,
         revision: String,
     ): Result<TransformerConfigResponse, DataError.Network> = Result.Error(DataError.Network.Unknown)

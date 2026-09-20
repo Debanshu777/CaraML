@@ -47,4 +47,10 @@ class HuggingFaceRepository(
         revision: String,
     ): Result<TransformerConfigResponse, DataError.Network> =
         api.getModelConfig(modelId, revision)
+
+    suspend fun getExactModelConfig(
+        modelId: String,
+        revision: String,
+    ): Result<TransformerConfigResponse, DataError.Network> =
+        api.getExactModelConfig(modelId, revision)
 }

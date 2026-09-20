@@ -265,13 +265,14 @@ class BoundedResponseTest {
     }
 
     @Test
-    fun configFollowsOneExactSameHubResolveCacheRedirect() = runTest {
+    fun browseAndExactConfigRedirectPoliciesDoNotLeakAcrossCalls() = runTest {
         val seenPaths = mutableListOf<String>()
+        val sourcePath = "/owner/model/resolve/$REVISION/config.json"
         val redirectPath = "/api/resolve-cache/models/owner/model/$REVISION/config.json"
         val client = HttpClient(MockEngine { request ->
             seenPaths += request.url.encodedPath
-            when (seenPaths.size) {
-                1 -> respond(
+            when (request.url.encodedPath) {
+                sourcePath -> respond(
                     content = "",
                     status = HttpStatusCode.TemporaryRedirect,
                     headers = headersOf(
@@ -279,17 +280,28 @@ class BoundedResponseTest {
                         "$redirectPath?download=true&etag=exact",
                     ),
                 )
-                else -> respond("{\"num_hidden_layers\":32}")
+                redirectPath -> respond("{\"num_hidden_layers\":32}")
+                else -> error("Unexpected request: ${request.url}")
             }
         })
         try {
             val service = RemoteHuggingFaceApiService(client, Json, "https://huggingface.co")
 
-            assertIs<Result.Success<*, *>>(service.getModelConfig("owner/model", REVISION))
+            assertEquals(
+                Result.Error(DataError.Network.Unknown),
+                service.getModelConfig("owner/model", REVISION),
+            )
+            assertIs<Result.Success<*, *>>(service.getExactModelConfig("owner/model", REVISION))
+            assertEquals(
+                Result.Error(DataError.Network.Unknown),
+                service.getModelConfig("owner/model", REVISION),
+            )
             assertEquals(
                 listOf(
-                    "/owner/model/resolve/$REVISION/config.json",
+                    sourcePath,
+                    sourcePath,
                     redirectPath,
+                    sourcePath,
                 ),
                 seenPaths,
             )
@@ -324,7 +336,7 @@ class BoundedResponseTest {
 
                 assertEquals(
                     Result.Error(DataError.Network.Serialization),
-                    service.getModelConfig("owner/model", REVISION),
+                    service.getExactModelConfig("owner/model", REVISION),
                     location,
                 )
                 assertEquals(1, requests, location)
@@ -352,7 +364,7 @@ class BoundedResponseTest {
 
                 assertEquals(
                     Result.Error(DataError.Network.Serialization),
-                    service.getModelConfig("owner/model", REVISION),
+                    service.getExactModelConfig("owner/model", REVISION),
                 )
                 assertEquals(1, requests)
             } finally {
@@ -378,7 +390,7 @@ class BoundedResponseTest {
 
             assertEquals(
                 Result.Error(DataError.Network.Serialization),
-                service.getModelConfig("owner/model", REVISION),
+                service.getExactModelConfig("owner/model", REVISION),
             )
             assertEquals(2, requests)
         } finally {

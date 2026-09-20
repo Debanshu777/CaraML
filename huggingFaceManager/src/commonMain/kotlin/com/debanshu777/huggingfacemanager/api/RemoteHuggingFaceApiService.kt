@@ -150,6 +150,25 @@ class RemoteHuggingFaceApiService private constructor(
     suspend fun getModelConfig(
         modelId: String,
         revision: String,
+    ): Result<TransformerConfigResponse, DataError.Network> = getModelConfig(
+        modelId = modelId,
+        revision = revision,
+        followTrustedRedirect = false,
+    )
+
+    suspend fun getExactModelConfig(
+        modelId: String,
+        revision: String,
+    ): Result<TransformerConfigResponse, DataError.Network> = getModelConfig(
+        modelId = modelId,
+        revision = revision,
+        followTrustedRedirect = true,
+    )
+
+    private suspend fun getModelConfig(
+        modelId: String,
+        revision: String,
+        followTrustedRedirect: Boolean,
     ): Result<TransformerConfigResponse, DataError.Network> {
         val segments = validatedModelSegments(modelId)
             ?: return Result.Error(DataError.Network.Unknown)
@@ -162,8 +181,10 @@ class RemoteHuggingFaceApiService private constructor(
             endpoint = url.toString(),
             maxResponseBytes = CONFIG_RESPONSE_LIMIT_BYTES,
             distinguishNotFound = true,
-            trustedSingleRedirect = { location ->
-                trustedConfigRedirect(location, segments, revision)
+            trustedSingleRedirect = if (followTrustedRedirect) {
+                { location -> trustedConfigRedirect(location, segments, revision) }
+            } else {
+                null
             },
             decode = { body -> strictJson.decodeFromString<TransformerConfigResponse>(body) },
         )
