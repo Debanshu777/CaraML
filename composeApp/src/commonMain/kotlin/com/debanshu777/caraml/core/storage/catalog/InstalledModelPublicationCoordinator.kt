@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.core.storage.catalog
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
@@ -39,16 +40,36 @@ class InstalledModelPublicationCoordinator(
         ) { "Invalid repair operation" }
         val flightKey = "$exactOwnerKey\u0000$operationKey"
         val stripe = repairFlightStripes[stripeIndex(stripeOwnerKey)]
+        var observedLeaderAborts = 0
+        var abortedFlight: RepairFlight? = null
         while (true) {
-            when (val selection = stripe.select(flightKey)) {
-                is FlightSelection.Follower -> return selection.flight.result.await().valueOrThrow()
+            val selection = abortedFlight
+                ?.let { stripe.selectSuccessor(it) }
+                ?: stripe.select(flightKey)
+            when (selection) {
+                is FlightSelection.Follower -> when (val outcome = selection.flight.result.await()) {
+                    FlightOutcome.LeaderAborted -> {
+                        observedLeaderAborts += 1
+                        if (observedLeaderAborts > MAX_LEADER_ABORT_RETRIES) {
+                            throw RepairFlightRetryExhaustedException()
+                        }
+                        abortedFlight = selection.flight
+                    }
+                    else -> return outcome.valueOrThrow()
+                }
                 is FlightSelection.Collision -> {
                     selection.flight.result.await()
                     continue
                 }
                 is FlightSelection.Leader -> {
+                    abortedFlight = null
                     val outcome = try {
                         FlightOutcome.Success(block())
+                    } catch (cancelled: CancellationException) {
+                        withContext(NonCancellable) {
+                            stripe.complete(selection.flight, FlightOutcome.LeaderAborted)
+                        }
+                        throw cancelled
                     } catch (failure: Throwable) {
                         FlightOutcome.Failure(failure)
                     }
@@ -77,18 +98,45 @@ class InstalledModelPublicationCoordinator(
                     FlightSelection.Leader(created)
                 }
                 current.key == key -> FlightSelection.Follower(current)
+                current.leaderAborted -> {
+                    val created = RepairFlight(key)
+                    active = created
+                    FlightSelection.Leader(created)
+                }
+                else -> FlightSelection.Collision(current)
+            }
+        }
+
+        suspend fun selectSuccessor(aborted: RepairFlight): FlightSelection = mutex.withLock {
+            aborted.successor?.let { return@withLock FlightSelection.Follower(it) }
+            val current = active
+            when {
+                current == null || current === aborted || current.leaderAborted -> {
+                    val created = RepairFlight(aborted.key)
+                    aborted.successor = created
+                    active = created
+                    FlightSelection.Leader(created)
+                }
+                current.key == aborted.key -> {
+                    aborted.successor = current
+                    FlightSelection.Follower(current)
+                }
                 else -> FlightSelection.Collision(current)
             }
         }
 
         suspend fun complete(flight: RepairFlight, outcome: FlightOutcome) = mutex.withLock {
-            if (active === flight) active = null
+            flight.leaderAborted = outcome === FlightOutcome.LeaderAborted
+            if (active === flight && !flight.leaderAborted) active = null
             flight.result.complete(outcome)
         }
     }
 
     private class RepairFlight(val key: String) {
         val result = CompletableDeferred<FlightOutcome>()
+        var leaderAborted: Boolean = false
+        // Late waiters from one aborted generation must observe the same successor.
+        var successor: RepairFlight? = null
     }
 
     private sealed interface FlightSelection {
@@ -100,18 +148,24 @@ class InstalledModelPublicationCoordinator(
     private sealed interface FlightOutcome {
         data class Success(val value: Any) : FlightOutcome
         data class Failure(val cause: Throwable) : FlightOutcome
+        data object LeaderAborted : FlightOutcome
 
         @Suppress("UNCHECKED_CAST")
         fun <T : Any> valueOrThrow(): T = when (this) {
             is Success -> value as T
             is Failure -> throw cause
+            LeaderAborted -> error("Aborted repair flight has no value")
         }
     }
+
+    private class RepairFlightRetryExhaustedException :
+        IllegalStateException("Repair could not elect a live leader")
 
     private companion object {
         const val DEFAULT_STRIPE_COUNT = 64
         const val MAX_STRIPE_COUNT = 256
         const val MAX_OPERATION_KEY_LENGTH = 64
+        const val MAX_LEADER_ABORT_RETRIES = 1
     }
 }
 

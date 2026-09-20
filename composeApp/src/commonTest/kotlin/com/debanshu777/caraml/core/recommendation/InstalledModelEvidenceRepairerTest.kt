@@ -37,6 +37,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -134,6 +135,41 @@ class InstalledModelEvidenceRepairerTest {
             assertTrue(results.all { it is EvidenceRepairResult.Ready })
             assertEquals(1, lookups)
             assertEquals(1, maxConcurrent)
+            assertEquals(1, fixture.dao.upsertCalls)
+        }
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun cancelledRepairLeaderLetsLiveFollowersPerformOneSuccessorLookupAndWrite() = runTest {
+        withFixture { fixture ->
+            val firstLookupEntered = CompletableDeferred<Unit>()
+            var lookups = 0
+            val repairer = fixture.repairer { _, _, _ ->
+                lookups += 1
+                if (lookups == 1) {
+                    firstLookupEntered.complete(Unit)
+                    awaitCancellation()
+                }
+                InstalledDescriptorLookup.Ready(fixture.descriptor)
+            }
+            val leader = async(start = CoroutineStart.UNDISPATCHED) {
+                repairer.requireComplete(fixture.model.modelId, GenerationMode.Text)
+            }
+            firstLookupEntered.await()
+            val followers = List(8) {
+                async(start = CoroutineStart.UNDISPATCHED) {
+                    repairer.requireComplete(fixture.model.modelId, GenerationMode.Text)
+                }
+            }
+
+            leader.cancel()
+            assertFailsWith<CancellationException> { leader.await() }
+            runCurrent()
+            val results = followers.awaitAll()
+
+            assertTrue(results.all { it is EvidenceRepairResult.Ready })
+            assertEquals(2, lookups)
             assertEquals(1, fixture.dao.upsertCalls)
         }
     }
