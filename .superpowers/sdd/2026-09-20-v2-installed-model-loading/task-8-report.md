@@ -7,6 +7,7 @@ Implementation commits:
 
 - `58e28e9` (`fix(models): complete installed model device acceptance`)
 - `eea1472` (`fix(models): harden installed model acceptance`)
+- `5f711f2` (`fix(models): retry restored load from fresh resolution`)
 
 Device: Pixel 9, serial `48221FDAQ003AT`
 Package: `com.debanshu777.caraml`
@@ -136,6 +137,7 @@ No device connectivity or inference preference remains in the temporary acceptan
 4. Search selection could empty the navigation back stack and crash; fixed atomically with two root/nested regressions.
 5. Resource capture could appear future-dated relative to an earlier clock sample; reproduced deterministically and fixed with a 19-test provider suite.
 6. Native preflight failure was conflated with invalid artifact identity; split into a safe diagnostic category and covered by admission/copy tests.
+7. A restored selection that ended in typed native-invalid had no same-model recovery action; fixed with an explicit fresh-resolution retry that never reuses the terminal request and never retries automatically.
 
 ## Review fix round 1 — independently auditable evidence
 
@@ -457,9 +459,277 @@ Final semantic Library evidence remained `1 downloaded model`, `MiniCPM5-2B-Q4_K
 
 During the original Task 8 run, the GPU-enabled automatic plan returned `NATIVE_PREFLIGHT_INVALID`. GPU was temporarily toggled off solely to complete the initial CPU load/generation diagnosis, then restored. The review reacceptance described above did not toggle the preference: both final online and offline selections began with GPU enabled and F16/F16 selected, surfaced the typed policy-approved CPU alternative, and generated successfully after accepting it.
 
+## Review fix round 3 — fresh same-model retry and final acceptance
+
+### Typed retry implementation and regression
+
+Only a terminal `NATIVE_PREFLIGHT_INVALID` model error now exposes the literal `Retry current model` action. Tapping it reads the still-selected model and invokes `InstalledModelLoadResolver.resolve(model, mode)` again; it does not retain or replay the rejected `LoadRequest` or plan. The existing load-start boundary changes state to `ModelLoading` before launching work, cancels and joins the prior load job before native operations, and therefore makes a second tap or racing stale job inert. The normal `Try Another Model` action remains available. Unrelated errors remain non-retryable and still show only `Try Another Model`.
+
+The focused ViewModel regression models the exact sequence: restored GPU request -> terminal typed Invalid -> two immediate retry taps -> exactly one second resolver call -> fresh GPU request -> separately bound CPU alternative -> explicit safer-plan acceptance -> success. It asserts resolver calls are exactly two, the stale restored request is invoked exactly once, and the load sequence is `restored`, `fresh-gpu`, `fresh-cpu`. The UI state-matrix regression separately proves that non-retryable errors have no retry action, while a retryable error renders and dispatches both actions.
+
+The initial UI expectation was run before the implementation and failed on the missing `Retry current model` node (1 test, 1 failure), establishing RED. The final focused command was:
+
+```text
+./gradlew :composeApp:jvmTest \
+  --tests '*ChatViewModelRetryTest' \
+  --tests '*CreateWorkbenchUiTest' \
+  --tests '*InstalledModelLoadingTest' \
+  --tests '*PendingLoadActionGateTest' \
+  --tests '*InstalledModelLoadRequestResolverTest' \
+  --tests '*LoadAdmissionControllerTest' \
+  --tests '*AuroraComponentsUiTest' \
+  --no-daemon
+```
+
+Result: PASS in 33 seconds, 76/76 tests, 0 failures/errors.
+
+The final full gate was:
+
+```text
+./gradlew verifyProject --no-daemon
+```
+
+Result: PASS in 42 seconds; 1,010 JVM tests, 0 failures/errors; native CTest 5/5.
+
+The in-place device install was:
+
+```text
+./gradlew :androidApp:installDebug --no-daemon
+```
+
+Result: PASS in 57 seconds, `Installed on 1 device.` No `pm clear`, uninstall, data deletion, database replacement, or model replacement command was used.
+
+Final hygiene commands before the production commit were:
+
+```text
+git diff --check
+rg -n "loadModel\\(model: LocalModelEntity|legacyLoad|selectedLoadRequest|ModelLoadRouter|RecommendedModelLoadRequestResolver" composeApp/src/commonMain
+```
+
+Result: PASS; no whitespace errors and no legacy matches. Commit `5f711f2` also reported `Orca Security: Searching for hard-coded secrets...[PASSED]`.
+
+### Final online device acceptance
+
+The installed package and data were preserved by the in-place install. On the final online restored launch, the automatic GPU attempt produced typed `INVALID_MODEL` but already had a valid freshly assessed CPU alternative and therefore went directly to `Safer configuration available`; it did not enter the terminal error screen, so `Retry current model` was not present or tapped in this run.
+
+The exact semantic and bounded-log inspection command was:
+
+```text
+android layout --device=48221FDAQ003AT -p && adb -s 48221FDAQ003AT logcat -d -v time -t 3000 -s LlamaRunner:I Inference:I '*:S'
+```
+
+Relevant bounded layout and phase-1 log output:
+
+```text
+text: Safer configuration available; center: [540,1085]
+text: A lower-resource configuration is available for this device.
+text: • batch reduced
+text: Use safer plan; interactions: clickable, focusable; center: [540,1502]
+text: Cancel; center: [540,1640]
+09-20 06:44:31.211 I/Inference: device: cores=4/8, memMB=2163, gpu=true
+09-20 06:44:31.212 I/Inference: buildRunnerConfig: arch='llama', family=DENSE
+09-20 06:44:33.443 I/Inference: preflight: invalid (INVALID_MODEL)
+```
+
+The literal acceptance and ready-state commands were:
+
+```text
+adb -s 48221FDAQ003AT shell input tap 540 1502
+android layout --device=48221FDAQ003AT -p
+android layout --device=48221FDAQ003AT -p
+```
+
+The ready layout identified the prompt and send controls:
+
+```text
+interactions: clickable, focusable, long-clickable; center: [540,2072]
+content-desc: Select model. Current model MiniCPM5-2B-GGUF; center: [488,2222]
+content-desc: Send message; center: [947,2222]
+```
+
+The literal prompt-field, fixed-marker, and send sequence was:
+
+```text
+adb -s 48221FDAQ003AT shell input tap 540 2072
+android layout --device=48221FDAQ003AT -p
+adb -s 48221FDAQ003AT shell input text 'Reply%swith%sexactly%sRETRY_ONLINE_OK'
+adb -s 48221FDAQ003AT shell input tap 947 1255
+android layout --device=48221FDAQ003AT -p
+android layout --device=48221FDAQ003AT -p && adb -s 48221FDAQ003AT logcat -d -v time -t 3000 -s LlamaRunner:I Inference:I '*:S'
+```
+
+The focused layout proved `state: focused` at `[540,1105]` and `content-desc: Send message` at `[947,1255]`. Final online result:
+
+```text
+text: RETRY_ONLINE_OKRETRY_ONLINE_OK
+text: 4.01 tokens/s
+text: 27 tokens
+text: 6.47s
+```
+
+Safe phase-2 CPU/native/generation excerpt:
+
+```text
+09-20 06:45:45.647 I/Inference: device: cores=4/8, memMB=2253, gpu=true
+09-20 06:45:49.594 I/LlamaRunner: load: model path supplied=1
+09-20 06:45:49.594 I/LlamaRunner: load: Final params - n_ctx=4096, n_threads=4, n_threads_batch=4, n_batch=128, n_gpu_layers=0
+09-20 06:45:50.222 I/LlamaRunner: load: Model loaded in 627 ms
+09-20 06:45:50.222 I/LlamaRunner: load: Context ready, n_ctx=4096
+09-20 06:45:50.234 I/LlamaRunner: load: Model ready (vocab_size=130560)
+09-20 06:46:17.028 I/Inference: generate: promptLen=34, remainingCtx=4084, context=12/4096
+09-20 06:46:26.460 I/Inference: complete: tokens=27, tps=4.0, context=62/4096, elapsed=6472ms, stop=EOG
+```
+
+### Final offline force-stop acceptance
+
+The exact connectivity baseline, disable, and bounded verification command was:
+
+```text
+adb -s 48221FDAQ003AT shell settings get global wifi_on && adb -s 48221FDAQ003AT shell settings get global mobile_data && adb -s 48221FDAQ003AT shell dumpsys wifi | rg -m1 'Wi-Fi is' && adb -s 48221FDAQ003AT shell dumpsys connectivity | rg -m1 'Active default network' && adb -s 48221FDAQ003AT shell svc wifi disable && adb -s 48221FDAQ003AT shell svc data disable && adb -s 48221FDAQ003AT shell settings get global wifi_on && adb -s 48221FDAQ003AT shell settings get global mobile_data && adb -s 48221FDAQ003AT shell dumpsys wifi | rg -m1 'Wi-Fi is' && (adb -s 48221FDAQ003AT shell dumpsys connectivity | rg -m1 'Active default network' || true) && adb -s 48221FDAQ003AT shell dumpsys telephony.registry | rg -m4 'mDataConnectionState|mDataActivity'
+```
+
+Bounded output:
+
+```text
+1
+1
+Wi-Fi is enabled
+Active default network: 259
+0
+1
+Wi-Fi is disabled
+Active default network: none
+mDataActivity=0
+mDataConnectionState=-1
+```
+
+The offline force-stop/relaunch and first semantic read were:
+
+```text
+adb -s 48221FDAQ003AT shell am force-stop com.debanshu777.caraml && adb -s 48221FDAQ003AT logcat -c && adb -s 48221FDAQ003AT shell monkey -p com.debanshu777.caraml 1 >/dev/null && android layout --device=48221FDAQ003AT -p
+android layout --device=48221FDAQ003AT -p && adb -s 48221FDAQ003AT logcat -d -v time -t 3000 -s LlamaRunner:I Inference:I '*:S'
+android layout --device=48221FDAQ003AT -p && adb -s 48221FDAQ003AT logcat -d -v time -t 3000 -s LlamaRunner:I Inference:I '*:S'
+```
+
+The first read showed `Loading model...`. The completed automatic attempt again produced typed Invalid but went directly to the exact alternative instead of terminal failure:
+
+```text
+text: Safer configuration available; center: [540,1126]
+text: A lower-resource configuration is available for this device.
+text: Use safer plan; interactions: clickable, focusable; center: [540,1462]
+text: Cancel; center: [540,1600]
+09-20 06:47:10.949 I/Inference: device: cores=4/8, memMB=2172, gpu=true
+09-20 06:47:10.949 I/Inference: buildRunnerConfig: arch='llama', family=DENSE
+09-20 06:47:13.205 I/Inference: preflight: invalid (INVALID_MODEL)
+```
+
+Because terminal Invalid did not occur, the conditional device instruction to tap `Retry current model` did not apply in this final run. There is consequently no fabricated retry-phase device log. The focused regression above is the verification that a terminal occurrence reruns the resolver, rejects stale reuse, and requires explicit `Use safer plan` acceptance.
+
+The literal offline acceptance, prompt-field, marker, send, and bounded-log sequence was:
+
+```text
+adb -s 48221FDAQ003AT shell input tap 540 1462
+android layout --device=48221FDAQ003AT -p
+android layout --device=48221FDAQ003AT -p && adb -s 48221FDAQ003AT logcat -d -v time -t 3000 -s LlamaRunner:I Inference:I '*:S'
+adb -s 48221FDAQ003AT shell input tap 540 2072
+android layout --device=48221FDAQ003AT -p
+adb -s 48221FDAQ003AT shell input text 'Reply%swith%sexactly%sRETRY_OFFLINE_OK'
+adb -s 48221FDAQ003AT shell input tap 947 1255
+android layout --device=48221FDAQ003AT -p
+android layout --device=48221FDAQ003AT -p && adb -s 48221FDAQ003AT logcat -d -v time -t 3000 -s LlamaRunner:I Inference:I '*:S'
+```
+
+The ready layout identified the prompt at `[540,2072]`, its focused state at `[540,1105]`, and `content-desc: Send message` at `[947,1255]`. Final offline result:
+
+```text
+text: RETRY_OFFLINE_OKRETRY_OFFLINE_OK
+text: 3.8 tokens/s
+text: 25 tokens
+text: 6.31s
+```
+
+Safe CPU/native/generation excerpt:
+
+```text
+09-20 06:47:27.596 I/Inference: device: cores=4/8, memMB=2176, gpu=true
+09-20 06:47:31.754 I/LlamaRunner: load: model path supplied=1
+09-20 06:47:31.754 I/LlamaRunner: load: Final params - n_ctx=4096, n_threads=4, n_threads_batch=4, n_batch=256, n_gpu_layers=0
+09-20 06:47:32.354 I/LlamaRunner: load: Model loaded in 600 ms
+09-20 06:47:32.354 I/LlamaRunner: load: Context ready, n_ctx=4096
+09-20 06:47:32.366 I/LlamaRunner: load: Model ready (vocab_size=130560)
+09-20 06:47:59.826 I/Inference: generate: promptLen=35, remainingCtx=4084, context=12/4096
+09-20 06:48:08.379 I/Inference: complete: tokens=25, tps=3.8, context=59/4096, elapsed=6311ms, stop=EOG
+```
+
+### Final restoration and preservation commands
+
+Restoration ran immediately after offline log capture:
+
+```text
+adb -s 48221FDAQ003AT shell svc wifi enable && adb -s 48221FDAQ003AT shell svc data enable && adb -s 48221FDAQ003AT shell settings get global wifi_on && adb -s 48221FDAQ003AT shell settings get global mobile_data && adb -s 48221FDAQ003AT shell dumpsys wifi | rg -m1 'Wi-Fi is' && adb -s 48221FDAQ003AT shell dumpsys connectivity | rg -m1 'Active default network' && adb -s 48221FDAQ003AT shell dumpsys connectivity | rg -c 'WIFI.*VALIDATED'
+adb -s 48221FDAQ003AT shell settings get global wifi_on && adb -s 48221FDAQ003AT shell settings get global mobile_data && adb -s 48221FDAQ003AT shell dumpsys wifi | rg -m1 'Wi-Fi is' && adb -s 48221FDAQ003AT shell dumpsys connectivity | rg -m1 'Active default network' && adb -s 48221FDAQ003AT shell dumpsys connectivity | rg -c 'WIFI.*VALIDATED'
+```
+
+The first check ran before Wi-Fi had reassociated and reported no default network. The immediate bounded recheck proved complete restoration:
+
+```text
+1
+1
+Wi-Fi is enabled
+Active default network: 260
+2
+```
+
+The literal Settings navigation and scroll commands were:
+
+```text
+adb -s 48221FDAQ003AT shell input tap 115 265
+android layout --device=48221FDAQ003AT -p
+adb -s 48221FDAQ003AT shell input tap 460 2256
+android layout --device=48221FDAQ003AT -p
+adb -s 48221FDAQ003AT shell input swipe 540 2100 540 400 600
+adb -s 48221FDAQ003AT shell input swipe 540 2100 540 400 600
+android layout --device=48221FDAQ003AT -p
+adb -s 48221FDAQ003AT shell input swipe 540 2100 540 900 500
+android layout --device=48221FDAQ003AT -p
+```
+
+Relevant bounded layout output:
+
+```text
+text: Current: F16/F16; center: [183,1187]
+content-desc: KV cache F16/F16, selected; state: checked; center: [203,1463]
+content-desc: GPU acceleration (Vulkan); state: checked; center: [540,2081]
+```
+
+The literal Library navigation commands were:
+
+```text
+adb -s 48221FDAQ003AT shell input tap 115 265
+android layout --device=48221FDAQ003AT -p
+adb -s 48221FDAQ003AT shell input tap 460 618
+android layout --device=48221FDAQ003AT -p
+adb -s 48221FDAQ003AT shell input tap 787 426
+android layout --device=48221FDAQ003AT -p
+```
+
+Relevant bounded final layout output:
+
+```text
+text: Library; state: selected; center: [787,426]
+text: 1 downloaded model
+text: MiniCPM5-2B-Q4_K_M.gguf
+text: openbmb/MiniCPM5-2B-GGUF
+text: by openbmb • text-generation • 1.45 GB • transformers
+content-desc: Ready for chat.; text: Ready
+```
+
+Original GPU enabled and F16/F16 settings were never toggled during round 3. The model remained 1.45 GB and Ready throughout. No screenshot was necessary because semantic layout contained the required text, content descriptions, checked state, bounds/centers, and actions.
+
 ## Blocked / unverified / concerns
 
 - Blocked: none.
+- Device-only limitation: the terminal Invalid state did not recur in either final round-3 launch because the exact CPU alternative was already available, so the new `Retry current model` control was not tapped on hardware. Its fresh-resolution, explicit-acceptance, stale-request, and double-tap/race behavior passed focused ViewModel/UI tests; native online/offline acceptance covered the resulting same safer CPU request path.
 - The accelerator plan itself remains a known rejected configuration for this exact artifact/device (`INVALID_MODEL`); GPU-native generation is therefore not claimed. Product usability with the user's original GPU preference is verified through the exact assessed CPU alternative, not a generic fallback.
 - Physical-device iOS/Desktop behavior was not part of this Android acceptance. Their JVM/native compilation and tests are covered by `verifyProject`; no claim of physical-device acceptance is made.
 - The model repeated each requested marker. This is a model-output quality observation, not a loading/generation failure.
