@@ -31,7 +31,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusProperties
@@ -51,30 +50,20 @@ import com.debanshu777.caraml.core.ui.components.CaraMLPane
 import com.debanshu777.caraml.core.ui.layout.AppNavigationLayout
 import com.debanshu777.caraml.core.ui.motion.AuroraMotionPolicy
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 
 @Immutable
 internal data class SidebarMotionSpec(
     val panelDurationMillis: Int,
     val scrimDurationMillis: Int,
     val spatialMovementEnabled: Boolean,
-    val selectionDelayMillis: Int,
 )
 
 internal fun sidebarMotionSpec(policy: AuroraMotionPolicy): SidebarMotionSpec {
     val panelDurationMillis = if (policy.spatialTransitionsEnabled) 180 else 90
-    val scaledSelectionDelay = if (policy.spatialTransitionsEnabled) {
-        (panelDurationMillis * policy.durationScale).roundToInt().coerceAtLeast(1)
-    } else {
-        panelDurationMillis
-    }
     return SidebarMotionSpec(
         panelDurationMillis = panelDurationMillis,
         scrimDurationMillis = 90,
         spatialMovementEnabled = policy.spatialTransitionsEnabled,
-        selectionDelayMillis = scaledSelectionDelay,
     )
 }
 
@@ -187,8 +176,6 @@ fun AdaptiveNavigation(
     content: @Composable () -> Unit,
 ) {
     val effectiveDrawerController = drawerController ?: remember { DrawerController() }
-    val shellScope = rememberCoroutineScope()
-
     LaunchedEffect(navigation) {
         if (navigation != AppNavigationLayout.ModalSidebar) {
             effectiveDrawerController.close()
@@ -207,7 +194,6 @@ fun AdaptiveNavigation(
             contextualItems = contextualItems,
             selectedContextualItemId = selectedContextualItemId,
             onContextualItemClick = onContextualItemClick,
-            shellScope = shellScope,
             modifier = modifier,
             content = content,
         )
@@ -279,19 +265,15 @@ private fun ModalSidebarNavigation(
     contextualItems: List<DrawerItem>,
     selectedContextualItemId: String?,
     onContextualItemClick: (DrawerItem) -> Unit,
-    shellScope: kotlinx.coroutines.CoroutineScope,
     modifier: Modifier,
     content: @Composable () -> Unit,
 ) {
     val motion = sidebarMotionSpec(LocalAuroraMotionPolicy.current)
     val backState = rememberNavigationEventState(NavigationEventInfo.None)
-    val closeThen: ((DrawerItem) -> Unit) -> (DrawerItem) -> Unit = { action ->
+    val selectAndClose: ((DrawerItem) -> Unit) -> (DrawerItem) -> Unit = { action ->
         { item ->
+            action(item)
             controller.close()
-            shellScope.launch {
-                delay(motion.selectionDelayMillis.toLong())
-                action(item)
-            }
         }
     }
 
@@ -367,14 +349,14 @@ private fun ModalSidebarNavigation(
                 footerItems = footerItems,
                 selectedItemId = selectedItemId,
                 compact = false,
-                onItemClick = closeThen(onItemClick),
-                onFooterItemClick = closeThen(onFooterItemClick),
+                onItemClick = selectAndClose(onItemClick),
+                onFooterItemClick = selectAndClose(onFooterItemClick),
                 modifier = Modifier.width(panelWidth),
                 contentInsets = navigationInsets,
                 contentInsetSides = WindowInsetsSides.Vertical + WindowInsetsSides.Start,
                 contextualItems = contextualItems,
                 selectedContextualItemId = selectedContextualItemId,
-                onContextualItemClick = closeThen(onContextualItemClick),
+                onContextualItemClick = selectAndClose(onContextualItemClick),
                 shape = RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp),
             )
         }

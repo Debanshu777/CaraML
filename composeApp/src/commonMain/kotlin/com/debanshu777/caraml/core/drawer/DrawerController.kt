@@ -30,3 +30,16 @@ val LocalDrawerController = staticCompositionLocalOf<DrawerController> {
 
 /** Present only when the current primary destination owns a compact modal-sidebar trigger. */
 val LocalNavigationMenuAction = staticCompositionLocalOf<(() -> Unit)?> { null }
+
+/** Lets a destination temporarily replace persistent navigation with an on-demand modal panel. */
+@Stable
+class FocusModeController {
+    var isActive by mutableStateOf(false)
+        private set
+
+    fun update(active: Boolean) {
+        isActive = active
+    }
+}
+
+val LocalFocusModeController = staticCompositionLocalOf<FocusModeController?> { null }

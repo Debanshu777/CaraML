@@ -74,10 +74,12 @@ fun AppDrawerShell(
 ) {
     val drawerController = remember { DrawerController() }
     val modeController = remember { GenerationModeController() }
+    val focusModeController = remember { FocusModeController() }
 
     CompositionLocalProvider(
         LocalDrawerController provides drawerController,
         LocalGenerationModeController provides modeController,
+        LocalFocusModeController provides focusModeController,
     ) {
         val currentScreen = backStack.lastOrNull()
         val selectedItemId = when (currentScreen) {
@@ -118,8 +120,15 @@ fun AppDrawerShell(
         BoxWithConstraints(modifier = modifier) {
             val appWindowWidth = maxWidth
             val navigation = adaptiveLayoutPolicy(maxWidth, AppContentKind.Chat).navigation
+            val effectiveNavigation = if (
+                focusModeController.isActive && currentScreen == AppScreen.Home
+            ) {
+                AppNavigationLayout.ModalSidebar
+            } else {
+                navigation
+            }
             AdaptiveNavigation(
-                navigation = navigation,
+                navigation = effectiveNavigation,
                 items = primaryNavigationItems,
                 footerItems = utilityNavigationItems,
                 selectedItemId = selectedItemId,
@@ -127,7 +136,8 @@ fun AppDrawerShell(
                 onFooterItemClick = navigateToItem,
                 drawerController = drawerController,
                 contextualItems = if (
-                    navigation != AppNavigationLayout.Rail && currentScreen == AppScreen.Home
+                    effectiveNavigation != AppNavigationLayout.Rail &&
+                    currentScreen == AppScreen.Home
                 ) {
                     generationModeItems
                 } else {
@@ -138,9 +148,9 @@ fun AppDrawerShell(
                 content = {
                     CompositionLocalProvider(
                         LocalAppWindowWidth provides appWindowWidth,
-                        LocalAppNavigationLayout provides navigation,
+                        LocalAppNavigationLayout provides effectiveNavigation,
                         LocalNavigationMenuAction provides if (
-                            navigation == AppNavigationLayout.ModalSidebar &&
+                            effectiveNavigation == AppNavigationLayout.ModalSidebar &&
                             currentScreen !is AppScreen.Details
                         ) {
                             drawerController::toggle

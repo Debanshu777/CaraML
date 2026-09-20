@@ -234,6 +234,16 @@ class SidebarNavigationUiTest {
 
         mainClock.advanceTimeBy(181)
         onNodeWithContentDescription("Models").performClick()
+
+        runOnIdle {
+            assertEquals(
+                "models",
+                selectedItemId,
+                "Selection must update in the same event that begins closing the sidebar",
+            )
+            assertFalse(controller.isOpen)
+        }
+
         runOnIdle { navigation = AppNavigationLayout.Rail }
         mainClock.advanceTimeBy(181)
         mainClock.advanceTimeByFrame()
