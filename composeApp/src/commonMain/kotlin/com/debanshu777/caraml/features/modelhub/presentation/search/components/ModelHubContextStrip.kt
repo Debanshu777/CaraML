@@ -50,41 +50,33 @@ fun ModelHubContextStrip(
     val showDevice = storageInfo.deviceHints != null
     if (!showStorage && !showDevice && profile == null) return
 
-    Surface(
+    Row(
         modifier = modifier
             .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 10.dp)
             .testTag("model-context"),
-        shape = MaterialTheme.shapes.small,
-        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.58f),
-        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 48.dp)
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (showStorage) {
-                ContextItem(
-                    icon = Icons.Outlined.Storage,
-                    label = "Storage",
-                    value = "${formatStorageBytes(storageInfo.availableDeviceBytes)} free · " +
-                        "Models: ${formatStorageBytes(storageInfo.usedByModelsBytes)}",
-                )
-            }
-            storageInfo.deviceHints?.let { hints ->
-                ContextItem(
-                    icon = Icons.Outlined.Memory,
-                    label = "Device",
-                    value = hints.summary(),
-                )
-            }
-            if (profile != null && onOpenProfile != null) {
-                RecommendationProfileContext(profile = profile, onClick = onOpenProfile)
-            }
+        if (showStorage) {
+            ContextItem(
+                icon = Icons.Outlined.Storage,
+                label = "Storage",
+                value = "${formatStorageBytes(storageInfo.availableDeviceBytes)} free · " +
+                    "Models: ${formatStorageBytes(storageInfo.usedByModelsBytes)}",
+            )
+        }
+        storageInfo.deviceHints?.let { hints ->
+            ContextItem(
+                icon = Icons.Outlined.Memory,
+                label = "Device",
+                value = hints.summary(),
+            )
+        }
+        if (profile != null && onOpenProfile != null) {
+            RecommendationProfileContext(profile = profile, onClick = onOpenProfile)
         }
     }
 }

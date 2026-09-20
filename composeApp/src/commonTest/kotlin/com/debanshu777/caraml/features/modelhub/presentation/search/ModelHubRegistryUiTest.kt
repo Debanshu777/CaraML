@@ -267,6 +267,39 @@ class ModelHubRegistryUiTest {
     }
 
     @Test
+    fun contextStripUsesTheRouteCanvasInsteadOfOuterCardChrome() = runComposeUiTest {
+        val canvas = Color.Magenta
+        setContent {
+            AtDensityOne {
+                MaterialTheme {
+                    Box(
+                        Modifier
+                            .width(360.dp)
+                            .background(canvas),
+                    ) {
+                        ModelHubOverview(
+                            storageInfo = StorageInfoUiState(
+                                totalDeviceBytes = 8_589_934_592L,
+                                availableDeviceBytes = 6_442_450_944L,
+                                usedByModelsBytes = 2_147_483_648L,
+                            ),
+                            profile = null,
+                            onOpenProfile = null,
+                        )
+                    }
+                }
+            }
+        }
+
+        val pixels = onNodeWithTag("model-context").captureToImage().toPixelMap()
+        assertEquals(
+            canvas,
+            pixels[1, pixels.height / 2],
+            "Secondary device context must sit directly on the route canvas",
+        )
+    }
+
+    @Test
     fun browseToolbarFitsOneHorizontalBandAt360dp() = runComposeUiTest {
         setContent {
             AtDensityOne {
