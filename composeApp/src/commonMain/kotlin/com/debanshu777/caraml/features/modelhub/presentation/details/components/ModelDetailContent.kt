@@ -33,6 +33,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -292,13 +293,12 @@ private fun ModelOverviewSection(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("detail-overview"),
-        shape = MaterialTheme.shapes.large,
+        shape = RectangleShape,
     ) {
         Column(
             modifier = Modifier.padding(spacing.l),
             verticalArrangement = Arrangement.spacedBy(spacing.s),
         ) {
-            CaraMLSectionHeader(title = "Overview")
             owner?.let {
                 Text(
                     text = it,

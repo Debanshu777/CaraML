@@ -32,6 +32,7 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -392,7 +393,7 @@ class ModelDetailsAuroraUiTest {
             ).fetchSemanticsNodes()
             assertEquals(1, scrollOwners.size)
 
-            val overview = onNodeWithText("Overview").fetchSemanticsNode().boundsInRoot
+            val overview = onNodeWithTag("detail-overview").fetchSemanticsNode().boundsInRoot
             val deviceFit = onNodeWithText("Device fit").fetchSemanticsNode().boundsInRoot
             assertTrue(deviceFit.left > overview.left, "Expanded details must remain two-column")
 
@@ -467,7 +468,7 @@ class ModelDetailsAuroraUiTest {
             }
         }
 
-        val compactOverview = onNodeWithText("Overview")
+        val compactOverview = onNodeWithTag("detail-overview")
             .fetchSemanticsNode().positionInRoot
         val compactInstall = onNodeWithText("Install summary")
             .fetchSemanticsNode().positionInRoot
@@ -475,7 +476,7 @@ class ModelDetailsAuroraUiTest {
 
         runOnIdle { windowWidth = 840.dp }
 
-        val expandedOverview = onNodeWithText("Overview")
+        val expandedOverview = onNodeWithTag("detail-overview")
             .fetchSemanticsNode().positionInRoot
         val expandedInstall = onNodeWithText("Install summary")
             .fetchSemanticsNode().positionInRoot
@@ -499,7 +500,7 @@ class ModelDetailsAuroraUiTest {
             }
         }
 
-        val overview = onNodeWithText("Overview").fetchSemanticsNode().positionInRoot
+        val overview = onNodeWithTag("detail-overview").fetchSemanticsNode().positionInRoot
         val install = onNodeWithText("Install summary").fetchSemanticsNode().positionInRoot
         assertTrue(install.y > overview.y)
     }

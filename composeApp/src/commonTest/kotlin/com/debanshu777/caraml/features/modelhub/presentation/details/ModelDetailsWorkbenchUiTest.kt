@@ -191,6 +191,38 @@ class ModelDetailsWorkbenchUiTest {
         }
 
     @Test
+    fun detailIdentityIsAnEdgeAlignedFieldWithoutARedundantOverviewCardHeading() =
+        runComposeUiTest {
+            val canvas = Color.Magenta
+            setContent {
+                CompositionLocalProvider(LocalDensity provides Density(1f)) {
+                    MaterialTheme {
+                        Box(
+                            Modifier
+                                .width(360.dp)
+                                .height(420.dp)
+                                .background(canvas),
+                        ) {
+                            ModelDetailContent(
+                                model = ModelDetailResponse(modelId = "org/private-model"),
+                                ggufFiles = emptyList(),
+                                isDownloading = false,
+                                onDownloadClick = { _, _, _ -> },
+                            )
+                        }
+                    }
+                }
+            }
+
+            onAllNodes(hasText("Overview")).assertCountEquals(0)
+            val pixels = onNodeWithTag("detail-overview").captureToImage().toPixelMap()
+            assertTrue(
+                pixels[0, 0] != canvas,
+                "The identity field must reach its aligned section edge instead of clipping into a card",
+            )
+        }
+
+    @Test
     fun longRepositoryNameWrapsBelowOwnerWithoutRepeatingOwner() = runComposeUiTest {
         val owner = "research-collective"
         val name = "MiniCPM5-1B-Claude-Opus-Fable5-Very-Long-Thinking-GGUF"
