@@ -82,6 +82,7 @@ import kotlinx.collections.immutable.persistentListOf
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class CreateWorkbenchUiTest {
@@ -744,6 +745,100 @@ class CreateWorkbenchUiTest {
             runOnIdle {
                 assertEquals(1, retriedLoads)
                 assertEquals(3, cancelledLoads)
+            }
+        }
+
+    @Test
+    fun loadActionButtonsSubmitTheExactRenderedActionAfterStateReplacement() =
+        runComposeUiTest {
+            val request = loadRequestForUi()
+            val alternativePlan = loadPlanForUi(contextTokens = 1_024)
+            val bindingA = PendingLoadBinding(
+                generation = 1L,
+                model = request.model,
+                mode = GenerationMode.Text,
+            )
+            val bindingB = bindingA.copy(generation = 2L)
+            val cases = listOf(
+                Triple(
+                    PendingLoadAction.ConfirmRisk(request, bindingA),
+                    PendingLoadAction.ConfirmRisk(request, bindingB),
+                    "Continue",
+                ),
+                Triple(
+                    PendingLoadAction.AcceptAlternative(request, alternativePlan, bindingA),
+                    PendingLoadAction.AcceptAlternative(request, alternativePlan, bindingB),
+                    "Use safer plan",
+                ),
+                Triple(
+                    PendingLoadAction.AcceptSafeAlternative(request, bindingA),
+                    PendingLoadAction.AcceptSafeAlternative(request, bindingB),
+                    "Use safer plan",
+                ),
+                Triple(
+                    PendingLoadAction.RetryQuarantined(request, bindingA),
+                    PendingLoadAction.RetryQuarantined(request, bindingB),
+                    "Retry explicitly",
+                ),
+            )
+            var state by mutableStateOf<ChatUiState>(ChatUiState.LoadActionRequired(cases.first().first))
+            val submitted = mutableListOf<PendingLoadAction>()
+
+            setContent {
+                MaterialTheme {
+                    CreateTestLocals {
+                        ChatScreenContent(
+                            uiState = state,
+                            streamingState = StreamingState(),
+                            onSelectModel = {},
+                            onSendMessage = {},
+                            onCancelGeneration = {},
+                            onConfirmLoad = { submitted += it },
+                            onAcceptAlternative = { submitted += it },
+                            onRetryLoad = { submitted += it },
+                            onCancelLoad = { submitted += it },
+                            onNavigateToSearch = {},
+                            modifier = Modifier.requiredSize(width = 420.dp, height = 360.dp),
+                        )
+                    }
+                }
+            }
+
+            cases.forEach { (actionA, actionB, buttonLabel) ->
+                runOnIdle { state = ChatUiState.LoadActionRequired(actionA) }
+                waitForIdle()
+                val oldPrimaryClick = requireNotNull(
+                    onNodeWithText(buttonLabel)
+                        .performScrollTo()
+                        .fetchSemanticsNode()
+                        .config[SemanticsActions.OnClick]
+                        .action,
+                )
+                val oldCancelClick = requireNotNull(
+                    onNodeWithText("Cancel")
+                        .performScrollTo()
+                        .fetchSemanticsNode()
+                        .config[SemanticsActions.OnClick]
+                        .action,
+                )
+
+                runOnIdle { state = ChatUiState.LoadActionRequired(actionB) }
+                waitForIdle()
+                runOnIdle {
+                    oldPrimaryClick()
+                    oldCancelClick()
+                }
+                onNodeWithText(buttonLabel).performScrollTo().performClick()
+                onNodeWithText("Cancel").performScrollTo().performClick()
+
+                runOnIdle {
+                    assertEquals(4, submitted.size)
+                    assertSame(actionA, submitted[0])
+                    assertSame(actionA, submitted[1])
+                    assertSame(actionB, submitted[2])
+                    assertSame(actionB, submitted[3])
+                    submitted.clear()
+                }
             }
         }
 

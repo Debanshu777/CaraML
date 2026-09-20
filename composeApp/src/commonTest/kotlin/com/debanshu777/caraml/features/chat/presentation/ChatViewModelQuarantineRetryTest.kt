@@ -72,6 +72,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -107,6 +108,62 @@ class ChatViewModelQuarantineRetryTest {
                 assertEquals(loadsBeforeSwitch + scenario.requestB, scenario.inference.loadRequests)
                 assertEquals(permissionsBeforeSwitch, scenario.inference.permissionRequests)
             }
+        }
+    }
+
+    @Test
+    fun staleRenderedConfirmationCannotConsumeCurrentModelsPendingConfirmation() = runTest {
+        var modelBLoadCalls = 0
+        val scenario = scenario(
+            initialPendingAction = InitialPendingAction.CONFIRM,
+            loadOverride = { request ->
+                if (request.model.id == 8L && modelBLoadCalls++ == 0) {
+                    ModelLoadResult.AdmissionRequired(
+                        LoadAdmission.ConfirmationRequired(
+                            request = request,
+                            reason = LoadAdmissionReason.RISK_ACKNOWLEDGEMENT_REQUIRED,
+                            explicitRetryRequired = false,
+                        ),
+                    )
+                } else {
+                    null
+                }
+            },
+        ) { _ -> }
+
+        withScenario(scenario) {
+            advanceUntilIdle()
+            val actionA = assertIs<PendingLoadAction.ConfirmRisk>(
+                assertIs<ChatUiState.LoadActionRequired>(scenario.viewModel.uiState.value).action,
+            )
+
+            scenario.viewModel.selectModel(scenario.modelB)
+            advanceUntilIdle()
+
+            val actionB = assertIs<PendingLoadAction.ConfirmRisk>(
+                assertIs<ChatUiState.LoadActionRequired>(scenario.viewModel.uiState.value).action,
+            )
+            val loadsWhileBPending = scenario.inference.loadRequests.toList()
+            val unloadsWhileBPending = scenario.inference.unloadCalls
+
+            scenario.viewModel.confirmPendingLoad(actionA)
+            advanceUntilIdle()
+
+            assertSame(
+                actionB,
+                assertIs<ChatUiState.LoadActionRequired>(scenario.viewModel.uiState.value).action,
+            )
+            assertEquals(loadsWhileBPending, scenario.inference.loadRequests)
+            assertEquals(unloadsWhileBPending, scenario.inference.unloadCalls)
+
+            scenario.viewModel.confirmPendingLoad(actionB)
+            advanceUntilIdle()
+
+            scenario.assertReadyFor(scenario.modelB, MODEL_B_CONTEXT)
+            assertEquals(
+                2,
+                scenario.inference.loadRequests.count { it.model.id == scenario.modelB.id },
+            )
         }
     }
 

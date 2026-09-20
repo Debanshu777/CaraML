@@ -41,6 +41,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
@@ -135,25 +136,11 @@ fun ChatScreen(
         onSelectModel = viewModel::selectModel,
         onSendMessage = viewModel::sendMessage,
         onCancelGeneration = viewModel::cancelGeneration,
-        onConfirmLoad = {
-            val action = (uiState as? ChatUiState.LoadActionRequired)?.action
-                as? PendingLoadAction.ConfirmRisk
-            if (action != null) viewModel.confirmPendingLoad(action)
-        },
-        onAcceptAlternative = {
-            val action = (uiState as? ChatUiState.LoadActionRequired)?.action
-            if (action != null) viewModel.acceptSaferPlan(action)
-        },
-        onRetryLoad = {
-            val action = (uiState as? ChatUiState.LoadActionRequired)?.action
-                as? PendingLoadAction.RetryQuarantined
-            if (action != null) viewModel.retryPendingLoad(action)
-        },
+        onConfirmLoad = viewModel::confirmPendingLoad,
+        onAcceptAlternative = viewModel::acceptSaferPlan,
+        onRetryLoad = viewModel::retryPendingLoad,
         onRetryCurrentModel = viewModel::retryCurrentModel,
-        onCancelLoad = {
-            val action = (uiState as? ChatUiState.LoadActionRequired)?.action
-            if (action != null) viewModel.cancelPendingLoad(action)
-        },
+        onCancelLoad = viewModel::cancelPendingLoad,
         loadMedia = viewModel::loadGeneratedMedia,
         onNavigateToSearch = onNavigateToSearch,
         onNavigateToModelDetail = onNavigateToModelDetail,
@@ -173,11 +160,11 @@ fun ChatScreenContent(
     onSelectModel: (LocalModelEntity) -> Unit,
     onSendMessage: (String) -> Unit,
     onCancelGeneration: () -> Unit,
-    onConfirmLoad: () -> Unit = {},
-    onAcceptAlternative: () -> Unit = {},
-    onRetryLoad: () -> Unit = {},
+    onConfirmLoad: (PendingLoadAction.ConfirmRisk) -> Unit = {},
+    onAcceptAlternative: (PendingLoadAction) -> Unit = {},
+    onRetryLoad: (PendingLoadAction.RetryQuarantined) -> Unit = {},
     onRetryCurrentModel: () -> Unit = {},
-    onCancelLoad: () -> Unit = {},
+    onCancelLoad: (PendingLoadAction) -> Unit = {},
     loadMedia: suspend (String) -> ByteArray? = { null },
     onNavigateToSearch: () -> Unit,
     onNavigateToModelDetail: (modelId: String, mode: ModelHubBrowseMode) -> Unit = { _, _ -> },
@@ -349,14 +336,16 @@ fun ChatScreenContent(
 
                 is ChatUiState.LoadActionRequired -> {
                     CreateStateViewport {
-                        LoadActionRequiredScreen(
-                            action = uiState.action,
-                            onConfirmLoad = onConfirmLoad,
-                            onAcceptAlternative = onAcceptAlternative,
-                            onRetryLoad = onRetryLoad,
-                            onCancelLoad = onCancelLoad,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+                        key(uiState.action) {
+                            LoadActionRequiredScreen(
+                                action = uiState.action,
+                                onConfirmLoad = onConfirmLoad,
+                                onAcceptAlternative = onAcceptAlternative,
+                                onRetryLoad = onRetryLoad,
+                                onCancelLoad = onCancelLoad,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                     }
                 }
 
@@ -454,10 +443,10 @@ private fun AnimatedCreateEmptyState(
 @Composable
 private fun LoadActionRequiredScreen(
     action: PendingLoadAction,
-    onConfirmLoad: () -> Unit,
-    onAcceptAlternative: () -> Unit,
-    onRetryLoad: () -> Unit,
-    onCancelLoad: () -> Unit,
+    onConfirmLoad: (PendingLoadAction.ConfirmRisk) -> Unit,
+    onAcceptAlternative: (PendingLoadAction) -> Unit,
+    onRetryLoad: (PendingLoadAction.RetryQuarantined) -> Unit,
+    onCancelLoad: (PendingLoadAction) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val (title, detail) = when (action) {
@@ -498,11 +487,13 @@ private fun LoadActionRequiredScreen(
                 }
                 Spacer(Modifier.height(LocalSpacing.current.l))
                 Button(
-                    onClick = when (action) {
-                        is PendingLoadAction.ConfirmRisk -> onConfirmLoad
-                        is PendingLoadAction.AcceptAlternative -> onAcceptAlternative
-                        is PendingLoadAction.AcceptSafeAlternative -> onAcceptAlternative
-                        is PendingLoadAction.RetryQuarantined -> onRetryLoad
+                    onClick = {
+                        when (action) {
+                            is PendingLoadAction.ConfirmRisk -> onConfirmLoad(action)
+                            is PendingLoadAction.AcceptAlternative -> onAcceptAlternative(action)
+                            is PendingLoadAction.AcceptSafeAlternative -> onAcceptAlternative(action)
+                            is PendingLoadAction.RetryQuarantined -> onRetryLoad(action)
+                        }
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -515,7 +506,10 @@ private fun LoadActionRequiredScreen(
                         },
                     )
                 }
-                OutlinedButton(onClick = onCancelLoad, modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(
+                    onClick = { onCancelLoad(action) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
                     Text("Cancel")
                 }
             }

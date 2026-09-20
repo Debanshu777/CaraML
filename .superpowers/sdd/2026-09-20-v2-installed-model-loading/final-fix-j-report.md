@@ -1,4 +1,4 @@
-# Final fix J report — post-teardown assessment, bound actions, and CPU provenance
+# Final fix J report — post-teardown assessment, bound rendered actions, and CPU provenance
 
 Date: 2026-09-20
 Branch: `codex/v2-installed-model-loading`
@@ -11,7 +11,7 @@ Installed-model selection no longer assesses current device headroom while a sup
 
 When a static assessment whose failed candidate is explicitly non-CPU ends specifically in `MEMORY_NO_FIT` or `NO_RUN_PLAN`, the resolver runs an independent CPU-only assessment through the same workload, policy, exact-artifact request builder, and final artifact revalidation. A valid CPU result is returned as a typed safe alternative and is never loaded automatically. The user must explicitly choose `Use safer plan`; invalid metadata, unsupported format/engine evidence, stale identity, CPU no-fit, CPU-selected primaries, and ambiguous backend provenance remain blocked.
 
-Every pending confirmation, quarantine retry, native safer-plan decision, and static CPU decision now carries its originating load generation, exact model entity, and generation mode. Selection, mode, and fresh-load entry close and remove the prior action synchronously before cancelling jobs or changing selection. The UI passes the rendered action back to the ViewModel, which validates action equality and all three bindings before consuming the single-use gate. A callback retained from model A is therefore inert after model B becomes current and cannot consume, cancel, assess, or load for B.
+Every pending confirmation, quarantine retry, native safer-plan decision, and static CPU decision now carries its originating load generation, exact model entity, and generation mode. Selection, mode, and fresh-load entry close and remove the prior action synchronously before cancelling jobs or changing selection. The UI passes the exact rendered action through typed callbacks instead of rereading the latest state when a click arrives. Each action identity also keys a fresh consent subtree so a retained Compose click handler remains bound to what the user actually saw. The ViewModel validates action equality and all three bindings before consuming the single-use gate. A callback retained from model A is therefore inert after model B becomes current and cannot consume, cancel, assess, or load for B.
 
 No legacy loading route or inferred-path fallback was added.
 
@@ -51,27 +51,21 @@ A later focused RED run added the rule that a CPU-only primary must not be asses
 
 The review follow-up started with a focused RED compile. It failed on the intentionally absent action-bound callback overloads and `NotAdmissible.candidateBackend`. The subsequent behavioral RED exposed seven expected stale equality/race expectations while provenance and action invalidation were introduced; all were resolved before expanding release-order coverage. The final policy no longer relies on accelerator presence: it uses validated failed-candidate backend provenance.
 
+The second review follow-up began with a focused UI RED compile: the new test could not receive a rendered action because all four UI callbacks were zero-argument functions. After introducing typed callbacks, the test remained RED because Compose reused the button interaction node and updated its handler to action B. Keying the consent subtree by exact action identity made the saved A handler immutable; the same test then passed for confirmation, both alternative variants, retry, and Cancel. A ViewModel integration test separately proves that submitted A is rejected without consuming B or adding runner calls, while the current B callback succeeds.
+
 Focused command:
 
 ```text
 ./gradlew :composeApp:jvmTest \
-  --tests '*InstalledModelLoadingTest*' \
-  --tests '*InstalledModelLoadRequestResolverTest*' \
-  --tests '*ChatViewModelRetryTest*' \
   --tests '*ChatViewModelQuarantineRetryTest*' \
-  --tests '*PendingLoadActionGateTest*' \
   --tests '*CreateWorkbenchUiTest*' \
   --no-daemon
 ```
 
-Final result: PASS, 77/77 tests, zero skipped/failures/errors:
+Final round-two result: PASS, 34/34 tests, zero skipped/failures/errors:
 
-- `InstalledModelLoadRequestResolverTest`: 28/28
-- `InstalledModelLoadingTest`: 14/14
-- `ChatViewModelQuarantineRetryTest`: 15/15
-- `ChatViewModelRetryTest`: 2/2
-- `PendingLoadActionGateTest`: 1/1
-- `CreateWorkbenchUiTest`: 17/17
+- `ChatViewModelQuarantineRetryTest`: 16/16
+- `CreateWorkbenchUiTest`: 18/18
 
 Coverage includes:
 
@@ -89,6 +83,7 @@ Coverage includes:
 - captured stale confirm, native/static alternative accept, retry, and cancel callbacks after selecting model B, with B's state and exact native call sequence surviving unchanged;
 - selected-CPU no-fit on an accelerated snapshot producing no redundant “safer CPU” offer, plus mixed-backend no-plan provenance failing closed;
 - real ViewModel release counters and event order for text-to-text, text-to-diffusion, diffusion-to-text, confirmation, native/static alternative acceptance, and cancellation, replacing helper-local synthetic release labels.
+- retained rendered handlers for confirmation, native/static alternative acceptance, retry, and Cancel submitting their exact A action after B is rendered; the stale A submission is rejected without consuming or cancelling B, while B's current confirmation still completes.
 
 ## Repository and platform verification
 
@@ -97,13 +92,13 @@ git diff --check
 ./gradlew verifyProject --no-daemon
 ```
 
-`verifyProject` PASS in 45 seconds. JVM: 1,135/1,135 tests across 144 suites with zero skipped/failures/errors. Native: artifact-root CTest 1/1 and diffusion CTests 5/5. Gradle reported 41 actionable tasks (14 executed, 27 up to date). `git diff --check` passed.
+`verifyProject` PASS in 45 seconds. JVM: 1,137/1,137 tests across 144 suites with zero skipped/failures/errors. Native: artifact-root CTest 1/1 and diffusion CTests 5/5. Gradle reported 41 actionable tasks (14 executed, 27 up to date). `git diff --check` passed.
 
 ```text
 ./gradlew :composeApp:compileAndroidMain --no-daemon
 ```
 
-PASS in 39 seconds; 25 actionable tasks (6 executed, 19 up to date).
+PASS in 38 seconds; 25 actionable tasks (6 executed, 19 up to date).
 
 ```text
 ./gradlew :composeApp:compileKotlinIosSimulatorArm64 --no-daemon --max-workers=1
