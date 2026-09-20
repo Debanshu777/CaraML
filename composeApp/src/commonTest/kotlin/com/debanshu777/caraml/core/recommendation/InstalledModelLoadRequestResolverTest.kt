@@ -205,6 +205,235 @@ class InstalledModelLoadRequestResolverTest {
     }
 
     @Test
+    fun gpuMemoryNoFitOffersASeparatelyAssessedExactCpuAlternative() = runTest {
+        val fixture = Fixture().apply {
+            snapshots += acceleratedSnapshot()
+            settings += AppSettings(useGpu = true)
+            planForSnapshot = { snapshot ->
+                if (snapshot.hasAccelerator()) {
+                    installedLlmPlan(backend = BackendKind.METAL, topology = MemoryTopology.UNIFIED)
+                } else {
+                    installedLlmPlan(backend = BackendKind.CPU, topology = MemoryTopology.UNIFIED)
+                }
+            }
+            recommendationForSnapshot = { snapshot ->
+                if (snapshot.hasAccelerator()) {
+                    RecommendationFixture(
+                        category = RecommendationCategory.NOT_SUITABLE,
+                        reasons = listOf(AssessmentReason.MEMORY_NO_FIT),
+                    )
+                } else {
+                    RecommendationFixture(RecommendationCategory.RECOMMENDED)
+                }
+            }
+        }
+
+        val result = fixture.resolve()
+        val alternative = assertIs<InstalledModelLoadResolution.SafeAlternative>(result)
+
+        assertEquals(AssessmentReason.MEMORY_NO_FIT, alternative.primaryReason)
+        assertEquals(BackendKind.CPU, alternative.saferRequest.plan.backend)
+        assertEquals(fixture.artifact.identity, alternative.saferRequest.identity)
+        assertSame(fixture.artifact, alternative.saferRequest.artifact)
+        assertEquals(2, fixture.assessmentCalls)
+        assertEquals(1, fixture.strictRequestCalls)
+        assertEquals(
+            listOf(
+                listOf(BackendKind.METAL, BackendKind.CPU),
+                listOf(BackendKind.CPU),
+            ),
+            fixture.assessmentSnapshots.map { snapshot -> snapshot.hardwareProfile.backends.map { it.kind } },
+        )
+    }
+
+    @Test
+    fun gpuNoPlanOffersCpuOnlyWhenCpuPolicyProducesAnExactPlan() = runTest {
+        val fixture = Fixture().apply {
+            snapshots += acceleratedSnapshot()
+            settings += AppSettings(useGpu = true)
+            planForSnapshot = { snapshot ->
+                if (snapshot.hasAccelerator()) {
+                    installedLlmPlan(backend = BackendKind.METAL, topology = MemoryTopology.UNIFIED)
+                } else {
+                    installedLlmPlan(backend = BackendKind.CPU, topology = MemoryTopology.UNIFIED)
+                }
+            }
+            recommendationForSnapshot = { snapshot ->
+                if (snapshot.hasAccelerator()) {
+                    RecommendationFixture(
+                        category = RecommendationCategory.NOT_SUITABLE,
+                        reasons = listOf(AssessmentReason.NO_RUN_PLAN),
+                        selectPlan = false,
+                    )
+                } else {
+                    RecommendationFixture(RecommendationCategory.RECOMMENDED)
+                }
+            }
+        }
+
+        val alternative = assertIs<InstalledModelLoadResolution.SafeAlternative>(fixture.resolve())
+
+        assertEquals(AssessmentReason.NO_RUN_PLAN, alternative.primaryReason)
+        assertEquals(BackendKind.CPU, alternative.saferRequest.plan.backend)
+        assertEquals(2, fixture.assessmentCalls)
+        assertEquals(1, fixture.strictRequestCalls)
+    }
+
+    @Test
+    fun invalidMetadataNeverTriggersCpuFallback() = runTest {
+        val fixture = Fixture().apply {
+            snapshots += acceleratedSnapshot()
+            settings += AppSettings(useGpu = true)
+            recommendationForSnapshot = {
+                RecommendationFixture(
+                    category = RecommendationCategory.NEEDS_INFORMATION,
+                    reasons = listOf(AssessmentReason.INVALID_METADATA),
+                    selectPlan = false,
+                )
+            }
+        }
+
+        val result = fixture.resolve()
+
+        assertEquals(
+            InstalledModelLoadResolution.NotAdmissible(AssessmentReason.INVALID_METADATA),
+            result,
+        )
+        assertEquals(1, fixture.assessmentCalls)
+        assertEquals(0, fixture.strictRequestCalls)
+    }
+
+    @Test
+    fun engineIncompatibilityNeverTriggersCpuFallback() = runTest {
+        val fixture = Fixture().apply {
+            snapshots += acceleratedSnapshot()
+            settings += AppSettings(useGpu = true)
+            recommendationForSnapshot = {
+                RecommendationFixture(
+                    category = RecommendationCategory.INCOMPATIBLE,
+                    reasons = listOf(AssessmentReason.UNSUPPORTED_ENGINE_FEATURE),
+                    selectPlan = false,
+                )
+            }
+        }
+
+        val result = fixture.resolve()
+
+        assertEquals(
+            InstalledModelLoadResolution.NotAdmissible(AssessmentReason.UNSUPPORTED_ENGINE_FEATURE),
+            result,
+        )
+        assertEquals(1, fixture.assessmentCalls)
+        assertEquals(0, fixture.strictRequestCalls)
+    }
+
+    @Test
+    fun gpuAndCpuMemoryNoFitRemainBlockedWithoutAnAlternative() = runTest {
+        val fixture = Fixture().apply {
+            snapshots += acceleratedSnapshot()
+            settings += AppSettings(useGpu = true)
+            planForSnapshot = { snapshot ->
+                if (snapshot.hasAccelerator()) {
+                    installedLlmPlan(backend = BackendKind.METAL, topology = MemoryTopology.UNIFIED)
+                } else {
+                    installedLlmPlan(backend = BackendKind.CPU, topology = MemoryTopology.UNIFIED)
+                }
+            }
+            recommendationForSnapshot = {
+                RecommendationFixture(
+                    category = RecommendationCategory.NOT_SUITABLE,
+                    reasons = listOf(AssessmentReason.MEMORY_NO_FIT),
+                )
+            }
+        }
+
+        val result = fixture.resolve()
+
+        assertEquals(
+            InstalledModelLoadResolution.NotAdmissible(AssessmentReason.MEMORY_NO_FIT),
+            result,
+        )
+        assertEquals(2, fixture.assessmentCalls)
+        assertEquals(0, fixture.strictRequestCalls)
+    }
+
+    @Test
+    fun diffusionGpuNoFitOffersAnExactCpuAlternative() = runTest {
+        val descriptor = task6DiffusionDescriptor()
+        val model = diffusionModel(descriptor)
+        val artifact = diffusionArtifact(model, descriptor)
+        val assessmentSnapshots = mutableListOf<DeviceSnapshot>()
+        var strictRequestCalls = 0
+        val resolver = InstalledModelLoadRequestResolver(
+            componentsForModel = { emptyList() },
+            requireComplete = { _, _ -> EvidenceRepairResult.Ready(descriptor) },
+            resolveArtifact = { _, _ -> ArtifactIdentityResolution.Verified(artifact) },
+            captureSnapshot = { acceleratedSnapshot() },
+            currentSettings = { AppSettings(useGpu = true) },
+            workloadFactory = InstalledModelWorkloadFactory(),
+            assess = { _, snapshot, _ ->
+                assessmentSnapshots += snapshot
+                val plan = installedDiffusionPlan(
+                    backend = if (snapshot.hasAccelerator()) BackendKind.METAL else BackendKind.CPU,
+                )
+                task6Assessment(
+                    plans = listOf(task6PlanAssessment(plan = plan)),
+                    assessmentKey = "diffusion-assessment-${assessmentSnapshots.size}",
+                    innerAssessmentKey = "diffusion-assessment-${assessmentSnapshots.size}",
+                    innerTopology = plan.memoryTopology,
+                )
+            },
+            personalize = { assessment, snapshot, profile ->
+                val selected = assessment.planAssessments.values.single()
+                PersonalizedRecommendation(
+                    assessmentKey = assessment.assessmentKey,
+                    category = if (snapshot.hasAccelerator()) {
+                        RecommendationCategory.NOT_SUITABLE
+                    } else {
+                        RecommendationCategory.RECOMMENDED
+                    },
+                    selectedPlan = selected.plan,
+                    reasons = if (snapshot.hasAccelerator()) {
+                        listOf(AssessmentReason.MEMORY_NO_FIT)
+                    } else {
+                        emptyList()
+                    },
+                    profile = profile,
+                    selectedPlanAssessment = selected,
+                )
+            },
+            createStrictRequest = { selectedModel, selectedDescriptor, selectedArtifact, assessment, recommendation ->
+                strictRequestCalls += 1
+                LoadRequestResolution.Ready(
+                    LoadRequest(
+                        model = selectedModel,
+                        identity = selectedArtifact.identity,
+                        observationIdentity = requireNotNull(
+                            ObservationModelIdentity.fromDescriptor(selectedDescriptor),
+                        ),
+                        plan = recommendation.selectedPlan as RunPlan,
+                        assessmentKey = assessment.assessmentKey,
+                        artifact = selectedArtifact,
+                        assessedPlans = assessment.planAssessments,
+                        profile = recommendation.profile,
+                    ),
+                )
+            },
+        )
+
+        val alternative = assertIs<InstalledModelLoadResolution.SafeAlternative>(
+            resolver.resolve(model, GenerationMode.Image),
+        )
+
+        assertEquals(BackendKind.CPU, alternative.saferRequest.plan.backend)
+        assertEquals(model, alternative.saferRequest.model)
+        assertEquals(artifact.identity, alternative.saferRequest.identity)
+        assertSame(artifact, alternative.saferRequest.artifact)
+        assertEquals(2, assessmentSnapshots.size)
+        assertEquals(1, strictRequestCalls)
+    }
+
+    @Test
     fun hybridSsmArchitectureIsAssessedWithCpuCapabilityBeforePlanSelection() = runTest {
         val fixture = Fixture().apply {
             descriptor = descriptor.copyForResolverTest(architecture = "qwen35")
@@ -291,6 +520,7 @@ class InstalledModelLoadRequestResolverTest {
             InstalledModelLoadResolution.NotAdmissible(AssessmentReason.UNSUPPORTED_FORMAT),
             rejected.resolver().resolve(rejected.model, GenerationMode.Text),
         )
+        assertEquals(0, rejected.assessmentCalls)
     }
 
     @Test
@@ -339,6 +569,7 @@ class InstalledModelLoadRequestResolverTest {
             InstalledModelLoadResolution.NotAdmissible(AssessmentReason.MEMORY_NO_FIT),
             result,
         )
+        assertEquals(1, fixture.assessmentCalls)
         assertEquals(0, fixture.strictRequestCalls)
     }
 
@@ -451,8 +682,12 @@ class InstalledModelLoadRequestResolverTest {
         var inconsistentAssessmentKey = false
         var recommendationCategory = RecommendationCategory.RECOMMENDED
         var recommendationReasons: List<AssessmentReason> = emptyList()
+        var recommendationForSnapshot: ((DeviceSnapshot) -> RecommendationFixture)? = null
         var cancellationStage: ResolverStage? = null
         var planForSnapshot: (DeviceSnapshot) -> RunPlan = { installedLlmPlan() }
+
+        suspend fun resolve(): InstalledModelLoadResolution =
+            resolver().resolve(model, GenerationMode.Text)
 
         fun resolver() = InstalledModelLoadRequestResolver(
             componentsForModel = {
@@ -490,16 +725,21 @@ class InstalledModelLoadRequestResolverTest {
                     innerTopology = planForSnapshot(snapshot).memoryTopology,
                 )
             },
-            personalize = { assessment, _, profile ->
+            personalize = { assessment, snapshot, profile ->
                 personalizedProfiles += profile
                 val selected = assessment.planAssessments.values.single()
+                val fixture = recommendationForSnapshot?.invoke(snapshot) ?: RecommendationFixture(
+                    category = recommendationCategory,
+                    reasons = recommendationReasons,
+                    selectPlan = !omitSelectedPlan,
+                )
                 PersonalizedRecommendation(
                     assessmentKey = assessment.assessmentKey,
-                    category = if (omitSelectedPlan) RecommendationCategory.NOT_SUITABLE else recommendationCategory,
-                    selectedPlan = selected.plan.takeUnless { omitSelectedPlan },
-                    reasons = if (omitSelectedPlan) listOf(AssessmentReason.NO_RUN_PLAN) else recommendationReasons,
+                    category = if (omitSelectedPlan) RecommendationCategory.NOT_SUITABLE else fixture.category,
+                    selectedPlan = selected.plan.takeIf { fixture.selectPlan && !omitSelectedPlan },
+                    reasons = if (omitSelectedPlan) listOf(AssessmentReason.NO_RUN_PLAN) else fixture.reasons,
                     profile = profile,
-                    selectedPlanAssessment = selected.takeUnless { omitSelectedPlan },
+                    selectedPlanAssessment = selected.takeIf { fixture.selectPlan && !omitSelectedPlan },
                 )
             },
             createStrictRequest = { selectedModel, selectedDescriptor, selectedArtifact, assessment, recommendation ->
@@ -525,6 +765,97 @@ class InstalledModelLoadRequestResolverTest {
         }
     }
 }
+
+private data class RecommendationFixture(
+    val category: RecommendationCategory,
+    val reasons: List<AssessmentReason> = emptyList(),
+    val selectPlan: Boolean = true,
+)
+
+private suspend fun InstalledModelLoadRequestResolver.resolve(
+    model: LocalModelEntity,
+    mode: GenerationMode,
+): InstalledModelLoadResolution = when (val preparation = prepare(model, mode)) {
+    is InstalledModelLoadPreparation.Ready -> resolve(preparation)
+    is InstalledModelLoadPreparation.Terminal -> preparation.resolution
+}
+
+private fun DeviceSnapshot.hasAccelerator(): Boolean =
+    hardwareProfile.backends.any { it.kind != BackendKind.CPU }
+
+private fun diffusionModel(descriptor: DiffusionModelDescriptor) = LocalModelEntity(
+    id = 8,
+    modelId = descriptor.repositoryId,
+    filename = descriptor.components.first { it.isPrimary }.file.path,
+    localPath = "/models/diffusion",
+    sizeBytes = descriptor.components.sumOf { it.file.sizeBytes },
+    downloadedAt = 1,
+    author = "owner",
+    libraryName = "diffusers",
+    pipelineTag = "text-to-image",
+    componentStatus = LocalModelEntity.STATUS_READY,
+)
+
+private fun diffusionArtifact(
+    model: LocalModelEntity,
+    descriptor: DiffusionModelDescriptor,
+): ResolvedLocalArtifact {
+    val components = descriptor.components.mapIndexed { index, component ->
+        ResolvedArtifactComponent(
+            logicalRole = if (component.isPrimary) "model" else "vae",
+            repositoryId = component.file.repositoryId,
+            repositoryRelativePath = component.file.path,
+            localPath = "${model.localPath}/${component.file.path}",
+            byteCount = component.file.sizeBytes,
+            contentSha256 = (index + 1).toString().repeat(64),
+            identity = component.file,
+        )
+    }
+    return ResolvedLocalArtifact(
+        identity = ModelFileIdentity(
+            repositoryId = model.modelId,
+            revision = "d".repeat(64),
+            path = model.filename,
+            sizeBytes = components.sumOf(ResolvedArtifactComponent::byteCount),
+            gitOid = null,
+            lfsOid = "sha256:${"d".repeat(64)}",
+            xetHash = null,
+            evidence = emptyList(),
+        ),
+        revisionIdentity = RevisionIdentity.HubCommit(
+            listOf(RepositoryCommit(model.modelId, descriptor.revision)),
+        ),
+        components = components,
+        loadTarget = VerifiedArtifactLoadTarget.Directory(
+            path = model.localPath,
+            storageOwner = model.modelId,
+            nativeConsumedRelativePaths = components.map(ResolvedArtifactComponent::repositoryRelativePath),
+        ),
+    )
+}
+
+private fun installedDiffusionPlan(backend: BackendKind) = DiffusionRunPlan(
+    mode = DiffusionMode.IMAGE,
+    width = 1_024,
+    height = 1_024,
+    frameCount = 1,
+    batchSize = 1,
+    steps = 20,
+    vaeTiling = false,
+    offloadToCpu = backend == BackendKind.CPU,
+    keepClipOnCpu = backend == BackendKind.CPU,
+    keepVaeOnCpu = backend == BackendKind.CPU,
+    maxVramBytes = null,
+    layerStreaming = false,
+    requiresUserAcceptance = false,
+    backend = backend,
+    memoryTopology = MemoryTopology.UNIFIED,
+    compromises = if (backend == BackendKind.CPU) {
+        listOf(DiffusionPlanCompromise.CPU_OFFLOAD)
+    } else {
+        emptyList()
+    },
+)
 
 private fun acceleratedSnapshot() = task6Snapshot(
     sharedBudget = 8_000,

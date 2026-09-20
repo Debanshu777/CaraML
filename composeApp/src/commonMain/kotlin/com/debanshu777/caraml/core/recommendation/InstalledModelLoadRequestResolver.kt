@@ -14,16 +14,39 @@ import kotlinx.coroutines.flow.first
 
 sealed interface InstalledModelLoadResolution {
     data class Ready(val request: LoadRequest) : InstalledModelLoadResolution
+    data class SafeAlternative(
+        val primaryReason: AssessmentReason,
+        val saferRequest: LoadRequest,
+    ) : InstalledModelLoadResolution
     data object NeedsNetwork : InstalledModelLoadResolution
     data class NotAdmissible(val reason: AssessmentReason) : InstalledModelLoadResolution
     data class Rejected(val reason: ArtifactIdentityRejection) : InstalledModelLoadResolution
     data object Failed : InstalledModelLoadResolution
 }
 
-fun interface InstalledModelLoadResolver {
-    suspend fun resolve(
+sealed interface InstalledModelLoadPreparation {
+    @ConsistentCopyVisibility
+    data class Ready internal constructor(
+        val model: LocalModelEntity,
+        val expectedMode: GenerationMode,
+        val descriptor: ModelDescriptor,
+        val artifact: ResolvedLocalArtifact,
+    ) : InstalledModelLoadPreparation
+
+    @ConsistentCopyVisibility
+    data class Terminal internal constructor(
+        val resolution: InstalledModelLoadResolution,
+    ) : InstalledModelLoadPreparation
+}
+
+interface InstalledModelLoadResolver {
+    suspend fun prepare(
         model: LocalModelEntity,
         expectedMode: GenerationMode,
+    ): InstalledModelLoadPreparation
+
+    suspend fun resolve(
+        preparation: InstalledModelLoadPreparation.Ready,
     ): InstalledModelLoadResolution
 }
 
@@ -71,49 +94,92 @@ class InstalledModelLoadRequestResolver internal constructor(
         createStrictRequest = artifactResolver::createLoadRequestFromVerifiedArtifact,
     )
 
-    override suspend fun resolve(
+    override suspend fun prepare(
         model: LocalModelEntity,
         expectedMode: GenerationMode,
+    ): InstalledModelLoadPreparation = try {
+        prepareChecked(model, expectedMode)
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        InstalledModelLoadPreparation.Terminal(InstalledModelLoadResolution.Failed)
+    }
+
+    override suspend fun resolve(
+        preparation: InstalledModelLoadPreparation.Ready,
     ): InstalledModelLoadResolution = try {
-        resolveChecked(model, expectedMode)
+        resolveChecked(preparation)
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (_: Exception) {
         InstalledModelLoadResolution.Failed
     }
 
-    private suspend fun resolveChecked(
+    private suspend fun prepareChecked(
         model: LocalModelEntity,
         expectedMode: GenerationMode,
-    ): InstalledModelLoadResolution {
+    ): InstalledModelLoadPreparation {
         val components = componentsForModel(model.modelId)
         val descriptor = when (val evidence = requireComplete(model.modelId, expectedMode)) {
             is EvidenceRepairResult.Ready -> evidence.descriptor
-            EvidenceRepairResult.NeedsNetwork -> return InstalledModelLoadResolution.NeedsNetwork
+            EvidenceRepairResult.NeedsNetwork -> return InstalledModelLoadPreparation.Terminal(
+                InstalledModelLoadResolution.NeedsNetwork,
+            )
             is EvidenceRepairResult.Rejected -> {
                 if (AssessmentReason.INVALID_METADATA in evidence.reasons) {
                     val artifactFailure = resolveArtifact(model, components)
                     if (artifactFailure is ArtifactIdentityResolution.Rejected) {
-                        return InstalledModelLoadResolution.Rejected(artifactFailure.reason)
+                        return InstalledModelLoadPreparation.Terminal(
+                            InstalledModelLoadResolution.Rejected(artifactFailure.reason),
+                        )
                     }
                 }
-                return InstalledModelLoadResolution.NotAdmissible(
-                    evidence.reasons.firstOrNull() ?: AssessmentReason.INVALID_METADATA,
+                return InstalledModelLoadPreparation.Terminal(
+                    InstalledModelLoadResolution.NotAdmissible(
+                        evidence.reasons.firstOrNull() ?: AssessmentReason.INVALID_METADATA,
+                    ),
                 )
             }
         }
         if (descriptor.repositoryId != model.modelId) {
-            return InstalledModelLoadResolution.Rejected(ArtifactIdentityRejection.INVALID_INPUT)
+            return InstalledModelLoadPreparation.Terminal(
+                InstalledModelLoadResolution.Rejected(ArtifactIdentityRejection.INVALID_INPUT),
+            )
         }
         if (!descriptor.matches(expectedMode)) {
-            return InstalledModelLoadResolution.NotAdmissible(AssessmentReason.INCOMPATIBLE_MODEL)
+            return InstalledModelLoadPreparation.Terminal(
+                InstalledModelLoadResolution.NotAdmissible(AssessmentReason.INCOMPATIBLE_MODEL),
+            )
         }
 
         val artifact = when (val resolution = resolveArtifact(model, components)) {
             is ArtifactIdentityResolution.Verified -> resolution.artifact
-            is ArtifactIdentityResolution.Rejected -> return InstalledModelLoadResolution.Rejected(resolution.reason)
+            is ArtifactIdentityResolution.Rejected -> return InstalledModelLoadPreparation.Terminal(
+                InstalledModelLoadResolution.Rejected(resolution.reason),
+            )
         }
         if (!artifact.matchesOwner(model.modelId) ||
+            !descriptor.requiredInstalledIdentities().hasSameExactInstalledIdentities(
+                artifact.components.map(ResolvedArtifactComponent::identity),
+            )
+        ) {
+            return InstalledModelLoadPreparation.Terminal(
+                InstalledModelLoadResolution.Rejected(ArtifactIdentityRejection.STALE_MANIFEST),
+            )
+        }
+
+        return InstalledModelLoadPreparation.Ready(model, expectedMode, descriptor, artifact)
+    }
+
+    private suspend fun resolveChecked(
+        preparation: InstalledModelLoadPreparation.Ready,
+    ): InstalledModelLoadResolution {
+        val model = preparation.model
+        val expectedMode = preparation.expectedMode
+        val descriptor = preparation.descriptor
+        val artifact = preparation.artifact
+        if (descriptor.repositoryId != model.modelId || !descriptor.matches(expectedMode) ||
+            !artifact.matchesOwner(model.modelId) ||
             !descriptor.requiredInstalledIdentities().hasSameExactInstalledIdentities(
                 artifact.components.map(ResolvedArtifactComponent::identity),
             )
@@ -143,11 +209,36 @@ class InstalledModelLoadRequestResolver internal constructor(
             profile = settings.recommendationProfile,
             requireCpu = cpuRequired,
         )
+        if (cpuRequired) return primary
+
+        if (capturedSnapshot.hasAccelerator() &&
+            primary is InstalledModelLoadResolution.NotAdmissible &&
+            primary.reason in STATIC_CPU_ALTERNATIVE_REASONS
+        ) {
+            return when (
+                val alternative = assessRequest(
+                    model = model,
+                    descriptor = descriptor,
+                    artifact = artifact,
+                    expectedMode = expectedMode,
+                    workload = workload,
+                    snapshot = capturedSnapshot.cpuOnly(),
+                    profile = settings.recommendationProfile,
+                    requireCpu = true,
+                )
+            ) {
+                is InstalledModelLoadResolution.Ready -> InstalledModelLoadResolution.SafeAlternative(
+                    primaryReason = primary.reason,
+                    saferRequest = alternative.request.copy(backendAlternative = null),
+                )
+                is InstalledModelLoadResolution.Rejected -> alternative
+                else -> primary
+            }
+        }
+
         if (primary !is InstalledModelLoadResolution.Ready) return primary
         val selected = primary.request.plan as? LlmRunPlan
-        if (descriptor !is LlmModelDescriptor || selected == null || selected.backend == BackendKind.CPU) {
-            return primary
-        }
+        if (descriptor !is LlmModelDescriptor || selected == null || selected.backend == BackendKind.CPU) return primary
 
         return when (
             val alternative = assessRequest(
@@ -168,6 +259,7 @@ class InstalledModelLoadRequestResolver internal constructor(
             )
             is InstalledModelLoadResolution.Rejected -> alternative
             InstalledModelLoadResolution.NeedsNetwork,
+            is InstalledModelLoadResolution.SafeAlternative,
             is InstalledModelLoadResolution.NotAdmissible,
             InstalledModelLoadResolution.Failed,
             -> primary
@@ -308,6 +400,9 @@ class InstalledModelLoadRequestResolver internal constructor(
         budgetConfidence = budgetConfidence.copy(gpu = null),
     )
 
+    private fun DeviceSnapshot.hasAccelerator(): Boolean =
+        hardwareProfile.backends.any { it.kind != BackendKind.CPU }
+
     private fun HardwareProfile.cpuOnly(): HardwareProfile = HardwareProfile(
         cpuArchitecture = cpuArchitecture,
         logicalCoreCount = logicalCoreCount,
@@ -317,4 +412,11 @@ class InstalledModelLoadRequestResolver internal constructor(
         memoryTopology = memoryTopology,
         evidence = evidence,
     )
+
+    private companion object {
+        val STATIC_CPU_ALTERNATIVE_REASONS = setOf(
+            AssessmentReason.MEMORY_NO_FIT,
+            AssessmentReason.NO_RUN_PLAN,
+        )
+    }
 }

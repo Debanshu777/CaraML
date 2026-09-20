@@ -60,6 +60,20 @@ sealed interface LoadAdmission {
         ),
     ) : LoadAdmission
 
+    data class SafeAlternativeAvailable(
+        val saferRequest: LoadRequest,
+        val reason: LoadAdmissionReason = LoadAdmissionReason.NO_SAFE_CONFIGURATION,
+    ) : LoadAdmission {
+        init {
+            require(saferRequest.plan.backend == BackendKind.CPU)
+            require(saferRequest.backendAlternative == null)
+            require(saferRequest.riskAcknowledgement == null)
+            require(saferRequest.assessmentKey.isNotBlank())
+            require(saferRequest.assessedPlans?.assessmentKey == saferRequest.assessmentKey)
+            require(saferRequest.artifact?.identity == saferRequest.identity)
+        }
+    }
+
     data class TemporarilyUnavailable(
         val request: LoadRequest,
         val reason: LoadAdmissionReason,

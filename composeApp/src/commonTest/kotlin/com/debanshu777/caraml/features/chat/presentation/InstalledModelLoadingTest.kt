@@ -9,6 +9,7 @@ import com.debanshu777.caraml.core.recommendation.AssessmentConfidence
 import com.debanshu777.caraml.core.recommendation.AssessmentReason
 import com.debanshu777.caraml.core.recommendation.Confidence
 import com.debanshu777.caraml.core.recommendation.InstalledModelLoadResolution
+import com.debanshu777.caraml.core.recommendation.InstalledModelLoadPreparation
 import com.debanshu777.caraml.core.recommendation.KvCacheType
 import com.debanshu777.caraml.core.recommendation.LlmRunPlan
 import com.debanshu777.caraml.core.recommendation.LoadAdmission
@@ -37,6 +38,77 @@ import kotlin.test.assertIs
 import kotlin.test.assertSame
 
 class InstalledModelLoadingTest {
+    @Test
+    fun immutablePreparationPrecedesSingleReleaseAndPostReleaseAssessment() = runTest {
+        val calls = mutableListOf<String>()
+        val preparation = InstalledModelLoadPreparation.Ready(
+            model = model,
+            expectedMode = GenerationMode.Text,
+            descriptor = task6LlmDescriptor(),
+            artifact = requireNotNull(request.artifact),
+        )
+
+        val result = loadInstalledModel(
+            model = model,
+            mode = GenerationMode.Text,
+            prepare = { preparedModel, preparedMode ->
+                assertSame(model, preparedModel)
+                assertEquals(GenerationMode.Text, preparedMode)
+                calls += "prepare"
+                preparation
+            },
+            releaseRunners = { calls += "release-runners" },
+            assess = { prepared ->
+                assertSame(preparation, prepared)
+                calls += "assess"
+                InstalledModelLoadResolution.Ready(request)
+            },
+            loadText = { exact ->
+                calls += "text:${exact.assessmentKey}"
+                ModelLoadResult.Success(4_096)
+            },
+            loadDiffusion = { error("diffusion loader must not be called for text") },
+        )
+
+        assertEquals(4_096, assertIs<ModelLoadResult.Success>(result).contextSize)
+        assertEquals(
+            listOf("prepare", "release-runners", "assess", "text:assessment"),
+            calls,
+        )
+    }
+
+    @Test
+    fun staticCpuAlternativeRequiresUserAdmissionWithoutCallingEitherRunner() = runTest {
+        var runnerCalls = 0
+        val preparation = InstalledModelLoadPreparation.Ready(
+            model = model,
+            expectedMode = GenerationMode.Text,
+            descriptor = task6LlmDescriptor(),
+            artifact = requireNotNull(request.artifact),
+        )
+
+        val result = loadInstalledModel(
+            model = model,
+            mode = GenerationMode.Text,
+            prepare = { _, _ -> preparation },
+            releaseRunners = {},
+            assess = {
+                InstalledModelLoadResolution.SafeAlternative(
+                    primaryReason = AssessmentReason.MEMORY_NO_FIT,
+                    saferRequest = request,
+                )
+            },
+            loadText = { runnerCalls++; ModelLoadResult.Success(1) },
+            loadDiffusion = { runnerCalls++; ModelLoadResult.Success(1) },
+        )
+
+        val admission = assertIs<ModelLoadResult.AdmissionRequired>(result).admission
+        val alternative = assertIs<LoadAdmission.SafeAlternativeAvailable>(admission)
+        assertSame(request, alternative.saferRequest)
+        assertEquals(LoadAdmissionReason.NO_SAFE_CONFIGURATION, alternative.reason)
+        assertEquals(0, runnerCalls)
+    }
+
     @Test
     fun textSelectionResolvesBeforeCallingOnlyTheExactTextLoader() = runTest {
         val calls = mutableListOf<String>()
@@ -232,28 +304,24 @@ class InstalledModelLoadingTest {
     }
 
     @Test
-    fun exactModeLoaderReleasesOnlyTheOppositeRunnerBeforeLoading() = runTest {
+    fun exactModeLoaderCallsOnlyTheSelectedRunnerAfterPreassessmentRelease() = runTest {
         val textCalls = mutableListOf<String>()
         loadExactModelForMode(
             mode = GenerationMode.Text,
             request = request,
-            unloadText = { textCalls += "unload-text" },
-            releaseDiffusion = { textCalls += "release-diffusion" },
             loadText = { textCalls += "load-text"; ModelLoadResult.Success(1) },
             loadDiffusion = { textCalls += "load-diffusion"; ModelLoadResult.Success(0) },
         )
-        assertEquals(listOf("release-diffusion", "load-text"), textCalls)
+        assertEquals(listOf("load-text"), textCalls)
 
         val diffusionCalls = mutableListOf<String>()
         loadExactModelForMode(
             mode = GenerationMode.Image,
             request = request,
-            unloadText = { diffusionCalls += "unload-text" },
-            releaseDiffusion = { diffusionCalls += "release-diffusion" },
             loadText = { diffusionCalls += "load-text"; ModelLoadResult.Success(1) },
             loadDiffusion = { diffusionCalls += "load-diffusion"; ModelLoadResult.Success(0) },
         )
-        assertEquals(listOf("unload-text", "load-diffusion"), diffusionCalls)
+        assertEquals(listOf("load-diffusion"), diffusionCalls)
     }
 
     @Test
@@ -404,4 +472,36 @@ class InstalledModelLoadingTest {
             ),
         )
     }
+}
+
+private suspend fun loadInstalledModel(
+    model: LocalModelEntity,
+    mode: GenerationMode,
+    resolve: suspend (LocalModelEntity, GenerationMode) -> InstalledModelLoadResolution,
+    loadText: suspend (LoadRequest) -> ModelLoadResult,
+    loadDiffusion: suspend (LoadRequest) -> ModelLoadResult,
+): ModelLoadResult {
+    var readyResolution: InstalledModelLoadResolution.Ready? = null
+    return loadInstalledModel(
+        model = model,
+        mode = mode,
+        prepare = { selectedModel, selectedMode ->
+            when (val resolution = resolve(selectedModel, selectedMode)) {
+                is InstalledModelLoadResolution.Ready -> {
+                    readyResolution = resolution
+                    InstalledModelLoadPreparation.Ready(
+                        model = selectedModel,
+                        expectedMode = selectedMode,
+                        descriptor = task6LlmDescriptor(),
+                        artifact = requireNotNull(resolution.request.artifact),
+                    )
+                }
+                else -> InstalledModelLoadPreparation.Terminal(resolution)
+            }
+        },
+        releaseRunners = {},
+        assess = { requireNotNull(readyResolution) },
+        loadText = loadText,
+        loadDiffusion = loadDiffusion,
+    )
 }

@@ -2,11 +2,14 @@ package com.debanshu777.caraml.features.chat.presentation
 
 import com.debanshu777.caraml.core.data.inference.ModelLoadResult
 import com.debanshu777.caraml.core.recommendation.AssessmentReason
+import com.debanshu777.caraml.core.recommendation.InstalledModelLoadPreparation
 import com.debanshu777.caraml.core.recommendation.InstalledModelLoadResolution
+import com.debanshu777.caraml.core.recommendation.LoadAdmission
 import com.debanshu777.caraml.core.recommendation.LoadAdmissionReason
 import com.debanshu777.caraml.core.recommendation.LoadRequest
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
@@ -25,48 +28,63 @@ internal suspend fun awaitPreviousModelLoad(previousJob: Job?) {
 internal suspend fun loadExactModelForMode(
     mode: GenerationMode,
     request: LoadRequest,
-    unloadText: suspend () -> Unit,
-    releaseDiffusion: suspend () -> Unit,
     loadText: suspend (LoadRequest) -> ModelLoadResult,
     loadDiffusion: suspend (LoadRequest) -> ModelLoadResult,
 ): ModelLoadResult = when (mode) {
-    GenerationMode.Text -> {
-        releaseDiffusion()
-        loadText(request)
-    }
+    GenerationMode.Text -> loadText(request)
     GenerationMode.Image,
     GenerationMode.Video,
-    -> {
-        unloadText()
-        loadDiffusion(request)
-    }
+    -> loadDiffusion(request)
 }
 
 internal suspend fun loadInstalledModel(
     model: LocalModelEntity,
     mode: GenerationMode,
-    resolve: suspend (LocalModelEntity, GenerationMode) -> InstalledModelLoadResolution,
+    prepare: suspend (LocalModelEntity, GenerationMode) -> InstalledModelLoadPreparation,
+    releaseRunners: suspend () -> Unit,
+    assess: suspend (InstalledModelLoadPreparation.Ready) -> InstalledModelLoadResolution,
     loadText: suspend (LoadRequest) -> ModelLoadResult,
     loadDiffusion: suspend (LoadRequest) -> ModelLoadResult,
-): ModelLoadResult = when (val resolution = resolve(model, mode)) {
-    is InstalledModelLoadResolution.Ready -> when (mode) {
-        GenerationMode.Text -> loadText(resolution.request)
-        GenerationMode.Image,
-        GenerationMode.Video,
-        -> loadDiffusion(resolution.request)
+): ModelLoadResult {
+    val preparation = prepare(model, mode)
+    val resolution = when (preparation) {
+        is InstalledModelLoadPreparation.Terminal -> preparation.resolution
+        is InstalledModelLoadPreparation.Ready -> {
+            try {
+                releaseRunners()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                return ModelLoadResult.Error("The previous model could not be released safely.")
+            }
+            assess(preparation)
+        }
     }
-    InstalledModelLoadResolution.NeedsNetwork -> ModelLoadResult.Error(
-        "Connect once to verify this installed model's metadata, then try again.",
-    )
-    is InstalledModelLoadResolution.NotAdmissible -> ModelLoadResult.Error(
-        resolution.reason.safeInstalledModelMessage(),
-    )
-    is InstalledModelLoadResolution.Rejected -> ModelLoadResult.Error(
-        "The installed model could not be verified.",
-    )
-    InstalledModelLoadResolution.Failed -> ModelLoadResult.Error(
-        "The installed model could not be prepared right now. Try again.",
-    )
+    return when (resolution) {
+        is InstalledModelLoadResolution.Ready -> when (mode) {
+            GenerationMode.Text -> loadText(resolution.request)
+            GenerationMode.Image,
+            GenerationMode.Video,
+            -> loadDiffusion(resolution.request)
+        }
+        is InstalledModelLoadResolution.SafeAlternative -> ModelLoadResult.AdmissionRequired(
+            LoadAdmission.SafeAlternativeAvailable(
+                saferRequest = resolution.saferRequest,
+            ),
+        )
+        InstalledModelLoadResolution.NeedsNetwork -> ModelLoadResult.Error(
+            "Connect once to verify this installed model's metadata, then try again.",
+        )
+        is InstalledModelLoadResolution.NotAdmissible -> ModelLoadResult.Error(
+            resolution.reason.safeInstalledModelMessage(),
+        )
+        is InstalledModelLoadResolution.Rejected -> ModelLoadResult.Error(
+            "The installed model could not be verified.",
+        )
+        InstalledModelLoadResolution.Failed -> ModelLoadResult.Error(
+            "The installed model could not be prepared right now. Try again.",
+        )
+    }
 }
 
 internal fun AssessmentReason.safeInstalledModelMessage(): String = when (this) {

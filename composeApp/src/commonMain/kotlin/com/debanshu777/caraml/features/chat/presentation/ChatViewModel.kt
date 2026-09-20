@@ -105,6 +105,9 @@ sealed interface PendingLoadAction {
             backendAlternative = null,
         ),
     ) : PendingLoadAction
+    data class AcceptSafeAlternative(
+        val saferRequest: LoadRequest,
+    ) : PendingLoadAction
     data class RetryQuarantined(val request: LoadRequest) : PendingLoadAction
 }
 
@@ -375,12 +378,18 @@ class ChatViewModel(
             loadInstalledModel(
                 model = model,
                 mode = attempt.mode,
-                resolve = installedModelLoadRequestResolver::resolve,
+                prepare = installedModelLoadRequestResolver::prepare,
+                releaseRunners = { releaseRunnersForAssessment(attempt) },
+                assess = { preparation ->
+                    withCurrentModelLoad(attempt) {
+                        installedModelLoadRequestResolver.resolve(preparation)
+                    }
+                },
                 loadText = { request ->
-                    loadExactModelForAttempt(attempt, GenerationMode.Text, request)
+                    loadTextRunner(attempt, request)
                 },
                 loadDiffusion = { request ->
-                    loadExactModelForAttempt(attempt, attempt.mode, request)
+                    loadDiffusionRunner(attempt, request)
                 },
             )
         }
@@ -530,26 +539,39 @@ class ChatViewModel(
             ) {
                 throw CancellationException("Stale runner teardown attempt")
             }
-            if (!runnersRequireTeardown) return
-            withContext(kotlinx.coroutines.NonCancellable) {
-                try {
-                    inferenceRepository.unloadModel()
-                } finally {
-                    releaseDiffusionModel()
-                }
-                runnersRequireTeardown = false
+            releaseAllRunnersLocked()
+        } finally {
+            modelLoadOwnership.unlock()
+        }
+    }
+
+    private suspend fun releaseRunnersForAssessment(attempt: ModelLoadAttempt) {
+        modelLoadOwnership.lock()
+        try {
+            currentCoroutineContext().ensureActive()
+            if (modelLoadOwnerGeneration != attempt.generation || !isCurrentModelLoadRequest(attempt)) {
+                throw CancellationException("Stale model load attempt")
+            }
+            releaseAllRunnersLocked()
+            currentCoroutineContext().ensureActive()
+            if (modelLoadOwnerGeneration != attempt.generation || !isCurrentModelLoadRequest(attempt)) {
+                throw CancellationException("Stale model load attempt")
             }
         } finally {
             modelLoadOwnership.unlock()
         }
     }
 
-    private suspend fun unloadTextRunner(attempt: ModelLoadAttempt) {
-        withCurrentModelLoad(attempt) { inferenceRepository.unloadModel() }
-    }
-
-    private suspend fun releaseDiffusionRunner(attempt: ModelLoadAttempt) {
-        withCurrentModelLoad(attempt) { releaseDiffusionModel() }
+    private suspend fun releaseAllRunnersLocked() {
+        if (!runnersRequireTeardown) return
+        withContext(kotlinx.coroutines.NonCancellable) {
+            try {
+                inferenceRepository.unloadModel()
+            } finally {
+                releaseDiffusionModel()
+            }
+            runnersRequireTeardown = false
+        }
     }
 
     private suspend fun loadTextRunner(
@@ -577,14 +599,15 @@ class ChatViewModel(
         attempt: ModelLoadAttempt,
         mode: GenerationMode,
         request: LoadRequest,
-    ): ModelLoadResult = loadExactModelForMode(
-        mode = mode,
-        request = request,
-        unloadText = { unloadTextRunner(attempt) },
-        releaseDiffusion = { releaseDiffusionRunner(attempt) },
-        loadText = { exact -> loadTextRunner(attempt, exact) },
-        loadDiffusion = { exact -> loadDiffusionRunner(attempt, exact) },
-    )
+    ): ModelLoadResult {
+        releaseRunnersForAssessment(attempt)
+        return loadExactModelForMode(
+            mode = mode,
+            request = request,
+            loadText = { exact -> loadTextRunner(attempt, exact) },
+            loadDiffusion = { exact -> loadDiffusionRunner(attempt, exact) },
+        )
+    }
 
     private fun handleAdmission(admission: LoadAdmission) {
         pendingLoadActionGate.close()
@@ -606,6 +629,12 @@ class ChatViewModel(
                         admission.saferPlan,
                         admission.saferRequest,
                     ),
+                )
+            }
+            is LoadAdmission.SafeAlternativeAvailable -> {
+                pendingLoadActionGate.open()
+                _internal.value = InternalChatState.LoadActionRequired(
+                    PendingLoadAction.AcceptSafeAlternative(admission.saferRequest),
                 )
             }
             is LoadAdmission.TemporarilyUnavailable -> {
@@ -641,10 +670,14 @@ class ChatViewModel(
     }
 
     fun acceptSaferPlan() {
-        val action = (_internal.value as? InternalChatState.LoadActionRequired)?.action
-            as? PendingLoadAction.AcceptAlternative ?: return
+        val action = (_internal.value as? InternalChatState.LoadActionRequired)?.action ?: return
+        val request = when (action) {
+            is PendingLoadAction.AcceptAlternative -> action.saferRequest
+            is PendingLoadAction.AcceptSafeAlternative -> action.saferRequest
+            else -> return
+        }
         if (!pendingLoadActionGate.tryConsume()) return
-        resumeExactLoad(action.saferRequest.copy(riskAcknowledgement = null, backendAlternative = null))
+        resumeExactLoad(request.copy(riskAcknowledgement = null, backendAlternative = null))
     }
 
     fun retryPendingLoad() {

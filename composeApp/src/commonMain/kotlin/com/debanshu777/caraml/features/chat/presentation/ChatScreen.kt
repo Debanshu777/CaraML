@@ -451,12 +451,15 @@ private fun LoadActionRequiredScreen(
             "This configuration may put the device under heavy memory pressure."
         is PendingLoadAction.AcceptAlternative -> "Safer configuration available" to
             "A lower-resource configuration is available for this device."
+        is PendingLoadAction.AcceptSafeAlternative -> "Safer configuration available" to
+            "A lower-resource configuration is available for this device."
         is PendingLoadAction.RetryQuarantined -> "Previous load may have crashed" to
             "This exact configuration is paused. Retry it only if you accept the risk."
     }
     val compromises = when (action) {
         is PendingLoadAction.ConfirmRisk -> action.request.plan.compromises
         is PendingLoadAction.AcceptAlternative -> action.saferPlan.compromises
+        is PendingLoadAction.AcceptSafeAlternative -> action.saferRequest.plan.compromises
         is PendingLoadAction.RetryQuarantined -> action.request.plan.compromises
     }
     Column(
@@ -484,6 +487,7 @@ private fun LoadActionRequiredScreen(
                     onClick = when (action) {
                         is PendingLoadAction.ConfirmRisk -> onConfirmLoad
                         is PendingLoadAction.AcceptAlternative -> onAcceptAlternative
+                        is PendingLoadAction.AcceptSafeAlternative -> onAcceptAlternative
                         is PendingLoadAction.RetryQuarantined -> onRetryLoad
                     },
                     modifier = Modifier.fillMaxWidth(),
@@ -492,6 +496,7 @@ private fun LoadActionRequiredScreen(
                         when (action) {
                             is PendingLoadAction.ConfirmRisk -> "Continue"
                             is PendingLoadAction.AcceptAlternative -> "Use safer plan"
+                            is PendingLoadAction.AcceptSafeAlternative -> "Use safer plan"
                             is PendingLoadAction.RetryQuarantined -> "Retry explicitly"
                         },
                     )
