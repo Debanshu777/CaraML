@@ -16,7 +16,7 @@ Package: `com.debanshu777.caraml`
 
 The existing `openbmb/MiniCPM5-2B-GGUF / MiniCPM5-2B-Q4_K_M.gguf` installation was preserved, repaired online through exact evidence, loaded through the exact V2 Llama path, and generated a response. With Wi-Fi and mobile data disabled, a force-stop/relaunch loaded the same installed artifact and generated again without a metadata fetch. Connectivity and the user's original GPU and F16/F16 KV settings were restored afterward.
 
-Device acceptance and review exposed several product defects. The scoped fixes are included in `58e28e9` and `eea1472`; no legacy loading fallback was added.
+Device acceptance and review exposed several product defects. The scoped fixes are included in `58e28e9`, `eea1472`, and `5f711f2`; no legacy loading fallback was added.
 
 ## Implemented
 
