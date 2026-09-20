@@ -3,7 +3,7 @@
 Date: 2026-09-21
 Branch: `codex/v2-installed-model-loading`
 Base: `088d7a7`
-Prior H1 commits: `2c2b6bc`, `51ac405`, `abb2c10`
+Prior H1 commits: `2c2b6bc`, `51ac405`, `abb2c10`, `a5ca911`
 
 ## Outcome
 
@@ -49,6 +49,17 @@ Two owners can retain different immutable revisions of the same repository-relat
 - Display-only author/library/pipeline/context enrichment does not hide an active exact batch.
 - Missing, duplicate, or storage-mutated task identities are rejected deterministically.
 
+## Round-four closure
+
+### iOS completed-download import quarantine
+
+- `IosCompletedDownloadImporter` now treats `ArtifactManifestRecoveryResult.QUARANTINED` as a terminal generic verification failure before enabling any staged mutation.
+- Its failure cleanup is armed only after recovery succeeds, so a quarantined recovery cannot discard or replace an existing checkpoint, open/copy the URLSession payload, sync bytes, or enter commit.
+- The importer-level iOS regression uses a real `ArtifactManifestStore` over a deterministic filesystem and verifies that the journal, staged checkpoint, and native temporary payload remain byte-for-byte unchanged while no target or manifest is published.
+- This closes CWE-754 (improper handling of an exceptional condition): untrusted journal state is no longer ignored before a destructive recovery path.
+
+The direct mutation audit found no second unguarded entry point: download writes and explicit checkpoint discard reject `QUARANTINED`; transaction commit and prune re-check internally; failure recovery with a pending journal calls recovery without discard; cleanup requires `readValidated()` before prune, whose own mutation boundary re-checks; remaining artifact-manifest recovery callers are read-only.
+
 ## Database compatibility boundary
 
 The user confirmed a fresh-install/current-schema boundary. Production migration compatibility is intentionally removed.
@@ -81,6 +92,7 @@ The review regressions were introduced before their production changes. The RED 
 - the UI selecting raw batches and allowing stale controls after an external component revision changed;
 - exact batches disappearing after display-only enrichment while ambiguous duplicate task identities remained matchable;
 - unscoped legacy fixtures remaining constructible after the current-only compatibility decision.
+- iOS completed-download import accepting quarantined recovery, deleting the existing staged checkpoint, copying and syncing a replacement, then failing only when commit re-ran recovery.
 
 The GREEN coverage includes:
 
@@ -89,6 +101,7 @@ The GREEN coverage includes:
 - exact language and diffusion progress/control projection, stale external-component rejection, callback replay rejection, and exact refresh;
 - display enrichment, storage identity mutation, duplicate/missing task IDs, and deterministic ordering;
 - primary files, external diffusion components, native directory generation roots, shared exact bytes with different owner roles, revision coexistence, reference-aware deletion, concurrent install, path traversal, case/length/bundle/suffix corruption, and restart/reopen.
+- importer-level iOS quarantine rejection with staged bytes, journal bytes, native temporary payload, target absence, and manifest absence all asserted at the public import boundary.
 
 Focused and broad results before the repository gate:
 
@@ -133,6 +146,27 @@ git diff --check
 ```
 
 The compile output contains only the repository's existing Kotlin expect/actual beta warnings and one redundant-conversion warning in the iOS secure-root implementation; there are no compile errors.
+
+Round-four fresh gates:
+
+```text
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+  ./gradlew :huggingFaceManager:iosSimulatorArm64Test \
+  --tests 'com.debanshu777.huggingfacemanager.download.IosCompletedDownloadImporterTest.quarantinedManifestFailsBeforeMutatingTheExistingCheckpoint' \
+  --no-daemon
+  1 / 1 passed; BUILD SUCCESSFUL in 1m 16s
+
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+  ./gradlew :huggingFaceManager:jvmTest \
+  :huggingFaceManager:compileKotlinIosArm64 --no-daemon
+  108 / 108 JVM tests passed; iOS arm64 production compile passed; BUILD SUCCESSFUL in 31s
+
+./gradlew verifyProject --no-daemon
+  BUILD SUCCESSFUL in 55s
+  1,191 JVM tests and 6 native tests remain green
+```
+
+The focused iOS test was executed on a temporary iOS 26.5 simulator, which was removed afterward. A separate pre-existing `DarwinSecureArtifactRootTest.rootReplacementAfterPinningCannotReceiveAWrite` invocation failed at secure-root construction on that simulator; the importer regression therefore uses the real manifest store over a deterministic filesystem to isolate importer ordering, and no full iOS-suite pass is claimed.
 
 ## Remaining manual boundary
 

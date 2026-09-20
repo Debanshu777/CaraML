@@ -2,13 +2,20 @@ package com.debanshu777.huggingfacemanager.download
 
 import io.ktor.http.URLBuilder
 import okio.Buffer
+import okio.Path
 import okio.Path.Companion.toPath
 import okio.buffer
 
 /** Moves a native URLSession result through CaraML's existing verified publication boundary. */
-class IosCompletedDownloadImporter(
+class IosCompletedDownloadImporter internal constructor(
     private val pathProvider: StoragePathProvider,
+    private val manifestStoreFactory: (Path) -> ArtifactManifestStore,
 ) {
+    constructor(pathProvider: StoragePathProvider) : this(
+        pathProvider = pathProvider,
+        manifestStoreFactory = { modelRoot -> ArtifactManifestStore(modelRoot) },
+    )
+
     suspend fun isPublished(metadata: DownloadMetadataDTO): Boolean =
         isArtifactPublished(pathProvider, metadata)
 
@@ -28,9 +35,13 @@ class IosCompletedDownloadImporter(
         val modelRoot = pathProvider.getModelsStorageDirectory(modelId).toPath(normalize = true)
         val localPath = (modelRoot / metadata.destinationRelativePath).normalized().toString()
         return ArtifactRootLockCoordinator.withRoots(listOf(modelRoot.toString())) {
-            val store = ArtifactManifestStore(modelRoot)
+            val store = manifestStoreFactory(modelRoot)
+            var stagedMutationStarted = false
             try {
-                store.recover()
+                if (store.recover() == ArtifactManifestRecoveryResult.QUARANTINED) {
+                    throw ArtifactVerificationException()
+                }
+                stagedMutationStarted = true
                 store.discardStaged(metadata.destinationRelativePath)
                 val source = secureRegularFileSource(temporaryFilePath, identity.expectedBytes).buffer()
                 val sink = store.prepareStaged(metadata.destinationRelativePath).buffer()
@@ -77,7 +88,9 @@ class IosCompletedDownloadImporter(
                     contentSha256 = contentSha256,
                 )
             } catch (error: Exception) {
-                runCatching { store.discardStaged(metadata.destinationRelativePath) }
+                if (stagedMutationStarted) {
+                    runCatching { store.discardStaged(metadata.destinationRelativePath) }
+                }
                 throw error
             } finally {
                 store.close()

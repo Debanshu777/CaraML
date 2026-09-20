@@ -168,7 +168,7 @@ Network categories are `NoInternet`, `Unauthorized`, `RequestTimeout`, `RateLimi
 - Storage providers now reject symlinked model roots and require canonical model paths to remain beneath the canonical trusted models parent
 - Downloads require pinned artifact identities and roots, strict UTF-8 descriptor-relative regular-file operations, and idempotent rollback journals; the native backend is exercised from packaged Desktop images and Android APKs
 - Downloads now validate repository/file paths, prevent storage-root escape, stage into `.part` files, verify HTTP status and byte counts, sync/close before commit, and preserve existing files on failure across JVM, Android, and iOS
-- Native iOS background-session results are imported from a no-follow regular-file descriptor, re-hashed, and committed through the same exact-artifact manifest transaction before becoming visible
+- Native iOS background-session results stop before checkpoint mutation when manifest recovery is quarantined; otherwise they are imported from a no-follow regular-file descriptor, re-hashed, and committed through the same exact-artifact manifest transaction before becoming visible
 - Progress emissions are coalesced to percentage changes (or 1 MiB for unknown lengths), avoiding channel/UI pressure during multi-gigabyte downloads
 - Recommendation detail supports validated immutable-revision lookups; exact installed repair alone follows at most one exact same-Hub config redirect, while ordinary browse preserves no-redirect behavior
 - Validated bundle reads and bundle publication now preserve coroutine cancellation while waiting on real artifact-root locks instead of translating it into absence or a failure value
