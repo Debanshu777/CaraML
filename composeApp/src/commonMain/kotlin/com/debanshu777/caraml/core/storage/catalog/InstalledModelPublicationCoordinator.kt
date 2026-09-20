@@ -22,9 +22,42 @@ class InstalledModelPublicationCoordinator(
     suspend fun <T> withOwnerPublication(
         ownerModelId: String,
         block: suspend () -> T,
+    ): T = withArtifactPublication(ownerModelId, emptyList(), block)
+
+    /**
+     * Serializes a catalog mutation with every exact storage identity it may publish or remove.
+     * Disjoint owners remain concurrent; owners sharing immutable bytes take the same stripe set.
+     */
+    internal suspend fun <T> withArtifactPublication(
+        ownerModelId: String,
+        artifactStorageKeys: Collection<String>,
+        block: suspend () -> T,
     ): T {
+        require(artifactStorageKeys.size <= MAX_ARTIFACT_STORAGE_KEYS) { "Too many artifact storage keys" }
         val ownerKey = normalizedOwnerKey(ownerModelId)
-        return publicationStripes[stripeIndex(ownerKey)].withLock { block() }
+        val indexes = buildSet {
+            add(stripeIndex(ownerKey))
+            artifactStorageKeys.forEach { key ->
+                require(
+                    key.isNotBlank() && key.length <= MAX_ARTIFACT_STORAGE_KEY_LENGTH &&
+                        key.none(Char::isISOControl),
+                ) { "Invalid artifact storage key" }
+                add(stripeIndex("artifact:${key.lowercase()}"))
+            }
+        }.sorted()
+        return withPublicationStripes(indexes, 0, block)
+    }
+
+    private suspend fun <T> withPublicationStripes(
+        indexes: List<Int>,
+        offset: Int,
+        block: suspend () -> T,
+    ): T = if (offset == indexes.size) {
+        block()
+    } else {
+        publicationStripes[indexes[offset]].withLock {
+            withPublicationStripes(indexes, offset + 1, block)
+        }
     }
 
     internal suspend fun <T : Any> coalesceRepair(
@@ -272,6 +305,8 @@ class InstalledModelPublicationCoordinator(
         const val DEFAULT_STRIPE_COUNT = 64
         const val MAX_STRIPE_COUNT = 256
         const val MAX_OPERATION_KEY_LENGTH = 64
+        const val MAX_ARTIFACT_STORAGE_KEYS = 64
+        const val MAX_ARTIFACT_STORAGE_KEY_LENGTH = 1_256
         const val MAX_OUTCOMES_PER_GENERATION = 2
     }
 }
@@ -303,3 +338,13 @@ private fun isSafeOwnerSegment(segment: String): Boolean =
     segment.isNotEmpty() && segment.length <= 96 && segment != "." && segment != ".." &&
         ".." !in segment && "--" !in segment && segment.first() !in ".-" && segment.last() !in ".-" &&
         segment.all { it.isLetterOrDigit() || it == '_' || it == '-' || it == '.' }
+
+internal fun artifactStorageCoordinationKey(repositoryId: String, localRelativePath: String): String {
+    val owner = validatedOwnerKey(repositoryId)
+    require(
+        localRelativePath.isNotBlank() && localRelativePath.length <= 1_024 &&
+            localRelativePath.none(Char::isISOControl) && '\\' !in localRelativePath,
+    ) { "Invalid artifact storage path" }
+    // ':' is rejected by validated repository IDs and artifact path segments, so this encoding is unambiguous.
+    return "$owner:$localRelativePath"
+}

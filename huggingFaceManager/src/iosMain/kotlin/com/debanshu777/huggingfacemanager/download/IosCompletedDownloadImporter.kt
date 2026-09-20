@@ -63,6 +63,7 @@ class IosCompletedDownloadImporter(
                     contentSha256 = contentSha256,
                     bundleId = metadata.bundleId,
                     localRelativePath = metadata.destinationRelativePath,
+                    layoutRelativePath = metadata.layoutRelativePath,
                 ) ?: throw ArtifactVerificationException()
                 store.commit(metadata.destinationRelativePath, entry)
                 check(!store.hasPendingTransaction()) { "Artifact transaction did not complete" }

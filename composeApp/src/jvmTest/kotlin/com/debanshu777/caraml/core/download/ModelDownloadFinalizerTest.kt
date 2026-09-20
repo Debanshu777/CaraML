@@ -8,9 +8,15 @@ import com.debanshu777.caraml.core.recommendation.QuantizationEvidence
 import com.debanshu777.caraml.core.recommendation.storage.EncodedModelEvidence
 import com.debanshu777.caraml.core.recommendation.storage.PersistedModelEvidenceCodec
 import com.debanshu777.caraml.core.storage.catalog.InstalledModelPublicationCoordinator
+import com.debanshu777.caraml.core.storage.getDatabaseBuilder
+import com.debanshu777.caraml.core.storage.getRoomDatabase
 import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 import com.debanshu777.huggingfacemanager.download.ArtifactVerificationException
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
+import com.debanshu777.huggingfacemanager.download.StoragePathProvider
+import com.debanshu777.huggingfacemanager.download.immutableArtifactGenerationRoot
+import com.debanshu777.huggingfacemanager.model.DIFFUSERS_BUNDLE_DB_FILENAME
+import java.nio.file.Files
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
@@ -24,6 +30,58 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class ModelDownloadFinalizerTest {
+    @Test
+    fun catalogPublisherPersistsExactScopedFileAndExternalComponentIdentity() = runTest {
+        val databasePath = Files.createTempDirectory("caraml-finalizer-file").resolve("caraml.db").toString()
+        val database = getRoomDatabase(getDatabaseBuilder(databasePath))
+        val paths = FinalizerStoragePathProvider()
+        val batch = finalizerBatch()
+        try {
+            RepositoryModelCatalogPublisher(database.installedModelCatalogDao(), paths, nowEpochMs = { 7L })
+                .publish(batch, batch.evidence)
+
+            val snapshot = requireNotNull(database.installedModelCatalogDao().snapshotReady(batch.ownerModelId))
+            val primary = batch.artifacts.single { it.request.primary }.request.metadata
+            val external = batch.artifacts.single { !it.request.primary }.request.metadata
+            assertEquals(
+                "${paths.getModelsStorageDirectory(batch.ownerModelId)}/${primary.destinationRelativePath}",
+                snapshot.model.localPath,
+            )
+            assertEquals(primary.layoutRelativePath.substringAfterLast('/'), snapshot.model.filename)
+            assertEquals(external.artifact.immutableRevision, snapshot.components.single().immutableRevision)
+            assertEquals(external.artifact.remoteObjectId, snapshot.components.single().remoteObjectId)
+            assertEquals(external.bundleId, snapshot.components.single().bundleId)
+            assertEquals(
+                "${paths.getModelsStorageDirectory(external.artifact.repositoryId)}/${external.destinationRelativePath}",
+                snapshot.components.single().localPath,
+            )
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun directoryCatalogPathIsTheExactImmutableGenerationRoot() = runTest {
+        val databasePath = Files.createTempDirectory("caraml-finalizer-directory").resolve("caraml.db").toString()
+        val database = getRoomDatabase(getDatabaseBuilder(databasePath))
+        val paths = FinalizerStoragePathProvider()
+        val batch = directoryFinalizerBatch()
+        try {
+            RepositoryModelCatalogPublisher(database.installedModelCatalogDao(), paths, nowEpochMs = { 8L })
+                .publish(batch, batch.evidence)
+
+            val model = requireNotNull(database.installedModelCatalogDao().snapshotReady(batch.ownerModelId)).model
+            val bundleId = batch.artifacts.first().request.metadata.bundleId
+            assertEquals(DIFFUSERS_BUNDLE_DB_FILENAME, model.filename)
+            assertEquals(
+                "${paths.getModelsStorageDirectory(batch.ownerModelId)}/${immutableArtifactGenerationRoot(bundleId)}",
+                model.localPath,
+            )
+        } finally {
+            database.close()
+        }
+    }
+
     @Test
     fun aggregateManifestIsValidatedBeforeCatalogPublication() = runTest {
         val calls = mutableListOf<String>()
@@ -319,6 +377,64 @@ private fun finalizerBatch(
         },
         evidence ?: pendingEvidence(requests.map { it.metadata.artifact }),
     )
+}
+
+private fun directoryFinalizerBatch(): DownloadBatchSnapshot {
+    val owner = "owner/diffusion"
+    val bundleId = "e".repeat(64)
+    val paths = listOf(
+        "unet/diffusion_pytorch_model.safetensors" to "model",
+        "vae/diffusion_pytorch_model.safetensors" to "diffusers-vae",
+        "text_encoder/model.safetensors" to "diffusers-clip-l",
+        "text_encoder_2/model.safetensors" to "diffusers-clip-g",
+    )
+    val requests = paths.map { (path, role) ->
+        DownloadArtifactRequest(
+            metadata = DownloadMetadataDTO(
+                artifact = finalizerIdentity(owner, path),
+                logicalRole = role,
+                sizeBytes = 10L,
+                author = null,
+                libraryName = "diffusers",
+                pipelineTag = "text-to-image",
+                bundleId = bundleId,
+            ),
+            primary = true,
+        )
+    }
+    return DownloadBatchSnapshot(
+        batchId = "batch-directory",
+        ownerModelId = owner,
+        modelType = "image",
+        displayName = "Diffusion",
+        state = DownloadBatchState.VERIFYING,
+        userIntent = DownloadUserIntent.RUN,
+        artifacts = requests.mapIndexed { index, request ->
+            DownloadArtifactSnapshot(
+                artifactId = "directory-artifact-$index",
+                batchId = "batch-directory",
+                request = request,
+                state = DownloadArtifactState.VERIFYING,
+                userIntent = DownloadUserIntent.RUN,
+                bytesReceived = 10L,
+                expectedBytes = 10L,
+            )
+        },
+        evidence = pendingEvidence(requests.map { it.metadata.artifact }),
+    )
+}
+
+private class FinalizerStoragePathProvider : StoragePathProvider {
+    override fun getModelsStorageDirectory(modelId: String): String = "/models/$modelId"
+    override fun getDatabasePath(): String = "/databases/caraml.db"
+    override fun fileExists(path: String): Boolean = false
+    override fun getAvailableStorageBytes(): Long = Long.MAX_VALUE
+    override fun getTotalStorageBytes(): Long = Long.MAX_VALUE
+    override fun isModelFileReadable(path: String): Boolean = false
+    override fun isDirectoryReadable(path: String): Boolean = false
+    override fun getFileSize(path: String): Long = 0L
+    override fun renameFile(from: String, to: String): Boolean = false
+    override fun deleteDownloadedModelContent(modelId: String, localPath: String): Boolean = false
 }
 
 private fun DownloadBatchSnapshot.primaryVariant(): String =

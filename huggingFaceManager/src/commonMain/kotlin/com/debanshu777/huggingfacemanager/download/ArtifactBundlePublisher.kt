@@ -100,6 +100,7 @@ private suspend fun withBundleStore(
                     contentSha256 = installed.contentSha256,
                     bundleId = metadata.bundleId,
                     localRelativePath = installed.localRelativePath,
+                    layoutRelativePath = installed.layoutRelativePath,
                 ) ?: return@withRoots false
             } finally {
                 artifactStore.close()

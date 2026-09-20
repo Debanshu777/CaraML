@@ -3,6 +3,7 @@ package com.debanshu777.caraml.core.download
 import com.debanshu777.caraml.core.recommendation.storage.EncodedModelEvidence
 import com.debanshu777.caraml.core.recommendation.storage.PersistedModelEvidenceCodec
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
+import com.debanshu777.huggingfacemanager.download.artifactBundleId
 import okio.Buffer
 
 private const val MAX_BATCH_ARTIFACTS = 64
@@ -68,8 +69,17 @@ data class DownloadBatchRequest(
         require(artifacts.filter(DownloadArtifactRequest::primary).all { it.metadata.artifact.repositoryId == ownerModelId }) {
             "Primary artifact does not belong to owner"
         }
-        require(artifacts.map { it.metadata.bundleId }.distinct().size == 1) { "Mismatched artifact bundle" }
+        require(artifacts.all { it.metadata.usesImmutableStorageLayout }) { "Invalid artifact destination" }
+        val expectedBundleId = requireNotNull(artifactBundleId(artifacts.map { it.metadata.artifact })) {
+            "Invalid artifact bundle"
+        }
+        require(artifacts.all { it.metadata.bundleId == expectedBundleId }) { "Mismatched artifact bundle" }
         require(artifacts.map(::downloadArtifactTaskId).distinct().size == artifacts.size) { "Duplicate artifact" }
+        require(
+            artifacts.distinctBy {
+                it.metadata.artifact.repositoryId to it.metadata.destinationRelativePath
+            }.size == artifacts.size,
+        ) { "Conflicting artifact destination" }
         PersistedModelEvidenceCodec().decode(evidence)
         artifacts.forEach { request ->
             require(request.metadata.sizeBytes == request.metadata.artifact.expectedBytes) { "Missing exact artifact size" }

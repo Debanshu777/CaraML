@@ -8,6 +8,8 @@ import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import com.debanshu777.huggingfacemanager.download.StoredArtifactKind
 import com.debanshu777.huggingfacemanager.download.StoredArtifactSnapshot
+import com.debanshu777.huggingfacemanager.download.immutableArtifactGenerationRoot
+import com.debanshu777.huggingfacemanager.download.immutableArtifactStorageLocation
 import com.debanshu777.huggingfacemanager.model.DIFFUSERS_BUNDLE_DB_FILENAME
 import com.debanshu777.huggingfacemanager.sdcpp.ComponentRole
 import kotlinx.coroutines.CancellationException
@@ -212,6 +214,45 @@ class LocalArtifactIdentityResolverTest {
     }
 
     @Test
+    fun scopedSingleFileUsesManifestRemotePathInsteadOfFabricatingItFromCatalogFilename() = runTest {
+        withRoot { storage, root ->
+            val bytes = "nested-model".encodeToByteArray()
+            val identity = downloadIdentity(
+                repo = "owner/model",
+                revision = "a".repeat(40),
+                relative = "weights/model.gguf",
+                size = bytes.size.toLong(),
+            )
+            val bundleId = requireNotNull(
+                com.debanshu777.huggingfacemanager.download.artifactBundleId(listOf(identity)),
+            )
+            val location = immutableArtifactStorageLocation(identity, bundleId)
+            val localPath = write(root / "owner/model" / location.localRelativePath, bytes)
+            val entry = requireNotNull(
+                ArtifactManifestEntry.create(
+                    logicalRole = "model",
+                    identity = identity,
+                    byteCount = bytes.size.toLong(),
+                    contentSha256 = bytes.sha256(),
+                    bundleId = bundleId,
+                    localRelativePath = location.localRelativePath,
+                    layoutRelativePath = location.layoutRelativePath,
+                ),
+            )
+
+            val verified = assertIs<ArtifactIdentityResolution.Verified>(
+                resolver(storage, manifest(entry)).resolve(
+                    model(localPath, bytes.size.toLong(), filename = "model.gguf"),
+                    emptyList(),
+                ),
+            )
+
+            assertEquals("weights/model.gguf", verified.artifact.components.single().repositoryRelativePath)
+            assertEquals(localPath, assertIs<VerifiedArtifactLoadTarget.File>(verified.artifact.loadTarget).path)
+        }
+    }
+
+    @Test
     fun validMultiRepositoryDiffusionBundleKeepsEveryRepositoryCommitAndRole() = runTest {
         withRoot { storage, root ->
             val primary = "primary".encodeToByteArray()
@@ -245,6 +286,76 @@ class LocalArtifactIdentityResolverTest {
                 listOf(RepositoryCommit("other/vae", "b".repeat(40)), RepositoryCommit("owner/model", "a".repeat(40))),
                 assertIs<RevisionIdentity.HubCommit>(verified.artifact.revisionIdentity).commits,
             )
+        }
+    }
+
+    @Test
+    fun catalogComponentWithDifferentExactRevisionCannotBindToManifestPath() = runTest {
+        withRoot { storage, root ->
+            val primary = "primary".encodeToByteArray()
+            val componentBytes = "component".encodeToByteArray()
+            val primaryPath = write(root / "owner/model/model.safetensors", primary)
+            val componentPath = write(root / "shared/repo/component.safetensors", componentBytes)
+            val primaryIdentity = downloadIdentity(
+                "owner/model",
+                "a".repeat(40),
+                "model.safetensors",
+                primary.size.toLong(),
+            )
+            val componentIdentity = requireNotNull(
+                DownloadArtifactIdentity.create(
+                    "shared/repo",
+                    "b".repeat(40),
+                    "component.safetensors",
+                    "sha256:${componentBytes.sha256()}",
+                    componentBytes.size.toLong(),
+                ),
+            )
+            val bundle = requireNotNull(
+                com.debanshu777.huggingfacemanager.download.artifactBundleId(
+                    listOf(primaryIdentity, componentIdentity),
+                ),
+            )
+            val exactManifest = manifest(
+                requireNotNull(
+                    ArtifactManifestEntry.create(
+                        "model",
+                        primaryIdentity,
+                        primary.size.toLong(),
+                        primary.sha256(),
+                        bundle,
+                    ),
+                ),
+                requireNotNull(
+                    ArtifactManifestEntry.create(
+                        "vae",
+                        componentIdentity,
+                        componentBytes.size.toLong(),
+                        componentBytes.sha256(),
+                        bundle,
+                    ),
+                ),
+            )
+            val staleCatalog = component(
+                repo = "shared/repo",
+                relative = "component.safetensors",
+                role = "vae",
+                path = componentPath,
+                size = componentBytes.size.toLong(),
+                immutableRevision = "c".repeat(40),
+                remoteObjectId = componentIdentity.remoteObjectId,
+                bundleId = bundle,
+                contentSha256 = componentBytes.sha256(),
+            )
+
+            val rejected = assertIs<ArtifactIdentityResolution.Rejected>(
+                resolver(storage, exactManifest).resolve(
+                    model(primaryPath, primary.size.toLong(), filename = "model.safetensors"),
+                    listOf(staleCatalog),
+                ),
+            )
+
+            assertEquals(ArtifactIdentityRejection.STALE_MANIFEST, rejected.reason)
         }
     }
 
@@ -360,6 +471,69 @@ class LocalArtifactIdentityResolverTest {
     }
 
     @Test
+    fun scopedDirectoryBundleLoadsOnlyFromItsExactGenerationRoot() = runTest {
+        withRoot { storage, root ->
+            val repositoryRoot = root / "owner/model"
+            val bundleId = "b".repeat(64)
+            val files = listOf(
+                Triple("model", "unet/diffusion_pytorch_model.safetensors", "unet"),
+                Triple("diffusers-vae", "vae/diffusion_pytorch_model.safetensors", "vae"),
+                Triple("diffusers-clip-l", "text_encoder/model.safetensors", "clip-l"),
+                Triple("diffusers-clip-g", "text_encoder_2/model.safetensors", "clip-g"),
+            )
+            val entries = files.map { (role, relativePath, contents) ->
+                val bytes = contents.encodeToByteArray()
+                val identity = downloadIdentity(
+                    "owner/model",
+                    "a".repeat(40),
+                    relativePath,
+                    bytes.size.toLong(),
+                )
+                val location = immutableArtifactStorageLocation(identity, bundleId)
+                write(repositoryRoot / location.localRelativePath, bytes)
+                requireNotNull(
+                    ArtifactManifestEntry.create(
+                        logicalRole = role,
+                        identity = identity,
+                        byteCount = bytes.size.toLong(),
+                        contentSha256 = bytes.sha256(),
+                        bundleId = bundleId,
+                        localRelativePath = location.localRelativePath,
+                        layoutRelativePath = location.layoutRelativePath,
+                    ),
+                )
+            }
+            val generationRoot = repositoryRoot / immutableArtifactGenerationRoot(bundleId)
+            val installed = model(
+                path = generationRoot.toString(),
+                size = 0L,
+                filename = DIFFUSERS_BUNDLE_DB_FILENAME,
+            )
+
+            val verified = assertIs<ArtifactIdentityResolution.Verified>(
+                resolver(storage, manifest(*entries.toTypedArray())).resolve(installed, emptyList()),
+            )
+
+            val target = assertIs<VerifiedArtifactLoadTarget.Directory>(verified.artifact.loadTarget)
+            assertEquals(generationRoot.toString(), target.path)
+            assertEquals(
+                files.map { it.second }.sorted(),
+                target.nativeConsumedRelativePaths,
+            )
+
+            val wrongGeneration = repositoryRoot / immutableArtifactGenerationRoot("c".repeat(64))
+            FileSystem.SYSTEM.createDirectories(wrongGeneration)
+            val rejected = assertIs<ArtifactIdentityResolution.Rejected>(
+                resolver(storage, manifest(*entries.toTypedArray())).resolve(
+                    installed.copy(localPath = wrongGeneration.toString()),
+                    emptyList(),
+                ),
+            )
+            assertEquals(ArtifactIdentityRejection.INCOMPLETE_DIRECTORY, rejected.reason)
+        }
+    }
+
+    @Test
     fun completeDirectoryManifestRejectsDifferentContainedRoomDirectory() = runTest {
         withRoot { storage, root ->
             val modelRoot = root / "owner/model"
@@ -427,7 +601,7 @@ class LocalArtifactIdentityResolverTest {
                 ),
             )
 
-            assertEquals(ArtifactIdentityRejection.INCOMPLETE_DIRECTORY, rejected.reason)
+            assertEquals(ArtifactIdentityRejection.STALE_MANIFEST, rejected.reason)
         }
     }
 
@@ -668,7 +842,23 @@ class LocalArtifactIdentityResolverTest {
         path: String,
         size: Long,
         id: Long = 1,
-    ) = DownloadedComponentEntity(id, repo, relative, role, path, size, 1)
+        immutableRevision: String? = null,
+        remoteObjectId: String? = null,
+        bundleId: String? = null,
+        contentSha256: String? = null,
+    ) = DownloadedComponentEntity(
+        id,
+        repo,
+        relative,
+        role,
+        path,
+        size,
+        1,
+        immutableRevision,
+        remoteObjectId,
+        bundleId,
+        contentSha256,
+    )
 
     private fun manifestEntry(
         role: String,

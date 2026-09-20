@@ -4,6 +4,9 @@ import com.debanshu777.huggingfacemanager.download.ArtifactManifest
 import com.debanshu777.huggingfacemanager.download.ArtifactManifestEntry
 import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
+import com.debanshu777.huggingfacemanager.download.immutableArtifactStorageLocation
+import com.debanshu777.huggingfacemanager.sdcpp.ComponentRole
+import com.debanshu777.huggingfacemanager.sdcpp.SdCppComponent
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -83,6 +86,18 @@ class DiffusionBundleProjectionTest {
         assertEquals(forward, reversed)
         assertEquals("model", forward.single { it.artifact == unet.artifact }.logicalRole)
         assertEquals("clip_g", forward.single { it.artifact == clipG.artifact }.logicalRole)
+        val generationRoot = forward.map { it.generationRootRelativePath }.toSet().single()
+        assertEquals(".caraml-artifacts/${forward.first().bundleId}", generationRoot)
+        assertTrue(forward.all(DownloadMetadataDTO::usesImmutableStorageLayout))
+        assertEquals(
+            setOf(
+                "unet/diffusion_pytorch_model.safetensors",
+                "vae/diffusion_pytorch_model.safetensors",
+                "text_encoder/model.safetensors",
+                "text_encoder_2/model.safetensors",
+            ),
+            forward.mapTo(mutableSetOf(), DownloadMetadataDTO::layoutRelativePath),
+        )
 
         val committed = forward.map { expected -> manifestEntry(expected) }
         committed.indices.forEach { lastCommitted ->
@@ -122,6 +137,7 @@ class DiffusionBundleProjectionTest {
                 contentSha256 = exact.contentSha256,
                 bundleId = exact.bundleId,
                 localRelativePath = exact.localRelativePath,
+                layoutRelativePath = exact.layoutRelativePath,
             ),
         )
 
@@ -135,6 +151,39 @@ class DiffusionBundleProjectionTest {
             recoverInterruptedDiffusionBundle(listOf(listOf(expected)), listOf(exact))
                 ?.installedMetadata,
         )
+    }
+
+    @Test
+    fun installedComponentLookupUsesNativeLayoutWithoutTreatingItAsStoragePath() {
+        val artifact = requireNotNull(
+            DownloadArtifactIdentity.create(
+                repositoryId = "shared/vae",
+                immutableRevision = "a".repeat(40),
+                relativePath = "vae/diffusion_pytorch_model.safetensors",
+                remoteObjectId = "sha256:${"b".repeat(64)}",
+                expectedBytes = 1,
+            ),
+        )
+        val bundleId = "c".repeat(64)
+        val location = immutableArtifactStorageLocation(artifact, bundleId)
+        val entry = requireNotNull(
+            ArtifactManifestEntry.create(
+                logicalRole = "vae",
+                identity = artifact,
+                byteCount = 1,
+                contentSha256 = "b".repeat(64),
+                bundleId = bundleId,
+                localRelativePath = location.localRelativePath,
+                layoutRelativePath = location.layoutRelativePath,
+            ),
+        )
+        val component = SdCppComponent(
+            role = ComponentRole.VAE,
+            repoId = artifact.repositoryId,
+            filePath = artifact.relativePath,
+        )
+
+        assertEquals(entry, findInstalledSetupComponent(listOf(entry), component))
     }
 
     private fun identity(path: String) = requireNotNull(
@@ -174,6 +223,7 @@ class DiffusionBundleProjectionTest {
             contentSha256 = "c".repeat(64),
             bundleId = metadata.bundleId,
             localRelativePath = metadata.destinationRelativePath,
+            layoutRelativePath = metadata.layoutRelativePath,
         ),
     )
 }

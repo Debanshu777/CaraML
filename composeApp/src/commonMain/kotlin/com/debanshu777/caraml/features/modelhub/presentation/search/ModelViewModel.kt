@@ -61,6 +61,7 @@ import com.debanshu777.huggingfacemanager.download.ArtifactFileAccessException
 import com.debanshu777.huggingfacemanager.download.ArtifactManifest
 import com.debanshu777.huggingfacemanager.download.ArtifactManifestEntry
 import com.debanshu777.huggingfacemanager.download.artifactBundleId
+import com.debanshu777.huggingfacemanager.download.immutableArtifactStorageLocation
 import com.debanshu777.huggingfacemanager.download.IncompleteDownloadException
 import com.debanshu777.huggingfacemanager.download.InsufficientStorageException
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
@@ -186,7 +187,7 @@ internal fun ArtifactManifest.matchesExactBundle(metadata: List<DownloadMetadata
             installed.logicalRole == expected.logicalRole &&
                 installed.identity == expected.artifact &&
                 installed.bundleId == expected.bundleId &&
-                installed.localRelativePath == expected.destinationRelativePath
+                installed.layoutRelativePath == expected.layoutRelativePath
         } != null
     }
 
@@ -245,14 +246,22 @@ internal fun buildDeterministicDiffusionBundleMetadata(
             libraryName = libraryName,
             pipelineTag = pipelineTag,
             contextLength = null,
-            destinationRelativePath = destination,
             bundleId = bundleId,
+            destinationRelativePath = immutableArtifactStorageLocation(artifact, bundleId).localRelativePath,
         )
     }
     val selectedIdentities = selectedMetadata.mapTo(mutableSetOf()) { it.artifact }
     val externalComponents = componentMetadata
         .filterNot { it.artifact in selectedIdentities }
-        .map { it.copy(bundleId = bundleId) }
+        .map { component ->
+            component.copy(
+                bundleId = bundleId,
+                destinationRelativePath = immutableArtifactStorageLocation(
+                    component.artifact,
+                    bundleId,
+                ).localRelativePath,
+            )
+        }
     return (selectedMetadata + externalComponents).sortedWith(
         compareBy<DownloadMetadataDTO>(
             { if (it.logicalRole == "model") 0 else 1 },
@@ -271,7 +280,20 @@ internal data class InterruptedDiffusionBundleRecovery(
 
 private fun ArtifactManifestEntry.matchesExact(metadata: DownloadMetadataDTO): Boolean =
     logicalRole == metadata.logicalRole && identity == metadata.artifact &&
-        bundleId == metadata.bundleId && localRelativePath == metadata.destinationRelativePath
+        bundleId == metadata.bundleId && layoutRelativePath == metadata.layoutRelativePath
+
+internal fun findInstalledSetupComponent(
+    entries: List<ArtifactManifestEntry>,
+    component: SdCppComponent,
+): ArtifactManifestEntry? {
+    val layout = normalizedDiffusersRelativePath(component.filePath)
+    return entries.singleOrNull { entry ->
+        entry.logicalRole == component.role.name.lowercase() &&
+            entry.identity.repositoryId == component.repoId &&
+            entry.identity.relativePath == component.filePath &&
+            entry.layoutRelativePath == layout
+    }
+}
 
 internal fun recoverInterruptedDiffusionBundle(
     candidates: List<List<DownloadMetadataDTO>>,
@@ -1624,13 +1646,10 @@ class ModelViewModel(
             .distinct()
             .associateWith { downloadManager.validatedArtifacts(it)?.entries.orEmpty() }
         for (component in requiredComponents) {
-            val destination = normalizedDiffusersRelativePath(component.filePath)
-            val installed = installedByRepository[component.repoId].orEmpty().singleOrNull { entry ->
-                entry.logicalRole == component.role.name.lowercase() &&
-                    entry.identity.repositoryId == component.repoId &&
-                    entry.identity.relativePath == component.filePath &&
-                    entry.localRelativePath == destination
-            }
+            val installed = findInstalledSetupComponent(
+                installedByRepository[component.repoId].orEmpty(),
+                component,
+            )
             val installedMetadata = installed?.let { entry ->
                 DownloadMetadataDTO(
                     artifact = entry.identity,
@@ -1782,7 +1801,6 @@ class ModelViewModel(
             libraryName = "stable-diffusion.cpp",
             pipelineTag = detail?.pipelineTag,
             contextLength = null,
-            destinationRelativePath = normalizedDiffusersRelativePath(identity.relativePath),
         )
     }
 

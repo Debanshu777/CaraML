@@ -204,6 +204,7 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 
 <!-- Updated at end of each AI-assisted development session -->
 
+- Ready catalogs now persist exact revision, object, bundle, digest, and local-generation bindings; migrated legacy rows remain identity-null, while manifest-bound resolution and transactional reference-aware removal prune only unlinked entries and prevent cross-owner artifact deletion
 - Rebuilt the shared UI as a sidebar-first Prism workbench: compact windows reveal a modal left panel without moving content, tablets use a compact rail, and wider workspaces use a labeled sidebar with contextual generation modes
 - Create now centers one focused command composer, keeps Text, Image, and Video as local modes, and exposes explicit empty, preparation, generation, completion, and failure states
 - Model Hub now uses one compact registry hierarchy, while Details prioritizes exact artifacts and renders durable pause/resume/cancel/retry state without sacrificing compact or large-text reachability

@@ -23,9 +23,87 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFails
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class DownloadManagerJvmTest {
+    @Test
+    fun deletingOneImmutableRevisionPrunesItsManifestAndKeepsTheOtherPublishedAfterRestart() =
+        withTemporaryRoot { root ->
+            val firstBytes = "revision-one".encodeToByteArray()
+            val secondBytes = "revision-two".encodeToByteArray()
+            val first = scopedMetadata("shared/model.gguf", "a".repeat(40), firstBytes)
+            val second = scopedMetadata("shared/model.gguf", "b".repeat(40), secondBytes)
+            val paths = TestStoragePathProvider(root)
+
+            withServer { exchange ->
+                val body = if (first.artifact.immutableRevision in exchange.requestURI.path) firstBytes else secondBytes
+                exchange.respond(status = 200, declaredLength = body.size.toLong(), body = body)
+            }.use { server ->
+                val manager = DownloadManager(paths, server.baseUrl)
+                runBlocking {
+                    manager.download("org/model", first.artifact.relativePath, first).toList()
+                    manager.download("org/model", second.artifact.relativePath, second).toList()
+                    val firstEntry = requireNotNull(manager.validatedArtifacts("org/model"))
+                        .entries.single { it.identity == first.artifact }
+
+                    assertTrue(deleteValidatedArtifactEntries(paths, listOf(firstEntry)))
+                }
+            }
+
+            val reopened = DownloadManager(paths, "https://huggingface.co")
+            runBlocking {
+                assertFalse(reopened.isPublished(first))
+                assertTrue(reopened.isPublished(second))
+                assertEquals(listOf(second.artifact), reopened.validatedArtifacts("org/model")?.entries?.map { it.identity })
+            }
+            assertFalse(modelFile(root, "org/model", first.destinationRelativePath).exists())
+            assertContentEquals(
+                secondBytes,
+                modelFile(root, "org/model", second.destinationRelativePath).readBytes(),
+            )
+        }
+
+    @Test
+    fun concurrentImmutableRevisionsOfSameRepositoryPathSurviveRestart() = withTemporaryRoot { root ->
+        val revisionOne = "a".repeat(40)
+        val revisionTwo = "b".repeat(40)
+        val bytesOne = "revision-one".encodeToByteArray()
+        val bytesTwo = "revision-two".encodeToByteArray()
+        val metadataOne = scopedMetadata("shared/model.gguf", revisionOne, bytesOne)
+        val metadataTwo = scopedMetadata("shared/model.gguf", revisionTwo, bytesTwo)
+
+        withServer { exchange ->
+            val body = if (revisionOne in exchange.requestURI.path) bytesOne else bytesTwo
+            exchange.respond(status = 200, declaredLength = body.size.toLong(), body = body)
+        }.use { server ->
+            val manager = DownloadManager(TestStoragePathProvider(root), server.baseUrl)
+            runBlocking {
+                val first = async {
+                    manager.download("org/model", "shared/model.gguf", metadataOne).toList().last()
+                }
+                val second = async {
+                    manager.download("org/model", "shared/model.gguf", metadataTwo).toList().last()
+                }
+                val firstPath = assertNotNull(first.await().localPath)
+                val secondPath = assertNotNull(second.await().localPath)
+                assertNotEquals(firstPath, secondPath)
+                assertContentEquals(bytesOne, File(firstPath).readBytes())
+                assertContentEquals(bytesTwo, File(secondPath).readBytes())
+                assertTrue(manager.isPublished(metadataOne))
+                assertTrue(manager.isPublished(metadataTwo))
+            }
+        }
+
+        val reopened = DownloadManager(TestStoragePathProvider(root), "https://huggingface.co")
+        runBlocking {
+            assertTrue(reopened.isPublished(metadataOne))
+            assertTrue(reopened.isPublished(metadataTwo))
+            assertEquals(2, reopened.validatedArtifacts("org/model")?.entries?.size)
+        }
+    }
+
     @Test
     fun validPartialResponseAppendsFromPersistedCheckpoint() = withTemporaryRoot { root ->
         val expected = "0123456789".encodeToByteArray()
@@ -346,7 +424,32 @@ class DownloadManagerJvmTest {
         author = null,
         libraryName = null,
         pipelineTag = null,
+        destinationRelativePath = path,
     )
+
+    private fun scopedMetadata(
+        path: String,
+        revision: String,
+        bytes: ByteArray,
+    ): DownloadMetadataDTO {
+        val identity = requireNotNull(
+            DownloadArtifactIdentity.create(
+                repositoryId = "org/model",
+                immutableRevision = revision,
+                relativePath = path,
+                remoteObjectId = "sha256:${bytes.sha256Hex()}",
+                expectedBytes = bytes.size.toLong(),
+            ),
+        )
+        return DownloadMetadataDTO(
+            artifact = identity,
+            logicalRole = "model",
+            sizeBytes = bytes.size.toLong(),
+            author = null,
+            libraryName = null,
+            pipelineTag = null,
+        )
+    }
 
     private fun installArtifact(root: File): DownloadMetadataDTO {
         val bytes = "installed-model".encodeToByteArray()

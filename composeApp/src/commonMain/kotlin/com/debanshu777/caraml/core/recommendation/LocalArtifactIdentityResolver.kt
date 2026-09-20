@@ -8,9 +8,11 @@ import com.debanshu777.caraml.core.storage.component.DownloadedComponentEntity
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.huggingfacemanager.download.ArtifactManifest
 import com.debanshu777.huggingfacemanager.download.ArtifactManifestEntry
+import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 import com.debanshu777.huggingfacemanager.download.StoredArtifactKind
 import com.debanshu777.huggingfacemanager.download.StoredArtifactSnapshot
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
+import com.debanshu777.huggingfacemanager.download.persistedArtifactStorageLocation
 import com.debanshu777.huggingfacemanager.sdcpp.getModelSetup
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -37,6 +39,9 @@ data class ResolvedArtifactComponent(
     val contentSha256: String,
     val identity: ModelFileIdentity,
     val localRelativePath: String = repositoryRelativePath,
+    /** Native-loader projection below a validated generation root; never a byte locator. */
+    val layoutRelativePath: String = localRelativePath,
+    val bundleId: String? = null,
 )
 
 sealed interface VerifiedArtifactLoadTarget {
@@ -149,7 +154,8 @@ class LocalArtifactIdentityResolver(
                 component.identity.sizeBytes != component.byteCount ||
                 !component.contentSha256.isSha256() ||
                 !isValidRole(component.logicalRole) ||
-                !isValidRelativePath(component.localRelativePath)
+                !isValidRelativePath(component.localRelativePath) ||
+                !component.hasValidStorageBinding()
             ) return false
             val snapshot = verifyFile(
                 component.repositoryId,
@@ -162,11 +168,13 @@ class LocalArtifactIdentityResolver(
                 repositoryId = component.repositoryId,
                 repositoryRelativePath = component.repositoryRelativePath,
                 localRelativePath = component.localRelativePath,
+                layoutRelativePath = component.layoutRelativePath,
                 localPath = component.localPath,
                 byteCount = component.byteCount,
                 contentSha256 = component.contentSha256,
                 immutableRevision = component.identity.revision,
                 remoteObjectId = component.identity.gitOid ?: component.identity.lfsOid ?: component.identity.xetHash,
+                bundleId = component.bundleId,
             )
         }
         val totalBytes = checkedResolvedArtifactBytes(verified.map(VerifiedComponent::byteCount)) ?: return false
@@ -329,29 +337,37 @@ class LocalArtifactIdentityResolver(
         val resolved = ArrayList<VerifiedComponent>(manifest.entries.size)
         for (entry in manifest.entries) {
             val supplied = byRemoteIdentity[entry.identity.repositoryId to entry.identity.relativePath]
+            if (supplied != null && !supplied.matchesExactCatalogIdentity(entry)) {
+                return ArtifactIdentityResolution.Rejected(ArtifactIdentityRejection.STALE_MANIFEST)
+            }
+            val manifestPath = localPathFor(entry)
+                ?: return ArtifactIdentityResolution.Rejected(ArtifactIdentityRejection.STALE_MANIFEST)
+            if (supplied != null && !sameNormalizedPath(supplied.localPath, manifestPath)) {
+                return ArtifactIdentityResolution.Rejected(ArtifactIdentityRejection.STALE_MANIFEST)
+            }
             val nativePath = directoryRoot
                 ?.takeIf {
                     entry.identity.repositoryId == model.modelId &&
-                        entry.localRelativePath in NATIVE_DIFFUSERS_CONSUMED_PATHS
+                        entry.layoutRelativePath in NATIVE_DIFFUSERS_CONSUMED_PATHS
                 }
-                ?.let { root -> localPathUnder(root, entry.localRelativePath) }
-            if (nativePath != null && supplied != null && !sameNormalizedPath(supplied.localPath, nativePath)) {
+                ?.let { root -> localPathUnder(root, entry.layoutRelativePath) }
+            if (nativePath != null && !sameNormalizedPath(manifestPath, nativePath)) {
                 return ArtifactIdentityResolution.Rejected(ArtifactIdentityRejection.INCOMPLETE_DIRECTORY)
             }
-            val localPath = nativePath ?: supplied?.localPath ?: localPathFor(entry)
-            val owner = if (nativePath != null) model.modelId else supplied?.storageOwner ?: entry.identity.repositoryId
-            val verified = verifyFile(owner, localPath, entry.byteCount, entry.contentSha256)
+            val verified = verifyFile(entry.identity.repositoryId, manifestPath, entry.byteCount, entry.contentSha256)
                 ?: return ArtifactIdentityResolution.Rejected(ArtifactIdentityRejection.STALE_MANIFEST)
             resolved += VerifiedComponent(
                 logicalRole = entry.logicalRole,
                 repositoryId = entry.identity.repositoryId,
                 repositoryRelativePath = entry.identity.relativePath,
                 localRelativePath = entry.localRelativePath,
-                localPath = localPath,
+                layoutRelativePath = entry.layoutRelativePath,
+                localPath = manifestPath,
                 byteCount = verified.byteCount,
                 contentSha256 = entry.contentSha256.lowercase(),
                 immutableRevision = entry.identity.immutableRevision.lowercase(),
                 remoteObjectId = entry.identity.remoteObjectId,
+                bundleId = entry.bundleId,
             )
         }
         if (resolved.none { it.repositoryId == model.modelId } || !allSuppliedInputsCovered(inputs, resolved)) {
@@ -372,7 +388,8 @@ class LocalArtifactIdentityResolver(
         when (storagePathProvider.inspectDownloadedArtifact(model.modelId, model.localPath)?.kind) {
             StoredArtifactKind.REGULAR_FILE -> {
                 if (!isValidRelativePath(model.filename)) return null
-                result += InputComponent("model", model.modelId, model.filename, model.localPath, model.modelId)
+                // Room stores only a display filename for the primary. Its exact Hub-relative path
+                // comes from the validated manifest and is bound below by the exact local path.
             }
             StoredArtifactKind.DIRECTORY -> Unit
             null -> return null
@@ -381,7 +398,19 @@ class LocalArtifactIdentityResolver(
             if (!isValidRole(component.role) || !isValidRepositoryId(component.repoId) || !isValidRelativePath(component.filePath)) {
                 return null
             }
-            result += InputComponent(component.role, component.repoId, component.filePath, component.localPath, component.repoId)
+            val exactValues = listOf(component.immutableRevision, component.remoteObjectId, component.bundleId)
+            if (exactValues.any { it != null } && exactValues.any { it.isNullOrBlank() }) return null
+            result += InputComponent(
+                component.role,
+                component.repoId,
+                component.filePath,
+                component.localPath,
+                component.repoId,
+                component.immutableRevision,
+                component.remoteObjectId,
+                component.bundleId,
+                component.contentSha256,
+            )
         }
         return result
     }
@@ -495,6 +524,8 @@ class LocalArtifactIdentityResolver(
                     component.contentSha256,
                     identity,
                     component.localRelativePath,
+                    component.layoutRelativePath,
+                    component.bundleId,
                 )
             },
             loadTarget = loadTarget,
@@ -513,7 +544,7 @@ class LocalArtifactIdentityResolver(
                     val expectedPath = localPathUnder(root, relativePath) ?: return@all false
                     components.singleOrNull {
                         it.repositoryId == model.modelId &&
-                            it.localRelativePath == relativePath &&
+                            it.layoutRelativePath == relativePath &&
                             sameNormalizedPath(it.localPath, expectedPath)
                     } != null
                 }
@@ -550,16 +581,14 @@ class LocalArtifactIdentityResolver(
                 it.localPath == target.path
         } != null
         is VerifiedArtifactLoadTarget.Directory -> {
-            val trustedRoot = normalizedModelRoot(target.storageOwner)
-            trustedRoot != null && sameNormalizedPath(target.path, trustedRoot) &&
-                storagePathProvider.inspectDownloadedArtifact(target.storageOwner, trustedRoot)?.kind ==
+            storagePathProvider.inspectDownloadedArtifact(target.storageOwner, target.path)?.kind ==
                 StoredArtifactKind.DIRECTORY &&
                 target.nativeConsumedRelativePaths == NATIVE_DIFFUSERS_CONSUMED_PATHS.sorted() &&
                 target.nativeConsumedRelativePaths.all { relativePath ->
-                    val expectedPath = localPathUnder(trustedRoot, relativePath) ?: return@all false
+                    val expectedPath = localPathUnder(target.path, relativePath) ?: return@all false
                     components.singleOrNull {
                         it.repositoryId == target.storageOwner &&
-                            it.localRelativePath == relativePath &&
+                            it.layoutRelativePath == relativePath &&
                             sameNormalizedPath(it.localPath, expectedPath)
                     } != null
                 }
@@ -568,7 +597,21 @@ class LocalArtifactIdentityResolver(
 
     private fun verifiedDirectoryRoot(model: LocalModelEntity, manifest: ArtifactManifest): String? {
         if (!manifest.isCompleteDiffusionInstallation(model.modelId, getModelSetup(model.modelId))) return null
-        val root = normalizedModelRoot(model.modelId) ?: return null
+        val repositoryRoot = normalizedModelRoot(model.modelId) ?: return null
+        val ownerEntries = manifest.entries.asSequence()
+            .filter {
+                it.identity.repositoryId == model.modelId &&
+                    it.layoutRelativePath in NATIVE_DIFFUSERS_CONSUMED_PATHS
+            }
+            .toList()
+        val ownerLocations = ownerEntries.mapNotNull { entry ->
+                persistedArtifactStorageLocation(entry.identity, entry.bundleId, entry.localRelativePath)
+                    ?.takeIf { it.layoutRelativePath == entry.layoutRelativePath }
+            }
+        if (ownerLocations.size != ownerEntries.size) return null
+        val generationRoots = ownerLocations.map { it.generationRootRelativePath }.distinct()
+        if (generationRoots.size != 1) return null
+        val root = generationRoots.single()?.let { localPathUnder(repositoryRoot, it) } ?: repositoryRoot
         if (!sameNormalizedPath(model.localPath, root)) return null
         return root.takeIf {
             storagePathProvider.inspectDownloadedArtifact(model.modelId, it)?.kind == StoredArtifactKind.DIRECTORY
@@ -610,8 +653,39 @@ class LocalArtifactIdentityResolver(
         return buffer.snapshot().sha256().hex()
     }
 
-    private fun localPathFor(entry: ArtifactManifestEntry): String =
-        "${storagePathProvider.getModelsStorageDirectory(entry.identity.repositoryId).trimEnd('/', '\\')}/${entry.localRelativePath}"
+    private fun localPathFor(entry: ArtifactManifestEntry): String? =
+        normalizedModelRoot(entry.identity.repositoryId)?.let { root ->
+            localPathUnder(root, entry.localRelativePath)
+        }
+
+    private fun ResolvedArtifactComponent.hasValidStorageBinding(): Boolean {
+        if (!isValidRelativePath(layoutRelativePath)) return false
+        val expectedPath = normalizedModelRoot(repositoryId)?.let { root ->
+            localPathUnder(root, localRelativePath)
+        } ?: return false
+        if (!sameNormalizedPath(localPath, expectedPath)) return false
+        val exactBundle = bundleId ?: return localRelativePath == layoutRelativePath
+        val downloadIdentity = DownloadArtifactIdentity.create(
+            repositoryId = identity.repositoryId,
+            immutableRevision = identity.revision,
+            relativePath = identity.path,
+            remoteObjectId = identity.gitOid ?: identity.lfsOid ?: identity.xetHash,
+            expectedBytes = identity.sizeBytes,
+        ) ?: return false
+        val location = persistedArtifactStorageLocation(downloadIdentity, exactBundle, localRelativePath)
+            ?: return false
+        return location.layoutRelativePath == layoutRelativePath
+    }
+
+    private fun InputComponent.matchesExactCatalogIdentity(entry: ArtifactManifestEntry): Boolean {
+        val revision = immutableRevision ?: return remoteObjectId == null && bundleId == null && contentSha256 == null
+        val remote = remoteObjectId ?: return false
+        val bundle = bundleId ?: return false
+        return revision.equals(entry.identity.immutableRevision, ignoreCase = true) &&
+            remote.equals(entry.identity.remoteObjectId, ignoreCase = true) &&
+            bundle.equals(entry.bundleId, ignoreCase = true) &&
+            contentSha256?.equals(entry.contentSha256, ignoreCase = true) != false
+    }
 
     private data class InputComponent(
         val logicalRole: String,
@@ -619,6 +693,10 @@ class LocalArtifactIdentityResolver(
         val repositoryRelativePath: String,
         val localPath: String,
         val storageOwner: String,
+        val immutableRevision: String? = null,
+        val remoteObjectId: String? = null,
+        val bundleId: String? = null,
+        val contentSha256: String? = null,
     )
 
     private data class VerifiedComponent(
@@ -626,11 +704,13 @@ class LocalArtifactIdentityResolver(
         val repositoryId: String,
         val repositoryRelativePath: String,
         val localRelativePath: String,
+        val layoutRelativePath: String,
         val localPath: String,
         val byteCount: Long,
         val contentSha256: String,
         val immutableRevision: String,
         val remoteObjectId: String?,
+        val bundleId: String?,
     )
 
     companion object {

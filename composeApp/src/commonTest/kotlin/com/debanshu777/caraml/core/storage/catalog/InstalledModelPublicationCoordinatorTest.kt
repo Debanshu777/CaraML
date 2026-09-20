@@ -36,6 +36,39 @@ class InstalledModelPublicationCoordinatorTest {
 
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
+    fun differentOwnersSharingAnExactArtifactPathCannotPublishOrDeleteItConcurrently() = runTest {
+        val coordinator = InstalledModelPublicationCoordinator()
+        val sharedPath = artifactStorageCoordinationKey(
+            "shared/repo",
+            ".caraml-artifacts/${"a".repeat(64)}/component.safetensors",
+        )
+        val firstEntered = CompletableDeferred<Unit>()
+        val releaseFirst = CompletableDeferred<Unit>()
+        val secondEntered = CompletableDeferred<Unit>()
+        val first = async(start = CoroutineStart.UNDISPATCHED) {
+            coordinator.withArtifactPublication("owner/a", listOf(sharedPath)) {
+                firstEntered.complete(Unit)
+                releaseFirst.await()
+            }
+        }
+        firstEntered.await()
+        val second = async(start = CoroutineStart.UNDISPATCHED) {
+            coordinator.withArtifactPublication("owner/b", listOf(sharedPath)) {
+                secondEntered.complete(Unit)
+            }
+        }
+
+        runCurrent()
+        assertFalse(secondEntered.isCompleted)
+        releaseFirst.complete(Unit)
+        first.await()
+        second.await()
+
+        assertTrue(secondEntered.isCompleted)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun cancelledLeaderLetsSingleAndManyLiveFollowersShareOneSuccessor() = runTest {
         listOf(1, 8).forEach { followerCount ->
             val coordinator = InstalledModelPublicationCoordinator()

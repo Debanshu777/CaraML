@@ -7,6 +7,7 @@ import com.debanshu777.caraml.core.recommendation.storage.PersistedModelEvidence
 import com.debanshu777.caraml.core.storage.catalog.InstalledCatalogRecord
 import com.debanshu777.caraml.core.storage.catalog.InstalledModelCatalogDao
 import com.debanshu777.caraml.core.storage.catalog.InstalledModelPublicationCoordinator
+import com.debanshu777.caraml.core.storage.catalog.artifactStorageCoordinationKey
 import com.debanshu777.caraml.core.storage.component.DownloadedComponentEntity
 import com.debanshu777.caraml.core.storage.evidence.toEntity
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
@@ -51,6 +52,9 @@ class RepositoryModelCatalogPublisher(
             ?: primary.first()
         val metadata = representative.request.metadata
         val directoryBundle = primary.size > 1
+        require(primary.map { it.request.metadata.generationRootRelativePath }.distinct().size == 1) {
+            "Primary artifacts span storage generations"
+        }
         val publishedAt = nowEpochMs()
         catalog.replaceReady(
             InstalledCatalogRecord(
@@ -59,10 +63,10 @@ class RepositoryModelCatalogPublisher(
                     filename = if (directoryBundle) {
                         DIFFUSERS_BUNDLE_DB_FILENAME
                     } else {
-                        metadata.destinationRelativePath.substringAfterLast('/')
+                        metadata.layoutRelativePath.substringAfterLast('/')
                     },
                     localPath = if (directoryBundle) {
-                        paths.getModelsStorageDirectory(batch.ownerModelId)
+                        generationRoot(metadata)
                     } else {
                         localPath(metadata)
                     },
@@ -85,6 +89,14 @@ class RepositoryModelCatalogPublisher(
                         localPath = localPath(component),
                         sizeBytes = component.sizeBytes,
                         downloadedAt = publishedAt,
+                        immutableRevision = component.artifact.immutableRevision,
+                        remoteObjectId = requireNotNull(component.artifact.remoteObjectId) {
+                            "Catalog component lacks remote identity"
+                        },
+                        bundleId = component.bundleId,
+                        contentSha256 = component.artifact.remoteObjectId
+                            ?.removePrefix("sha256:")
+                            ?.takeIf { it.length == 64 },
                     )
                 },
                 evidence = evidence.toEntity(batch.ownerModelId, publishedAt),
@@ -94,6 +106,11 @@ class RepositoryModelCatalogPublisher(
 
     private fun localPath(metadata: DownloadMetadataDTO): String =
         "${paths.getModelsStorageDirectory(metadata.artifact.repositoryId)}/${metadata.destinationRelativePath}"
+
+    private fun generationRoot(metadata: DownloadMetadataDTO): String =
+        metadata.generationRootRelativePath?.let { relative ->
+            "${paths.getModelsStorageDirectory(metadata.artifact.repositoryId)}/$relative"
+        } ?: paths.getModelsStorageDirectory(metadata.artifact.repositoryId)
 }
 
 class ModelDownloadFinalizer(
@@ -106,8 +123,14 @@ class ModelDownloadFinalizer(
     override suspend fun finalize(batchId: String) {
         val batch = store.getBatch(batchId) ?: throw ArtifactVerificationException()
         val evidence = validateEvidence(batch)
-        publicationCoordinator.withOwnerPublication(batch.ownerModelId) {
-            val artifacts = batch.artifacts.map { it.request.metadata }
+        val artifacts = batch.artifacts.map { it.request.metadata }
+        val storageKeys = artifacts.map { metadata ->
+            artifactStorageCoordinationKey(
+                metadata.artifact.repositoryId,
+                metadata.destinationRelativePath,
+            )
+        }
+        publicationCoordinator.withArtifactPublication(batch.ownerModelId, storageKeys) {
             if (!bundlePublisher.publish(batch.ownerModelId, artifacts) ||
                 !bundlePublisher.validate(batch.ownerModelId, artifacts)
             ) {

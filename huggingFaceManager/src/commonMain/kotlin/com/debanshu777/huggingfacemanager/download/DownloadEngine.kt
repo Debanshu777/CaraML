@@ -122,6 +122,7 @@ internal fun downloadArtifact(
                     contentSha256 = contentSha256,
                     bundleId = metadata.bundleId,
                     localRelativePath = destination,
+                    layoutRelativePath = metadata.layoutRelativePath,
                 ) ?: throw ArtifactVerificationException()
                 manifestStore.commit(destination, entry)
                 check(!manifestStore.hasPendingTransaction()) {

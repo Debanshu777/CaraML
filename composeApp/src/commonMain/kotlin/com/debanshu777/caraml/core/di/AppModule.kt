@@ -39,6 +39,7 @@ import com.debanshu777.caraml.core.recommendation.storage.RecommendationDatabase
 import com.debanshu777.caraml.core.recommendation.storage.PersistedModelEvidenceCodec
 import com.debanshu777.caraml.core.storage.component.ComponentRepository
 import com.debanshu777.caraml.core.storage.catalog.InstalledModelPublicationCoordinator
+import com.debanshu777.caraml.core.storage.catalog.InstalledModelRemovalService
 import com.debanshu777.caraml.core.storage.evidence.InstalledModelEvidenceRepository
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
 import com.debanshu777.caraml.core.download.ArtifactTransfer
@@ -105,6 +106,15 @@ val appModule = module {
     single { DownloadManager(get()) }
     single { InstalledModelPublicationCoordinator() }
     single { installedModelManifestSource(get<DownloadManager>()::validatedBundle) }
+    single {
+        val manifestSource = get<InstalledModelManifestSource>()
+        InstalledModelRemovalService(
+            catalog = get(),
+            storagePathProvider = get(),
+            manifestSource = { ownerModelId -> manifestSource(ownerModelId) },
+            publicationCoordinator = get(),
+        )
+    }
     single<DownloadTaskStore> { RoomDownloadTaskStore(get<DownloadDatabase>().downloadTaskDao()) }
     single<ArtifactTransfer> { DownloadManagerArtifactTransfer(get()) }
     single<DownloadCheckpointCleaner> { DownloadManagerCheckpointCleaner(get()) }
@@ -300,7 +310,8 @@ val appModule = module {
     viewModel {
         DownloadedModelsViewModel(
             localModelRepository = get(),
-            storagePathProvider = get()
+            storagePathProvider = get(),
+            removalService = get(),
         )
     }
     viewModel {

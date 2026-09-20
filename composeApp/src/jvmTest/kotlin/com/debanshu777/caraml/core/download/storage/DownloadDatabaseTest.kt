@@ -17,6 +17,7 @@ import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
 import com.debanshu777.huggingfacemanager.download.artifactBundleId
+import com.debanshu777.huggingfacemanager.download.immutableArtifactStorageLocation
 import java.nio.file.Files
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -416,7 +417,7 @@ class DownloadDatabaseTest {
             author = "owner",
             libraryName = "gguf",
             pipelineTag = "text-generation",
-            destinationRelativePath = identity.relativePath,
+            destinationRelativePath = immutableArtifactStorageLocation(identity, bundleId).localRelativePath,
             bundleId = bundleId,
         )
         return DownloadBatchRequest(

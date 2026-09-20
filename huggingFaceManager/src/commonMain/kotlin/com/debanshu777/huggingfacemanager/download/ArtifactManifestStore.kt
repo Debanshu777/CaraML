@@ -47,9 +47,11 @@ data class ArtifactManifestEntry private constructor(
     val contentSha256: String,
     val bundleId: String = requireNotNull(artifactBundleId(listOf(identity))),
     val localRelativePath: String = identity.relativePath,
+    /** Native-loader layout below the validated immutable generation root; never a byte locator. */
+    val layoutRelativePath: String = localRelativePath,
 ) {
     init {
-        require(isValid(logicalRole, identity, byteCount, contentSha256, bundleId, localRelativePath)) {
+        require(isValid(logicalRole, identity, byteCount, contentSha256, bundleId, localRelativePath, layoutRelativePath)) {
             "Invalid artifact manifest entry"
         }
     }
@@ -62,8 +64,9 @@ data class ArtifactManifestEntry private constructor(
             contentSha256: String,
             bundleId: String = requireNotNull(artifactBundleId(listOf(identity))),
             localRelativePath: String = identity.relativePath,
+            layoutRelativePath: String = localRelativePath,
         ): ArtifactManifestEntry? = if (
-            isValid(logicalRole, identity, byteCount, contentSha256, bundleId, localRelativePath)
+            isValid(logicalRole, identity, byteCount, contentSha256, bundleId, localRelativePath, layoutRelativePath)
         ) {
             ArtifactManifestEntry(
                 logicalRole,
@@ -72,6 +75,7 @@ data class ArtifactManifestEntry private constructor(
                 contentSha256.lowercase(),
                 bundleId.lowercase(),
                 localRelativePath,
+                layoutRelativePath,
             )
         } else {
             null
@@ -84,6 +88,7 @@ data class ArtifactManifestEntry private constructor(
             contentSha256: String,
             bundleId: String,
             localRelativePath: String,
+            layoutRelativePath: String,
         ): Boolean =
             logicalRole.isNotEmpty() && logicalRole.length <= MAX_LOGICAL_ROLE_LENGTH &&
                 logicalRole == logicalRole.trim() &&
@@ -91,9 +96,9 @@ data class ArtifactManifestEntry private constructor(
                 byteCount == identity.expectedBytes &&
                 contentSha256.length == 64 && contentSha256.all(::isAsciiHexDigit) &&
                 bundleId.length == 64 && bundleId.all(::isAsciiHexDigit) &&
-                runCatching {
-                    validateDownloadRequest(identity.repositoryId, localRelativePath).relativePath
-                }.getOrNull() == localRelativePath
+                persistedArtifactStorageLocation(identity, bundleId, localRelativePath)?.let { location ->
+                    location.layoutRelativePath == layoutRelativePath
+                } == true
     }
 }
 
@@ -132,6 +137,7 @@ data class ArtifactManifest private constructor(
                     entry.contentSha256,
                     entry.bundleId,
                     entry.localRelativePath,
+                    entry.layoutRelativePath,
                 ) != null && roles.add("${entry.bundleId}\u0000${entry.logicalRole}") &&
                     paths.add("${entry.identity.repositoryId}\u0000${entry.localRelativePath}")
             }
@@ -186,6 +192,12 @@ private data class ArtifactCommitJournal(
     val step: ManifestJournalStep? = null,
 )
 
+@Serializable
+private data class ArtifactPruneJournal(
+    val version: Int,
+    val nextManifestDigest: String,
+)
+
 class ArtifactManifestStore(
     private val modelRoot: Path,
     private val fileSystem: FileSystem = FileSystem.SYSTEM,
@@ -195,8 +207,10 @@ class ArtifactManifestStore(
     companion object {
         const val MANIFEST_FILE_NAME = ".caraml-artifact-v1.json"
         const val JOURNAL_FILE_NAME = ".caraml-artifact-v1.journal"
+        const val PRUNE_JOURNAL_FILE_NAME = ".caraml-artifact-v1.prune-journal"
         const val MAX_MANIFEST_BYTES = 256 * 1024
         private const val MAX_JOURNAL_BYTES = 4 * 1024
+        private const val MAX_PRUNE_JOURNAL_BYTES = 256
     }
 
     private val manifestPath = modelRoot / MANIFEST_FILE_NAME
@@ -204,6 +218,8 @@ class ArtifactManifestStore(
     private val manifestPreviousPath = "$manifestPath.previous".toPath()
     private val journalPath = modelRoot / JOURNAL_FILE_NAME
     private val journalPartPath = "$journalPath.part".toPath()
+    private val pruneJournalPath = modelRoot / PRUNE_JOURNAL_FILE_NAME
+    private val pruneJournalPartPath = "$pruneJournalPath.part".toPath()
     private val durability = durability ?: artifactDurability(modelRoot, fileSystem)
     private val secureRoot = if (fileSystem === FileSystem.SYSTEM) SecureArtifactRoot(modelRoot) else null
     private val json = Json {
@@ -309,7 +325,40 @@ class ArtifactManifestStore(
         continueTransaction(journal, target)
     }
 
+    /**
+     * Atomically removes only the exact validated entries supplied by the caller. The manifest is
+     * published before callers remove bytes, so an interrupted cleanup can leak unreferenced bytes
+     * but cannot invalidate entries that remain owned by another installed model.
+     */
+    internal fun pruneValidated(entries: Collection<ArtifactManifestEntry>): Boolean {
+        val requested = entries.asSequence().take(MAX_MANIFEST_ENTRIES + 1).toList()
+        if (requested.isEmpty() || requested.size != entries.size || requested.distinct().size != requested.size) {
+            return false
+        }
+        recover()
+        if (exists(journalPath) || exists(pruneJournalPath) || exists(manifestPreviousPath) || exists(manifestPartPath)) {
+            return false
+        }
+        val current = readValidated() ?: return false
+        if (!requested.all(current.entries::contains)) return false
+        val retained = current.entries.filterNot(requested.toSet()::contains)
+        if (retained.isEmpty()) {
+            durableDelete(manifestPath)
+            return !exists(manifestPath)
+        }
+        val next = ArtifactManifest.create(retained) ?: return false
+        writeManifestPart(next)
+        writePruneJournal(ArtifactPruneJournal(ArtifactManifest.VERSION, next.bundleDigest))
+        phaseObserver(ManifestJournalPhase.PREPARED)
+        continuePrune(next.bundleDigest)
+        return readValidated()?.bundleDigest == next.bundleDigest
+    }
+
     fun recover() {
+        if (exists(pruneJournalPath)) {
+            if (exists(journalPath)) throw ArtifactVerificationException()
+            recoverPrune()
+        }
         if (!exists(journalPath)) return
         val decoded = readJournal() ?: run {
             durableDelete(journalPartPath)
@@ -329,6 +378,80 @@ class ArtifactManifestStore(
         } else {
             restorePreviousGeneration(journal, target)
         }
+    }
+
+    private fun recoverPrune() {
+        val journal = readBounded(pruneJournalPath, MAX_PRUNE_JOURNAL_BYTES)?.let { bytes ->
+            runCatching { json.decodeFromString<ArtifactPruneJournal>(bytes.decodeToString()) }.getOrNull()
+        }?.takeIf {
+            it.version == ArtifactManifest.VERSION && isSha256(it.nextManifestDigest)
+        } ?: throw ArtifactVerificationException()
+
+        val published = readManifest(manifestPath)?.takeIf { manifest ->
+            manifest.bundleDigest == journal.nextManifestDigest && validateManifest(manifestPath)
+        }
+        if (published != null) {
+            finishPrune()
+            return
+        }
+        val staged = readManifest(manifestPartPath)?.takeIf { manifest ->
+            manifest.bundleDigest == journal.nextManifestDigest && validateManifest(manifestPartPath)
+        }
+        if (staged != null) {
+            preserveManifestForPrune()
+            publishExactlyOnce(manifestPartPath, manifestPath)
+            if (readManifest(manifestPath)?.bundleDigest != journal.nextManifestDigest ||
+                !validateManifest(manifestPath)
+            ) {
+                restorePrunedManifest()
+                throw ArtifactVerificationException()
+            }
+            finishPrune()
+            return
+        }
+        restorePrunedManifest()
+    }
+
+    private fun continuePrune(nextManifestDigest: String) {
+        preserveManifestForPrune()
+        phaseObserver(ManifestJournalPhase.OLD_PRESERVED)
+        publishExactlyOnce(manifestPartPath, manifestPath)
+        phaseObserver(ManifestJournalPhase.NEW_PUBLISHED)
+        if (readManifest(manifestPath)?.bundleDigest != nextManifestDigest || !validateManifest(manifestPath)) {
+            restorePrunedManifest()
+            throw ArtifactVerificationException()
+        }
+        finishPrune()
+    }
+
+    private fun preserveManifestForPrune() {
+        when {
+            exists(manifestPath) && !exists(manifestPreviousPath) ->
+                durableMove(manifestPath, manifestPreviousPath)
+            !exists(manifestPath) && exists(manifestPreviousPath) -> Unit
+            else -> throw ArtifactVerificationException()
+        }
+    }
+
+    private fun restorePrunedManifest() {
+        when {
+            exists(manifestPreviousPath) -> {
+                durableDelete(manifestPath)
+                durableMove(manifestPreviousPath, manifestPath)
+            }
+            readManifest(manifestPath)?.let { validateManifest(manifestPath) } != true ->
+                throw ArtifactVerificationException()
+        }
+        durableDelete(manifestPartPath)
+        durableDelete(pruneJournalPartPath)
+        durableDelete(pruneJournalPath)
+    }
+
+    private fun finishPrune() {
+        durableDelete(manifestPreviousPath)
+        durableDelete(manifestPartPath)
+        durableDelete(pruneJournalPartPath)
+        durableDelete(pruneJournalPath)
     }
 
     private fun normalizedJournal(journal: ArtifactCommitJournal, target: Path): ArtifactCommitJournal? {
@@ -505,6 +628,20 @@ class ArtifactManifestStore(
             journal.step == ManifestJournalStep.OLD_PRESERVED ||
             journal.step == ManifestJournalStep.NEW_PUBLISHED
         ) phaseObserver(journal.phase)
+    }
+
+    private fun writePruneJournal(journal: ArtifactPruneJournal) {
+        val encoded = json.encodeToString(journal).encodeToByteArray()
+        if (encoded.size > MAX_PRUNE_JOURNAL_BYTES) throw ArtifactVerificationException()
+        durableDelete(pruneJournalPartPath)
+        val sink = openSink(pruneJournalPartPath, mustCreate = true).buffer()
+        try {
+            sink.write(encoded)
+        } finally {
+            sink.close()
+        }
+        sync(pruneJournalPartPath)
+        durableMove(pruneJournalPartPath, pruneJournalPath)
     }
 
     private fun preserveExactlyOnce(source: Path, previous: Path, required: Boolean) {

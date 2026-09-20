@@ -47,7 +47,6 @@ import com.debanshu777.caraml.core.settings.AppSettings
 import com.debanshu777.caraml.core.storage.component.ComponentRepository
 import com.debanshu777.caraml.core.storage.component.DownloadedComponentDao
 import com.debanshu777.caraml.core.storage.component.DownloadedComponentEntity
-import com.debanshu777.caraml.core.storage.component.ModelComponentLinkEntity
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelDao
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
@@ -352,13 +351,8 @@ private class DetailsLocalModelDao : LocalModelDao {
 }
 
 private class DetailsDownloadedComponentDao : DownloadedComponentDao {
-    override suspend fun insertComponent(entity: DownloadedComponentEntity): Long = 0L
-    override suspend fun insertLink(entity: ModelComponentLinkEntity) = Unit
-    override suspend fun getByRepoAndPath(repoId: String, filePath: String): DownloadedComponentEntity? = null
-    override suspend fun isComponentDownloaded(repoId: String, filePath: String): Boolean = false
     override fun getAllComponents(): Flow<List<DownloadedComponentEntity>> = flowOf(emptyList())
     override suspend fun getComponentsForModel(modelId: String): List<DownloadedComponentEntity> = emptyList()
-    override suspend fun deleteByRepoAndPath(repoId: String, filePath: String) = Unit
 }
 
 private class DetailsStoragePathProvider : StoragePathProvider {

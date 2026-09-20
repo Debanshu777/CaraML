@@ -3,6 +3,8 @@ package com.debanshu777.caraml.features.modelhub.presentation.downloaded
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.debanshu777.caraml.core.domain.ModelReadinessReconciler
+import com.debanshu777.caraml.core.storage.catalog.InstalledModelRemovalResult
+import com.debanshu777.caraml.core.storage.catalog.InstalledModelRemovalService
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
@@ -24,6 +26,7 @@ enum class ReadinessFilter { ALL, READY, PARTIAL }
 class DownloadedModelsViewModel(
     private val localModelRepository: LocalModelRepository,
     private val storagePathProvider: StoragePathProvider,
+    private val removalService: InstalledModelRemovalService? = null,
 ) : ViewModel() {
 
     private val reconciler = ModelReadinessReconciler(localModelRepository, storagePathProvider)
@@ -112,19 +115,14 @@ class DownloadedModelsViewModel(
                 withContext(Dispatchers.IO) {
                     for (entity in snapshot) {
                         try {
-                            val ok = storagePathProvider.deleteDownloadedModelContent(
-                                entity.modelId,
-                                entity.localPath,
-                            )
-                            if (!ok) {
-                                anyFailed = true
-                                continue
+                            when (removalService?.remove(entity) ?: InstalledModelRemovalResult.Rejected) {
+                                InstalledModelRemovalResult.Removed -> removedIds.add(entity.id)
+                                InstalledModelRemovalResult.RemovedWithCleanupFailure -> {
+                                    removedIds.add(entity.id)
+                                    anyFailed = true
+                                }
+                                InstalledModelRemovalResult.Rejected -> anyFailed = true
                             }
-                            localModelRepository.deleteByModelIdAndFilename(
-                                entity.modelId,
-                                entity.filename,
-                            )
-                            removedIds.add(entity.id)
                         } catch (e: CancellationException) {
                             throw e
                         } catch (_: Exception) {

@@ -19,6 +19,89 @@ import kotlin.test.assertTrue
 
 class ArtifactManifestStoreTest {
     @Test
+    fun pruningOneImmutableGenerationKeepsTheOtherRevisionValidAfterReopen() =
+        withStore { fs, root, store ->
+            val firstBytes = "first-revision".encodeToByteArray()
+            val secondBytes = "second-revision".encodeToByteArray()
+            val first = scopedEntry(
+                identity(
+                    revision = "a".repeat(40),
+                    remoteObjectId = "sha256:${firstBytes.sha256Hex()}",
+                    expectedBytes = firstBytes.size.toLong(),
+                ),
+                bundleId = "1".repeat(64),
+                bytes = firstBytes,
+            )
+            val second = scopedEntry(
+                identity(
+                    revision = "b".repeat(40),
+                    remoteObjectId = "sha256:${secondBytes.sha256Hex()}",
+                    expectedBytes = secondBytes.size.toLong(),
+                ),
+                bundleId = "2".repeat(64),
+                bytes = secondBytes,
+            )
+            listOf(first to firstBytes, second to secondBytes).forEach { (entry, bytes) ->
+                val target = root / entry.localRelativePath
+                fs.createDirectories(requireNotNull(target.parent))
+                fs.write(target.siblingPart()) { write(bytes) }
+                store.commit(entry.localRelativePath, entry)
+            }
+
+            assertTrue(store.pruneValidated(listOf(first)))
+            fs.delete(root / first.localRelativePath)
+
+            val reopened = ArtifactManifestStore(root, fs)
+            reopened.recover()
+            assertEquals(listOf(second), reopened.readValidated()?.entries)
+            assertTrue(fs.exists(root / second.localRelativePath))
+        }
+
+    @Test
+    fun restartAfterEveryPrunePhaseKeepsTheRetainedRevisionValid() {
+        ManifestJournalPhase.entries.filterNot { it == ManifestJournalPhase.ROLLING_BACK }.forEach { crashPhase ->
+            val fs = FakeFileSystem()
+            val root = "/models/org/prune-${crashPhase.name}".toPath()
+            fs.createDirectories(root)
+            val firstBytes = "first-${crashPhase.name}".encodeToByteArray()
+            val secondBytes = "second-${crashPhase.name}".encodeToByteArray()
+            val first = scopedEntry(
+                identity(
+                    revision = "a".repeat(40),
+                    remoteObjectId = "sha256:${firstBytes.sha256Hex()}",
+                    expectedBytes = firstBytes.size.toLong(),
+                ),
+                bundleId = "1".repeat(64),
+                bytes = firstBytes,
+            )
+            val second = scopedEntry(
+                identity(
+                    revision = "b".repeat(40),
+                    remoteObjectId = "sha256:${secondBytes.sha256Hex()}",
+                    expectedBytes = secondBytes.size.toLong(),
+                ),
+                bundleId = "2".repeat(64),
+                bytes = secondBytes,
+            )
+            val initial = ArtifactManifestStore(root, fs)
+            listOf(first to firstBytes, second to secondBytes).forEach { (entry, bytes) ->
+                installScopedEntry(fs, root, initial, entry, bytes)
+            }
+            val crashing = ArtifactManifestStore(root, fs, phaseObserver = { phase ->
+                if (phase == crashPhase) throw SimulatedCrash()
+            })
+
+            assertFailsWith<SimulatedCrash> { crashing.pruneValidated(listOf(first)) }
+
+            val reopened = ArtifactManifestStore(root, fs)
+            repeat(2) { reopened.recover() }
+            fs.delete(root / first.localRelativePath)
+            assertEquals(listOf(second), reopened.readValidated()?.entries, crashPhase.name)
+            assertFalse(fs.exists(root / ArtifactManifestStore.PRUNE_JOURNAL_FILE_NAME), crashPhase.name)
+        }
+    }
+
+    @Test
     fun repeatedRecoveryAfterPartialPreservationNeverDeletesTheOnlyOldGeneration() {
         val fs = FakeFileSystem()
         val root = "/models/org/partial-preserve".toPath()
@@ -335,6 +418,10 @@ class ArtifactManifestStoreTest {
 
         val first = assertNotNull(ArtifactManifest.create(entries))
         val reordered = assertNotNull(ArtifactManifest.create(entries.reversed()))
+        val scopedLocation = immutableArtifactStorageLocation(
+            entries.first().identity,
+            entries.first().bundleId,
+        )
         val relocatedEntry = requireNotNull(
             ArtifactManifestEntry.create(
                 logicalRole = entries.first().logicalRole,
@@ -342,7 +429,8 @@ class ArtifactManifestStoreTest {
                 byteCount = entries.first().byteCount,
                 contentSha256 = entries.first().contentSha256,
                 bundleId = entries.first().bundleId,
-                localRelativePath = "local/renamed.gguf",
+                localRelativePath = scopedLocation.localRelativePath,
+                layoutRelativePath = scopedLocation.layoutRelativePath,
             ),
         )
         val relocated = assertNotNull(ArtifactManifest.create(listOf(relocatedEntry, entries.last())))
@@ -714,6 +802,38 @@ private fun entry(
         contentSha256 = digest,
     ),
 )
+
+private fun scopedEntry(
+    identity: DownloadArtifactIdentity,
+    bundleId: String,
+    bytes: ByteArray,
+): ArtifactManifestEntry {
+    val location = immutableArtifactStorageLocation(identity, bundleId)
+    return requireNotNull(
+        ArtifactManifestEntry.create(
+            logicalRole = "model",
+            identity = identity,
+            byteCount = identity.expectedBytes,
+            contentSha256 = bytes.sha256Hex(),
+            bundleId = bundleId,
+            localRelativePath = location.localRelativePath,
+            layoutRelativePath = location.layoutRelativePath,
+        ),
+    )
+}
+
+private fun installScopedEntry(
+    fs: FileSystem,
+    root: Path,
+    store: ArtifactManifestStore,
+    entry: ArtifactManifestEntry,
+    bytes: ByteArray,
+) {
+    val target = root / entry.localRelativePath
+    fs.createDirectories(requireNotNull(target.parent))
+    fs.write(target.siblingPart()) { write(bytes) }
+    store.commit(entry.localRelativePath, entry)
+}
 
 private fun Path.siblingPart(): Path = "$this.part".toPath()
 private fun Path.siblingPrevious(): Path = "$this.previous".toPath()
