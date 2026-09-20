@@ -76,6 +76,7 @@ import com.debanshu777.huggingfacemanager.download.ArtifactManifestEntry
 import com.debanshu777.huggingfacemanager.download.ArtifactManifestStore
 import com.debanshu777.huggingfacemanager.download.ArtifactBundleManifestStore
 import com.debanshu777.huggingfacemanager.download.artifactBundleId
+import com.debanshu777.huggingfacemanager.download.immutableArtifactStorageLocation
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import com.debanshu777.huggingfacemanager.model.DIFFUSERS_BUNDLE_DB_FILENAME
 import com.debanshu777.huggingfacemanager.repository.HuggingFaceRepository
@@ -1146,7 +1147,7 @@ class ModelViewModelRecommendationTest {
         val trusted = Files.createTempDirectory("caraml-vm-manifest-").toRealPath().toFile()
         val storage = FakeStoragePathProvider(trusted, realFileAccess = true)
         try {
-            writeVerifiedBundle(
+            val corruptBundleId = writeVerifiedBundle(
                 storage = storage,
                 repositoryId = "stabilityai/sd-turbo",
                 revision = revision,
@@ -1192,7 +1193,19 @@ class ModelViewModelRecommendationTest {
                     Triple(componentPath, "clip_g", componentBytes),
                 ),
             )
-            File(storage.getModelsStorageDirectory("stabilityai/sd-turbo"), componentPath)
+            val corruptComponentIdentity = requireNotNull(
+                DownloadArtifactIdentity.create(
+                    repositoryId = "stabilityai/sd-turbo",
+                    immutableRevision = revision,
+                    relativePath = componentPath,
+                    remoteObjectId = "sha256:$componentSha",
+                    expectedBytes = componentBytes.size.toLong(),
+                ),
+            )
+            File(
+                storage.getModelsStorageDirectory("stabilityai/sd-turbo"),
+                immutableArtifactStorageLocation(corruptComponentIdentity, corruptBundleId).localRelativePath,
+            )
                 .writeBytes("evil".encodeToByteArray())
             val corrupted = viewModel(client, dispatcher, storagePathProvider = storage)
             backgroundScope.launch { corrupted.installBundleState.collect {} }
@@ -1259,13 +1272,25 @@ class ModelViewModelRecommendationTest {
         val model = unknownDiffusionModel(storage, ModelType.VIDEO)
         val bytes = "valid".encodeToByteArray()
         try {
-            writeVerifiedBundle(
+            val bundleId = writeVerifiedBundle(
                 storage = storage,
                 repositoryId = model.modelId,
                 revision = "a".repeat(40),
                 files = listOf(Triple("checkpoint.safetensors", "model", bytes)),
             )
-            File(storage.getModelsStorageDirectory(model.modelId), "checkpoint.safetensors")
+            val identity = requireNotNull(
+                DownloadArtifactIdentity.create(
+                    repositoryId = model.modelId,
+                    immutableRevision = "a".repeat(40),
+                    relativePath = "checkpoint.safetensors",
+                    remoteObjectId = "sha256:${bytes.sha256()}",
+                    expectedBytes = bytes.size.toLong(),
+                ),
+            )
+            File(
+                storage.getModelsStorageDirectory(model.modelId),
+                immutableArtifactStorageLocation(identity, bundleId).localRelativePath,
+            )
                 .writeBytes("evil!".encodeToByteArray())
             val dao = FakeLocalModelDao(mainModels = listOf(model))
 
@@ -1622,7 +1647,7 @@ private fun writeVerifiedBundle(
     repositoryId: String,
     revision: String,
     files: List<Triple<String, String, ByteArray>>,
-) {
+): String {
     val identities = files.map { (path, _, bytes) ->
         requireNotNull(
             DownloadArtifactIdentity.create(
@@ -1637,8 +1662,9 @@ private fun writeVerifiedBundle(
     val bundleId = requireNotNull(artifactBundleId(identities))
     val root = File(storage.getModelsStorageDirectory(repositoryId)).apply { mkdirs() }
     val entries = files.zip(identities).map { (fixture, identity) ->
-        val (path, role, bytes) = fixture
-        File(root, path).apply {
+        val (_, role, bytes) = fixture
+        val location = immutableArtifactStorageLocation(identity, bundleId)
+        File(root, location.localRelativePath).apply {
             parentFile?.mkdirs()
             writeBytes(bytes)
         }
@@ -1649,13 +1675,15 @@ private fun writeVerifiedBundle(
                 byteCount = bytes.size.toLong(),
                 contentSha256 = bytes.sha256(),
                 bundleId = bundleId,
-                localRelativePath = path,
+                localRelativePath = location.localRelativePath,
+                layoutRelativePath = location.layoutRelativePath,
             ),
         )
     }
     val encoded = Json { encodeDefaults = true }.encodeToString(requireNotNull(ArtifactManifest.create(entries)))
     File(root, ArtifactManifestStore.MANIFEST_FILE_NAME).writeText(encoded)
     File(root, ArtifactBundleManifestStore.MANIFEST_FILE_NAME).writeText(encoded)
+    return bundleId
 }
 
 private fun ByteArray.sha256(): String =

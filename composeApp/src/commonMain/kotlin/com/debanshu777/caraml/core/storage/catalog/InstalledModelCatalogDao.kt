@@ -42,7 +42,10 @@ interface InstalledModelCatalogDao {
 
     @Query(
         """
-        SELECT dc.* FROM downloaded_component dc
+        SELECT dc.id, dc.repo_id, dc.file_path, mcl.role AS role, dc.local_path,
+            dc.size_bytes, dc.downloaded_at, dc.immutable_revision, dc.remote_object_id,
+            dc.bundle_id, dc.content_sha256
+        FROM downloaded_component dc
         INNER JOIN model_component_link mcl ON dc.id = mcl.component_id
         WHERE mcl.model_id = :modelId
         ORDER BY dc.repo_id, dc.immutable_revision, dc.file_path, dc.id

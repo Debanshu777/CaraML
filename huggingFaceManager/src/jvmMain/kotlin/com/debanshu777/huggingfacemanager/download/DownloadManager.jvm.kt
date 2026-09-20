@@ -26,6 +26,7 @@ actual class DownloadManager actual constructor(
         metadata: DownloadMetadataDTO,
         resumeMetadata: DownloadResumeMetadata?,
     ): Flow<DownloadProgressDTO> {
+        requireImmutableArtifactWriteMetadata(metadata)
         val request = validateDownloadArguments(modelId, path, metadata)
         val dirPath = pathProvider.getModelsStorageDirectory(request.modelId)
         val root = File(dirPath).toPath().toAbsolutePath().normalize()

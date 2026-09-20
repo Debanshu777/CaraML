@@ -124,6 +124,7 @@ class ModelDownloadFinalizer(
         val batch = store.getBatch(batchId) ?: throw ArtifactVerificationException()
         val evidence = validateEvidence(batch)
         val artifacts = batch.artifacts.map { it.request.metadata }
+        if (artifacts.any { !it.usesImmutableStorageLayout }) throw ArtifactVerificationException()
         val storageKeys = artifacts.map { metadata ->
             artifactStorageCoordinationKey(
                 metadata.artifact.repositoryId,

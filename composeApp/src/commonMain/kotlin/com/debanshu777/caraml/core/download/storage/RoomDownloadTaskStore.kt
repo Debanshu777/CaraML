@@ -94,6 +94,8 @@ class RoomDownloadTaskStore(
     ): Boolean {
         require(owner.isNotBlank() && owner.length <= 128 && owner.none(Char::isISOControl))
         require(expiresAtEpochMs > nowEpochMs)
+        val metadata = runCatching { dao.artifact(artifactId)?.toMetadata() }.getOrNull() ?: return false
+        if (!metadata.usesImmutableStorageLayout) return false
         val claimed = dao.claim(artifactId, owner, nowEpochMs, expiresAtEpochMs) == 1
         if (claimed) refreshBatchForArtifact(artifactId, nowEpochMs)
         return claimed
@@ -169,30 +171,12 @@ class RoomDownloadTaskStore(
 private fun DownloadBatchWithArtifacts.toSnapshot(): DownloadBatchSnapshot {
     val intent = strictEnum<DownloadUserIntent>(batch.userIntent)
     val artifactSnapshots = artifacts.sortedBy(DownloadArtifactEntity::artifactId).map { artifact ->
-        val identity = requireNotNull(
-            DownloadArtifactIdentity.create(
-                repositoryId = artifact.repositoryId,
-                immutableRevision = artifact.immutableRevision,
-                relativePath = artifact.relativePath,
-                remoteObjectId = artifact.remoteObjectId,
-                expectedBytes = artifact.expectedBytes,
-            ),
-        ) { "Corrupt persisted artifact identity" }
+        val metadata = artifact.toMetadata()
         DownloadArtifactSnapshot(
             artifactId = artifact.artifactId,
             batchId = artifact.batchId,
             request = DownloadArtifactRequest(
-                metadata = DownloadMetadataDTO(
-                    artifact = identity,
-                    logicalRole = artifact.logicalRole,
-                    sizeBytes = artifact.expectedBytes,
-                    author = artifact.author,
-                    libraryName = artifact.libraryName,
-                    pipelineTag = artifact.pipelineTag,
-                    contextLength = artifact.contextLength,
-                    destinationRelativePath = artifact.destinationRelativePath,
-                    bundleId = artifact.bundleId,
-                ),
+                metadata = metadata,
                 primary = artifact.isPrimary,
             ),
             state = strictEnum(artifact.state),
@@ -216,6 +200,29 @@ private fun DownloadBatchWithArtifacts.toSnapshot(): DownloadBatchSnapshot {
         artifacts = artifactSnapshots,
         evidence = batch.restoreEvidence(artifactSnapshots.map { it.request.metadata.artifact }),
         failureCode = batch.failureCode?.let(::strictEnum),
+    )
+}
+
+private fun DownloadArtifactEntity.toMetadata(): DownloadMetadataDTO {
+    val identity = requireNotNull(
+        DownloadArtifactIdentity.create(
+            repositoryId = repositoryId,
+            immutableRevision = immutableRevision,
+            relativePath = relativePath,
+            remoteObjectId = remoteObjectId,
+            expectedBytes = expectedBytes,
+        ),
+    ) { "Corrupt persisted artifact identity" }
+    return DownloadMetadataDTO(
+        artifact = identity,
+        logicalRole = logicalRole,
+        sizeBytes = expectedBytes,
+        author = author,
+        libraryName = libraryName,
+        pipelineTag = pipelineTag,
+        contextLength = contextLength,
+        destinationRelativePath = destinationRelativePath,
+        bundleId = bundleId,
     )
 }
 

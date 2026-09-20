@@ -33,6 +33,10 @@ internal fun validateDownloadArguments(
     return request
 }
 
+internal fun requireImmutableArtifactWriteMetadata(metadata: DownloadMetadataDTO) {
+    if (!metadata.usesImmutableStorageLayout) throw ArtifactFileAccessException()
+}
+
 internal fun validateModelId(modelId: String): String {
     require(modelId.isNotEmpty() && modelId == modelId.trim()) {
         "Invalid model identifier"

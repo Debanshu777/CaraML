@@ -29,6 +29,82 @@ import kotlin.test.assertTrue
 
 class DownloadManagerJvmTest {
     @Test
+    fun persistedUnscopedDestinationIsRejectedBeforeNetworkOrStorageMutation() =
+        withTemporaryRoot { root ->
+            val requests = AtomicInteger()
+            val bytes = "legacy-write-must-not-run".encodeToByteArray()
+            val scoped = scopedMetadata("model.gguf", "a".repeat(40), bytes)
+            val unscoped = scoped.copy(destinationRelativePath = scoped.layoutRelativePath)
+
+            withServer { exchange ->
+                requests.incrementAndGet()
+                exchange.respond(status = 200, declaredLength = bytes.size.toLong(), body = bytes)
+            }.use { server ->
+                val manager = DownloadManager(TestStoragePathProvider(root), server.baseUrl)
+
+                assertFailsWith<ArtifactFileAccessException> {
+                    runBlocking {
+                        manager.download("org/model", "model.gguf", unscoped).toList()
+                    }
+                }
+            }
+
+            assertEquals(0, requests.get())
+            assertFalse(modelFile(root, "org/model", unscoped.destinationRelativePath).exists())
+            assertFalse(modelFile(root, "org/model", unscoped.destinationRelativePath + ".part").exists())
+        }
+
+    @Test
+    fun persistedUnscopedDestinationCannotPublishOrDiscardThroughPublicMutationSeams() =
+        withTemporaryRoot { root ->
+            val storageResolutions = AtomicInteger()
+            val bytes = "legacy-mutation-must-not-run".encodeToByteArray()
+            val scoped = scopedMetadata("model.gguf", "a".repeat(40), bytes)
+            val unscoped = scoped.copy(destinationRelativePath = scoped.layoutRelativePath)
+            val manager = DownloadManager(TestStoragePathProvider(root, storageResolutions))
+
+            assertFalse(runBlocking { manager.publishBundle("org/model", listOf(unscoped)) })
+            assertFailsWith<ArtifactFileAccessException> {
+                runBlocking { manager.discardCheckpoint(unscoped) }
+            }
+            assertEquals(0, storageResolutions.get())
+        }
+
+    @Test
+    fun exactLegacyManifestRemainsReadableWithoutBecomingWritable() = withTemporaryRoot { root ->
+        val bytes = "legacy-installed-model".encodeToByteArray()
+        val scoped = scopedMetadata("model.gguf", "a".repeat(40), bytes)
+        val legacy = scoped.copy(destinationRelativePath = scoped.layoutRelativePath)
+        val modelRoot = modelFile(root, "org/model", "").apply { mkdirs() }
+        File(modelRoot, legacy.destinationRelativePath + ".part").apply {
+            parentFile.mkdirs()
+            writeBytes(bytes)
+        }
+        ArtifactManifestStore(modelRoot.absolutePath.toOkioPath()).commit(
+            relativePath = legacy.destinationRelativePath,
+            entry = requireNotNull(
+                ArtifactManifestEntry.create(
+                    logicalRole = legacy.logicalRole,
+                    identity = legacy.artifact,
+                    byteCount = bytes.size.toLong(),
+                    contentSha256 = bytes.sha256Hex(),
+                    bundleId = legacy.bundleId,
+                    localRelativePath = legacy.destinationRelativePath,
+                    layoutRelativePath = legacy.layoutRelativePath,
+                ),
+            ),
+        )
+        val manager = DownloadManager(TestStoragePathProvider(root))
+
+        assertTrue(runBlocking { manager.isPublished(legacy) })
+        assertEquals(
+            legacy.destinationRelativePath,
+            runBlocking { manager.validatedArtifacts("org/model") }?.entries?.single()?.localRelativePath,
+        )
+        assertFalse(runBlocking { manager.publishBundle("org/model", listOf(legacy)) })
+    }
+
+    @Test
     fun deletingOneImmutableRevisionPrunesItsManifestAndKeepsTheOtherPublishedAfterRestart() =
         withTemporaryRoot { root ->
             val firstBytes = "revision-one".encodeToByteArray()
@@ -107,7 +183,8 @@ class DownloadManagerJvmTest {
     @Test
     fun validPartialResponseAppendsFromPersistedCheckpoint() = withTemporaryRoot { root ->
         val expected = "0123456789".encodeToByteArray()
-        val finalFile = modelFile(root, "org/model", "model.gguf")
+        val metadata = metadata("model.gguf", expected.size.toLong(), expected.sha256Hex())
+        val finalFile = modelFile(root, "org/model", metadata.destinationRelativePath)
         finalFile.parentFile.mkdirs()
         File(finalFile.path + ".part").writeBytes(expected.copyOfRange(0, 4))
         withServer { exchange ->
@@ -122,7 +199,7 @@ class DownloadManagerJvmTest {
                 manager.download(
                     "org/model",
                     "model.gguf",
-                    metadata("model.gguf", expected.size.toLong(), expected.sha256Hex()),
+                    metadata,
                     DownloadResumeMetadata(bytesReceived = 4L, entityTag = "etag-1", lastModified = null),
                 ).toList()
             }
@@ -134,7 +211,8 @@ class DownloadManagerJvmTest {
     @Test
     fun fullResponseToRangeRequestSafelyRestartsStaging() = withTemporaryRoot { root ->
         val expected = "replacement".encodeToByteArray()
-        val finalFile = modelFile(root, "org/model", "model.gguf")
+        val metadata = metadata("model.gguf", expected.size.toLong(), expected.sha256Hex())
+        val finalFile = modelFile(root, "org/model", metadata.destinationRelativePath)
         finalFile.parentFile.mkdirs()
         File(finalFile.path + ".part").writeBytes("stale".encodeToByteArray())
         withServer { exchange ->
@@ -146,7 +224,7 @@ class DownloadManagerJvmTest {
                 manager.download(
                     "org/model",
                     "model.gguf",
-                    metadata("model.gguf", expected.size.toLong(), expected.sha256Hex()),
+                    metadata,
                     DownloadResumeMetadata(bytesReceived = 5L, entityTag = "etag-old", lastModified = null),
                 ).toList()
             }
@@ -158,7 +236,8 @@ class DownloadManagerJvmTest {
     @Test
     fun nonSuccessResponseDoesNotReplaceExistingModel() = withTemporaryRoot { root ->
         val original = byteArrayOf(1, 2, 3)
-        val finalFile = modelFile(root, "org/model", "weights/model.gguf")
+        val metadata = metadata("weights/model.gguf", 9L)
+        val finalFile = modelFile(root, "org/model", metadata.destinationRelativePath)
         finalFile.parentFile.mkdirs()
         finalFile.writeBytes(original)
 
@@ -169,20 +248,21 @@ class DownloadManagerJvmTest {
 
             assertFailsWith<DownloadHttpException> {
                 runBlocking {
-                    manager.download("org/model", "weights/model.gguf", metadata("weights/model.gguf", 9L)).toList()
+                    manager.download("org/model", "weights/model.gguf", metadata).toList()
                 }
             }
         }
 
         assertContentEquals(original, finalFile.readBytes())
         assertFalse(File(finalFile.path + ".part").exists())
-        assertFalse(File(finalFile.parentFile.parentFile, ArtifactManifestStore.MANIFEST_FILE_NAME).exists())
+        assertFalse(File(modelFile(root, "org/model", ""), ArtifactManifestStore.MANIFEST_FILE_NAME).exists())
     }
 
     @Test
     fun truncatedResponseRemovesTemporaryFileAndPreservesExistingModel() = withTemporaryRoot { root ->
         val original = byteArrayOf(4, 5, 6)
-        val finalFile = modelFile(root, "org/model", "model.gguf")
+        val metadata = metadata("model.gguf", 10L)
+        val finalFile = modelFile(root, "org/model", metadata.destinationRelativePath)
         finalFile.parentFile.mkdirs()
         finalFile.writeBytes(original)
 
@@ -193,19 +273,20 @@ class DownloadManagerJvmTest {
 
             assertFails {
                 runBlocking {
-                    manager.download("org/model", "model.gguf", metadata("model.gguf", 10L)).toList()
+                    manager.download("org/model", "model.gguf", metadata).toList()
                 }
             }
         }
 
         assertContentEquals(original, finalFile.readBytes())
         assertFalse(File(finalFile.path + ".part").exists())
-        assertFalse(File(finalFile.parentFile, ArtifactManifestStore.MANIFEST_FILE_NAME).exists())
+        assertFalse(File(modelFile(root, "org/model", ""), ArtifactManifestStore.MANIFEST_FILE_NAME).exists())
     }
 
     @Test
     fun successfulResponseCommitsExactBytesAndPublishesFinalPath() = withTemporaryRoot { root ->
         val expected = ByteArray(32_768) { index -> (index % 251).toByte() }
+        val metadata = metadata("weights/model.gguf", expected.size.toLong(), expected.sha256Hex())
 
         withServer { exchange ->
             exchange.respond(status = 200, declaredLength = expected.size.toLong(), body = expected)
@@ -215,10 +296,10 @@ class DownloadManagerJvmTest {
                 manager.download(
                     "org/model",
                     "weights/model.gguf",
-                    metadata("weights/model.gguf", expected.size.toLong(), expected.sha256Hex()),
+                    metadata,
                 ).toList()
             }
-            val finalFile = modelFile(root, "org/model", "weights/model.gguf")
+            val finalFile = modelFile(root, "org/model", metadata.destinationRelativePath)
 
             assertTrue(finalFile.isFile)
             assertContentEquals(expected, finalFile.readBytes())
@@ -226,7 +307,9 @@ class DownloadManagerJvmTest {
             assertEquals(finalFile.canonicalPath, events.last().localPath)
             assertEquals(100f, events.last().percentage)
             assertEquals(expected.sha256Hex(), events.last().contentSha256)
-            val manifest = ArtifactManifestStore(finalFile.parentFile.parentFile.absolutePath.toOkioPath()).read()
+            val manifest = ArtifactManifestStore(
+                modelFile(root, "org/model", "").absolutePath.toOkioPath(),
+            ).read()
             assertEquals(expected.sha256Hex(), manifest?.entries?.single()?.contentSha256)
             assertEquals(
                 manifest,
@@ -264,6 +347,7 @@ class DownloadManagerJvmTest {
         withTemporaryRoot { root ->
             val path = "weights/模型-😀.gguf"
             val expected = "unicode-download".encodeToByteArray()
+            val metadata = metadata(path, expected.size.toLong(), expected.sha256Hex())
             withServer { exchange ->
                 exchange.respond(status = 200, declaredLength = expected.size.toLong(), body = expected)
             }.use { server ->
@@ -272,11 +356,11 @@ class DownloadManagerJvmTest {
                     manager.download(
                         "org/model",
                         path,
-                        metadata(path, expected.size.toLong(), expected.sha256Hex()),
+                        metadata,
                     ).toList()
                 }
 
-                val finalFile = modelFile(root, "org/model", path)
+                val finalFile = modelFile(root, "org/model", metadata.destinationRelativePath)
                 assertTrue(finalFile.isFile)
                 assertContentEquals(expected, finalFile.readBytes())
                 assertEquals(
@@ -424,7 +508,6 @@ class DownloadManagerJvmTest {
         author = null,
         libraryName = null,
         pipelineTag = null,
-        destinationRelativePath = path,
     )
 
     private fun scopedMetadata(
@@ -455,9 +538,12 @@ class DownloadManagerJvmTest {
         val bytes = "installed-model".encodeToByteArray()
         val metadata = metadata("model.gguf", bytes.size.toLong(), bytes.sha256Hex())
         val modelRoot = modelFile(root, "org/model", "").apply { mkdirs() }
-        File(modelRoot, "model.gguf.part").writeBytes(bytes)
+        File(modelRoot, metadata.destinationRelativePath + ".part").apply {
+            parentFile.mkdirs()
+            writeBytes(bytes)
+        }
         ArtifactManifestStore(modelRoot.absolutePath.toOkioPath()).commit(
-            relativePath = "model.gguf",
+            relativePath = metadata.destinationRelativePath,
             entry = requireNotNull(
                 ArtifactManifestEntry.create(
                     logicalRole = metadata.logicalRole,
@@ -466,6 +552,7 @@ class DownloadManagerJvmTest {
                     contentSha256 = bytes.sha256Hex(),
                     bundleId = metadata.bundleId,
                     localRelativePath = metadata.destinationRelativePath,
+                    layoutRelativePath = metadata.layoutRelativePath,
                 ),
             ),
         )

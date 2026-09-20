@@ -20,6 +20,7 @@ class IosCompletedDownloadImporter(
         finalResponseUrl: String,
         statusCode: Int,
     ): DownloadProgressDTO {
+        requireImmutableArtifactWriteMetadata(metadata)
         validateDownloadArguments(modelId, path, metadata)
         require(acceptsResponse(finalResponseUrl, statusCode)) { "Unexpected download response" }
 

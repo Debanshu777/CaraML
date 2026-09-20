@@ -8,9 +8,12 @@ internal suspend fun publishArtifactBundle(
     pathProvider: StoragePathProvider,
     ownerModelId: String,
     artifacts: List<DownloadMetadataDTO>,
-): Boolean = withBundleStore(pathProvider, ownerModelId, artifacts) { store, entries ->
-    store.publish(entries)
-    store.readValidated()?.bundleDigest == ArtifactManifest.create(entries)?.bundleDigest
+): Boolean {
+    if (artifacts.any { !it.usesImmutableStorageLayout }) return false
+    return withBundleStore(pathProvider, ownerModelId, artifacts) { store, entries ->
+        store.publish(entries)
+        store.readValidated()?.bundleDigest == ArtifactManifest.create(entries)?.bundleDigest
+    }
 }
 
 internal suspend fun validateArtifactBundle(

@@ -84,8 +84,19 @@ internal fun DownloadArtifactIdentity.expectedSha256OrNull(): String? {
 fun artifactBundleId(artifacts: Collection<DownloadArtifactIdentity>): String? {
     val snapshot = artifacts.asSequence().take(65).toList()
     if (snapshot.isEmpty() || snapshot.size != artifacts.size || snapshot.distinct().size != snapshot.size) return null
+    if (snapshot.distinctBy { Triple(it.repositoryId, it.immutableRevision, it.relativePath) }.size != snapshot.size) {
+        return null
+    }
     val buffer = Buffer()
-    snapshot.sortedWith(compareBy({ it.repositoryId }, { it.relativePath }, { it.immutableRevision })).forEach { artifact ->
+    snapshot.sortedWith(
+        compareBy<DownloadArtifactIdentity>(
+            { it.repositoryId },
+            { it.immutableRevision },
+            { it.relativePath },
+            { it.remoteObjectId.orEmpty() },
+            { it.expectedBytes },
+        ),
+    ).forEach { artifact ->
         listOf(
             artifact.repositoryId,
             artifact.immutableRevision,

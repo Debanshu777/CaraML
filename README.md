@@ -219,7 +219,7 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 
 <!-- This section is updated at the end of each AI-assisted development session -->
 
-- Installed artifacts now live in validated immutable bundle generations, so owners can retain different revisions of the same repository path without overwriting bytes; exact catalog links, manifest-bound loading, and reference-aware deletion prune only unlinked manifest entries before removing bytes, preserving every still-ready owner
+- Installed artifacts now live in validated immutable bundle generations; download DB v3 quarantines unfinished legacy write paths, Ready requires the exact manifest generation, per-owner catalog roles survive shared-byte deduplication, and reference-aware deletion preserves every still-linked owner
 - Rebuilt CaraML as a sidebar-first Prism workbench: compact windows use a stationary-content modal panel, tablets use a compact rail, and wider workspaces use a labeled sidebar with contextual generation modes
 - Reframed Create around one focused command composer and explicit activity states; generation modes remain local state while the Create destination stays selected
 - Reworked Model Hub as a compact registry and made Details artifact-first with reachable metadata, exact artifact actions, and durable pause/resume/cancel/retry state

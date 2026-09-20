@@ -31,6 +31,29 @@ import kotlin.test.assertTrue
 
 class ModelDownloadFinalizerTest {
     @Test
+    fun persistedUnscopedArtifactCannotPublishManifestOrReadyCatalog() = runTest {
+        val calls = mutableListOf<String>()
+        val scoped = finalizerBatch()
+        val unsafe = scoped.copy(
+            artifacts = scoped.artifacts.map { artifact ->
+                artifact.copy(
+                    request = artifact.request.copy(
+                        metadata = artifact.request.metadata.copy(
+                            destinationRelativePath = artifact.request.metadata.layoutRelativePath,
+                        ),
+                    ),
+                )
+            },
+        )
+
+        assertFailsWith<ArtifactVerificationException> {
+            finalizer(unsafe, calls).finalize(unsafe.batchId)
+        }
+
+        assertEquals(emptyList(), calls)
+    }
+
+    @Test
     fun catalogPublisherPersistsExactScopedFileAndExternalComponentIdentity() = runTest {
         val databasePath = Files.createTempDirectory("caraml-finalizer-file").resolve("caraml.db").toString()
         val database = getRoomDatabase(getDatabaseBuilder(databasePath))

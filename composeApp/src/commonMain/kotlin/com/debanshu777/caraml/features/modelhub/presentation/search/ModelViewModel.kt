@@ -187,6 +187,7 @@ internal fun ArtifactManifest.matchesExactBundle(metadata: List<DownloadMetadata
             installed.logicalRole == expected.logicalRole &&
                 installed.identity == expected.artifact &&
                 installed.bundleId == expected.bundleId &&
+                installed.localRelativePath == expected.destinationRelativePath &&
                 installed.layoutRelativePath == expected.layoutRelativePath
         } != null
     }
@@ -280,7 +281,8 @@ internal data class InterruptedDiffusionBundleRecovery(
 
 private fun ArtifactManifestEntry.matchesExact(metadata: DownloadMetadataDTO): Boolean =
     logicalRole == metadata.logicalRole && identity == metadata.artifact &&
-        bundleId == metadata.bundleId && layoutRelativePath == metadata.layoutRelativePath
+        bundleId == metadata.bundleId && localRelativePath == metadata.destinationRelativePath &&
+        layoutRelativePath == metadata.layoutRelativePath
 
 internal fun findInstalledSetupComponent(
     entries: List<ArtifactManifestEntry>,

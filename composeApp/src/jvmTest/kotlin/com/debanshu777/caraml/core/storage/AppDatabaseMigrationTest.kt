@@ -165,10 +165,13 @@ class AppDatabaseMigrationTest {
             )
             database.installedModelCatalogDao().replaceReady(
                 exactCatalogRecord("owner/b", "c".repeat(40), "d".repeat(64), "2".repeat(64))
-                    .copy(components = listOf(shared)),
+                    .copy(components = listOf(shared.copy(role = "clip_g"))),
             )
 
             val first = requireNotNull(database.installedModelCatalogDao().snapshotReady("owner/a"))
+            val secondBeforeRemoval = requireNotNull(database.installedModelCatalogDao().snapshotReady("owner/b"))
+            assertEquals("vae", first.components.single().role)
+            assertEquals("clip_g", secondBeforeRemoval.components.single().role)
             val firstRemoval = requireNotNull(database.installedModelCatalogDao().removeReadyIfMatches(first))
 
             assertEquals(emptyList(), firstRemoval.unreferencedComponents)
@@ -176,9 +179,11 @@ class AppDatabaseMigrationTest {
             assertEquals(1, database.downloadedComponentDao().getAllComponents().first().size)
 
             val second = requireNotNull(database.installedModelCatalogDao().snapshotReady("owner/b"))
+            assertEquals("clip_g", second.components.single().role)
             val secondRemoval = requireNotNull(database.installedModelCatalogDao().removeReadyIfMatches(second))
 
             assertEquals(shared.localPath, secondRemoval.unreferencedComponents.single().localPath)
+            assertEquals("clip_g", secondRemoval.unreferencedComponents.single().role)
             assertEquals(emptyList(), database.downloadedComponentDao().getAllComponents().first())
         } finally {
             database.close()

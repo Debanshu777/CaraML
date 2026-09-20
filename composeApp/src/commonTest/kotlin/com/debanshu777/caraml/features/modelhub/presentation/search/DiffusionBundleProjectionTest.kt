@@ -154,6 +154,47 @@ class DiffusionBundleProjectionTest {
     }
 
     @Test
+    fun aggregateManifestAtWrongGenerationDoesNotMatchExpectedGeneration() {
+        val expected = buildDeterministicDiffusionBundleMetadata(
+            selected = listOf(ui(identity("checkpoint.safetensors"))),
+            componentMetadata = emptyList(),
+            author = null,
+            libraryName = null,
+            pipelineTag = null,
+        ).single()
+        val wrongGeneration = manifestEntry(
+            metadata = expected,
+            localRelativePath = expected.layoutRelativePath,
+        )
+        val aggregate = requireNotNull(ArtifactManifest.create(listOf(wrongGeneration)))
+
+        assertFalse(aggregate.matchesExactBundle(listOf(expected)))
+    }
+
+    @Test
+    fun interruptedRecoveryDoesNotReuseExactIdentityFromWrongGeneration() {
+        val expected = buildDeterministicDiffusionBundleMetadata(
+            selected = listOf(ui(identity("checkpoint.safetensors"))),
+            componentMetadata = emptyList(),
+            author = null,
+            libraryName = null,
+            pipelineTag = null,
+        ).single()
+        val wrongGeneration = manifestEntry(
+            metadata = expected,
+            localRelativePath = expected.layoutRelativePath,
+        )
+
+        assertEquals(
+            null,
+            recoverInterruptedDiffusionBundle(
+                candidates = listOf(listOf(expected)),
+                installedEntries = listOf(wrongGeneration),
+            ),
+        )
+    }
+
+    @Test
     fun installedComponentLookupUsesNativeLayoutWithoutTreatingItAsStoragePath() {
         val artifact = requireNotNull(
             DownloadArtifactIdentity.create(
@@ -215,15 +256,19 @@ class DiffusionBundleProjectionTest {
         destinationRelativePath = identity.relativePath,
     )
 
-    private fun manifestEntry(metadata: DownloadMetadataDTO) = requireNotNull(
+    private fun manifestEntry(
+        metadata: DownloadMetadataDTO,
+        localRelativePath: String = metadata.destinationRelativePath,
+    ) = requireNotNull(
         ArtifactManifestEntry.create(
             logicalRole = metadata.logicalRole,
             identity = metadata.artifact,
             byteCount = metadata.artifact.expectedBytes,
             contentSha256 = "c".repeat(64),
             bundleId = metadata.bundleId,
-            localRelativePath = metadata.destinationRelativePath,
+            localRelativePath = localRelativePath,
             layoutRelativePath = metadata.layoutRelativePath,
         ),
     )
+
 }

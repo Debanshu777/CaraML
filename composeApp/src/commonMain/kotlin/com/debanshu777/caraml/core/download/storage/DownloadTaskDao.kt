@@ -77,6 +77,9 @@ interface DownloadTaskDao {
     @Query("SELECT * FROM download_artifact WHERE artifact_id = :artifactId")
     suspend fun requireArtifact(artifactId: String): DownloadArtifactEntity
 
+    @Query("SELECT * FROM download_artifact WHERE artifact_id = :artifactId")
+    suspend fun artifact(artifactId: String): DownloadArtifactEntity?
+
     @Query(
         """
         UPDATE download_artifact
@@ -85,6 +88,13 @@ interface DownloadTaskDao {
         WHERE artifact_id = :artifactId
           AND state IN ('QUEUED', 'FAILED_RETRYABLE', 'WAITING_FOR_NETWORK')
           AND (lease_owner IS NULL OR lease_expires_at_epoch_ms < :nowEpochMs)
+          AND length(bundle_id) = 64
+          AND bundle_id = lower(bundle_id)
+          AND bundle_id NOT GLOB '*[^0-9a-f]*'
+          AND destination_relative_path LIKE '.caraml-artifacts/' || bundle_id || '/%'
+          AND length(destination_relative_path) > length('.caraml-artifacts/' || bundle_id || '/')
+          AND destination_relative_path NOT LIKE '%/../%'
+          AND destination_relative_path NOT LIKE '%/./%'
         """,
     )
     suspend fun claim(

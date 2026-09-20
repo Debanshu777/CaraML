@@ -29,6 +29,29 @@ import kotlin.test.assertTrue
 
 class DownloadBatchRunnerTest {
     @Test
+    fun unscopedPersistedArtifactIsTerminallyRejectedBeforeClaimResumeOrFinalization() = runTest {
+        val store = RunnerStore(usesImmutableStorage = false)
+        val transfer = RecordingTransfer(published = true)
+        var finalizerCalls = 0
+        val runner = DownloadBatchRunner(
+            store = store,
+            transfer = transfer,
+            finalizer = BatchFinalizer { finalizerCalls += 1 },
+            clock = { 10L },
+            leaseOwner = { "unsafe-owner" },
+        )
+
+        val result = runner.run("batch") {}
+
+        assertEquals(DownloadRunResult.Failed(DownloadFailureCode.SECURE_PATH), result)
+        assertEquals(0, transfer.publishedChecks)
+        assertEquals(0, transfer.downloadCalls)
+        assertEquals(0, store.claimCalls)
+        assertEquals(listOf(DownloadArtifactState.FAILED_TERMINAL), store.transitions)
+        assertEquals(0, finalizerCalls)
+    }
+
+    @Test
     fun persistedCheckpointIsForwardedAndArtifactIsVerifiedBeforeCompletion() = runTest {
         val store = RunnerStore()
         val transfer = RecordingTransfer()
@@ -173,8 +196,12 @@ private class RecordingTransfer(
 ) : ArtifactTransfer {
     var resume: DownloadResumeMetadata? = null
     var downloadCalls: Int = 0
+    var publishedChecks: Int = 0
 
-    override suspend fun isPublished(metadata: DownloadMetadataDTO): Boolean = published
+    override suspend fun isPublished(metadata: DownloadMetadataDTO): Boolean {
+        publishedChecks += 1
+        return published
+    }
 
     override fun download(
         metadata: DownloadMetadataDTO,
@@ -214,11 +241,17 @@ private class CountingManifestTransfer(
 
 private class RunnerStore(
     initialArtifactState: DownloadArtifactState = DownloadArtifactState.QUEUED,
+    usesImmutableStorage: Boolean = true,
 ) : DownloadTaskStore {
     private val identity = requireNotNull(
         DownloadArtifactIdentity.create("owner/model", "a".repeat(40), "model.gguf", "b".repeat(64), 10L),
     )
-    val metadata = DownloadMetadataDTO(identity, "model", 10L, null, null, null)
+    private val scopedMetadata = DownloadMetadataDTO(identity, "model", 10L, null, null, null)
+    val metadata = if (usesImmutableStorage) {
+        scopedMetadata
+    } else {
+        scopedMetadata.copy(destinationRelativePath = scopedMetadata.layoutRelativePath)
+    }
     private val request = DownloadArtifactRequest(
         metadata,
         primary = true,

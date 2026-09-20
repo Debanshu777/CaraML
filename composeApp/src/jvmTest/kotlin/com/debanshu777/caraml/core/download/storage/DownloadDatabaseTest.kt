@@ -7,6 +7,7 @@ import com.debanshu777.caraml.core.download.DownloadArtifactRequest
 import com.debanshu777.caraml.core.download.DownloadArtifactState
 import com.debanshu777.caraml.core.download.DownloadBatchRequest
 import com.debanshu777.caraml.core.download.DownloadBatchState
+import com.debanshu777.caraml.core.download.DownloadFailureCode
 import com.debanshu777.caraml.core.download.DownloadUserIntent
 import com.debanshu777.caraml.core.download.downloadBatchId
 import com.debanshu777.caraml.core.download.pendingEvidence
@@ -154,6 +155,106 @@ class DownloadDatabaseTest {
                 assertTrue(statement.step())
                 assertEquals("legacy-artifact-id", statement.getText(0))
             }
+        }
+    }
+
+    @Test
+    fun migrationTwoToThreeQuarantinesUnscopedWorkButKeepsCompletedLegacyReadOnlyAfterReopen() = runTest {
+        val path = Files.createTempDirectory("caraml-download-storage-migration").resolve("downloads.db").toString()
+        createVersionTwoDatabase(path)
+        BundledSQLiteDriver().open(path).use { connection ->
+            insertVersionTwoArtifact(
+                connection = connection,
+                batchId = "1".repeat(64),
+                artifactId = "a".repeat(64),
+                batchState = "VERIFYING",
+                artifactState = "QUEUED",
+                destination = "weights/model.gguf",
+            )
+            insertVersionTwoArtifact(
+                connection = connection,
+                batchId = "2".repeat(64),
+                artifactId = "b".repeat(64),
+                batchState = "VERIFYING",
+                artifactState = "VERIFYING",
+                destination = "weights/model.gguf",
+            )
+            insertVersionTwoArtifact(
+                connection = connection,
+                batchId = "3".repeat(64),
+                artifactId = "c".repeat(64),
+                batchState = "COMPLETED",
+                artifactState = "COMPLETED",
+                destination = "weights/model.gguf",
+            )
+            insertVersionTwoArtifact(
+                connection = connection,
+                batchId = "4".repeat(64),
+                artifactId = "d".repeat(64),
+                batchState = "QUEUED",
+                artifactState = "QUEUED",
+                destination = ".caraml-artifacts/${"c".repeat(64)}/weights/model.gguf",
+            )
+        }
+
+        repeat(2) {
+            val database = getDownloadRoomDatabase(getDownloadDatabaseBuilder(path))
+            try {
+                val store = RoomDownloadTaskStore(database.downloadTaskDao())
+                listOf("1".repeat(64), "2".repeat(64)).forEach { batchId ->
+                    val quarantined = assertNotNull(store.getBatch(batchId))
+                    assertEquals(DownloadBatchState.FAILED_TERMINAL, quarantined.state)
+                    assertEquals(DownloadFailureCode.SECURE_PATH, quarantined.failureCode)
+                    assertEquals(DownloadArtifactState.FAILED_TERMINAL, quarantined.artifacts.single().state)
+                    assertEquals(DownloadFailureCode.SECURE_PATH, quarantined.artifacts.single().failureCode)
+                    assertEquals(null, database.downloadTaskDao().requireArtifact(quarantined.artifacts.single().artifactId).leaseOwner)
+                    assertEquals(null, quarantined.artifacts.single().platformTaskId)
+                }
+                val completed = assertNotNull(store.getBatch("3".repeat(64)))
+                assertEquals(DownloadBatchState.COMPLETED, completed.state)
+                assertEquals(DownloadArtifactState.COMPLETED, completed.artifacts.single().state)
+                assertFalse(completed.artifacts.single().request.metadata.usesImmutableStorageLayout)
+
+                val scoped = assertNotNull(store.getBatch("4".repeat(64)))
+                assertEquals(DownloadBatchState.QUEUED, scoped.state)
+                assertTrue(scoped.artifacts.single().request.metadata.usesImmutableStorageLayout)
+                assertEquals(listOf("4".repeat(64)), store.recoverableBatches().map { it.batchId })
+            } finally {
+                database.close()
+            }
+        }
+    }
+
+    @Test
+    fun claimFailsClosedWhenPersistedDestinationIsChangedToLegacyAfterMigration() = runTest {
+        val path = Files.createTempDirectory("caraml-download-claim-scope").resolve("downloads.db").toString()
+        var database = getDownloadRoomDatabase(getDownloadDatabaseBuilder(path))
+        val artifactId: String
+        try {
+            val store = RoomDownloadTaskStore(database.downloadTaskDao())
+            val batchId = store.create(request(), nowEpochMs = 1L)
+            artifactId = requireNotNull(store.getBatch(batchId)).artifacts.single().artifactId
+        } finally {
+            database.close()
+        }
+        BundledSQLiteDriver().open(path).use { connection ->
+            connection.prepare(
+                "UPDATE download_artifact SET destination_relative_path = relative_path WHERE artifact_id = ?",
+            ).use { statement ->
+                statement.bindText(1, artifactId)
+                statement.step()
+            }
+        }
+
+        database = getDownloadRoomDatabase(getDownloadDatabaseBuilder(path))
+        try {
+            val store = RoomDownloadTaskStore(database.downloadTaskDao())
+            assertFalse(store.claim(artifactId, "worker", nowEpochMs = 2L, expiresAtEpochMs = 100L))
+            val persisted = database.downloadTaskDao().requireArtifact(artifactId)
+            assertEquals(DownloadArtifactState.QUEUED.name, persisted.state)
+            assertEquals(null, persisted.leaseOwner)
+        } finally {
+            database.close()
         }
     }
 
@@ -494,6 +595,70 @@ class DownloadDatabaseTest {
             "CREATE INDEX IF NOT EXISTS index_download_artifact_state_updated_at_epoch_ms " +
                 "ON download_artifact (state, updated_at_epoch_ms)",
         )
+    }
+
+    private fun createVersionTwoDatabase(path: String) {
+        BundledSQLiteDriver().open(path).use { connection ->
+            createVersionOneTables(connection)
+            DOWNLOAD_MIGRATION_1_2.migrate(connection)
+            connection.execSQL("DROP INDEX IF EXISTS index_download_artifact_state_updated_at_epoch_ms")
+            connection.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_download_artifact_state_lease_expires_at_epoch_ms " +
+                    "ON download_artifact (state, lease_expires_at_epoch_ms)",
+            )
+            connection.execSQL("CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY, identity_hash TEXT)")
+            connection.execSQL(
+                "INSERT OR REPLACE INTO room_master_table (id, identity_hash) " +
+                    "VALUES (42, 'e137d927c60c40eb309fa2b5fc0d8270')",
+            )
+            connection.execSQL("PRAGMA user_version = 2")
+        }
+    }
+
+    private fun insertVersionTwoArtifact(
+        connection: SQLiteConnection,
+        batchId: String,
+        artifactId: String,
+        batchState: String,
+        artifactState: String,
+        destination: String,
+    ) {
+        connection.prepare(
+            """
+            INSERT INTO download_batch (
+                batch_id, owner_model_id, model_type, display_name, state, user_intent, failure_code,
+                evidence_state, evidence_schema_version, evidence_payload, evidence_sha256,
+                download_for_later_confirmed, created_at_epoch_ms, updated_at_epoch_ms
+            ) VALUES (?, 'owner/model', 'text', 'Model', ?, 'RUN', NULL, NULL, NULL, NULL, NULL, 0, 1, 1)
+            """.trimIndent(),
+        ).use { statement ->
+            statement.bindText(1, batchId)
+            statement.bindText(2, batchState)
+            statement.step()
+        }
+        connection.prepare(
+            """
+            INSERT INTO download_artifact (
+                artifact_id, batch_id, repository_id, immutable_revision, relative_path, remote_object_id,
+                expected_bytes, logical_role, destination_relative_path, bundle_id, is_primary,
+                author, library_name, pipeline_tag, context_length, state, bytes_received, entity_tag,
+                last_modified, failure_code, retry_count, platform_task_id, lease_owner,
+                lease_expires_at_epoch_ms, staging_token, updated_at_epoch_ms
+            ) VALUES (
+                ?, ?, 'owner/model', '${"a".repeat(40)}', 'weights/model.gguf', '${"b".repeat(64)}',
+                1024, 'model', ?, '${"c".repeat(64)}', 1,
+                NULL, NULL, NULL, NULL, ?, 0, NULL, NULL, NULL, 0, 'platform-task', 'legacy-owner',
+                99, ?, 1
+            )
+            """.trimIndent(),
+        ).use { statement ->
+            statement.bindText(1, artifactId)
+            statement.bindText(2, batchId)
+            statement.bindText(3, destination)
+            statement.bindText(4, artifactState)
+            statement.bindText(5, artifactId)
+            statement.step()
+        }
     }
 
     private fun clearPersistedEvidence(path: String) {

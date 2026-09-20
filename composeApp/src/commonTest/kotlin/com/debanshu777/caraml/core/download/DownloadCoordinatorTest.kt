@@ -10,6 +10,24 @@ import kotlin.test.assertEquals
 
 class DownloadCoordinatorTest {
     @Test
+    fun resumeNeverSchedulesPersistedUnscopedArtifact() = runTest {
+        val calls = mutableListOf<String>()
+        val store = FakeDownloadTaskStore(calls, usesImmutableStorage = false)
+        val coordinator = DownloadCoordinator(
+            store,
+            RecordingScheduler(calls),
+            DownloadNotificationPermissionController {},
+            DownloadCheckpointCleaner {},
+            { 10L },
+        )
+
+        coordinator.resume("batch")
+
+        assertEquals(emptyList(), calls)
+        assertEquals(DownloadUserIntent.RUN, store.snapshot.userIntent)
+    }
+
+    @Test
     fun enqueuePersistsBeforePermissionAndScheduling() = runTest {
         val calls = mutableListOf<String>()
         val store = FakeDownloadTaskStore(calls)
@@ -120,8 +138,20 @@ private class RecordingScheduler(
 
 private class FakeDownloadTaskStore(
     private val calls: MutableList<String>,
+    usesImmutableStorage: Boolean = true,
 ) : DownloadTaskStore {
-    private val request = DownloadCoordinatorTestFixture.request
+    private val batchRequest = DownloadCoordinatorTestFixture.request
+    private val artifactRequest = if (usesImmutableStorage) {
+        batchRequest.artifacts.single()
+    } else {
+        batchRequest.artifacts.single().let { artifact ->
+            artifact.copy(
+                metadata = artifact.metadata.copy(
+                    destinationRelativePath = artifact.metadata.layoutRelativePath,
+                ),
+            )
+        }
+    }
     var snapshot = DownloadBatchSnapshot(
         batchId = "batch",
         ownerModelId = "owner/model",
@@ -133,14 +163,14 @@ private class FakeDownloadTaskStore(
             DownloadArtifactSnapshot(
                 artifactId = "artifact",
                 batchId = "batch",
-                request = request.artifacts.single(),
+                request = artifactRequest,
                 state = DownloadArtifactState.QUEUED,
                 userIntent = DownloadUserIntent.RUN,
                 bytesReceived = 0L,
                 expectedBytes = 10L,
             ),
         ),
-        evidence = request.evidence,
+        evidence = batchRequest.evidence,
     )
 
     override suspend fun create(request: DownloadBatchRequest, nowEpochMs: Long): String {

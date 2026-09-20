@@ -92,6 +92,15 @@ class IosDownloadScheduler(
             finishBatchIfReady(batchId)
             return
         }
+        if (!artifact.request.metadata.usesImmutableStorageLayout) {
+            store.transitionArtifact(
+                artifact.artifactId,
+                DownloadArtifactState.FAILED_TERMINAL,
+                DownloadFailureCode.SECURE_PATH,
+                nowEpochMs(),
+            )
+            return
+        }
         if (runCatching { importer.isPublished(artifact.request.metadata) }.getOrDefault(false)) {
             val owner = "ios-published-recovery"
             if (store.claim(artifact.artifactId, owner, nowEpochMs(), Long.MAX_VALUE)) {
@@ -214,7 +223,10 @@ class IosDownloadScheduler(
             val artifact = store.getBatch(descriptor.batchId)
                 ?.artifacts
                 ?.firstOrNull { it.artifactId == descriptor.artifactId }
-            if (artifact == null || artifact.expectedBytes != descriptor.expectedBytes) {
+            if (artifact == null ||
+                !artifact.request.metadata.usesImmutableStorageLayout ||
+                artifact.expectedBytes != descriptor.expectedBytes
+            ) {
                 val rejection = withResponseBoundLock {
                     responseBound.inspect(taskId, task.taskDescription, -1L, -1L)
                 }
@@ -224,7 +236,14 @@ class IosDownloadScheduler(
                     task.cancel()
                 }
                 if (artifact != null && artifact.state !in TERMINAL_ARTIFACT_STATES) {
-                    failBoundedResponse(descriptor.key)
+                    failBoundedResponse(
+                        descriptor.key,
+                        if (artifact.request.metadata.usesImmutableStorageLayout) {
+                            DownloadFailureCode.INTEGRITY
+                        } else {
+                            DownloadFailureCode.SECURE_PATH
+                        },
+                    )
                 }
             } else {
                 val registered = withResponseBoundLock {

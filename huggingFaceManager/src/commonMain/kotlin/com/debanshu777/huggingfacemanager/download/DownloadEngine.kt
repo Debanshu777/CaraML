@@ -27,6 +27,7 @@ internal fun downloadArtifact(
     localPath: String,
     resumeMetadata: DownloadResumeMetadata?,
 ): Flow<DownloadProgressDTO> = flow {
+    requireImmutableArtifactWriteMetadata(metadata)
     val request = validateDownloadArguments(modelId, path, metadata)
     val identity = metadata.artifact
 
@@ -193,6 +194,7 @@ internal suspend fun discardArtifactCheckpoint(
     pathProvider: StoragePathProvider,
     metadata: DownloadMetadataDTO,
 ) {
+    requireImmutableArtifactWriteMetadata(metadata)
     val identity = metadata.artifact
     validateDownloadArguments(identity.repositoryId, identity.relativePath, metadata)
     val modelRoot = pathProvider.getModelsStorageDirectory(identity.repositoryId).toPath(normalize = true)

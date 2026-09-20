@@ -69,6 +69,21 @@ class DownloadBatchRunner(
             DownloadUserIntent.RUN -> Unit
         }
 
+        val unscoped = initial.artifacts.filterNot { it.request.metadata.usesImmutableStorageLayout }
+        if (unscoped.isNotEmpty()) {
+            unscoped.forEach { artifact ->
+                if (artifact.state.canTransitionTo(DownloadArtifactState.FAILED_TERMINAL)) {
+                    store.transitionArtifact(
+                        artifact.artifactId,
+                        DownloadArtifactState.FAILED_TERMINAL,
+                        DownloadFailureCode.SECURE_PATH,
+                        clock(),
+                    )
+                }
+            }
+            return DownloadRunResult.Failed(DownloadFailureCode.SECURE_PATH)
+        }
+
         val verifyingArtifacts = mutableListOf<String>()
         for (initialArtifact in initial.artifacts) {
             if (initialArtifact.state == DownloadArtifactState.COMPLETED) continue
