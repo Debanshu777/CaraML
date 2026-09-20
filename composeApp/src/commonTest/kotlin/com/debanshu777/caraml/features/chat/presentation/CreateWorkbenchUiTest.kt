@@ -622,6 +622,7 @@ class CreateWorkbenchUiTest {
             var confirmedLoads = 0
             var acceptedAlternatives = 0
             var retriedLoads = 0
+            var retriedCurrentModels = 0
             var cancelledLoads = 0
 
             setContent {
@@ -637,6 +638,7 @@ class CreateWorkbenchUiTest {
                                 onConfirmLoad = { confirmedLoads += 1 },
                                 onAcceptAlternative = { acceptedAlternatives += 1 },
                                 onRetryLoad = { retriedLoads += 1 },
+                                onRetryCurrentModel = { retriedCurrentModels += 1 },
                                 onCancelLoad = { cancelledLoads += 1 },
                                 onNavigateToSearch = { modelHubNavigations += 1 },
                                 onNavigateToModelDetail = { modelId, mode ->
@@ -670,8 +672,23 @@ class CreateWorkbenchUiTest {
             onNodeWithText("Loading model...").performScrollTo().assertIsDisplayed()
 
             show(ChatUiState.ModelError("The selected model could not be opened."))
+            onAllNodesWithText("Retry current model").assertCountEquals(0)
+
+            show(
+                ChatUiState.ModelError(
+                    message = "The selected model could not be opened.",
+                    canRetryCurrentModel = true,
+                ),
+            )
+            onNodeWithText("Retry current model")
+                .performScrollTo()
+                .assertIsDisplayed()
+                .performClick()
             onNodeWithText("Try Another Model").performScrollTo().assertIsDisplayed().performClick()
-            runOnIdle { assertEquals(3, modelHubNavigations) }
+            runOnIdle {
+                assertEquals(1, retriedCurrentModels)
+                assertEquals(3, modelHubNavigations)
+            }
 
             show(
                 ChatUiState.MissingComponents(

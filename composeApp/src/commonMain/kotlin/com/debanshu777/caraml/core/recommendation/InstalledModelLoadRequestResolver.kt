@@ -20,6 +20,13 @@ sealed interface InstalledModelLoadResolution {
     data object Failed : InstalledModelLoadResolution
 }
 
+fun interface InstalledModelLoadResolver {
+    suspend fun resolve(
+        model: LocalModelEntity,
+        expectedMode: GenerationMode,
+    ): InstalledModelLoadResolution
+}
+
 class InstalledModelLoadRequestResolver internal constructor(
     private val componentsForModel: suspend (String) -> List<DownloadedComponentEntity>,
     private val requireComplete: suspend (
@@ -47,7 +54,7 @@ class InstalledModelLoadRequestResolver internal constructor(
         ModelAssessment,
         PersonalizedRecommendation,
     ) -> LoadRequestResolution,
-) {
+) : InstalledModelLoadResolver {
     constructor(
         componentRepository: ComponentRepository,
         evidenceRepairer: InstalledModelEvidenceRepairer,
@@ -68,7 +75,7 @@ class InstalledModelLoadRequestResolver internal constructor(
         createStrictRequest = artifactResolver::createLoadRequestFromVerifiedArtifact,
     )
 
-    suspend fun resolve(
+    override suspend fun resolve(
         model: LocalModelEntity,
         expectedMode: GenerationMode,
     ): InstalledModelLoadResolution = try {

@@ -138,6 +138,7 @@ fun ChatScreen(
         onConfirmLoad = viewModel::confirmPendingLoad,
         onAcceptAlternative = viewModel::acceptSaferPlan,
         onRetryLoad = viewModel::retryPendingLoad,
+        onRetryCurrentModel = viewModel::retryCurrentModel,
         onCancelLoad = viewModel::cancelPendingLoad,
         loadMedia = viewModel::loadGeneratedMedia,
         onNavigateToSearch = onNavigateToSearch,
@@ -161,6 +162,7 @@ fun ChatScreenContent(
     onConfirmLoad: () -> Unit = {},
     onAcceptAlternative: () -> Unit = {},
     onRetryLoad: () -> Unit = {},
+    onRetryCurrentModel: () -> Unit = {},
     onCancelLoad: () -> Unit = {},
     loadMedia: suspend (String) -> ByteArray? = { null },
     onNavigateToSearch: () -> Unit,
@@ -305,6 +307,9 @@ fun ChatScreenContent(
                     CreateStateViewport {
                         ModelErrorScreen(
                             errorMessage = uiState.message,
+                            onRetryCurrentModelClick = onRetryCurrentModel.takeIf {
+                                uiState.canRetryCurrentModel
+                            },
                             onTryAnotherModelClick = onNavigateToSearch,
                             modifier = Modifier.fillMaxWidth(),
                         )

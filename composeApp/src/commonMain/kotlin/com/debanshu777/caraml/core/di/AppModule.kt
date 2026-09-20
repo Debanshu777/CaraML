@@ -331,7 +331,7 @@ val appModule = module {
             inferenceRepository = get(),
             diffusionRepository = get(),
             generatedMediaStore = get(),
-            installedModelLoadRequestResolver = get(),
+            installedModelLoadRequestResolver = get<InstalledModelLoadRequestResolver>(),
         )
     }
 }

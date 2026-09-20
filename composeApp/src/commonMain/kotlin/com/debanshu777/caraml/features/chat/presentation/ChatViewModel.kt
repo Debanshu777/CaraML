@@ -9,8 +9,9 @@ import com.debanshu777.caraml.core.data.inference.ModelLoadResult
 import com.debanshu777.caraml.core.data.inference.PromptContextFullException
 import com.debanshu777.caraml.core.media.GeneratedMediaStore
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
-import com.debanshu777.caraml.core.recommendation.InstalledModelLoadRequestResolver
+import com.debanshu777.caraml.core.recommendation.InstalledModelLoadResolver
 import com.debanshu777.caraml.core.recommendation.LoadAdmission
+import com.debanshu777.caraml.core.recommendation.LoadAdmissionReason
 import com.debanshu777.caraml.core.recommendation.LoadRequest
 import com.debanshu777.caraml.core.recommendation.RiskAcknowledgement
 import com.debanshu777.caraml.core.recommendation.RunPlan
@@ -39,6 +40,7 @@ import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -69,6 +71,7 @@ private sealed class InternalChatState {
 
     data class ModelError(
         val message: String,
+        val canRetryCurrentModel: Boolean = false,
     ) : InternalChatState()
 
     data class MissingComponents(
@@ -107,7 +110,9 @@ class ChatViewModel(
     private val inferenceRepository: InferenceRepository,
     private val diffusionRepository: DiffusionInferenceRepository,
     private val generatedMediaStore: GeneratedMediaStore,
-    private val installedModelLoadRequestResolver: InstalledModelLoadRequestResolver,
+    private val installedModelLoadRequestResolver: InstalledModelLoadResolver,
+    private val modelLoadDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val releaseDiffusionModel: suspend () -> Unit = diffusionRepository::release,
 ) : ViewModel() {
 
     private val _topModels: StateFlow<ImmutableList<LocalModelEntity>> =
@@ -143,7 +148,10 @@ class ChatViewModel(
             is InternalChatState.NoModelsForMode ->
                 ChatUiState.NoModelsForMode(mode = mode)
             is InternalChatState.ModelLoading -> ChatUiState.ModelLoading
-            is InternalChatState.ModelError -> ChatUiState.ModelError(internal.message)
+            is InternalChatState.ModelError -> ChatUiState.ModelError(
+                message = internal.message,
+                canRetryCurrentModel = internal.canRetryCurrentModel,
+            )
             is InternalChatState.MissingComponents -> ChatUiState.MissingComponents(
                 missingComponentLabels = internal.missingComponentLabels,
                 modelName = internal.modelName,
@@ -341,7 +349,7 @@ class ChatViewModel(
                         mode = GenerationMode.Text,
                         request = request,
                         unloadText = inferenceRepository::unloadModel,
-                        releaseDiffusion = diffusionRepository::release,
+                        releaseDiffusion = releaseDiffusionModel,
                         loadText = inferenceRepository::loadModel,
                         loadDiffusion = diffusionRepository::loadModel,
                     )
@@ -351,7 +359,7 @@ class ChatViewModel(
                         mode = mode,
                         request = request,
                         unloadText = inferenceRepository::unloadModel,
-                        releaseDiffusion = diffusionRepository::release,
+                        releaseDiffusion = releaseDiffusionModel,
                         loadText = inferenceRepository::loadModel,
                         loadDiffusion = diffusionRepository::loadModel,
                     )
@@ -377,7 +385,7 @@ class ChatViewModel(
 
         _internal.value = InternalChatState.ModelLoading
 
-        modelLoadJob = viewModelScope.launch(Dispatchers.Default) {
+        modelLoadJob = viewModelScope.launch(modelLoadDispatcher) {
             // Wait for the previous job to fully complete (including any in-progress JNI call)
             // before we start new native operations. Without this, a cancelled job that is still
             // inside a blocking JNI call races with our unloadModel() → double-free crash.
@@ -432,6 +440,8 @@ class ChatViewModel(
             is LoadAdmission.Blocked -> {
                 _internal.value = InternalChatState.ModelError(
                     admission.reason.safeBlockedLoadMessage(),
+                    canRetryCurrentModel =
+                        admission.reason == LoadAdmissionReason.NATIVE_PREFLIGHT_INVALID,
                 )
             }
             is LoadAdmission.Ready -> resumeExactLoad(admission.request)
@@ -466,7 +476,7 @@ class ChatViewModel(
             as? PendingLoadAction.RetryQuarantined ?: return
         if (!pendingLoadActionGate.tryConsume()) return
         _internal.value = InternalChatState.ModelLoading
-        viewModelScope.launch(Dispatchers.Default) {
+        viewModelScope.launch(modelLoadDispatcher) {
             try {
                 when (action.request.plan) {
                     is com.debanshu777.caraml.core.recommendation.LlmRunPlan ->
@@ -489,13 +499,20 @@ class ChatViewModel(
         _internal.value = InternalChatState.ModelError("Model loading was cancelled.")
     }
 
+    fun retryCurrentModel() {
+        val failure = _internal.value as? InternalChatState.ModelError ?: return
+        if (!failure.canRetryCurrentModel) return
+        val model = _selectedModel.value ?: return
+        loadSelectedModel(model)
+    }
+
     private fun resumeExactLoad(request: LoadRequest) {
         startModelLoad(request.model) { mode ->
             loadExactModelForMode(
                 mode = mode,
                 request = request,
                 unloadText = inferenceRepository::unloadModel,
-                releaseDiffusion = diffusionRepository::release,
+                releaseDiffusion = releaseDiffusionModel,
                 loadText = inferenceRepository::loadModel,
                 loadDiffusion = diffusionRepository::loadModel,
             )

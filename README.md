@@ -226,6 +226,7 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 - Durable downloads now retain codec-validated exact descriptor evidence for complete artifact-set matches and bind its digest into batch identity; uncertain descriptors remain enrichment-only
 - Existing Ready installs repair missing descriptor metadata once through an exact serialized lookup, persist the complete evidence for offline reuse, and reject ambiguous identities without touching model files
 - Inference loading now accepts only a freshly assessed exact `LoadRequest` rebuilt from manifest artifacts, current device/settings state, and a newly personalized plan; explicit KV presets and GPU opt-out remain authoritative
+- Restored-model native-preflight failures now offer an explicit same-model retry that captures fresh device/settings evidence, revalidates the exact artifact, and requires approval before using a safer CPU plan
 - Reorganized Settings as a dense, accessible list with exclusive selections, disclosure rows, and the app's single contextual appearance preview
 - Added a restrained static ambient field and two deliberate grain-backed focal gradients—Details overview and the Settings appearance preview—while keeping navigation, lists, filters, cards, and the composer matte
 - Verified the sidebar shell with focused and repository-wide JVM/native gates, Android debug assembly, and iOS simulator compilation; the fresh physical-device visual and animation matrix remains unverified because the Pixel was no longer attached at the final checkpoint
