@@ -21,7 +21,9 @@ struct PreflightTensorEvidence {
 };
 
 struct PreflightComponentEvidence {
-    int role = DIFFUSION_COMPONENT_OTHER;
+    int source_role = DIFFUSION_COMPONENT_MODEL_BUNDLE;
+    int source_ordinal = 0;
+    int subdivision_role = DIFFUSION_COMPONENT_OTHER;
     int64_t parameter_bytes = 0;
     int runtime_placement = DIFFUSION_RUNTIME_DEFAULT;
     int64_t runtime_backend_mask = 0;
@@ -145,6 +147,12 @@ inline int component_role_for_tensor(const std::string &name) {
     return DIFFUSION_COMPONENT_OTHER;
 }
 
+inline int declared_source_subdivision_role(int source_role) {
+    return source_role == DIFFUSION_COMPONENT_TAESD
+        ? DIFFUSION_COMPONENT_VAE
+        : source_role;
+}
+
 inline int parameter_placement_for_assignment(const std::string &assignment) {
     const std::string normalized = lower_ascii(assignment);
     if (normalized == "cpu") return DIFFUSION_PARAMS_CPU;
@@ -162,6 +170,8 @@ inline int runtime_placement_for_assignment(const std::string &assignment, int64
 
 inline std::vector<PreflightComponentEvidence> classify_bundled_components(
         const std::vector<PreflightTensorEvidence> &tensors,
+        int source_role,
+        int source_ordinal,
         const std::string &runtime_spec,
         const std::string &params_spec,
         const std::function<int64_t(const std::string &)> &backend_mask) {
@@ -199,6 +209,8 @@ inline std::vector<PreflightComponentEvidence> classify_bundled_components(
         const int64_t mask = runtime.empty() || lower_ascii(runtime) == "cpu"
             ? 0 : backend_mask(runtime);
         result.push_back({
+            source_role,
+            source_ordinal,
             roles[index],
             totals[index],
             runtime_placement_for_assignment(runtime, mask),

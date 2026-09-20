@@ -452,7 +452,7 @@ private fun DiffusionFitReport.matches(
     config: DiffusionModelConfig,
 ): Boolean {
     if (streamLayers != plan.layerStreaming || components.isEmpty() || backends.isEmpty() ||
-        !components.matchConfiguredComponentRoles(config)
+        !components.matchConfiguredComponentBindings(config)
     ) {
         return false
     }
@@ -525,48 +525,36 @@ private fun DiffusionModelConfig.configuredComponentBindings(): List<ConfiguredD
 }
 
 private fun List<DiffusionPreflightComponent>
-    .matchConfiguredComponentRoles(config: DiffusionModelConfig): Boolean {
-    val reportedRoles = map { it.role }
+    .matchConfiguredComponentBindings(config: DiffusionModelConfig): Boolean {
     val reportedOrdinals = map { it.ordinal }
-    if (reportedRoles.toSet().size != reportedRoles.size ||
-        reportedOrdinals.toSet() != indices.toSet()
-    ) {
-        return false
-    }
+    if (reportedOrdinals.toSet() != indices.toSet()) return false
 
     val configured = config.configuredComponentBindings()
     if (configured.isEmpty() || configured.any { it.path.isEmpty() }) return false
-    val split = configured.first().role == DiffusionComponentRole.DIFFUSION_MODEL
-    val configuredRoles = configured.mapTo(mutableSetOf()) { it.role }
-    if (split) {
-        if (size != configured.size) return false
-        val reportedByOrdinal = associateBy { it.ordinal }
-        // Native declares split components in this exact role/path order. The
-        // ordinal binds each private path without echoing it across the ABI.
-        return configured.withIndex().all { (ordinal, expected) ->
-            reportedByOrdinal[ordinal]?.role == expected.role
-        }
-    }
+    val bySourceOrdinal = groupBy { it.sourceOrdinal }
+    if (bySourceOrdinal.keys != configured.indices.toSet()) return false
 
-    if (reportedRoles.none {
-            it == DiffusionComponentRole.MODEL_BUNDLE ||
-                it == DiffusionComponentRole.DIFFUSION_MODEL
+    return configured.withIndex().all { (sourceOrdinal, expected) ->
+        val evidence = bySourceOrdinal.getValue(sourceOrdinal)
+        if (evidence.any { it.sourceRole != expected.role }) return@all false
+        val subdivisions = evidence.map { it.subdivisionRole }
+        when (expected.role) {
+            DiffusionComponentRole.MODEL_BUNDLE -> {
+                val allowed = setOf(
+                    DiffusionComponentRole.DIFFUSION_MODEL,
+                    DiffusionComponentRole.VAE,
+                    DiffusionComponentRole.TEXT_ENCODER,
+                    DiffusionComponentRole.OTHER,
+                )
+                subdivisions.toSet().size == subdivisions.size &&
+                    DiffusionComponentRole.DIFFUSION_MODEL in subdivisions &&
+                    subdivisions.all { it in allowed }
+            }
+            DiffusionComponentRole.TAESD -> evidence.size == 1 &&
+                subdivisions.single() == DiffusionComponentRole.VAE
+            else -> evidence.size == 1 && subdivisions.single() == expected.role
         }
-    ) {
-        return false
     }
-    val logicalSourceRoles = reportedRoles.mapTo(mutableSetOf()) { role ->
-        when (role) {
-            DiffusionComponentRole.MODEL_BUNDLE,
-            DiffusionComponentRole.DIFFUSION_MODEL,
-            DiffusionComponentRole.VAE,
-            DiffusionComponentRole.TEXT_ENCODER,
-            DiffusionComponentRole.OTHER,
-            -> DiffusionComponentRole.MODEL_BUNDLE
-            else -> role
-        }
-    }
-    return logicalSourceRoles == configuredRoles
 }
 
 private fun com.debanshu777.diffusionrunner.DiffusionPreflightComponent.matchesRuntimePlacement(
@@ -574,7 +562,7 @@ private fun com.debanshu777.diffusionrunner.DiffusionPreflightComponent.matchesR
     runtimeKind: DiffusionBackendKind,
     backends: List<com.debanshu777.diffusionrunner.DiffusionPreflightBackend>,
 ): Boolean {
-    val cpuRuntime = when (role) {
+    val cpuRuntime = when (subdivisionRole) {
         DiffusionComponentRole.LLM,
         DiffusionComponentRole.CLIP_L,
         DiffusionComponentRole.CLIP_G,

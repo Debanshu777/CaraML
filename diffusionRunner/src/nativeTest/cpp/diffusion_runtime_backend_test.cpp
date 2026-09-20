@@ -102,6 +102,8 @@ int main() {
            "CPU runtime assignment could not be built");
     const auto components = classify_bundled_components(
         bundled,
+        DIFFUSION_COMPONENT_MODEL_BUNDLE,
+        0,
         spec,
         "cpu",
         [](const std::string &) { return int64_t{0}; });

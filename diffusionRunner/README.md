@@ -156,7 +156,7 @@ The merged iOS `.a` includes both `llama_runner` and `diffusion_runner` objects.
 - `DiffusionModelConfig` now carries explicit CPU, Metal, Vulkan, or CUDA runtime placement independently of parameter residency; JNI and iOS use stable explicit integer values rather than enum ordinals
 - Preflight initializes and reports only devices selected by the resolved runtime/parameter plan; a failing unused registry device no longer invalidates a valid plan
 - Added fixed-layout Android/JVM/iOS preflight, backend-registry and feature-probe APIs; model load and preflight share the pinned engine's bounded max-VRAM/auto-fit resolution
-- Preflight now reports bundled component roles and exact resolved placements, preserves pinned max-VRAM and streaming semantics, publishes new contexts through immediate RAII ownership, and identifies backend devices canonically across platform ABIs
+- Preflight now reports lossless configured source role/ordinal evidence separately from bundle-internal tensor subdivisions, emits external TAESD as its own source with VAE placement, preserves pinned max-VRAM and streaming semantics, and identifies backend devices canonically across platform ABIs
 - Native contexts now use reference-counted handles, per-handle operation locking, asynchronous cancellation, and scoped image/PNG cleanup across JNI and iOS FFI
 - Video output is capped by combined frame-pixels; iOS reports video unsupported until a native video ABI replaces the removed repeated-still emulation
 - Added bounded validation for prompts, dimensions/pixel area, steps, CFG, video frames, and LoRA inputs before native allocation

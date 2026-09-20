@@ -30,7 +30,8 @@ class DiffusionInferenceRepositoryTest {
             fit(
                 components = listOf(
                     component(
-                        role = DiffusionComponentRole.MODEL_BUNDLE,
+                        role = DiffusionComponentRole.DIFFUSION_MODEL,
+                        sourceRole = DiffusionComponentRole.MODEL_BUNDLE,
                         runtime = DiffusionRuntimePlacement.GPU,
                         backendMask = 1L,
                         params = DiffusionParameterPlacement.CPU,
@@ -51,7 +52,8 @@ class DiffusionInferenceRepositoryTest {
             fit(
                 components = listOf(
                     component(
-                        role = DiffusionComponentRole.MODEL_BUNDLE,
+                        role = DiffusionComponentRole.DIFFUSION_MODEL,
+                        sourceRole = DiffusionComponentRole.MODEL_BUNDLE,
                         runtime = DiffusionRuntimePlacement.CPU,
                         params = DiffusionParameterPlacement.CPU,
                     ),
@@ -70,18 +72,23 @@ class DiffusionInferenceRepositoryTest {
             components = listOf(
                 component(
                     role = DiffusionComponentRole.DIFFUSION_MODEL,
+                    sourceRole = DiffusionComponentRole.MODEL_BUNDLE,
                     runtime = DiffusionRuntimePlacement.GPU,
                     backendMask = 2L,
                     params = DiffusionParameterPlacement.CPU,
                 ),
                 component(
                     role = DiffusionComponentRole.TEXT_ENCODER,
+                    sourceRole = DiffusionComponentRole.MODEL_BUNDLE,
+                    sourceOrdinal = 0,
                     runtime = DiffusionRuntimePlacement.CPU,
                     params = DiffusionParameterPlacement.CPU,
                     ordinal = 1,
                 ),
                 component(
                     role = DiffusionComponentRole.VAE,
+                    sourceRole = DiffusionComponentRole.MODEL_BUNDLE,
+                    sourceOrdinal = 0,
                     runtime = DiffusionRuntimePlacement.CPU,
                     params = DiffusionParameterPlacement.CPU,
                     ordinal = 2,
@@ -95,7 +102,7 @@ class DiffusionInferenceRepositoryTest {
         val wrongVaePlacement = matching.copy(
             report = matching.report.copy(
                 components = matching.report.components.map { component ->
-                    if (component.role == DiffusionComponentRole.VAE) {
+                    if (component.subdivisionRole == DiffusionComponentRole.VAE) {
                         component.copy(
                             runtimePlacement = DiffusionRuntimePlacement.GPU,
                             runtimeBackendMask = 2L,
@@ -130,7 +137,8 @@ class DiffusionInferenceRepositoryTest {
         val report = fit(
             components = listOf(
                 component(
-                    role = DiffusionComponentRole.MODEL_BUNDLE,
+                    role = DiffusionComponentRole.DIFFUSION_MODEL,
+                    sourceRole = DiffusionComponentRole.MODEL_BUNDLE,
                     runtime = DiffusionRuntimePlacement.CPU,
                     params = DiffusionParameterPlacement.CPU,
                 ),
@@ -156,12 +164,35 @@ class DiffusionInferenceRepositoryTest {
     }
 
     @Test
+    fun splitConfigWithTaesdKeepsDistinctSourceAndVaeSubdivision() {
+        val (plan, matching) = matchingSplitCudaPreflight()
+        val withTaesd = matching.copy(
+            report = matching.report.copy(
+                components = matching.report.components + component(
+                    role = DiffusionComponentRole.VAE,
+                    sourceRole = DiffusionComponentRole.TAESD,
+                    sourceOrdinal = 3,
+                    runtime = DiffusionRuntimePlacement.GPU,
+                    backendMask = 1L,
+                    params = DiffusionParameterPlacement.DEFAULT,
+                    ordinal = 3,
+                ),
+            ),
+        )
+
+        assertEquals(
+            NativeLoadPreflight.Fit,
+            exactDiffusionNativePreflight(plan, splitTaesdConfig(), withTaesd),
+        )
+    }
+
+    @Test
     fun splitConfigRejectsAnOmittedConfiguredComponent() {
         val (plan, matching) = matchingSplitCudaPreflight()
         val omittedVae = matching.copy(
             report = matching.report.copy(
                 components = matching.report.components.filterNot {
-                    it.role == DiffusionComponentRole.VAE
+                    it.sourceRole == DiffusionComponentRole.VAE
                 },
             ),
         )
@@ -213,9 +244,9 @@ class DiffusionInferenceRepositoryTest {
         val swapped = matching.copy(
             report = matching.report.copy(
                 components = matching.report.components.map { component ->
-                    when (component.role) {
-                        DiffusionComponentRole.CLIP_L -> component.copy(role = DiffusionComponentRole.VAE)
-                        DiffusionComponentRole.VAE -> component.copy(role = DiffusionComponentRole.CLIP_L)
+                    when (component.sourceRole) {
+                        DiffusionComponentRole.CLIP_L -> component.copy(sourceRole = DiffusionComponentRole.VAE)
+                        DiffusionComponentRole.VAE -> component.copy(sourceRole = DiffusionComponentRole.CLIP_L)
                         else -> component
                     }
                 },
@@ -225,6 +256,168 @@ class DiffusionInferenceRepositoryTest {
         assertEquals(
             NativeLoadPreflight.Invalid,
             exactDiffusionNativePreflight(plan, splitConfig(), swapped),
+        )
+    }
+
+    @Test
+    fun bundleRejectsDeclaredBundleAsAnInternalSubdivision() {
+        val matching = matchingBundledCpuPreflight()
+        val contradictory = matching.copy(
+            report = matching.report.copy(
+                components = matching.report.components + component(
+                    role = DiffusionComponentRole.MODEL_BUNDLE,
+                    sourceRole = DiffusionComponentRole.MODEL_BUNDLE,
+                    sourceOrdinal = 0,
+                    runtime = DiffusionRuntimePlacement.CPU,
+                    params = DiffusionParameterPlacement.CPU,
+                    ordinal = 2,
+                ),
+            ),
+        )
+
+        assertEquals(
+            NativeLoadPreflight.Invalid,
+            exactDiffusionNativePreflight(cpuPlan(), bundledConfig(), contradictory),
+        )
+    }
+
+    @Test
+    fun bundleRejectsDuplicateDiffusionPrimarySubdivision() {
+        val matching = matchingBundledCpuPreflight()
+        val duplicatePrimary = matching.copy(
+            report = matching.report.copy(
+                components = matching.report.components + matching.report.components.first().copy(ordinal = 2),
+            ),
+        )
+
+        assertEquals(
+            NativeLoadPreflight.Invalid,
+            exactDiffusionNativePreflight(cpuPlan(), bundledConfig(), duplicatePrimary),
+        )
+    }
+
+    @Test
+    fun bundleRejectsContradictoryDiffusionModelSource() {
+        val matching = matchingBundledCpuPreflight()
+        val contradictoryPrimarySource = matching.copy(
+            report = matching.report.copy(
+                components = matching.report.components + component(
+                    role = DiffusionComponentRole.DIFFUSION_MODEL,
+                    sourceRole = DiffusionComponentRole.DIFFUSION_MODEL,
+                    sourceOrdinal = 1,
+                    runtime = DiffusionRuntimePlacement.CPU,
+                    params = DiffusionParameterPlacement.CPU,
+                    ordinal = 2,
+                ),
+            ),
+        )
+
+        assertEquals(
+            NativeLoadPreflight.Invalid,
+            exactDiffusionNativePreflight(cpuPlan(), bundledConfig(), contradictoryPrimarySource),
+        )
+    }
+
+    @Test
+    fun bundleRejectsArbitraryInternalSubdivision() {
+        val matching = matchingBundledCpuPreflight()
+        val extraSubdivision = matching.copy(
+            report = matching.report.copy(
+                components = matching.report.components + component(
+                    role = DiffusionComponentRole.CLIP_L,
+                    sourceRole = DiffusionComponentRole.MODEL_BUNDLE,
+                    sourceOrdinal = 0,
+                    runtime = DiffusionRuntimePlacement.CPU,
+                    params = DiffusionParameterPlacement.CPU,
+                    ordinal = 2,
+                ),
+            ),
+        )
+
+        assertEquals(
+            NativeLoadPreflight.Invalid,
+            exactDiffusionNativePreflight(cpuPlan(), bundledConfig(), extraSubdivision),
+        )
+    }
+
+    @Test
+    fun bundleRejectsAnUnconfiguredSource() {
+        val matching = matchingBundledCpuPreflight()
+        val extraSource = matching.copy(
+            report = matching.report.copy(
+                components = matching.report.components + component(
+                    role = DiffusionComponentRole.VAE,
+                    sourceRole = DiffusionComponentRole.VAE,
+                    sourceOrdinal = 1,
+                    runtime = DiffusionRuntimePlacement.CPU,
+                    params = DiffusionParameterPlacement.CPU,
+                    ordinal = 2,
+                ),
+            ),
+        )
+
+        assertEquals(
+            NativeLoadPreflight.Invalid,
+            exactDiffusionNativePreflight(cpuPlan(), bundledConfig(), extraSource),
+        )
+    }
+
+    @Test
+    fun bundleRejectsMissingConfiguredPrimarySource() {
+        val missingBundle = fit(
+            components = listOf(
+                component(
+                    role = DiffusionComponentRole.VAE,
+                    sourceRole = DiffusionComponentRole.VAE,
+                    runtime = DiffusionRuntimePlacement.CPU,
+                    params = DiffusionParameterPlacement.CPU,
+                ),
+            ),
+            backends = listOf(backend(DiffusionBackendKind.CPU, ordinal = 0)),
+        )
+
+        assertEquals(
+            NativeLoadPreflight.Invalid,
+            exactDiffusionNativePreflight(cpuPlan(), bundledConfig(), missingBundle),
+        )
+    }
+
+    @Test
+    fun bundleWithExternalTaesdAcceptsDistinctSourceEvidence() {
+        assertEquals(
+            NativeLoadPreflight.Fit,
+            exactDiffusionNativePreflight(
+                cpuPlan(),
+                bundledTaesdConfig(),
+                matchingBundledCpuPreflight(includeExternalTaesd = true),
+            ),
+        )
+    }
+
+    @Test
+    fun bundleVaeSubdivisionCannotSatisfyMissingExternalTaesd() {
+        assertEquals(
+            NativeLoadPreflight.Invalid,
+            exactDiffusionNativePreflight(
+                cpuPlan(),
+                bundledTaesdConfig(),
+                matchingBundledCpuPreflight(),
+            ),
+        )
+    }
+
+    @Test
+    fun bundleRejectsDuplicateExternalTaesdSourceEvidence() {
+        val matching = matchingBundledCpuPreflight(includeExternalTaesd = true)
+        val duplicateTaesd = matching.copy(
+            report = matching.report.copy(
+                components = matching.report.components + matching.report.components.last().copy(ordinal = 3),
+            ),
+        )
+
+        assertEquals(
+            NativeLoadPreflight.Invalid,
+            exactDiffusionNativePreflight(cpuPlan(), bundledTaesdConfig(), duplicateTaesd),
         )
     }
 
@@ -266,10 +459,19 @@ class DiffusionInferenceRepositoryTest {
 
     private fun bundledConfig() = DiffusionModelConfig(modelPath = "/models/bundle.gguf")
 
+    private fun bundledTaesdConfig() = DiffusionModelConfig(
+        modelPath = "/models/bundle.gguf",
+        taesdPath = "/models/taesd.safetensors",
+    )
+
     private fun splitConfig() = DiffusionModelConfig(
         modelPath = "/models/diffusion.gguf",
         vaePath = "/models/vae.gguf",
         clipLPath = "/models/clip-l.gguf",
+    )
+
+    private fun splitTaesdConfig() = splitConfig().copy(
+        taesdPath = "/models/taesd.safetensors",
     )
 
     private fun matchingSplitCudaPreflight(): Pair<DiffusionRunPlan, DiffusionPreflightResult.Fit> {
@@ -308,6 +510,45 @@ class DiffusionInferenceRepositoryTest {
         )
     }
 
+    private fun matchingBundledCpuPreflight(
+        includeExternalTaesd: Boolean = false,
+    ): DiffusionPreflightResult.Fit = fit(
+        components = buildList {
+            add(
+                component(
+                    role = DiffusionComponentRole.DIFFUSION_MODEL,
+                    sourceRole = DiffusionComponentRole.MODEL_BUNDLE,
+                    sourceOrdinal = 0,
+                    runtime = DiffusionRuntimePlacement.CPU,
+                    params = DiffusionParameterPlacement.CPU,
+                ),
+            )
+            add(
+                component(
+                    role = DiffusionComponentRole.VAE,
+                    sourceRole = DiffusionComponentRole.MODEL_BUNDLE,
+                    sourceOrdinal = 0,
+                    runtime = DiffusionRuntimePlacement.CPU,
+                    params = DiffusionParameterPlacement.CPU,
+                    ordinal = 1,
+                ),
+            )
+            if (includeExternalTaesd) {
+                add(
+                    component(
+                        role = DiffusionComponentRole.VAE,
+                        sourceRole = DiffusionComponentRole.TAESD,
+                        sourceOrdinal = 1,
+                        runtime = DiffusionRuntimePlacement.CPU,
+                        params = DiffusionParameterPlacement.CPU,
+                        ordinal = 2,
+                    ),
+                )
+            }
+        },
+        backends = listOf(backend(DiffusionBackendKind.CPU, ordinal = 0)),
+    )
+
     private fun fit(
         components: List<DiffusionPreflightComponent>,
         backends: List<DiffusionPreflightBackend>,
@@ -329,8 +570,12 @@ class DiffusionInferenceRepositoryTest {
         backendMask: Long = 0L,
         params: DiffusionParameterPlacement,
         ordinal: Int = 0,
+        sourceRole: DiffusionComponentRole = role,
+        sourceOrdinal: Int = ordinal,
     ) = DiffusionPreflightComponent(
-        role = role,
+        sourceRole = sourceRole,
+        sourceOrdinal = sourceOrdinal,
+        subdivisionRole = role,
         ordinal = ordinal,
         parameterBytes = 1_024L,
         runtimePlacement = runtime,

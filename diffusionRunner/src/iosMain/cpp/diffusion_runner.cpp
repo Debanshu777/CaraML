@@ -178,13 +178,14 @@ int diffusion_runner_ios_preflight(
         long long *output,
         int capacity) {
     return ffi_guard<int>("preflight", 0, [&]() {
-        constexpr int header_fields = 8;
-        constexpr int component_fields = 6;
+        constexpr int header_fields = 9;
+        constexpr int component_fields = 8;
         constexpr int backend_fields = 6;
         if (!output || capacity < header_fields) return 0;
         const DiffusionPreflightResultNative native =
             diffusion_runner_core_preflight(convert_model_config(config));
-        if (native.component_count < 0 || native.component_count > DIFFUSION_PREFLIGHT_MAX_COMPONENTS ||
+        if (native.source_count < 0 || native.source_count > DIFFUSION_PREFLIGHT_MAX_COMPONENTS ||
+            native.component_count < 0 || native.component_count > DIFFUSION_PREFLIGHT_MAX_COMPONENTS ||
             native.backend_count < 0 || native.backend_count > DIFFUSION_PREFLIGHT_MAX_BACKENDS) {
             return 0;
         }
@@ -198,12 +199,15 @@ int diffusion_runner_ios_preflight(
         output[cursor++] = native.quantization;
         output[cursor++] = native.memory_confidence;
         output[cursor++] = native.stream_layers ? 1 : 0;
-        output[cursor++] = native.declared_component_mask;
+        output[cursor++] = native.declared_source_mask;
+        output[cursor++] = native.source_count;
         output[cursor++] = native.component_count;
         output[cursor++] = native.backend_count;
         for (int index = 0; index < native.component_count; ++index) {
             const DiffusionPreflightComponentNative &component = native.components[index];
-            output[cursor++] = component.role;
+            output[cursor++] = component.source_role;
+            output[cursor++] = component.source_ordinal;
+            output[cursor++] = component.subdivision_role;
             output[cursor++] = component.ordinal;
             output[cursor++] = component.parameter_bytes;
             output[cursor++] = component.runtime_placement;

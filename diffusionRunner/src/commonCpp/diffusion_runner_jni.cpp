@@ -286,19 +286,23 @@ Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativePreflightModel(
             native.quantization,
             native.memory_confidence,
             native.stream_layers ? 1 : 0,
-            native.declared_component_mask,
+            native.declared_source_mask,
+            native.source_count,
             native.component_count,
             native.backend_count,
         };
-        if (native.component_count < 0 || native.component_count > DIFFUSION_PREFLIGHT_MAX_COMPONENTS ||
+        if (native.source_count < 0 || native.source_count > DIFFUSION_PREFLIGHT_MAX_COMPONENTS ||
+            native.component_count < 0 || native.component_count > DIFFUSION_PREFLIGHT_MAX_COMPONENTS ||
             native.backend_count < 0 || native.backend_count > DIFFUSION_PREFLIGHT_MAX_BACKENDS) {
             return nullptr;
         }
-        payload.reserve(8 + native.component_count * 6 + native.backend_count * 6);
+        payload.reserve(9 + native.component_count * 8 + native.backend_count * 6);
         for (int index = 0; index < native.component_count; ++index) {
             const DiffusionPreflightComponentNative &component = native.components[index];
             payload.insert(payload.end(), {
-                component.role,
+                component.source_role,
+                component.source_ordinal,
+                component.subdivision_role,
                 component.ordinal,
                 component.parameter_bytes,
                 component.runtime_placement,

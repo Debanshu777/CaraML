@@ -215,7 +215,9 @@ enum DiffusionBackendDeviceTypeNative {
 };
 
 struct DiffusionPreflightComponentNative {
-    int role = DIFFUSION_COMPONENT_MODEL_BUNDLE;
+    int source_role = DIFFUSION_COMPONENT_MODEL_BUNDLE;
+    int source_ordinal = 0;
+    int subdivision_role = DIFFUSION_COMPONENT_OTHER;
     int ordinal = 0;
     int64_t parameter_bytes = 0;
     int runtime_placement = DIFFUSION_RUNTIME_DEFAULT;
@@ -238,7 +240,8 @@ struct DiffusionPreflightResultNative {
     int quantization = DIFFUSION_QUANT_UNKNOWN;
     int memory_confidence = 0;
     bool stream_layers = false;
-    int64_t declared_component_mask = 0;
+    int64_t declared_source_mask = 0;
+    int source_count = 0;
     int component_count = 0;
     int backend_count = 0;
     DiffusionPreflightComponentNative components[DIFFUSION_PREFLIGHT_MAX_COMPONENTS]{};
