@@ -139,7 +139,7 @@ val appModule = module {
             clock = { Clock.System.now().toEpochMilliseconds() },
         )
     }
-    single { LoadSessionCoordinator(get()) }
+    single { LoadSessionCoordinator(get(), get()) }
 
     single { DeviceCapabilities() }
     single<BackendCapabilitySource> { RunnerBackendCapabilitySource(get(), get()) }

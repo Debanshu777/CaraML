@@ -1,19 +1,36 @@
 package com.debanshu777.caraml.core.download
 
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import com.debanshu777.caraml.core.recommendation.DiffusionComponentDescriptor
 import com.debanshu777.caraml.core.recommendation.DiffusionMode
 import com.debanshu777.caraml.core.recommendation.DiffusionModelDescriptor
+import com.debanshu777.caraml.core.recommendation.CoordinatedLoadResult
+import com.debanshu777.caraml.core.recommendation.LoadAdmission
+import com.debanshu777.caraml.core.recommendation.LoadRecoveryRepository
+import com.debanshu777.caraml.core.recommendation.LoadRequest
+import com.debanshu777.caraml.core.recommendation.LoadSessionCoordinator
 import com.debanshu777.caraml.core.recommendation.ModelFileIdentity
+import com.debanshu777.caraml.core.recommendation.NativeLoadOutcome
+import com.debanshu777.caraml.core.recommendation.ObservationModelIdentity
 import com.debanshu777.caraml.core.recommendation.QuantizationEvidence
+import com.debanshu777.caraml.core.recommendation.RecoveryFixtures
+import com.debanshu777.caraml.core.recommendation.RepositoryCommit
+import com.debanshu777.caraml.core.recommendation.ResolvedArtifactComponent
+import com.debanshu777.caraml.core.recommendation.ResolvedLocalArtifact
+import com.debanshu777.caraml.core.recommendation.RevisionIdentity
+import com.debanshu777.caraml.core.recommendation.VerifiedArtifactLoadTarget
 import com.debanshu777.caraml.core.recommendation.storage.EncodedModelEvidence
 import com.debanshu777.caraml.core.recommendation.storage.PersistedModelEvidenceCodec
+import com.debanshu777.caraml.core.recommendation.task6LlmDescriptor
 import com.debanshu777.caraml.core.storage.catalog.InstalledModelPublicationCoordinator
 import com.debanshu777.caraml.core.storage.getDatabaseBuilder
 import com.debanshu777.caraml.core.storage.getRoomDatabase
+import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 import com.debanshu777.huggingfacemanager.download.ArtifactVerificationException
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
+import com.debanshu777.huggingfacemanager.download.artifactBundleId
 import com.debanshu777.huggingfacemanager.download.immutableArtifactGenerationRoot
 import com.debanshu777.huggingfacemanager.model.DIFFUSERS_BUNDLE_DB_FILENAME
 import java.nio.file.Files
@@ -23,10 +40,12 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
+import okio.Path.Companion.toPath
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class ModelDownloadFinalizerTest {
@@ -167,6 +186,68 @@ class ModelDownloadFinalizerTest {
             ),
             calls,
         )
+    }
+
+    @Test
+    fun realFinalizerCannotReplaceExactArtifactsDuringNativeLoadLifetime() = runTest {
+        val batch = canonicalFinalizerBatch()
+        val request = loadRequestFor(batch)
+        val publication = InstalledModelPublicationCoordinator(stripeCount = 256)
+        val dataStorePath = Files.createTempDirectory("caraml-finalizer-load-race")
+            .resolve("state.preferences_pb")
+        val recovery = LoadRecoveryRepository(
+            PreferenceDataStoreFactory.createWithPath(scope = backgroundScope) {
+                dataStorePath.toString().toPath()
+            },
+            "engine-1",
+        ) { 2_000L }
+        val coordinator = LoadSessionCoordinator(recovery, publication)
+        val nativeEntered = CompletableDeferred<Unit>()
+        val releaseNative = CompletableDeferred<Unit>()
+        val publishEntered = CompletableDeferred<Unit>()
+        var publishCount = 0
+        val load = async(start = CoroutineStart.UNDISPATCHED) {
+            coordinator.execute(
+                request = request,
+                evaluateAdmission = { LoadAdmission.Ready(request) },
+                artifactValidator = { true },
+                releasePartialState = {},
+                nativeLoad = {
+                    nativeEntered.complete(Unit)
+                    releaseNative.await()
+                    NativeLoadOutcome.Succeeded("loaded")
+                },
+            )
+        }
+        nativeEntered.await()
+        val finalizer = finalizer(
+            batch = batch,
+            bundlePublisher = object : BundlePublisher {
+                override suspend fun publish(
+                    ownerModelId: String,
+                    artifacts: List<DownloadMetadataDTO>,
+                ): Boolean {
+                    publishCount += 1
+                    publishEntered.complete(Unit)
+                    return true
+                }
+
+                override suspend fun validate(
+                    ownerModelId: String,
+                    artifacts: List<DownloadMetadataDTO>,
+                ): Boolean = true
+            },
+            catalogPublisher = ModelCatalogPublisher { _, _ -> },
+            publicationCoordinator = publication,
+        )
+        val finalize = async(start = CoroutineStart.UNDISPATCHED) { finalizer.finalize(batch.batchId) }
+
+        assertFalse(publishEntered.isCompleted)
+        releaseNative.complete(Unit)
+        assertIs<CoordinatedLoadResult.Completed<String>>(load.await())
+        finalize.await()
+        assertTrue(publishEntered.isCompleted)
+        assertEquals(1, publishCount)
     }
 
     @Test
@@ -386,6 +467,99 @@ private fun finalizerBatch(
             )
         },
         evidence ?: pendingEvidence(requests.map { it.metadata.artifact }),
+    )
+}
+
+private fun canonicalFinalizerBatch(): DownloadBatchSnapshot {
+    val original = finalizerBatch()
+    val identities = original.artifacts.map { it.request.metadata.artifact }
+    val bundleId = requireNotNull(artifactBundleId(identities))
+    val artifacts = original.artifacts.map { snapshot ->
+        val metadata = snapshot.request.metadata
+        val canonicalMetadata = DownloadMetadataDTO(
+            artifact = metadata.artifact,
+            logicalRole = metadata.logicalRole,
+            sizeBytes = metadata.sizeBytes,
+            author = metadata.author,
+            libraryName = metadata.libraryName,
+            pipelineTag = metadata.pipelineTag,
+            contextLength = metadata.contextLength,
+            bundleId = bundleId,
+        )
+        snapshot.copy(request = snapshot.request.copy(metadata = canonicalMetadata))
+    }
+    return original.copy(artifacts = artifacts)
+}
+
+private fun loadRequestFor(batch: DownloadBatchSnapshot): LoadRequest {
+    val components = batch.artifacts.map { snapshot ->
+        val metadata = snapshot.request.metadata
+        val remote = metadata.artifact.remoteObjectId
+        val identity = ModelFileIdentity(
+            repositoryId = metadata.artifact.repositoryId,
+            revision = metadata.artifact.immutableRevision,
+            path = metadata.artifact.relativePath,
+            sizeBytes = metadata.artifact.expectedBytes,
+            gitOid = remote?.takeIf { it.length == 40 },
+            lfsOid = remote?.takeIf { it.startsWith("sha256:") },
+            xetHash = remote?.takeIf { it.length != 40 && !it.startsWith("sha256:") },
+            evidence = emptyList(),
+        )
+        ResolvedArtifactComponent(
+            logicalRole = metadata.logicalRole,
+            repositoryId = identity.repositoryId,
+            repositoryRelativePath = identity.path,
+            localPath = "/private/${identity.repositoryId}/${metadata.destinationRelativePath}",
+            byteCount = identity.sizeBytes,
+            contentSha256 = "d".repeat(64),
+            identity = identity,
+            localRelativePath = metadata.destinationRelativePath,
+            layoutRelativePath = metadata.layoutRelativePath,
+            bundleId = metadata.bundleId,
+        )
+    }
+    val primary = components.single { it.logicalRole == "model" }
+    val aggregate = ModelFileIdentity(
+        repositoryId = batch.ownerModelId,
+        revision = "e".repeat(64),
+        path = primary.repositoryRelativePath,
+        sizeBytes = components.sumOf(ResolvedArtifactComponent::byteCount),
+        gitOid = null,
+        lfsOid = "sha256:${"e".repeat(64)}",
+        xetHash = null,
+        evidence = emptyList(),
+    )
+    val artifact = ResolvedLocalArtifact(
+        identity = aggregate,
+        revisionIdentity = RevisionIdentity.HubCommit(
+            components.map { RepositoryCommit(it.repositoryId, it.identity.revision) }
+                .distinct()
+                .sortedWith(compareBy(RepositoryCommit::repositoryId, RepositoryCommit::revision)),
+        ),
+        components = components,
+        loadTarget = VerifiedArtifactLoadTarget.File(
+            path = primary.localPath,
+            componentRole = primary.logicalRole,
+            repositoryId = primary.repositoryId,
+            localRelativePath = primary.localRelativePath,
+        ),
+    )
+    return LoadRequest(
+        model = LocalModelEntity(
+            modelId = batch.ownerModelId,
+            filename = primary.layoutRelativePath.substringAfterLast('/'),
+            localPath = primary.localPath,
+            sizeBytes = aggregate.sizeBytes,
+            downloadedAt = 1L,
+            author = null,
+            libraryName = null,
+            pipelineTag = "text-generation",
+        ),
+        identity = aggregate,
+        observationIdentity = requireNotNull(ObservationModelIdentity.fromDescriptor(task6LlmDescriptor())),
+        plan = RecoveryFixtures.plan,
+        assessmentKey = "assessment-1",
+        artifact = artifact,
     )
 }
 
