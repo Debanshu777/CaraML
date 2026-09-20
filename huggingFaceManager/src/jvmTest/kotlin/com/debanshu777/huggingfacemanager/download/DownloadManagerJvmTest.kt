@@ -4,6 +4,7 @@ import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
@@ -28,6 +29,269 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class DownloadManagerJvmTest {
+    @Test
+    fun currentBundleLifetimeReturnsValidatedOwnerManifestUnderTheRootLease() = withTemporaryRoot { root ->
+        val storage = TestStoragePathProvider(root)
+        val installed = installArtifact(root)
+        val modelRoot = modelFile(root, installed.artifact.repositoryId, "")
+        assertTrue(runBlocking { DownloadManager(storage).publishBundle(installed.artifact.repositoryId, listOf(installed)) })
+
+        val current = runBlocking {
+            artifactRootLifetime(storage).withCurrentBundle(
+                ownerModelId = installed.artifact.repositoryId,
+                expectedRepositoryRoots = mapOf(installed.artifact.repositoryId to modelRoot.absolutePath),
+            ) { it }
+        }
+
+        assertEquals(installed.artifact, assertNotNull(current).entries.single().identity)
+    }
+
+    @Test
+    fun currentBundleLifetimeDiscoversAndLocksExternalCandidateRoot() = withTemporaryRoot { root ->
+        val storage = TestStoragePathProvider(root)
+        val ownerBytes = "owner-component".encodeToByteArray()
+        val externalBytes = "external-component".encodeToByteArray()
+        val ownerIdentity = requireNotNull(
+            DownloadArtifactIdentity.create(
+                repositoryId = "org/model",
+                immutableRevision = "a".repeat(40),
+                relativePath = "model.safetensors",
+                remoteObjectId = "sha256:${ownerBytes.sha256Hex()}",
+                expectedBytes = ownerBytes.size.toLong(),
+            ),
+        )
+        val externalIdentity = requireNotNull(
+            DownloadArtifactIdentity.create(
+                repositoryId = "external/vae",
+                immutableRevision = "b".repeat(40),
+                relativePath = "vae.safetensors",
+                remoteObjectId = "sha256:${externalBytes.sha256Hex()}",
+                expectedBytes = externalBytes.size.toLong(),
+            ),
+        )
+        val bundleId = requireNotNull(artifactBundleId(listOf(ownerIdentity, externalIdentity)))
+        val owner = metadataForBundle(ownerIdentity, "model", bundleId)
+        val external = metadataForBundle(externalIdentity, "vae", bundleId)
+        installArtifact(root, owner, ownerBytes)
+        installArtifact(root, external, externalBytes)
+        val manager = DownloadManager(storage)
+        assertTrue(runBlocking { manager.publishBundle(ownerIdentity.repositoryId, listOf(owner, external)) })
+        val ownerRoot = modelFile(root, ownerIdentity.repositoryId, "")
+        val externalRoot = modelFile(root, externalIdentity.repositoryId, "")
+
+        runBlocking {
+            coroutineScope {
+                val mutationEntered = CompletableDeferred<Unit>()
+                lateinit var mutation: Deferred<Unit>
+                val current = artifactRootLifetime(storage).withCurrentBundle(
+                    ownerModelId = ownerIdentity.repositoryId,
+                    expectedRepositoryRoots = mapOf(ownerIdentity.repositoryId to ownerRoot.absolutePath),
+                ) { manifest ->
+                    mutation = async(start = CoroutineStart.UNDISPATCHED) {
+                        ArtifactRootLockCoordinator.withRoots(listOf(externalRoot.absolutePath)) {
+                            mutationEntered.complete(Unit)
+                        }
+                    }
+                    assertFalse(mutationEntered.isCompleted)
+                    manifest
+                }
+
+                assertEquals(2, assertNotNull(current).entries.size)
+                mutation.await()
+                assertTrue(mutationEntered.isCompleted)
+            }
+        }
+    }
+
+    @Test
+    fun currentBundleLifetimeDiscoversStagedExternalRootBeforeRecovery() = withTemporaryRoot { root ->
+        val storage = TestStoragePathProvider(root)
+        val old = installArtifact(root)
+        val manager = DownloadManager(storage)
+        assertTrue(runBlocking { manager.publishBundle(old.artifact.repositoryId, listOf(old)) })
+        val ownerRoot = modelFile(root, old.artifact.repositoryId, "")
+        val newOwnerBytes = "new-owner-component".encodeToByteArray()
+        val externalBytes = "staged-external-component".encodeToByteArray()
+        val newOwnerIdentity = requireNotNull(
+            DownloadArtifactIdentity.create(
+                repositoryId = old.artifact.repositoryId,
+                immutableRevision = "c".repeat(40),
+                relativePath = "model.safetensors",
+                remoteObjectId = "sha256:${newOwnerBytes.sha256Hex()}",
+                expectedBytes = newOwnerBytes.size.toLong(),
+            ),
+        )
+        val externalIdentity = requireNotNull(
+            DownloadArtifactIdentity.create(
+                repositoryId = "external/staged-vae",
+                immutableRevision = "d".repeat(40),
+                relativePath = "vae.safetensors",
+                remoteObjectId = "sha256:${externalBytes.sha256Hex()}",
+                expectedBytes = externalBytes.size.toLong(),
+            ),
+        )
+        val bundleId = requireNotNull(artifactBundleId(listOf(newOwnerIdentity, externalIdentity)))
+        val newOwner = metadataForBundle(newOwnerIdentity, "model", bundleId)
+        val external = metadataForBundle(externalIdentity, "vae", bundleId)
+        installArtifact(root, newOwner, newOwnerBytes)
+        installArtifact(root, external, externalBytes)
+        val stagedEntries = listOf(
+            manifestEntry(newOwner, newOwnerBytes),
+            manifestEntry(external, externalBytes),
+        )
+        val expected = requireNotNull(ArtifactManifest.create(stagedEntries))
+        val crashingStore = ArtifactBundleManifestStore(
+            ownerRoot.absolutePath.toOkioPath(),
+            phaseObserver = { phase ->
+                if (phase == ManifestJournalPhase.PREPARED) throw SimulatedRootLifetimeCrash()
+            },
+            artifactValidator = { true },
+        )
+        assertFailsWith<SimulatedRootLifetimeCrash> { crashingStore.publish(stagedEntries) }
+        crashingStore.close()
+        val journal = File(ownerRoot, ArtifactBundleManifestStore.JOURNAL_FILE_NAME)
+        val part = File(ownerRoot, ArtifactBundleManifestStore.MANIFEST_FILE_NAME + ".part")
+        assertTrue(journal.exists())
+        assertTrue(part.exists())
+
+        val canonicalCurrent = runBlocking { manager.validatedBundle(old.artifact.repositoryId) }
+        assertEquals(expected, canonicalCurrent)
+        val current = runBlocking {
+            artifactRootLifetime(storage).withCurrentBundle(
+                ownerModelId = old.artifact.repositoryId,
+                expectedRepositoryRoots = mapOf(old.artifact.repositoryId to ownerRoot.absolutePath),
+            ) { it }
+        }
+
+        assertEquals(expected, current)
+        assertFalse(journal.exists())
+        assertFalse(part.exists())
+    }
+
+    @Test
+    fun sharedRootLifetimeBlocksDownloadCommitUntilValidatedConsumerExits() = withTemporaryRoot { root ->
+        val storage = TestStoragePathProvider(root)
+        val oldMetadata = installArtifact(root)
+        val oldTarget = modelFile(root, oldMetadata.artifact.repositoryId, oldMetadata.destinationRelativePath)
+        val modelRoot = modelFile(root, oldMetadata.artifact.repositoryId, "")
+        val manifestFile = File(modelRoot, ArtifactManifestStore.MANIFEST_FILE_NAME)
+        val oldTargetBytes = oldTarget.readBytes()
+        val oldManifestBytes = manifestFile.readBytes()
+        val newBytes = "replacement-generation".encodeToByteArray()
+        val newMetadata = scopedMetadata("model.gguf", "b".repeat(40), newBytes)
+        val newTarget = modelFile(root, newMetadata.artifact.repositoryId, newMetadata.destinationRelativePath)
+        val requests = AtomicInteger()
+
+        withServer { exchange ->
+            requests.incrementAndGet()
+            exchange.respond(status = 200, declaredLength = newBytes.size.toLong(), body = newBytes)
+        }.use { server ->
+            val manager = DownloadManager(storage, server.baseUrl)
+            runBlocking {
+                coroutineScope {
+                    lateinit var replacement: Deferred<List<DownloadProgressDTO>>
+                    ArtifactRootLockCoordinator.withRoots(listOf(modelRoot.absolutePath)) {
+                        replacement = async(start = CoroutineStart.UNDISPATCHED) {
+                            manager.download(
+                                newMetadata.artifact.repositoryId,
+                                newMetadata.artifact.relativePath,
+                                newMetadata,
+                            ).toList()
+                        }
+
+                        assertFalse(replacement.isCompleted)
+                        assertEquals(0, requests.get())
+                        assertContentEquals(oldTargetBytes, oldTarget.readBytes())
+                        assertContentEquals(oldManifestBytes, manifestFile.readBytes())
+                        assertFalse(newTarget.exists())
+                    }
+
+                    replacement.await()
+                }
+            }
+        }
+
+        assertEquals(1, requests.get())
+        assertContentEquals(oldTargetBytes, oldTarget.readBytes())
+        assertContentEquals(newBytes, newTarget.readBytes())
+        assertNotEquals(oldManifestBytes.toList(), manifestFile.readBytes().toList())
+        val entries = ArtifactManifestStore(modelRoot.absolutePath.toOkioPath()).readValidated()?.entries.orEmpty()
+        assertEquals(1, entries.count { it.identity == newMetadata.artifact })
+    }
+
+    @Test
+    fun sharedRootLifetimeBlocksValidatedReadJournalRecoveryWithoutMutation() = withTemporaryRoot { root ->
+        val storage = TestStoragePathProvider(root)
+        val oldMetadata = installArtifact(root)
+        val modelRoot = modelFile(root, oldMetadata.artifact.repositoryId, "")
+        val oldTarget = modelFile(root, oldMetadata.artifact.repositoryId, oldMetadata.destinationRelativePath)
+        val manifestFile = File(modelRoot, ArtifactManifestStore.MANIFEST_FILE_NAME)
+        val newBytes = "recoverable-generation".encodeToByteArray()
+        val newMetadata = scopedMetadata("model.gguf", "c".repeat(40), newBytes)
+        val newTargetPart = modelFile(
+            root,
+            newMetadata.artifact.repositoryId,
+            newMetadata.destinationRelativePath + ".part",
+        ).apply {
+            parentFile.mkdirs()
+            writeBytes(newBytes)
+        }
+        val crashingStore = ArtifactManifestStore(
+            modelRoot.absolutePath.toOkioPath(),
+            phaseObserver = { phase ->
+                if (phase == ManifestJournalPhase.PREPARED) throw SimulatedRootLifetimeCrash()
+            },
+        )
+        assertFailsWith<SimulatedRootLifetimeCrash> {
+            crashingStore.commit(
+                newMetadata.destinationRelativePath,
+                requireNotNull(
+                    ArtifactManifestEntry.create(
+                        logicalRole = newMetadata.logicalRole,
+                        identity = newMetadata.artifact,
+                        byteCount = newBytes.size.toLong(),
+                        contentSha256 = newBytes.sha256Hex(),
+                        bundleId = newMetadata.bundleId,
+                        localRelativePath = newMetadata.destinationRelativePath,
+                        layoutRelativePath = newMetadata.layoutRelativePath,
+                    ),
+                ),
+            )
+        }
+        crashingStore.close()
+        val journalFile = File(modelRoot, ArtifactManifestStore.JOURNAL_FILE_NAME)
+        val manifestPartFile = File(modelRoot, ArtifactManifestStore.MANIFEST_FILE_NAME + ".part")
+        val oldTargetBytes = oldTarget.readBytes()
+        val oldManifestBytes = manifestFile.readBytes()
+        val journalBytes = journalFile.readBytes()
+        val manifestPartBytes = manifestPartFile.readBytes()
+        val manager = DownloadManager(storage, "https://huggingface.co")
+
+        runBlocking {
+            coroutineScope {
+                lateinit var validatedRead: Deferred<ArtifactManifest?>
+                ArtifactRootLockCoordinator.withRoots(listOf(modelRoot.absolutePath)) {
+                    validatedRead = async(start = CoroutineStart.UNDISPATCHED) {
+                        manager.validatedArtifacts(oldMetadata.artifact.repositoryId)
+                    }
+
+                    assertFalse(validatedRead.isCompleted)
+                    assertContentEquals(oldTargetBytes, oldTarget.readBytes())
+                    assertContentEquals(oldManifestBytes, manifestFile.readBytes())
+                    assertContentEquals(journalBytes, journalFile.readBytes())
+                    assertContentEquals(manifestPartBytes, manifestPartFile.readBytes())
+                    assertContentEquals(newBytes, newTargetPart.readBytes())
+                }
+
+                val recovered = assertNotNull(validatedRead.await())
+                assertTrue(recovered.entries.any { it.identity == newMetadata.artifact })
+            }
+        }
+
+        assertFalse(journalFile.exists())
+        assertFalse(manifestPartFile.exists())
+    }
+
     @Test
     fun unscopedDestinationIsRejectedAtTypedBoundaryBeforeNetworkOrStorageMutation() =
         withTemporaryRoot { root ->
@@ -533,12 +797,17 @@ class DownloadManagerJvmTest {
     private fun installArtifact(root: File): DownloadMetadataDTO {
         val bytes = "installed-model".encodeToByteArray()
         val metadata = metadata("model.gguf", bytes.size.toLong(), bytes.sha256Hex())
-        val modelRoot = modelFile(root, "org/model", "").apply { mkdirs() }
-        File(modelRoot, metadata.destinationRelativePath + ".part").apply {
+        installArtifact(root, metadata, bytes)
+        return metadata
+    }
+
+    private fun installArtifact(root: File, metadata: DownloadMetadataDTO, bytes: ByteArray) {
+        val exactModelRoot = modelFile(root, metadata.artifact.repositoryId, "").apply { mkdirs() }
+        File(exactModelRoot, metadata.destinationRelativePath + ".part").apply {
             parentFile.mkdirs()
             writeBytes(bytes)
         }
-        ArtifactManifestStore(modelRoot.absolutePath.toOkioPath()).commit(
+        ArtifactManifestStore(exactModelRoot.absolutePath.toOkioPath()).commit(
             relativePath = metadata.destinationRelativePath,
             entry = requireNotNull(
                 ArtifactManifestEntry.create(
@@ -552,8 +821,33 @@ class DownloadManagerJvmTest {
                 ),
             ),
         )
-        return metadata
     }
+
+    private fun metadataForBundle(
+        identity: DownloadArtifactIdentity,
+        role: String,
+        bundleId: String,
+    ) = DownloadMetadataDTO(
+        artifact = identity,
+        logicalRole = role,
+        sizeBytes = identity.expectedBytes,
+        author = null,
+        libraryName = null,
+        pipelineTag = null,
+        bundleId = bundleId,
+    )
+
+    private fun manifestEntry(metadata: DownloadMetadataDTO, bytes: ByteArray): ArtifactManifestEntry = requireNotNull(
+        ArtifactManifestEntry.create(
+            logicalRole = metadata.logicalRole,
+            identity = metadata.artifact,
+            byteCount = bytes.size.toLong(),
+            contentSha256 = bytes.sha256Hex(),
+            bundleId = metadata.bundleId,
+            localRelativePath = metadata.destinationRelativePath,
+            layoutRelativePath = metadata.layoutRelativePath,
+        ),
+    )
 
     private suspend fun <T> assertRootLockCancellationDoesNotReturn(
         root: String,
@@ -582,6 +876,8 @@ class DownloadManagerJvmTest {
         }
     }
 }
+
+private class SimulatedRootLifetimeCrash : RuntimeException()
 
 private fun ByteArray.sha256Hex(): String = okio.ByteString.of(*this).sha256().hex()
 

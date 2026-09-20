@@ -93,10 +93,14 @@ class ArtifactBundleManifestStore(
         manifest.entries.map { it.bundleId }.toSet().size == 1 && manifest.entries.all(artifactValidator)
     }
 
-    internal fun readManifestOnly(): ArtifactManifest? =
+    internal fun readRecoveryCandidates(): List<ArtifactManifest> =
         sequenceOf(manifestPath, partPath, previousPath)
             .mapNotNull(::readManifest)
-            .firstOrNull { manifest -> manifest.entries.map { it.bundleId }.toSet().size == 1 }
+            .filter { manifest -> manifest.entries.map { it.bundleId }.toSet().size == 1 }
+            .distinct()
+            .toList()
+
+    internal fun readManifestOnly(): ArtifactManifest? = readRecoveryCandidates().firstOrNull()
 
     fun close() = secureRoot?.close()
 

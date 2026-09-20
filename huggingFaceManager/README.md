@@ -160,6 +160,7 @@ Network categories are `NoInternet`, `Unauthorized`, `RequestTimeout`, `RateLimi
 
 <!-- Updated at end of each Claude Code session -->
 
+- A narrow shared artifact-root lifetime discovers and locks expected roots plus repositories from every bounded main/staged/previous owner-bundle recovery candidate, then recovery-validates without recursively locking and holds the same canonical locks used by download commit, iOS import, validation, and cleanup
 - Every download, publish, discard, and iOS import write requires a canonical `.caraml-artifacts/<bundle-digest>/...` destination; unscoped manifests are unreadable, invalid pending journals remain quarantined without exposing torn state, bundle digests reject ambiguous duplicate coordinates, and crash-recoverable pruning preserves other linked revisions
 - Downloads now resume verified staged files with validated `Range`/`If-Range` responses, safely restart on full responses, and preserve synchronized checkpoints without weakening root containment
 - Android downloads now pin the trusted app-owned models root directly, avoiding SELinux-forbidden reads of `/` while retaining descriptor-relative no-symlink artifact operations

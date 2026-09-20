@@ -1,8 +1,9 @@
 package com.debanshu777.caraml.core.recommendation
 
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
-import com.debanshu777.caraml.core.storage.catalog.InstalledModelPublicationCoordinator
-import com.debanshu777.caraml.core.storage.catalog.artifactStorageCoordinationKey
+import com.debanshu777.huggingfacemanager.download.ArtifactManifest
+import com.debanshu777.huggingfacemanager.download.ArtifactManifestEntry
+import com.debanshu777.huggingfacemanager.download.ArtifactRootLifetime
 import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 import com.debanshu777.huggingfacemanager.download.artifactBundleId
 import com.debanshu777.huggingfacemanager.download.immutableArtifactStorageLocation
@@ -13,6 +14,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.runCurrent
@@ -29,7 +32,8 @@ class LoadSessionCoordinatorTest {
     @Test
     fun mutationAfterPreflightStopsBeforeMarkerAndNativeEntry() = runTest {
         val repository = repository()
-        val coordinator = LoadSessionCoordinator(repository, InstalledModelPublicationCoordinator())
+        val lifetime = testArtifactLifetime(request)
+        val coordinator = LoadSessionCoordinator(repository, lifetime)
         var artifactCurrent = true
         var nativeCalls = 0
 
@@ -56,7 +60,7 @@ class LoadSessionCoordinatorTest {
     @Test
     fun concurrentCrossEngineLoadsCannotOverlapOrReplaceALiveMarker() = runTest {
         val repository = repository()
-        val coordinator = LoadSessionCoordinator(repository, InstalledModelPublicationCoordinator())
+        val coordinator = LoadSessionCoordinator(repository, testArtifactLifetime(request))
         val firstEnteredNative = CompletableDeferred<Unit>()
         val releaseFirst = CompletableDeferred<Unit>()
         var secondAdmissionStarted = false
@@ -103,7 +107,7 @@ class LoadSessionCoordinatorTest {
     @Test
     fun abandonedMarkerIsConvertedOnlyByOneStartupRecovery() = runTest {
         val repository = repository()
-        val coordinator = LoadSessionCoordinator(repository, InstalledModelPublicationCoordinator())
+        val coordinator = LoadSessionCoordinator(repository, testArtifactLifetime(request))
         repository.beginLoad(RecoveryFixtures.identity, RecoveryFixtures.plan)
 
         val first = coordinator.recoverAbandonedLoadAtStartup()
@@ -117,15 +121,15 @@ class LoadSessionCoordinatorTest {
     @Test
     fun overlappingArtifactMutationWaitsThroughFinalValidationMarkerAndNativeLoad() = runTest {
         val repository = repository()
-        val publication = InstalledModelPublicationCoordinator(stripeCount = 256)
-        val coordinator = LoadSessionCoordinator(repository, publication)
+        val lifetime = testArtifactLifetime(request)
+        val coordinator = LoadSessionCoordinator(repository, lifetime)
         val validationEntered = CompletableDeferred<Unit>()
         val releaseValidation = CompletableDeferred<Unit>()
         val nativeEntered = CompletableDeferred<Unit>()
         val releaseNative = CompletableDeferred<Unit>()
         val mutationEntered = CompletableDeferred<Unit>()
         val exactRequest = scopedRequest()
-        val storageKey = exactRequest.artifact!!.components.single().coordinationKey()
+        val storageRoot = exactRequest.artifact!!.components.single().storageRoot
 
         val load = async(start = CoroutineStart.UNDISPATCHED) {
             coordinator.execute<String>(
@@ -146,7 +150,7 @@ class LoadSessionCoordinatorTest {
         }
         validationEntered.await()
         val mutation = async(start = CoroutineStart.UNDISPATCHED) {
-            publication.withArtifactPublication("other/owner", listOf(storageKey)) {
+            lifetime.withRoots(listOf(storageRoot)) {
                 mutationEntered.complete(Unit)
             }
         }
@@ -167,15 +171,19 @@ class LoadSessionCoordinatorTest {
     @Test
     fun everyDiffusionComponentIsLockedBeforeFinalValidationStarts() = runTest {
         val repository = repository()
-        val publication = InstalledModelPublicationCoordinator(stripeCount = 256)
-        val coordinator = LoadSessionCoordinator(repository, publication)
-        val exactRequest = scopedRequest(componentCount = 2, directoryTarget = true)
-        val secondKey = exactRequest.artifact!!.components.last().coordinationKey()
+        val exactRequest = scopedRequest(
+            componentCount = 2,
+            directoryTarget = true,
+            separateComponentRoots = true,
+        )
+        val lifetime = testArtifactLifetime(exactRequest)
+        val coordinator = LoadSessionCoordinator(repository, lifetime)
+        val secondRoot = exactRequest.artifact!!.components.last().storageRoot
         val blockerEntered = CompletableDeferred<Unit>()
         val releaseBlocker = CompletableDeferred<Unit>()
         val validationEntered = CompletableDeferred<Unit>()
         val blocker = async(start = CoroutineStart.UNDISPATCHED) {
-            publication.withArtifactPublication("other/owner", listOf(secondKey)) {
+            lifetime.withRoots(listOf(secondRoot)) {
                 blockerEntered.complete(Unit)
                 releaseBlocker.await()
             }
@@ -204,9 +212,38 @@ class LoadSessionCoordinatorTest {
     }
 
     @Test
+    fun newerCurrentBundleRejectsStaleRequestBeforeHashingOrNativeEntry() = runTest {
+        val repository = repository()
+        val stale = scopedRequest(remoteKind = RemoteKind.LFS)
+        val newer = scopedRequest(remoteKind = RemoteKind.XET)
+        val coordinator = LoadSessionCoordinator(repository, testArtifactLifetime(newer))
+        var validationCalls = 0
+        var nativeCalls = 0
+
+        val result = coordinator.execute(
+            request = stale,
+            evaluateAdmission = { LoadAdmission.Ready(stale) },
+            artifactValidator = {
+                validationCalls += 1
+                true
+            },
+            releasePartialState = {},
+            nativeLoad = {
+                nativeCalls += 1
+                NativeLoadOutcome.Succeeded("unexpected")
+            },
+        )
+
+        assertIs<CoordinatedLoadResult.ArtifactChanged>(result)
+        assertEquals(0, validationCalls)
+        assertEquals(0, nativeCalls)
+        assertEquals(0, repository.recoveryRecordCount())
+    }
+
+    @Test
     fun malformedScopedBindingFailsClosedBeforeValidationMarkerOrNativeEntry() = runTest {
         val repository = repository()
-        val coordinator = LoadSessionCoordinator(repository, InstalledModelPublicationCoordinator())
+        val coordinator = LoadSessionCoordinator(repository, testArtifactLifetime(request))
         val valid = scopedRequest()
         val component = valid.artifact!!.components.single()
         val malformed = valid.copy(
@@ -237,7 +274,7 @@ class LoadSessionCoordinatorTest {
     @Test
     fun forgedGenerationBundleFailsClosedBeforeTakingAStorageLifetime() = runTest {
         val repository = repository()
-        val coordinator = LoadSessionCoordinator(repository, InstalledModelPublicationCoordinator())
+        val coordinator = LoadSessionCoordinator(repository, testArtifactLifetime(request))
         val valid = scopedRequest()
         val original = valid.artifact!!.components.single()
         val forgedBundle = "f".repeat(64)
@@ -289,6 +326,45 @@ class LoadSessionCoordinatorTest {
     }
 
     @Test
+    fun mutatedStorageRootFailsClosedBeforeFinalValidation() = runTest {
+        val valid = scopedRequest()
+        val component = valid.artifact!!.components.single()
+        val malformed = valid.copy(
+            artifact = valid.artifact.copy(
+                components = listOf(component.copy(storageRoot = "/private/other/root")),
+            ),
+        )
+
+        assertRejectedBeforeFinalValidation(malformed)
+    }
+
+    @Test
+    fun xetRemoteIdentityUsesExactManifestIdAndRejectsMutation() = runTest {
+        val repository = repository()
+        val exact = scopedRequest(remoteKind = RemoteKind.XET)
+        val coordinator = LoadSessionCoordinator(repository, testArtifactLifetime(exact))
+        var validationCalls = 0
+
+        val completed = coordinator.execute(
+            request = exact,
+            evaluateAdmission = { LoadAdmission.Ready(exact) },
+            artifactValidator = { validationCalls += 1; true },
+            releasePartialState = {},
+            nativeLoad = { NativeLoadOutcome.Succeeded("loaded") },
+        )
+
+        assertIs<CoordinatedLoadResult.Completed<String>>(completed)
+        assertEquals(1, validationCalls)
+        val component = exact.artifact!!.components.single()
+        val mutated = exact.copy(
+            artifact = exact.artifact.copy(
+                components = listOf(component.copy(remoteObjectId = "e".repeat(64))),
+            ),
+        )
+        assertRejectedBeforeFinalValidation(mutated)
+    }
+
+    @Test
     fun duplicateGenerationKeyFailsClosedBeforeFinalValidation() = runTest {
         val valid = scopedRequest()
         val component = valid.artifact!!.components.single()
@@ -326,10 +402,10 @@ class LoadSessionCoordinatorTest {
     @Test
     fun cancellationReleasesArtifactLifetimeAfterTerminalMarkerCleanup() = runTest {
         val repository = repository()
-        val publication = InstalledModelPublicationCoordinator()
-        val coordinator = LoadSessionCoordinator(repository, publication)
         val exactRequest = scopedRequest()
-        val storageKey = exactRequest.artifact!!.components.single().coordinationKey()
+        val lifetime = testArtifactLifetime(exactRequest)
+        val coordinator = LoadSessionCoordinator(repository, lifetime)
+        val storageRoot = exactRequest.artifact!!.components.single().storageRoot
         val nativeEntered = CompletableDeferred<Unit>()
         val load = async(start = CoroutineStart.UNDISPATCHED) {
             coordinator.execute<String>(
@@ -347,7 +423,7 @@ class LoadSessionCoordinatorTest {
 
         load.cancelAndJoin()
         var mutationEntered = false
-        publication.withArtifactPublication("other/owner", listOf(storageKey)) {
+        lifetime.withRoots(listOf(storageRoot)) {
             mutationEntered = true
         }
 
@@ -358,10 +434,10 @@ class LoadSessionCoordinatorTest {
     @Test
     fun nativeThrowReleasesArtifactLifetimeAfterFailureMarkerCleanup() = runTest {
         val repository = repository()
-        val publication = InstalledModelPublicationCoordinator()
-        val coordinator = LoadSessionCoordinator(repository, publication)
         val exactRequest = scopedRequest()
-        val storageKey = exactRequest.artifact!!.components.single().coordinationKey()
+        val lifetime = testArtifactLifetime(exactRequest)
+        val coordinator = LoadSessionCoordinator(repository, lifetime)
+        val storageRoot = exactRequest.artifact!!.components.single().storageRoot
         val failure = IllegalStateException("native open failed")
 
         val observed = runCatching {
@@ -374,7 +450,7 @@ class LoadSessionCoordinatorTest {
             )
         }.exceptionOrNull()
         var mutationEntered = false
-        publication.withArtifactPublication("other/owner", listOf(storageKey)) {
+        lifetime.withRoots(listOf(storageRoot)) {
             mutationEntered = true
         }
 
@@ -386,13 +462,13 @@ class LoadSessionCoordinatorTest {
     @Test
     fun disjointArtifactGenerationDoesNotWaitForActiveNativeLoad() = runTest {
         val repository = repository()
-        val publication = InstalledModelPublicationCoordinator(stripeCount = 256)
-        val coordinator = LoadSessionCoordinator(repository, publication)
         val exactRequest = scopedRequest()
         val disjoint = scopedRequest(
             repositoryId = "different/model",
         )
-        val disjointKey = disjoint.artifact!!.components.single().coordinationKey()
+        val lifetime = testArtifactLifetime(exactRequest, disjoint)
+        val coordinator = LoadSessionCoordinator(repository, lifetime)
+        val disjointRoot = disjoint.artifact!!.components.single().storageRoot
         val nativeEntered = CompletableDeferred<Unit>()
         val releaseNative = CompletableDeferred<Unit>()
         val load = async(start = CoroutineStart.UNDISPATCHED) {
@@ -411,7 +487,7 @@ class LoadSessionCoordinatorTest {
         nativeEntered.await()
         var disjointEntered = false
 
-        publication.withArtifactPublication("different/owner", listOf(disjointKey)) {
+        lifetime.withRoots(listOf(disjointRoot)) {
             disjointEntered = true
         }
 
@@ -428,7 +504,7 @@ class LoadSessionCoordinatorTest {
 
     private suspend fun TestScope.assertRejectedBeforeFinalValidation(malformed: LoadRequest) {
         val repository = repository()
-        val coordinator = LoadSessionCoordinator(repository, InstalledModelPublicationCoordinator())
+        val coordinator = LoadSessionCoordinator(repository, testArtifactLifetime(request))
         var validationCalls = 0
         var nativeCalls = 0
 
@@ -449,6 +525,61 @@ class LoadSessionCoordinatorTest {
         assertEquals(0, repository.recoveryRecordCount())
     }
 
+    private fun testArtifactLifetime(vararg requests: LoadRequest): TestArtifactRootLifetime {
+        val manifests = requests.associate { candidate ->
+            candidate.model.modelId to requireNotNull(candidate.artifact).toManifest()
+        }
+        return TestArtifactRootLifetime(manifests)
+    }
+
+    private class TestArtifactRootLifetime(
+        private val manifests: Map<String, ArtifactManifest>,
+    ) : ArtifactRootLifetime {
+        private val guard = Mutex()
+        private val rootLocks = mutableMapOf<String, Mutex>()
+
+        override suspend fun <T> withCurrentBundle(
+            ownerModelId: String,
+            expectedRepositoryRoots: Map<String, String>,
+            block: suspend (ArtifactManifest?) -> T,
+        ): T = withRoots(expectedRepositoryRoots.values) {
+            block(manifests[ownerModelId])
+        }
+
+        suspend fun <T> withRoots(roots: Collection<String>, block: suspend () -> T): T {
+            val locks = guard.withLock {
+                roots.distinct().sorted().map { root -> rootLocks.getOrPut(root) { Mutex() } }
+            }
+            return lockRecursively(locks, 0, block)
+        }
+
+        private suspend fun <T> lockRecursively(
+            locks: List<Mutex>,
+            index: Int,
+            block: suspend () -> T,
+        ): T = if (index == locks.size) block() else locks[index].withLock {
+            lockRecursively(locks, index + 1, block)
+        }
+    }
+
+    private fun ResolvedLocalArtifact.toManifest(): ArtifactManifest = requireNotNull(
+        ArtifactManifest.create(
+            components.map { component ->
+                requireNotNull(
+                    ArtifactManifestEntry.create(
+                        logicalRole = component.logicalRole,
+                        identity = component.downloadIdentity(),
+                        byteCount = component.byteCount,
+                        contentSha256 = component.contentSha256,
+                        bundleId = requireNotNull(component.bundleId),
+                        localRelativePath = component.localRelativePath,
+                        layoutRelativePath = component.layoutRelativePath,
+                    ),
+                )
+            },
+        ),
+    )
+
     private companion object {
         const val ENGINE_VERSION = "engine-1"
         val request = scopedRequest()
@@ -457,19 +588,31 @@ class LoadSessionCoordinatorTest {
             repositoryId: String = "owner/model",
             componentCount: Int = 1,
             directoryTarget: Boolean = false,
+            separateComponentRoots: Boolean = false,
+            remoteKind: RemoteKind = RemoteKind.LFS,
         ): LoadRequest {
             val componentIdentities = (0 until componentCount).map { index ->
+                val componentRepository = if (separateComponentRoots && index > 0) {
+                    "external/component-$index"
+                } else {
+                    repositoryId
+                }
                 val path = if (componentCount == 1) "model.gguf" else "component-$index.safetensors"
                 val identityDigit = (index % 16).toString(16)
                 val objectDigit = ((index + 3) % 16).toString(16)
+                val objectId = when (remoteKind) {
+                    RemoteKind.GIT -> objectDigit.repeat(40)
+                    RemoteKind.LFS -> "sha256:${objectDigit.repeat(64)}"
+                    RemoteKind.XET -> objectDigit.repeat(64)
+                }
                 val identity = ModelFileIdentity(
-                    repositoryId = repositoryId,
+                    repositoryId = componentRepository,
                     revision = identityDigit.repeat(64),
                     path = path,
                     sizeBytes = 4L,
-                    gitOid = null,
-                    lfsOid = "sha256:${objectDigit.repeat(64)}",
-                    xetHash = null,
+                    gitOid = objectId.takeIf { remoteKind == RemoteKind.GIT },
+                    lfsOid = objectId.takeIf { remoteKind == RemoteKind.LFS },
+                    xetHash = objectId.takeIf { remoteKind == RemoteKind.XET },
                     evidence = emptyList(),
                 )
                 identity
@@ -480,7 +623,7 @@ class LoadSessionCoordinatorTest {
                         repositoryId = identity.repositoryId,
                         immutableRevision = identity.revision,
                         relativePath = identity.path,
-                        remoteObjectId = identity.lfsOid,
+                        remoteObjectId = identity.canonicalDownloadRemoteObjectId(),
                         expectedBytes = identity.sizeBytes,
                     ),
                 )
@@ -492,21 +635,23 @@ class LoadSessionCoordinatorTest {
                 val location = immutableArtifactStorageLocation(downloadIdentity, bundleId)
                 ResolvedArtifactComponent(
                     logicalRole = if (index == 0) "model" else "component-$index",
-                    repositoryId = repositoryId,
+                    repositoryId = identity.repositoryId,
                     repositoryRelativePath = path,
-                    localPath = "/private/$repositoryId/${location.localRelativePath}",
+                    localPath = "/private/${identity.repositoryId}/${location.localRelativePath}",
                     byteCount = identity.sizeBytes,
                     contentSha256 = ((index + 3) % 16).toString(16).repeat(64),
                     identity = identity,
                     localRelativePath = location.localRelativePath,
                     layoutRelativePath = location.layoutRelativePath,
                     bundleId = bundleId,
+                    remoteObjectId = requireNotNull(downloadIdentity.remoteObjectId),
+                    storageRoot = "/private/${identity.repositoryId}",
                 )
             }
             val aggregate = ModelFileIdentity(
                 repositoryId = repositoryId,
                 revision = "a".repeat(64),
-                path = if (directoryTarget) "model_index.json" else components.single().repositoryRelativePath,
+                path = if (directoryTarget) "model_index.json" else components.first().repositoryRelativePath,
                 sizeBytes = components.sumOf(ResolvedArtifactComponent::byteCount),
                 gitOid = null,
                 lfsOid = "sha256:${"b".repeat(64)}",
@@ -524,10 +669,12 @@ class LoadSessionCoordinatorTest {
                     VerifiedArtifactLoadTarget.Directory(
                         path = root,
                         storageOwner = repositoryId,
-                        nativeConsumedRelativePaths = components.map(ResolvedArtifactComponent::layoutRelativePath),
+                        nativeConsumedRelativePaths = components
+                            .filter { it.repositoryId == repositoryId }
+                            .map(ResolvedArtifactComponent::layoutRelativePath),
                     )
                 } else {
-                    val component = components.single()
+                    val component = components.first()
                     VerifiedArtifactLoadTarget.File(
                         path = component.localPath,
                         componentRole = component.logicalRole,
@@ -554,18 +701,21 @@ class LoadSessionCoordinatorTest {
             artifact = artifact,
             )
         }
+
+        enum class RemoteKind {
+            GIT,
+            LFS,
+            XET,
+        }
     }
 }
-
-private fun ResolvedArtifactComponent.coordinationKey(): String =
-    artifactStorageCoordinationKey(repositoryId, localRelativePath)
 
 private fun ResolvedArtifactComponent.downloadIdentity(): DownloadArtifactIdentity = requireNotNull(
     DownloadArtifactIdentity.create(
         repositoryId = identity.repositoryId,
         immutableRevision = identity.revision,
         relativePath = identity.path,
-        remoteObjectId = identity.gitOid ?: identity.lfsOid ?: identity.xetHash,
+        remoteObjectId = remoteObjectId,
         expectedBytes = identity.sizeBytes,
     ),
 )

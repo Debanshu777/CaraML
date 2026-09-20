@@ -204,7 +204,7 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 
 <!-- Updated at end of each AI-assisted development session -->
 
-- Exact native loading now acquires every canonical component-generation stripe before final byte validation and retains that lifetime through load-marker cleanup and native open/load, preventing finalization or deletion from changing a multi-file generation mid-load
+- Exact native loading now acquires every expected plus current-candidate repository root on the download subsystem's shared lock, recovery-validates and exactly compares the authoritative owner bundle, then retains the lifetime through byte validation, marker cleanup, and native open/load; Git, LFS, and Xet bindings fail closed
 - Ready catalogs now require exact revision, object, bundle, digest, local generation, and complete current request-set bindings; the app/download Room stores support only their current schemas and destructively recreate stale ones, malformed current rows are isolated without terminating observers, Model Details controls carry exact revalidated batch/task IDs, and transactional removal prunes a generation only after its final owner is gone
 - Rebuilt the shared UI as a sidebar-first Prism workbench: compact windows reveal a modal left panel without moving content, tablets use a compact rail, and wider workspaces use a labeled sidebar with contextual generation modes
 - Create now centers one focused command composer, keeps Text, Image, and Video as local modes, and exposes explicit empty, preparation, generation, completion, and failure states

@@ -33,6 +33,30 @@ class LocalArtifactIdentityResolverTest {
     private val defaultBundleId = "b".repeat(64)
 
     @Test
+    fun gitRemoteIdentityAndStorageRootRoundTripAndRejectMutation() = runTest {
+        val remoteObjectId = "a".repeat(40)
+        assertExactRemoteIdentityRoundTrip(remoteObjectId) { identity ->
+            assertEquals(remoteObjectId, identity.gitOid)
+        }
+    }
+
+    @Test
+    fun lfsRemoteIdentityAndStorageRootRoundTripAndRejectMutation() = runTest {
+        val remoteObjectId = "sha256:${"b".repeat(64)}"
+        assertExactRemoteIdentityRoundTrip(remoteObjectId) { identity ->
+            assertEquals(remoteObjectId, identity.lfsOid)
+        }
+    }
+
+    @Test
+    fun xetRemoteIdentityAndStorageRootRoundTripAndRejectMutation() = runTest {
+        val remoteObjectId = "c".repeat(64)
+        assertExactRemoteIdentityRoundTrip(remoteObjectId) { identity ->
+            assertEquals(remoteObjectId, identity.xetHash)
+        }
+    }
+
+    @Test
     fun missingHubManifestDoesNotReadOrRewriteLegacySidecar() = runTest {
         withRoot { storage, root ->
             val bytes = "model".encodeToByteArray()
@@ -226,12 +250,11 @@ class LocalArtifactIdentityResolverTest {
                 ),
             )
 
-            val verified = assertIs<ArtifactIdentityResolution.Verified>(
-                resolver(storage, manifest(entry)).resolve(
+            val result = resolver(storage, manifest(entry)).resolve(
                     model(localPath, bytes.size.toLong(), filename = "model.gguf"),
                     emptyList(),
-                ),
-            )
+                )
+            val verified = assertIs<ArtifactIdentityResolution.Verified>(result, result.toString())
 
             assertEquals("weights/model.gguf", verified.artifact.components.single().repositoryRelativePath)
             assertEquals(localPath, assertIs<VerifiedArtifactLoadTarget.File>(verified.artifact.loadTarget).path)
@@ -573,9 +596,8 @@ class LocalArtifactIdentityResolverTest {
                 filename = DIFFUSERS_BUNDLE_DB_FILENAME,
             )
 
-            val verified = assertIs<ArtifactIdentityResolution.Verified>(
-                resolver(storage, manifest(*entries.toTypedArray())).resolve(installed, emptyList()),
-            )
+            val result = resolver(storage, manifest(*entries.toTypedArray())).resolve(installed, emptyList())
+            val verified = assertIs<ArtifactIdentityResolution.Verified>(result, result.toString())
 
             val target = assertIs<VerifiedArtifactLoadTarget.Directory>(verified.artifact.loadTarget)
             assertEquals(generationRoot.toString(), target.path)
@@ -840,6 +862,61 @@ class LocalArtifactIdentityResolverTest {
         }
     }
 
+    private suspend fun TestScope.assertExactRemoteIdentityRoundTrip(
+        remoteObjectId: String,
+        assertTypedIdentity: (ModelFileIdentity) -> Unit,
+    ) {
+        withRoot { storage, root ->
+            val bytes = "exact-remote-$remoteObjectId".encodeToByteArray()
+            val revision = "d".repeat(40)
+            val identity = downloadIdentity(
+                repo = "owner/model",
+                revision = revision,
+                relative = "model.gguf",
+                size = bytes.size.toLong(),
+                remoteObjectId = remoteObjectId,
+            )
+            val location = immutableArtifactStorageLocation(identity, defaultBundleId)
+            val entry = requireNotNull(
+                ArtifactManifestEntry.create(
+                    logicalRole = "model",
+                    identity = identity,
+                    byteCount = bytes.size.toLong(),
+                    contentSha256 = bytes.sha256(),
+                    bundleId = defaultBundleId,
+                    localRelativePath = location.localRelativePath,
+                    layoutRelativePath = location.layoutRelativePath,
+                ),
+            )
+            val path = write(root / "owner/model" / location.localRelativePath, bytes)
+            val resolver = resolver(storage, manifest(entry))
+            val artifact = assertIs<ArtifactIdentityResolution.Verified>(
+                resolver.resolve(model(path, bytes.size.toLong()), emptyList()),
+            ).artifact
+            val component = artifact.components.single()
+
+            assertEquals(remoteObjectId, component.remoteObjectId)
+            assertEquals((root / "owner/model").normalized().toString(), component.storageRoot)
+            assertTypedIdentity(component.identity)
+            assertTrue(resolver.revalidate(artifact))
+
+            assertFalse(
+                resolver.revalidate(
+                    artifact.copy(
+                        components = listOf(component.copy(remoteObjectId = "wrong-$remoteObjectId")),
+                    ),
+                ),
+            )
+            assertFalse(
+                resolver.revalidate(
+                    artifact.copy(
+                        components = listOf(component.copy(storageRoot = (root / "other/root").toString())),
+                    ),
+                ),
+            )
+        }
+    }
+
     private fun write(path: Path, bytes: ByteArray): String {
         FileSystem.SYSTEM.createDirectories(path.parent!!)
         FileSystem.SYSTEM.write(path) { write(bytes) }
@@ -973,7 +1050,7 @@ class LocalArtifactIdentityResolverTest {
         revision: String,
         relative: String,
         size: Long,
-        remoteObjectId: String? = null,
+        remoteObjectId: String? = "f".repeat(40),
     ) = checkNotNull(DownloadArtifactIdentity.create(repo, revision, relative, remoteObjectId, size))
 
     private fun ByteArray.sha256(): String = Buffer().write(this).snapshot().sha256().hex()

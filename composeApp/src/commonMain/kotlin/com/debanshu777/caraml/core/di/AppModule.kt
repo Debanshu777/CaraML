@@ -79,6 +79,8 @@ import com.debanshu777.caraml.features.modelhub.presentation.search.ModelViewMod
 import com.debanshu777.caraml.features.settings.presentation.SettingsViewModel
 import com.debanshu777.huggingfacemanager.createHuggingFaceApi
 import com.debanshu777.huggingfacemanager.download.DownloadManager
+import com.debanshu777.huggingfacemanager.download.ArtifactRootLifetime
+import com.debanshu777.huggingfacemanager.download.artifactRootLifetime
 import com.debanshu777.runner.LlamaRunner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineScope
@@ -104,6 +106,7 @@ val appModule = module {
     single { ComponentRepository(get()) }
     single { InstalledModelEvidenceRepository(get()) }
     single { DownloadManager(get()) }
+    single<ArtifactRootLifetime> { artifactRootLifetime(get()) }
     single { InstalledModelPublicationCoordinator() }
     single { installedModelManifestSource(get<DownloadManager>()::validatedBundle) }
     single {

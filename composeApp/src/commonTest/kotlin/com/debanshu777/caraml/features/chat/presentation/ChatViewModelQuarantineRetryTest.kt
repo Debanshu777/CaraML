@@ -30,6 +30,7 @@ import com.debanshu777.caraml.core.recommendation.ObservationModelIdentity
 import com.debanshu777.caraml.core.recommendation.PlanAssessment
 import com.debanshu777.caraml.core.recommendation.RecommendationProfile
 import com.debanshu777.caraml.core.recommendation.ResolvedArtifactComponent
+import com.debanshu777.caraml.core.recommendation.canonicalDownloadRemoteObjectId
 import com.debanshu777.caraml.core.recommendation.ResolvedLocalArtifact
 import com.debanshu777.caraml.core.recommendation.RevisionIdentity
 import com.debanshu777.caraml.core.recommendation.RiskAcknowledgement
@@ -1383,6 +1384,8 @@ private fun retryDiffusionRequest(model: LocalModelEntity): LoadRequest {
             byteCount = component.file.sizeBytes,
             contentSha256 = (index + 1).toString().repeat(64),
             identity = component.file,
+            remoteObjectId = requireNotNull(component.file.canonicalDownloadRemoteObjectId()),
+            storageRoot = model.localPath,
         )
     }
     val identity = ModelFileIdentity(
@@ -1503,6 +1506,8 @@ private fun retryRequest(
                     byteCount = identity.sizeBytes,
                     contentSha256 = "c".repeat(64),
                     identity = identity,
+                    remoteObjectId = requireNotNull(identity.canonicalDownloadRemoteObjectId()),
+                    storageRoot = model.localPath.substringBeforeLast('/'),
                 ),
             ),
             loadTarget = VerifiedArtifactLoadTarget.File(

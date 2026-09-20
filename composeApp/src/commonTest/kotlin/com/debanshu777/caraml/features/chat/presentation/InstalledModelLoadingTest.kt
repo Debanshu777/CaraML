@@ -19,6 +19,7 @@ import com.debanshu777.caraml.core.recommendation.ModelFileIdentity
 import com.debanshu777.caraml.core.recommendation.ObservationModelIdentity
 import com.debanshu777.caraml.core.recommendation.PlanAssessment
 import com.debanshu777.caraml.core.recommendation.ResolvedArtifactComponent
+import com.debanshu777.caraml.core.recommendation.canonicalDownloadRemoteObjectId
 import com.debanshu777.caraml.core.recommendation.ResolvedLocalArtifact
 import com.debanshu777.caraml.core.recommendation.RevisionIdentity
 import com.debanshu777.caraml.core.recommendation.task6LlmDescriptor
@@ -440,6 +441,8 @@ class InstalledModelLoadingTest {
                     ResolvedArtifactComponent(
                         "model", "owner/model", "model.gguf", "/private/model.gguf", 4,
                         "c".repeat(64), identity,
+                        remoteObjectId = requireNotNull(identity.canonicalDownloadRemoteObjectId()),
+                        storageRoot = "/private",
                     ),
                 ),
                 loadTarget = com.debanshu777.caraml.core.recommendation.VerifiedArtifactLoadTarget.File(

@@ -733,6 +733,8 @@ class InstalledModelLoadRequestResolverTest {
                     byteCount = identity.sizeBytes,
                     contentSha256 = "b".repeat(64),
                     identity = identity,
+                    remoteObjectId = requireNotNull(identity.canonicalDownloadRemoteObjectId()),
+                    storageRoot = model.localPath.substringBeforeLast('/'),
                 ),
             ),
             loadTarget = VerifiedArtifactLoadTarget.File(
@@ -884,6 +886,8 @@ private fun diffusionArtifact(
             byteCount = component.file.sizeBytes,
             contentSha256 = (index + 1).toString().repeat(64),
             identity = component.file,
+            remoteObjectId = requireNotNull(component.file.canonicalDownloadRemoteObjectId()),
+            storageRoot = model.localPath,
         )
     }
     return ResolvedLocalArtifact(

@@ -41,18 +41,6 @@ class InstalledModelPublicationCoordinator(
         return withPublicationStripes(indexes, 0, block)
     }
 
-    /**
-     * Keeps exact artifact generations stable while a validated consumer opens them. The owner
-     * stripe is intentionally excluded: only publication/removal touching the same bytes blocks.
-     */
-    internal suspend fun <T> withArtifactLifetime(
-        artifactStorageKeys: Collection<String>,
-        block: suspend () -> T,
-    ): T {
-        require(artifactStorageKeys.isNotEmpty()) { "Missing artifact storage keys" }
-        return withPublicationStripes(artifactStripeIndexes(artifactStorageKeys), 0, block)
-    }
-
     private fun artifactStripeIndexes(artifactStorageKeys: Collection<String>): List<Int> {
         require(artifactStorageKeys.size <= MAX_ARTIFACT_STORAGE_KEYS) { "Too many artifact storage keys" }
         require(artifactStorageKeys.distinct().size == artifactStorageKeys.size) { "Duplicate artifact storage key" }

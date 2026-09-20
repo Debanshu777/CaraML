@@ -219,7 +219,7 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 
 <!-- This section is updated at the end of each AI-assisted development session -->
 
-- Exact model loads now hold the immutable artifact generation from final revalidation through recovery-marker cleanup and native open/load, blocking overlapping finalization or deletion while leaving disjoint generations concurrent
+- Exact model loads now recover and compare the authoritative current owner bundle while holding every expected and candidate repository root on the download subsystem's shared lock, then retain that lifetime through byte revalidation, recovery-marker cleanup, and native open/load; exact Git, LFS, and Xet object IDs are preserved
 - Installed artifacts now live only in validated immutable bundle generations; stale Room schemas are destructively recreated, corrupt current rows and journals fail closed, Model Details controls bind to the exact current batch/task identity, iOS background payloads require the same exact persisted binding, and reference-aware deletion preserves every still-linked owner
 - Rebuilt CaraML as a sidebar-first Prism workbench: compact windows use a stationary-content modal panel, tablets use a compact rail, and wider workspaces use a labeled sidebar with contextual generation modes
 - Reframed Create around one focused command composer and explicit activity states; generation modes remain local state while the Create destination stays selected

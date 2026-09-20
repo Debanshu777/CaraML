@@ -1,7 +1,8 @@
 package com.debanshu777.caraml.core.recommendation
 
-import com.debanshu777.caraml.core.storage.catalog.InstalledModelPublicationCoordinator
-import com.debanshu777.caraml.core.storage.catalog.artifactStorageCoordinationKey
+import com.debanshu777.huggingfacemanager.download.ArtifactRootLifetime
+import com.debanshu777.huggingfacemanager.download.ArtifactManifest
+import com.debanshu777.huggingfacemanager.download.ArtifactManifestEntry
 import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 import com.debanshu777.huggingfacemanager.download.artifactBundleId
 import com.debanshu777.huggingfacemanager.download.persistedArtifactStorageLocation
@@ -25,11 +26,12 @@ sealed interface CoordinatedLoadResult<out T> {
 
 /**
  * Process-wide ownership for the complete exact-load transaction across both native engines.
- * The lock covers admission, both byte-identity checks, marker persistence, and native entry.
+ * Admission runs before the artifact lifetime; exact root locking covers final byte validation,
+ * marker persistence, native open/load, and terminal cleanup.
  */
 class LoadSessionCoordinator(
     private val recoveryRepository: LoadRecoveryRepository,
-    private val publicationCoordinator: InstalledModelPublicationCoordinator,
+    private val artifactRootLifetime: ArtifactRootLifetime,
 ) {
     private val sessionMutex = Mutex()
     private var startupRecoveryCompleted = false
@@ -54,12 +56,18 @@ class LoadSessionCoordinator(
         if (!admitted.request.matchesExact(request)) {
             return@withLock CoordinatedLoadResult.ArtifactChanged(request)
         }
-        val storageKeys = request.artifactLifetimeStorageKeys()
+        val artifactLifetime = request.artifactLifetimeBinding()
             ?: return@withLock CoordinatedLoadResult.ArtifactChanged(request)
 
-        publicationCoordinator.withArtifactLifetime(storageKeys) {
+        artifactRootLifetime.withCurrentBundle(
+            ownerModelId = request.model.modelId,
+            expectedRepositoryRoots = artifactLifetime.repositoryRoots,
+        ) { currentManifest ->
+            if (!request.matchesCurrentBundle(currentManifest)) {
+                return@withCurrentBundle CoordinatedLoadResult.ArtifactChanged(request)
+            }
             if (!artifactValidator(request)) {
-                return@withArtifactLifetime CoordinatedLoadResult.ArtifactChanged(request)
+                return@withCurrentBundle CoordinatedLoadResult.ArtifactChanged(request)
             }
             val marker = recoveryRepository.beginLoad(request.identity, request.plan)
             try {
@@ -105,40 +113,74 @@ class LoadSessionCoordinator(
             artifact == other.artifact
 }
 
-private fun LoadRequest.artifactLifetimeStorageKeys(): List<String>? {
+private data class ArtifactLifetimeBinding(
+    val repositoryRoots: Map<String, String>,
+)
+
+private fun LoadRequest.artifactLifetimeBinding(): ArtifactLifetimeBinding? {
     val resolved = artifact ?: return null
     if (resolved.identity != identity || resolved.identity.repositoryId != model.modelId ||
         resolved.components.isEmpty() || resolved.components.size > MAX_LIFETIME_COMPONENTS
     ) return null
-    val keys = ArrayList<String>(resolved.components.size)
+    val exactLocations = HashSet<String>(resolved.components.size)
+    val roots = LinkedHashMap<String, String>(resolved.components.size)
     val downloadIdentities = ArrayList<DownloadArtifactIdentity>(resolved.components.size)
     for (component in resolved.components) {
         if (component.identity.repositoryId != component.repositoryId ||
             component.identity.path != component.repositoryRelativePath ||
             component.identity.sizeBytes != component.byteCount ||
-            !component.localPath.isCanonicalAbsolutePath()
+            !component.localPath.isCanonicalAbsolutePath() ||
+            !component.storageRoot.isCanonicalAbsolutePath() ||
+            !component.identity.canonicalDownloadRemoteObjectId()
+                .equals(component.remoteObjectId, ignoreCase = true)
         ) return null
         val bundle = component.bundleId ?: return null
         val downloadIdentity = DownloadArtifactIdentity.create(
             repositoryId = component.identity.repositoryId,
             immutableRevision = component.identity.revision,
             relativePath = component.identity.path,
-            remoteObjectId = component.identity.gitOid ?: component.identity.lfsOid ?: component.identity.xetHash,
+            remoteObjectId = component.remoteObjectId,
             expectedBytes = component.identity.sizeBytes,
         ) ?: return null
         downloadIdentities += downloadIdentity
         val location = persistedArtifactStorageLocation(downloadIdentity, bundle, component.localRelativePath)
             ?.takeIf { it.isScoped && it.layoutRelativePath == component.layoutRelativePath }
             ?: return null
-        keys += runCatching {
-            artifactStorageCoordinationKey(component.repositoryId, location.localRelativePath)
-        }.getOrNull() ?: return null
+        val expectedPath = canonicalChildPath(component.storageRoot, location.localRelativePath) ?: return null
+        if (!sameCanonicalPath(component.localPath, expectedPath) ||
+            !exactLocations.add("${component.repositoryId}\u0000${location.localRelativePath}")
+        ) return null
+        val priorRoot = roots.put(component.repositoryId, component.storageRoot)
+        if (priorRoot != null && priorRoot != component.storageRoot) return null
     }
     val expectedBundle = artifactBundleId(downloadIdentities) ?: return null
     if (resolved.components.any { it.bundleId != expectedBundle } ||
-        keys.distinct().size != keys.size || !resolved.hasBoundLoadTarget(model.localPath)
+        roots.isEmpty() || model.modelId !in roots || !resolved.hasBoundLoadTarget(model.localPath)
     ) return null
-    return keys.sorted()
+    return ArtifactLifetimeBinding(roots.toMap())
+}
+
+private fun LoadRequest.matchesCurrentBundle(current: ArtifactManifest?): Boolean {
+    val resolved = artifact ?: return false
+    val expectedEntries = resolved.components.map { component ->
+        val identity = DownloadArtifactIdentity.create(
+            repositoryId = component.repositoryId,
+            immutableRevision = component.identity.revision,
+            relativePath = component.repositoryRelativePath,
+            remoteObjectId = component.remoteObjectId,
+            expectedBytes = component.byteCount,
+        ) ?: return false
+        ArtifactManifestEntry.create(
+            logicalRole = component.logicalRole,
+            identity = identity,
+            byteCount = component.byteCount,
+            contentSha256 = component.contentSha256,
+            bundleId = component.bundleId ?: return false,
+            localRelativePath = component.localRelativePath,
+            layoutRelativePath = component.layoutRelativePath,
+        ) ?: return false
+    }
+    return ArtifactManifest.create(expectedEntries) == current
 }
 
 private fun ResolvedLocalArtifact.hasBoundLoadTarget(modelLocalPath: String): Boolean =
