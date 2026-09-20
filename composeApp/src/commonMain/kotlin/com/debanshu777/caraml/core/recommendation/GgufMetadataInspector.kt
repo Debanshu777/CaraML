@@ -4,6 +4,7 @@ import okio.BufferedSource
 import okio.FileSystem
 import okio.Path.Companion.toPath
 import okio.buffer
+import okio.use
 
 internal data class GgufLocalMetadata(
     val version: Int,
