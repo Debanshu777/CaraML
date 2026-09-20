@@ -181,6 +181,83 @@ class ChatViewModelQuarantineRetryTest {
     }
 
     @Test
+    fun incompatibleSelectionCannotCancelPendingNoModelTeardown() = runTest {
+        val staleLoadEntered = CompletableDeferred<Unit>()
+        val allowStaleLoadToReturn = CompletableDeferred<Unit>()
+        val runnerEvents = mutableListOf<String>()
+        var diffusionReleaseCalls = 0
+        val scenario = scenario(
+            releaseDiffusionModel = {
+                diffusionReleaseCalls += 1
+                runnerEvents += "release-diffusion:$diffusionReleaseCalls"
+            },
+            onUnload = { call -> runnerEvents += "unload-text:$call" },
+            loadOverride = { request ->
+                if (request.model.id != 7L || staleLoadEntered.isCompleted) {
+                    null
+                } else {
+                    runnerEvents += "load-a-start"
+                    staleLoadEntered.complete(Unit)
+                    withContext(NonCancellable) { allowStaleLoadToReturn.await() }
+                    runnerEvents += "load-a-end"
+                    ModelLoadResult.Success(MODEL_A_CONTEXT)
+                }
+            },
+        ) { _ -> }
+
+        withScenario(scenario) {
+            advanceUntilIdle()
+            scenario.assertRetryActionFor(scenario.modelA.id)
+
+            scenario.viewModel.retryPendingLoad()
+            testScheduler.runCurrent()
+            assertTrue(staleLoadEntered.isCompleted)
+
+            try {
+                scenario.viewModel.setGenerationMode(GenerationMode.Image)
+                testScheduler.runCurrent()
+                assertIs<ChatUiState.NoModelsForMode>(scenario.viewModel.uiState.value)
+
+                scenario.viewModel.selectModel(scenario.modelA)
+                testScheduler.runCurrent()
+
+                assertIs<ChatUiState.NoModelsForMode>(scenario.viewModel.uiState.value)
+                assertEquals(
+                    listOf(
+                        scenario.requestA,
+                        scenario.requestA.copy(riskAcknowledgement = null),
+                    ),
+                    scenario.inference.loadRequests,
+                )
+                assertEquals(1, scenario.inference.unloadCalls)
+                assertEquals(3, diffusionReleaseCalls)
+            } finally {
+                allowStaleLoadToReturn.complete(Unit)
+                advanceUntilIdle()
+            }
+
+            assertIs<ChatUiState.NoModelsForMode>(scenario.viewModel.uiState.value)
+            assertEquals(2, scenario.inference.unloadCalls)
+            assertEquals(4, diffusionReleaseCalls)
+            assertEquals(listOf(scenario.requestA), scenario.inference.permissionRequests)
+            assertEquals(emptyList(), scenario.diffusionLoadRequests)
+            assertEquals(
+                listOf(
+                    "unload-text:1",
+                    "release-diffusion:1",
+                    "release-diffusion:2",
+                    "release-diffusion:3",
+                    "load-a-start",
+                    "load-a-end",
+                    "unload-text:2",
+                    "release-diffusion:4",
+                ),
+                runnerEvents,
+            )
+        }
+    }
+
+    @Test
     fun clearWaitsForAdmittedNativeLoadThenTearsDownOnceWithoutUiMutation() = runTest {
         val staleLoadEntered = CompletableDeferred<Unit>()
         val allowStaleLoadToReturn = CompletableDeferred<Unit>()

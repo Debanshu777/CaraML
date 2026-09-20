@@ -356,6 +356,8 @@ class ChatViewModel(
     }
 
     fun selectModel(model: LocalModelEntity) {
+        if (!model.matchesGenerationMode(_generationMode.value)) return
+
         val selectionUnchanged = _selectedModel.value?.id == model.id
         _selectedModel.value = model
         if (selectionUnchanged) loadSelectedModel(model)
@@ -388,16 +390,15 @@ class ChatViewModel(
         model: LocalModelEntity,
         load: suspend (ModelLoadAttempt) -> ModelLoadResult,
     ) {
+        val mode = _generationMode.value
+        if (!model.matchesGenerationMode(mode)) return
+
         val previousJob = modelLoadJob
         modelLoadJob?.cancel()
         signalGenerationCancellation()
         generationJob?.cancel()
         _streamingState.value = StreamingState()
 
-        val mode = _generationMode.value
-        if (!model.matchesGenerationMode(mode)) {
-            return
-        }
         val loadGeneration = modelLoadGeneration.fetchAndAdd(1L) + 1L
         val attempt = ModelLoadAttempt(model, mode, loadGeneration)
         lastRunnerTeardownKey = null
