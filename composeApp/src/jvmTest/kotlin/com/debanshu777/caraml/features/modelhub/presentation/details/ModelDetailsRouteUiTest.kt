@@ -56,6 +56,7 @@ import com.debanshu777.caraml.features.modelhub.domain.ModelRecommendationServic
 import com.debanshu777.caraml.features.modelhub.domain.RecommendationSnapshotSource
 import com.debanshu777.caraml.features.modelhub.domain.RecommendationVariantEvaluator
 import com.debanshu777.caraml.features.modelhub.domain.RepositoryVariantSet
+import com.debanshu777.caraml.features.modelhub.presentation.modelHubTestDownloadCoordinator
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelViewModel
 import com.debanshu777.huggingfacemanager.HuggingFaceApi
@@ -222,6 +223,7 @@ private class DetailsRouteEnvironment(
         deviceCapabilities = DeviceCapabilities(),
         recommendationService = detailsRecommendationService(),
         settingsRepository = DetailsSettingsRepository(),
+        downloadCoordinator = modelHubTestDownloadCoordinator(),
     )
 
     override fun close() {

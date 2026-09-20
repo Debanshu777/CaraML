@@ -87,7 +87,6 @@ import com.debanshu777.huggingfacemanager.usecase.GetRecommendationModelDetailUs
 import com.debanshu777.huggingfacemanager.usecase.ListModelsUseCase
 import com.debanshu777.huggingfacemanager.usecase.ListRecommendationModelsUseCase
 import com.debanshu777.huggingfacemanager.usecase.SearchModelsUseCase
-import com.sun.net.httpserver.HttpServer
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockEngineConfig
@@ -100,13 +99,10 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -116,7 +112,6 @@ import kotlinx.coroutines.test.setMain
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 import java.io.File
-import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.security.MessageDigest
 import kotlin.test.Test
@@ -898,23 +893,16 @@ class ModelViewModelRecommendationTest {
             override val dispatcher: CoroutineDispatcher = requestDispatcher
         }
         val client = HttpClient(engine)
-        val trusted = Files.createTempDirectory("caraml-needs-information-").toRealPath().toFile()
-        val storage = FakeStoragePathProvider(
-            trusted,
-            realFileAccess = true,
-            availableStorageBytes = 1024L * 1024 * 1024,
-        )
-        val server = ControlledDownloadServer(body)
+        val store = ObservingDownloadTaskStore()
         try {
             val viewModel = viewModel(
                 client = client,
                 dispatcher = dispatcher,
-                storagePathProvider = storage,
-                downloadManager = DownloadManager(storage, server.baseUrl),
                 recommendationService = recommendationService(
                     dispatcher = dispatcher,
                     variantSet = { id -> RepositoryVariantSet.NeedsInformation(id) },
                 ),
+                downloadCoordinator = observingDownloadCoordinator(store),
             )
 
             viewModel.loadDetail(repositoryId, ModelHubBrowseMode.LanguageModels)
@@ -968,80 +956,8 @@ class ModelViewModelRecommendationTest {
                 viewModel.isDownloading.value,
                 "A validated detail artifact should download while recommendation info is incomplete: ${viewModel.downloadError.value}",
             )
-            server.requestStarted.await()
-            server.releaseResponse.complete(Unit)
-            advanceUntilIdle()
-        } finally {
-            server.close()
-            client.close()
-            trusted.deleteRecursively()
-            Dispatchers.resetMain()
-        }
-    }
-
-    @Test
-    fun unavailableArtifactStorageIsNotReportedAsAConnectionFailure() = runTest {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        Dispatchers.setMain(dispatcher)
-        val repositoryId = "org/unavailable-storage"
-        val revision = "a".repeat(40)
-        val path = "model-Q4_K_M.gguf"
-        val objectId = "b".repeat(64)
-        val requestDispatcher = dispatcher
-        val engine = object : MockEngine(MockEngineConfig().apply {
-            reuseHandlers = true
-            addHandler { request ->
-                when {
-                    request.url.encodedPath.contains("/tree/") -> respondJson(
-                        """[{"path":"$path","type":"file","size":100,"lfs":{"oid":"$objectId","size":100}}]""",
-                    )
-                    request.url.encodedPath.endsWith("/$repositoryId") -> respondJson(
-                        """{"id":"$repositoryId","modelId":"$repositoryId","sha":"$revision","private":false}""",
-                    )
-                    else -> error("Unexpected request ${request.url}")
-                }
-            }
-        }) {
-            override val dispatcher: CoroutineDispatcher = requestDispatcher
-        }
-        val client = HttpClient(engine)
-        val storage = FakeStoragePathProvider(File("/caraml-unwritable-storage"), realFileAccess = true)
-        try {
-            val viewModel = viewModel(
-                client = client,
-                dispatcher = dispatcher,
-                storagePathProvider = storage,
-                downloadManager = DownloadManager(storage, "http://127.0.0.1:1"),
-                recommendationService = recommendationService(
-                    dispatcher = dispatcher,
-                    variantSet = { id -> RepositoryVariantSet.NeedsInformation(id) },
-                ),
-            )
-
-            viewModel.loadDetail(repositoryId, ModelHubBrowseMode.LanguageModels)
-            advanceUntilIdle()
-            val artifact = requireNotNull(viewModel.ggufFiles.value.single().artifact)
-
-            val observedError = async { viewModel.downloadError.first { it != null } }
-            viewModel.startDownload(
-                repositoryId,
-                path,
-                DownloadMetadataDTO(
-                    artifact = artifact,
-                    logicalRole = "model",
-                    sizeBytes = artifact.expectedBytes,
-                    author = null,
-                    libraryName = null,
-                    pipelineTag = null,
-                ),
-            )
-
-            assertEquals(
-                "Model storage is unavailable. Please check storage access and try again.",
-                observedError.await(),
-            )
-            runCurrent()
-            assertFalse(viewModel.isDownloading.value)
+            val request = store.createdRequests.single()
+            assertEquals(artifact, request.artifacts.single().metadata.artifact)
         } finally {
             client.close()
             Dispatchers.resetMain()
@@ -1049,19 +965,19 @@ class ModelViewModelRecommendationTest {
     }
 
     @Test
-    fun confirmedLanguageDownloadPublishesExactPathBeforeProgressAndClearsAfterCompletion() = runTest {
+    fun confirmedLanguageDownloadEnqueuesExactDurableRequest() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
         val repositoryId = "org/download-state"
         val path = "weights/model-00001-of-00002.gguf"
         val revision = "a".repeat(40)
         val objectId = "b".repeat(40)
-        val body = ByteArray(100) { it.toByte() }
+        val expectedBytes = 100L
         val descriptorFile = ModelFileIdentity(
             repositoryId = repositoryId,
             revision = revision,
             path = path,
-            sizeBytes = body.size.toLong(),
+            sizeBytes = expectedBytes,
             gitOid = objectId,
             lfsOid = null,
             xetHash = null,
@@ -1073,7 +989,7 @@ class ModelViewModelRecommendationTest {
                 immutableRevision = revision,
                 relativePath = path,
                 remoteObjectId = objectId,
-                expectedBytes = body.size.toLong(),
+                expectedBytes = expectedBytes,
             ),
         )
         val metadata = DownloadMetadataDTO(
@@ -1102,25 +1018,21 @@ class ModelViewModelRecommendationTest {
             override val dispatcher: CoroutineDispatcher = requestDispatcher
         }
         val client = HttpClient(engine)
-        val trusted = Files.createTempDirectory("caraml-active-download-").toRealPath().toFile()
-        val storage = FakeStoragePathProvider(
-            trusted,
-            realFileAccess = true,
-            availableStorageBytes = 1024L * 1024 * 1024,
-        )
-        val server = ControlledDownloadServer(body)
+        val store = ObservingDownloadTaskStore()
         try {
             val viewModel = viewModel(
                 client = client,
                 dispatcher = dispatcher,
-                storagePathProvider = storage,
-                downloadManager = DownloadManager(storage, server.baseUrl),
+                storagePathProvider = FakeStoragePathProvider(
+                    availableStorageBytes = 1024L * 1024 * 1024,
+                ),
                 recommendationService = recommendationService(
                     dispatcher = dispatcher,
                     descriptorFiles = listOf(descriptorFile),
                     recommendationCategory = RecommendationCategory.NOT_SUITABLE,
                     recommendationStorageFit = FitBand.COMFORTABLE,
                 ),
+                downloadCoordinator = observingDownloadCoordinator(store),
             )
             viewModel.loadDetail(repositoryId, ModelHubBrowseMode.LanguageModels)
             advanceUntilIdle()
@@ -1136,22 +1048,16 @@ class ModelViewModelRecommendationTest {
             assertEquals(null, viewModel.activeDownloadArtifact.value)
 
             viewModel.confirmDownloadForLater()
-            server.requestStarted.await()
+            advanceUntilIdle()
 
             assertTrue(viewModel.isDownloading.value)
-            assertEquals(artifact, viewModel.activeDownloadArtifact.value)
-
-            val activeArtifactCleared = async { viewModel.activeDownloadArtifact.first { it == null } }
-            server.releaseResponse.complete(Unit)
-            activeArtifactCleared.await()
-            runCurrent()
-
             assertEquals(null, viewModel.activeDownloadArtifact.value)
-            assertFalse(viewModel.isDownloading.value)
+            assertFalse(viewModel.showDownloadForLaterConfirmation.value)
+            val request = store.createdRequests.single()
+            assertTrue(request.downloadForLaterConfirmed)
+            assertEquals(artifact, request.artifacts.single().metadata.artifact)
         } finally {
-            server.close()
             client.close()
-            trusted.deleteRecursively()
             Dispatchers.resetMain()
         }
     }
@@ -1564,7 +1470,7 @@ class ModelViewModelRecommendationTest {
         downloadManager: DownloadManager = DownloadManager(storagePathProvider),
         recommendationService: ModelRecommendationService = recommendationService(dispatcher),
         calibrationSource: CalibrationSource = NoCalibrationSource,
-        downloadCoordinator: DownloadCoordinator? = null,
+        downloadCoordinator: DownloadCoordinator = observingDownloadCoordinator(ObservingDownloadTaskStore()),
     ): ModelViewModel {
         return ModelViewModel(
             api = huggingFaceApi(client),
@@ -1995,30 +1901,6 @@ private class FakeSettingsRepository : SettingsRepository {
 
     override suspend fun updateRecommendationProfile(profile: RecommendationProfile) = Unit
     override suspend fun completeModelProfileOnboarding(profile: RecommendationProfile) = Unit
-}
-
-private class ControlledDownloadServer(
-    private val body: ByteArray,
-) : AutoCloseable {
-    val requestStarted = CompletableDeferred<Unit>()
-    val releaseResponse = CompletableDeferred<Unit>()
-    private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
-        createContext("/") { exchange ->
-            requestStarted.complete(Unit)
-            runBlocking { releaseResponse.await() }
-            exchange.sendResponseHeaders(200, body.size.toLong())
-            exchange.responseBody.use { it.write(body) }
-            exchange.close()
-        }
-        start()
-    }
-
-    val baseUrl: String = "http://127.0.0.1:${server.address.port}"
-
-    override fun close() {
-        releaseResponse.complete(Unit)
-        server.stop(0)
-    }
 }
 
 private class FakeStoragePathProvider(

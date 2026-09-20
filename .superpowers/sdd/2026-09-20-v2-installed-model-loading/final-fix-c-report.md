@@ -24,7 +24,7 @@ Repair no longer trusts caller-supplied model or component rows and no longer us
 - Preserved cancellation through owner-lock waits, remote lookup, hashing, and CAS. Single-flight cleanup completes in `NonCancellable`, while the original cancellation is rethrown to leaders and followers.
 - Preserved cancellation through the batch runner's finalizer wait and the production bundle read/publish adapters, so root-lock cancellation cannot become artifact failure, retry, manifest absence, or a false publication result.
 - Kept the existing cross-store failure boundary fail closed. If manifest publication succeeds but catalog publication throws, no rollback is attempted; a subsequent repair sees the manifest/catalog mismatch and cannot publish or claim Ready evidence.
-- Removed the dormant `ModelViewModel` setup-component download entry point that directly published a bundle and rewrote Ready state outside the durable coordinator/finalizer path.
+- Made `ModelViewModel`'s `DownloadCoordinator` dependency mandatory and removed every direct-download fallback/helper that could publish a bundle or rewrite Ready state outside the durable coordinator/finalizer path.
 - Added concise root, `composeApp`, and `huggingFaceManager` Recent Changes entries. No schema version, persisted evidence format, remote API, logging, or native inference contract changed.
 
 ## Review follow-up
@@ -38,6 +38,17 @@ The final review's three Important findings and one Minor finding are resolved:
 - A manifest-success/catalog-failure regression proves repair rejects the mismatched durable state without lookup/write, then a subsequent finalizer retry converges manifest, catalog, and exact evidence.
 
 Review follow-up commit subject: `fix(models): harden publication coordination`.
+
+## Review round 2 follow-up
+
+The remaining Important and Minor findings are resolved:
+
+- `DownloadBatchRunner` now handles its initial queued-artifact publication check with explicit exception branches: `CancellationException` is rethrown, while an ordinary read failure remains a fail-closed `false` and proceeds through the normal durable transfer path.
+- A production-adapter regression holds a real `DownloadManager` download inside the artifact root lock, starts a queued runner whose real manifest read waits for that lock, then cancels it. Cancellation escapes with zero runner claims, transfer calls, progress checkpoints, state transitions, lease releases, or finalizer calls.
+- `ModelViewModel` now requires a non-null `DownloadCoordinator`. Language and diffusion entry points only create durable batch requests; the direct transfer, bundle publication/validation, Room insert/Ready rewrite, and setup-component fallback helpers were deleted.
+- All direct construction fixtures provide an explicit coordinator. A structural source regression rejects nullable coordinator syntax and the direct publication/Ready patterns that previously formed the bypass.
+
+Review round 2 commit subject: `fix(models): require durable download coordination`.
 
 ## RED evidence
 
@@ -78,9 +89,20 @@ Result before the production fixes: 16 tests ran with exactly two expected failu
 
 Result before the production fixes: two tests ran with exactly two expected failures because both real root-lock cancellation paths returned a value.
 
+Review-round-2 RED command and observed failures:
+
+```text
+./gradlew :composeApp:jvmTest \
+  --tests '*DownloadBatchRunnerTest.cancellationWhilePublishedCheckWaitsForRootLockNeverMutatesQueuedArtifact' \
+  --tests '*ModelViewModelDurableDownloadStructureTest' \
+  --no-daemon
+```
+
+Result before the production fixes: two tests ran with exactly two expected failures. The queued publication check converted cancellation to `false` and claimed the artifact, while `ModelViewModel` still allowed a missing coordinator and retained direct publication/Ready fallbacks.
+
 ## Controlled race and CAS coverage
 
-Nine controlled race/interleaving tests pass:
+Ten controlled race/interleaving tests pass:
 
 1. `sameOwnerFinalizersHoldPublicationThroughCatalogCommit` forces the historical A-publish/A-validate/A-catalog-block/B-start schedule and proves B cannot publish until A's catalog commit completes; final manifest and catalog/evidence are B.
 2. `differentOwnerFinalizersCanPublishConcurrently` holds two distinct owner publications at a barrier and observes two active publishers.
@@ -91,6 +113,7 @@ Nine controlled race/interleaving tests pass:
 7. `cancellationWhileFinalizerWaitsForOwnerLockNeverMarksArtifactFailed` blocks finalization on its owner lock, cancels the runner, and proves no retry/failure artifact transition or finalizer entry.
 8. `cancelledValidatedBundleRootLockWaitNeverReturnsAbsence` cancels a production validated-bundle read behind a real root lock and proves cancellation escapes rather than returning `null`.
 9. `cancelledPublishBundleRootLockWaitNeverReturnsFailureValue` cancels production publication behind a real root lock and proves cancellation escapes rather than returning `false`.
+10. `cancellationWhilePublishedCheckWaitsForRootLockNeverMutatesQueuedArtifact` holds a real production download inside the root lock, blocks a queued runner in the real manifest-read adapter, cancels it, and proves cancellation escapes with zero runner claims, transfer calls, progress writes, transitions, lease releases, or finalizer calls.
 
 One additional cross-store failure regression, `manifestSuccessCatalogFailureStaysFailClosedUntilFinalizerRetryConverges`, proves a successful manifest write followed by a throwing catalog publisher cannot be misreported by repair as stale Ready/evidence; a later finalizer retry converges successfully.
 
@@ -139,6 +162,27 @@ Underlying manifest-store command:
 
 Result: PASS, 35/35 tests across four suites, zero skipped/failures/errors.
 
+Review-round-2 impacted application command:
+
+```text
+./gradlew :composeApp:jvmTest \
+  --tests '*DownloadBatchRunnerTest' \
+  --tests '*DownloadCoordinatorTest' \
+  --tests '*ModelDownloadFinalizerTest' \
+  --tests '*InstalledModelPublicationCoordinatorTest' \
+  --tests '*InstalledModelEvidenceRepairerTest' \
+  --tests '*AppModuleManifestSourceTest' \
+  --tests '*ModelViewModelRecommendationTest' \
+  --tests '*ModelViewModelDurableDownloadStructureTest' \
+  --tests '*ModelHubProductionBranchUiTest' \
+  --tests '*ModelDetailsRouteUiTest' \
+  --no-daemon
+```
+
+Result: PASS, 74/74 tests across ten suites, zero skipped/failures/errors. Suite counts were AppModule manifest source 6, batch runner 4, download coordinator 4, evidence repairer 13, publication coordinator 1, details route UI 2, finalizer 9, Model Hub production UI 10, durable-download structure 1, and ModelViewModel recommendation 24.
+
+The manifest-store command above was rerun after the round-2 changes and remained PASS at 35/35 tests across four suites.
+
 ## Repository gate
 
 `git diff --check` passes.
@@ -149,7 +193,7 @@ Final repository command:
 ./gradlew verifyProject --no-daemon
 ```
 
-Result: PASS in 45 seconds. The gate ran 1,048/1,048 JVM tests across 139 suites plus 5/5 native CTests, with zero skipped JVM tests and zero failures/errors. JVM detail: `composeApp` 909 tests/115 suites, `huggingFaceManager` 91/15, `runner` 29/6, and `diffusionRunner` 19/3. Gradle reported 41 actionable tasks: 16 executed and 25 up to date.
+Result after review round 2: PASS in 57 seconds. The gate ran 1,049/1,049 JVM tests across 140 suites plus 5/5 native CTests, with zero skipped JVM tests and zero failures/errors. JVM detail: `composeApp` 910 tests/116 suites, `huggingFaceManager` 91/15, `runner` 29/6, and `diffusionRunner` 19/3. Gradle reported 41 actionable tasks: 18 executed and 23 up to date.
 
 ## Self-review
 
@@ -161,8 +205,8 @@ Result: PASS in 45 seconds. The gate ran 1,048/1,048 JVM tests across 139 suites
 - Confirmed baseline/CAS conflict handling rereads and revalidates current durable state rather than returning the stale candidate.
 - Confirmed same-owner coalescing is bounded, unrelated tested owners progress concurrently, and there is no externally keyed unbounded map.
 - Confirmed exact-case owners cannot share repair flights even when they intentionally hash to the same normalized stripe.
-- Confirmed cancellation is rethrown by repair, the batch runner, and production bundle adapters, with no artifact failure mutation and no payload, path, metadata, or exception detail logged.
-- Confirmed no dormant `ModelViewModel` entry point remains that can publish a bundle or Ready catalog outside the durable finalizer.
+- Confirmed cancellation is rethrown by repair, both batch-runner lock waits (queued manifest preflight and finalization), and production bundle adapters, with no artifact mutation and no payload, path, metadata, or exception detail logged.
+- Confirmed `ModelViewModel` cannot be constructed without a durable coordinator and no entry point remains that can transfer, publish a bundle, or write the Ready catalog outside that coordinator/finalizer path.
 - Confirmed manifest/artifact/evidence validation remains strict and mismatch/failure behavior remains fail closed.
 - Confirmed README scope is limited to the root and affected `composeApp` and `huggingFaceManager` modules, and `git diff --check` is clean.
 

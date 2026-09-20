@@ -76,7 +76,14 @@ class DownloadBatchRunner(
                 verifyingArtifacts += initialArtifact.artifactId
                 continue
             }
-            if (runCatching { transfer.isPublished(initialArtifact.request.metadata) }.getOrDefault(false)) {
+            val isPublished = try {
+                transfer.isPublished(initialArtifact.request.metadata)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                false
+            }
+            if (isPublished) {
                 val owner = leaseOwner().take(128)
                 if (store.claim(initialArtifact.artifactId, owner, clock(), clock() + LEASE_DURATION_MS)) {
                     try {

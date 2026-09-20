@@ -72,6 +72,7 @@ import com.debanshu777.caraml.features.modelhub.domain.RecommendationVariantEval
 import com.debanshu777.caraml.features.modelhub.domain.RepositoryVariantSet
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.DownloadedModelsViewModel
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.ReadinessFilter
+import com.debanshu777.caraml.features.modelhub.presentation.modelHubTestDownloadCoordinator
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubStateKind
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubStateView
 import com.debanshu777.huggingfacemanager.HuggingFaceApi
@@ -572,6 +573,7 @@ private class TestModelHubEnvironment : AutoCloseable {
         deviceCapabilities = DeviceCapabilities(),
         recommendationService = testRecommendationService(),
         settingsRepository = TestSettingsRepository(),
+        downloadCoordinator = modelHubTestDownloadCoordinator(),
     )
 
     override fun close() {
