@@ -231,22 +231,7 @@ val appModule = module {
     single {
         LocalArtifactIdentityResolver(
             storagePathProvider = get(),
-            manifestSource = { ownerModelId ->
-                val downloadManager = get<DownloadManager>()
-                val linked = get<ComponentRepository>().getComponentsForModel(ownerModelId)
-                val primary = downloadManager.validatedBundle(ownerModelId)?.entries.orEmpty()
-                val external = linked.groupBy { it.repoId }.flatMap { (repoId, expected) ->
-                    val installed = downloadManager.validatedArtifacts(repoId)?.entries.orEmpty()
-                    expected.mapNotNull { component ->
-                        installed.singleOrNull {
-                            it.identity.repositoryId == component.repoId &&
-                                it.identity.relativePath == component.filePath &&
-                                it.logicalRole == component.role
-                        }
-                    }
-                }
-                (primary + external).takeIf { it.isNotEmpty() }?.let(ArtifactManifest::create)
-            },
+            manifestSource = installedModelManifestSource(get<DownloadManager>()::validatedBundle),
             hashingDispatcher = Dispatchers.Default,
         )
     }
@@ -337,6 +322,12 @@ val appModule = module {
 }
 
 private const val NATIVE_LOAD_ENGINE_VERSION = "native-engine-v1"
+
+internal fun installedModelManifestSource(
+    validatedBundle: suspend (String) -> ArtifactManifest?,
+): suspend (String) -> ArtifactManifest? = { ownerModelId ->
+    validatedBundle(ownerModelId)
+}
 
 private class RecommendationCalibrationScope(val scope: CoroutineScope)
 class DownloadRuntimeScope(val scope: CoroutineScope)
