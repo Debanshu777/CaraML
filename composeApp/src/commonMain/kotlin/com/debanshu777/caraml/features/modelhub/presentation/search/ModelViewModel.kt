@@ -113,6 +113,29 @@ internal fun relevantDownloadTask(
     }
 }
 
+internal fun relevantDownloadTask(
+    batches: List<DownloadBatchSnapshot>,
+    expectedRequests: List<DownloadArtifactRequest>,
+    artifact: DownloadArtifactIdentity?,
+): RelevantDownloadTask? {
+    if (artifact == null || expectedRequests.isEmpty()) return null
+    return relevantDownloadTask(
+        batches = batches.filter { batch -> batch.matchesExactRequests(expectedRequests) },
+    ) { task ->
+        task.request == expectedRequests.singleOrNull { request ->
+            request.metadata.artifact == artifact
+        }
+    }
+}
+
+private fun DownloadBatchSnapshot.matchesExactRequests(
+    expectedRequests: List<DownloadArtifactRequest>,
+): Boolean {
+    if (artifacts.size != expectedRequests.size) return false
+    val unmatched = artifacts.mapTo(mutableListOf(), DownloadArtifactSnapshot::request)
+    return expectedRequests.all(unmatched::remove) && unmatched.isEmpty()
+}
+
 private fun relevantDownloadTask(
     batches: List<DownloadBatchSnapshot>,
     matches: (DownloadArtifactSnapshot) -> Boolean,
@@ -1097,9 +1120,14 @@ class ModelViewModel(
     ) {
         val hydratedModelId = _modelDetail.value?.let { it.modelId ?: it.id }
         if (hydratedModelId != modelId || _ggufFiles.value.isEmpty()) return
+        val currentRequestBundles = currentExpectedRequestBundles().values.distinct()
+        if (currentRequestBundles.isEmpty()) return
 
         val newlyCompletedBatchIds = batches.asSequence()
-            .filter { it.state == DownloadBatchState.COMPLETED }
+            .filter { batch ->
+                batch.state == DownloadBatchState.COMPLETED &&
+                    currentRequestBundles.any(batch::matchesExactRequests)
+            }
             .map(DownloadBatchSnapshot::batchId)
             .filterNot(refreshedCompletedBatchIds::contains)
             .toSet()
@@ -1120,15 +1148,25 @@ class ModelViewModel(
             DownloadBatchState.WAITING_FOR_NETWORK,
             DownloadBatchState.VERIFYING,
         )
-        _isDownloading.value = batches.any { it.state in activeBatchStates }
+        val currentRequestBundles = currentExpectedRequestBundles()
+        val selections = currentRequestBundles.mapNotNull { (artifact, requests) ->
+            relevantDownloadTask(batches, requests, artifact)
+        }
+        val relevantBatches = selections.map(RelevantDownloadTask::batch).distinctBy { it.batchId }
+        _isDownloading.value = relevantBatches.any { it.state in activeBatchStates }
 
         val selectedArtifact = _selectedVariantPath.value?.let { selectedPath ->
             _ggufFiles.value.singleOrNull { it.path == selectedPath }?.artifact
         }
-        val selectedTask = relevantDownloadTask(batches, selectedArtifact)
-        val runningTask = selectedTask?.takeIf {
-            it.task.state == DownloadArtifactState.RUNNING
-        } ?: batches.asSequence()
+        val selectedRequests = selectedArtifact?.let(currentRequestBundles::get)
+        val selectedTask = selectedRequests?.let { requests ->
+            relevantDownloadTask(batches, requests, selectedArtifact)
+        }
+        val runningTask = selectedTask?.batch?.artifacts?.asSequence()
+            ?.filter { it.state == DownloadArtifactState.RUNNING }
+            ?.map { task -> RelevantDownloadTask(selectedTask.batch, task) }
+            ?.minByOrNull { it.task.artifactId }
+            ?: relevantBatches.asSequence()
             .flatMap { batch ->
                 batch.artifacts.asSequence().map { task -> RelevantDownloadTask(batch, task) }
             }
@@ -1143,15 +1181,12 @@ class ModelViewModel(
 
         _ggufFiles.update { files ->
             files.map { file ->
-                val task = relevantDownloadTask(batches, file.artifact)?.task
-                val completed = file.artifact != null && batches.any { batch ->
-                    batch.artifacts.any { artifact ->
-                        artifact.request.metadata.artifact == file.artifact &&
-                            artifact.state == DownloadArtifactState.COMPLETED
+                val task = file.artifact?.let { artifact ->
+                    currentRequestBundles[artifact]?.let { requests ->
+                        relevantDownloadTask(batches, requests, artifact)?.task
                     }
                 }
                 file.copy(
-                    isDownloaded = file.isDownloaded || completed,
                     progress = task?.takeIf {
                         it.state == DownloadArtifactState.RUNNING && it.expectedBytes > 0L
                     }?.let {
@@ -1162,25 +1197,25 @@ class ModelViewModel(
         }
         _setupComponents.update { components ->
             components.map { component ->
-                fun DownloadArtifactSnapshot.matchesComponent(): Boolean =
+                val expected = selectedRequests?.singleOrNull { request ->
                     request.metadata.artifact.let { identity ->
                         identity.repositoryId == component.repoId &&
                             identity.relativePath == component.filePath
                     }
-                val task = relevantDownloadTask(batches) { it.matchesComponent() }?.task
-                val completed = batches.any { batch ->
-                    batch.artifacts.any { artifact ->
-                        artifact.matchesComponent() &&
-                            artifact.state == DownloadArtifactState.COMPLETED
-                    }
+                }
+                val task = expected?.let { request ->
+                    relevantDownloadTask(
+                        batches = batches,
+                        expectedRequests = selectedRequests,
+                        artifact = request.metadata.artifact,
+                    )?.task
                 }
                 component.copy(
-                    isDownloaded = component.isDownloaded || completed,
                     progress = task?.takeIf {
                         it.state == DownloadArtifactState.RUNNING && it.expectedBytes > 0L
                     }?.let {
                         it.bytesReceived.toFloat() * 100f / it.expectedBytes.toFloat()
-                    },
+                    }
                 )
             }
         }
@@ -1207,6 +1242,63 @@ class ModelViewModel(
             DownloadBatchState.FAILED_TERMINAL ->
                 "Download could not be verified. Please start it again."
             else -> null
+        }
+    }
+
+    private fun currentExpectedRequestBundles(): Map<DownloadArtifactIdentity, List<DownloadArtifactRequest>> =
+        _ggufFiles.value.mapNotNull { file ->
+            val artifact = file.artifact ?: return@mapNotNull null
+            val requests = expectedRequestsFor(file.path) ?: return@mapNotNull null
+            artifact to requests
+        }.toMap()
+
+    private fun expectedRequestsFor(path: String): List<DownloadArtifactRequest>? {
+        val detail = _modelDetail.value ?: return null
+        val ownerModelId = detail.modelId ?: detail.id ?: return null
+        return when (_browseMode.value) {
+            ModelHubBrowseMode.LanguageModels -> {
+                val artifact = _ggufFiles.value.singleOrNull { it.path == path }?.artifact ?: return null
+                listOf(
+                    DownloadArtifactRequest(
+                        metadata = DownloadMetadataDTO(
+                            artifact = artifact,
+                            logicalRole = "model",
+                            sizeBytes = artifact.expectedBytes,
+                            author = detail.author,
+                            libraryName = detail.libraryName,
+                            pipelineTag = detail.pipelineTag,
+                            contextLength = detail.gguf?.contextLength,
+                        ),
+                        primary = true,
+                    ),
+                )
+            }
+            ModelHubBrowseMode.DiffusionImage,
+            ModelHubBrowseMode.DiffusionVideo,
+            -> {
+                val requiredComponents = getModelSetup(ownerModelId)
+                    ?.components
+                    ?.filter(SdCppComponent::required)
+                    .orEmpty()
+                if (!requiredComponents.all(exactSetupComponentMetadata::containsKey)) return null
+                val metadata = createExactBundleMetadata(path, exactSetupComponentMetadata)
+                    ?: _ggufFiles.value.singleOrNull { it.path == path }?.let { selected ->
+                        buildDeterministicDiffusionBundleMetadata(
+                            selected = listOf(selected),
+                            componentMetadata = exactSetupComponentMetadata.values,
+                            author = detail.author,
+                            libraryName = detail.libraryName,
+                            pipelineTag = detail.pipelineTag,
+                        ).takeIf(List<DownloadMetadataDTO>::isNotEmpty)
+                    }
+                    ?: return null
+                metadata.map { value ->
+                    DownloadArtifactRequest(
+                        metadata = value,
+                        primary = value.artifact.repositoryId == ownerModelId,
+                    )
+                }
+            }
         }
     }
 

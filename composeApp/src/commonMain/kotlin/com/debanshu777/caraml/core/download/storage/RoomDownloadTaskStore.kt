@@ -83,8 +83,14 @@ class RoomDownloadTaskStore(
 
     override suspend fun getBatch(batchId: String): DownloadBatchSnapshot? = dao.batch(batchId)?.toSnapshot()
 
-    override suspend fun recoverableBatches(): List<DownloadBatchSnapshot> =
-        dao.recoverableBatches().map(DownloadBatchWithArtifacts::toSnapshot)
+    override suspend fun recoverableBatches(): List<DownloadBatchSnapshot> {
+        val recovered = mutableListOf<DownloadBatchSnapshot>()
+        dao.recoverableBatches().forEach { persisted ->
+            persisted.toMutationSafeSnapshotOrNull()?.let(recovered::add)
+                ?: dao.quarantineMutableBatch(persisted.batch.batchId)
+        }
+        return recovered
+    }
 
     override suspend fun claim(
         artifactId: String,
@@ -94,8 +100,14 @@ class RoomDownloadTaskStore(
     ): Boolean {
         require(owner.isNotBlank() && owner.length <= 128 && owner.none(Char::isISOControl))
         require(expiresAtEpochMs > nowEpochMs)
-        val metadata = runCatching { dao.artifact(artifactId)?.toMetadata() }.getOrNull() ?: return false
-        if (!metadata.usesImmutableStorageLayout) return false
+        val entity = dao.artifact(artifactId) ?: return false
+        val batch = dao.batch(entity.batchId) ?: return false
+        val snapshot = batch.toMutationSafeSnapshotOrNull()
+        if (snapshot == null) {
+            dao.quarantineMutableBatch(entity.batchId)
+            return false
+        }
+        if (snapshot.artifacts.none { it.artifactId == artifactId }) return false
         val claimed = dao.claim(artifactId, owner, nowEpochMs, expiresAtEpochMs) == 1
         if (claimed) refreshBatchForArtifact(artifactId, nowEpochMs)
         return claimed
@@ -201,6 +213,39 @@ private fun DownloadBatchWithArtifacts.toSnapshot(): DownloadBatchSnapshot {
         evidence = batch.restoreEvidence(artifactSnapshots.map { it.request.metadata.artifact }),
         failureCode = batch.failureCode?.let(::strictEnum),
     )
+}
+
+private fun DownloadBatchWithArtifacts.toMutationSafeSnapshotOrNull(): DownloadBatchSnapshot? = try {
+    val snapshot = toSnapshot()
+    val request = DownloadBatchRequest(
+        ownerModelId = snapshot.ownerModelId,
+        modelType = snapshot.modelType,
+        artifacts = snapshot.artifacts.map(DownloadArtifactSnapshot::request),
+        evidence = snapshot.evidence,
+        downloadForLaterConfirmed = batch.downloadForLaterConfirmed,
+        displayName = snapshot.displayName,
+    )
+    check(downloadBatchId(request) == snapshot.batchId) { "Corrupt persisted batch identity" }
+    val persistedById = artifacts.associateBy(DownloadArtifactEntity::artifactId)
+    check(persistedById.size == artifacts.size) { "Corrupt persisted artifact identity" }
+    snapshot.artifacts.forEach { artifact ->
+        val persisted = checkNotNull(persistedById[artifact.artifactId]) {
+            "Corrupt persisted artifact identity"
+        }
+        check(persisted.batchId == snapshot.batchId) { "Corrupt persisted batch link" }
+        check(artifact.artifactId == downloadBatchArtifactId(snapshot.batchId, artifact.request)) {
+            "Corrupt persisted artifact identity"
+        }
+        check(persisted.stagingToken == artifact.artifactId) { "Corrupt persisted staging identity" }
+        check(artifact.bytesReceived in 0L..artifact.expectedBytes && artifact.retryCount >= 0) {
+            "Corrupt persisted artifact progress"
+        }
+    }
+    snapshot
+} catch (_: IllegalArgumentException) {
+    null
+} catch (_: IllegalStateException) {
+    null
 }
 
 private fun DownloadArtifactEntity.toMetadata(): DownloadMetadataDTO {

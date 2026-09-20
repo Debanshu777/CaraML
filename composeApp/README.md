@@ -204,7 +204,7 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 
 <!-- Updated at end of each AI-assisted development session -->
 
-- Ready catalogs now require exact revision, object, bundle, digest, and local-generation bindings; download DB v3 quarantines unfinished unscoped work, shared bytes retain each owner's link role, and transactional removal prunes only an exact generation after its final owner is gone
+- Ready catalogs now require exact revision, object, bundle, digest, local generation, and complete current request-set bindings; download DB v3 reconstructs and quarantines malformed work per batch, iOS rejects background payloads whose persisted request binding changed, shared bytes retain each owner's link role, and transactional removal prunes only an exact generation after its final owner is gone
 - Rebuilt the shared UI as a sidebar-first Prism workbench: compact windows reveal a modal left panel without moving content, tablets use a compact rail, and wider workspaces use a labeled sidebar with contextual generation modes
 - Create now centers one focused command composer, keeps Text, Image, and Video as local modes, and exposes explicit empty, preparation, generation, completion, and failure states
 - Model Hub now uses one compact registry hierarchy, while Details prioritizes exact artifacts and renders durable pause/resume/cancel/retry state without sacrificing compact or large-text reachability

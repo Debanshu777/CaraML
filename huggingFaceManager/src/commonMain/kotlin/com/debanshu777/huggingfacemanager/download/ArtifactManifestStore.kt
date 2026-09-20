@@ -231,7 +231,11 @@ class ArtifactManifestStore(
 
     fun read(): ArtifactManifest? = readManifest(manifestPath)
 
-    fun readValidated(): ArtifactManifest? = read()?.takeIf { validateManifest(manifestPath) }
+    fun readValidated(): ArtifactManifest? = if (hasPendingTransaction()) {
+        null
+    } else {
+        read()?.takeIf { validateManifest(manifestPath) }
+    }
 
     fun containsValidated(entry: ArtifactManifestEntry): Boolean =
         readValidated()?.entries?.singleOrNull {
@@ -370,7 +374,14 @@ class ArtifactManifestStore(
             durableDelete(journalPath)
             return
         }
-        val journal = normalizedJournal(decoded, target) ?: return
+        val journal = normalizedJournal(decoded, target) ?: run {
+            discardUntrustedJournalIfCurrentManifestIsSettled()
+            return
+        }
+        if (!targetsImmutableStorageGeneration(journal)) {
+            restorePreviousGeneration(journal, target)
+            return
+        }
         if (journal.phase == ManifestJournalPhase.ROLLING_BACK) {
             restorePreviousGeneration(journal, target)
         } else if (newGenerationIsRecoverable(journal, target)) {
@@ -479,6 +490,29 @@ class ArtifactManifestStore(
         }
         if (!filesystemMatchesJournalEvidence(normalized, target)) return null
         return normalized
+    }
+
+    private fun targetsImmutableStorageGeneration(journal: ArtifactCommitJournal): Boolean {
+        if (journal.phase == ManifestJournalPhase.ROLLING_BACK) return true
+        val manifest = listOf(manifestPartPath, manifestPath)
+            .mapNotNull(::readManifest)
+            .firstOrNull { it.bundleDigest == journal.transactionId }
+            ?: return false
+        val entry = manifest.entries.singleOrNull { it.localRelativePath == journal.relativePath }
+            ?: return false
+        return persistedArtifactStorageLocation(
+            entry.identity,
+            entry.bundleId,
+            entry.localRelativePath,
+        )?.isScoped == true
+    }
+
+    private fun discardUntrustedJournalIfCurrentManifestIsSettled() {
+        if (!validateManifest(manifestPath)) return
+        durableDelete(manifestPartPath)
+        durableDelete(manifestPreviousPath)
+        durableDelete(journalPartPath)
+        durableDelete(journalPath)
     }
 
     private fun legalJournalState(phase: ManifestJournalPhase, step: ManifestJournalStep): Boolean = when (phase) {

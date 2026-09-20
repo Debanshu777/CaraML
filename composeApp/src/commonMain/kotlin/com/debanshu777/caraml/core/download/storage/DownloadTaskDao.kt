@@ -71,6 +71,31 @@ interface DownloadTaskDao {
     @Query("SELECT * FROM download_batch WHERE state NOT IN ('COMPLETED', 'FAILED_TERMINAL', 'CANCELLED')")
     suspend fun recoverableBatches(): List<DownloadBatchWithArtifacts>
 
+    @Query(
+        """
+        UPDATE download_artifact
+        SET state = 'FAILED_TERMINAL', failure_code = 'SECURE_PATH', platform_task_id = NULL,
+            lease_owner = NULL, lease_expires_at_epoch_ms = NULL
+        WHERE batch_id = :batchId AND state NOT IN ('COMPLETED', 'FAILED_TERMINAL', 'CANCELLED')
+        """,
+    )
+    suspend fun quarantineMutableArtifacts(batchId: String)
+
+    @Query(
+        """
+        UPDATE download_batch
+        SET state = 'FAILED_TERMINAL', failure_code = 'SECURE_PATH'
+        WHERE batch_id = :batchId AND state NOT IN ('COMPLETED', 'FAILED_TERMINAL', 'CANCELLED')
+        """,
+    )
+    suspend fun quarantineMutableBatchRecord(batchId: String)
+
+    @Transaction
+    suspend fun quarantineMutableBatch(batchId: String) {
+        quarantineMutableArtifacts(batchId)
+        quarantineMutableBatchRecord(batchId)
+    }
+
     @Query("SELECT * FROM download_batch WHERE batch_id = :batchId")
     suspend fun requireBatch(batchId: String): DownloadBatchEntity
 

@@ -6,9 +6,11 @@ import androidx.sqlite.execSQL
 import com.debanshu777.caraml.core.download.DownloadArtifactRequest
 import com.debanshu777.caraml.core.download.DownloadArtifactState
 import com.debanshu777.caraml.core.download.DownloadBatchRequest
+import com.debanshu777.caraml.core.download.DownloadBatchSnapshot
 import com.debanshu777.caraml.core.download.DownloadBatchState
 import com.debanshu777.caraml.core.download.DownloadFailureCode
 import com.debanshu777.caraml.core.download.DownloadUserIntent
+import com.debanshu777.caraml.core.download.downloadBatchArtifactId
 import com.debanshu777.caraml.core.download.downloadBatchId
 import com.debanshu777.caraml.core.download.pendingEvidence
 import com.debanshu777.caraml.core.recommendation.storage.InstalledEvidenceState
@@ -161,6 +163,10 @@ class DownloadDatabaseTest {
     @Test
     fun migrationTwoToThreeQuarantinesUnscopedWorkButKeepsCompletedLegacyReadOnlyAfterReopen() = runTest {
         val path = Files.createTempDirectory("caraml-download-storage-migration").resolve("downloads.db").toString()
+        val scopedRequest = request()
+        val scopedBatchId = downloadBatchId(scopedRequest)
+        val scopedArtifactRequest = scopedRequest.artifacts.single()
+        val scopedArtifactId = downloadBatchArtifactId(scopedBatchId, scopedArtifactRequest)
         createVersionTwoDatabase(path)
         BundledSQLiteDriver().open(path).use { connection ->
             insertVersionTwoArtifact(
@@ -189,11 +195,12 @@ class DownloadDatabaseTest {
             )
             insertVersionTwoArtifact(
                 connection = connection,
-                batchId = "4".repeat(64),
-                artifactId = "d".repeat(64),
+                batchId = scopedBatchId,
+                artifactId = scopedArtifactId,
                 batchState = "QUEUED",
                 artifactState = "QUEUED",
-                destination = ".caraml-artifacts/${"c".repeat(64)}/weights/model.gguf",
+                destination = scopedArtifactRequest.metadata.destinationRelativePath,
+                bundleId = scopedArtifactRequest.metadata.bundleId,
             )
         }
 
@@ -215,10 +222,10 @@ class DownloadDatabaseTest {
                 assertEquals(DownloadArtifactState.COMPLETED, completed.artifacts.single().state)
                 assertFalse(completed.artifacts.single().request.metadata.usesImmutableStorageLayout)
 
-                val scoped = assertNotNull(store.getBatch("4".repeat(64)))
+                val scoped = assertNotNull(store.getBatch(scopedBatchId))
                 assertEquals(DownloadBatchState.QUEUED, scoped.state)
                 assertTrue(scoped.artifacts.single().request.metadata.usesImmutableStorageLayout)
-                assertEquals(listOf("4".repeat(64)), store.recoverableBatches().map { it.batchId })
+                assertEquals(listOf(scopedBatchId), store.recoverableBatches().map { it.batchId })
             } finally {
                 database.close()
             }
@@ -226,7 +233,7 @@ class DownloadDatabaseTest {
     }
 
     @Test
-    fun claimFailsClosedWhenPersistedDestinationIsChangedToLegacyAfterMigration() = runTest {
+    fun claimQuarantinesPersistedDestinationChangedToLegacyAfterMigration() = runTest {
         val path = Files.createTempDirectory("caraml-download-claim-scope").resolve("downloads.db").toString()
         var database = getDownloadRoomDatabase(getDownloadDatabaseBuilder(path))
         val artifactId: String
@@ -251,10 +258,87 @@ class DownloadDatabaseTest {
             val store = RoomDownloadTaskStore(database.downloadTaskDao())
             assertFalse(store.claim(artifactId, "worker", nowEpochMs = 2L, expiresAtEpochMs = 100L))
             val persisted = database.downloadTaskDao().requireArtifact(artifactId)
-            assertEquals(DownloadArtifactState.QUEUED.name, persisted.state)
+            assertEquals(DownloadArtifactState.FAILED_TERMINAL.name, persisted.state)
+            assertEquals(DownloadFailureCode.SECURE_PATH.name, persisted.failureCode)
             assertEquals(null, persisted.leaseOwner)
+            assertEquals(
+                DownloadBatchState.FAILED_TERMINAL.name,
+                database.downloadTaskDao().requireBatch(persisted.batchId).state,
+            )
         } finally {
             database.close()
+        }
+    }
+
+    @Test
+    fun recoverableBatchesQuarantineCorruptRowsIndependentlyAcrossReopen() = runTest {
+        val path = Files.createTempDirectory("caraml-download-corrupt-isolation").resolve("downloads.db").toString()
+        var database = getDownloadRoomDatabase(getDownloadDatabaseBuilder(path))
+        val batches = linkedMapOf<String, Pair<String, String>>()
+        try {
+            val store = RoomDownloadTaskStore(database.downloadTaskDao())
+            listOf("case", "length", "bundle", "suffix", "evidence", "valid").forEachIndexed { index, key ->
+                val batchId = store.create(
+                    request(
+                        relativePath = "weights/model-$key.gguf",
+                        immutableRevision = ("${index + 1}".repeat(40)),
+                    ),
+                    nowEpochMs = index.toLong(),
+                )
+                val artifact = requireNotNull(store.getBatch(batchId)).artifacts.single()
+                batches[key] = batchId to artifact.artifactId
+            }
+        } finally {
+            database.close()
+        }
+        BundledSQLiteDriver().open(path).use { connection ->
+            connection.execSQL(
+                "UPDATE download_artifact SET bundle_id = upper(bundle_id) " +
+                    "WHERE artifact_id = '${batches.getValue("case").second}'",
+            )
+            connection.prepare(
+                "UPDATE download_artifact SET relative_path = ? WHERE artifact_id = ?",
+            ).use { statement ->
+                statement.bindText(1, "weights/${"x".repeat(1_100)}.gguf")
+                statement.bindText(2, batches.getValue("length").second)
+                statement.step()
+            }
+            val arbitraryBundle = "d".repeat(64)
+            connection.execSQL(
+                "UPDATE download_artifact SET bundle_id = '$arbitraryBundle', " +
+                    "destination_relative_path = '.caraml-artifacts/$arbitraryBundle/weights/model-bundle.gguf' " +
+                    "WHERE artifact_id = '${batches.getValue("bundle").second}'",
+            )
+            connection.execSQL(
+                "UPDATE download_artifact SET destination_relative_path = destination_relative_path || '.extra' " +
+                    "WHERE artifact_id = '${batches.getValue("suffix").second}'",
+            )
+            connection.execSQL(
+                "UPDATE download_batch SET evidence_payload = NULL " +
+                    "WHERE batch_id = '${batches.getValue("evidence").first}'",
+            )
+        }
+
+        repeat(2) {
+            database = getDownloadRoomDatabase(getDownloadDatabaseBuilder(path))
+            try {
+                val store = RoomDownloadTaskStore(database.downloadTaskDao())
+                assertEquals(
+                    listOf(batches.getValue("valid").first),
+                    store.recoverableBatches().map(DownloadBatchSnapshot::batchId),
+                )
+                batches.filterKeys { it != "valid" }.values.forEach { (batchId, artifactId) ->
+                    assertEquals(DownloadBatchState.FAILED_TERMINAL.name, database.downloadTaskDao().requireBatch(batchId).state)
+                    val artifact = database.downloadTaskDao().requireArtifact(artifactId)
+                    assertEquals(DownloadArtifactState.FAILED_TERMINAL.name, artifact.state)
+                    assertEquals(DownloadFailureCode.SECURE_PATH.name, artifact.failureCode)
+                    assertEquals(null, artifact.platformTaskId)
+                    assertEquals(null, artifact.leaseOwner)
+                    assertEquals(null, artifact.leaseExpiresAtEpochMs)
+                }
+            } finally {
+                database.close()
+            }
         }
     }
 
@@ -459,12 +543,15 @@ class DownloadDatabaseTest {
         return getDownloadRoomDatabase(getDownloadDatabaseBuilder(path.toString()))
     }
 
-    private fun request(): DownloadBatchRequest {
+    private fun request(
+        relativePath: String = "weights/model.gguf",
+        immutableRevision: String = "a".repeat(40),
+    ): DownloadBatchRequest {
         val identity = requireNotNull(
             DownloadArtifactIdentity.create(
                 repositoryId = "owner/model",
-                immutableRevision = "a".repeat(40),
-                relativePath = "weights/model.gguf",
+                immutableRevision = immutableRevision,
+                relativePath = relativePath,
                 remoteObjectId = "b".repeat(64),
                 expectedBytes = 1_024L,
             ),
@@ -622,6 +709,7 @@ class DownloadDatabaseTest {
         batchState: String,
         artifactState: String,
         destination: String,
+        bundleId: String = "c".repeat(64),
     ) {
         connection.prepare(
             """
@@ -646,7 +734,7 @@ class DownloadDatabaseTest {
                 lease_expires_at_epoch_ms, staging_token, updated_at_epoch_ms
             ) VALUES (
                 ?, ?, 'owner/model', '${"a".repeat(40)}', 'weights/model.gguf', '${"b".repeat(64)}',
-                1024, 'model', ?, '${"c".repeat(64)}', 1,
+                1024, 'model', ?, ?, 1,
                 NULL, NULL, NULL, NULL, ?, 0, NULL, NULL, NULL, 0, 'platform-task', 'legacy-owner',
                 99, ?, 1
             )
@@ -655,8 +743,9 @@ class DownloadDatabaseTest {
             statement.bindText(1, artifactId)
             statement.bindText(2, batchId)
             statement.bindText(3, destination)
-            statement.bindText(4, artifactState)
-            statement.bindText(5, artifactId)
+            statement.bindText(4, bundleId)
+            statement.bindText(5, artifactState)
+            statement.bindText(6, artifactId)
             statement.step()
         }
     }

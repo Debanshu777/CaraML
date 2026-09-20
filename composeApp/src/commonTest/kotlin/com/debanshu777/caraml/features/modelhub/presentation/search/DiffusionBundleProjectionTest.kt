@@ -5,6 +5,14 @@ import com.debanshu777.huggingfacemanager.download.ArtifactManifestEntry
 import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
 import com.debanshu777.huggingfacemanager.download.immutableArtifactStorageLocation
+import com.debanshu777.caraml.core.download.DownloadArtifactRequest
+import com.debanshu777.caraml.core.download.DownloadArtifactSnapshot
+import com.debanshu777.caraml.core.download.DownloadArtifactState
+import com.debanshu777.caraml.core.download.DownloadBatchSnapshot
+import com.debanshu777.caraml.core.download.DownloadBatchState
+import com.debanshu777.caraml.core.download.DownloadUserIntent
+import com.debanshu777.caraml.core.recommendation.storage.EncodedModelEvidence
+import com.debanshu777.caraml.core.recommendation.storage.InstalledEvidenceState
 import com.debanshu777.huggingfacemanager.sdcpp.ComponentRole
 import com.debanshu777.huggingfacemanager.sdcpp.SdCppComponent
 import kotlin.test.Test
@@ -13,6 +21,91 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class DiffusionBundleProjectionTest {
+    @Test
+    fun durableProjectionRejectsBundleWhenExternalComponentRevisionChanged() {
+        val primary = ui(identity("checkpoint.safetensors"))
+        val oldComponent = metadata(
+            identity(
+                path = "vae.safetensors",
+                repositoryId = "shared/vae",
+                revision = "b".repeat(40),
+            ),
+            role = "vae",
+        )
+        val currentComponent = metadata(
+            identity(
+                path = "vae.safetensors",
+                repositoryId = "shared/vae",
+                revision = "c".repeat(40),
+            ),
+            role = "vae",
+        )
+        val oldMetadata = buildDeterministicDiffusionBundleMetadata(
+            selected = listOf(primary),
+            componentMetadata = listOf(oldComponent),
+            author = null,
+            libraryName = "stable-diffusion.cpp",
+            pipelineTag = "text-to-image",
+        )
+        val currentMetadata = buildDeterministicDiffusionBundleMetadata(
+            selected = listOf(primary),
+            componentMetadata = listOf(currentComponent),
+            author = null,
+            libraryName = "stable-diffusion.cpp",
+            pipelineTag = "text-to-image",
+        )
+        val stale = snapshot("stale", oldMetadata, DownloadArtifactState.COMPLETED)
+        val expectedRequests = requests(currentMetadata)
+
+        assertEquals(
+            null,
+            relevantDownloadTask(listOf(stale), expectedRequests, primary.artifact),
+        )
+        assertEquals(
+            primary.artifact,
+            relevantDownloadTask(
+                listOf(snapshot("current", currentMetadata, DownloadArtifactState.RUNNING)),
+                expectedRequests,
+                primary.artifact,
+            )?.task?.request?.metadata?.artifact,
+        )
+    }
+
+    @Test
+    fun durableProjectionRejectsSameIdentityStoredInWrongGeneration() {
+        val artifact = identity("checkpoint.safetensors")
+        val expected = buildDeterministicDiffusionBundleMetadata(
+            selected = listOf(ui(artifact)),
+            componentMetadata = emptyList(),
+            author = null,
+            libraryName = null,
+            pipelineTag = null,
+        ).single()
+        val wrongBundleId = "d".repeat(64)
+        val wrongGeneration = expected.copy(
+            bundleId = wrongBundleId,
+            destinationRelativePath = immutableArtifactStorageLocation(
+                artifact,
+                wrongBundleId,
+            ).localRelativePath,
+        )
+
+        assertEquals(
+            null,
+            relevantDownloadTask(
+                batches = listOf(
+                    snapshot(
+                        batchId = "wrong-generation",
+                        metadata = listOf(wrongGeneration),
+                        state = DownloadArtifactState.COMPLETED,
+                    ),
+                ),
+                expectedRequests = requests(listOf(expected)),
+                artifact = artifact,
+            ),
+        )
+    }
+
     @Test
     fun aggregateManifestMarksOnlyTheExactlyCommittedVariant() {
         val committed = identity("model.fp16.safetensors")
@@ -227,10 +320,14 @@ class DiffusionBundleProjectionTest {
         assertEquals(entry, findInstalledSetupComponent(listOf(entry), component))
     }
 
-    private fun identity(path: String) = requireNotNull(
+    private fun identity(
+        path: String,
+        repositoryId: String = "org/model",
+        revision: String = "a".repeat(40),
+    ) = requireNotNull(
         DownloadArtifactIdentity.create(
-            repositoryId = "org/model",
-            immutableRevision = "a".repeat(40),
+            repositoryId = repositoryId,
+            immutableRevision = revision,
             relativePath = path,
             remoteObjectId = null,
             expectedBytes = 1,
@@ -268,6 +365,52 @@ class DiffusionBundleProjectionTest {
             bundleId = metadata.bundleId,
             localRelativePath = localRelativePath,
             layoutRelativePath = metadata.layoutRelativePath,
+        ),
+    )
+
+    private fun requests(metadata: List<DownloadMetadataDTO>): List<DownloadArtifactRequest> =
+        metadata.map { value ->
+            DownloadArtifactRequest(
+                metadata = value,
+                primary = value.artifact.repositoryId == "org/model",
+            )
+        }
+
+    private fun snapshot(
+        batchId: String,
+        metadata: List<DownloadMetadataDTO>,
+        state: DownloadArtifactState,
+    ): DownloadBatchSnapshot = DownloadBatchSnapshot(
+        batchId = batchId,
+        ownerModelId = "org/model",
+        modelType = "image",
+        displayName = "model",
+        state = when (state) {
+            DownloadArtifactState.RUNNING -> DownloadBatchState.RUNNING
+            DownloadArtifactState.COMPLETED -> DownloadBatchState.COMPLETED
+            else -> error("Unsupported fixture state")
+        },
+        userIntent = DownloadUserIntent.RUN,
+        artifacts = requests(metadata).mapIndexed { index, request ->
+            DownloadArtifactSnapshot(
+                artifactId = "$batchId-$index",
+                batchId = batchId,
+                request = request,
+                state = state,
+                userIntent = DownloadUserIntent.RUN,
+                bytesReceived = if (state == DownloadArtifactState.COMPLETED) {
+                    request.metadata.artifact.expectedBytes
+                } else {
+                    0L
+                },
+                expectedBytes = request.metadata.artifact.expectedBytes,
+            )
+        },
+        evidence = EncodedModelEvidence(
+            state = InstalledEvidenceState.REQUIRES_ENRICHMENT,
+            schemaVersion = 1,
+            payload = "{}",
+            sha256 = "e".repeat(64),
         ),
     )
 

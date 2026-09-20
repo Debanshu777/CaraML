@@ -143,27 +143,33 @@ class ArtifactManifestStoreTest {
             val fs = FakeFileSystem()
             val root = "/models/org/fault-$crashIndex".toPath()
             fs.createDirectories(root)
-            val target = root / "model.gguf"
-            stageAndCommit(fs, ArtifactManifestStore(root, fs), target, "old".encodeToByteArray(), "a".repeat(40))
             val replacement = "replacement-$crashIndex".encodeToByteArray()
+            val old = ByteArray(replacement.size) { 'o'.code.toByte() }
+            val artifact = identity(expectedBytes = replacement.size.toLong())
+            val bundleId = requireNotNull(artifactBundleId(listOf(artifact)))
+            val replacementEntry = scopedEntry(artifact, bundleId, replacement)
+            val target = root / replacementEntry.localRelativePath
+            installScopedEntry(
+                fs = fs,
+                root = root,
+                store = ArtifactManifestStore(root, fs),
+                entry = scopedEntry(artifact, bundleId, old),
+                bytes = old,
+            )
             fs.write(target.siblingPart()) { write(replacement) }
             val faulting = CountingMutationFileSystem(fs, crashIndex)
 
             runCatching {
                 ArtifactManifestStore(root, faulting).commit(
-                    "model.gguf",
-                    entry(
-                        identity(revision = "b".repeat(40), expectedBytes = replacement.size.toLong()),
-                        "model",
-                        replacement.sha256Hex(),
-                    ),
+                    replacementEntry.localRelativePath,
+                    replacementEntry,
                 )
             }
             repeat(3) { ArtifactManifestStore(root, fs).recover() }
 
             val manifest = assertNotNull(ArtifactManifestStore(root, fs).read(), "fault $crashIndex")
             val installed = fs.read(target) { readByteArray() }
-            assertTrue(installed.contentEquals("old".encodeToByteArray()) || installed.contentEquals(replacement))
+            assertTrue(installed.contentEquals(old) || installed.contentEquals(replacement))
             assertEquals(installed.sha256Hex(), manifest.entries.single().contentSha256)
             assertFalse(fs.exists(root / ArtifactManifestStore.JOURNAL_FILE_NAME))
         }
@@ -471,10 +477,45 @@ class ArtifactManifestStoreTest {
             val fs = FakeFileSystem()
             val root = "/models/org/model-${crashPhase.name}".toPath()
             fs.createDirectories(root)
-            val target = root / "model.gguf"
-            val initial = ArtifactManifestStore(root, fs)
-            stageAndCommit(fs, initial, target, "old".encodeToByteArray(), revision = "a".repeat(40))
             val replacement = "replacement-${crashPhase.name}".encodeToByteArray()
+            val replacementEntry = scopedEntry(
+                identity(
+                    revision = "b".repeat(40),
+                    expectedBytes = replacement.size.toLong(),
+                ),
+                bundleId = "1".repeat(64),
+                bytes = replacement,
+            )
+            val target = root / replacementEntry.localRelativePath
+            fs.createDirectories(requireNotNull(target.parent))
+            fs.write(target.siblingPart()) { write(replacement) }
+            val crashing = ArtifactManifestStore(root, fs) { phase ->
+                if (phase == crashPhase) throw SimulatedCrash()
+            }
+
+            assertFailsWith<SimulatedCrash> {
+                crashing.commit(
+                    relativePath = replacementEntry.localRelativePath,
+                    entry = replacementEntry,
+                )
+            }
+
+            val restarted = ArtifactManifestStore(root, fs)
+            restarted.recover()
+            assertEquals(replacement.decodeToString(), fs.read(target) { readUtf8() }, crashPhase.name)
+            assertEquals(replacementEntry, restarted.readValidated()?.entries?.single(), crashPhase.name)
+            assertFalse(fs.exists(root / ArtifactManifestStore.JOURNAL_FILE_NAME))
+        }
+    }
+
+    @Test
+    fun restartAfterEveryJournalPhaseNeverPublishesPreH1UnscopedGeneration() {
+        ManifestJournalPhase.entries.filterNot { it == ManifestJournalPhase.ROLLING_BACK }.forEach { crashPhase ->
+            val fs = FakeFileSystem()
+            val root = "/models/org/legacy-${crashPhase.name}".toPath()
+            fs.createDirectories(root)
+            val target = root / "model.gguf"
+            val replacement = "legacy-${crashPhase.name}".encodeToByteArray()
             fs.write(target.siblingPart()) { write(replacement) }
             val crashing = ArtifactManifestStore(root, fs) { phase ->
                 if (phase == crashPhase) throw SimulatedCrash()
@@ -492,10 +533,13 @@ class ArtifactManifestStoreTest {
             }
 
             val restarted = ArtifactManifestStore(root, fs)
+            assertNull(restarted.readValidated(), "pending ${crashPhase.name}")
             restarted.recover()
-            assertEquals(replacement.decodeToString(), fs.read(target) { readUtf8() }, crashPhase.name)
-            assertEquals("b".repeat(40), restarted.read()?.entries?.single()?.identity?.immutableRevision)
-            assertFalse(fs.exists(root / ArtifactManifestStore.JOURNAL_FILE_NAME))
+
+            assertNull(restarted.readValidated(), crashPhase.name)
+            assertFalse(fs.exists(target), crashPhase.name)
+            assertFalse(fs.exists(target.siblingPart()), crashPhase.name)
+            assertFalse(fs.exists(root / ArtifactManifestStore.JOURNAL_FILE_NAME), crashPhase.name)
         }
     }
 
@@ -680,18 +724,24 @@ private fun successfulReplacementMutationCount(): Int {
     val fs = FakeFileSystem()
     val root = "/models/org/count".toPath()
     fs.createDirectories(root)
-    val target = root / "model.gguf"
-    stageAndCommit(fs, ArtifactManifestStore(root, fs), target, "old".encodeToByteArray(), "a".repeat(40))
     val replacement = "replacement".encodeToByteArray()
+    val old = ByteArray(replacement.size) { 'o'.code.toByte() }
+    val artifact = identity(expectedBytes = replacement.size.toLong())
+    val bundleId = requireNotNull(artifactBundleId(listOf(artifact)))
+    val replacementEntry = scopedEntry(artifact, bundleId, replacement)
+    val target = root / replacementEntry.localRelativePath
+    installScopedEntry(
+        fs = fs,
+        root = root,
+        store = ArtifactManifestStore(root, fs),
+        entry = scopedEntry(artifact, bundleId, old),
+        bytes = old,
+    )
     fs.write(target.siblingPart()) { write(replacement) }
     val counting = CountingMutationFileSystem(fs, crashIndex = null)
     ArtifactManifestStore(root, counting).commit(
-        "model.gguf",
-        entry(
-            identity(revision = "b".repeat(40), expectedBytes = replacement.size.toLong()),
-            "model",
-            replacement.sha256Hex(),
-        ),
+        replacementEntry.localRelativePath,
+        replacementEntry,
     )
     return counting.count
 }

@@ -867,6 +867,77 @@ class ModelViewModelRecommendationTest {
     }
 
     @Test
+    fun completedDiffusionTaskWithoutCommittedManifestStaysNotDownloadedAfterRefresh() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val repositoryId = "org/unpublished-diffusion"
+        val revision = "2".repeat(40)
+        val path = "checkpoint.safetensors"
+        val bytes = "not committed".encodeToByteArray()
+        val objectId = bytes.sha256()
+        val artifact = requireNotNull(
+            DownloadArtifactIdentity.create(
+                repositoryId = repositoryId,
+                immutableRevision = revision,
+                relativePath = path,
+                remoteObjectId = "sha256:$objectId",
+                expectedBytes = bytes.size.toLong(),
+            ),
+        )
+        val requestDispatcher = dispatcher
+        val engine = object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler { request ->
+                when {
+                    request.url.encodedPath.contains("/tree/") -> respondJson(
+                        """[{"path":"$path","type":"file","size":${bytes.size},"lfs":{"oid":"$objectId","size":${bytes.size}}}]""",
+                    )
+                    request.url.encodedPath.endsWith("/$repositoryId") -> respondJson(
+                        """{"id":"$repositoryId","modelId":"$repositoryId","sha":"$revision","private":false}""",
+                    )
+                    else -> error("Unexpected request ${request.url}")
+                }
+            }
+        }) {
+            override val dispatcher: CoroutineDispatcher = requestDispatcher
+        }
+        val client = HttpClient(engine)
+        val trusted = Files.createTempDirectory("caraml-unpublished-complete-").toRealPath().toFile()
+        val storage = FakeStoragePathProvider(trusted, realFileAccess = true)
+        val store = ObservingDownloadTaskStore().apply {
+            snapshots.value = listOf(
+                durableSnapshot(
+                    batchId = "completed-without-manifest",
+                    artifact = artifact,
+                    artifactState = DownloadArtifactState.COMPLETED,
+                    batchState = DownloadBatchState.COMPLETED,
+                    bytesReceived = artifact.expectedBytes,
+                ),
+            )
+        }
+        try {
+            val viewModel = viewModel(
+                client = client,
+                dispatcher = dispatcher,
+                storagePathProvider = storage,
+                downloadManager = DownloadManager(storage),
+                downloadCoordinator = observingDownloadCoordinator(store),
+            )
+            backgroundScope.launch { viewModel.installBundleState.collect {} }
+
+            viewModel.loadDetail(repositoryId, ModelHubBrowseMode.DiffusionImage)
+            advanceUntilIdle()
+
+            assertFalse(viewModel.ggufFiles.value.single().isDownloaded)
+            assertFalse(viewModel.installBundleState.value.isReady)
+        } finally {
+            client.close()
+            trusted.deleteRecursively()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
     fun needsInformationAllowsDownloadOnlyForAnExactCurrentDetailArtifact() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)

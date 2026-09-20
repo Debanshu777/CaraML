@@ -112,6 +112,32 @@ internal data class IosBackgroundTaskDescriptor(
     }
 }
 
+/**
+ * Rebinds a restored platform task to the current durable request, not merely its persisted size.
+ * A Room row whose metadata changed without its primary key changing must never import bytes for
+ * the former request.
+ */
+internal fun iosPersistedTaskBindingFailure(
+    batch: DownloadBatchSnapshot,
+    descriptor: IosBackgroundTaskDescriptor,
+): DownloadFailureCode? {
+    val artifact = batch.artifacts.singleOrNull { it.artifactId == descriptor.artifactId }
+        ?: return DownloadFailureCode.INTEGRITY
+    if (!artifact.request.metadata.usesImmutableStorageLayout) return DownloadFailureCode.SECURE_PATH
+    val canonicalArtifactId = downloadBatchArtifactId(batch.batchId, artifact.request)
+    return if (
+        descriptor.batchId != batch.batchId ||
+        descriptor.artifactId != canonicalArtifactId ||
+        artifact.artifactId != canonicalArtifactId ||
+        descriptor.expectedBytes != artifact.expectedBytes ||
+        artifact.expectedBytes != artifact.request.metadata.artifact.expectedBytes
+    ) {
+        DownloadFailureCode.INTEGRITY
+    } else {
+        null
+    }
+}
+
 internal sealed interface IosDownloadBoundDecision {
     data class Progress(
         val descriptor: IosBackgroundTaskDescriptor,

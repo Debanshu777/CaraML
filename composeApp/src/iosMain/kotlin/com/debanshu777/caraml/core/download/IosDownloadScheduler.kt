@@ -92,13 +92,13 @@ class IosDownloadScheduler(
             finishBatchIfReady(batchId)
             return
         }
-        if (!artifact.request.metadata.usesImmutableStorageLayout) {
-            store.transitionArtifact(
-                artifact.artifactId,
-                DownloadArtifactState.FAILED_TERMINAL,
-                DownloadFailureCode.SECURE_PATH,
-                nowEpochMs(),
-            )
+        val descriptor = IosBackgroundTaskDescriptor(
+            batchId = batch.batchId,
+            artifactId = artifact.artifactId,
+            expectedBytes = artifact.expectedBytes,
+        )
+        iosPersistedTaskBindingFailure(batch, descriptor)?.let { failure ->
+            failArtifact(artifact.artifactId, failure, terminal = true)
             return
         }
         if (runCatching { importer.isPublished(artifact.request.metadata) }.getOrDefault(false)) {
@@ -137,11 +137,7 @@ class IosDownloadScheduler(
                 session.downloadTaskWithRequest(NSMutableURLRequest.requestWithURL(url))
             }
         val platformTaskId = task.taskIdentifier.toString()
-        task.taskDescription = IosBackgroundTaskDescriptor(
-            batchId = batch.batchId,
-            artifactId = artifact.artifactId,
-            expectedBytes = artifact.expectedBytes,
-        ).encode()
+        task.taskDescription = descriptor.encode()
         withResponseBoundLock { responseBound.registerNewTask(platformTaskId, task.taskDescription) }
         store.setPlatformTaskId(artifact.artifactId, platformTaskId, nowEpochMs())
         val claimed = store.claim(
@@ -220,13 +216,14 @@ class IosDownloadScheduler(
                 task.cancel()
                 return@forEach
             }
-            val artifact = store.getBatch(descriptor.batchId)
-                ?.artifacts
-                ?.firstOrNull { it.artifactId == descriptor.artifactId }
-            if (artifact == null ||
-                !artifact.request.metadata.usesImmutableStorageLayout ||
-                artifact.expectedBytes != descriptor.expectedBytes
-            ) {
+            val batch = store.getBatch(descriptor.batchId)
+            val artifact = batch?.artifacts?.firstOrNull { it.artifactId == descriptor.artifactId }
+            val bindingFailure = if (batch == null) {
+                DownloadFailureCode.INTEGRITY
+            } else {
+                iosPersistedTaskBindingFailure(batch, descriptor)
+            }
+            if (artifact == null || bindingFailure != null) {
                 val rejection = withResponseBoundLock {
                     responseBound.inspect(taskId, task.taskDescription, -1L, -1L)
                 }
@@ -238,11 +235,7 @@ class IosDownloadScheduler(
                 if (artifact != null && artifact.state !in TERMINAL_ARTIFACT_STATES) {
                     failBoundedResponse(
                         descriptor.key,
-                        if (artifact.request.metadata.usesImmutableStorageLayout) {
-                            DownloadFailureCode.INTEGRITY
-                        } else {
-                            DownloadFailureCode.SECURE_PATH
-                        },
+                        bindingFailure ?: DownloadFailureCode.INTEGRITY,
                     )
                 }
             } else {
@@ -335,9 +328,11 @@ class IosDownloadScheduler(
         scope.launch {
             val batch = store.getBatch(decision.descriptor.batchId) ?: return@launch
             val artifact = batch.artifacts.firstOrNull { it.artifactId == artifactId } ?: return@launch
-            if (artifact.expectedBytes == decision.descriptor.expectedBytes &&
-                decision.bytesWritten <= artifact.expectedBytes
-            ) {
+            iosPersistedTaskBindingFailure(batch, decision.descriptor)?.let { failure ->
+                failBoundedResponse(decision.descriptor.key, failure)
+                return@launch
+            }
+            if (decision.bytesWritten <= artifact.expectedBytes) {
                 store.updateProgress(artifactId, decision.bytesWritten, null, null, now)
             }
         }
@@ -415,26 +410,31 @@ class IosDownloadScheduler(
         }
         val finalUrl = response?.URL?.absoluteString
         val status = response?.statusCode?.toInt()
-        if (finalUrl == null || status == null || !importer.acceptsResponse(finalUrl, status)) {
-            launchTracked {
-                failArtifact(
-                    descriptor.artifactId,
-                    DownloadFailureCode.HTTP,
-                    terminal = status == null || status in 400..499,
-                )
-            }
-            return
-        }
         val capturedPath = runCatching { completedFileStore.capture(descriptor.artifactId, temporaryPath) }
             .getOrElse {
                 launchTracked { failArtifact(descriptor.artifactId, DownloadFailureCode.SECURE_PATH, terminal = true) }
                 return
-            }
+        }
         launchTracked tracked@{
-            val batch = store.getBatch(descriptor.batchId) ?: return@tracked
-            val artifact = batch.artifacts.firstOrNull { it.artifactId == descriptor.artifactId } ?: return@tracked
-            if (artifact.expectedBytes != descriptor.expectedBytes) {
-                failBoundedResponse(descriptor.key)
+            val batch = store.getBatch(descriptor.batchId) ?: run {
+                completedFileStore.delete(descriptor.artifactId)
+                return@tracked
+            }
+            val artifact = batch.artifacts.firstOrNull { it.artifactId == descriptor.artifactId } ?: run {
+                completedFileStore.delete(descriptor.artifactId)
+                return@tracked
+            }
+            iosPersistedTaskBindingFailure(batch, descriptor)?.let { failure ->
+                failBoundedResponse(descriptor.key, failure)
+                return@tracked
+            }
+            if (finalUrl == null || status == null || !importer.acceptsResponse(finalUrl, status)) {
+                failArtifact(
+                    artifact.artifactId,
+                    DownloadFailureCode.HTTP,
+                    terminal = status == null || status in 400..499,
+                )
+                completedFileStore.delete(artifact.artifactId)
                 return@tracked
             }
             try {
@@ -476,6 +476,12 @@ class IosDownloadScheduler(
     private suspend fun recoverCapturedFile(batchId: String, artifactId: String, capturedPath: String) {
         val batch = store.getBatch(batchId) ?: return
         val artifact = batch.artifacts.firstOrNull { it.artifactId == artifactId } ?: return
+        val descriptor = IosBackgroundTaskDescriptor(batchId, artifactId, artifact.expectedBytes)
+        iosPersistedTaskBindingFailure(batch, descriptor)?.let { failure ->
+            completedFileStore.delete(artifactId)
+            failArtifact(artifactId, failure, terminal = true)
+            return
+        }
         try {
             importer.import(
                 modelId = artifact.request.metadata.artifact.repositoryId,
@@ -526,11 +532,15 @@ class IosDownloadScheduler(
             IosDownloadBoundCompletion.MISSING,
             -> Unit
         }
-        if (error == null) return
-        val key = downloadTask.activeTaskKey() ?: return
+        val descriptor = downloadTask.taskDescriptor() ?: return
         launchTracked tracked@{
-            val batch = store.getBatch(key.batchId) ?: return@tracked
-            val artifact = batch.artifacts.firstOrNull { it.artifactId == key.artifactId } ?: return@tracked
+            val batch = store.getBatch(descriptor.batchId) ?: return@tracked
+            val artifact = batch.artifacts.firstOrNull { it.artifactId == descriptor.artifactId } ?: return@tracked
+            iosPersistedTaskBindingFailure(batch, descriptor)?.let { failure ->
+                failBoundedResponse(descriptor.key, failure)
+                return@tracked
+            }
+            if (error == null) return@tracked
             store.setPlatformTaskId(artifact.artifactId, null, nowEpochMs())
             when (batch.userIntent) {
                 DownloadUserIntent.PAUSE, DownloadUserIntent.CANCEL -> Unit

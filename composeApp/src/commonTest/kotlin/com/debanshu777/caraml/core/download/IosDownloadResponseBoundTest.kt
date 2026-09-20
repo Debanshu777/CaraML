@@ -1,5 +1,9 @@
 package com.debanshu777.caraml.core.download
 
+import com.debanshu777.caraml.core.recommendation.storage.EncodedModelEvidence
+import com.debanshu777.caraml.core.recommendation.storage.InstalledEvidenceState
+import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
+import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -8,6 +12,66 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class IosDownloadResponseBoundTest {
+    @Test
+    fun restoredTaskRejectsSameSizeScopedRequestChangedSinceRegistration() {
+        val oldRequest = request(remoteObjectId = "b".repeat(40))
+        val currentRequest = request(remoteObjectId = "c".repeat(40))
+        val batch = batchWithPersistedArtifactId(
+            persistedRequest = oldRequest,
+            currentRequest = currentRequest,
+        )
+        val descriptor = IosBackgroundTaskDescriptor(
+            batchId = batch.batchId,
+            artifactId = batch.artifacts.single().artifactId,
+            expectedBytes = currentRequest.metadata.artifact.expectedBytes,
+        )
+
+        assertEquals(
+            DownloadFailureCode.INTEGRITY,
+            iosPersistedTaskBindingFailure(batch, descriptor),
+        )
+    }
+
+    @Test
+    fun completionBindingAcceptsExactCurrentGitOidSizeOnlyRequest() {
+        val currentRequest = request(remoteObjectId = "b".repeat(40))
+        val batch = batchWithPersistedArtifactId(
+            persistedRequest = currentRequest,
+            currentRequest = currentRequest,
+        )
+        val descriptor = IosBackgroundTaskDescriptor(
+            batchId = batch.batchId,
+            artifactId = batch.artifacts.single().artifactId,
+            expectedBytes = currentRequest.metadata.artifact.expectedBytes,
+        )
+
+        assertNull(iosPersistedTaskBindingFailure(batch, descriptor))
+    }
+
+    @Test
+    fun completionBindingRejectsCurrentUnscopedRequestAsSecurePath() {
+        val scoped = request(remoteObjectId = "b".repeat(40))
+        val unscoped = scoped.copy(
+            metadata = scoped.metadata.copy(
+                destinationRelativePath = scoped.metadata.artifact.relativePath,
+            ),
+        )
+        val batch = batchWithPersistedArtifactId(
+            persistedRequest = scoped,
+            currentRequest = unscoped,
+        )
+        val descriptor = IosBackgroundTaskDescriptor(
+            batchId = batch.batchId,
+            artifactId = batch.artifacts.single().artifactId,
+            expectedBytes = unscoped.metadata.artifact.expectedBytes,
+        )
+
+        assertEquals(
+            DownloadFailureCode.SECURE_PATH,
+            iosPersistedTaskBindingFailure(batch, descriptor),
+        )
+    }
+
     @Test
     fun declaredResponseLargerThanExactArtifactIsRejectedOnlyOnce() {
         val subject = IosDownloadResponseBound()
@@ -388,4 +452,59 @@ class IosDownloadResponseBoundTest {
         expectedBytes = expectedBytes,
         disposition = IosBackgroundTaskDisposition.ACTIVE,
     )
+
+    private fun request(remoteObjectId: String): DownloadArtifactRequest {
+        val identity = requireNotNull(
+            DownloadArtifactIdentity.create(
+                repositoryId = "org/model",
+                immutableRevision = "d".repeat(40),
+                relativePath = "model.gguf",
+                remoteObjectId = remoteObjectId,
+                expectedBytes = 10L,
+            ),
+        )
+        return DownloadArtifactRequest(
+            metadata = DownloadMetadataDTO(
+                artifact = identity,
+                logicalRole = "model",
+                sizeBytes = identity.expectedBytes,
+                author = null,
+                libraryName = null,
+                pipelineTag = null,
+            ),
+            primary = true,
+        )
+    }
+
+    private fun batchWithPersistedArtifactId(
+        persistedRequest: DownloadArtifactRequest,
+        currentRequest: DownloadArtifactRequest,
+    ): DownloadBatchSnapshot {
+        val batchId = "a".repeat(64)
+        return DownloadBatchSnapshot(
+            batchId = batchId,
+            ownerModelId = "org/model",
+            modelType = "text",
+            displayName = "model.gguf",
+            state = DownloadBatchState.RUNNING,
+            userIntent = DownloadUserIntent.RUN,
+            artifacts = listOf(
+                DownloadArtifactSnapshot(
+                    artifactId = downloadBatchArtifactId(batchId, persistedRequest),
+                    batchId = batchId,
+                    request = currentRequest,
+                    state = DownloadArtifactState.RUNNING,
+                    userIntent = DownloadUserIntent.RUN,
+                    bytesReceived = 0L,
+                    expectedBytes = currentRequest.metadata.artifact.expectedBytes,
+                ),
+            ),
+            evidence = EncodedModelEvidence(
+                state = InstalledEvidenceState.REQUIRES_ENRICHMENT,
+                schemaVersion = 1,
+                payload = "{}",
+                sha256 = "f".repeat(64),
+            ),
+        )
+    }
 }
