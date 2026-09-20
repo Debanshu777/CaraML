@@ -31,6 +31,11 @@ class HuggingFaceRepository(
         modelId: String,
     ): Result<ModelDetailResponse, DataError.Network> = api.getRecommendationModelDetail(modelId)
 
+    suspend fun getRecommendationModelDetail(
+        modelId: String,
+        revision: String,
+    ): Result<ModelDetailResponse, DataError.Network> = api.getRecommendationModelDetail(modelId, revision)
+
     suspend fun getModelFileTree(
         modelId: String,
         revision: String,

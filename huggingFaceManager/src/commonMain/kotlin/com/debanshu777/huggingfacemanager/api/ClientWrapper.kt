@@ -46,9 +46,18 @@ class ClientWrapper(
         endpoint: String,
         queries: Map<String, String>? = null,
         maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
+        distinguishNotFound: Boolean = false,
         decode: (String) -> T,
     ): Result<T, DataError.Network> {
-        return when (val result = networkGetBounded(endpoint, queries, maxResponseBytes, decode)) {
+        return when (
+            val result = networkGetBounded(
+                endpoint,
+                queries,
+                maxResponseBytes,
+                distinguishNotFound,
+                decode,
+            )
+        ) {
             is Result.Success -> Result.Success(result.data.data)
             is Result.Error -> Result.Error(result.error)
         }
@@ -71,9 +80,17 @@ class ClientWrapper(
         endpoint: String,
         queries: Map<String, String>? = null,
         maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
+        distinguishNotFound: Boolean = false,
         decode: (String) -> T,
     ): Result<BoundedNetworkResponse<T>, DataError.Network> {
-        return when (val response = networkGetTextBounded(endpoint, queries, maxResponseBytes)) {
+        return when (
+            val response = networkGetTextBounded(
+                endpoint,
+                queries,
+                maxResponseBytes,
+                distinguishNotFound,
+            )
+        ) {
             is Result.Error -> Result.Error(response.error)
             is Result.Success -> try {
                 Result.Success(
@@ -98,6 +115,7 @@ class ClientWrapper(
         endpoint: String,
         queries: Map<String, String>?,
         maxResponseBytes: Long,
+        distinguishNotFound: Boolean = false,
     ): Result<BoundedNetworkResponse<String>, DataError.Network> {
         require(maxResponseBytes in 1..DEFAULT_MAX_RESPONSE_BYTES) {
             "Response byte limit is outside the supported range"
@@ -142,6 +160,9 @@ class ClientWrapper(
                     }
 
                     401 -> Result.Error(DataError.Network.Unauthorized)
+                    404 -> Result.Error(
+                        if (distinguishNotFound) DataError.Network.NotFound else DataError.Network.Unknown,
+                    )
                     408 -> Result.Error(DataError.Network.RequestTimeout)
                     409 -> Result.Error(DataError.Network.Conflict)
                     413 -> Result.Error(DataError.Network.PayloadTooLarge)

@@ -5,6 +5,7 @@ sealed interface DataError : RootError {
         data object NoInternet : Network
         data object Serialization : Network
         data object Unauthorized : Network
+        data object NotFound : Network
         data object Conflict : Network
         data object RequestTimeout : Network
         data object PayloadTooLarge : Network

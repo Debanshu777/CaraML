@@ -677,6 +677,8 @@ class ModelViewModel(
                                 "Failed to process server response. The data format may be invalid."
                             DataError.Network.Unauthorized ->
                                 "Authentication failed. Please check your credentials."
+                            DataError.Network.NotFound ->
+                                "An unexpected error occurred. Please try again."
                             DataError.Network.RequestTimeout ->
                                 "Request timed out. The server took too long to respond."
                             DataError.Network.Conflict ->
@@ -802,6 +804,8 @@ class ModelViewModel(
                                 "Failed to process server response. The data format may be invalid."
                             DataError.Network.Unauthorized ->
                                 "Authentication failed. Please check your credentials."
+                            DataError.Network.NotFound ->
+                                "Could not load model details. Please try again."
                             DataError.Network.RequestTimeout ->
                                 "Request timed out. The server took too long to respond."
                             DataError.Network.Conflict ->
@@ -1667,6 +1671,8 @@ class ModelViewModel(
                                 "Failed to process server response. The data format may be invalid."
                             DataError.Network.Unauthorized ->
                                 "Authentication failed. Please check your credentials."
+                            DataError.Network.NotFound ->
+                                "An unexpected error occurred. Please try again."
                             DataError.Network.RequestTimeout ->
                                 "Request timed out. The server took too long to respond."
                             DataError.Network.Conflict ->

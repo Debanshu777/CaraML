@@ -107,6 +107,19 @@ class RemoteHuggingFaceApiService private constructor(
         )
     }
 
+    suspend fun getRecommendationModelDetail(
+        modelId: String,
+        revision: String,
+    ): Result<ModelDetailResponse, DataError.Network> {
+        val url = recommendationModelDetailUrl(modelId, revision)
+            ?: return Result.Error(DataError.Network.Unknown)
+
+        return clientWrapper.networkGetUsecase(
+            endpoint = url.toString(),
+            decode = { body -> RecommendationMetadataV1.decodeDetail(strictJson, body) },
+        )
+    }
+
     private fun modelDetailUrl(modelId: String): Url? {
         val segments = validatedModelSegments(modelId) ?: return null
         return URLBuilder(trustedOrigin).apply {
@@ -118,6 +131,17 @@ class RemoteHuggingFaceApiService private constructor(
     private fun recommendationModelDetailUrl(modelId: String): Url? {
         val url = modelDetailUrl(modelId) ?: return null
         return URLBuilder(url).apply {
+            RECOMMENDATION_DETAIL_EXPANSIONS.forEach { parameters.append("expand", it) }
+        }.build()
+    }
+
+    private fun recommendationModelDetailUrl(modelId: String, revision: String): Url? {
+        val segments = validatedModelSegments(modelId) ?: return null
+        if (!isImmutableRevision(revision)) return null
+        return URLBuilder(trustedOrigin).apply {
+            appendPathSegments("api", "models")
+            appendPathSegments(segments, encodeSlash = true)
+            appendPathSegments("revision", revision)
             RECOMMENDATION_DETAIL_EXPANSIONS.forEach { parameters.append("expand", it) }
         }.build()
     }
@@ -136,6 +160,7 @@ class RemoteHuggingFaceApiService private constructor(
         return clientWrapper.networkGetUsecase(
             endpoint = url.toString(),
             maxResponseBytes = CONFIG_RESPONSE_LIMIT_BYTES,
+            distinguishNotFound = true,
             decode = { body -> strictJson.decodeFromString<TransformerConfigResponse>(body) },
         )
     }

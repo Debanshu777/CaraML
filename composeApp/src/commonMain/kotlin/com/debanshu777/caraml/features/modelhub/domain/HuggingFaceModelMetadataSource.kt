@@ -26,6 +26,11 @@ import kotlinx.coroutines.CancellationException
 internal interface HuggingFaceMetadataGateway {
     suspend fun getStrictDetail(repositoryId: String): Result<ModelDetailResponse, DataError.Network>
 
+    suspend fun getStrictDetail(
+        repositoryId: String,
+        revision: String,
+    ): Result<ModelDetailResponse, DataError.Network>
+
     suspend fun getTree(
         repositoryId: String,
         revision: String,
@@ -43,6 +48,9 @@ private class ApiHuggingFaceMetadataGateway(
 ) : HuggingFaceMetadataGateway {
     override suspend fun getStrictDetail(repositoryId: String) =
         api.getRecommendationModelDetail(repositoryId)
+
+    override suspend fun getStrictDetail(repositoryId: String, revision: String) =
+        api.getRecommendationModelDetail(repositoryId, revision)
 
     override suspend fun getTree(
         repositoryId: String,
@@ -89,6 +97,9 @@ class HuggingFaceModelMetadataSource internal constructor(
         if (!identities.hasValidExactInstalledIdentitySet()) {
             return InstalledDescriptorLookup.Rejected(listOf(AssessmentReason.INVALID_METADATA))
         }
+        val exactRevisions = exactInstalledRevisions(identities)
+            ?.takeIf { repositoryId in it }
+            ?: return InstalledDescriptorLookup.Rejected(listOf(AssessmentReason.INVALID_METADATA))
         return try {
             exactInstalledDescriptorLookup(
                 repositoryId = repositoryId,
@@ -99,6 +110,7 @@ class HuggingFaceModelMetadataSource internal constructor(
                     mode,
                     retryNetworkFailure = true,
                     exactIdentities = identities,
+                    exactRevisions = exactRevisions,
                 ),
             )
         } catch (cancelled: CancellationException) {
@@ -115,24 +127,46 @@ class HuggingFaceModelMetadataSource internal constructor(
         mode: ModelHubBrowseMode,
         retryNetworkFailure: Boolean,
         exactIdentities: List<ModelFileIdentity>?,
+        exactRevisions: Map<String, String>? = null,
     ): RepositoryVariantSet {
-        val detail = gateway.getStrictDetail(repositoryId).successOrNull(retryNetworkFailure)
+        val requestedRevision = exactRevisions?.get(repositoryId)
+        if (exactRevisions != null && requestedRevision == null) {
+            return needsInformation(repositoryId, AssessmentReason.INVALID_METADATA)
+        }
+        val detail = if (requestedRevision == null) {
+            gateway.getStrictDetail(repositoryId)
+        } else {
+            gateway.getStrictDetail(repositoryId, requestedRevision)
+        }.successOrNull(retryNetworkFailure)
             ?: return needsInformation(repositoryId)
-        val revision = detail.sha
-        if (revision == null || !isImmutableRevisionValue(revision)) {
+        val returnedRevision = detail.sha
+        if (returnedRevision == null || !isImmutableRevisionValue(returnedRevision)) {
             return needsInformation(repositoryId, AssessmentReason.INVALID_REVISION)
         }
+        if (requestedRevision != null && !returnedRevision.equals(requestedRevision, ignoreCase = true)) {
+            return needsInformation(repositoryId, AssessmentReason.INVALID_REVISION)
+        }
+        val revision = requestedRevision ?: returnedRevision
+        val exactDetail = if (detail.sha == revision) detail else detail.copy(sha = revision)
         return when (mode) {
             ModelHubBrowseMode.LanguageModels -> describeLlm(
                 repositoryId,
-                detail,
+                exactDetail,
                 revision,
                 retryNetworkFailure,
                 exactIdentities,
             )
             ModelHubBrowseMode.DiffusionImage,
             ModelHubBrowseMode.DiffusionVideo,
-            -> describeDiffusion(repositoryId, detail, revision, mode, retryNetworkFailure, exactIdentities)
+            -> describeDiffusion(
+                repositoryId,
+                exactDetail,
+                revision,
+                mode,
+                retryNetworkFailure,
+                exactIdentities,
+                exactRevisions,
+            )
         }
     }
 
@@ -157,7 +191,10 @@ class HuggingFaceModelMetadataSource internal constructor(
             return if (exactIdentities == null) selectVariant(repositoryId) else RepositoryVariantSet.Ready(emptyList())
         }
         if (exactIdentities == null && candidates.size > MAX_RUNNABLE_VARIANTS) return selectVariant(repositoryId)
-        val config = gateway.getConfig(repositoryId, revision).successOrNull(retryNetworkFailure = false)
+        val config = gateway.getConfig(repositoryId, revision).successOrNull(
+            retryNetworkFailure = retryNetworkFailure,
+            allowNotFound = true,
+        )
         val variants = ArrayList<RepositoryVariant>(candidates.size)
         for (group in candidates) {
             when (val built = descriptorFactory.buildLlm(detail, group, config)) {
@@ -179,6 +216,7 @@ class HuggingFaceModelMetadataSource internal constructor(
         browseMode: ModelHubBrowseMode,
         retryNetworkFailure: Boolean,
         exactIdentities: List<ModelFileIdentity>?,
+        exactRevisions: Map<String, String>?,
     ): RepositoryVariantSet {
         val setup = setupResolver(repositoryId) ?: return selectVariant(repositoryId)
         if (setup.components.size > DescriptorLimits.MAX_COMPONENTS ||
@@ -193,7 +231,7 @@ class HuggingFaceModelMetadataSource internal constructor(
         ).successOrNull(retryNetworkFailure) ?: return needsInformation(repositoryId)
         if (!hasUniqueBoundedPaths(mainFiles)) return needsInformation(repositoryId)
 
-        val resolvedExternal = resolveExternalComponents(repositoryId, setup, retryNetworkFailure)
+        val resolvedExternal = resolveExternalComponents(repositoryId, setup, retryNetworkFailure, exactRevisions)
             ?: return needsInformation(repositoryId, AssessmentReason.MISSING_REQUIRED_COMPONENT)
         val sameRepositoryComponents = setup.components.filter { it.repoId == repositoryId }
         val mainByPath = mainFiles.associateBy { it.path }
@@ -253,6 +291,7 @@ class HuggingFaceModelMetadataSource internal constructor(
         primaryRepositoryId: String,
         setup: SdCppModelSetup,
         retryNetworkFailure: Boolean,
+        exactRevisions: Map<String, String>?,
     ): List<ResolvedDiffusionComponentMetadata>? {
         val external = setup.components.filter { it.repoId != primaryRepositoryId }
         if (external.isEmpty()) return emptyList()
@@ -262,16 +301,27 @@ class HuggingFaceModelMetadataSource internal constructor(
         for (component in external) {
             val snapshot = snapshots[component.repoId] ?: run {
                 if (!isValidRepositoryId(component.repoId)) return null
-                val detail = gateway.getStrictDetail(component.repoId).successOrNull(retryNetworkFailure) ?: return null
-                val revision = detail.sha
-                if (revision == null || !isImmutableRevisionValue(revision)) return null
+                val requestedRevision = exactRevisions?.get(component.repoId)
+                if (exactRevisions != null && requestedRevision == null) return null
+                val detail = if (requestedRevision == null) {
+                    gateway.getStrictDetail(component.repoId)
+                } else {
+                    gateway.getStrictDetail(component.repoId, requestedRevision)
+                }.successOrNull(retryNetworkFailure) ?: return null
+                val returnedRevision = detail.sha
+                if (returnedRevision == null || !isImmutableRevisionValue(returnedRevision)) return null
+                if (requestedRevision != null && !returnedRevision.equals(requestedRevision, ignoreCase = true)) {
+                    return null
+                }
+                val revision = requestedRevision ?: returnedRevision
+                val exactDetail = if (detail.sha == revision) detail else detail.copy(sha = revision)
                 val tree = gateway.getTree(
                     component.repoId,
                     revision,
                     ModelFileWeightFilter.StableDiffusionCppWeights,
                 ).successOrNull(retryNetworkFailure) ?: return null
                 if (!hasUniqueBoundedPaths(tree)) return null
-                (detail to tree.associateBy { it.path }).also { snapshots[component.repoId] = it }
+                (exactDetail to tree.associateBy { it.path }).also { snapshots[component.repoId] = it }
             }
             val file = snapshot.second[component.filePath] ?: return null
             resolved += ResolvedDiffusionComponentMetadata(component, snapshot.first, file)
@@ -325,6 +375,18 @@ class HuggingFaceModelMetadataSource internal constructor(
     private fun isAsciiHexDigit(value: Char): Boolean =
         value in '0'..'9' || value in 'a'..'f' || value in 'A'..'F'
 
+    private fun exactInstalledRevisions(identities: Collection<ModelFileIdentity>): Map<String, String>? {
+        val revisions = linkedMapOf<String, String>()
+        val repositoryPaths = hashSetOf<Pair<String, String>>()
+        for (identity in identities) {
+            if (!repositoryPaths.add(identity.repositoryId to identity.path)) return null
+            val existing = revisions[identity.repositoryId]
+            if (existing != null && !existing.equals(identity.revision, ignoreCase = true)) return null
+            if (existing == null) revisions[identity.repositoryId] = identity.revision
+        }
+        return revisions.takeIf { it.isNotEmpty() }
+    }
+
     private fun ggufDisplayName(files: List<ModelFileTreeResponse>): String? {
         val first = files.firstOrNull()?.path ?: return null
         val value = if (files.size == 1) {
@@ -375,9 +437,16 @@ class HuggingFaceModelMetadataSource internal constructor(
         }
     }
 
-    private fun <T> Result<T, DataError.Network>.successOrNull(retryNetworkFailure: Boolean): T? = when (this) {
+    private fun <T> Result<T, DataError.Network>.successOrNull(
+        retryNetworkFailure: Boolean,
+        allowNotFound: Boolean = false,
+    ): T? = when (this) {
         is Result.Success -> data
-        is Result.Error -> if (retryNetworkFailure) throw RetryableMetadataUnavailable else null
+        is Result.Error -> when {
+            allowNotFound && error == DataError.Network.NotFound -> null
+            retryNetworkFailure -> throw RetryableMetadataUnavailable
+            else -> null
+        }
     }
 
     private data class ShardEntry(val index: Int, val file: ModelFileTreeResponse)
