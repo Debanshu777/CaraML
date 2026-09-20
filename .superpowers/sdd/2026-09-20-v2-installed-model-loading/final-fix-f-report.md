@@ -80,3 +80,18 @@ Result: PASS in 1 minute 20 seconds. The gate ran 1,070/1,070 JVM tests across 1
 
 - Physical-device acceptance was not repeated for this pure common codec hardening. The changed boundary is covered by direct common/JVM tests, all durable evidence consumers, the full repository JVM gate, and all native CTests.
 - Existing expect/actual, generic CMake architecture, missing `ccache`, and deprecated Compose-test warnings remain unchanged.
+
+## Review follow-up
+
+The Final Fix F production implementation was approved with one Minor test gap: hostile-input tests proved the rejection result but did not distinguish immediate limit exit from a scanner that continued into a malformed suffix.
+
+The test-only follow-up adds literal ASCII and multibyte cases where the prefix already exceeds 64 bytes and an unpaired high surrogate follows. Both must return `UTF8_BYTE_COUNT_LIMIT_EXCEEDED`, proving the suffix is never inspected after the cap is crossed.
+
+A temporary mutation changed the scanner to remember the exceeded state and continue through the remaining string. The new single-test run failed at the first assertion because the malformed suffix won. The mutation was immediately removed; `git diff` confirmed production returned byte-for-byte to the committed implementation. Post-revert results:
+
+- evidence codec: 23/23 tests;
+- impacted evidence/download/migration/finalizer/repair/load matrix: 107/107 tests across 9 suites;
+- `verifyProject`: 1,071/1,071 JVM tests across 142 suites plus 5/5 native CTests, with zero failures/errors; JVM detail is `composeApp` 932/118 suites, `huggingFaceManager` 91/15, `runner` 29/6, and `diffusionRunner` 19/3;
+- full gate time: 47 seconds; 41 actionable tasks, 14 executed and 27 up to date.
+
+No production, README, schema, API, or runtime behavior changed in this follow-up.

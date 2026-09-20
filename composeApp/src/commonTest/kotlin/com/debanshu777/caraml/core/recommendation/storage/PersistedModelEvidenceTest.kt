@@ -156,6 +156,18 @@ class PersistedModelEvidenceTest {
     }
 
     @Test
+    fun cappedUtf8ByteCountStopsAtLimitBeforeMalformedSuffix() {
+        assertEquals(
+            UTF8_BYTE_COUNT_LIMIT_EXCEEDED,
+            cappedUtf8ByteCount("a".repeat(65) + "\ud800", 64),
+        )
+        assertEquals(
+            UTF8_BYTE_COUNT_LIMIT_EXCEEDED,
+            cappedUtf8ByteCount("\u20ac".repeat(22) + "\ud800", 64),
+        )
+    }
+
+    @Test
     fun payloadSchemaAndTransportStateMismatchesAreRejected() {
         val valid = codec.encode(listOf(modelIdentity()), descriptor = null)
         val unsupportedSchema = valid.payload.replaceFirst("\"schemaVersion\":1", "\"schemaVersion\":2")
