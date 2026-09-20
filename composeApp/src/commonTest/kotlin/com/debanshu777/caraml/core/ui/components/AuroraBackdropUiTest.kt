@@ -25,12 +25,92 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
+import com.debanshu777.caraml.core.ui.motion.auroraMotionPolicy
 import kotlin.math.max
 import kotlin.test.Test
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class AuroraBackdropUiTest {
+    @Test
+    fun focalSurfaceAtmosphereEntersOnceThenBecomesPixelStable() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        setContent {
+            CompositionLocalProvider(LocalDensity provides Density(1f)) {
+                MaterialTheme(
+                    colorScheme = darkColorScheme(
+                        surface = Color(0xFF0E1018),
+                        primary = Color(0xFF276BFF),
+                        secondary = Color(0xFF00D59C),
+                        tertiary = Color(0xFFFF3F92),
+                    ),
+                ) {
+                    FocalFixture(
+                        tag = "entering-focal",
+                        entrance = FocalEntrance.OneShot,
+                    )
+                }
+            }
+        }
+
+        val initial = onNodeWithTag("entering-focal").captureToImage().toPixelMap()
+        mainClock.advanceTimeBy(450)
+        val midpoint = onNodeWithTag("entering-focal").captureToImage().toPixelMap()
+        mainClock.advanceTimeBy(550)
+        val settled = onNodeWithTag("entering-focal").captureToImage().toPixelMap()
+        mainClock.advanceTimeBy(1_000)
+        val idle = onNodeWithTag("entering-focal").captureToImage().toPixelMap()
+
+        assertTrue(
+            initial.maxChannelDifference(midpoint) >= 0.01f,
+            "focal atmosphere must visibly reveal during its first 900ms",
+        )
+        assertTrue(
+            midpoint.maxChannelDifference(settled) >= 0.005f,
+            "focal atmosphere must continue resolving after the midpoint",
+        )
+        assertTrue(
+            settled.maxChannelDifference(idle) <= (1f / 255f) + 0.0001f,
+            "focal atmosphere must be completely static after the one-shot entrance",
+        )
+    }
+
+    @Test
+    fun reducedMotionShowsTheSettledFocalAtmosphereWithoutSpatialOrIdleMotion() =
+        runComposeUiTest {
+            mainClock.autoAdvance = false
+            setContent {
+                CompositionLocalProvider(
+                    LocalDensity provides Density(1f),
+                    LocalAuroraMotionPolicy provides auroraMotionPolicy(durationScale = 0f),
+                ) {
+                    MaterialTheme(
+                        colorScheme = darkColorScheme(
+                            surface = Color(0xFF0E1018),
+                            primary = Color(0xFF276BFF),
+                            secondary = Color(0xFF00D59C),
+                            tertiary = Color(0xFFFF3F92),
+                        ),
+                    ) {
+                        FocalFixture(
+                            tag = "reduced-focal",
+                            entrance = FocalEntrance.OneShot,
+                        )
+                    }
+                }
+            }
+
+            val initial = onNodeWithTag("reduced-focal").captureToImage().toPixelMap()
+            mainClock.advanceTimeBy(1_000)
+            val later = onNodeWithTag("reduced-focal").captureToImage().toPixelMap()
+
+            assertTrue(
+                initial.maxChannelDifference(later) <= (1f / 255f) + 0.0001f,
+                "reduced motion must render the settled focal atmosphere immediately",
+            )
+        }
+
     @Test
     fun ambientMeshKeepsThreeRestrainedColorRegionsAtCompactAndWideAspectRatios() =
         runComposeUiTest {
@@ -365,11 +445,20 @@ private fun BackdropFixture(
 
 @androidx.compose.runtime.Composable
 private fun FocalFixture(tag: String) {
+    FocalFixture(tag = tag, entrance = FocalEntrance.None)
+}
+
+@androidx.compose.runtime.Composable
+private fun FocalFixture(
+    tag: String,
+    entrance: FocalEntrance,
+) {
     AuroraFocalSurface(
         modifier = Modifier
             .requiredSize(width = 360.dp, height = 180.dp)
             .testTag(tag),
         shape = RectangleShape,
+        entrance = entrance,
     ) {}
 }
 

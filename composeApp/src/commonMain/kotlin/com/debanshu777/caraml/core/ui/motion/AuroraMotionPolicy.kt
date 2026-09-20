@@ -15,6 +15,7 @@ data class AuroraMotionPolicy(
     val hierarchicalPopEnterMillis: Int,
     val exitMillis: Int,
     val generationPulseMillis: Int,
+    val focalEntranceMillis: Int,
 )
 
 fun auroraMotionPolicy(durationScale: Float): AuroraMotionPolicy {
@@ -30,6 +31,7 @@ fun auroraMotionPolicy(durationScale: Float): AuroraMotionPolicy {
         hierarchicalPopEnterMillis = 240,
         exitMillis = 190,
         generationPulseMillis = 1600,
+        focalEntranceMillis = if (reducedMotion) 90 else 900,
     )
 }
 

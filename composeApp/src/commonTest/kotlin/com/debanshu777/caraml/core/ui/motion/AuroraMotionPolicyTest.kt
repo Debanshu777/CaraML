@@ -24,6 +24,7 @@ class AuroraMotionPolicyTest {
         assertFalse(policy.pulseEnabled)
         assertFalse(policy.shapeMorphEnabled)
         assertEquals(90, policy.opacityDurationMillis)
+        assertEquals(90, policy.focalEntranceMillis)
     }
 
     @Test
@@ -38,6 +39,7 @@ class AuroraMotionPolicyTest {
         assertEquals(240, policy.hierarchicalPopEnterMillis)
         assertEquals(190, policy.exitMillis)
         assertEquals(1600, policy.generationPulseMillis)
+        assertEquals(900, policy.focalEntranceMillis)
     }
 
     @Test
