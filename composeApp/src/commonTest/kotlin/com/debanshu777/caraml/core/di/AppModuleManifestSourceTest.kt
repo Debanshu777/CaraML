@@ -129,7 +129,7 @@ class AppModuleManifestSourceTest {
             hashingDispatcher = StandardTestDispatcher(testScheduler),
         )
         val verified = assertIs<ArtifactIdentityResolution.Verified>(
-            resolver.resolvePersistedHub(fixture.model, fixture.components),
+            resolver.resolve(fixture.model, fixture.components),
         )
 
         assertEquals(

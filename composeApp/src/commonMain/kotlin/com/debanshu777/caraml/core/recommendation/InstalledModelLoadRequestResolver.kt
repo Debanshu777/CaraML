@@ -30,7 +30,7 @@ fun interface InstalledModelLoadResolver {
 class InstalledModelLoadRequestResolver internal constructor(
     private val componentsForModel: suspend (String) -> List<DownloadedComponentEntity>,
     private val requireComplete: suspend (String, GenerationMode) -> EvidenceRepairResult,
-    private val resolvePersistedHub: suspend (
+    private val resolveArtifact: suspend (
         LocalModelEntity,
         List<DownloadedComponentEntity>,
     ) -> ArtifactIdentityResolution,
@@ -62,7 +62,7 @@ class InstalledModelLoadRequestResolver internal constructor(
     ) : this(
         componentsForModel = componentRepository::getComponentsForModel,
         requireComplete = evidenceRepairer::requireComplete,
-        resolvePersistedHub = artifactResolver::resolvePersistedHub,
+        resolveArtifact = artifactResolver::resolve,
         captureSnapshot = snapshotProvider::capture,
         currentSettings = { settingsRepository.getSettings().first() },
         workloadFactory = workloadFactory,
@@ -92,7 +92,7 @@ class InstalledModelLoadRequestResolver internal constructor(
             EvidenceRepairResult.NeedsNetwork -> return InstalledModelLoadResolution.NeedsNetwork
             is EvidenceRepairResult.Rejected -> {
                 if (AssessmentReason.INVALID_METADATA in evidence.reasons) {
-                    val artifactFailure = resolvePersistedHub(model, components)
+                    val artifactFailure = resolveArtifact(model, components)
                     if (artifactFailure is ArtifactIdentityResolution.Rejected) {
                         return InstalledModelLoadResolution.Rejected(artifactFailure.reason)
                     }
@@ -109,7 +109,7 @@ class InstalledModelLoadRequestResolver internal constructor(
             return InstalledModelLoadResolution.NotAdmissible(AssessmentReason.INCOMPATIBLE_MODEL)
         }
 
-        val artifact = when (val resolution = resolvePersistedHub(model, components)) {
+        val artifact = when (val resolution = resolveArtifact(model, components)) {
             is ArtifactIdentityResolution.Verified -> resolution.artifact
             is ArtifactIdentityResolution.Rejected -> return InstalledModelLoadResolution.Rejected(resolution.reason)
         }
@@ -291,7 +291,7 @@ class InstalledModelLoadRequestResolver internal constructor(
     }
 
     private fun ResolvedLocalArtifact.matchesOwner(modelId: String): Boolean =
-        revisionIdentity is RevisionIdentity.HubCommit && identity.repositoryId == modelId && when (val target = loadTarget) {
+        identity.repositoryId == modelId && when (val target = loadTarget) {
             is VerifiedArtifactLoadTarget.File -> target.repositoryId == modelId
             is VerifiedArtifactLoadTarget.Directory -> target.storageOwner == modelId
         }

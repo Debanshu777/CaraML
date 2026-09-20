@@ -277,22 +277,6 @@ class InstalledModelLoadRequestResolverTest {
     }
 
     @Test
-    fun legacyContentArtifactIsRejectedBeforeAssessment() = runTest {
-        val fixture = Fixture()
-        fixture.artifact = fixture.artifact.copy(
-            revisionIdentity = RevisionIdentity.LocalContent("b".repeat(64)),
-        )
-
-        val result = fixture.resolver().resolve(fixture.model, GenerationMode.Text)
-
-        assertEquals(
-            InstalledModelLoadResolution.Rejected(ArtifactIdentityRejection.STALE_MANIFEST),
-            result,
-        )
-        assertEquals(0, fixture.assessmentCalls)
-    }
-
-    @Test
     fun repairNetworkAndTerminalRejectionRemainDistinct() = runTest {
         val network = Fixture().apply { evidenceResult = EvidenceRepairResult.NeedsNetwork }
         val rejected = Fixture().apply {
@@ -479,7 +463,7 @@ class InstalledModelLoadRequestResolverTest {
                 cancelAt(ResolverStage.REPAIR)
                 evidenceResult
             },
-            resolvePersistedHub = { _, _ ->
+            resolveArtifact = { _, _ ->
                 cancelAt(ResolverStage.ARTIFACT)
                 persistedHubCalls += 1
                 artifactResolution ?: ArtifactIdentityResolution.Verified(artifact)

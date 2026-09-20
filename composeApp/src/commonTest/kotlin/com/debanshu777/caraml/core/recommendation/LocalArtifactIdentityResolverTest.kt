@@ -16,18 +16,51 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import okio.Buffer
 import okio.FileSystem
+import okio.ForwardingFileSystem
 import okio.Path
 import okio.Path.Companion.toPath
+import okio.Source
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
-import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
-import kotlin.test.fail
 
 class LocalArtifactIdentityResolverTest {
+    @Test
+    fun missingHubManifestDoesNotReadOrRewriteLegacySidecar() = runTest {
+        withRoot { storage, root ->
+            val bytes = "model".encodeToByteArray()
+            val path = write(root / "owner/model/model.gguf", bytes)
+            val legacySidecar = root / "owner/model/.caraml-local-identity-v1.json"
+            val legacyBytes = "legacy-sidecar-must-be-ignored".encodeToByteArray()
+            write(legacySidecar, legacyBytes)
+            val trackingFileSystem = LegacySidecarReadTrackingFileSystem(FileSystem.SYSTEM, legacySidecar)
+            var hashCalls = 0
+
+            val rejected = assertIs<ArtifactIdentityResolution.Rejected>(
+                resolver(
+                    storage = storage,
+                    manifest = null,
+                    fileSystem = trackingFileSystem,
+                    hashFile = { _, _ ->
+                        hashCalls += 1
+                        bytes.sha256()
+                    },
+                ).resolve(model(path, bytes.size.toLong()), emptyList()),
+            )
+
+            assertEquals(ArtifactIdentityRejection.STALE_MANIFEST, rejected.reason)
+            assertEquals(0, trackingFileSystem.legacySidecarReadCount)
+            assertEquals(0, hashCalls)
+            assertEquals(
+                legacyBytes.toList(),
+                FileSystem.SYSTEM.read(legacySidecar) { readByteArray() }.toList(),
+            )
+        }
+    }
+
     @Test
     fun strictLoadRequestRevalidatesVerifiedArtifactWithoutLegacyResolutionOrSidecar() = runTest {
         withRoot { storage, root ->
@@ -45,7 +78,7 @@ class LocalArtifactIdentityResolverTest {
                 onManifestRead = { manifestReads += 1 },
             )
             val artifact = assertIs<ArtifactIdentityResolution.Verified>(
-                resolver.resolvePersistedHub(model, emptyList()),
+                resolver.resolve(model, emptyList()),
             ).artifact
             val descriptor = descriptorIdentity(revision, "model.gguf", bytes.size.toLong(), digest)
             val plan = task6LlmPlan()
@@ -73,12 +106,12 @@ class LocalArtifactIdentityResolverTest {
 
             assertIs<LoadRequestResolution.Ready>(result)
             assertEquals(1, manifestReads)
-            assertFalse(FileSystem.SYSTEM.exists(root / "owner/model/${LocalArtifactIdentityResolver.MANIFEST_FILE_NAME}"))
+            assertFalse(FileSystem.SYSTEM.exists(root / "owner/model/.caraml-local-identity-v1.json"))
         }
     }
 
     @Test
-    fun loadRequestRejectsEveryStaleDescriptorIdentityFieldAfterResolvingBytes() = runTest {
+    fun verifiedArtifactRequestRejectsEveryStaleDescriptorIdentityField() = runTest {
         withRoot { storage, root ->
             val bytes = "model".encodeToByteArray()
             val digest = bytes.sha256()
@@ -123,12 +156,15 @@ class LocalArtifactIdentityResolverTest {
             )
             val resolver = resolver(storage, manifest)
             val installedModel = model(path, bytes.size.toLong())
+            val artifact = assertIs<ArtifactIdentityResolution.Verified>(
+                resolver.resolve(installedModel, emptyList()),
+            ).artifact
 
             assertIs<LoadRequestResolution.Ready>(
-                resolver.createLoadRequest(
+                resolver.createLoadRequestFromVerifiedArtifact(
                     installedModel,
-                    emptyList(),
                     descriptorIdentity(revision, "model.gguf", bytes.size.toLong(), digest),
+                    artifact,
                     assessment,
                     recommendation,
                 ),
@@ -142,10 +178,10 @@ class LocalArtifactIdentityResolverTest {
             )
             staleDescriptors.forEach { descriptor ->
                 val rejected = assertIs<LoadRequestResolution.Rejected>(
-                    resolver.createLoadRequest(
+                    resolver.createLoadRequestFromVerifiedArtifact(
                         installedModel,
-                        emptyList(),
                         descriptor,
+                        artifact,
                         assessment,
                         recommendation,
                     ),
@@ -264,14 +300,21 @@ class LocalArtifactIdentityResolverTest {
                 selectedPlanAssessment = planAssessment,
             )
 
+            val installedModel = model(primaryPath, primaryBytes.size.toLong(), "model.safetensors")
+            val components = listOf(
+                component("other/vae", "vae.safetensors", "vae", vaePath, vaeBytes.size.toLong()),
+                component("other/clip", "clip.safetensors", "clip_l", clipPath, clipBytes.size.toLong(), id = 2),
+            )
+            val resolver = resolver(storage, manifest)
+            val artifact = assertIs<ArtifactIdentityResolution.Verified>(
+                resolver.resolve(installedModel, components),
+            ).artifact
+
             val rejected = assertIs<LoadRequestResolution.Rejected>(
-                resolver(storage, manifest).createLoadRequest(
-                    model(primaryPath, primaryBytes.size.toLong(), "model.safetensors"),
-                    listOf(
-                        component("other/vae", "vae.safetensors", "vae", vaePath, vaeBytes.size.toLong()),
-                        component("other/clip", "clip.safetensors", "clip_l", clipPath, clipBytes.size.toLong(), id = 2),
-                    ),
+                resolver.createLoadRequestFromVerifiedArtifact(
+                    installedModel,
                     descriptor,
+                    artifact,
                     assessment,
                     recommendation,
                 ),
@@ -389,7 +432,7 @@ class LocalArtifactIdentityResolverTest {
     }
 
     @Test
-    fun legacyDirectoryWithoutCompleteManifestIsRejectedBeforeAnyPrimaryCanBeLoaded() = runTest {
+    fun directoryWithoutManifestIsRejectedBeforeAnyPrimaryCanBeLoaded() = runTest {
         withRoot { storage, root ->
             val modelRoot = root / "owner/model"
             FileSystem.SYSTEM.createDirectories(modelRoot)
@@ -402,7 +445,7 @@ class LocalArtifactIdentityResolverTest {
                 ),
             )
 
-            assertEquals(ArtifactIdentityRejection.INCOMPLETE_DIRECTORY, rejected.reason)
+            assertEquals(ArtifactIdentityRejection.STALE_MANIFEST, rejected.reason)
         }
     }
 
@@ -472,119 +515,42 @@ class LocalArtifactIdentityResolverTest {
     }
 
     @Test
-    fun legacySingleFileAndAllowlistedBundleAreContentAddressedAndRootIndependent() = runTest {
-        withRoot { storage, firstRoot ->
-            val firstMain = write(firstRoot / "owner/model/model.gguf", byteArrayOf(1, 2, 3))
-            val single = assertIs<ArtifactIdentityResolution.Verified>(
-                resolver(storage, null).resolve(model(firstMain, 3), emptyList()),
-            )
-            assertIs<RevisionIdentity.LocalContent>(single.artifact.revisionIdentity)
-
-            withRoot { secondStorage, secondRoot ->
-                val secondMain = write(secondRoot / "owner/model/model.gguf", byteArrayOf(1, 2, 3))
-                val same = assertIs<ArtifactIdentityResolution.Verified>(
-                    resolver(secondStorage, null).resolve(model(secondMain, 3), emptyList()),
-                )
-                assertEquals(single.artifact.identity.revision, same.artifact.identity.revision)
-
-                write(secondRoot / "owner/model/model.gguf", byteArrayOf(1, 2, 4))
-                val changed = assertIs<ArtifactIdentityResolution.Verified>(
-                    resolver(secondStorage, null).resolve(model(secondMain, 3), emptyList()),
-                )
-                assertNotEquals(single.artifact.identity.revision, changed.artifact.identity.revision)
-            }
-
-            val componentPath = write(firstRoot / "component/repo/vae.safetensors", byteArrayOf(9, 8))
-            val bundled = assertIs<ArtifactIdentityResolution.Verified>(
-                resolver(storage, null).resolve(
-                    model(firstMain, 3),
-                    listOf(component("component/repo", "vae.safetensors", "vae", componentPath, 2)),
-                ),
-            )
-            assertEquals(2, bundled.artifact.components.size)
-            assertTrue(FileSystem.SYSTEM.exists(firstRoot / "owner/model/${LocalArtifactIdentityResolver.MANIFEST_FILE_NAME}"))
-        }
-    }
-
-    @Test
-    fun cancellationDuringLegacyHashingIsRethrownAndLeavesNoManifestOrPart() = runTest {
+    fun cancellationDuringManifestHashingIsRethrown() = runTest {
         withRoot { storage, root ->
-            val main = write(root / "owner/model/model.gguf", byteArrayOf(1, 2, 3))
+            val bytes = byteArrayOf(1, 2, 3)
+            val main = write(root / "owner/model/model.gguf", bytes)
             val expected = CancellationException("stop")
             val resolver = LocalArtifactIdentityResolver(
                 storagePathProvider = storage,
-                manifestSource = { null },
+                manifestSource = {
+                    manifest(
+                        manifestEntry("model", "owner/model", "a".repeat(40), "model.gguf", bytes),
+                    )
+                },
                 hashingDispatcher = StandardTestDispatcher(testScheduler),
                 fileSystem = FileSystem.SYSTEM,
                 hashFile = { _, _ -> throw expected },
             )
 
-            try {
+            val actual = kotlin.test.assertFailsWith<CancellationException> {
                 resolver.resolve(model(main, 3), emptyList())
-                fail("Expected cancellation")
-            } catch (actual: CancellationException) {
-                assertTrue(actual === expected)
             }
 
-            val manifest = root / "owner/model/${LocalArtifactIdentityResolver.MANIFEST_FILE_NAME}"
-            assertFalse(FileSystem.SYSTEM.exists(manifest))
-            assertFalse(FileSystem.SYSTEM.exists("$manifest.part".toPath()))
+            assertTrue(actual === expected)
         }
     }
 
     @Test
-    fun aggregateAboveOnePiBIsRejectedWithoutThrowingOrPersistingSidecar() = runTest {
-        withRoot { storage, root ->
-            val main = write(root / "owner/model/model.gguf", byteArrayOf(1))
-            val auxiliary = write(root / "other/vae/vae.safetensors", byteArrayOf(2))
-            storage.snapshots[main] = snapshot(DescriptorLimits.MAX_FILE_BYTES)
-            storage.snapshots[auxiliary] = snapshot(1L)
-            var hashCalls = 0
-
-            val rejected = assertIs<ArtifactIdentityResolution.Rejected>(
-                resolver(storage, null, hashFile = { _, _ ->
-                    hashCalls++
-                    "a".repeat(64)
-                }).resolve(
-                    model(main, DescriptorLimits.MAX_FILE_BYTES),
-                    listOf(component("other/vae", "vae.safetensors", "vae", auxiliary, 1L)),
-                ),
-            )
-
-            assertEquals(ArtifactIdentityRejection.ARTIFACT_TOO_LARGE, rejected.reason)
-            assertEquals(0, hashCalls)
-            assertFalse(FileSystem.SYSTEM.exists(root / "owner/model/${LocalArtifactIdentityResolver.MANIFEST_FILE_NAME}"))
-        }
-    }
-
-    @Test
-    fun aggregateAboveTwoPiBAndOverflowSizedEvidenceAreStableRejections() = runTest {
-        withRoot { storage, root ->
-            val main = write(root / "owner/model/model.gguf", byteArrayOf(1))
-            val first = write(root / "other/one/one.safetensors", byteArrayOf(2))
-            val second = write(root / "other/two/two.safetensors", byteArrayOf(3))
-            storage.snapshots[main] = snapshot(DescriptorLimits.MAX_FILE_BYTES)
-            storage.snapshots[first] = snapshot(DescriptorLimits.MAX_FILE_BYTES)
-            storage.snapshots[second] = snapshot(1L)
-            val resolver = resolver(storage, null, hashFile = { _, _ -> "b".repeat(64) })
-
-            val overBundle = assertIs<ArtifactIdentityResolution.Rejected>(
-                resolver.resolve(
-                    model(main, DescriptorLimits.MAX_FILE_BYTES),
-                    listOf(
-                        component("other/one", "one.safetensors", "one", first, DescriptorLimits.MAX_FILE_BYTES),
-                        component("other/two", "two.safetensors", "two", second, 1L, id = 2),
-                    ),
-                ),
-            )
-            assertEquals(ArtifactIdentityRejection.ARTIFACT_TOO_LARGE, overBundle.reason)
-
-            storage.snapshots[main] = snapshot(Long.MAX_VALUE)
-            val overflow = assertIs<ArtifactIdentityResolution.Rejected>(
-                resolver.resolve(model(main, Long.MAX_VALUE), emptyList()),
-            )
-            assertEquals(ArtifactIdentityRejection.ARTIFACT_TOO_LARGE, overflow.reason)
-        }
+    fun aggregateArtifactByteBoundRejectsOverflowWithoutArithmeticWraparound() {
+        assertEquals(
+            DescriptorLimits.MAX_FILE_BYTES,
+            checkedResolvedArtifactBytes(listOf(DescriptorLimits.MAX_FILE_BYTES)),
+        )
+        assertEquals(
+            null,
+            checkedResolvedArtifactBytes(listOf(DescriptorLimits.MAX_FILE_BYTES, 1L)),
+        )
+        assertEquals(null, checkedResolvedArtifactBytes(listOf(Long.MAX_VALUE)))
     }
 
     private fun TestScope.resolver(
@@ -592,6 +558,7 @@ class LocalArtifactIdentityResolverTest {
         manifest: ArtifactManifest?,
         hashFile: (suspend (String, Long) -> String)? = null,
         onManifestRead: () -> Unit = {},
+        fileSystem: FileSystem = FileSystem.SYSTEM,
     ) = LocalArtifactIdentityResolver(
         storagePathProvider = storage,
         manifestSource = {
@@ -599,7 +566,7 @@ class LocalArtifactIdentityResolverTest {
             manifest
         },
         hashingDispatcher = StandardTestDispatcher(testScheduler),
-        fileSystem = FileSystem.SYSTEM,
+        fileSystem = fileSystem,
         hashFile = hashFile ?: { path, maxBytes ->
             val source = FileSystem.SYSTEM.source(path.toPath())
             val buffer = Buffer()
@@ -773,6 +740,18 @@ class LocalArtifactIdentityResolverTest {
                 byteCount = metadata.size ?: 0,
                 changeStamp = "${metadata.lastModifiedAtMillis ?: 0}:${metadata.size ?: 0}",
             )
+        }
+    }
+
+    private class LegacySidecarReadTrackingFileSystem(
+        delegate: FileSystem,
+        private val legacySidecar: Path,
+    ) : ForwardingFileSystem(delegate) {
+        var legacySidecarReadCount = 0
+
+        override fun source(file: Path): Source {
+            if (file == legacySidecar) legacySidecarReadCount += 1
+            return super.source(file)
         }
     }
 }

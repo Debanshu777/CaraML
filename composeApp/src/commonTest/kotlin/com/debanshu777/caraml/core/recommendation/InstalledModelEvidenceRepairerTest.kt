@@ -545,7 +545,7 @@ class InstalledModelEvidenceRepairerTest {
             publicationCoordinator = coordinator,
             catalogSnapshot = ::catalogSnapshot,
             manifestSource = { modelId -> currentManifest?.takeIf { currentModel.modelId == modelId } },
-            resolvePersistedHub = resolver::resolvePersistedHub,
+            resolveArtifact = resolver::resolve,
             evidenceCompareAndSet = repository::compareAndSet,
             metadataSource = InstalledDescriptorMetadataSource(lookup),
             codec = codec,
@@ -683,8 +683,8 @@ class InstalledModelEvidenceRepairerTest {
         publicationCoordinator = coordinator,
         catalogSnapshot = { modelId -> fixtures[modelId]?.catalogSnapshot(modelId) },
         manifestSource = { modelId -> fixtures[modelId]?.currentManifest },
-        resolvePersistedHub = { model, components, manifest ->
-            requireNotNull(fixtures[model.modelId]).resolver.resolvePersistedHub(model, components, manifest)
+        resolveArtifact = { model, components, manifest ->
+            requireNotNull(fixtures[model.modelId]).resolver.resolve(model, components, manifest)
         },
         evidenceCompareAndSet = { modelId, expected, evidence, nowEpochMs ->
             requireNotNull(fixtures[modelId]).repository.compareAndSet(modelId, expected, evidence, nowEpochMs)

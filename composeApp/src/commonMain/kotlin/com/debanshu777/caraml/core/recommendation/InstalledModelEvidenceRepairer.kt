@@ -26,7 +26,7 @@ class InstalledModelEvidenceRepairer internal constructor(
     private val publicationCoordinator: InstalledModelPublicationCoordinator,
     private val catalogSnapshot: suspend (String) -> InstalledCatalogSnapshot?,
     private val manifestSource: suspend (String) -> ArtifactManifest?,
-    private val resolvePersistedHub: suspend (
+    private val resolveArtifact: suspend (
         LocalModelEntity,
         List<DownloadedComponentEntity>,
         ArtifactManifest,
@@ -56,7 +56,7 @@ class InstalledModelEvidenceRepairer internal constructor(
         publicationCoordinator = publicationCoordinator,
         catalogSnapshot = catalog::snapshotReady,
         manifestSource = manifestSource::invoke,
-        resolvePersistedHub = artifactResolver::resolvePersistedHub,
+        resolveArtifact = artifactResolver::resolve,
         evidenceCompareAndSet = evidenceRepository::compareAndSet,
         metadataSource = metadataSource,
         codec = codec,
@@ -119,7 +119,7 @@ class InstalledModelEvidenceRepairer internal constructor(
 
     private suspend fun captureVerified(modelId: String): VerifiedRepairSnapshot? {
         val baseline = readBaseline(modelId) ?: return null
-        val resolution = resolvePersistedHub(
+        val resolution = resolveArtifact(
             baseline.catalog.model,
             baseline.catalog.components,
             baseline.manifest,
@@ -183,7 +183,7 @@ class InstalledModelEvidenceRepairer internal constructor(
         baseline: RepairBaseline,
         mode: ModelHubBrowseMode,
     ): EvidenceRepairResult {
-        val resolution = resolvePersistedHub(
+        val resolution = resolveArtifact(
             baseline.catalog.model,
             baseline.catalog.components,
             baseline.manifest,
