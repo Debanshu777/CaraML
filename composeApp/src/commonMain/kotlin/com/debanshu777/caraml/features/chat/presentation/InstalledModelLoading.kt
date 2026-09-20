@@ -122,5 +122,7 @@ internal fun LoadAdmissionReason.safeBlockedLoadMessage(): String = when (this) 
         "The installed model changed or could not be verified."
     LoadAdmissionReason.NATIVE_PREFLIGHT_INVALID ->
         "The native engine rejected this model before loading."
+    LoadAdmissionReason.NATIVE_BACKEND_INCOMPATIBLE ->
+        "The selected accelerator is incompatible with this model."
     else -> "This model cannot be loaded safely with the available information."
 }

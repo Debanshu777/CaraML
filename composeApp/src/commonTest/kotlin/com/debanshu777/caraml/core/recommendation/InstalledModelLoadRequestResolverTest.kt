@@ -170,6 +170,38 @@ class InstalledModelLoadRequestResolverTest {
             listOf(BackendKind.METAL, BackendKind.CPU),
             fixture.assessmentSnapshots[1].hardwareProfile.backends.map { it.kind },
         )
+        assertEquals(
+            listOf(BackendKind.CPU),
+            fixture.assessmentSnapshots[2].hardwareProfile.backends.map { it.kind },
+        )
+    }
+
+    @Test
+    fun gpuSelectionCarriesAnExactPolicyApprovedCpuAlternative() = runTest {
+        val fixture = Fixture().apply {
+            snapshots += acceleratedSnapshot()
+            settings += AppSettings(useGpu = true)
+            planForSnapshot = { snapshot ->
+                if (snapshot.hardwareProfile.backends.any { it.kind != BackendKind.CPU }) {
+                    installedLlmPlan(backend = BackendKind.METAL, topology = MemoryTopology.UNIFIED)
+                } else {
+                    installedLlmPlan(backend = BackendKind.CPU, topology = MemoryTopology.UNIFIED)
+                }
+            }
+        }
+
+        val request = assertIs<InstalledModelLoadResolution.Ready>(
+            fixture.resolver().resolve(fixture.model, GenerationMode.Text),
+        ).request
+        val alternative = requireNotNull(request.backendAlternative)
+
+        assertEquals(BackendKind.METAL, request.plan.backend)
+        assertEquals(BackendKind.CPU, alternative.plan.backend)
+        assertEquals(request.identity, alternative.identity)
+        assertEquals(request.artifact, alternative.artifact)
+        assertEquals(alternative.assessmentKey, alternative.assessedPlans?.assessmentKey)
+        assertEquals(2, fixture.assessmentCalls)
+        assertEquals(2, fixture.strictRequestCalls)
     }
 
     @Test

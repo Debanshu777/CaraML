@@ -87,7 +87,15 @@ private sealed class InternalChatState {
 
 sealed interface PendingLoadAction {
     data class ConfirmRisk(val request: LoadRequest) : PendingLoadAction
-    data class AcceptAlternative(val original: LoadRequest, val saferPlan: RunPlan) : PendingLoadAction
+    data class AcceptAlternative(
+        val original: LoadRequest,
+        val saferPlan: RunPlan,
+        val saferRequest: LoadRequest = original.copy(
+            plan = saferPlan,
+            riskAcknowledgement = null,
+            backendAlternative = null,
+        ),
+    ) : PendingLoadAction
     data class RetryQuarantined(val request: LoadRequest) : PendingLoadAction
 }
 
@@ -409,7 +417,11 @@ class ChatViewModel(
             is LoadAdmission.AlternativeAvailable -> {
                 pendingLoadActionGate.open()
                 _internal.value = InternalChatState.LoadActionRequired(
-                    PendingLoadAction.AcceptAlternative(admission.original, admission.saferPlan),
+                    PendingLoadAction.AcceptAlternative(
+                        admission.original,
+                        admission.saferPlan,
+                        admission.saferRequest,
+                    ),
                 )
             }
             is LoadAdmission.TemporarilyUnavailable -> {
@@ -446,7 +458,7 @@ class ChatViewModel(
         val action = (_internal.value as? InternalChatState.LoadActionRequired)?.action
             as? PendingLoadAction.AcceptAlternative ?: return
         if (!pendingLoadActionGate.tryConsume()) return
-        resumeExactLoad(action.original.copy(plan = action.saferPlan, riskAcknowledgement = null))
+        resumeExactLoad(action.saferRequest.copy(riskAcknowledgement = null, backendAlternative = null))
     }
 
     fun retryPendingLoad() {

@@ -120,24 +120,75 @@ class InstalledModelLoadRequestResolver internal constructor(
 
         val capturedSnapshot = captureSnapshot()
         val settings = currentSettings()
-        val assessmentSnapshot = if (
+        val cpuRequired =
             !settings.useGpu ||
             descriptor is LlmModelDescriptor && descriptor.architecture.requiresCpuOnlyLlmExecution()
-        ) {
+        val assessmentSnapshot = if (cpuRequired) {
             capturedSnapshot.cpuOnly()
         } else {
             capturedSnapshot
         }
         val workload = workloadFactory.create(descriptor, expectedMode, settings)
             ?: return InstalledModelLoadResolution.NotAdmissible(AssessmentReason.INVALID_WORKLOAD)
-        val assessment = assess(descriptor, assessmentSnapshot, workload)
+        val primary = assessRequest(
+            model = model,
+            descriptor = descriptor,
+            artifact = artifact,
+            expectedMode = expectedMode,
+            workload = workload,
+            snapshot = assessmentSnapshot,
+            profile = settings.recommendationProfile,
+            requireCpu = cpuRequired,
+        )
+        if (primary !is InstalledModelLoadResolution.Ready) return primary
+        val selected = primary.request.plan as? LlmRunPlan
+        if (descriptor !is LlmModelDescriptor || selected == null || selected.backend == BackendKind.CPU) {
+            return primary
+        }
+
+        return when (
+            val alternative = assessRequest(
+                model = model,
+                descriptor = descriptor,
+                artifact = artifact,
+                expectedMode = expectedMode,
+                workload = workload,
+                snapshot = capturedSnapshot.cpuOnly(),
+                profile = settings.recommendationProfile,
+                requireCpu = true,
+            )
+        ) {
+            is InstalledModelLoadResolution.Ready -> InstalledModelLoadResolution.Ready(
+                primary.request.copy(
+                    backendAlternative = alternative.request.copy(backendAlternative = null),
+                ),
+            )
+            is InstalledModelLoadResolution.Rejected -> alternative
+            InstalledModelLoadResolution.NeedsNetwork,
+            is InstalledModelLoadResolution.NotAdmissible,
+            InstalledModelLoadResolution.Failed,
+            -> primary
+        }
+    }
+
+    private suspend fun assessRequest(
+        model: LocalModelEntity,
+        descriptor: ModelDescriptor,
+        artifact: ResolvedLocalArtifact,
+        expectedMode: GenerationMode,
+        workload: WorkloadConfig,
+        snapshot: DeviceSnapshot,
+        profile: RecommendationProfile,
+        requireCpu: Boolean,
+    ): InstalledModelLoadResolution {
+        val assessment = assess(descriptor, snapshot, workload)
         if (!assessment.hasConsistentKeys()) {
             return InstalledModelLoadResolution.Rejected(ArtifactIdentityRejection.INVALID_INPUT)
         }
         val recommendation = personalize(
             assessment,
-            assessmentSnapshot,
-            settings.recommendationProfile,
+            snapshot,
+            profile,
         )
         if (recommendation.assessmentKey != assessment.assessmentKey) {
             return InstalledModelLoadResolution.Rejected(ArtifactIdentityRejection.INVALID_INPUT)
@@ -148,9 +199,7 @@ class InstalledModelLoadRequestResolver internal constructor(
         val selected = recommendation.selectedPlan as? RunPlan
             ?: return InstalledModelLoadResolution.NotAdmissible(AssessmentReason.NO_RUN_PLAN)
         if (!selected.matches(expectedMode) || !selected.matches(workload) ||
-            (!settings.useGpu ||
-                descriptor is LlmModelDescriptor && descriptor.architecture.requiresCpuOnlyLlmExecution()) &&
-            selected.backend != BackendKind.CPU
+            requireCpu && selected.backend != BackendKind.CPU
         ) {
             return InstalledModelLoadResolution.Rejected(ArtifactIdentityRejection.INVALID_INPUT)
         }

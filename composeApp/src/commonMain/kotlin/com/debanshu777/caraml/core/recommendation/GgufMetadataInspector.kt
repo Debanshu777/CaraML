@@ -29,33 +29,44 @@ class GgufMetadataInspector(
             if (metadataCount > MAX_METADATA_ENTRIES) return null
 
             var architecture: String? = null
-            val numericMetadata = mutableMapOf<String, Int>()
+            var architectureSeen = false
+            val numericCandidates = mutableMapOf<String, Long?>()
+            val duplicateNumericCandidates = mutableSetOf<String>()
             repeat(metadataCount.toInt()) {
                 val key = reader.readString(MAX_KEY_BYTES) ?: return null
                 val type = reader.readUnsignedIntLe()?.toInt() ?: return null
                 if (key == ARCHITECTURE_KEY) {
+                    if (architectureSeen) return null
+                    architectureSeen = true
                     if (type != GGUF_TYPE_STRING) return null
                     architecture = reader.readString(MAX_ARCHITECTURE_BYTES)
                         ?.takeIf(::isSafeArchitecture)
                         ?: return null
-                } else if (architecture?.let { arch -> NUMERIC_SUFFIXES.any { key == "$arch$it" } } == true) {
-                    val value = reader.readUnsignedMetadata(type)
+                } else if (NUMERIC_SUFFIXES.any(key::endsWith)) {
+                    if (numericCandidates.containsKey(key)) duplicateNumericCandidates += key
+                    numericCandidates[key] = if (type == GGUF_TYPE_UINT32 || type == GGUF_TYPE_UINT64) {
+                        reader.readUnsignedMetadata(type) ?: return null
+                    } else {
+                        if (!reader.skipValue(type)) return null
+                        null
+                    }
+                } else if (!reader.skipValue(type)) {
+                    return null
+                }
+            }
+            val exactArchitecture = architecture ?: return null
+            val numericMetadata = mutableMapOf<String, Int>()
+            NUMERIC_SUFFIXES.forEach { suffix ->
+                val key = "$exactArchitecture$suffix"
+                if (key in duplicateNumericCandidates) return null
+                if (numericCandidates.containsKey(key)) {
+                    val value = numericCandidates[key]
                         ?.takeIf { it in 1..MAX_TRANSFORMER_FIELD }
                         ?.toInt()
                         ?: return null
                     numericMetadata[key] = value
-                } else if (!reader.skipValue(type)) {
-                    return null
-                }
-                val currentArchitecture = architecture
-                if (currentArchitecture != null && CORE_SHAPE_SUFFIXES.all {
-                        numericMetadata.containsKey("$currentArchitecture$it")
-                    }
-                ) {
-                    return metadata(version, currentArchitecture, numericMetadata)
                 }
             }
-            val exactArchitecture = architecture ?: return null
             metadata(version, exactArchitecture, numericMetadata)
         }
     } catch (_: Exception) {
@@ -124,19 +135,20 @@ class GgufMetadataInspector(
         val hiddenSize = value(EMBEDDING_LENGTH_SUFFIX)
         val attentionHeads = value(ATTENTION_HEAD_COUNT_SUFFIX)
         val explicitHeadDim = value(ATTENTION_KEY_LENGTH_SUFFIX)
-        val derivedHeadDim = explicitHeadDim ?: if (
-            hiddenSize != null && attentionHeads != null && hiddenSize % attentionHeads == 0
-        ) {
+        val derivedHeadDim = if (hiddenSize != null && attentionHeads != null) {
+            if (hiddenSize % attentionHeads != 0) return null
             hiddenSize / attentionHeads
         } else {
             null
         }
+        if (explicitHeadDim != null && derivedHeadDim != null && explicitHeadDim != derivedHeadDim) return null
+        val headDim = explicitHeadDim ?: derivedHeadDim
         val shapeValues = listOf(
             value(BLOCK_COUNT_SUFFIX),
             value(ATTENTION_HEAD_COUNT_KV_SUFFIX),
             attentionHeads,
             hiddenSize,
-            derivedHeadDim,
+            headDim,
         )
         return GgufLocalMetadata(
             version = version,
@@ -181,13 +193,6 @@ class GgufMetadataInspector(
             ATTENTION_HEAD_COUNT_SUFFIX,
             ATTENTION_HEAD_COUNT_KV_SUFFIX,
             ATTENTION_KEY_LENGTH_SUFFIX,
-        )
-        val CORE_SHAPE_SUFFIXES = listOf(
-            CONTEXT_LENGTH_SUFFIX,
-            EMBEDDING_LENGTH_SUFFIX,
-            BLOCK_COUNT_SUFFIX,
-            ATTENTION_HEAD_COUNT_SUFFIX,
-            ATTENTION_HEAD_COUNT_KV_SUFFIX,
         )
         val SUPPORTED_GGUF_VERSIONS = 2..3
     }
