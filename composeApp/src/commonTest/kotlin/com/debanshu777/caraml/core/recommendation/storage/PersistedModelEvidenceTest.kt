@@ -63,6 +63,99 @@ class PersistedModelEvidenceTest {
     }
 
     @Test
+    fun cappedUtf8ByteCountAcceptsExactAsciiBoundaryAndRejectsTheNextByte() {
+        val exactBoundary = "a".repeat(262_144)
+
+        assertEquals(262_144, cappedUtf8ByteCount(exactBoundary, 262_144))
+        assertEquals(
+            UTF8_BYTE_COUNT_LIMIT_EXCEEDED,
+            cappedUtf8ByteCount(exactBoundary + "b", 262_144),
+        )
+    }
+
+    @Test
+    fun cappedUtf8ByteCountUsesUtf8WidthForBmpCharacters() {
+        assertEquals(6, cappedUtf8ByteCount("A\u00e9\u20ac", 6))
+        assertEquals(UTF8_BYTE_COUNT_LIMIT_EXCEEDED, cappedUtf8ByteCount("A\u00e9\u20ac", 5))
+    }
+
+    @Test
+    fun cappedUtf8ByteCountTreatsSupplementaryPairAsFourBytes() {
+        val supplementary = "\ud83d\ude00"
+
+        assertEquals(5, cappedUtf8ByteCount("A$supplementary", 5))
+        assertEquals(
+            UTF8_BYTE_COUNT_LIMIT_EXCEEDED,
+            cappedUtf8ByteCount("A$supplementary", 4),
+        )
+    }
+
+    @Test
+    fun cappedUtf8ByteCountRejectsUnpairedSurrogates() {
+        assertEquals(UTF8_BYTE_COUNT_MALFORMED, cappedUtf8ByteCount("\ud800", 262_144))
+        assertEquals(UTF8_BYTE_COUNT_MALFORMED, cappedUtf8ByteCount("\udc00", 262_144))
+        assertEquals(UTF8_BYTE_COUNT_MALFORMED, cappedUtf8ByteCount("\ud800A", 262_144))
+    }
+
+    @Test
+    fun decodeAcceptsExactAsciiByteBoundaryButRejectsBoundaryPlusOneBeforeDigest() {
+        val exactBoundary = " ".repeat(262_144)
+        val invalidPayload = assertFailsWith<IllegalArgumentException> {
+            codec.decode(
+                EncodedModelEvidence(
+                    state = InstalledEvidenceState.REQUIRES_ENRICHMENT,
+                    schemaVersion = 1,
+                    payload = exactBoundary,
+                    sha256 = sha256(exactBoundary),
+                ),
+            )
+        }
+        val tooLarge = assertFailsWith<IllegalArgumentException> {
+            codec.decode(
+                EncodedModelEvidence(
+                    state = InstalledEvidenceState.REQUIRES_ENRICHMENT,
+                    schemaVersion = 1,
+                    payload = exactBoundary + " ",
+                    sha256 = "0".repeat(64),
+                ),
+            )
+        }
+
+        assertEquals("Invalid evidence payload", invalidPayload.message)
+        assertEquals("Evidence payload is too large", tooLarge.message)
+    }
+
+    @Test
+    fun decodeRejectsMalformedSurrogatesBeforeDigestWork() {
+        listOf("\ud800", "\udc00", "A\ud800B").forEach { payload ->
+            val error = assertFailsWith<IllegalArgumentException> {
+                codec.decode(
+                    EncodedModelEvidence(
+                        state = InstalledEvidenceState.REQUIRES_ENRICHMENT,
+                        schemaVersion = 1,
+                        payload = payload,
+                        sha256 = "0".repeat(64),
+                    ),
+                )
+            }
+
+            assertEquals("Invalid evidence payload", error.message)
+        }
+    }
+
+    @Test
+    fun cappedUtf8ByteCountRejectsHugeHostileInputsWithoutReportingAByteCount() {
+        assertEquals(
+            UTF8_BYTE_COUNT_LIMIT_EXCEEDED,
+            cappedUtf8ByteCount("a".repeat(4_000_000), 64),
+        )
+        assertEquals(
+            UTF8_BYTE_COUNT_LIMIT_EXCEEDED,
+            cappedUtf8ByteCount("\u20ac".repeat(1_000_000), 64),
+        )
+    }
+
+    @Test
     fun payloadSchemaAndTransportStateMismatchesAreRejected() {
         val valid = codec.encode(listOf(modelIdentity()), descriptor = null)
         val unsupportedSchema = valid.payload.replaceFirst("\"schemaVersion\":1", "\"schemaVersion\":2")

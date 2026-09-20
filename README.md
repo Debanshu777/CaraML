@@ -223,7 +223,7 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 - Reframed Create around one focused command composer and explicit activity states; generation modes remain local state while the Create destination stays selected
 - Reworked Model Hub as a compact registry and made Details artifact-first with reachable metadata, exact artifact actions, and durable pause/resume/cancel/retry state
 - Model downloads now use a persistent resumable queue with exact-artifact verification; Android uses UIDT/foreground notifications, iOS reconnects to a background URLSession, and Desktop resumes on relaunch
-- Durable downloads now retain codec-validated exact descriptor evidence for complete artifact-set matches and bind its digest into batch identity; uncertain descriptors remain enrichment-only
+- Durable downloads retain exact descriptor evidence and bind its digest into batch identity; persisted payloads use capped allocation-free UTF-8 preflight before hashing or parsing, while uncertain descriptors remain enrichment-only
 - Existing Ready installs repair missing descriptor metadata once through revision-qualified owner/component lookups pinned to each installed commit, persist the complete evidence for offline reuse, and reject ambiguous identities without touching model files
 - Exact repair follows only the Hub's one validated same-repository/same-commit config redirect and rejects deterministic detail/tree/config failures instead of retrying them
 - Installed manifest, Ready catalog, and evidence publication now share bounded owner-scoped coordination; repair performs network lookup outside the owner lock, then rechecks the exact durable baseline and uses Room compare-and-set so stale work cannot overwrite a newer installation

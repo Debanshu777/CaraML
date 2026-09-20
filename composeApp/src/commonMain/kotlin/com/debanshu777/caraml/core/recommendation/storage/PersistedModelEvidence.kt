@@ -28,6 +28,9 @@ private const val MAX_EVIDENCE_PAYLOAD_BYTES = 262_144
 private const val MAX_ARCHITECTURE_LENGTH = 64
 private const val MAX_TRANSFORMER_FIELD = 1_048_576
 
+internal const val UTF8_BYTE_COUNT_LIMIT_EXCEEDED = -1
+internal const val UTF8_BYTE_COUNT_MALFORMED = -2
+
 private val evidenceJson = Json {
     encodeDefaults = true
     explicitNulls = true
@@ -37,6 +40,40 @@ private val evidenceJson = Json {
 
 private fun digest(payload: String): String =
     Buffer().writeUtf8(payload).snapshot().sha256().hex()
+
+/** Returns a non-negative byte count, or one of the rejection constants above. */
+internal fun cappedUtf8ByteCount(value: String, limit: Int): Int {
+    require(limit >= 0) { "UTF-8 byte limit must be non-negative" }
+    var byteCount = 0
+    var index = 0
+    while (index < value.length) {
+        val codeUnit = value[index].code
+        val width = when {
+            codeUnit <= 0x7f -> 1
+            codeUnit <= 0x7ff -> 2
+            codeUnit in 0xd800..0xdbff -> {
+                if (index + 1 >= value.length || value[index + 1].code !in 0xdc00..0xdfff) {
+                    return UTF8_BYTE_COUNT_MALFORMED
+                }
+                index += 1
+                4
+            }
+            codeUnit in 0xdc00..0xdfff -> return UTF8_BYTE_COUNT_MALFORMED
+            else -> 3
+        }
+        if (byteCount > limit - width) return UTF8_BYTE_COUNT_LIMIT_EXCEEDED
+        byteCount += width
+        index += 1
+    }
+    return byteCount
+}
+
+private fun requireBoundedEvidencePayload(payload: String) {
+    when (cappedUtf8ByteCount(payload, MAX_EVIDENCE_PAYLOAD_BYTES)) {
+        UTF8_BYTE_COUNT_LIMIT_EXCEEDED -> throw IllegalArgumentException("Evidence payload is too large")
+        UTF8_BYTE_COUNT_MALFORMED -> throw IllegalArgumentException("Invalid evidence payload")
+    }
+}
 
 enum class InstalledEvidenceState { COMPLETE, REQUIRES_ENRICHMENT }
 
@@ -77,7 +114,7 @@ class PersistedModelEvidenceCodec {
                 descriptor = descriptor?.let(::DescriptorDto),
             ),
         )
-        require(payload.encodeToByteArray().size <= MAX_EVIDENCE_PAYLOAD_BYTES) { "Evidence payload is too large" }
+        requireBoundedEvidencePayload(payload)
         return EncodedModelEvidence(
             state = state,
             schemaVersion = EVIDENCE_SCHEMA_VERSION,
@@ -88,7 +125,7 @@ class PersistedModelEvidenceCodec {
 
     fun decode(encoded: EncodedModelEvidence): DecodedModelEvidence {
         require(encoded.schemaVersion == EVIDENCE_SCHEMA_VERSION) { "Unsupported evidence schema" }
-        require(encoded.payload.encodeToByteArray().size <= MAX_EVIDENCE_PAYLOAD_BYTES) { "Evidence payload is too large" }
+        requireBoundedEvidencePayload(encoded.payload)
         require(LOWERCASE_SHA256.matches(encoded.sha256)) { "Invalid evidence digest" }
         require(digest(encoded.payload) == encoded.sha256) { "Evidence digest mismatch" }
 
