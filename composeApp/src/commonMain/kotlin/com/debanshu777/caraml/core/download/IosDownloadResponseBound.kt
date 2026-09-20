@@ -1,20 +1,47 @@
 package com.debanshu777.caraml.core.download
 
+private const val IOS_BACKGROUND_DESCRIPTOR_VERSION = "1"
 private const val IOS_BACKGROUND_ID_LENGTH = 64
 private const val IOS_BACKGROUND_MAX_ARTIFACT_BYTES = 1L shl 50
-private const val IOS_BACKGROUND_MAX_DESCRIPTION_LENGTH =
-    IOS_BACKGROUND_ID_LENGTH + 1 + IOS_BACKGROUND_ID_LENGTH + 1 + 16
+private const val IOS_BACKGROUND_MAX_EXPECTED_BYTES_LENGTH = 16
+private const val IOS_BACKGROUND_MIN_DESCRIPTION_LENGTH = 135
+private const val IOS_BACKGROUND_MAX_DESCRIPTION_LENGTH = 150
+
+internal enum class IosBackgroundTaskDisposition(val code: String) {
+    ACTIVE("a"),
+    REJECTED("r"),
+    STOPPED("s"),
+    ;
+
+    companion object {
+        fun fromCode(code: String): IosBackgroundTaskDisposition? = entries.firstOrNull { it.code == code }
+    }
+}
+
+internal data class IosBackgroundTaskKey(
+    val batchId: String,
+    val artifactId: String,
+) {
+    init {
+        require(batchId.isCanonicalDownloadId()) { "Invalid background download" }
+        require(artifactId.isCanonicalDownloadId()) { "Invalid background download" }
+    }
+}
 
 /**
- * Exact download identity persisted by `NSURLSessionTask.taskDescription`.
+ * Exact download identity and terminal disposition persisted by
+ * `NSURLSessionTask.taskDescription`.
  *
- * A background session restores the description before delivering delegate callbacks, so the
- * response limit remains available synchronously even after process death.
+ * A background session restores the description before delivering delegate callbacks, so both
+ * the response limit and a terminal rejection survive process death. Only the current, canonical
+ * version is accepted for normal processing; earlier formats are recoverable solely to fail their
+ * associated artifact closed.
  */
 internal data class IosBackgroundTaskDescriptor(
     val batchId: String,
     val artifactId: String,
     val expectedBytes: Long,
+    val disposition: IosBackgroundTaskDisposition = IosBackgroundTaskDisposition.ACTIVE,
 ) {
     init {
         require(batchId.isCanonicalDownloadId()) { "Invalid background download" }
@@ -22,30 +49,59 @@ internal data class IosBackgroundTaskDescriptor(
         require(expectedBytes in 1L..IOS_BACKGROUND_MAX_ARTIFACT_BYTES) { "Invalid background download" }
     }
 
-    fun encode(): String = "$batchId:$artifactId:$expectedBytes"
+    val key: IosBackgroundTaskKey
+        get() = IosBackgroundTaskKey(batchId, artifactId)
+
+    fun withDisposition(value: IosBackgroundTaskDisposition): IosBackgroundTaskDescriptor =
+        if (disposition == value) this else copy(disposition = value)
+
+    fun encode(): String =
+        "$IOS_BACKGROUND_DESCRIPTOR_VERSION:${disposition.code}:$batchId:$artifactId:$expectedBytes"
 
     companion object {
         fun decode(value: String?): IosBackgroundTaskDescriptor? {
-            if (value == null || value.length !in 131..IOS_BACKGROUND_MAX_DESCRIPTION_LENGTH) return null
-            val firstSeparator = value.indexOf(':')
-            val secondSeparator = value.indexOf(':', firstSeparator + 1)
-            if (firstSeparator != IOS_BACKGROUND_ID_LENGTH || secondSeparator != IOS_BACKGROUND_ID_LENGTH * 2 + 1) {
-                return null
-            }
-            if (value.indexOf(':', secondSeparator + 1) != -1) return null
-            val batchId = value.substring(0, firstSeparator)
-            val artifactId = value.substring(firstSeparator + 1, secondSeparator)
-            val expectedText = value.substring(secondSeparator + 1)
-            if (!batchId.isCanonicalDownloadId() || !artifactId.isCanonicalDownloadId()) return null
-            if (expectedText.isEmpty() || expectedText.length > 16 || expectedText.first() == '0' ||
-                expectedText.any { it !in '0'..'9' }
+            if (value == null || value.length !in
+                IOS_BACKGROUND_MIN_DESCRIPTION_LENGTH..IOS_BACKGROUND_MAX_DESCRIPTION_LENGTH
             ) {
                 return null
             }
+            val fields = value.split(':')
+            if (fields.size != 5 || fields[0] != IOS_BACKGROUND_DESCRIPTOR_VERSION) return null
+            val disposition = IosBackgroundTaskDisposition.fromCode(fields[1]) ?: return null
+            val batchId = fields[2]
+            val artifactId = fields[3]
+            val expectedText = fields[4]
+            if (!batchId.isCanonicalDownloadId() || !artifactId.isCanonicalDownloadId()) return null
+            if (!expectedText.isCanonicalExpectedBytes()) return null
             val expectedBytes = expectedText.toLongOrNull()
                 ?.takeIf { it in 1L..IOS_BACKGROUND_MAX_ARTIFACT_BYTES }
                 ?: return null
-            return IosBackgroundTaskDescriptor(batchId, artifactId, expectedBytes)
+            val descriptor = IosBackgroundTaskDescriptor(
+                batchId = batchId,
+                artifactId = artifactId,
+                expectedBytes = expectedBytes,
+                disposition = disposition,
+            )
+            return descriptor.takeIf { it.encode() == value }
+        }
+
+        /**
+         * Recovers only validated opaque identifiers from an invalid/prior description so the
+         * matching durable record can be terminally failed. The result must never resume work.
+         */
+        fun recoverKeyForTerminalFailure(value: String?): IosBackgroundTaskKey? {
+            if (value == null || value.length !in 129..IOS_BACKGROUND_MAX_DESCRIPTION_LENGTH) return null
+            val fields = value.split(':')
+            val (batchId, artifactId) = when (fields.size) {
+                2, 3 -> fields[0] to fields[1]
+                5 -> {
+                    if (fields[0] != IOS_BACKGROUND_DESCRIPTOR_VERSION) return null
+                    fields[2] to fields[3]
+                }
+                else -> return null
+            }
+            if (!batchId.isCanonicalDownloadId() || !artifactId.isCanonicalDownloadId()) return null
+            return IosBackgroundTaskKey(batchId, artifactId)
         }
     }
 }
@@ -58,16 +114,29 @@ internal sealed interface IosDownloadBoundDecision {
 
     data class Reject(val descriptor: IosBackgroundTaskDescriptor) : IosDownloadBoundDecision
 
+    data class Invalid(val recoverableKey: IosBackgroundTaskKey?) : IosDownloadBoundDecision
     data object Duplicate : IosDownloadBoundDecision
     data object Inactive : IosDownloadBoundDecision
-    data object Invalid : IosDownloadBoundDecision
 }
 
 internal enum class IosDownloadBoundCompletion {
     ACTIVE,
     REJECTED,
     STOPPED,
+    INVALID,
     MISSING,
+}
+
+/** Adapter used by the Foundation delegate to make the durable reason observable before cancel. */
+internal fun persistIosRejectionBeforeCancellation(
+    descriptor: IosBackgroundTaskDescriptor,
+    persistTaskDescription: (String) -> Unit,
+    cancel: () -> Unit,
+) {
+    persistTaskDescription(
+        descriptor.withDisposition(IosBackgroundTaskDisposition.REJECTED).encode(),
+    )
+    cancel()
 }
 
 /**
@@ -82,13 +151,14 @@ internal class IosDownloadResponseBound {
     fun register(taskId: String, persistedTaskDescription: String?): Boolean {
         if (!taskId.isPlatformTaskId()) return false
         val descriptor = IosBackgroundTaskDescriptor.decode(persistedTaskDescription) ?: return false
+        if (descriptor.disposition != IosBackgroundTaskDisposition.ACTIVE) return false
         val current = tasks[taskId]
         if (current == null) {
             tasks[taskId] = TaskState.Active(descriptor, highestBytesWritten = -1L)
             return true
         }
-        if (current.descriptor != descriptor) {
-            tasks[taskId] = TaskState.Rejected(current.descriptor)
+        if (!current.descriptor.hasSameBound(descriptor)) {
+            tasks[taskId] = TaskState.Rejected(current.descriptor.asRejected())
             return false
         }
         return current is TaskState.Active
@@ -100,46 +170,94 @@ internal class IosDownloadResponseBound {
         totalBytesWritten: Long,
         declaredExpectedBytes: Long,
     ): IosDownloadBoundDecision {
-        if (!taskId.isPlatformTaskId()) return IosDownloadBoundDecision.Invalid
+        if (!taskId.isPlatformTaskId()) {
+            return IosDownloadBoundDecision.Invalid(
+                IosBackgroundTaskDescriptor.recoverKeyForTerminalFailure(persistedTaskDescription),
+            )
+        }
         val descriptor = IosBackgroundTaskDescriptor.decode(persistedTaskDescription)
-            ?: return IosDownloadBoundDecision.Invalid
+            ?: return IosDownloadBoundDecision.Invalid(
+                IosBackgroundTaskDescriptor.recoverKeyForTerminalFailure(persistedTaskDescription),
+            )
+        if (descriptor.disposition == IosBackgroundTaskDisposition.STOPPED) {
+            return IosDownloadBoundDecision.Inactive
+        }
         val state = tasks[taskId]
+        if (descriptor.disposition == IosBackgroundTaskDisposition.REJECTED) {
+            if (state is TaskState.Rejected && state.descriptor.hasSameBound(descriptor)) {
+                return IosDownloadBoundDecision.Inactive
+            }
+            tasks[taskId] = TaskState.Rejected(descriptor)
+            return IosDownloadBoundDecision.Reject(descriptor)
+        }
         val active = when {
             state == null -> TaskState.Active(descriptor, highestBytesWritten = -1L)
                 .also { tasks[taskId] = it }
-            state.descriptor != descriptor -> {
-                tasks[taskId] = TaskState.Rejected(state.descriptor)
-                return IosDownloadBoundDecision.Reject(state.descriptor)
+            !state.descriptor.hasSameBound(descriptor) -> {
+                val rejected = descriptor.asRejected()
+                tasks[taskId] = TaskState.Rejected(rejected)
+                return IosDownloadBoundDecision.Reject(rejected)
             }
             state is TaskState.Rejected || state is TaskState.Stopped -> {
                 return IosDownloadBoundDecision.Inactive
             }
             else -> state as TaskState.Active
         }
-        if (totalBytesWritten < 0L || declaredExpectedBytes > descriptor.expectedBytes ||
+        if (totalBytesWritten < 0L || declaredExpectedBytes < -1L ||
+            declaredExpectedBytes > descriptor.expectedBytes ||
             totalBytesWritten > descriptor.expectedBytes
         ) {
-            tasks[taskId] = TaskState.Rejected(descriptor)
-            return IosDownloadBoundDecision.Reject(descriptor)
+            val rejected = descriptor.asRejected()
+            tasks[taskId] = TaskState.Rejected(rejected)
+            return IosDownloadBoundDecision.Reject(rejected)
         }
         if (totalBytesWritten <= active.highestBytesWritten) return IosDownloadBoundDecision.Duplicate
         active.highestBytesWritten = totalBytesWritten
         return IosDownloadBoundDecision.Progress(descriptor, totalBytesWritten)
     }
 
-    fun stop(taskId: String, persistedTaskDescription: String? = null) {
-        if (!taskId.isPlatformTaskId()) return
-        val descriptor = tasks[taskId]?.descriptor
-            ?: IosBackgroundTaskDescriptor.decode(persistedTaskDescription)
-            ?: return
-        tasks[taskId] = TaskState.Stopped(descriptor)
+    /**
+     * Returns the description that must be persisted before platform cancellation. A missing state
+     * is deliberately not inserted: completion may already have removed this task generation.
+     */
+    fun stop(taskId: String, persistedTaskDescription: String? = null): IosBackgroundTaskDescriptor? {
+        if (!taskId.isPlatformTaskId()) return null
+        val current = tasks[taskId]
+        val persisted = IosBackgroundTaskDescriptor.decode(persistedTaskDescription)
+        val descriptor = current?.descriptor ?: persisted ?: return null
+        if (current is TaskState.Rejected ||
+            persisted?.disposition == IosBackgroundTaskDisposition.REJECTED
+        ) {
+            val rejected = descriptor.asRejected()
+            if (current != null) tasks[taskId] = TaskState.Rejected(rejected)
+            return rejected
+        }
+        val stopped = descriptor.withDisposition(IosBackgroundTaskDisposition.STOPPED)
+        if (current != null) tasks[taskId] = TaskState.Stopped(stopped)
+        return stopped
     }
 
-    fun complete(taskId: String): IosDownloadBoundCompletion = when (tasks.remove(taskId)) {
-        is TaskState.Active -> IosDownloadBoundCompletion.ACTIVE
-        is TaskState.Rejected -> IosDownloadBoundCompletion.REJECTED
-        is TaskState.Stopped -> IosDownloadBoundCompletion.STOPPED
-        null -> IosDownloadBoundCompletion.MISSING
+    fun complete(
+        taskId: String,
+        persistedTaskDescription: String? = null,
+    ): IosDownloadBoundCompletion {
+        val state = tasks.remove(taskId)
+        val persistedDescriptor = IosBackgroundTaskDescriptor.decode(persistedTaskDescription)
+        val persistedDisposition = persistedDescriptor?.disposition
+        return when {
+            state is TaskState.Rejected -> IosDownloadBoundCompletion.REJECTED
+            state is TaskState.Stopped -> IosDownloadBoundCompletion.STOPPED
+            persistedTaskDescription != null && persistedDescriptor == null ->
+                IosDownloadBoundCompletion.INVALID
+            persistedDisposition == IosBackgroundTaskDisposition.REJECTED ->
+                IosDownloadBoundCompletion.REJECTED
+            persistedDisposition == IosBackgroundTaskDisposition.STOPPED ->
+                IosDownloadBoundCompletion.STOPPED
+            state is TaskState.Active ||
+                persistedDisposition == IosBackgroundTaskDisposition.ACTIVE ->
+                IosDownloadBoundCompletion.ACTIVE
+            else -> IosDownloadBoundCompletion.MISSING
+        }
     }
 
     private sealed interface TaskState {
@@ -155,8 +273,18 @@ internal class IosDownloadResponseBound {
     }
 }
 
+private fun IosBackgroundTaskDescriptor.asRejected(): IosBackgroundTaskDescriptor =
+    withDisposition(IosBackgroundTaskDisposition.REJECTED)
+
+private fun IosBackgroundTaskDescriptor.hasSameBound(other: IosBackgroundTaskDescriptor): Boolean =
+    batchId == other.batchId && artifactId == other.artifactId && expectedBytes == other.expectedBytes
+
 private fun String.isCanonicalDownloadId(): Boolean =
     length == IOS_BACKGROUND_ID_LENGTH && all { it in '0'..'9' || it in 'a'..'f' }
+
+private fun String.isCanonicalExpectedBytes(): Boolean =
+    isNotEmpty() && length <= IOS_BACKGROUND_MAX_EXPECTED_BYTES_LENGTH && first() != '0' &&
+        all { it in '0'..'9' }
 
 private fun String.isPlatformTaskId(): Boolean =
     length in 1..20 && all { it in '0'..'9' }

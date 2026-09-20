@@ -3,29 +3,45 @@
 Date: 2026-09-20
 Branch: `codex/v2-installed-model-loading`
 Base: `84bb3fe3d5bffc33dcf56935d434b20d27d68e00`
-Commit subject: `fix(downloads): bound iOS background responses`
+Commits: `fd3a298` (`fix(downloads): bound iOS background responses`) plus the review follow-up `fix(downloads): persist iOS overflow rejection`
 
 ## Outcome
 
-iOS background downloads now carry their exact expected byte count in the URLSession-persisted task description and reconstruct the same bound synchronously after process relaunch. The real delegate cancels a task as soon as either the server-declared total or cumulative bytes written exceeds that exact size, including chunked/unknown-length responses. Equality remains valid.
+iOS background downloads now persist the exact expected byte count and their active, rejected, or stopped disposition in `NSURLSessionTask.taskDescription`. The real delegate rejects a task as soon as either the server-declared length or cumulative bytes written exceeds the exact expected size, including unknown-length/chunked responses. Equality remains valid.
 
-Oversize rejection is terminal and generic (`INTEGRITY` -> the existing user-facing “Download could not be verified” message). The delegate never logs or surfaces the URL, local path, model identity, expected size, response detail, or exception detail.
+An overflow writes a canonical rejected description before calling `cancel()`. If the app dies before the asynchronous Room transition completes, URLSession restores that rejected description and `didCompleteWithError` repairs the durable record as terminal `INTEGRITY`; the cancellation can no longer be downgraded to retryable `NETWORK`. The existing UI maps the terminal failure to the generic “Download failed” state.
+
+## Review follow-up closure
+
+### Crash-window durability
+
+- Replaced the unversioned description with the bounded canonical form `1:<a|r|s>:<batchId>:<artifactId>:<expectedBytes>`.
+- Both identifiers remain lowercase 64-character hex; expected bytes remain canonical decimal in the 1-byte through 1-PiB range. The complete description is restricted to 135–150 characters and round-trips through its encoder before acceptance.
+- The delegate uses the production `persistIosRejectionBeforeCancellation` adapter, which assigns the rejected description before invoking cancellation. Its ordering is covered by a common test.
+- `didWriteData`, `didFinishDownloading`, reconciliation, and `didCompleteWithError` all recognize restored rejection. Rejection and malformed/prior-format descriptions with validated identifiers terminally fail with `INTEGRITY`, including when the earlier database write was lost.
+- Previous two-field and three-field descriptions are never accepted to continue or resume. Their strictly validated opaque identifiers may only be recovered to locate and terminally fail the matching durable record.
+- A rejected disposition has precedence over stale active memory and cannot be downgraded by a concurrent pause/stop.
+
+### Bounded lifecycle
+
+- `stop()` no longer inserts state when `complete()` has already removed that task generation. It may return a stopped snapshot for the platform task, but the in-memory map remains empty.
+- A 256-generation ordering regression proves `register -> complete -> stop` can repeat without retaining stopped tombstones or blocking the next generation.
+- Duplicate and out-of-order progress callbacks remain inert, terminal cleanup is idempotent, and explicit coroutine cancellation still propagates.
 
 ## Implementation
 
-- Replaced the two-field task description with one canonical, bounded `batchId:artifactId:expectedBytes` descriptor. Both IDs must be lowercase 64-character hex and the byte count must be canonical decimal in the same 1-byte through 1-PiB artifact range as the download identity contract.
-- Added a pure common `IosDownloadResponseBound` state machine used directly by the production iOS scheduler. It tracks each platform task instance, reconstructs a missing in-memory entry from the persisted description, keeps a monotonic high-water mark, and records active, rejected, and explicitly stopped states.
-- `didWriteData` now evaluates declared and written lengths even when `totalBytesExpectedToWrite` is unknown. The first violation synchronously calls `cancel()` and schedules one terminal integrity transition; duplicate rejection callbacks become inert.
-- `didFinishDownloading` rechecks the response-declared length and the actual temporary-file size before capture/import, so a missing or coalesced progress callback cannot bypass the bound.
-- `didCompleteWithError` consumes the state-machine disposition. A cancellation caused by the exact bound cannot race the terminal integrity write into a retryable network failure; pause/cancel completion remains inert.
-- Pause, cancel, failed claim, and reconciliation mark their task instance stopped before platform cancellation, preventing late callbacks from restarting progress or failure work.
-- Reconciliation parses every restored task description and compares its persisted expected bytes with the exact durable artifact snapshot before restoring its platform-task link. Missing, malformed, stale, or mismatched descriptors are canceled fail-closed; a known nonterminal mismatch is terminally rejected.
-- Terminal failure cleanup removes resume data, captured completion files, and progress checkpoints. Explicit coroutine cancellation is rethrown; a concurrent user terminal transition is treated idempotently rather than overwritten.
-- Updated the root and `composeApp` Recent Changes bullets. `huggingFaceManager`, runner, diffusion, and native-engine public contracts did not change.
+- The pure common `IosDownloadResponseBound` remains the policy used by the real Foundation delegate. It validates restored descriptions synchronously, maintains a monotonic byte high-water mark, and returns a rejected descriptor for any invalid total, declared length above the bound, or written count above the bound.
+- Unknown response length is represented only by `-1`; other negative declared lengths fail closed. Exactly equal declared or written lengths continue.
+- Pause, cancel, failed claim, and stale-task reconciliation persist `STOPPED` before platform cancellation. A prior `REJECTED` marker wins over `STOPPED`.
+- Reconciliation validates active restored descriptors against the durable artifact’s exact expected bytes before reconnecting platform ownership. Rejected, malformed, old, stale, or mismatched tasks are canceled fail-closed.
+- Terminal bounded-response cleanup removes resume data, captured completion files, progress checkpoints, and the platform task ID. Concurrent terminal transitions remain idempotent.
+- No URL, filesystem path, model identity, expected size, response detail, exception detail, token, or secret is logged or surfaced.
 
 ## TDD evidence
 
-The test was written before the state machine or descriptor existed:
+The initial RED run failed compilation because the descriptor and response-bound state machine did not exist. The review follow-up added process-recreation, disposition, adapter-ordering, legacy-fail-closed, and lifecycle-race tests before production changes; its RED run failed compilation on the intentionally absent `IosBackgroundTaskDisposition`, `IosBackgroundTaskKey`, `INVALID` completion, persisted-description completion, and terminal-recovery APIs.
+
+Focused command:
 
 ```text
 ./gradlew :composeApp:jvmTest \
@@ -33,55 +49,50 @@ The test was written before the state machine or descriptor existed:
   --no-daemon
 ```
 
-The first sandboxed attempt stopped at the shared Gradle wrapper lock and was rerun with approved cache access. The RED run then failed compilation on the deliberately absent `IosDownloadResponseBound`, `IosDownloadBoundDecision`, `IosDownloadBoundCompletion`, and `IosBackgroundTaskDescriptor` symbols. No production implementation existed.
+Final result: PASS, 17/17 tests, zero skipped/failures/errors. Coverage includes:
 
-After the minimal implementation and production wiring, the same command passed 8/8 tests with zero skipped/failures/errors. The tests cover:
+- declared oversize, unknown-length crossing, exact equality, and invalid negative counts;
+- duplicate/out-of-order callbacks without progress regression;
+- exact-bound reconstruction after process relaunch;
+- overflow -> rejected task-description snapshot -> fresh-process cancellation completion;
+- rejected durable state overriding stale active memory;
+- malformed and old descriptions failing closed, never becoming a success/continuation path;
+- canonical version, disposition, identifier, decimal, size, and total-description bounds;
+- tested persist-before-cancel adapter ordering;
+- pause/stop late-callback suppression and rejected-over-stopped precedence;
+- 256 complete-before-stop generations with no state resurrection.
 
-- declared response length above the exact artifact size;
-- unknown/chunked length crossing the exact size;
-- exact equality;
-- duplicate and out-of-order callbacks without progress regression;
-- process-restart reconstruction from the persisted description;
-- cancellation before any progress callback and late-callback suppression;
-- malformed/unbounded restored descriptions failing closed;
-- invalid negative cumulative byte counts failing closed.
-
-## Cross-platform evidence
+## Platform and repository evidence
 
 ```text
 ./gradlew :composeApp:compileAndroidMain --no-daemon
 ```
 
-Result: PASS in 42 seconds, 25 actionable tasks (6 executed, 19 up to date). This confirms the shared pure state machine leaves Android main compilation intact.
+PASS in 40 seconds; 25 actionable tasks (6 executed, 19 up to date). This confirms the common policy leaves Android compilation unaffected.
 
 ```text
 ./gradlew :composeApp:compileKotlinIosSimulatorArm64 --no-daemon --max-workers=1
 ```
 
-The first run exposed one Fix-I-local nullable `FileMetadata.size` type error plus the existing app-wide `GgufMetadataInspector.kt` Kotlin/Native failures. The local error was corrected and the gate rerun. The second run rebuilt the iOS native libraries and compiled the updated delegate far enough to report only the unchanged `GgufMetadataInspector.kt:20,73` `use`/nullable-generic errors. Therefore app-wide iOS compilation remains blocked outside Fix I; no Fix I source error remains in the compiler output.
-
-## Repository gate
+The final attempt rebuilt the native iOS libraries and reached application Kotlin compilation. It reported only the pre-existing, out-of-scope `GgufMetadataInspector.kt:20,73` Kotlin/Native `use`/nullable-generic errors. No Fix-I source appeared in compiler diagnostics. App-wide iOS compilation therefore remains blocked independently of this change.
 
 ```text
 git diff --check
 ./gradlew verifyProject --no-daemon
 ```
 
-Result: PASS in 49 seconds. JVM: 1,104/1,104 tests across 144 suites with zero skipped/failures/errors (`composeApp` 963/120, `huggingFaceManager` 91/15, `runner` 29/6, `diffusionRunner` 21/3). Native: artifact-root CTest 1/1 and diffusion CTests 5/5. Gradle reported 41 actionable tasks (14 executed, 27 up to date). `git diff --check` passed.
+`verifyProject` PASS in 36 seconds. JVM: 1,113/1,113 tests across 144 suites with zero skipped/failures/errors (`composeApp` 972/120, `huggingFaceManager` 91/15, `runner` 29/6, `diffusionRunner` 21/3). Native: artifact-root CTest 1/1 and diffusion CTests 5/5. Gradle reported 41 actionable tasks (14 executed, 27 up to date). `git diff --check` passed.
 
-## Security and exactness review
+## Security review
 
-- URLSession description, callback totals, response metadata, and temporary-file metadata are treated as untrusted and strictly bounded before use.
-- The exact byte limit is persisted by URLSession itself, so background callbacks do not wait for a Room lookup before enforcing the network bound.
-- Durable reconciliation independently checks the persisted value against the authoritative artifact row before reconnecting task ownership.
-- Unknown response length does not disable enforcement; cumulative bytes remain bounded.
-- Equality is accepted and under-length completion remains subject to the existing exact importer verification.
-- Oversize cancellation is synchronous at the delegate boundary; state persistence is idempotent and cannot be downgraded by the expected cancellation error callback.
-- No custom URL acceptance, filesystem containment, hashing, or publication behavior was weakened.
-- No URL, path, repository/model identity, byte count, response content, secret, or internal exception detail was added to logs or user-visible messages.
+- URLSession descriptions and callback totals are untrusted and strictly length-, alphabet-, format-, and range-validated before use.
+- Invalid and prior formats cannot resume work. Identifier recovery is bounded and terminal-only, preventing an unbounded or malformed value from becoming a download capability.
+- The durable rejection reason is assigned before cancellation, closing the process-death window without waiting for Room or exposing internals.
+- Unknown response length cannot disable the cumulative-byte bound; equality is accepted and under-length completion remains subject to exact importer verification.
+- Failure remains generic. No URLs, paths, repository/model names, sizes, response content, secrets, or stack traces were added to logs or user-visible messages.
 
 ## Remaining verification boundary
 
-- App-wide iOS simulator compile and Kotlin/Native test compilation are blocked by the pre-existing `GgufMetadataInspector.kt` portability error described above. That file is unchanged by Fix I.
-- No iOS simulator/device runtime was launched. Background URLSession relaunch delivery requires an app lifecycle/runtime test; the deterministic delegate policy is instead exercised through the pure production state machine on the JVM, while real Foundation adapter wiring is compiler-checked up to the independent branch blocker.
-- Existing expect/actual, missing `ccache`, and native toolchain warnings are unchanged.
+- App-wide iOS simulator compile and Kotlin/Native test compilation remain blocked by the unchanged `GgufMetadataInspector.kt` portability errors above.
+- No iOS simulator/device runtime was launched. Background URLSession relaunch delivery still needs lifecycle testing on an Apple runtime; deterministic restoration, terminal disposition, cancellation ordering, and lifecycle races are covered through the production common policy/adapter used by the real delegate.
+- Existing expect/actual, missing `ccache`, OpenSSL/OpenGL, and native-toolchain warnings are unchanged.
