@@ -205,12 +205,12 @@ internal fun AuroraThemePreview(modifier: Modifier = Modifier) {
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(
-                text = "Prism workbench",
+                text = "CaraML workspace",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
-                text = "Current workspace atmosphere",
+                text = "Seed color, atmosphere, and grain",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

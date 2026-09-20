@@ -35,6 +35,7 @@ import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -490,7 +491,8 @@ class SettingsWorkbenchUiTest {
                 "200% text preview must grow beyond the 104dp normal-density minimum",
             )
 
-            listOf("Prism workbench", "Current workspace atmosphere").forEach { label ->
+            onAllNodesWithText("Prism workbench").assertCountEquals(0)
+            listOf("CaraML workspace", "Seed color, atmosphere, and grain").forEach { label ->
                 val labelNode = onNodeWithText(label, useUnmergedTree = true)
                     .fetchSemanticsNode()
                 val labelLeft = labelNode.positionInRoot.x
