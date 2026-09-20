@@ -106,23 +106,23 @@ class ArtifactManifestStoreTest {
         val fs = FakeFileSystem()
         val root = "/models/org/partial-preserve".toPath()
         fs.createDirectories(root)
-        val target = root / "model.gguf"
         val old = "old-generation".encodeToByteArray()
-        stageAndCommit(fs, ArtifactManifestStore(root, fs), target, old, revision = "a".repeat(40))
-        val replacement = "replacement-generation".encodeToByteArray()
+        val target = stageAndCommit(fs, ArtifactManifestStore(root, fs), root, old, revision = "a".repeat(40))
+        val replacement = "new-generation".encodeToByteArray()
         fs.write(target.siblingPart()) { write(replacement) }
 
         val crashAfterTargetPreserved = FaultAfterMutationFileSystem(fs) { _, from, to ->
             from == target && to == target.siblingPrevious()
         }
+        val replacementEntry = entry(
+            identity(revision = "a".repeat(40), expectedBytes = replacement.size.toLong()),
+            "model",
+            replacement.sha256Hex(),
+        )
         assertFailsWith<SimulatedCrash> {
             ArtifactManifestStore(root, crashAfterTargetPreserved).commit(
-                "model.gguf",
-                entry(
-                    identity(revision = "b".repeat(40), expectedBytes = replacement.size.toLong()),
-                    "model",
-                    replacement.sha256Hex(),
-                ),
+                replacementEntry.localRelativePath,
+                replacementEntry,
             )
         }
 
@@ -204,14 +204,16 @@ class ArtifactManifestStoreTest {
         val fs = FakeFileSystem()
         val root = "/models/org/durable".toPath()
         fs.createDirectories(root)
-        val target = root / "model.gguf"
         val bytes = "durable".encodeToByteArray()
+        val manifestEntry = entry(identity(expectedBytes = bytes.size.toLong()), "model", bytes.sha256Hex())
+        val target = root / manifestEntry.localRelativePath
+        fs.createDirectories(requireNotNull(target.parent))
         fs.write(target.siblingPart()) { write(bytes) }
         val durability = RecordingArtifactDurability()
 
         ArtifactManifestStore(root, fs, durability = durability).commit(
-            "model.gguf",
-            entry(identity(expectedBytes = bytes.size.toLong()), "model", bytes.sha256Hex()),
+            manifestEntry.localRelativePath,
+            manifestEntry,
         )
 
         assertTrue(durability.events.indexOf("file:.caraml-artifact-v1.json.part") < durability.events.indexOf("dir:."))
@@ -225,26 +227,35 @@ class ArtifactManifestStoreTest {
         val baselineRoot = "/models/org/durable-baseline".toPath()
         baselineFs.createDirectories(baselineRoot)
         val baselineBytes = "durable".encodeToByteArray()
-        baselineFs.write((baselineRoot / "model.gguf").siblingPart()) { write(baselineBytes) }
+        val baselineEntry = entry(
+            identity(expectedBytes = baselineBytes.size.toLong()),
+            "model",
+            baselineBytes.sha256Hex(),
+        )
+        val baselineTarget = baselineRoot / baselineEntry.localRelativePath
+        baselineFs.createDirectories(requireNotNull(baselineTarget.parent))
+        baselineFs.write(baselineTarget.siblingPart()) { write(baselineBytes) }
         val baseline = RecordingArtifactDurability()
         ArtifactManifestStore(baselineRoot, baselineFs, durability = baseline).commit(
-            "model.gguf",
-            entry(identity(expectedBytes = baselineBytes.size.toLong()), "model", baselineBytes.sha256Hex()),
+            baselineEntry.localRelativePath,
+            baselineEntry,
         )
         val terminalDirectoryBarrier = baseline.events.count { it.startsWith("dir:") }
 
         val fs = FakeFileSystem()
         val root = "/models/org/durable-failure".toPath()
         fs.createDirectories(root)
-        val target = root / "model.gguf"
         val bytes = "durable".encodeToByteArray()
+        val manifestEntry = entry(identity(expectedBytes = bytes.size.toLong()), "model", bytes.sha256Hex())
+        val target = root / manifestEntry.localRelativePath
+        fs.createDirectories(requireNotNull(target.parent))
         fs.write(target.siblingPart()) { write(bytes) }
         val durability = RecordingArtifactDurability(failAtDirectorySync = terminalDirectoryBarrier)
 
         assertFailsWith<ArtifactDurabilityException> {
             ArtifactManifestStore(root, fs, durability = durability).commit(
-                "model.gguf",
-                entry(identity(expectedBytes = bytes.size.toLong()), "model", bytes.sha256Hex()),
+                manifestEntry.localRelativePath,
+                manifestEntry,
             )
         }
     }
@@ -305,6 +316,7 @@ class ArtifactManifestStoreTest {
 
         val first = entry(identity(relativePath = "a.gguf"), "model", "a".repeat(64))
         val duplicateIdentity = identity(relativePath = "b.gguf")
+        val duplicateRoleLocation = immutableArtifactStorageLocation(duplicateIdentity, first.bundleId)
         val duplicateRole = requireNotNull(
             ArtifactManifestEntry.create(
                 "model",
@@ -312,6 +324,8 @@ class ArtifactManifestStoreTest {
                 duplicateIdentity.expectedBytes,
                 "b".repeat(64),
                 bundleId = first.bundleId,
+                localRelativePath = duplicateRoleLocation.localRelativePath,
+                layoutRelativePath = duplicateRoleLocation.layoutRelativePath,
             ),
         )
         val duplicatePath = entry(identity(relativePath = "a.gguf"), "other", "c".repeat(64))
@@ -321,40 +335,49 @@ class ArtifactManifestStoreTest {
 
     @Test
     fun roleUniquenessIsScopedToOwningBundleAndNormalizedDestinationIsValidated() = withStore { fs, root, store ->
-        val standardPath = "unet/diffusion_pytorch_model.safetensors"
-        fs.createDirectories(root / "unet")
         val bytes = "fp16-content".encodeToByteArray()
-        fs.write((root / standardPath).siblingPart()) { write(bytes) }
         val remote = identity(
             relativePath = "unet/diffusion_pytorch_model.fp16.safetensors",
             expectedBytes = bytes.size.toLong(),
         )
+        val firstBundleId = "1".repeat(64)
+        val firstLocation = immutableArtifactStorageLocation(remote, firstBundleId)
+        val standardPath = firstLocation.localRelativePath
+        fs.createDirectories(requireNotNull((root / standardPath).parent))
+        fs.write((root / standardPath).siblingPart()) { write(bytes) }
         val first = requireNotNull(
             ArtifactManifestEntry.create(
                 logicalRole = "model",
                 identity = remote,
                 byteCount = bytes.size.toLong(),
                 contentSha256 = bytes.sha256Hex(),
-                bundleId = "1".repeat(64),
+                bundleId = firstBundleId,
                 localRelativePath = standardPath,
+                layoutRelativePath = firstLocation.layoutRelativePath,
             ),
         )
 
         store.commit(standardPath, first)
 
+        assertEquals("unet/diffusion_pytorch_model.safetensors", first.layoutRelativePath)
         assertEquals(standardPath, store.readValidated()?.entries?.single()?.localRelativePath)
         val secondBytes = "two".encodeToByteArray()
+        val secondIdentity = identity(relativePath = "other.gguf", expectedBytes = secondBytes.size.toLong())
+        val secondBundleId = "2".repeat(64)
+        val secondLocation = immutableArtifactStorageLocation(secondIdentity, secondBundleId)
         val second = requireNotNull(
             ArtifactManifestEntry.create(
                 logicalRole = "model",
-                identity = identity(relativePath = "other.gguf", expectedBytes = secondBytes.size.toLong()),
+                identity = secondIdentity,
                 byteCount = secondBytes.size.toLong(),
                 contentSha256 = secondBytes.sha256Hex(),
-                bundleId = "2".repeat(64),
-                localRelativePath = "other.gguf",
+                bundleId = secondBundleId,
+                localRelativePath = secondLocation.localRelativePath,
+                layoutRelativePath = secondLocation.layoutRelativePath,
             ),
         )
         assertNotNull(ArtifactManifest.create(listOf(first, second)))
+        val duplicateRoleLocation = immutableArtifactStorageLocation(second.identity, first.bundleId)
         val duplicateRoleSameBundle = requireNotNull(
             ArtifactManifestEntry.create(
                 logicalRole = "model",
@@ -362,12 +385,15 @@ class ArtifactManifestStoreTest {
                 byteCount = second.byteCount,
                 contentSha256 = second.contentSha256,
                 bundleId = "1".repeat(64),
-                localRelativePath = second.localRelativePath,
+                localRelativePath = duplicateRoleLocation.localRelativePath,
+                layoutRelativePath = duplicateRoleLocation.layoutRelativePath,
             ),
         )
         assertNull(ArtifactManifest.create(listOf(first, duplicateRoleSameBundle)))
-        fs.write((root / "other.gguf").siblingPart()) { write(secondBytes) }
-        store.commit("other.gguf", second)
+        val secondTarget = root / second.localRelativePath
+        fs.createDirectories(requireNotNull(secondTarget.parent))
+        fs.write(secondTarget.siblingPart()) { write(secondBytes) }
+        store.commit(second.localRelativePath, second)
         assertEquals(2, store.readValidated()?.entries?.size)
     }
 
@@ -383,36 +409,41 @@ class ArtifactManifestStoreTest {
     @Test
     fun commitRejectsDigestAndByteCountMismatchWithoutPublishing() = withStore { fs, root, store ->
         val bytes = "new-generation".encodeToByteArray()
-        val target = root / "model.gguf"
+        val digestMismatch = entry(identity(expectedBytes = bytes.size.toLong()), "model", "0".repeat(64))
+        val target = root / digestMismatch.localRelativePath
+        fs.createDirectories(requireNotNull(target.parent))
         fs.write(target.siblingPart()) { write(bytes) }
 
         assertFailsWith<ArtifactVerificationException> {
             store.commit(
-                relativePath = "model.gguf",
-                entry = entry(identity(expectedBytes = bytes.size.toLong()), "model", "0".repeat(64)),
+                relativePath = digestMismatch.localRelativePath,
+                entry = digestMismatch,
             )
         }
         assertFalse(fs.exists(target))
         assertNull(store.read())
 
-        fs.write(target.siblingPart()) { write(bytes) }
+        val byteCountMismatch = entry(
+            identity(expectedBytes = bytes.size.toLong() + 1L),
+            "model",
+            bytes.sha256Hex(),
+            byteCount = bytes.size.toLong() + 1L,
+        )
+        val mismatchedTarget = root / byteCountMismatch.localRelativePath
+        fs.createDirectories(requireNotNull(mismatchedTarget.parent))
+        fs.write(mismatchedTarget.siblingPart()) { write(bytes) }
         assertFailsWith<ArtifactVerificationException> {
             store.commit(
-                relativePath = "model.gguf",
-                entry = entry(
-                    identity(expectedBytes = bytes.size.toLong() + 1L),
-                    "model",
-                    bytes.sha256Hex(),
-                    byteCount = bytes.size.toLong() + 1L,
-                ),
+                relativePath = byteCountMismatch.localRelativePath,
+                entry = byteCountMismatch,
             )
         }
-        assertFalse(fs.exists(target))
+        assertFalse(fs.exists(mismatchedTarget))
         assertNull(store.read())
     }
 
     @Test
-    fun canonicalBundleDigestIgnoresInputOrderButBindsNormalizedDestination() {
+    fun canonicalBundleDigestIgnoresInputOrderAndRejectsUnscopedDestination() {
         val entries = listOf(
             entry(identity(relativePath = "weights/model.gguf"), "model", "a".repeat(64)),
             entry(
@@ -428,45 +459,43 @@ class ArtifactManifestStoreTest {
             entries.first().identity,
             entries.first().bundleId,
         )
-        val relocatedEntry = requireNotNull(
-            ArtifactManifestEntry.create(
-                logicalRole = entries.first().logicalRole,
-                identity = entries.first().identity,
-                byteCount = entries.first().byteCount,
-                contentSha256 = entries.first().contentSha256,
-                bundleId = entries.first().bundleId,
-                localRelativePath = scopedLocation.localRelativePath,
-                layoutRelativePath = scopedLocation.layoutRelativePath,
-            ),
+        val unscopedEntry = ArtifactManifestEntry.create(
+            logicalRole = entries.first().logicalRole,
+            identity = entries.first().identity,
+            byteCount = entries.first().byteCount,
+            contentSha256 = entries.first().contentSha256,
+            bundleId = entries.first().bundleId,
+            localRelativePath = scopedLocation.layoutRelativePath,
+            layoutRelativePath = scopedLocation.layoutRelativePath,
         )
-        val relocated = assertNotNull(ArtifactManifest.create(listOf(relocatedEntry, entries.last())))
 
         assertEquals(first.bundleDigest, reordered.bundleDigest)
-        assertNotEquals(first.bundleDigest, relocated.bundleDigest)
         assertEquals(first.entries, reordered.entries)
+        assertEquals(scopedLocation.localRelativePath, entries.first().localRelativePath)
+        assertNull(unscopedEntry)
         assertNotEquals("/private/models", first.bundleDigest)
     }
 
     @Test
     fun successfulReplacementPublishesManifestAndRemovesPreviousOnlyAfterNewGenerationValidates() =
         withStore { fs, root, store ->
-            val target = root / "model.gguf"
-            val old = "old".encodeToByteArray()
-            stageAndCommit(fs, store, target, old, revision = "a".repeat(40))
+            val old = "old-generation".encodeToByteArray()
+            val target = stageAndCommit(fs, store, root, old, revision = "a".repeat(40))
             val new = "new-generation".encodeToByteArray()
             fs.write(target.siblingPart()) { write(new) }
+            val replacementEntry = entry(
+                identity(revision = "a".repeat(40), expectedBytes = new.size.toLong()),
+                "model",
+                new.sha256Hex(),
+            )
 
             store.commit(
-                relativePath = "model.gguf",
-                entry = entry(
-                    identity(revision = "b".repeat(40), expectedBytes = new.size.toLong()),
-                    "model",
-                    new.sha256Hex(),
-                ),
+                relativePath = replacementEntry.localRelativePath,
+                entry = replacementEntry,
             )
 
             assertEquals("new-generation", fs.read(target) { readUtf8() })
-            assertEquals("b".repeat(40), store.read()?.entries?.single()?.identity?.immutableRevision)
+            assertEquals("a".repeat(40), store.read()?.entries?.single()?.identity?.immutableRevision)
             assertFalse(fs.exists(target.siblingPrevious()))
             assertFalse(fs.exists(root / ArtifactManifestStore.JOURNAL_FILE_NAME))
         }
@@ -509,38 +538,128 @@ class ArtifactManifestStoreTest {
     }
 
     @Test
-    fun restartAfterEveryJournalPhaseNeverPublishesPreH1UnscopedGeneration() {
-        ManifestJournalPhase.entries.filterNot { it == ManifestJournalPhase.ROLLING_BACK }.forEach { crashPhase ->
-            val fs = FakeFileSystem()
-            val root = "/models/org/legacy-${crashPhase.name}".toPath()
-            fs.createDirectories(root)
-            val target = root / "model.gguf"
-            val replacement = "legacy-${crashPhase.name}".encodeToByteArray()
-            fs.write(target.siblingPart()) { write(replacement) }
-            val crashing = ArtifactManifestStore(root, fs) { phase ->
-                if (phase == crashPhase) throw SimulatedCrash()
-            }
+    fun commitRejectsCallerTargetOutsideTheEntryGenerationWithoutPublishing() {
+        val fs = FakeFileSystem()
+        val root = "/models/org/unscoped-target".toPath()
+        fs.createDirectories(root)
+        val target = root / "model.gguf"
+        val replacement = "unscoped-target".encodeToByteArray()
+        fs.write(target.siblingPart()) { write(replacement) }
+        val scopedEntry = entry(
+            identity(revision = "b".repeat(40), expectedBytes = replacement.size.toLong()),
+            "model",
+            replacement.sha256Hex(),
+        )
 
-            assertFailsWith<SimulatedCrash> {
-                crashing.commit(
-                    relativePath = "model.gguf",
-                    entry = entry(
-                        identity(revision = "b".repeat(40), expectedBytes = replacement.size.toLong()),
-                        "model",
-                        replacement.sha256Hex(),
-                    ),
-                )
-            }
-
-            val restarted = ArtifactManifestStore(root, fs)
-            assertNull(restarted.readValidated(), "pending ${crashPhase.name}")
-            restarted.recover()
-
-            assertNull(restarted.readValidated(), crashPhase.name)
-            assertFalse(fs.exists(target), crashPhase.name)
-            assertFalse(fs.exists(target.siblingPart()), crashPhase.name)
-            assertFalse(fs.exists(root / ArtifactManifestStore.JOURNAL_FILE_NAME), crashPhase.name)
+        assertFailsWith<IllegalArgumentException> {
+            ArtifactManifestStore(root, fs).commit(
+                relativePath = "model.gguf",
+                entry = scopedEntry,
+            )
         }
+
+        assertNull(ArtifactManifestStore(root, fs).readValidated())
+        assertFalse(fs.exists(target))
+        assertTrue(fs.exists(target.siblingPart()))
+        assertFalse(fs.exists(root / ArtifactManifestStore.JOURNAL_FILE_NAME))
+    }
+
+    @Test
+    fun unreadableNewPublishedJournalKeepsUnscopedManifestQuarantinedWithoutMutation() {
+        val fs = FakeFileSystem()
+        val root = "/models/org/unreadable-new-published".toPath()
+        fs.createDirectories(root)
+        val replacement = "unscoped-new-generation".encodeToByteArray()
+        val replacementEntry = entry(
+            identity(revision = "b".repeat(40), expectedBytes = replacement.size.toLong()),
+            "model",
+            replacement.sha256Hex(),
+        )
+        val target = root / replacementEntry.localRelativePath
+        fs.createDirectories(requireNotNull(target.parent))
+        fs.write(target.siblingPart()) { write(replacement) }
+        val crashing = ArtifactManifestStore(root, fs) { phase ->
+            if (phase == ManifestJournalPhase.NEW_PUBLISHED) throw SimulatedCrash()
+        }
+        assertFailsWith<SimulatedCrash> {
+            crashing.commit(
+                replacementEntry.localRelativePath,
+                replacementEntry,
+            )
+        }
+        rewriteManifestAsUnscoped(fs, root, replacementEntry)
+        val journalPath = root / ArtifactManifestStore.JOURNAL_FILE_NAME
+        fs.write(journalPath) { writeUtf8("{\"phase\":") }
+        val counting = CountingMutationFileSystem(fs, crashIndex = null)
+        val restarted = ArtifactManifestStore(root, counting)
+
+        repeat(2) {
+            assertEquals(ArtifactManifestRecoveryResult.QUARANTINED, restarted.recover())
+            assertNull(restarted.readValidated())
+        }
+
+        assertTrue(fs.exists(journalPath))
+        assertEquals(0, counting.count)
+    }
+
+    @Test
+    fun tamperedOldRemovedJournalKeepsUnscopedManifestQuarantinedWithoutMutation() {
+        val fs = FakeFileSystem()
+        val root = "/models/org/tampered-old-removed".toPath()
+        fs.createDirectories(root)
+        val old = "old-generation".encodeToByteArray()
+        val target = stageAndCommit(
+            fs,
+            ArtifactManifestStore(root, fs),
+            root,
+            old,
+            revision = "a".repeat(40),
+        )
+        val replacement = "new-generation".encodeToByteArray()
+        val replacementEntry = entry(
+            identity(revision = "a".repeat(40), expectedBytes = replacement.size.toLong()),
+            "model",
+            replacement.sha256Hex(),
+        )
+        fs.write(target.siblingPart()) { write(replacement) }
+        val manifestPrevious = (root / ArtifactManifestStore.MANIFEST_FILE_NAME).siblingPrevious()
+        val crashingFs = FaultAfterMutationFileSystem(fs) { kind, path, _ ->
+            kind == MutationKind.DELETE && path == manifestPrevious
+        }
+        assertFailsWith<SimulatedCrash> {
+            ArtifactManifestStore(root, crashingFs).commit(
+                replacementEntry.localRelativePath,
+                replacementEntry,
+            )
+        }
+        rewriteManifestAsUnscoped(fs, root, replacementEntry)
+        val journalPath = root / ArtifactManifestStore.JOURNAL_FILE_NAME
+        val journal = fs.read(journalPath) { readUtf8() }
+        fs.write(journalPath) {
+            writeUtf8(journal.replace("\"transactionId\":\"", "\"transactionId\":\"f"))
+        }
+        val counting = CountingMutationFileSystem(fs, crashIndex = null)
+        val restarted = ArtifactManifestStore(root, counting)
+
+        repeat(2) {
+            assertEquals(ArtifactManifestRecoveryResult.QUARANTINED, restarted.recover())
+            assertNull(restarted.readValidated())
+        }
+
+        assertTrue(fs.exists(journalPath))
+        assertEquals(0, counting.count)
+    }
+
+    @Test
+    fun settledUnscopedManifestWithoutJournalIsUnreadable() = withStore { fs, root, store ->
+        val bytes = "settled-legacy".encodeToByteArray()
+        stageAndCommit(fs, store, root, bytes, revision = "a".repeat(40))
+        val manifest = requireNotNull(store.readValidated())
+        rewriteManifestAsUnscoped(fs, root, manifest.entries.single())
+
+        assertFalse(fs.exists(root / ArtifactManifestStore.JOURNAL_FILE_NAME))
+        assertNull(store.read())
+        assertNull(store.readValidated())
     }
 
     @Test
@@ -549,22 +668,28 @@ class ArtifactManifestStoreTest {
             val fs = FakeFileSystem()
             val root = "/models/org/restore-${crashPhase.name}".toPath()
             fs.createDirectories(root)
-            val target = root / "model.gguf"
             val old = "old-generation".encodeToByteArray()
-            stageAndCommit(fs, ArtifactManifestStore(root, fs), target, old, revision = "a".repeat(40))
-            val replacement = "replacement-${crashPhase.name}".encodeToByteArray()
+            val target = stageAndCommit(
+                fs,
+                ArtifactManifestStore(root, fs),
+                root,
+                old,
+                revision = "a".repeat(40),
+            )
+            val replacement = ByteArray(old.size) { ('n'.code + crashPhase.ordinal).toByte() }
             fs.write(target.siblingPart()) { write(replacement) }
+            val replacementEntry = entry(
+                identity(revision = "a".repeat(40), expectedBytes = replacement.size.toLong()),
+                "model",
+                replacement.sha256Hex(),
+            )
             val crashing = ArtifactManifestStore(root, fs) { phase ->
                 if (phase == crashPhase) throw SimulatedCrash()
             }
             assertFailsWith<SimulatedCrash> {
                 crashing.commit(
-                    "model.gguf",
-                    entry(
-                        identity(revision = "b".repeat(40), expectedBytes = replacement.size.toLong()),
-                        "model",
-                        replacement.sha256Hex(),
-                    ),
+                    replacementEntry.localRelativePath,
+                    replacementEntry,
                 )
             }
             val newPath = if (crashPhase == ManifestJournalPhase.NEW_PUBLISHED) target else target.siblingPart()
@@ -583,7 +708,7 @@ class ArtifactManifestStoreTest {
     fun tamperedJournalTupleCannotAuthorizeDeletionOfThePublishedGeneration() {
         val tamperers: List<(String) -> String> = listOf(
             { journal -> journal.replace("\"version\":1", "\"version\":2") },
-            { journal -> journal.replace("\"relativePath\":\"model.gguf\"", "\"relativePath\":\"other.gguf\"") },
+            { journal -> journal.replace("\"relativePath\":\"", "\"relativePath\":\"other/") },
             { journal -> journal.replace("\"transactionId\":\"", "\"transactionId\":\"f") },
             { journal -> journal.replace("\"previousManifestDigest\":\"", "\"previousManifestDigest\":\"f") },
             { journal -> journal.replace("\"previousTargetSha256\":\"", "\"previousTargetSha256\":\"f") },
@@ -609,37 +734,40 @@ class ArtifactManifestStoreTest {
             val fs = FakeFileSystem()
             val root = "/models/org/tampered-$index".toPath()
             fs.createDirectories(root)
-            val target = root / "model.gguf"
             val old = "known-valid-old-$index".encodeToByteArray()
-            stageAndCommit(fs, ArtifactManifestStore(root, fs), target, old, revision = "a".repeat(40))
-            val replacement = "new-$index".encodeToByteArray()
+            val target = stageAndCommit(
+                fs,
+                ArtifactManifestStore(root, fs),
+                root,
+                old,
+                revision = "a".repeat(40),
+            )
+            val replacement = ByteArray(old.size) { 'n'.code.toByte() }
             fs.write(target.siblingPart()) { write(replacement) }
+            val replacementEntry = entry(
+                identity(revision = "a".repeat(40), expectedBytes = replacement.size.toLong()),
+                "model",
+                replacement.sha256Hex(),
+            )
             val crashing = ArtifactManifestStore(root, fs) { phase ->
                 if (phase == ManifestJournalPhase.PREPARED) throw SimulatedCrash()
             }
             assertFailsWith<SimulatedCrash> {
                 crashing.commit(
-                    "model.gguf",
-                    entry(
-                        identity(revision = "b".repeat(40), expectedBytes = replacement.size.toLong()),
-                        "model",
-                        replacement.sha256Hex(),
-                    ),
+                    replacementEntry.localRelativePath,
+                    replacementEntry,
                 )
             }
             val journalPath = root / ArtifactManifestStore.JOURNAL_FILE_NAME
             val originalJournal = fs.read(journalPath) { readUtf8() }
             fs.write(journalPath) { writeUtf8(tamper(originalJournal)) }
 
-            repeat(3) { runCatching { ArtifactManifestStore(root, fs).recover() } }
+            repeat(3) { ArtifactManifestStore(root, fs).recover() }
 
             assertTrue(fs.exists(target), "case $index removed the only published target")
             assertEquals(old.decodeToString(), fs.read(target) { readUtf8() }, "case $index")
-            assertEquals(
-                "a".repeat(40),
-                ArtifactManifestStore(root, fs).readValidated()?.entries?.single()?.identity?.immutableRevision,
-                "case $index",
-            )
+            assertNotNull(ArtifactManifestStore(root, fs).readValidated(), "case $index")
+            assertFalse(fs.exists(journalPath), "case $index")
         }
     }
 }
@@ -757,27 +885,27 @@ private fun successfulRollbackMutationCount(): Int {
 
 private fun prepareInvalidPublishedReplacement(fs: FakeFileSystem, root: Path): Path {
     fs.createDirectories(root)
-    val target = root / "model.gguf"
-    stageAndCommit(
+    val target = stageAndCommit(
         fs,
         ArtifactManifestStore(root, fs),
-        target,
+        root,
         "old-generation".encodeToByteArray(),
         "a".repeat(40),
     )
     val replacement = "new-generation".encodeToByteArray()
     fs.write(target.siblingPart()) { write(replacement) }
+    val replacementEntry = entry(
+        identity(revision = "a".repeat(40), expectedBytes = replacement.size.toLong()),
+        "model",
+        replacement.sha256Hex(),
+    )
     val crashing = ArtifactManifestStore(root, fs) { phase ->
         if (phase == ManifestJournalPhase.NEW_PUBLISHED) throw SimulatedCrash()
     }
     assertFailsWith<SimulatedCrash> {
         crashing.commit(
-            "model.gguf",
-            entry(
-                identity(revision = "b".repeat(40), expectedBytes = replacement.size.toLong()),
-                "model",
-                replacement.sha256Hex(),
-            ),
+            replacementEntry.localRelativePath,
+            replacementEntry,
         )
     }
     fs.write(target) { writeUtf8("invalid-new-generation") }
@@ -791,22 +919,39 @@ private fun withStore(block: (FakeFileSystem, Path, ArtifactManifestStore) -> Un
     block(fs, root, ArtifactManifestStore(root, fs))
 }
 
+private fun rewriteManifestAsUnscoped(
+    fs: FileSystem,
+    root: Path,
+    entry: ArtifactManifestEntry,
+) {
+    val manifestPath = root / ArtifactManifestStore.MANIFEST_FILE_NAME
+    val encoded = fs.read(manifestPath) { readUtf8() }
+    val scopedField = "\"localRelativePath\":\"${entry.localRelativePath}\""
+    val unscopedField = "\"localRelativePath\":\"${entry.layoutRelativePath}\""
+    check(scopedField in encoded)
+    fs.write(manifestPath) { writeUtf8(encoded.replace(scopedField, unscopedField)) }
+}
+
 private fun stageAndCommit(
     fs: FileSystem,
     store: ArtifactManifestStore,
-    target: Path,
+    root: Path,
     bytes: ByteArray,
     revision: String,
-) {
+): Path {
+    val manifestEntry = entry(
+        identity(revision = revision, expectedBytes = bytes.size.toLong()),
+        logicalRole = "model",
+        digest = bytes.sha256Hex(),
+    )
+    val target = root / manifestEntry.localRelativePath
+    fs.createDirectories(requireNotNull(target.parent))
     fs.write(target.siblingPart()) { write(bytes) }
     store.commit(
-        relativePath = target.name,
-        entry = entry(
-            identity(revision = revision, expectedBytes = bytes.size.toLong()),
-            logicalRole = "model",
-            digest = bytes.sha256Hex(),
-        ),
+        relativePath = manifestEntry.localRelativePath,
+        entry = manifestEntry,
     )
+    return target
 }
 
 private fun identity(
@@ -844,14 +989,21 @@ private fun entry(
     logicalRole: String,
     digest: String,
     byteCount: Long = identity.expectedBytes,
-): ArtifactManifestEntry = requireNotNull(
-    ArtifactManifestEntry.create(
-        logicalRole = logicalRole,
-        identity = identity,
-        byteCount = byteCount,
-        contentSha256 = digest,
-    ),
-)
+): ArtifactManifestEntry {
+    val bundleId = requireNotNull(artifactBundleId(listOf(identity)))
+    val location = immutableArtifactStorageLocation(identity, bundleId)
+    return requireNotNull(
+        ArtifactManifestEntry.create(
+            logicalRole = logicalRole,
+            identity = identity,
+            byteCount = byteCount,
+            contentSha256 = digest,
+            bundleId = bundleId,
+            localRelativePath = location.localRelativePath,
+            layoutRelativePath = location.layoutRelativePath,
+        ),
+    )
+}
 
 private fun scopedEntry(
     identity: DownloadArtifactIdentity,

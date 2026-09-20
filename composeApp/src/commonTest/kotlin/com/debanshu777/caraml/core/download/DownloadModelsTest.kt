@@ -112,22 +112,12 @@ class DownloadModelsTest {
     }
 
     @Test
-    fun requestRejectsLegacyUnscopedDestinationForANewDownloadBatch() {
+    fun metadataRejectsUnscopedDestinationBeforeANewDownloadBatchCanBeBuilt() {
         val scoped = artifactRequest(role = "model", path = "weights/model.gguf", primary = true)
-        val legacy = scoped.copy(
-            metadata = scoped.metadata.copy(
-                destinationRelativePath = scoped.metadata.layoutRelativePath,
-            ),
-        )
 
         assertFailsWith<IllegalArgumentException> {
-            DownloadBatchRequest(
-                ownerModelId = "owner/model",
-                modelType = "text",
-                artifacts = listOf(legacy),
-                evidence = pendingEvidence(legacy.metadata.artifact),
-                downloadForLaterConfirmed = false,
-                displayName = "Legacy destination",
+            scoped.metadata.copy(
+                destinationRelativePath = scoped.metadata.layoutRelativePath,
             )
         }
     }

@@ -29,8 +29,8 @@ import kotlin.test.assertTrue
 
 class DownloadBatchRunnerTest {
     @Test
-    fun unscopedPersistedArtifactIsTerminallyRejectedBeforeClaimResumeOrFinalization() = runTest {
-        val store = RunnerStore(usesImmutableStorage = false)
+    fun corruptBatchFilteredByTheStoreNeverClaimsTransfersOrFinalizes() = runTest {
+        val store = RunnerStore(batchAvailable = false)
         val transfer = RecordingTransfer(published = true)
         var finalizerCalls = 0
         val runner = DownloadBatchRunner(
@@ -43,11 +43,11 @@ class DownloadBatchRunnerTest {
 
         val result = runner.run("batch") {}
 
-        assertEquals(DownloadRunResult.Failed(DownloadFailureCode.SECURE_PATH), result)
+        assertEquals(DownloadRunResult.Failed(DownloadFailureCode.PLATFORM), result)
         assertEquals(0, transfer.publishedChecks)
         assertEquals(0, transfer.downloadCalls)
         assertEquals(0, store.claimCalls)
-        assertEquals(listOf(DownloadArtifactState.FAILED_TERMINAL), store.transitions)
+        assertEquals(emptyList(), store.transitions)
         assertEquals(0, finalizerCalls)
     }
 
@@ -241,17 +241,13 @@ private class CountingManifestTransfer(
 
 private class RunnerStore(
     initialArtifactState: DownloadArtifactState = DownloadArtifactState.QUEUED,
-    usesImmutableStorage: Boolean = true,
+    private val batchAvailable: Boolean = true,
 ) : DownloadTaskStore {
     private val identity = requireNotNull(
         DownloadArtifactIdentity.create("owner/model", "a".repeat(40), "model.gguf", "b".repeat(64), 10L),
     )
     private val scopedMetadata = DownloadMetadataDTO(identity, "model", 10L, null, null, null)
-    val metadata = if (usesImmutableStorage) {
-        scopedMetadata
-    } else {
-        scopedMetadata.copy(destinationRelativePath = scopedMetadata.layoutRelativePath)
-    }
+    val metadata = scopedMetadata
     private val request = DownloadArtifactRequest(
         metadata,
         primary = true,
@@ -288,8 +284,8 @@ private class RunnerStore(
 
     override suspend fun create(request: DownloadBatchRequest, nowEpochMs: Long) = "batch"
     override fun observeForModel(modelId: String) = flowOf(listOf(batch))
-    override suspend fun getBatch(batchId: String) = batch
-    override suspend fun recoverableBatches() = listOf(batch)
+    override suspend fun getBatch(batchId: String) = batch.takeIf { batchAvailable }
+    override suspend fun recoverableBatches() = listOfNotNull(batch.takeIf { batchAvailable })
     override suspend fun claim(artifactId: String, owner: String, nowEpochMs: Long, expiresAtEpochMs: Long): Boolean {
         claimCalls += 1
         transitions += DownloadArtifactState.RUNNING

@@ -12,6 +12,7 @@ import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import com.debanshu777.huggingfacemanager.download.StoredArtifactKind
 import com.debanshu777.huggingfacemanager.download.StoredArtifactSnapshot
 import com.debanshu777.huggingfacemanager.download.artifactBundleId
+import com.debanshu777.huggingfacemanager.download.immutableArtifactStorageLocation
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -147,10 +148,8 @@ class AppModuleManifestSourceTest {
     ): BundleFixture {
         val ownerBytes = "owner-primary".encodeToByteArray()
         val ownerRelativePath = "model.safetensors"
-        val ownerPath = write(root / ownerModelId / ownerRelativePath, ownerBytes)
         val artifacts = externalArtifacts.mapIndexed { index, artifact ->
             val bytes = artifact.content.encodeToByteArray()
-            val path = write(root / artifact.repositoryId / artifact.relativePath, bytes)
             FixtureArtifact(
                 role = artifact.role,
                 identity = identity(
@@ -160,17 +159,25 @@ class AppModuleManifestSourceTest {
                     bytes,
                 ),
                 bytes = bytes,
-                localPath = path,
+                localPath = "",
             )
         }
         val ownerIdentity = identity(ownerModelId, "a".repeat(40), ownerRelativePath, ownerBytes)
         val allIdentities = listOf(ownerIdentity) + artifacts.map(FixtureArtifact::identity)
         val bundleId = requireNotNull(artifactBundleId(allIdentities))
-        val manifestEntries = listOf(entry("model", ownerIdentity, ownerBytes, bundleId)) + artifacts.map {
+        val ownerLocation = immutableArtifactStorageLocation(ownerIdentity, bundleId)
+        val ownerPath = write(root / ownerModelId / ownerLocation.localRelativePath, ownerBytes)
+        val persistedArtifacts = artifacts.map { artifact ->
+            val location = immutableArtifactStorageLocation(artifact.identity, bundleId)
+            artifact.copy(
+                localPath = write(root / artifact.identity.repositoryId / location.localRelativePath, artifact.bytes),
+            )
+        }
+        val manifestEntries = listOf(entry("model", ownerIdentity, ownerBytes, bundleId)) + persistedArtifacts.map {
             entry(it.role, it.identity, it.bytes, bundleId)
         }
         val manifest = requireNotNull(ArtifactManifest.create(manifestEntries))
-        val components = artifacts.mapIndexed { index, artifact ->
+        val components = persistedArtifacts.mapIndexed { index, artifact ->
             DownloadedComponentEntity(
                 id = index.toLong() + 1L,
                 repoId = artifact.identity.repositoryId,
@@ -179,6 +186,10 @@ class AppModuleManifestSourceTest {
                 localPath = artifact.localPath,
                 sizeBytes = artifact.bytes.size.toLong(),
                 downloadedAt = 1L,
+                immutableRevision = artifact.identity.immutableRevision,
+                remoteObjectId = artifact.identity.remoteObjectId,
+                bundleId = bundleId,
+                contentSha256 = artifact.bytes.sha256(),
             )
         }
         val expectedCoverage = manifestEntries.map {
@@ -238,13 +249,15 @@ class AppModuleManifestSourceTest {
         bytes: ByteArray,
         bundleId: String,
     ): ArtifactManifestEntry = requireNotNull(
-        ArtifactManifestEntry.create(
+        immutableArtifactStorageLocation(identity, bundleId).let { location -> ArtifactManifestEntry.create(
             logicalRole = role,
             identity = identity,
             byteCount = bytes.size.toLong(),
             contentSha256 = bytes.sha256(),
             bundleId = bundleId,
-        ),
+            localRelativePath = location.localRelativePath,
+            layoutRelativePath = location.layoutRelativePath,
+        ) },
     )
 
     private fun ByteArray.sha256(): String = Buffer().write(this).snapshot().sha256().hex()

@@ -1,6 +1,5 @@
 package com.debanshu777.caraml.core.storage
 
-import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import androidx.sqlite.execSQL
 import com.debanshu777.caraml.core.download.pendingEvidence
@@ -31,88 +30,7 @@ import kotlin.test.assertFails
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-class AppDatabaseMigrationTest {
-    @Test
-    fun migrationFourToFivePreservesLegacyComponentLinksWithoutFabricatingIdentity() {
-        val path = Files.createTempDirectory("caraml-component-migration").resolve("caraml.db").toString()
-        BundledSQLiteDriver().open(path).use { connection ->
-            createVersionFourComponentTables(connection)
-            insertLegacyComponentAndLink(connection)
-
-            APP_MIGRATION_4_5.migrate(connection)
-        }
-
-        BundledSQLiteDriver().open(path).use { connection ->
-            connection.prepare(
-                """
-                SELECT immutable_revision, remote_object_id, bundle_id, content_sha256, local_path
-                FROM downloaded_component WHERE id = 11
-                """.trimIndent(),
-            ).use { statement ->
-                assertTrue(statement.step())
-                assertTrue(statement.isNull(0))
-                assertTrue(statement.isNull(1))
-                assertTrue(statement.isNull(2))
-                assertTrue(statement.isNull(3))
-                assertEquals("/models/shared/component.safetensors", statement.getText(4))
-            }
-            connection.prepare("SELECT model_id, component_id FROM model_component_link WHERE id = 19").use { statement ->
-                assertTrue(statement.step())
-                assertEquals("owner/a", statement.getText(0))
-                assertEquals(11L, statement.getLong(1))
-            }
-        }
-    }
-
-    @Test
-    fun migrationFiveToFourPreservesRowsAndRestoresLegacyUniqueness() {
-        val path = Files.createTempDirectory("caraml-component-downgrade").resolve("caraml.db").toString()
-        BundledSQLiteDriver().open(path).use { connection ->
-            createVersionFourComponentTables(connection)
-            insertLegacyComponentAndLink(connection)
-            APP_MIGRATION_4_5.migrate(connection)
-            connection.execSQL(
-                """
-                UPDATE downloaded_component SET
-                    immutable_revision = '${"a".repeat(40)}',
-                    remote_object_id = 'sha256:${"b".repeat(64)}',
-                    bundle_id = '${"c".repeat(64)}',
-                    content_sha256 = '${"d".repeat(64)}'
-                WHERE id = 11
-                """.trimIndent(),
-            )
-
-            APP_MIGRATION_5_4.migrate(connection)
-        }
-
-        BundledSQLiteDriver().open(path).use { connection ->
-            connection.prepare(
-                "SELECT repo_id, file_path, local_path FROM downloaded_component WHERE id = 11",
-            ).use { statement ->
-                assertTrue(statement.step())
-                assertEquals("shared/repo", statement.getText(0))
-                assertEquals("component.safetensors", statement.getText(1))
-                assertEquals("/models/shared/component.safetensors", statement.getText(2))
-            }
-            connection.prepare("SELECT model_id, component_id FROM model_component_link WHERE id = 19").use { statement ->
-                assertTrue(statement.step())
-                assertEquals("owner/a", statement.getText(0))
-                assertEquals(11L, statement.getLong(1))
-            }
-            assertFails {
-                connection.execSQL(
-                    """
-                    INSERT INTO downloaded_component (
-                        repo_id, file_path, role, local_path, size_bytes, downloaded_at
-                    ) VALUES (
-                        'shared/repo', 'component.safetensors', 'vae', '/models/duplicate', 10, 2
-                    )
-                    """.trimIndent(),
-                )
-            }
-        }
-    }
-
+class AppDatabaseCurrentSchemaTest {
     @Test
     fun exactComponentRevisionsForDifferentOwnersCoexistAfterReopen() = runTest {
         val path = Files.createTempDirectory("caraml-component-revisions").resolve("caraml.db").toString()
@@ -286,40 +204,6 @@ class AppDatabaseMigrationTest {
             assertEquals(emptyList(), storage.deletedPaths)
         } finally {
             database.close()
-        }
-    }
-
-    @Test
-    fun migrationThreeToFourPreservesLocalModelsAndCreatesEmptyEvidenceTable() {
-        val path = Files.createTempDirectory("caraml-app-migration").resolve("caraml.db").toString()
-        BundledSQLiteDriver().open(path).use { connection ->
-            createVersionThreeLocalModelTable(connection)
-            connection.execSQL(
-                """
-                INSERT INTO local_model (
-                    id, model_id, filename, local_path, size_bytes, downloaded_at,
-                    author, library_name, pipeline_tag, usage_count, context_length,
-                    model_type, component_status, is_main_model, arch
-                ) VALUES (
-                    7, 'owner/model', 'model.gguf', '/models/owner/model/model.gguf', 1024, 1,
-                    'owner', 'gguf', 'text-generation', 3, 4096,
-                    'text', 'ready', 1, 'llama'
-                )
-                """.trimIndent(),
-            )
-
-            APP_MIGRATION_3_4.migrate(connection)
-
-            connection.prepare("SELECT model_id, filename FROM local_model WHERE id = 7").use { statement ->
-                assertTrue(statement.step())
-                assertEquals("owner/model", statement.getText(0))
-                assertEquals("model.gguf", statement.getText(1))
-            }
-            connection.prepare("SELECT COUNT(*) FROM installed_model_evidence").use { statement ->
-                assertTrue(statement.step())
-                assertEquals(0L, statement.getLong(0))
-                assertFalse(statement.step())
-            }
         }
     }
 
@@ -570,62 +454,6 @@ private class RemovalStoragePathProvider : StoragePathProvider {
     }
 }
 
-private fun createVersionFourComponentTables(connection: SQLiteConnection) {
-    connection.execSQL("PRAGMA foreign_keys = ON")
-    connection.execSQL(
-        """
-        CREATE TABLE downloaded_component (
-            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-            repo_id TEXT NOT NULL,
-            file_path TEXT NOT NULL,
-            role TEXT NOT NULL,
-            local_path TEXT NOT NULL,
-            size_bytes INTEGER,
-            downloaded_at INTEGER NOT NULL
-        )
-        """.trimIndent(),
-    )
-    connection.execSQL(
-        "CREATE UNIQUE INDEX index_downloaded_component_repo_id_file_path ON downloaded_component (repo_id, file_path)",
-    )
-    connection.execSQL(
-        """
-        CREATE TABLE model_component_link (
-            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-            model_id TEXT NOT NULL,
-            component_id INTEGER NOT NULL,
-            role TEXT NOT NULL,
-            FOREIGN KEY(component_id) REFERENCES downloaded_component(id) ON UPDATE NO ACTION ON DELETE CASCADE
-        )
-        """.trimIndent(),
-    )
-    connection.execSQL(
-        "CREATE UNIQUE INDEX index_model_component_link_model_id_component_id ON model_component_link (model_id, component_id)",
-    )
-    connection.execSQL(
-        "CREATE INDEX index_model_component_link_component_id ON model_component_link (component_id)",
-    )
-}
-
-private fun insertLegacyComponentAndLink(connection: SQLiteConnection) {
-    connection.execSQL(
-        """
-        INSERT INTO downloaded_component (
-            id, repo_id, file_path, role, local_path, size_bytes, downloaded_at
-        ) VALUES (
-            11, 'shared/repo', 'component.safetensors', 'vae',
-            '/models/shared/component.safetensors', 10, 1
-        )
-        """.trimIndent(),
-    )
-    connection.execSQL(
-        """
-        INSERT INTO model_component_link (id, model_id, component_id, role)
-        VALUES (19, 'owner/a', 11, 'vae')
-        """.trimIndent(),
-    )
-}
-
 private const val MODEL_ID = "owner/model"
 
 private fun completeEvidenceEntity(publishedAtEpochMs: Long): InstalledModelEvidenceEntity {
@@ -724,27 +552,3 @@ private fun identity(
 ): DownloadArtifactIdentity = requireNotNull(
     DownloadArtifactIdentity.create(repositoryId, revision, path, objectId, 10L),
 )
-
-private fun createVersionThreeLocalModelTable(connection: SQLiteConnection) {
-    connection.execSQL(
-        """
-        CREATE TABLE local_model (
-            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-            model_id TEXT NOT NULL,
-            filename TEXT NOT NULL,
-            local_path TEXT NOT NULL,
-            size_bytes INTEGER,
-            downloaded_at INTEGER NOT NULL,
-            author TEXT,
-            library_name TEXT,
-            pipeline_tag TEXT,
-            usage_count INTEGER NOT NULL DEFAULT 0,
-            context_length INTEGER,
-            model_type TEXT,
-            component_status TEXT,
-            is_main_model INTEGER NOT NULL DEFAULT 1,
-            arch TEXT
-        )
-        """.trimIndent(),
-    )
-}

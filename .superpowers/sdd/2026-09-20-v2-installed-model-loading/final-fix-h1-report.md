@@ -1,120 +1,139 @@
-# Final fix H1 report — immutable revision-scoped artifact lifetime
+# Final fix H1 report — current immutable artifact storage
 
 Date: 2026-09-21
 Branch: `codex/v2-installed-model-loading`
 Base: `088d7a7`
-Implementation commits: `2c2b6bc`, `51ac405`, plus the round-two review follow-up commit containing this report
+Prior H1 commits: `2c2b6bc`, `51ac405`, `abb2c10`
 
 ## Outcome
 
-Two installed owners can now retain different immutable revisions of the same repository-relative artifact without sharing or overwriting a byte path. Every new durable batch derives storage below:
+Installed and in-flight artifacts now use one current storage contract:
 
 ```text
-<validated repository root>/.caraml-artifacts/<64-char lowercase bundle digest>/<native layout path>
+<validated repository root>/.caraml-artifacts/<canonical bundle digest>/<native layout path>
 ```
 
-The bundle digest is derived from the complete exact artifact identity set. The native layout remains a separate projection used only after the exact manifest `localRelativePath` and generation root have been validated. Callers cannot choose an arbitrary generation, relocate an artifact, escape the repository root, or admit an unscoped destination into a new durable batch.
+The bundle digest is derived from the complete immutable request set. `localRelativePath` is the only byte locator; `layoutRelativePath` is only a native-loader projection after the immutable generation has been validated. Unscoped manifests, destinations, and task rows are not compatible current state.
 
-Single-file models store the exact scoped file in `LocalModelEntity.localPath`. Native directory bundles store the exact immutable generation root, with every required native path proven to be below that same root. External diffusion components retain their own repository roots and exact scoped paths.
+Two owners can retain different immutable revisions of the same repository-relative artifact without overwriting a path or catalog row. Owners may also share one exact component generation under different link roles. Removing or replacing one owner does not prune a generation while another exact link remains.
 
-The review follow-up closes every mutation seam around legacy destinations. Download DB v3 quarantines unfinished pre-H1 rows, batch claim/resume and finalization reject them, and Android, iOS, and JVM platform entry points refuse download, publication, discard, or import writes outside an immutable generation. A completed legacy install can still be read only when its exact installed manifest independently binds the bytes; it cannot authorize a new write or deduplication candidate.
+## Round-three closure
 
-The round-two closure also makes restart state exact. A pending pre-H1 commit journal is untrusted mutation state and is rolled back rather than completed; only canonical immutable journals may recover. Recoverable database batches are reconstructed and validated from their complete Kotlin request model one batch at a time, so a malformed row is terminally quarantined without aborting reconciliation of valid batches. Model Hub adopts progress/completion only when the full current artifact request multiset agrees, and iOS imports a background payload only when its descriptor still equals the canonical ID recomputed from the current persisted request.
+### Manifest recovery
 
-## Storage, manifest, and catalog contract
+- `ArtifactManifestStore.recover()` returns an explicit `NO_PENDING_TRANSACTION`, `RECOVERED`, or `QUARANTINED` result.
+- An unreadable, structurally invalid, or noncanonical pending commit journal cannot be erased and cannot make a torn current manifest visible.
+- A journal is discarded only when the current manifest independently validates and every entry is bound to a canonical immutable generation.
+- A quarantined journal is a bounded stable marker: repeated reads/recovery do not mutate it or loop.
+- Commit, prune, download, and checkpoint-discard mutation paths stop on `QUARANTINED`.
+- Commit additionally binds the caller target to the entry's exact `localRelativePath`.
 
-- `immutableArtifactStorageLocation` is the single derivation point for new storage. It validates the canonical lowercase bundle digest, normalized remote/native path, full relative-path bound, repository-relative containment, and path segments.
-- `ArtifactManifestEntry` persists both `localRelativePath` and `layoutRelativePath`. Only the former locates bytes. The latter is accepted solely as the native-loader layout after it re-derives from the exact identity and local storage binding.
-- Repository manifests can retain multiple revisions of one remote repository/path because their local paths are generation-scoped. Bundle manifests copy the exact installed local path instead of reconstructing it.
-- `DownloadBatchRequest` recomputes the bundle digest from every exact identity, rejects a caller-forged digest, rejects destination collisions, and rejects legacy/unscoped destinations for new work.
-- `downloaded_component` now records nullable `immutable_revision`, `remote_object_id`, `bundle_id`, and `content_sha256`. New Ready publication requires the exact identity fields and deduplicates only by exact immutable storage identity and path.
-- Same exact component generation may safely be linked by more than one owner. Different revisions or different bundle generations coexist as distinct rows/paths.
-- Owner snapshots project the role from `model_component_link`, not the shared component row, so two owners may bind identical bytes under different native roles without corrupting resolution or removal.
-- The finalizer locks the owner and all exact storage paths through manifest validation and the Room Ready transaction, preventing concurrent publication/removal from observing a half-published generation.
+### Safe current-schema Room reads
 
-## Load and legacy boundary
+- `observeForModel`, `getBatch`, and `recoverableBatches` reconstruct every batch through the complete typed request and exact canonical IDs.
+- Malformed terminal rows are filtered without throwing. Malformed mutable rows are terminally quarantined once; the SQL transition is state-guarded, so Room observation cannot oscillate.
+- Corruption in one batch does not terminate observation or reconciliation of valid batches.
+- Evidence is always complete persisted evidence. Missing/all-null evidence is invalid current data and is never synthesized.
 
-`LocalArtifactIdentityResolver` locates bytes only from a validated owner bundle manifest and its exact `localRelativePath`. Catalog paths, revision/object/bundle identity, byte count, digest, and the post-hash storage snapshot must agree. Ready/partial UI projection applies the same exact-generation check; matching identity and native layout cannot make a stale or different generation Ready. A directory target is admitted only when `LocalModelEntity.localPath` equals the exact validated generation root and every required stable-diffusion native path resolves below it.
+### Exact Model Details controls
 
-The v4 -> v5 migration leaves all new identity columns null for existing rows. It never fabricates a revision, object ID, bundle, or digest. Such legacy-null rows are never exact dedup/reuse candidates. They remain readable only when an independently validated manifest binds the same repository path and exact local path; partial identity is rejected. Persisted manifest entries may retain their pre-H1 unscoped local path, but every future durable batch uses a scoped path, so a conflicting revision cannot overwrite the legacy file.
+- `ModelDetailContent` no longer receives or searches raw download snapshots.
+- The ViewModel projects `DurableDownloadControlUiState(batchId, artifactId, batchState, artifactState)` only from the exact current request set.
+- Pause, resume, cancel, and retry callbacks carry both exact IDs. The ViewModel revalidates the pair and command/state at invocation, so a stale rendered callback is harmless.
+- Changing any external diffusion component revision removes the old batch's progress, completion, and controls even when the primary artifact is unchanged.
 
-## Reference-aware deletion
+### Canonical request matching
 
-Ready removal now follows one conservative sequence:
+- Exact request matching compares deterministic `downloadArtifactTaskId` multisets.
+- The task identity includes repository, immutable revision, relative path, remote object, expected size, role, canonical destination, bundle, and primary flag.
+- Display-only author/library/pipeline/context enrichment does not hide an active exact batch.
+- Missing, duplicate, or storage-mutated task identities are rejected deterministically.
 
-1. Read the validated owner bundle manifest.
-2. Lock the owner and every exact artifact storage key.
-3. Re-read the manifest and exact Ready catalog snapshot; reject or retry if either changed.
-4. Remove only that matching owner snapshot in one Room transaction, retaining shared component rows while another owner link exists.
-5. Count remaining catalog references by exact local path.
-6. Under all affected repository-root locks, revalidate the repository manifests, durably prune only the unreferenced entries, and only then delete their exact derived files.
+## Database compatibility boundary
 
-Manifest pruning uses `.caraml-artifact-v1.prune-journal` plus the preserved previous manifest. Recovery completes a valid staged prune or restores the previous manifest. A crash or filesystem deletion failure can conservatively leak unreferenced bytes, but it cannot leave a retained manifest entry pointing at bytes this cleanup removed. Cleanup never recursively removes a caller-supplied directory and never deletes a generation still referenced by another Ready owner.
+The user confirmed a fresh-install/current-schema boundary. Production migration compatibility is intentionally removed.
 
-The deleted owner's aggregate bundle manifest is allowed to become invalid after its catalog is removed; it cannot resolve as Ready, and a later exact publication replaces it. No remaining owner's repository manifest is invalidated.
+- Application database current schema: version 5.
+- Download database current schema: version 3.
+- Neither database registers upgrade or downgrade migrations.
+- A stale schema is destructively recreated with Room's `fallbackToDestructiveMigration(dropAllTables = true)`.
+- Same-version close/reopen is covered. Exact revision coexistence, owner-role projection, compare-and-remove behavior, corrupt-current-row isolation, and persisted evidence reopen remain covered.
+- No old schema fixture, migration object, downgrade path, pre-H1 task quarantine migration, unscoped terminal exception, or settled unscoped manifest read path remains.
 
-## Database migration boundary
+Source scan used for the migration boundary:
 
-- Application catalog schema version: 5.
-- `APP_MIGRATION_4_5` adds the four nullable exact-identity columns, replaces repository/path uniqueness with exact immutable storage identity uniqueness, and adds a local-path reference index. Existing rows and links are preserved byte-for-byte, with null exact identity.
-- `APP_MIGRATION_5_4` explicitly rebuilds the v4 table and link foreign key/indexes. It is lossless only when the v5 rows satisfy v4 repository/path uniqueness. If multiple exact revisions of one repository/path exist, v4 cannot represent them; the unique-index creation fails transactionally instead of conflating or deleting data.
-- Reopen tests cover v4 -> v5 preservation, v5 -> v4 compatible downgrade, exact revision coexistence after close/reopen, link retention, and snapshot compare-and-remove behavior.
-- Download database schema version: 3. `DOWNLOAD_MIGRATION_2_3` is a one-way data migration with no table-shape change. It terminally quarantines every queued, paused, downloading, or verifying pre-H1 artifact whose destination is not structurally scoped to its canonical immutable bundle, clears its platform task/lease, and terminally closes its nonterminal batch. Canonically scoped work remains resumable.
-- SQL migration is a conservative structural first pass. Every recoverable batch is then reconstructed from all persisted request fields and checked against its canonical batch ID, artifact ID, bundle digest, exact destination, staging token, progress bounds, and complete artifact set. Decode or validation failure quarantines only that batch and cannot terminate global reconciliation.
-- Completed unscoped rows are preserved only for exact, read-only installed-manifest compatibility. There is intentionally no v3 -> v2 migration: an older binary must never resume work under the weaker v2 write-path contract. Migration tests create a real v2 database, migrate/reopen twice, verify quarantine and preservation, and prove a raw-mutated unscoped row cannot be claimed after upgrade.
+```text
+rg -n '\bMigration\s*\(|MIGRATION_|addMigrations|withMigration|createAppDatabaseAtVersion|createDownloadDatabaseAtVersion' \
+  composeApp/src/commonMain/kotlin/com/debanshu777/caraml/core/storage/AppDatabase.kt \
+  composeApp/src/commonMain/kotlin/com/debanshu777/caraml/core/download/storage/DownloadDatabase.kt \
+  composeApp/src/jvmTest/kotlin/com/debanshu777/caraml/core/storage/AppDatabaseCurrentSchemaTest.kt \
+  composeApp/src/jvmTest/kotlin/com/debanshu777/caraml/core/download/storage/DownloadDatabaseTest.kt
+```
+
+Result: no matches. The destructive-fallback API is intentionally outside the forbidden pattern.
 
 ## TDD evidence
 
-Tests were written before each production slice. The intended RED states included:
+The review regressions were introduced before their production changes. The RED behaviors included:
 
-- missing immutable storage derivation, generation/local-layout manifest fields, and scoped destination behavior;
-- schema/query failures before v5 exact identity columns and exact lookup existed;
-- resolver failures for nested single-file paths, revision mismatch, exact directory generation roots, and external diffusion components;
-- missing reference-aware removal/CAS APIs and shared-link cleanup behavior;
-- concurrent same-repository/path revisions colliding under the old unscoped destination;
-- missing manifest-prune API, followed by a restart regression proving that deleting bytes without pruning invalidated the retained revision;
-- crash-injected prune phases before recovery support existed;
-- a mutation run with the new-batch scoped-path guard removed, where a direct legacy destination was incorrectly accepted.
-- pre-H1 queued/verifying rows remaining claimable after upgrade and public platform writes accepting an unscoped destination;
-- aggregate and interrupted-recovery projections treating a wrong generation as Ready;
-- shared exact bytes losing one owner's link role, and ambiguous duplicate bundle coordinates producing order-dependent identity.
-- pre-H1 journals becoming visible after restart at any commit phase, stale external-component batches projecting current progress/completion, same-size iOS descriptors binding a changed request, and one malformed database row aborting recovery of an otherwise valid batch.
+- torn/tampered commit journals either being discarded without trustworthy current state or allowing later mutation;
+- malformed persisted rows throwing from direct and observed read paths;
+- the UI selecting raw batches and allowing stale controls after an external component revision changed;
+- exact batches disappearing after display-only enrichment while ambiguous duplicate task identities remained matchable;
+- unscoped legacy fixtures remaining constructible after the current-only compatibility decision.
 
-The round-two impacted Compose aggregate passed 93/93 tests. The complete `huggingFaceManager` JVM suite passed 105/105, including public mutation-seam rejection, completed legacy read-only compatibility, concurrent revision downloads, restart/reopen validation, deletion of one revision while retaining another, deterministic bundle identity, restart after every prune journal phase, and fail-closed recovery at every unscoped commit-journal phase.
+The GREEN coverage includes:
 
-Coverage also includes path traversal, forged/noncanonical bundle IDs, full-path and component-count bounds, destination collisions, duplicate repository/revision/path rejection, same-revision reference retention with distinct owner roles, different-revision coexistence, wrong-generation recovery rejection, stale manifest/catalog rejection, exact directory-root publication, and concurrent owner publication.
+- every commit crash phase, unreadable and tampered `NEW_PUBLISHED`/`OLD_REMOVED` journals, mutation-free repeated quarantine, and valid scoped recovery;
+- malformed mutable and terminal current rows across observe/get/recover/reopen, with per-batch isolation;
+- exact language and diffusion progress/control projection, stale external-component rejection, callback replay rejection, and exact refresh;
+- display enrichment, storage identity mutation, duplicate/missing task IDs, and deterministic ordering;
+- primary files, external diffusion components, native directory generation roots, shared exact bytes with different owner roles, revision coexistence, reference-aware deletion, concurrent install, path traversal, case/length/bundle/suffix corruption, and restart/reopen.
 
-Round-two focused coverage additionally exercises every unscoped journal crash phase, valid scoped journal recovery, full-request projection when an external component revision changes, wrong-generation interrupted recovery, exact and mismatched git-OID iOS bindings, arbitrary/case/length/suffix destination corruption, per-batch decode isolation, and repeated database reopen.
-
-## Repository and platform verification
+Focused and broad results before the repository gate:
 
 ```text
-git diff --check
-./gradlew verifyProject --no-daemon
-./gradlew :composeApp:compileAndroidMain \
-  :huggingFaceManager:compileKotlinIosSimulatorArm64 --no-daemon
+huggingFaceManager:jvmTest                       108 / 108
+composeApp focused DB/projection/UI aggregate     82 / 82
+LocalArtifactIdentityResolverTest                 18 / 18
+InstalledModelEvidenceRepairerTest                14 / 14
+composeApp:jvmTest                             1,033 / 1,033
 ```
 
-All three passed after the round-two H1 review follow-up.
-
-- `verifyProject`: BUILD SUCCESSFUL in 55 seconds; 41 actionable tasks (14 executed, 27 up to date).
-- JVM XML: 1,190/1,190 tests — `composeApp` 1,035, `huggingFaceManager` 105, `runner` 29, `diffusionRunner` 21.
-- Native: artifact-root CTest 1/1 and diffusion CTests 5/5.
-- Combined automated count: 1,196/1,196.
-- Android common/application compile plus Hugging Face Manager iOS simulator compile: BUILD SUCCESSFUL in 48 seconds; 27 actionable tasks (8 executed, 19 up to date).
-
-A full `composeApp` iOS simulator compile was freshly attempted after the round-two follow-up. It built the native libraries, compiled the directly changed Hugging Face Manager iOS surface, and reached application Kotlin/Native compilation. The first attempt exposed and fixed one nullable failure-code handoff in the changed scheduler. The fresh rerun failed only at unchanged `GgufMetadataInspector.kt:20,73` `use`/nullable-generic diagnostics; no Fix H1 file appeared in the final diagnostics.
+One converted test fixture initially appeared to hang. Systematic isolation showed that its fake `StoredArtifactSnapshot.changeStamp` embedded the now-long scoped path and violated the snapshot bound before concurrent lookups could reach their test latches. The fake stamp was made bounded and stable; no production timeout, sleep, validation weakening, or coroutine workaround was added.
 
 ## Security and failure behavior
 
-- Repository IDs, revisions, remote paths, roles, digests, local paths, counts, and lengths remain bounded and validated before filesystem, database, or coordination use.
-- No manifest layout value or catalog filename can independently select a byte path.
-- New generations are derived from exact immutable identities; legacy-null rows never authorize deduplication or a write destination.
-- Root containment is checked after normalization. Traversal, absolute paths, control characters, unsafe separators, noncanonical digest scopes, and case-forged bundle scopes fail closed.
-- Publication/removal use a bounded fixed-stripe coordinator with deterministic lock ordering; repository-root locks are also acquired in stable order.
-- Removal revalidates both manifest and catalog evidence before unlinking and revalidates repository manifests again before deletion.
-- Cancellation is rethrown. Other cleanup/storage failures produce the existing generic removal failure state without exposing paths or internals.
+- Repository IDs, revisions, object IDs, roles, paths, bundle IDs, counts, and lengths are validated before database, filesystem, scheduler, or native use.
+- A layout path cannot locate bytes, and callers cannot choose a generation.
+- Absolute paths, traversal, control characters, forged/case-variant bundles, malformed suffixes, and oversized paths fail closed.
+- Invalid current DB rows cannot resume, claim, publish, import, or finalize a payload.
+- Invalid pending journals cannot expose a torn manifest or authorize writes.
+- Cancellation continues to propagate; UI/storage errors remain generic and do not expose local paths.
 
-## Remaining verification boundary
+## Repository and platform verification
 
-No new physical-device download/load sequence was run for Fix H1. The path, manifest, catalog, resolver, restart, concurrency, migration, and deletion contracts are covered deterministically on JVM, with Android compilation, Hugging Face Manager iOS compilation, and native repository gates passing. Full application iOS compilation remains blocked by the unchanged source noted above.
+Final fresh gates:
+
+```text
+./gradlew verifyProject --no-daemon
+  BUILD SUCCESSFUL in 53s
+  composeApp JVM                 1,033 tests, 0 failures, 0 errors
+  huggingFaceManager JVM           108 tests, 0 failures, 0 errors
+  runner JVM                        29 tests, 0 failures, 0 errors
+  diffusionRunner JVM               21 tests, 0 failures, 0 errors
+  native artifact/diffusion           6 tests, 0 failures
+
+./gradlew :composeApp:compileAndroidMain \
+  :huggingFaceManager:compileKotlinIosSimulatorArm64 --no-daemon
+  BUILD SUCCESSFUL in 44s
+
+git diff --check
+  clean
+```
+
+The compile output contains only the repository's existing Kotlin expect/actual beta warnings and one redundant-conversion warning in the iOS secure-root implementation; there are no compile errors.
+
+## Remaining manual boundary
+
+No new physical-device download/load sequence was run for this follow-up. Automated coverage proves current-schema reopen, exact projection, platform binding, manifest recovery, reference-aware deletion, and native-layout resolution. Device notification/background behavior remains the existing manual integration boundary.

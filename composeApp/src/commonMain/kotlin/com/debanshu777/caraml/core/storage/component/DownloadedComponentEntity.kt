@@ -24,7 +24,7 @@ data class DownloadedComponentEntity(
     @ColumnInfo(name = "local_path") val localPath: String,
     @ColumnInfo(name = "size_bytes") val sizeBytes: Long?,
     @ColumnInfo(name = "downloaded_at") val downloadedAt: Long,
-    /** Null only for rows migrated from v4; never treated as exact identity or a dedup key. */
+    /** Nullable for database integrity, but incomplete identity is never Ready or a dedup key. */
     @ColumnInfo(name = "immutable_revision") val immutableRevision: String? = null,
     @ColumnInfo(name = "remote_object_id") val remoteObjectId: String? = null,
     @ColumnInfo(name = "bundle_id") val bundleId: String? = null,

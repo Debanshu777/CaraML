@@ -38,7 +38,7 @@ import com.debanshu777.caraml.core.ui.components.StatusMark
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.features.modelhub.presentation.search.InstallBundleUiState
 import com.debanshu777.caraml.features.modelhub.presentation.search.SetupComponentUiState
-import com.debanshu777.caraml.core.download.DownloadBatchSnapshot
+import com.debanshu777.caraml.features.modelhub.presentation.search.DurableDownloadControlUiState
 import com.debanshu777.caraml.core.download.DownloadBatchState
 
 private fun formatBytes(bytes: Long): String {
@@ -74,7 +74,7 @@ fun InstallBundleCard(
     modifier: Modifier = Modifier,
     recommendedVariantPath: String? = null,
     installEnabled: Boolean = true,
-    durableBatch: DownloadBatchSnapshot? = null,
+    durableControl: DurableDownloadControlUiState? = null,
     onPause: () -> Unit = {},
     onResume: () -> Unit = {},
     onCancel: () -> Unit = {},
@@ -93,7 +93,7 @@ fun InstallBundleCard(
             onInstall = onInstall,
             installEnabled = installEnabled,
             modifier = Modifier.testTag("detail-action"),
-            durableBatch = durableBatch,
+            durableControl = durableControl,
             onPause = onPause,
             onResume = onResume,
             onCancel = onCancel,
@@ -128,7 +128,7 @@ internal fun InstallBundleActionFooter(
     onInstall: () -> Unit,
     modifier: Modifier = Modifier,
     installEnabled: Boolean = true,
-    durableBatch: DownloadBatchSnapshot? = null,
+    durableControl: DurableDownloadControlUiState? = null,
     onPause: () -> Unit = {},
     onResume: () -> Unit = {},
     onCancel: () -> Unit = {},
@@ -147,7 +147,7 @@ internal fun InstallBundleActionFooter(
                 state = state,
                 onInstall = onInstall,
                 installEnabled = installEnabled,
-                durableBatch = durableBatch,
+                durableControl = durableControl,
                 onPause = onPause,
                 onResume = onResume,
                 onCancel = onCancel,
@@ -231,7 +231,7 @@ private fun ColumnScope.InstallBundleActionContent(
     onInstall: () -> Unit,
     installEnabled: Boolean,
     modifier: Modifier = Modifier,
-    durableBatch: DownloadBatchSnapshot?,
+    durableControl: DurableDownloadControlUiState?,
     onPause: () -> Unit,
     onResume: () -> Unit,
     onCancel: () -> Unit,
@@ -249,7 +249,7 @@ private fun ColumnScope.InstallBundleActionContent(
         reportedOverallProgress ?: 0f
     }
 
-    val command = when (durableBatch?.state) {
+    val command = when (durableControl?.batchState) {
         DownloadBatchState.QUEUED,
         DownloadBatchState.RUNNING,
         DownloadBatchState.WAITING_FOR_NETWORK,
@@ -284,7 +284,7 @@ private fun ColumnScope.InstallBundleActionContent(
                 }
             }
         }
-        if (durableBatch?.state in setOf(
+        if (durableControl?.batchState in setOf(
                 DownloadBatchState.QUEUED,
                 DownloadBatchState.RUNNING,
                 DownloadBatchState.PAUSED,

@@ -12,14 +12,14 @@ import com.debanshu777.caraml.core.download.DownloadUserIntent
 import com.debanshu777.caraml.core.download.canTransitionTo
 import com.debanshu777.caraml.core.download.downloadBatchArtifactId
 import com.debanshu777.caraml.core.download.downloadBatchId
-import com.debanshu777.caraml.core.download.pendingEvidence
 import com.debanshu777.caraml.core.recommendation.storage.EncodedModelEvidence
 import com.debanshu777.caraml.core.recommendation.storage.InstalledEvidenceState
 import com.debanshu777.caraml.core.recommendation.storage.PersistedModelEvidenceCodec
 import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.transform
 
 class RoomDownloadTaskStore(
     private val dao: DownloadTaskDao,
@@ -79,9 +79,25 @@ class RoomDownloadTaskStore(
     }
 
     override fun observeForModel(modelId: String): Flow<List<DownloadBatchSnapshot>> =
-        dao.observeForModel(modelId).map { batches -> batches.map(DownloadBatchWithArtifacts::toSnapshot) }
+        dao.observeForModel(modelId).transform { batches ->
+            val snapshots = mutableListOf<DownloadBatchSnapshot>()
+            batches.forEach { persisted ->
+                val snapshot = persisted.toReadSafeSnapshotOrNull()
+                if (snapshot != null) {
+                    snapshots += snapshot
+                } else if (persisted.requiresQuarantine()) {
+                    dao.quarantineMutableBatch(persisted.batch.batchId)
+                }
+            }
+            emit(snapshots)
+        }.distinctUntilChanged()
 
-    override suspend fun getBatch(batchId: String): DownloadBatchSnapshot? = dao.batch(batchId)?.toSnapshot()
+    override suspend fun getBatch(batchId: String): DownloadBatchSnapshot? {
+        val persisted = dao.batch(batchId) ?: return null
+        persisted.toReadSafeSnapshotOrNull()?.let { return it }
+        if (persisted.requiresQuarantine()) dao.quarantineMutableBatch(batchId)
+        return null
+    }
 
     override suspend fun recoverableBatches(): List<DownloadBatchSnapshot> {
         val recovered = mutableListOf<DownloadBatchSnapshot>()
@@ -210,13 +226,45 @@ private fun DownloadBatchWithArtifacts.toSnapshot(): DownloadBatchSnapshot {
         state = strictEnum(batch.state),
         userIntent = intent,
         artifacts = artifactSnapshots,
-        evidence = batch.restoreEvidence(artifactSnapshots.map { it.request.metadata.artifact }),
+        evidence = batch.restoreEvidence(),
         failureCode = batch.failureCode?.let(::strictEnum),
     )
 }
 
+private fun DownloadBatchWithArtifacts.toReadSafeSnapshotOrNull(): DownloadBatchSnapshot? = try {
+    val snapshot = toSnapshot()
+    validatePersistedStructure(snapshot)
+    validateExactMutableIdentity(snapshot)
+    snapshot
+} catch (_: Exception) {
+    null
+}
+
 private fun DownloadBatchWithArtifacts.toMutationSafeSnapshotOrNull(): DownloadBatchSnapshot? = try {
     val snapshot = toSnapshot()
+    validatePersistedStructure(snapshot)
+    validateExactMutableIdentity(snapshot)
+    snapshot
+} catch (_: Exception) {
+    null
+}
+
+private fun DownloadBatchWithArtifacts.validatePersistedStructure(snapshot: DownloadBatchSnapshot) {
+    val persistedById = artifacts.associateBy(DownloadArtifactEntity::artifactId)
+    check(persistedById.size == artifacts.size) { "Corrupt persisted artifact identity" }
+    snapshot.artifacts.forEach { artifact ->
+        val persisted = checkNotNull(persistedById[artifact.artifactId]) {
+            "Corrupt persisted artifact identity"
+        }
+        check(persisted.batchId == snapshot.batchId) { "Corrupt persisted batch link" }
+        check(persisted.stagingToken == artifact.artifactId) { "Corrupt persisted staging identity" }
+        check(artifact.bytesReceived in 0L..artifact.expectedBytes && artifact.retryCount >= 0) {
+            "Corrupt persisted artifact progress"
+        }
+    }
+}
+
+private fun DownloadBatchWithArtifacts.validateExactMutableIdentity(snapshot: DownloadBatchSnapshot) {
     val request = DownloadBatchRequest(
         ownerModelId = snapshot.ownerModelId,
         modelType = snapshot.modelType,
@@ -226,27 +274,37 @@ private fun DownloadBatchWithArtifacts.toMutationSafeSnapshotOrNull(): DownloadB
         displayName = snapshot.displayName,
     )
     check(downloadBatchId(request) == snapshot.batchId) { "Corrupt persisted batch identity" }
-    val persistedById = artifacts.associateBy(DownloadArtifactEntity::artifactId)
-    check(persistedById.size == artifacts.size) { "Corrupt persisted artifact identity" }
     snapshot.artifacts.forEach { artifact ->
-        val persisted = checkNotNull(persistedById[artifact.artifactId]) {
-            "Corrupt persisted artifact identity"
-        }
-        check(persisted.batchId == snapshot.batchId) { "Corrupt persisted batch link" }
         check(artifact.artifactId == downloadBatchArtifactId(snapshot.batchId, artifact.request)) {
             "Corrupt persisted artifact identity"
         }
-        check(persisted.stagingToken == artifact.artifactId) { "Corrupt persisted staging identity" }
-        check(artifact.bytesReceived in 0L..artifact.expectedBytes && artifact.retryCount >= 0) {
-            "Corrupt persisted artifact progress"
-        }
     }
-    snapshot
-} catch (_: IllegalArgumentException) {
-    null
-} catch (_: IllegalStateException) {
-    null
 }
+
+private fun DownloadBatchWithArtifacts.requiresQuarantine(): Boolean =
+    batch.state !in TERMINAL_BATCH_STATE_NAMES || artifacts.any { it.state !in TERMINAL_ARTIFACT_STATE_NAMES }
+
+private val DownloadBatchState.isTerminal: Boolean
+    get() = this in setOf(
+        DownloadBatchState.COMPLETED,
+        DownloadBatchState.FAILED_TERMINAL,
+        DownloadBatchState.CANCELLED,
+    )
+
+private val DownloadArtifactState.isTerminal: Boolean
+    get() = this in setOf(
+        DownloadArtifactState.COMPLETED,
+        DownloadArtifactState.FAILED_TERMINAL,
+        DownloadArtifactState.CANCELLED,
+    )
+
+private val TERMINAL_BATCH_STATE_NAMES = DownloadBatchState.entries
+    .filter(DownloadBatchState::isTerminal)
+    .mapTo(mutableSetOf(), DownloadBatchState::name)
+
+private val TERMINAL_ARTIFACT_STATE_NAMES = DownloadArtifactState.entries
+    .filter(DownloadArtifactState::isTerminal)
+    .mapTo(mutableSetOf(), DownloadArtifactState::name)
 
 private fun DownloadArtifactEntity.toMetadata(): DownloadMetadataDTO {
     val identity = requireNotNull(
@@ -271,17 +329,8 @@ private fun DownloadArtifactEntity.toMetadata(): DownloadMetadataDTO {
     )
 }
 
-private fun DownloadBatchEntity.restoreEvidence(
-    artifacts: Collection<DownloadArtifactIdentity>,
-): EncodedModelEvidence {
+private fun DownloadBatchEntity.restoreEvidence(): EncodedModelEvidence {
     val fields = listOf(evidenceState, evidenceSchemaVersion, evidencePayload, evidenceSha256)
-    if (fields.all { it == null }) {
-        return try {
-            pendingEvidence(artifacts)
-        } catch (cause: IllegalArgumentException) {
-            throw IllegalStateException("Corrupt persisted evidence", cause)
-        }
-    }
     check(fields.none { it == null }) { "Corrupt persisted evidence" }
     val encoded = EncodedModelEvidence(
         state = strictEnum<InstalledEvidenceState>(requireNotNull(evidenceState)),

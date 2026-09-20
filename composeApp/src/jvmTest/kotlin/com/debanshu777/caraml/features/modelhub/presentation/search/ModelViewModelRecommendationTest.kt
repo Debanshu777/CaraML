@@ -117,6 +117,7 @@ import java.security.MessageDigest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -640,11 +641,12 @@ class ModelViewModelRecommendationTest {
         val store = ObservingDownloadTaskStore().apply {
             snapshots.value = listOf(selectedPaused, otherRunning)
         }
+        val scheduler = RecordingPlatformDownloadScheduler()
         try {
             val viewModel = viewModel(
                 client = client,
                 dispatcher = dispatcher,
-                downloadCoordinator = observingDownloadCoordinator(store),
+                downloadCoordinator = observingDownloadCoordinator(store, scheduler),
             )
             backgroundScope.launch { viewModel.installBundleState.collect {} }
             viewModel.loadDetail(repositoryId, ModelHubBrowseMode.DiffusionImage)
@@ -671,6 +673,13 @@ class ModelViewModelRecommendationTest {
             assertEquals(40L, viewModel.installBundleState.value.overallBytesReceived)
             assertEquals(100L, viewModel.installBundleState.value.overallBytesTotal)
             assertEquals(0.4f, viewModel.installBundleState.value.overallProgress)
+            val selectedControl = assertNotNull(viewModel.installBundleState.value.durableControl)
+            assertEquals(selectedPaused.batchId, selectedControl.batchId)
+            assertEquals(selectedPaused.artifacts.single().artifactId, selectedControl.artifactId)
+
+            viewModel.resumeDownload(selectedControl.batchId, selectedControl.artifactId)
+            advanceUntilIdle()
+            assertEquals(listOf(selectedPaused.batchId), scheduler.enqueuedBatchIds)
 
             val selectedRetryable = durableSnapshot(
                 batchId = "selected-retryable",
@@ -691,6 +700,10 @@ class ModelViewModelRecommendationTest {
                 "Download paused after a problem. Retry when ready.",
                 viewModel.downloadError.value,
             )
+            val retryControl = assertNotNull(viewModel.installBundleState.value.durableControl)
+            viewModel.retryDownload(retryControl.batchId, retryControl.artifactId)
+            advanceUntilIdle()
+            assertEquals(listOf(selectedPaused.batchId, selectedRetryable.batchId), scheduler.enqueuedBatchIds)
 
             viewModel.selectVariant(otherPath)
             advanceUntilIdle()
@@ -699,6 +712,10 @@ class ModelViewModelRecommendationTest {
             assertEquals(200L, viewModel.installBundleState.value.overallBytesTotal)
             assertEquals(0.5f, viewModel.installBundleState.value.overallProgress)
             assertEquals(null, viewModel.downloadError.value)
+            val otherControl = assertNotNull(viewModel.installBundleState.value.durableControl)
+            viewModel.pauseDownload(otherControl.batchId, otherControl.artifactId)
+            advanceUntilIdle()
+            assertEquals(listOf(otherRunning.batchId), scheduler.pausedBatchIds)
 
             viewModel.selectVariant(selectedPath)
             advanceUntilIdle()
@@ -709,6 +726,21 @@ class ModelViewModelRecommendationTest {
                 "Download paused after a problem. Retry when ready.",
                 viewModel.downloadError.value,
             )
+
+            store.snapshots.value = listOf(selectedRetryable)
+            advanceUntilIdle()
+            val commandCounts = scheduler.commandCounts()
+            viewModel.pauseDownload(otherControl.batchId, otherControl.artifactId)
+            viewModel.resumeDownload(otherControl.batchId, otherControl.artifactId)
+            viewModel.cancelDownload(otherControl.batchId, otherControl.artifactId)
+            viewModel.retryDownload(otherControl.batchId, otherControl.artifactId)
+            advanceUntilIdle()
+            assertEquals(commandCounts, scheduler.commandCounts())
+
+            val currentControl = assertNotNull(viewModel.installBundleState.value.durableControl)
+            viewModel.cancelDownload(currentControl.batchId, currentControl.artifactId)
+            advanceUntilIdle()
+            assertEquals(listOf(selectedRetryable.batchId), scheduler.cancelledBatchIds)
         } finally {
             client.close()
             Dispatchers.resetMain()
@@ -1612,12 +1644,12 @@ private class ObservingDownloadTaskStore : DownloadTaskStore {
         state: DownloadArtifactState,
         failureCode: DownloadFailureCode?,
         nowEpochMs: Long,
-    ): Boolean = false
+    ): Boolean = snapshots.value.any { batch -> batch.artifacts.any { it.artifactId == artifactId } }
     override suspend fun setUserIntent(
         batchId: String,
         intent: DownloadUserIntent,
         nowEpochMs: Long,
-    ): Boolean = false
+    ): Boolean = snapshots.value.any { it.batchId == batchId }
     override suspend fun setPlatformTaskId(
         artifactId: String,
         platformTaskId: String?,
@@ -1631,19 +1663,48 @@ private class ObservingDownloadTaskStore : DownloadTaskStore {
     override suspend fun clearAll() = Unit
 }
 
-private fun observingDownloadCoordinator(store: DownloadTaskStore): DownloadCoordinator =
+private fun observingDownloadCoordinator(
+    store: DownloadTaskStore,
+    scheduler: PlatformDownloadScheduler = object : PlatformDownloadScheduler {
+        override suspend fun enqueue(batchId: String) = Unit
+        override suspend fun pause(batchId: String) = Unit
+        override suspend fun cancel(batchId: String) = Unit
+        override suspend fun reconcile(liveBatchIds: Set<String>) = Unit
+    },
+): DownloadCoordinator =
     DownloadCoordinator(
         store = store,
-        scheduler = object : PlatformDownloadScheduler {
-            override suspend fun enqueue(batchId: String) = Unit
-            override suspend fun pause(batchId: String) = Unit
-            override suspend fun cancel(batchId: String) = Unit
-            override suspend fun reconcile(liveBatchIds: Set<String>) = Unit
-        },
+        scheduler = scheduler,
         notifications = DownloadNotificationPermissionController {},
         checkpointCleaner = DownloadCheckpointCleaner {},
         nowEpochMs = { 0L },
     )
+
+private class RecordingPlatformDownloadScheduler : PlatformDownloadScheduler {
+    val enqueuedBatchIds = mutableListOf<String>()
+    val pausedBatchIds = mutableListOf<String>()
+    val cancelledBatchIds = mutableListOf<String>()
+
+    override suspend fun enqueue(batchId: String) {
+        enqueuedBatchIds += batchId
+    }
+
+    override suspend fun pause(batchId: String) {
+        pausedBatchIds += batchId
+    }
+
+    override suspend fun cancel(batchId: String) {
+        cancelledBatchIds += batchId
+    }
+
+    override suspend fun reconcile(liveBatchIds: Set<String>) = Unit
+
+    fun commandCounts(): List<Int> = listOf(
+        enqueuedBatchIds.size,
+        pausedBatchIds.size,
+        cancelledBatchIds.size,
+    )
+}
 
 private fun durableSnapshot(
     batchId: String,

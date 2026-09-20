@@ -30,6 +30,8 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class LocalArtifactIdentityResolverTest {
+    private val defaultBundleId = "b".repeat(64)
+
     @Test
     fun missingHubManifestDoesNotReadOrRewriteLegacySidecar() = runTest {
         withRoot { storage, root ->
@@ -68,14 +70,15 @@ class LocalArtifactIdentityResolverTest {
         withRoot { storage, root ->
             val bytes = "model".encodeToByteArray()
             val digest = bytes.sha256()
-            val path = write(root / "owner/model/model.gguf", bytes)
             val revision = "a".repeat(40)
+            val entry = manifestEntry("model", "owner/model", revision, "model.gguf", bytes)
+            val path = write(root / "owner/model" / entry.localRelativePath, bytes)
             val model = model(path, bytes.size.toLong())
             var manifestReads = 0
             val resolver = resolver(
                 storage = storage,
                 manifest = manifest(
-                    manifestEntry("model", "owner/model", revision, "model.gguf", bytes),
+                    entry,
                 ),
                 onManifestRead = { manifestReads += 1 },
             )
@@ -117,31 +120,15 @@ class LocalArtifactIdentityResolverTest {
         withRoot { storage, root ->
             val bytes = "model".encodeToByteArray()
             val digest = bytes.sha256()
-            val path = write(root / "owner/model/model.gguf", bytes)
             val revision = "a".repeat(40)
-            val downloadIdentity = checkNotNull(
-                DownloadArtifactIdentity.create(
-                    repositoryId = "owner/model",
-                    immutableRevision = revision,
-                    relativePath = "model.gguf",
-                    remoteObjectId = "sha256:$digest",
-                    expectedBytes = bytes.size.toLong(),
-                ),
-            )
             val manifest = checkNotNull(
                 ArtifactManifest.create(
                     listOf(
-                        checkNotNull(
-                            ArtifactManifestEntry.create(
-                                logicalRole = "model",
-                                identity = downloadIdentity,
-                                byteCount = bytes.size.toLong(),
-                                contentSha256 = digest,
-                            ),
-                        ),
+                        manifestEntry("model", "owner/model", revision, "model.gguf", bytes),
                     ),
                 ),
             )
+            val path = write(root / "owner/model" / manifest.entries.single().localRelativePath, bytes)
             val plan = task6LlmPlan()
             val planAssessment = task6PlanAssessment(plan = plan)
             val assessment = task6Assessment(
@@ -197,10 +184,9 @@ class LocalArtifactIdentityResolverTest {
     fun validSingleFileHubManifestProducesCommitIdentity() = runTest {
         withRoot { storage, root ->
             val bytes = "model".encodeToByteArray()
-            val path = write(root / "owner/model/model.gguf", bytes)
-            val manifest = manifest(
-                manifestEntry("model", "owner/model", "a".repeat(40), "model.gguf", bytes),
-            )
+            val entry = manifestEntry("model", "owner/model", "a".repeat(40), "model.gguf", bytes)
+            val path = write(root / "owner/model" / entry.localRelativePath, bytes)
+            val manifest = manifest(entry)
             val resolver = resolver(storage, manifest)
 
             val verified = assertIs<ArtifactIdentityResolution.Verified>(
@@ -257,22 +243,48 @@ class LocalArtifactIdentityResolverTest {
         withRoot { storage, root ->
             val primary = "primary".encodeToByteArray()
             val vae = "vae".encodeToByteArray()
-            val primaryPath = write(root / "owner/model/model.safetensors", primary)
-            val vaePath = write(root / "other/vae/vae.safetensors", vae)
             val identities = listOf(
-                downloadIdentity("owner/model", "a".repeat(40), "model.safetensors", primary.size.toLong()),
-                downloadIdentity("other/vae", "b".repeat(40), "vae.safetensors", vae.size.toLong()),
+                downloadIdentity(
+                    "owner/model", "a".repeat(40), "model.safetensors", primary.size.toLong(),
+                    "sha256:${primary.sha256()}",
+                ),
+                downloadIdentity(
+                    "other/vae", "b".repeat(40), "vae.safetensors", vae.size.toLong(),
+                    "sha256:${vae.sha256()}",
+                ),
             )
             val bundle = checkNotNull(com.debanshu777.huggingfacemanager.download.artifactBundleId(identities))
+            val primaryLocation = immutableArtifactStorageLocation(identities[0], bundle)
+            val vaeLocation = immutableArtifactStorageLocation(identities[1], bundle)
+            val primaryPath = write(root / "owner/model" / primaryLocation.localRelativePath, primary)
+            val vaePath = write(root / "other/vae" / vaeLocation.localRelativePath, vae)
             val manifest = checkNotNull(
                 ArtifactManifest.create(
                     listOf(
-                        checkNotNull(ArtifactManifestEntry.create("model", identities[0], primary.size.toLong(), primary.sha256(), bundle)),
-                        checkNotNull(ArtifactManifestEntry.create("vae", identities[1], vae.size.toLong(), vae.sha256(), bundle)),
+                        checkNotNull(
+                            ArtifactManifestEntry.create(
+                                "model", identities[0], primary.size.toLong(), primary.sha256(), bundle,
+                                primaryLocation.localRelativePath, primaryLocation.layoutRelativePath,
+                            ),
+                        ),
+                        checkNotNull(
+                            ArtifactManifestEntry.create(
+                                "vae", identities[1], vae.size.toLong(), vae.sha256(), bundle,
+                                vaeLocation.localRelativePath, vaeLocation.layoutRelativePath,
+                            ),
+                        ),
                     ),
                 ),
             )
-            val components = listOf(component("other/vae", "vae.safetensors", "vae", vaePath, vae.size.toLong()))
+            val components = listOf(
+                component(
+                    "other/vae", "vae.safetensors", "vae", vaePath, vae.size.toLong(),
+                    immutableRevision = identities[1].immutableRevision,
+                    remoteObjectId = identities[1].remoteObjectId,
+                    bundleId = bundle,
+                    contentSha256 = vae.sha256(),
+                ),
+            )
 
             val verified = assertIs<ArtifactIdentityResolution.Verified>(
                 resolver(storage, manifest).resolve(
@@ -294,8 +306,6 @@ class LocalArtifactIdentityResolverTest {
         withRoot { storage, root ->
             val primary = "primary".encodeToByteArray()
             val componentBytes = "component".encodeToByteArray()
-            val primaryPath = write(root / "owner/model/model.safetensors", primary)
-            val componentPath = write(root / "shared/repo/component.safetensors", componentBytes)
             val primaryIdentity = downloadIdentity(
                 "owner/model",
                 "a".repeat(40),
@@ -316,6 +326,10 @@ class LocalArtifactIdentityResolverTest {
                     listOf(primaryIdentity, componentIdentity),
                 ),
             )
+            val primaryLocation = immutableArtifactStorageLocation(primaryIdentity, bundle)
+            val componentLocation = immutableArtifactStorageLocation(componentIdentity, bundle)
+            val primaryPath = write(root / "owner/model" / primaryLocation.localRelativePath, primary)
+            val componentPath = write(root / "shared/repo" / componentLocation.localRelativePath, componentBytes)
             val exactManifest = manifest(
                 requireNotNull(
                     ArtifactManifestEntry.create(
@@ -324,6 +338,8 @@ class LocalArtifactIdentityResolverTest {
                         primary.size.toLong(),
                         primary.sha256(),
                         bundle,
+                        primaryLocation.localRelativePath,
+                        primaryLocation.layoutRelativePath,
                     ),
                 ),
                 requireNotNull(
@@ -333,6 +349,8 @@ class LocalArtifactIdentityResolverTest {
                         componentBytes.size.toLong(),
                         componentBytes.sha256(),
                         bundle,
+                        componentLocation.localRelativePath,
+                        componentLocation.layoutRelativePath,
                     ),
                 ),
             )
@@ -366,18 +384,49 @@ class LocalArtifactIdentityResolverTest {
             val primaryBytes = "primary".encodeToByteArray()
             val vaeBytes = "vae".encodeToByteArray()
             val clipBytes = "clip".encodeToByteArray()
-            val primaryPath = write(root / "owner/model/model.safetensors", primaryBytes)
-            val vaePath = write(root / "other/vae/vae.safetensors", vaeBytes)
-            val clipPath = write(root / "other/clip/clip.safetensors", clipBytes)
-            val primaryIdentity = downloadIdentity("owner/model", revision, "model.safetensors", primaryBytes.size.toLong())
-            val vaeIdentity = downloadIdentity("other/vae", "b".repeat(40), "vae.safetensors", vaeBytes.size.toLong())
-            val clipIdentity = downloadIdentity("other/clip", "c".repeat(40), "clip.safetensors", clipBytes.size.toLong())
+            val primaryIdentity = downloadIdentity(
+                "owner/model", revision, "model.safetensors", primaryBytes.size.toLong(),
+                "sha256:${primaryBytes.sha256()}",
+            )
+            val vaeIdentity = downloadIdentity(
+                "other/vae", "b".repeat(40), "vae.safetensors", vaeBytes.size.toLong(),
+                "sha256:${vaeBytes.sha256()}",
+            )
+            val clipIdentity = downloadIdentity(
+                "other/clip", "c".repeat(40), "clip.safetensors", clipBytes.size.toLong(),
+                "sha256:${clipBytes.sha256()}",
+            )
+            val identities = listOf(primaryIdentity, vaeIdentity, clipIdentity)
+            val bundle = requireNotNull(
+                com.debanshu777.huggingfacemanager.download.artifactBundleId(identities),
+            )
+            val primaryLocation = immutableArtifactStorageLocation(primaryIdentity, bundle)
+            val vaeLocation = immutableArtifactStorageLocation(vaeIdentity, bundle)
+            val clipLocation = immutableArtifactStorageLocation(clipIdentity, bundle)
+            val primaryPath = write(root / "owner/model" / primaryLocation.localRelativePath, primaryBytes)
+            val vaePath = write(root / "other/vae" / vaeLocation.localRelativePath, vaeBytes)
+            val clipPath = write(root / "other/clip" / clipLocation.localRelativePath, clipBytes)
             val manifest = checkNotNull(
                 ArtifactManifest.create(
                     listOf(
-                        checkNotNull(ArtifactManifestEntry.create("model", primaryIdentity, primaryBytes.size.toLong(), primaryBytes.sha256())),
-                        checkNotNull(ArtifactManifestEntry.create("clip_l", vaeIdentity, vaeBytes.size.toLong(), vaeBytes.sha256())),
-                        checkNotNull(ArtifactManifestEntry.create("vae", clipIdentity, clipBytes.size.toLong(), clipBytes.sha256())),
+                        checkNotNull(
+                            ArtifactManifestEntry.create(
+                                "model", primaryIdentity, primaryBytes.size.toLong(), primaryBytes.sha256(), bundle,
+                                primaryLocation.localRelativePath, primaryLocation.layoutRelativePath,
+                            ),
+                        ),
+                        checkNotNull(
+                            ArtifactManifestEntry.create(
+                                "clip_l", vaeIdentity, vaeBytes.size.toLong(), vaeBytes.sha256(), bundle,
+                                vaeLocation.localRelativePath, vaeLocation.layoutRelativePath,
+                            ),
+                        ),
+                        checkNotNull(
+                            ArtifactManifestEntry.create(
+                                "vae", clipIdentity, clipBytes.size.toLong(), clipBytes.sha256(), bundle,
+                                clipLocation.localRelativePath, clipLocation.layoutRelativePath,
+                            ),
+                        ),
                     ),
                 ),
             )
@@ -413,8 +462,20 @@ class LocalArtifactIdentityResolverTest {
 
             val installedModel = model(primaryPath, primaryBytes.size.toLong(), "model.safetensors")
             val components = listOf(
-                component("other/vae", "vae.safetensors", "vae", vaePath, vaeBytes.size.toLong()),
-                component("other/clip", "clip.safetensors", "clip_l", clipPath, clipBytes.size.toLong(), id = 2),
+                component(
+                    "other/vae", "vae.safetensors", "clip_l", vaePath, vaeBytes.size.toLong(),
+                    immutableRevision = vaeIdentity.immutableRevision,
+                    remoteObjectId = vaeIdentity.remoteObjectId,
+                    bundleId = bundle,
+                    contentSha256 = vaeBytes.sha256(),
+                ),
+                component(
+                    "other/clip", "clip.safetensors", "vae", clipPath, clipBytes.size.toLong(), id = 2,
+                    immutableRevision = clipIdentity.immutableRevision,
+                    remoteObjectId = clipIdentity.remoteObjectId,
+                    bundleId = bundle,
+                    contentSha256 = clipBytes.sha256(),
+                ),
             )
             val resolver = resolver(storage, manifest)
             val artifact = assertIs<ArtifactIdentityResolution.Verified>(
@@ -447,14 +508,16 @@ class LocalArtifactIdentityResolverTest {
             )
             val entries = files.map { (role, relativePath, contents) ->
                 val bytes = contents.encodeToByteArray()
-                write(modelRoot / relativePath, bytes)
-                manifestEntry(role, "owner/model", "a".repeat(40), relativePath, bytes)
+                manifestEntry(role, "owner/model", "a".repeat(40), relativePath, bytes).also { entry ->
+                    write(modelRoot / entry.localRelativePath, bytes)
+                }
             }
+            val generationRoot = modelRoot / immutableArtifactGenerationRoot(defaultBundleId)
             val resolver = resolver(storage, manifest(*entries.toTypedArray()))
             val verified = assertIs<ArtifactIdentityResolution.Verified>(
                 resolver.resolve(
                     model(
-                        path = modelRoot.toString(),
+                        path = generationRoot.toString(),
                         size = 0L,
                         filename = DIFFUSERS_BUNDLE_DB_FILENAME,
                     ),
@@ -465,7 +528,7 @@ class LocalArtifactIdentityResolverTest {
             assertIs<VerifiedArtifactLoadTarget.Directory>(verified.artifact.loadTarget)
             assertEquals(4, verified.artifact.components.size)
 
-            write(modelRoot / "unet/diffusion_pytorch_model.safetensors", "vnet".encodeToByteArray())
+            write(modelRoot / entries.first().localRelativePath, "vnet".encodeToByteArray())
             assertFalse(resolver.revalidate(verified.artifact))
         }
     }
@@ -545,10 +608,12 @@ class LocalArtifactIdentityResolverTest {
             )
             val entries = files.map { (role, relativePath, contents) ->
                 val bytes = contents.encodeToByteArray()
-                write(modelRoot / relativePath, bytes)
-                manifestEntry(role, "owner/model", "a".repeat(40), relativePath, bytes)
+                manifestEntry(role, "owner/model", "a".repeat(40), relativePath, bytes).also { entry ->
+                    write(modelRoot / entry.localRelativePath, bytes)
+                }
             }
-            val differentContainedDirectory = modelRoot / "stale-row-target"
+            val generationRoot = modelRoot / immutableArtifactGenerationRoot(defaultBundleId)
+            val differentContainedDirectory = generationRoot / "stale-row-target"
             FileSystem.SYSTEM.createDirectories(differentContainedDirectory)
 
             val rejected = assertIs<ArtifactIdentityResolution.Rejected>(
@@ -578,17 +643,20 @@ class LocalArtifactIdentityResolverTest {
             )
             val entries = files.map { (role, relativePath, contents) ->
                 val bytes = contents.encodeToByteArray()
-                write(modelRoot / relativePath, bytes)
-                manifestEntry(role, "owner/model", "a".repeat(40), relativePath, bytes)
+                manifestEntry(role, "owner/model", "a".repeat(40), relativePath, bytes).also { entry ->
+                    write(modelRoot / entry.localRelativePath, bytes)
+                }
             }
+            val generationRoot = modelRoot / immutableArtifactGenerationRoot(defaultBundleId)
+            val vaeEntry = entries.single { it.logicalRole == "diffusers-vae" }
             val misplacedVae = write(
-                modelRoot / "alternate/vae/diffusion_pytorch_model.safetensors",
+                generationRoot / "alternate/vae/diffusion_pytorch_model.safetensors",
                 "vae".encodeToByteArray(),
             )
 
             val rejected = assertIs<ArtifactIdentityResolution.Rejected>(
                 resolver(storage, manifest(*entries.toTypedArray())).resolve(
-                    model(modelRoot.toString(), 0L, DIFFUSERS_BUNDLE_DB_FILENAME),
+                    model(generationRoot.toString(), 0L, DIFFUSERS_BUNDLE_DB_FILENAME),
                     listOf(
                         component(
                             repo = "owner/model",
@@ -596,6 +664,10 @@ class LocalArtifactIdentityResolverTest {
                             role = "diffusers-vae",
                             path = misplacedVae,
                             size = 3L,
+                            immutableRevision = vaeEntry.identity.immutableRevision,
+                            remoteObjectId = vaeEntry.identity.remoteObjectId,
+                            bundleId = vaeEntry.bundleId,
+                            contentSha256 = vaeEntry.contentSha256,
                         ),
                     ),
                 ),
@@ -627,13 +699,13 @@ class LocalArtifactIdentityResolverTest {
     fun staleSizeOrDigestEvidenceIsRejected() = runTest {
         withRoot { storage, root ->
             val bytes = "real".encodeToByteArray()
-            val path = write(root / "owner/model/model.gguf", bytes)
-            val staleDigest = manifest(
-                manifestEntry("model", "owner/model", "a".repeat(40), "model.gguf", "fake".encodeToByteArray()),
-            )
+            val staleDigestEntry =
+                manifestEntry("model", "owner/model", "a".repeat(40), "model.gguf", "fake".encodeToByteArray())
+            val staleDigest = manifest(staleDigestEntry)
             val staleSize = manifest(
                 manifestEntry("model", "owner/model", "a".repeat(40), "model.gguf", bytes + byteArrayOf(0)),
             )
+            val path = write(root / "owner/model" / staleDigestEntry.localRelativePath, bytes)
 
             assertIs<ArtifactIdentityResolution.Rejected>(
                 resolver(storage, staleDigest).resolve(model(path, bytes.size.toLong()), emptyList()),
@@ -692,14 +764,13 @@ class LocalArtifactIdentityResolverTest {
     fun cancellationDuringManifestHashingIsRethrown() = runTest {
         withRoot { storage, root ->
             val bytes = byteArrayOf(1, 2, 3)
-            val main = write(root / "owner/model/model.gguf", bytes)
+            val entry = manifestEntry("model", "owner/model", "a".repeat(40), "model.gguf", bytes)
+            val main = write(root / "owner/model" / entry.localRelativePath, bytes)
             val expected = CancellationException("stop")
             val resolver = LocalArtifactIdentityResolver(
                 storagePathProvider = storage,
                 manifestSource = {
-                    manifest(
-                        manifestEntry("model", "owner/model", "a".repeat(40), "model.gguf", bytes),
-                    )
+                    manifest(entry)
                 },
                 hashingDispatcher = StandardTestDispatcher(testScheduler),
                 fileSystem = FileSystem.SYSTEM,
@@ -867,13 +938,23 @@ class LocalArtifactIdentityResolverTest {
         relative: String,
         expectedBytes: ByteArray,
     ): ArtifactManifestEntry {
-        val identity = downloadIdentity(repo, revision, relative, expectedBytes.size.toLong())
+        val identity = downloadIdentity(
+            repo,
+            revision,
+            relative,
+            expectedBytes.size.toLong(),
+            "sha256:${expectedBytes.sha256()}",
+        )
+        val location = immutableArtifactStorageLocation(identity, defaultBundleId)
         return checkNotNull(
             ArtifactManifestEntry.create(
                 logicalRole = role,
                 identity = identity,
                 byteCount = expectedBytes.size.toLong(),
                 contentSha256 = expectedBytes.sha256(),
+                bundleId = defaultBundleId,
+                localRelativePath = location.localRelativePath,
+                layoutRelativePath = location.layoutRelativePath,
             ),
         )
     }
@@ -887,8 +968,13 @@ class LocalArtifactIdentityResolverTest {
         changeStamp = "stamp:$bytes",
     )
 
-    private fun downloadIdentity(repo: String, revision: String, relative: String, size: Long) =
-        checkNotNull(DownloadArtifactIdentity.create(repo, revision, relative, null, size))
+    private fun downloadIdentity(
+        repo: String,
+        revision: String,
+        relative: String,
+        size: Long,
+        remoteObjectId: String? = null,
+    ) = checkNotNull(DownloadArtifactIdentity.create(repo, revision, relative, remoteObjectId, size))
 
     private fun ByteArray.sha256(): String = Buffer().write(this).snapshot().sha256().hex()
 

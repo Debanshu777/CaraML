@@ -6,6 +6,7 @@ import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
@@ -49,27 +50,14 @@ class IosDownloadResponseBoundTest {
     }
 
     @Test
-    fun completionBindingRejectsCurrentUnscopedRequestAsSecurePath() {
+    fun typedRequestRejectsUnscopedDestinationBeforeCompletionBinding() {
         val scoped = request(remoteObjectId = "b".repeat(40))
-        val unscoped = scoped.copy(
-            metadata = scoped.metadata.copy(
-                destinationRelativePath = scoped.metadata.artifact.relativePath,
-            ),
-        )
-        val batch = batchWithPersistedArtifactId(
-            persistedRequest = scoped,
-            currentRequest = unscoped,
-        )
-        val descriptor = IosBackgroundTaskDescriptor(
-            batchId = batch.batchId,
-            artifactId = batch.artifacts.single().artifactId,
-            expectedBytes = unscoped.metadata.artifact.expectedBytes,
-        )
 
-        assertEquals(
-            DownloadFailureCode.SECURE_PATH,
-            iosPersistedTaskBindingFailure(batch, descriptor),
-        )
+        assertFailsWith<IllegalArgumentException> {
+            scoped.metadata.copy(
+                destinationRelativePath = scoped.metadata.artifact.relativePath,
+            )
+        }
     }
 
     @Test

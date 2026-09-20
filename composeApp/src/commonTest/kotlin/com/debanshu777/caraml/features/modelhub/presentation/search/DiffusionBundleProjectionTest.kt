@@ -4,6 +4,7 @@ import com.debanshu777.huggingfacemanager.download.ArtifactManifest
 import com.debanshu777.huggingfacemanager.download.ArtifactManifestEntry
 import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
+import com.debanshu777.huggingfacemanager.download.artifactBundleId
 import com.debanshu777.huggingfacemanager.download.immutableArtifactStorageLocation
 import com.debanshu777.caraml.core.download.DownloadArtifactRequest
 import com.debanshu777.caraml.core.download.DownloadArtifactSnapshot
@@ -18,9 +19,64 @@ import com.debanshu777.huggingfacemanager.sdcpp.SdCppComponent
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class DiffusionBundleProjectionTest {
+    @Test
+    fun durableProjectionKeepsExactTaskVisibleWhenDisplayMetadataIsEnriched() {
+        val primary = ui(identity("checkpoint.safetensors"))
+        val exact = buildDeterministicDiffusionBundleMetadata(
+            selected = listOf(primary),
+            componentMetadata = emptyList(),
+            author = "original-author",
+            libraryName = "original-library",
+            pipelineTag = "text-to-image",
+        )
+        val enriched = exact.map { metadata ->
+            metadata.copy(
+                author = "enriched-author",
+                libraryName = "enriched-library",
+                pipelineTag = "image-to-image",
+                contextLength = 4096,
+            )
+        }
+
+        assertNotNull(
+            relevantDownloadTask(
+                batches = listOf(snapshot("enriched", enriched, DownloadArtifactState.RUNNING)),
+                expectedRequests = requests(exact),
+                artifact = primary.artifact,
+            ),
+        )
+    }
+
+    @Test
+    fun durableProjectionRejectsDuplicateCanonicalTaskIdentity() {
+        val primary = ui(identity("checkpoint.safetensors"))
+        val component = metadata(
+            identity("vae.safetensors", repositoryId = "shared/vae"),
+            role = "vae",
+        )
+        val exact = buildDeterministicDiffusionBundleMetadata(
+            selected = listOf(primary),
+            componentMetadata = listOf(component),
+            author = null,
+            libraryName = null,
+            pipelineTag = null,
+        )
+        val duplicated = exact + exact.single { it.logicalRole == "vae" }
+
+        assertEquals(
+            null,
+            relevantDownloadTask(
+                batches = listOf(snapshot("duplicate", duplicated, DownloadArtifactState.RUNNING)),
+                expectedRequests = requests(duplicated),
+                artifact = primary.artifact,
+            ),
+        )
+    }
+
     @Test
     fun durableProjectionRejectsBundleWhenExternalComponentRevisionChanged() {
         val primary = ui(identity("checkpoint.safetensors"))
@@ -59,15 +115,20 @@ class DiffusionBundleProjectionTest {
 
         assertEquals(
             null,
-            relevantDownloadTask(listOf(stale), expectedRequests, primary.artifact),
+            relevantDownloadControl(listOf(stale), expectedRequests, primary.artifact),
         )
         assertEquals(
-            primary.artifact,
-            relevantDownloadTask(
-                listOf(snapshot("current", currentMetadata, DownloadArtifactState.RUNNING)),
+            null,
+            relevantDownloadTask(listOf(stale), expectedRequests, primary.artifact),
+        )
+        val current = snapshot("current", currentMetadata, DownloadArtifactState.RUNNING)
+        assertEquals(
+            current.artifacts.single { it.request.metadata.artifact == primary.artifact }.artifactId,
+            relevantDownloadControl(
+                listOf(current),
                 expectedRequests,
                 primary.artifact,
-            )?.task?.request?.metadata?.artifact,
+            )?.artifactId,
         )
     }
 
@@ -110,13 +171,17 @@ class DiffusionBundleProjectionTest {
     fun aggregateManifestMarksOnlyTheExactlyCommittedVariant() {
         val committed = identity("model.fp16.safetensors")
         val otherVariant = identity("model.safetensors")
+        val bundleId = requireNotNull(artifactBundleId(listOf(committed)))
+        val location = immutableArtifactStorageLocation(committed, bundleId)
         val entry = requireNotNull(
             ArtifactManifestEntry.create(
                 logicalRole = "model",
                 identity = committed,
                 byteCount = committed.expectedBytes,
                 contentSha256 = "c".repeat(64),
-                localRelativePath = committed.relativePath,
+                bundleId = bundleId,
+                localRelativePath = location.localRelativePath,
+                layoutRelativePath = location.layoutRelativePath,
             ),
         )
         val manifest = requireNotNull(ArtifactManifest.create(listOf(entry)))
@@ -255,10 +320,7 @@ class DiffusionBundleProjectionTest {
             libraryName = null,
             pipelineTag = null,
         ).single()
-        val wrongGeneration = manifestEntry(
-            metadata = expected,
-            localRelativePath = expected.layoutRelativePath,
-        )
+        val wrongGeneration = manifestEntry(metadata = expected, bundleId = "d".repeat(64))
         val aggregate = requireNotNull(ArtifactManifest.create(listOf(wrongGeneration)))
 
         assertFalse(aggregate.matchesExactBundle(listOf(expected)))
@@ -273,10 +335,7 @@ class DiffusionBundleProjectionTest {
             libraryName = null,
             pipelineTag = null,
         ).single()
-        val wrongGeneration = manifestEntry(
-            metadata = expected,
-            localRelativePath = expected.layoutRelativePath,
-        )
+        val wrongGeneration = manifestEntry(metadata = expected, bundleId = "d".repeat(64))
 
         assertEquals(
             null,
@@ -350,23 +409,23 @@ class DiffusionBundleProjectionTest {
         author = null,
         libraryName = "stable-diffusion.cpp",
         pipelineTag = null,
-        destinationRelativePath = identity.relativePath,
     )
 
     private fun manifestEntry(
         metadata: DownloadMetadataDTO,
-        localRelativePath: String = metadata.destinationRelativePath,
-    ) = requireNotNull(
-        ArtifactManifestEntry.create(
+        bundleId: String = metadata.bundleId,
+    ): ArtifactManifestEntry {
+        val location = immutableArtifactStorageLocation(metadata.artifact, bundleId)
+        return requireNotNull(ArtifactManifestEntry.create(
             logicalRole = metadata.logicalRole,
             identity = metadata.artifact,
             byteCount = metadata.artifact.expectedBytes,
             contentSha256 = "c".repeat(64),
-            bundleId = metadata.bundleId,
-            localRelativePath = localRelativePath,
-            layoutRelativePath = metadata.layoutRelativePath,
-        ),
-    )
+            bundleId = bundleId,
+            localRelativePath = location.localRelativePath,
+            layoutRelativePath = location.layoutRelativePath,
+        ))
+    }
 
     private fun requests(metadata: List<DownloadMetadataDTO>): List<DownloadArtifactRequest> =
         metadata.map { value ->

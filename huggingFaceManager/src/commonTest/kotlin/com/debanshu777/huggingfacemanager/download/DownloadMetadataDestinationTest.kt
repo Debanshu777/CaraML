@@ -3,7 +3,6 @@ package com.debanshu777.huggingfacemanager.download
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class DownloadMetadataDestinationTest {
@@ -31,7 +30,7 @@ class DownloadMetadataDestinationTest {
     }
 
     @Test
-    fun persistedLegacyFp16MetadataRemainsReadableButIsNotWritableStorage() {
+    fun persistedUnscopedFp16MetadataIsRejected() {
         val artifact = requireNotNull(
             DownloadArtifactIdentity.create(
                 repositoryId = "org/model",
@@ -42,9 +41,9 @@ class DownloadMetadataDestinationTest {
             ),
         )
 
-        val metadata = metadata(artifact, "unet/diffusion_pytorch_model.safetensors")
-        assertEquals("unet/diffusion_pytorch_model.safetensors", metadata.destinationRelativePath)
-        assertFalse(metadata.usesImmutableStorageLayout)
+        assertFailsWith<IllegalArgumentException> {
+            metadata(artifact, "unet/diffusion_pytorch_model.safetensors")
+        }
     }
 
     @Test

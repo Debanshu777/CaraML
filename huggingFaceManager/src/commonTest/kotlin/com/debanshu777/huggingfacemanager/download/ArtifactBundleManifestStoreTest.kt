@@ -21,7 +21,8 @@ class ArtifactBundleManifestStoreTest {
         store.publish(entries)
         assertEquals(2, store.readValidated()?.entries?.size)
 
-        fixture.fs.write(fixture.vaeRoot / "vae.safetensors") { writeUtf8("substituted") }
+        val vaeEntry = entries.single { it.logicalRole == "vae" }
+        fixture.fs.write(fixture.vaeRoot / vaeEntry.localRelativePath) { writeUtf8("substituted") }
         assertNull(fixture.bundleStore().readValidated())
     }
 
@@ -46,22 +47,10 @@ class ArtifactBundleManifestStoreTest {
         val fixture = BundleFixture("preserve-valid")
         val old = fixture.installBundle("a".repeat(40), "old-main", "old-vae")
         fixture.bundleStore().publish(old)
-        val replacement = old.map { entry ->
-            requireNotNull(
-                ArtifactManifestEntry.create(
-                    logicalRole = entry.logicalRole,
-                    identity = entry.identity,
-                    byteCount = entry.byteCount,
-                    contentSha256 = entry.contentSha256,
-                    bundleId = "f".repeat(64),
-                    localRelativePath = entry.localRelativePath,
-                ),
-            )
-        }
         val crashing = fixture.bundleStore { phase ->
             if (phase == ManifestJournalPhase.PREPARED) throw BundleCrash()
         }
-        assertFailsWith<BundleCrash> { crashing.publish(replacement) }
+        assertFailsWith<BundleCrash> { crashing.publish(old) }
         fixture.fs.write(fixture.mainRoot / "${ArtifactBundleManifestStore.MANIFEST_FILE_NAME}.part") {
             writeUtf8("invalid")
         }
@@ -133,11 +122,22 @@ private class BundleFixture(suffix: String = "default") {
         bundleId: String,
     ): ArtifactManifestEntry {
         val bytes = value.encodeToByteArray()
+        val location = immutableArtifactStorageLocation(identity, bundleId)
         val entry = requireNotNull(
-            ArtifactManifestEntry.create(role, identity, bytes.size.toLong(), bytes.toByteString().sha256().hex(), bundleId),
+            ArtifactManifestEntry.create(
+                role,
+                identity,
+                bytes.size.toLong(),
+                bytes.toByteString().sha256().hex(),
+                bundleId,
+                location.localRelativePath,
+                location.layoutRelativePath,
+            ),
         )
-        fs.write(root / "${identity.relativePath}.part") { write(bytes) }
-        ArtifactManifestStore(root, fs).commit(identity.relativePath, entry)
+        val target = root / location.localRelativePath
+        fs.createDirectories(requireNotNull(target.parent))
+        fs.write("$target.part".toPath()) { write(bytes) }
+        ArtifactManifestStore(root, fs).commit(location.localRelativePath, entry)
         return entry
     }
 

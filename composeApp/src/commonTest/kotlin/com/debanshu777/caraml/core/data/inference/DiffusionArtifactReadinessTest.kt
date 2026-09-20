@@ -69,14 +69,17 @@ class DiffusionArtifactReadinessTest {
                 expectedBytes = 4L,
             ),
         )
+        val bundleId = "b".repeat(64)
+        val location = immutableArtifactStorageLocation(identity, bundleId)
         return requireNotNull(
             ArtifactManifestEntry.create(
                 logicalRole = logicalRole,
                 identity = identity,
                 byteCount = 4L,
                 contentSha256 = "c".repeat(64),
-                bundleId = "b".repeat(64),
-                localRelativePath = path,
+                bundleId = bundleId,
+                localRelativePath = location.localRelativePath,
+                layoutRelativePath = location.layoutRelativePath,
             ),
         )
     }

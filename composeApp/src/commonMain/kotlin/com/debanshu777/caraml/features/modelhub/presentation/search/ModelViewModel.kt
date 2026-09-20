@@ -29,6 +29,7 @@ import com.debanshu777.caraml.core.download.DownloadBatchSnapshot
 import com.debanshu777.caraml.core.download.DownloadBatchState
 import com.debanshu777.caraml.core.download.DownloadCoordinator
 import com.debanshu777.caraml.core.download.DownloadEvidenceFactory
+import com.debanshu777.caraml.core.download.downloadArtifactTaskId
 import com.debanshu777.caraml.core.recommendation.storage.PersistedModelEvidenceCodec
 import com.debanshu777.caraml.features.modelhub.domain.ModelRecommendationService
 import com.debanshu777.caraml.features.modelhub.domain.RecommendationOrdering
@@ -103,6 +104,21 @@ internal data class RelevantDownloadTask(
     val task: DownloadArtifactSnapshot,
 )
 
+data class DurableDownloadControlUiState(
+    val batchId: String,
+    val artifactId: String,
+    val batchState: DownloadBatchState,
+    val artifactState: DownloadArtifactState,
+)
+
+private fun RelevantDownloadTask.toControlUiState(): DurableDownloadControlUiState =
+    DurableDownloadControlUiState(
+        batchId = batch.batchId,
+        artifactId = task.artifactId,
+        batchState = batch.state,
+        artifactState = task.state,
+    )
+
 internal fun relevantDownloadTask(
     batches: List<DownloadBatchSnapshot>,
     artifact: DownloadArtifactIdentity?,
@@ -113,18 +129,26 @@ internal fun relevantDownloadTask(
     }
 }
 
+internal fun relevantDownloadControl(
+    batches: List<DownloadBatchSnapshot>,
+    expectedRequests: List<DownloadArtifactRequest>,
+    artifact: DownloadArtifactIdentity?,
+): DurableDownloadControlUiState? =
+    relevantDownloadTask(batches, expectedRequests, artifact)?.toControlUiState()
+
 internal fun relevantDownloadTask(
     batches: List<DownloadBatchSnapshot>,
     expectedRequests: List<DownloadArtifactRequest>,
     artifact: DownloadArtifactIdentity?,
 ): RelevantDownloadTask? {
     if (artifact == null || expectedRequests.isEmpty()) return null
+    val expectedTaskId = expectedRequests.singleOrNull { request ->
+        request.metadata.artifact == artifact
+    }?.let(::downloadArtifactTaskId) ?: return null
     return relevantDownloadTask(
         batches = batches.filter { batch -> batch.matchesExactRequests(expectedRequests) },
     ) { task ->
-        task.request == expectedRequests.singleOrNull { request ->
-            request.metadata.artifact == artifact
-        }
+        downloadArtifactTaskId(task.request) == expectedTaskId
     }
 }
 
@@ -132,8 +156,14 @@ private fun DownloadBatchSnapshot.matchesExactRequests(
     expectedRequests: List<DownloadArtifactRequest>,
 ): Boolean {
     if (artifacts.size != expectedRequests.size) return false
-    val unmatched = artifacts.mapTo(mutableListOf(), DownloadArtifactSnapshot::request)
-    return expectedRequests.all(unmatched::remove) && unmatched.isEmpty()
+    val expectedTaskIds = expectedRequests.map(::downloadArtifactTaskId)
+    val actualTaskIds = artifacts.map { artifact -> downloadArtifactTaskId(artifact.request) }
+    if (expectedTaskIds.distinct().size != expectedTaskIds.size ||
+        actualTaskIds.distinct().size != actualTaskIds.size
+    ) {
+        return false
+    }
+    return expectedTaskIds.sorted() == actualTaskIds.sorted()
 }
 
 private fun relevantDownloadTask(
@@ -192,6 +222,7 @@ data class GgufFileUiState(
     val isDownloaded: Boolean,
     val progress: Float?,
     val artifact: DownloadArtifactIdentity? = null,
+    val durableControl: DurableDownloadControlUiState? = null,
 )
 
 internal fun projectCommittedDiffusionVariants(
@@ -389,6 +420,8 @@ data class InstallBundleUiState(
     val overallBytesTotal: Long = 0L,
     /** Short filename of the file currently being downloaded, e.g. "flux1-dev-q4_k.gguf". */
     val currentDownloadLabel: String? = null,
+    /** Exact current batch/task pair authorized for user controls. */
+    val durableControl: DurableDownloadControlUiState? = null,
 )
 
 /** Internal snapshot of ongoing install progress, updated on every progress tick. */
@@ -398,6 +431,31 @@ private data class InstallProgress(
     val bytesTotal: Long = 0L,
     val label: String? = null,
 )
+
+private enum class DownloadControlCommand {
+    PAUSE,
+    RESUME,
+    CANCEL,
+    RETRY,
+    ;
+
+    fun accepts(state: DownloadBatchState): Boolean = when (this) {
+        PAUSE -> state in setOf(
+            DownloadBatchState.QUEUED,
+            DownloadBatchState.RUNNING,
+            DownloadBatchState.WAITING_FOR_NETWORK,
+        )
+        RESUME -> state == DownloadBatchState.PAUSED
+        CANCEL -> state in setOf(
+            DownloadBatchState.QUEUED,
+            DownloadBatchState.RUNNING,
+            DownloadBatchState.PAUSED,
+            DownloadBatchState.WAITING_FOR_NETWORK,
+            DownloadBatchState.FAILED_RETRYABLE,
+        )
+        RETRY -> state == DownloadBatchState.FAILED_RETRYABLE
+    }
+}
 
 private sealed interface PendingDownloadForLater {
     data class Single(
@@ -561,7 +619,8 @@ class ModelViewModel(
     private val _downloadError = MutableStateFlow<String?>(null)
     val downloadError: StateFlow<String?> = _downloadError.asStateFlow()
     private val _downloadBatches = MutableStateFlow<List<DownloadBatchSnapshot>>(emptyList())
-    val downloadBatches: StateFlow<List<DownloadBatchSnapshot>> = _downloadBatches.asStateFlow()
+    private val _actionableDownloadControls =
+        MutableStateFlow<Map<Pair<String, String>, DurableDownloadControlUiState>>(emptyMap())
     private var downloadObservationJob: Job? = null
     private val refreshedCompletedBatchIds = mutableSetOf<String>()
 
@@ -624,6 +683,9 @@ class ModelViewModel(
             installError = installError,
             isReady = isReady,
             isSelfContained = isSelfContained,
+            durableControl = selectedPath
+                ?.let { path -> ggufFiles.singleOrNull { it.path == path } }
+                ?.durableControl,
         )
     }.combine(_validatedBundleReady) { bundle, validatedBundleReady ->
         bundle.copy(isReady = bundle.isReady && validatedBundleReady)
@@ -1084,20 +1146,37 @@ class ModelViewModel(
         }
     }
 
-    fun pauseDownload(batchId: String) {
-        viewModelScope.launch { downloadCoordinator.pause(batchId) }
+    fun pauseDownload(batchId: String, artifactId: String) {
+        dispatchDownloadControl(batchId, artifactId, DownloadControlCommand.PAUSE)
     }
 
-    fun resumeDownload(batchId: String) {
-        viewModelScope.launch { downloadCoordinator.resume(batchId) }
+    fun resumeDownload(batchId: String, artifactId: String) {
+        dispatchDownloadControl(batchId, artifactId, DownloadControlCommand.RESUME)
     }
 
-    fun cancelDownload(batchId: String) {
-        viewModelScope.launch { downloadCoordinator.cancel(batchId) }
+    fun cancelDownload(batchId: String, artifactId: String) {
+        dispatchDownloadControl(batchId, artifactId, DownloadControlCommand.CANCEL)
     }
 
-    fun retryDownload(batchId: String) {
-        viewModelScope.launch { downloadCoordinator.retry(batchId) }
+    fun retryDownload(batchId: String, artifactId: String) {
+        dispatchDownloadControl(batchId, artifactId, DownloadControlCommand.RETRY)
+    }
+
+    private fun dispatchDownloadControl(
+        batchId: String,
+        artifactId: String,
+        command: DownloadControlCommand,
+    ) {
+        val control = _actionableDownloadControls.value[batchId to artifactId] ?: return
+        if (!command.accepts(control.batchState)) return
+        viewModelScope.launch {
+            when (command) {
+                DownloadControlCommand.PAUSE -> downloadCoordinator.pause(control.batchId)
+                DownloadControlCommand.RESUME -> downloadCoordinator.resume(control.batchId)
+                DownloadControlCommand.CANCEL -> downloadCoordinator.cancel(control.batchId)
+                DownloadControlCommand.RETRY -> downloadCoordinator.retry(control.batchId)
+            }
+        }
     }
 
     private fun observeDurableDownloads(modelId: String) {
@@ -1149,19 +1228,19 @@ class ModelViewModel(
             DownloadBatchState.VERIFYING,
         )
         val currentRequestBundles = currentExpectedRequestBundles()
-        val selections = currentRequestBundles.mapNotNull { (artifact, requests) ->
-            relevantDownloadTask(batches, requests, artifact)
-        }
-        val relevantBatches = selections.map(RelevantDownloadTask::batch).distinctBy { it.batchId }
+        val selectionsByArtifact = currentRequestBundles.mapNotNull { (artifact, requests) ->
+            relevantDownloadTask(batches, requests, artifact)?.let { artifact to it }
+        }.toMap()
+        val relevantBatches = selectionsByArtifact.values
+            .map(RelevantDownloadTask::batch)
+            .distinctBy { it.batchId }
         _isDownloading.value = relevantBatches.any { it.state in activeBatchStates }
 
         val selectedArtifact = _selectedVariantPath.value?.let { selectedPath ->
             _ggufFiles.value.singleOrNull { it.path == selectedPath }?.artifact
         }
         val selectedRequests = selectedArtifact?.let(currentRequestBundles::get)
-        val selectedTask = selectedRequests?.let { requests ->
-            relevantDownloadTask(batches, requests, selectedArtifact)
-        }
+        val selectedTask = selectedArtifact?.let(selectionsByArtifact::get)
         val runningTask = selectedTask?.batch?.artifacts?.asSequence()
             ?.filter { it.state == DownloadArtifactState.RUNNING }
             ?.map { task -> RelevantDownloadTask(selectedTask.batch, task) }
@@ -1182,18 +1261,27 @@ class ModelViewModel(
         _ggufFiles.update { files ->
             files.map { file ->
                 val task = file.artifact?.let { artifact ->
-                    currentRequestBundles[artifact]?.let { requests ->
-                        relevantDownloadTask(batches, requests, artifact)?.task
-                    }
+                    selectionsByArtifact[artifact]?.task
                 }
+                val control = file.artifact?.let(selectionsByArtifact::get)?.toControlUiState()
                 file.copy(
                     progress = task?.takeIf {
                         it.state == DownloadArtifactState.RUNNING && it.expectedBytes > 0L
                     }?.let {
                         it.bytesReceived.toFloat() * 100f / it.expectedBytes.toFloat()
                     },
+                    durableControl = control,
                 )
             }
+        }
+        val projectedControls = when (_browseMode.value) {
+            ModelHubBrowseMode.LanguageModels -> selectionsByArtifact.values
+            ModelHubBrowseMode.DiffusionImage,
+            ModelHubBrowseMode.DiffusionVideo,
+            -> listOfNotNull(selectedTask)
+        }.map(RelevantDownloadTask::toControlUiState)
+        _actionableDownloadControls.value = projectedControls.associateBy { control ->
+            control.batchId to control.artifactId
         }
         _setupComponents.update { components ->
             components.map { component ->
@@ -1223,7 +1311,7 @@ class ModelViewModel(
         val projectionBatch = if (selectedArtifact != null) {
             selectedTask?.batch
         } else {
-            relevantDownloadBatch(batches)
+            relevantDownloadBatch(relevantBatches)
         }
         _installProgress.value = projectionBatch?.let { batch ->
             InstallProgress(

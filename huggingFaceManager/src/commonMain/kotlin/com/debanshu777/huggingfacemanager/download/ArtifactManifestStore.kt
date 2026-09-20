@@ -18,6 +18,12 @@ enum class ManifestJournalPhase {
     ROLLING_BACK,
 }
 
+enum class ArtifactManifestRecoveryResult {
+    NO_PENDING_TRANSACTION,
+    RECOVERED,
+    QUARANTINED,
+}
+
 private enum class ManifestJournalStep {
     PREPARED,
     OLD_TARGET_PRESERVED,
@@ -288,7 +294,10 @@ class ArtifactManifestStore(
     internal fun close() = secureRoot?.close()
 
     fun commit(relativePath: String, entry: ArtifactManifestEntry) {
-        recover()
+        if (recover() == ArtifactManifestRecoveryResult.QUARANTINED) {
+            throw ArtifactVerificationException()
+        }
+        require(relativePath == entry.localRelativePath) { "Invalid model file path" }
         val target = validatedTarget(relativePath) ?: throw IllegalArgumentException("Invalid model file path")
         val staged = target.sibling(PART_SUFFIX)
         if (!validateFile(staged, entry)) throw ArtifactVerificationException()
@@ -339,7 +348,7 @@ class ArtifactManifestStore(
         if (requested.isEmpty() || requested.size != entries.size || requested.distinct().size != requested.size) {
             return false
         }
-        recover()
+        if (recover() == ArtifactManifestRecoveryResult.QUARANTINED) return false
         if (exists(journalPath) || exists(pruneJournalPath) || exists(manifestPreviousPath) || exists(manifestPartPath)) {
             return false
         }
@@ -358,29 +367,32 @@ class ArtifactManifestStore(
         return readValidated()?.bundleDigest == next.bundleDigest
     }
 
-    fun recover() {
+    fun recover(): ArtifactManifestRecoveryResult {
+        var recovered = false
         if (exists(pruneJournalPath)) {
             if (exists(journalPath)) throw ArtifactVerificationException()
             recoverPrune()
+            recovered = true
         }
-        if (!exists(journalPath)) return
+        if (!exists(journalPath)) {
+            return if (recovered) {
+                ArtifactManifestRecoveryResult.RECOVERED
+            } else {
+                ArtifactManifestRecoveryResult.NO_PENDING_TRANSACTION
+            }
+        }
         val decoded = readJournal() ?: run {
-            durableDelete(journalPartPath)
-            durableDelete(journalPath)
-            return
+            return settleUntrustedJournalIfScoped()
         }
         val target = validatedTarget(decoded.relativePath) ?: run {
-            durableDelete(journalPartPath)
-            durableDelete(journalPath)
-            return
+            return settleUntrustedJournalIfScoped()
         }
         val journal = normalizedJournal(decoded, target) ?: run {
-            discardUntrustedJournalIfCurrentManifestIsSettled()
-            return
+            return settleUntrustedJournalIfScoped()
         }
         if (!targetsImmutableStorageGeneration(journal)) {
             restorePreviousGeneration(journal, target)
-            return
+            return ArtifactManifestRecoveryResult.RECOVERED
         }
         if (journal.phase == ManifestJournalPhase.ROLLING_BACK) {
             restorePreviousGeneration(journal, target)
@@ -389,6 +401,7 @@ class ArtifactManifestStore(
         } else {
             restorePreviousGeneration(journal, target)
         }
+        return ArtifactManifestRecoveryResult.RECOVERED
     }
 
     private fun recoverPrune() {
@@ -507,12 +520,25 @@ class ArtifactManifestStore(
         )?.isScoped == true
     }
 
-    private fun discardUntrustedJournalIfCurrentManifestIsSettled() {
-        if (!validateManifest(manifestPath)) return
+    private fun settleUntrustedJournalIfScoped(): ArtifactManifestRecoveryResult {
+        val current = readManifest(manifestPath)
+            ?.takeIf { validateManifest(manifestPath) }
+            ?: return ArtifactManifestRecoveryResult.QUARANTINED
+        if (current.entries.any { entry ->
+                persistedArtifactStorageLocation(
+                    entry.identity,
+                    entry.bundleId,
+                    entry.localRelativePath,
+                )?.isScoped != true
+            }
+        ) {
+            return ArtifactManifestRecoveryResult.QUARANTINED
+        }
         durableDelete(manifestPartPath)
         durableDelete(manifestPreviousPath)
         durableDelete(journalPartPath)
         durableDelete(journalPath)
+        return ArtifactManifestRecoveryResult.RECOVERED
     }
 
     private fun legalJournalState(phase: ManifestJournalPhase, step: ManifestJournalStep): Boolean = when (phase) {

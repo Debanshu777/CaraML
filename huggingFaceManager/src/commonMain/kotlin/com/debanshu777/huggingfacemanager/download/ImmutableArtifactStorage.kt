@@ -40,10 +40,7 @@ fun immutableArtifactGenerationRoot(bundleId: String): String {
     return "$IMMUTABLE_ARTIFACT_DIRECTORY/$bundleId"
 }
 
-/**
- * Validates a persisted destination. The unscoped form is accepted only for pre-migration
- * manifest/database rows; new metadata defaults exclusively to [immutableArtifactStorageLocation].
- */
+/** Validates a persisted destination against the current immutable-generation layout. */
 fun persistedArtifactStorageLocation(
     identity: DownloadArtifactIdentity,
     bundleId: String,
@@ -51,13 +48,5 @@ fun persistedArtifactStorageLocation(
 ): ImmutableArtifactStorageLocation? {
     val scoped = runCatching { immutableArtifactStorageLocation(identity, bundleId) }.getOrNull()
         ?: return null
-    return when (localRelativePath) {
-        scoped.localRelativePath -> scoped
-        scoped.layoutRelativePath -> ImmutableArtifactStorageLocation(
-            generationRootRelativePath = null,
-            layoutRelativePath = scoped.layoutRelativePath,
-            localRelativePath = scoped.layoutRelativePath,
-        )
-        else -> null
-    }
+    return scoped.takeIf { localRelativePath == it.localRelativePath }
 }

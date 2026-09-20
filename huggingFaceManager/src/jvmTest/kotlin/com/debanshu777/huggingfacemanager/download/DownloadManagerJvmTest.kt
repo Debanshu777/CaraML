@@ -29,79 +29,75 @@ import kotlin.test.assertTrue
 
 class DownloadManagerJvmTest {
     @Test
-    fun persistedUnscopedDestinationIsRejectedBeforeNetworkOrStorageMutation() =
+    fun unscopedDestinationIsRejectedAtTypedBoundaryBeforeNetworkOrStorageMutation() =
         withTemporaryRoot { root ->
             val requests = AtomicInteger()
             val bytes = "legacy-write-must-not-run".encodeToByteArray()
             val scoped = scopedMetadata("model.gguf", "a".repeat(40), bytes)
-            val unscoped = scoped.copy(destinationRelativePath = scoped.layoutRelativePath)
 
             withServer { exchange ->
                 requests.incrementAndGet()
                 exchange.respond(status = 200, declaredLength = bytes.size.toLong(), body = bytes)
             }.use { server ->
-                val manager = DownloadManager(TestStoragePathProvider(root), server.baseUrl)
-
-                assertFailsWith<ArtifactFileAccessException> {
-                    runBlocking {
-                        manager.download("org/model", "model.gguf", unscoped).toList()
-                    }
+                DownloadManager(TestStoragePathProvider(root), server.baseUrl)
+                assertFailsWith<IllegalArgumentException> {
+                    scoped.copy(destinationRelativePath = scoped.layoutRelativePath)
                 }
             }
 
             assertEquals(0, requests.get())
-            assertFalse(modelFile(root, "org/model", unscoped.destinationRelativePath).exists())
-            assertFalse(modelFile(root, "org/model", unscoped.destinationRelativePath + ".part").exists())
+            assertFalse(modelFile(root, "org/model", scoped.layoutRelativePath).exists())
+            assertFalse(modelFile(root, "org/model", scoped.layoutRelativePath + ".part").exists())
         }
 
     @Test
-    fun persistedUnscopedDestinationCannotPublishOrDiscardThroughPublicMutationSeams() =
+    fun unscopedDestinationCannotReachPublicMutationSeams() =
         withTemporaryRoot { root ->
             val storageResolutions = AtomicInteger()
             val bytes = "legacy-mutation-must-not-run".encodeToByteArray()
             val scoped = scopedMetadata("model.gguf", "a".repeat(40), bytes)
-            val unscoped = scoped.copy(destinationRelativePath = scoped.layoutRelativePath)
-            val manager = DownloadManager(TestStoragePathProvider(root, storageResolutions))
+            DownloadManager(TestStoragePathProvider(root, storageResolutions))
 
-            assertFalse(runBlocking { manager.publishBundle("org/model", listOf(unscoped)) })
-            assertFailsWith<ArtifactFileAccessException> {
-                runBlocking { manager.discardCheckpoint(unscoped) }
+            assertFailsWith<IllegalArgumentException> {
+                scoped.copy(destinationRelativePath = scoped.layoutRelativePath)
             }
             assertEquals(0, storageResolutions.get())
         }
 
     @Test
-    fun exactLegacyManifestRemainsReadableWithoutBecomingWritable() = withTemporaryRoot { root ->
-        val bytes = "legacy-installed-model".encodeToByteArray()
+    fun settledUnscopedManifestIsNotPublishedOrReadable() = withTemporaryRoot { root ->
+        val bytes = "unscoped-installed-model".encodeToByteArray()
         val scoped = scopedMetadata("model.gguf", "a".repeat(40), bytes)
-        val legacy = scoped.copy(destinationRelativePath = scoped.layoutRelativePath)
         val modelRoot = modelFile(root, "org/model", "").apply { mkdirs() }
-        File(modelRoot, legacy.destinationRelativePath + ".part").apply {
+        File(modelRoot, scoped.destinationRelativePath + ".part").apply {
             parentFile.mkdirs()
             writeBytes(bytes)
         }
         ArtifactManifestStore(modelRoot.absolutePath.toOkioPath()).commit(
-            relativePath = legacy.destinationRelativePath,
+            relativePath = scoped.destinationRelativePath,
             entry = requireNotNull(
                 ArtifactManifestEntry.create(
-                    logicalRole = legacy.logicalRole,
-                    identity = legacy.artifact,
+                    logicalRole = scoped.logicalRole,
+                    identity = scoped.artifact,
                     byteCount = bytes.size.toLong(),
                     contentSha256 = bytes.sha256Hex(),
-                    bundleId = legacy.bundleId,
-                    localRelativePath = legacy.destinationRelativePath,
-                    layoutRelativePath = legacy.layoutRelativePath,
+                    bundleId = scoped.bundleId,
+                    localRelativePath = scoped.destinationRelativePath,
+                    layoutRelativePath = scoped.layoutRelativePath,
                 ),
+            ),
+        )
+        val manifestFile = File(modelRoot, ArtifactManifestStore.MANIFEST_FILE_NAME)
+        manifestFile.writeText(
+            manifestFile.readText().replace(
+                "\"localRelativePath\":\"${scoped.destinationRelativePath}\"",
+                "\"localRelativePath\":\"${scoped.layoutRelativePath}\"",
             ),
         )
         val manager = DownloadManager(TestStoragePathProvider(root))
 
-        assertTrue(runBlocking { manager.isPublished(legacy) })
-        assertEquals(
-            legacy.destinationRelativePath,
-            runBlocking { manager.validatedArtifacts("org/model") }?.entries?.single()?.localRelativePath,
-        )
-        assertFalse(runBlocking { manager.publishBundle("org/model", listOf(legacy)) })
+        assertFalse(runBlocking { manager.isPublished(scoped) })
+        assertEquals(null, runBlocking { manager.validatedArtifacts("org/model") })
     }
 
     @Test

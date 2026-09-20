@@ -31,26 +31,13 @@ import kotlin.test.assertTrue
 
 class ModelDownloadFinalizerTest {
     @Test
-    fun persistedUnscopedArtifactCannotPublishManifestOrReadyCatalog() = runTest {
-        val calls = mutableListOf<String>()
+    fun typedArtifactRejectsUnscopedDestinationBeforeFinalization() = runTest {
         val scoped = finalizerBatch()
-        val unsafe = scoped.copy(
-            artifacts = scoped.artifacts.map { artifact ->
-                artifact.copy(
-                    request = artifact.request.copy(
-                        metadata = artifact.request.metadata.copy(
-                            destinationRelativePath = artifact.request.metadata.layoutRelativePath,
-                        ),
-                    ),
-                )
-            },
-        )
+        val metadata = scoped.artifacts.first().request.metadata
 
-        assertFailsWith<ArtifactVerificationException> {
-            finalizer(unsafe, calls).finalize(unsafe.batchId)
+        assertFailsWith<IllegalArgumentException> {
+            metadata.copy(destinationRelativePath = metadata.layoutRelativePath)
         }
-
-        assertEquals(emptyList(), calls)
     }
 
     @Test

@@ -42,13 +42,8 @@ import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import com.debanshu777.caraml.core.drawer.AppDrawerShell
 import com.debanshu777.caraml.core.drawer.LocalAppWindowWidth
-import com.debanshu777.caraml.core.download.DownloadArtifactRequest
-import com.debanshu777.caraml.core.download.DownloadArtifactSnapshot
 import com.debanshu777.caraml.core.download.DownloadArtifactState
-import com.debanshu777.caraml.core.download.DownloadBatchSnapshot
 import com.debanshu777.caraml.core.download.DownloadBatchState
-import com.debanshu777.caraml.core.download.DownloadUserIntent
-import com.debanshu777.caraml.core.download.pendingEvidence
 import com.debanshu777.caraml.core.navigation.AppScreen
 import com.debanshu777.caraml.core.rating.SdArchitecture
 import com.debanshu777.caraml.core.recommendation.DiffusionComponentDescriptor
@@ -72,6 +67,7 @@ import com.debanshu777.caraml.features.modelhub.presentation.details.components.
 import com.debanshu777.caraml.features.modelhub.presentation.search.GgufFileUiState
 import com.debanshu777.caraml.features.modelhub.presentation.search.InstallBundleUiState
 import com.debanshu777.caraml.features.modelhub.presentation.search.SetupComponentUiState
+import com.debanshu777.caraml.features.modelhub.presentation.search.DurableDownloadControlUiState
 import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
 import com.debanshu777.huggingfacemanager.model.ListModelsResponse
@@ -548,12 +544,10 @@ class ModelDetailsAuroraUiTest {
     fun durableTransferLocksOtherRowsWhileExactTaskControlsRemainAvailable() =
         runComposeUiTest {
             val fixture = ggufDownloadFixture()
-            val activeBatch = durableBatch(
+            val activeControl = durableControl(
                 batchId = "active-batch",
-                artifact = fixture.activeArtifact,
                 artifactState = DownloadArtifactState.RUNNING,
                 batchState = DownloadBatchState.RUNNING,
-                bytesReceived = fixture.activeArtifact.expectedBytes / 2,
             )
             var pausedBatch = ""
             var cancelledBatch = ""
@@ -562,23 +556,20 @@ class ModelDetailsAuroraUiTest {
                     Box(Modifier.width(900.dp).height(720.dp)) {
                         ModelDetailContent(
                             model = fixture.model,
-                            ggufFiles = fixture.files,
+                            ggufFiles = fixture.files.map { file ->
+                                if (file.artifact == fixture.activeArtifact) {
+                                    file.copy(durableControl = activeControl)
+                                } else {
+                                    file
+                                }
+                            },
                             isDownloading = true,
                             activeDownloadArtifact = fixture.activeArtifact,
                             onDownloadClick = { _, _, _ -> },
                             recommendationState = fixture.recommendation,
                             windowWidth = 900.dp,
-                            downloadBatches = listOf(
-                                activeBatch,
-                                durableBatch(
-                                    batchId = "idle-cancelled",
-                                    artifact = fixture.idleArtifact,
-                                    artifactState = DownloadArtifactState.CANCELLED,
-                                    batchState = DownloadBatchState.CANCELLED,
-                                ),
-                            ),
-                            onPauseDownload = { pausedBatch = it },
-                            onCancelDownload = { cancelledBatch = it },
+                            onPauseDownload = { batchId, _ -> pausedBatch = batchId },
+                            onCancelDownload = { batchId, _ -> cancelledBatch = batchId },
                         )
                     }
                 }
@@ -675,9 +666,8 @@ class ModelDetailsAuroraUiTest {
                     modelDescription = null,
                     onVariantSelected = {},
                     onInstall = {},
-                    durableBatch = durableBatch(
+                    durableControl = durableControl(
                         batchId = "retryable-batch",
-                        artifact = artifact,
                         artifactState = DownloadArtifactState.FAILED_RETRYABLE,
                         batchState = DownloadBatchState.FAILED_RETRYABLE,
                     ),
@@ -696,19 +686,9 @@ class ModelDetailsAuroraUiTest {
     }
 
     @Test
-    fun selectedInstallArtifactControlsWinOverEarlierDifferentVariantBatch() =
+    fun installControlsUseOnlyTheProjectedSelectedBatch() =
         runComposeUiTest {
             val fixture = realisticInstallFixture()
-            val selected = requireNotNull(fixture.installState.variants.first().artifact)
-            val other = requireNotNull(
-                DownloadArtifactIdentity.create(
-                    repositoryId = selected.repositoryId,
-                    immutableRevision = selected.immutableRevision,
-                    relativePath = "unet/model-q8.safetensors",
-                    remoteObjectId = "sha256:${"f".repeat(64)}",
-                    expectedBytes = selected.expectedBytes * 2,
-                ),
-            )
             var resumedBatch = ""
             var cancelledBatch = ""
             setContent {
@@ -719,27 +699,20 @@ class ModelDetailsAuroraUiTest {
                             ggufFiles = emptyList(),
                             isDownloading = true,
                             onDownloadClick = { _, _, _ -> },
-                            installBundleState = fixture.installState.copy(isInstalling = true),
-                            onVariantSelected = {},
-                            onSmartInstall = {},
-                            showInstallBundle = true,
-                            recommendationState = fixture.recommendation,
-                            downloadBatches = listOf(
-                                durableBatch(
-                                    batchId = "other-running",
-                                    artifact = other,
-                                    artifactState = DownloadArtifactState.RUNNING,
-                                    batchState = DownloadBatchState.RUNNING,
-                                ),
-                                durableBatch(
+                            installBundleState = fixture.installState.copy(
+                                isInstalling = true,
+                                durableControl = durableControl(
                                     batchId = "selected-paused",
-                                    artifact = selected,
                                     artifactState = DownloadArtifactState.PAUSED,
                                     batchState = DownloadBatchState.PAUSED,
                                 ),
                             ),
-                            onResumeDownload = { resumedBatch = it },
-                            onCancelDownload = { cancelledBatch = it },
+                            onVariantSelected = {},
+                            onSmartInstall = {},
+                            showInstallBundle = true,
+                            recommendationState = fixture.recommendation,
+                            onResumeDownload = { batchId, _ -> resumedBatch = batchId },
+                            onCancelDownload = { batchId, _ -> cancelledBatch = batchId },
                         )
                     }
                 }
@@ -905,45 +878,16 @@ private data class GgufDownloadFixture(
     val recommendation: RecommendedModelUiState,
 )
 
-private fun durableBatch(
+private fun durableControl(
     batchId: String,
-    artifact: DownloadArtifactIdentity,
     artifactState: DownloadArtifactState,
     batchState: DownloadBatchState,
-    bytesReceived: Long = 0L,
-): DownloadBatchSnapshot {
-    val request = DownloadArtifactRequest(
-        metadata = DownloadMetadataDTO(
-            artifact = artifact,
-            logicalRole = "model",
-            sizeBytes = artifact.expectedBytes,
-            author = null,
-            libraryName = null,
-            pipelineTag = null,
-        ),
-        primary = true,
-    )
-    return DownloadBatchSnapshot(
+): DurableDownloadControlUiState = DurableDownloadControlUiState(
         batchId = batchId,
-        ownerModelId = artifact.repositoryId,
-        modelType = "text",
-        displayName = artifact.relativePath.substringAfterLast('/'),
-        state = batchState,
-        userIntent = DownloadUserIntent.RUN,
-        artifacts = listOf(
-            DownloadArtifactSnapshot(
-                artifactId = "$batchId-artifact",
-                batchId = batchId,
-                request = request,
-                state = artifactState,
-                userIntent = DownloadUserIntent.RUN,
-                bytesReceived = bytesReceived,
-                expectedBytes = artifact.expectedBytes,
-            ),
-        ),
-        evidence = pendingEvidence(artifact),
+        artifactId = "$batchId-artifact",
+        batchState = batchState,
+        artifactState = artifactState,
     )
-}
 
 private fun ggufDownloadFixture(): GgufDownloadFixture {
     val repositoryId = "org/gguf-model"

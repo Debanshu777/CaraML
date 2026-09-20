@@ -31,6 +31,8 @@ import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import com.debanshu777.huggingfacemanager.download.StoredArtifactKind
 import com.debanshu777.huggingfacemanager.download.StoredArtifactSnapshot
+import com.debanshu777.huggingfacemanager.download.artifactBundleId
+import com.debanshu777.huggingfacemanager.download.immutableArtifactStorageLocation
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
@@ -471,8 +473,6 @@ class InstalledModelEvidenceRepairerTest {
         FileSystem.SYSTEM.createDirectories(root)
         try {
             val bytes = minimalGguf(version = 3, architecture = "llama")
-            val modelPath = root / "model.gguf"
-            FileSystem.SYSTEM.write(modelPath) { write(bytes) }
             val digest = Buffer().write(bytes).snapshot().sha256().hex()
             val revision = "a".repeat(40)
             val remoteObjectId = "sha256:$digest"
@@ -485,6 +485,11 @@ class InstalledModelEvidenceRepairerTest {
                     expectedBytes = bytes.size.toLong(),
                 ),
             )
+            val bundleId = requireNotNull(artifactBundleId(listOf(downloadIdentity)))
+            val location = immutableArtifactStorageLocation(downloadIdentity, bundleId)
+            val modelPath = root / location.localRelativePath
+            FileSystem.SYSTEM.createDirectories(requireNotNull(modelPath.parent))
+            FileSystem.SYSTEM.write(modelPath) { write(bytes) }
             val manifest = assertNotNull(
                 ArtifactManifest.create(
                     listOf(
@@ -494,6 +499,9 @@ class InstalledModelEvidenceRepairerTest {
                                 identity = downloadIdentity,
                                 byteCount = bytes.size.toLong(),
                                 contentSha256 = digest,
+                                bundleId = bundleId,
+                                localRelativePath = location.localRelativePath,
+                                layoutRelativePath = location.layoutRelativePath,
                             ),
                         ),
                     ),
@@ -591,9 +599,6 @@ class InstalledModelEvidenceRepairerTest {
 
         fun replacementPublication(variant: String): ReplacementPublication {
             val bytes = minimalGguf(version = 3, architecture = "llama") + variant.encodeToByteArray()
-            val path = root / "model-$variant.gguf"
-            FileSystem.SYSTEM.write(path) { write(bytes) }
-            storage.addArtifact(path, bytes.size.toLong())
             val digest = Buffer().write(bytes).snapshot().sha256().hex()
             val revision = "c".repeat(40)
             val remoteObjectId = "sha256:$digest"
@@ -601,11 +606,17 @@ class InstalledModelEvidenceRepairerTest {
                 DownloadArtifactIdentity.create(
                     repositoryId = model.modelId,
                     immutableRevision = revision,
-                    relativePath = path.name,
+                    relativePath = "model-$variant.gguf",
                     remoteObjectId = remoteObjectId,
                     expectedBytes = bytes.size.toLong(),
                 ),
             )
+            val bundleId = requireNotNull(artifactBundleId(listOf(downloadIdentity)))
+            val location = immutableArtifactStorageLocation(downloadIdentity, bundleId)
+            val path = root / location.localRelativePath
+            FileSystem.SYSTEM.createDirectories(requireNotNull(path.parent))
+            FileSystem.SYSTEM.write(path) { write(bytes) }
+            storage.addArtifact(path, bytes.size.toLong())
             val manifest = requireNotNull(
                 ArtifactManifest.create(
                     listOf(
@@ -615,6 +626,9 @@ class InstalledModelEvidenceRepairerTest {
                                 identity = downloadIdentity,
                                 byteCount = bytes.size.toLong(),
                                 contentSha256 = digest,
+                                bundleId = bundleId,
+                                localRelativePath = location.localRelativePath,
+                                layoutRelativePath = location.layoutRelativePath,
                             ),
                         ),
                     ),
@@ -623,7 +637,7 @@ class InstalledModelEvidenceRepairerTest {
             val identity = ModelFileIdentity(
                 repositoryId = model.modelId,
                 revision = revision,
-                path = path.name,
+                path = downloadIdentity.relativePath,
                 sizeBytes = bytes.size.toLong(),
                 gitOid = null,
                 lfsOid = remoteObjectId,
@@ -675,7 +689,7 @@ class InstalledModelEvidenceRepairerTest {
                 manifest = manifest,
                 model = model.copy(
                     id = 2L,
-                    filename = path.name,
+                    filename = downloadIdentity.relativePath,
                     localPath = path.toString(),
                     sizeBytes = bytes.size.toLong(),
                     downloadedAt = 3L,
@@ -841,7 +855,7 @@ class InstalledModelEvidenceRepairerTest {
         override fun inspectDownloadedArtifact(modelId: String, localPath: String): StoredArtifactSnapshot? = when (localPath) {
             root.toString() -> StoredArtifactSnapshot(StoredArtifactKind.DIRECTORY, 0L, "root-stamp")
             else -> artifacts[localPath]?.let { bytes ->
-                StoredArtifactSnapshot(StoredArtifactKind.REGULAR_FILE, bytes, "model-stamp:$localPath:$bytes")
+                StoredArtifactSnapshot(StoredArtifactKind.REGULAR_FILE, bytes, "model-stamp:$bytes")
             }
         }
     }

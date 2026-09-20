@@ -39,7 +39,9 @@ internal fun downloadArtifact(
 
         var preserveCheckpoint = false
         try {
-            manifestStore.recover()
+            if (manifestStore.recover() == ArtifactManifestRecoveryResult.QUARANTINED) {
+                throw ArtifactVerificationException()
+            }
             val stagedBytes = manifestStore.stagedSize(destination)
             val requestedResume = resumeMetadata?.takeIf {
                 it.bytesReceived < identity.expectedBytes && stagedBytes == it.bytesReceived
@@ -201,7 +203,9 @@ internal suspend fun discardArtifactCheckpoint(
     ArtifactRootLockCoordinator.withRoots(listOf(modelRoot.toString())) {
         val store = ArtifactManifestStore(modelRoot)
         try {
-            store.recover()
+            if (store.recover() == ArtifactManifestRecoveryResult.QUARANTINED) {
+                throw ArtifactVerificationException()
+            }
             store.discardStaged(metadata.destinationRelativePath)
         } finally {
             store.close()

@@ -109,10 +109,6 @@ class SecureArtifactRootJvmTest {
     fun standardUtf8BmpAndEmojiPathRoundTripsThroughNativeManifestAndJava() = withRoots { root, _ ->
         val path = "weights/模型-😀.gguf"
         val bytes = "unicode-content".encodeToByteArray()
-        val secure = SecureArtifactRoot(root.toOkioPath())
-        secure.createParentDirectories("$path.part")
-        secure.sink("$path.part", mustCreate = true).buffer().use { it.write(bytes) }
-        secure.close()
         val identity = requireNotNull(
             DownloadArtifactIdentity.create(
                 repositoryId = "org/model",
@@ -122,15 +118,29 @@ class SecureArtifactRootJvmTest {
                 expectedBytes = bytes.size.toLong(),
             ),
         )
+        val bundleId = requireNotNull(artifactBundleId(listOf(identity)))
+        val location = immutableArtifactStorageLocation(identity, bundleId)
+        val secure = SecureArtifactRoot(root.toOkioPath())
+        secure.createParentDirectories("${location.localRelativePath}.part")
+        secure.sink("${location.localRelativePath}.part", mustCreate = true).buffer().use { it.write(bytes) }
+        secure.close()
         val entry = requireNotNull(
-            ArtifactManifestEntry.create("model", identity, bytes.size.toLong(), bytes.sha256HexForSecureRootTest()),
+            ArtifactManifestEntry.create(
+                "model",
+                identity,
+                bytes.size.toLong(),
+                bytes.sha256HexForSecureRootTest(),
+                bundleId,
+                location.localRelativePath,
+                location.layoutRelativePath,
+            ),
         )
         val store = ArtifactManifestStore(root.toOkioPath())
 
-        store.commit(path, entry)
+        store.commit(location.localRelativePath, entry)
 
-        assertTrue(root.resolve(path).exists())
-        assertTrue(Files.readAllBytes(root.resolve(path)).contentEquals(bytes))
+        assertTrue(root.resolve(location.localRelativePath).exists())
+        assertTrue(Files.readAllBytes(root.resolve(location.localRelativePath)).contentEquals(bytes))
         assertTrue(store.readValidated()?.entries?.single()?.identity == identity)
         store.close()
     }
