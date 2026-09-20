@@ -60,6 +60,7 @@ static DiffusionModelConfig convert_model_config(const DiffusionModelConfigFFI &
     config.clip_l_path = ffi_config.clip_l_path;
     config.clip_g_path = ffi_config.clip_g_path;
     config.t5xxl_path = ffi_config.t5xxl_path;
+    config.runtime_backend = ffi_config.runtime_backend;
     config.offload_to_cpu = ffi_config.offload_to_cpu != 0;
     config.keep_clip_on_cpu = ffi_config.keep_clip_on_cpu != 0;
     config.keep_vae_on_cpu = ffi_config.keep_vae_on_cpu != 0;

@@ -274,6 +274,8 @@ static bool valid_model_config_native(const DiffusionModelConfig &config) {
         if (!bounded_string(paths[index], 4096, true)) return false;
     }
     return bounded_string(config.max_vram, 256, true) &&
+        config.runtime_backend >= DIFFUSION_RUNTIME_BACKEND_CPU &&
+        config.runtime_backend <= DIFFUSION_RUNTIME_BACKEND_CUDA &&
         (config.n_threads == -1 || (config.n_threads >= 1 && config.n_threads <= 1024)) &&
         valid_sd_weight_type(config.wtype) &&
         config.prediction >= -1 && config.prediction < PREDICTION_COUNT &&
@@ -521,10 +523,18 @@ static ResolvedModelPlan resolve_model_plan(
                 plan.params_spec)) {
             return plan;
         }
+    } else if (!caraml::diffusion::explicit_runtime_backend_spec(
+            config.runtime_backend,
+            plan.runtime_spec)) {
+        return plan;
     }
 
-    const bool force_clip_cpu = config.keep_clip_on_cpu || registry_has_vulkan_gpu();
-    const bool force_vae_cpu = config.keep_vae_on_cpu || registry_has_vulkan_gpu();
+    const bool vulkan_cpu_components = caraml::diffusion::vulkan_runtime_requires_cpu_components(
+        config.runtime_backend,
+        config.auto_fit,
+        registry_has_vulkan_gpu());
+    const bool force_clip_cpu = config.keep_clip_on_cpu || vulkan_cpu_components;
+    const bool force_vae_cpu = config.keep_vae_on_cpu || vulkan_cpu_components;
     if (force_clip_cpu) append_assignment(plan.runtime_spec, "te", "cpu");
     if (force_vae_cpu) append_assignment(plan.runtime_spec, "vae", "cpu");
     if (config.offload_to_cpu) {
@@ -638,10 +648,7 @@ int64_t diffusion_runner_core_load_model(const DiffusionModelConfig &config) {
     }
 #else
     dr_logf(DIFFUSION_LOG_WARN,
-            "load_model: SD_USE_VULKAN NOT defined in this translation unit — "
-            "vulkan-aware workarounds (keep_clip_on_cpu, wtype=F16) are DISABLED here. "
-            "If sd.cpp was built with SD_USE_VULKAN, the backend will still pick Vulkan "
-            "and CLIP/VAE will crash with GGML_ABORT. Fix the CMake macro propagation.");
+            "load_model: diffusion runner was built without SD_USE_VULKAN");
 #endif
 
     // Set up sd_ctx_params_t
@@ -671,12 +678,9 @@ int64_t diffusion_runner_core_load_model(const DiffusionModelConfig &config) {
     // behavior change than "free after first use" so it is intentionally not auto-mapped here.
     std::string backend_assignment = resolved_plan.runtime_spec;
     std::string params_backend_assignment = resolved_plan.params_spec;
-    // ggml-vulkan on Android (Adreno/Mali) lacks F16 softmax/norm pipeline variants
-    // used by the CLIP transformer and VAE decoder. Submitting those graphs to the
-    // Vulkan backend triggers GGML_ABORT inside ggml_vk_op_get_pipeline.
-    // Mirror stable-diffusion.cpp's documented workaround: pin CLIP + VAE to the CPU
-    // backend whenever a Vulkan device is present. The heavy UNet stays on Vulkan.
-    // Caller opt-in (config flag = true) is preserved via OR.
+    // resolve_model_plan already encoded caller overrides and Vulkan's CLIP/VAE CPU
+    // safety into this exact assignment. An unrelated registered Vulkan device does
+    // not mutate an explicit CUDA or Metal plan.
     if (!backend_assignment.empty()) params.backend = backend_assignment.c_str();
     if (!params_backend_assignment.empty()) params.params_backend = params_backend_assignment.c_str();
     params.max_vram = config.max_vram[0] == '\0' ? nullptr : config.max_vram;

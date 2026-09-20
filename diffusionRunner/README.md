@@ -153,6 +153,7 @@ The merged iOS `.a` includes both `llama_runner` and `diffusion_runner` objects.
 <!-- Updated at end of each Claude Code session -->
 
 - Opt-in native parity verifies bounded corrupt safetensors rejection and repeat-cleanup via `CARAML_NATIVE_PARITY=true ./gradlew :diffusionRunner:jvmTest`; successful diffusion load remains a physical-device gate because no small redistribution-safe fixture is pinned
+- `DiffusionModelConfig` now carries explicit CPU, Metal, Vulkan, or CUDA runtime placement independently of parameter residency; JNI and iOS pass the same closed contract into preflight and load
 - Preflight initializes and reports only devices selected by the resolved runtime/parameter plan; a failing unused registry device no longer invalidates a valid plan
 - Added fixed-layout Android/JVM/iOS preflight, backend-registry and feature-probe APIs; model load and preflight share the pinned engine's bounded max-VRAM/auto-fit resolution
 - Preflight now reports bundled component roles and exact resolved placements, preserves pinned max-VRAM and streaming semantics, publishes new contexts through immediate RAII ownership, and identifies backend devices canonically across platform ABIs
@@ -162,8 +163,7 @@ The merged iOS `.a` includes both `llama_runner` and `diffusion_runner` objects.
 - JNI model configuration now owns string storage per invocation; iOS string pointers remain inside their allocation scope; JNI/iOS C boundaries return controlled failures for native exceptions
 - Missing native libraries degrade to a recoverable load error, cancellation is rethrown, and sensitive prompts/model paths are no longer included in app-owned diagnostics
 - iOS framework/cinterop tasks now depend explicitly on the matching native static-library merge task
-- Fix: SD Vulkan SIGABRT root cause — `SD_VULKAN=OFF` in Android CMakeLists is the real fix; `diffusion_runner_core.cpp` reverted: removed `diffusion_conv_direct=true` force and wtype=F16 auto-override from Vulkan detection block (these were failed workarounds); CLIP+VAE CPU-pin block kept as belt-and-suspenders for future Vulkan enablement
-- Fix: Vulkan-Android crash mid-CLIP — `diffusion_runner_core_load_model` now auto-sets `keep_clip_on_cpu` + `keep_vae_on_cpu` when a Vulkan device is detected, dodging unsupported F16 softmax/norm pipeline aborts on Adreno/Mali GPUs; user-provided `true` flags still honored, UNet keeps Vulkan offload
+- Vulkan runtime plans keep CLIP and VAE on CPU for unsupported mobile F16 pipelines without changing explicit CUDA/Metal plans merely because a Vulkan device is also registered
 - DiffusionModelConfig extended: `taesdPath`, `vaeTiling`, `freeParamsImmediately` fields; `flowShift` now actually plumbed into `sd_sample_params_t.flow_shift` via `SdHandle` cache (per-gen overrides default)
 - SampleMethod gained `fromName(String)` resolver so registry string samplers ("euler", "euler_a", "lcm", etc.) map to the right enum
 - JNI + iOS FFI (`.def` / `.h` / `.cpp`) updated in lockstep with new model-config fields

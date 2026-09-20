@@ -429,6 +429,7 @@ val testLlamaRunnerNativeDesktop by tasks.registering(Exec::class) {
 
 val diffusionNativeTestTargets = listOf(
     "diffusion_bundled_components_test",
+    "diffusion_runtime_backend_test",
     "diffusion_max_vram_test",
     "diffusion_stream_layers_test",
     "diffusion_context_publication_test",
@@ -462,7 +463,7 @@ val testDiffusionRunnerNativeDesktop by tasks.registering(Exec::class) {
         "Release",
         "--output-on-failure",
         "--tests-regex",
-        "^diffusion_(bundled_components|max_vram|stream_layers|context_publication)_test$",
+        "^diffusion_(bundled_components|runtime_backend|max_vram|stream_layers|context_publication)_test$",
     )
 }
 

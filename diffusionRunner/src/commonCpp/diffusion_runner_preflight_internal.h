@@ -65,6 +65,26 @@ inline std::string canonical_backend_name(std::string value) {
     return lower_ascii(value.substr(first, last - first));
 }
 
+inline bool explicit_runtime_backend_spec(int runtime_backend, std::string &destination) {
+    switch (runtime_backend) {
+        case DIFFUSION_RUNTIME_BACKEND_CPU: destination = "cpu"; return true;
+        case DIFFUSION_RUNTIME_BACKEND_METAL: destination = "metal"; return true;
+        case DIFFUSION_RUNTIME_BACKEND_VULKAN: destination = "vulkan"; return true;
+        case DIFFUSION_RUNTIME_BACKEND_CUDA: destination = "cuda"; return true;
+        default:
+            destination.clear();
+            return false;
+    }
+}
+
+inline bool vulkan_runtime_requires_cpu_components(
+        int runtime_backend,
+        bool auto_fit,
+        bool vulkan_gpu_available) {
+    return runtime_backend == DIFFUSION_RUNTIME_BACKEND_VULKAN ||
+        (auto_fit && vulkan_gpu_available);
+}
+
 inline std::string assignment_value(const std::string &spec, const std::string &module) {
     std::string default_value;
     std::string exact_value;
@@ -159,8 +179,8 @@ inline std::vector<PreflightComponentEvidence> classify_bundled_components(
         const char *module = roles[index] == DIFFUSION_COMPONENT_DIFFUSION_MODEL ? "diffusion" :
             roles[index] == DIFFUSION_COMPONENT_VAE ? "vae" :
             roles[index] == DIFFUSION_COMPONENT_TEXT_ENCODER ? "te" : "";
-        const std::string runtime = module[0] ? assignment_value(runtime_spec, module) : "";
-        const std::string params = module[0] ? assignment_value(params_spec, module) : "";
+        const std::string runtime = assignment_value(runtime_spec, module);
+        const std::string params = assignment_value(params_spec, module);
         const int64_t mask = runtime.empty() || lower_ascii(runtime) == "cpu"
             ? 0 : backend_mask(runtime);
         result.push_back({

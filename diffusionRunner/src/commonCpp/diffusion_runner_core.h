@@ -14,6 +14,13 @@ enum DiffusionLogLevel {
 
 using DiffusionLogFn = std::function<void(DiffusionLogLevel level, const char *msg)>;
 
+enum DiffusionRuntimeBackendNative {
+    DIFFUSION_RUNTIME_BACKEND_CPU = 0,
+    DIFFUSION_RUNTIME_BACKEND_METAL = 1,
+    DIFFUSION_RUNTIME_BACKEND_VULKAN = 2,
+    DIFFUSION_RUNTIME_BACKEND_CUDA = 3,
+};
+
 struct DiffusionModelConfig {
     const char *model_path = "";
     const char *vae_path = "";
@@ -21,6 +28,7 @@ struct DiffusionModelConfig {
     const char *clip_l_path = "";
     const char *clip_g_path = "";
     const char *t5xxl_path = "";
+    int runtime_backend = DIFFUSION_RUNTIME_BACKEND_CPU;
     bool offload_to_cpu = false;
     bool keep_clip_on_cpu = false;
     bool keep_vae_on_cpu = false;

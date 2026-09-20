@@ -3,6 +3,7 @@ package com.debanshu777.caraml.core.recommendation
 import com.debanshu777.caraml.core.platform.BackendKind
 import com.debanshu777.caraml.core.platform.MemoryTopology
 import com.debanshu777.diffusionrunner.DiffusionModelConfig
+import com.debanshu777.diffusionrunner.DiffusionRuntimeBackend
 import com.debanshu777.runner.NativeRunnerConfig
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -164,6 +165,49 @@ class NativeRunPlanAdapterTest {
         assertEquals(DiffusionMode.VIDEO, mapped.mode)
     }
 
+    @Test
+    fun cpuDiffusionPlanPinsTheNativeRuntimeToCpu() {
+        val plan = diffusionPlan(backend = BackendKind.CPU)
+
+        val mapped = NativeRunPlanAdapter.toDiffusionExecutionConfig(
+            plan,
+            DiffusionModelConfig(
+                modelPath = "/private/model.gguf",
+                runtimeBackend = DiffusionRuntimeBackend.VULKAN,
+            ),
+        )
+
+        assertEquals(DiffusionRuntimeBackend.CPU, mapped.model.runtimeBackend)
+    }
+
+    @Test
+    fun acceleratedDiffusionPlanPinsTheExactNativeBackendKind() {
+        val expected = mapOf(
+            BackendKind.METAL to DiffusionRuntimeBackend.METAL,
+            BackendKind.VULKAN to DiffusionRuntimeBackend.VULKAN,
+            BackendKind.CUDA to DiffusionRuntimeBackend.CUDA,
+        )
+
+        expected.forEach { (backend, nativeBackend) ->
+            val mapped = NativeRunPlanAdapter.toDiffusionExecutionConfig(
+                diffusionPlan(backend),
+                DiffusionModelConfig(modelPath = "/private/model.gguf"),
+            )
+
+            assertEquals(nativeBackend, mapped.model.runtimeBackend)
+        }
+    }
+
+    @Test
+    fun unrepresentableDiffusionBackendFailsClosed() {
+        assertFailsWith<IllegalArgumentException> {
+            NativeRunPlanAdapter.toDiffusionExecutionConfig(
+                diffusionPlan(backend = BackendKind.OTHER),
+                DiffusionModelConfig(modelPath = "/private/model.gguf"),
+            )
+        }
+    }
+
     private fun llmPlan(gpuLayers: Int?, backend: BackendKind) = LlmRunPlan(
         contextTokens = 4_096,
         batchSize = 256,
@@ -174,6 +218,25 @@ class NativeRunPlanAdapterTest {
         backend = backend,
         memoryTopology = if (backend == BackendKind.CPU) MemoryTopology.UNKNOWN else MemoryTopology.UNIFIED,
         gpuLayerCount = gpuLayers,
+        compromises = emptyList(),
+    )
+
+    private fun diffusionPlan(backend: BackendKind) = DiffusionRunPlan(
+        mode = DiffusionMode.IMAGE,
+        width = 512,
+        height = 512,
+        frameCount = 1,
+        batchSize = 1,
+        steps = 20,
+        vaeTiling = false,
+        offloadToCpu = backend == BackendKind.CPU,
+        keepClipOnCpu = backend == BackendKind.CPU,
+        keepVaeOnCpu = backend == BackendKind.CPU,
+        maxVramBytes = null,
+        layerStreaming = false,
+        requiresUserAcceptance = false,
+        backend = backend,
+        memoryTopology = if (backend == BackendKind.CPU) MemoryTopology.UNKNOWN else MemoryTopology.DISCRETE,
         compromises = emptyList(),
     )
 }

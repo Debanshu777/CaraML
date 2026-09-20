@@ -53,6 +53,7 @@ actual class DiffusionRunner {
                 clip_l_path = config.clipLPath.cstr.ptr
                 clip_g_path = config.clipGPath.cstr.ptr
                 t5xxl_path = config.t5xxlPath.cstr.ptr
+                runtime_backend = config.runtimeBackend.ordinal
                 offload_to_cpu = if (config.offloadToCpu) 1 else 0
                 keep_clip_on_cpu = if (config.keepClipOnCpu) 1 else 0
                 keep_vae_on_cpu = if (config.keepVaeOnCpu) 1 else 0
@@ -230,6 +231,7 @@ actual class DiffusionRunner {
             clip_l_path = config.clipLPath.cstr.ptr
             clip_g_path = config.clipGPath.cstr.ptr
             t5xxl_path = config.t5xxlPath.cstr.ptr
+            runtime_backend = config.runtimeBackend.ordinal
             offload_to_cpu = if (config.offloadToCpu) 1 else 0
             keep_clip_on_cpu = if (config.keepClipOnCpu) 1 else 0
             keep_vae_on_cpu = if (config.keepVaeOnCpu) 1 else 0

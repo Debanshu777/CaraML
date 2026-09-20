@@ -1,6 +1,7 @@
 package com.debanshu777.caraml.core.data.inference
 
 import com.debanshu777.caraml.core.platform.AppLogger
+import com.debanshu777.caraml.core.platform.BackendKind
 import com.debanshu777.caraml.core.platform.DeviceCapabilities
 import com.debanshu777.caraml.core.recommendation.DeviceSnapshotProvider
 import com.debanshu777.caraml.core.recommendation.DiffusionRunPlan
@@ -28,8 +29,14 @@ import com.debanshu777.caraml.core.recommendation.VerifiedArtifactLoadTarget
 import com.debanshu777.caraml.core.recommendation.toInferenceObservationPlan
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.diffusionrunner.DiffusionModelConfig
+import com.debanshu777.diffusionrunner.DiffusionBackendDeviceType
+import com.debanshu777.diffusionrunner.DiffusionBackendKind
+import com.debanshu777.diffusionrunner.DiffusionComponentRole
+import com.debanshu777.diffusionrunner.DiffusionFitReport
+import com.debanshu777.diffusionrunner.DiffusionParameterPlacement
 import com.debanshu777.diffusionrunner.DiffusionPreflightResult
 import com.debanshu777.diffusionrunner.DiffusionRunner
+import com.debanshu777.diffusionrunner.DiffusionRuntimePlacement
 import com.debanshu777.diffusionrunner.ImageGenParams
 import com.debanshu777.diffusionrunner.VideoGenParams
 import com.debanshu777.diffusionrunner.generateImage
@@ -146,12 +153,10 @@ class DiffusionInferenceRepository(
                 val candidateExecution = runCatching {
                     NativeRunPlanAdapter.toDiffusionExecutionConfig(candidatePlan, candidateBase)
                 }.getOrElse { return@admissionController NativeLoadPreflight.Invalid }
-                when (runner.preflightModel(candidateExecution.model)) {
-                    is DiffusionPreflightResult.Fit -> NativeLoadPreflight.Fit
-                    is DiffusionPreflightResult.NoFit -> NativeLoadPreflight.NoFit
-                    is DiffusionPreflightResult.InvalidModel -> NativeLoadPreflight.Invalid
-                    is DiffusionPreflightResult.Unavailable -> NativeLoadPreflight.Unavailable
-                }
+                exactDiffusionNativePreflight(
+                    candidatePlan,
+                    runner.preflightModel(candidateExecution.model),
+                )
             } ?: return@withContext ModelLoadResult.Error("Load admission is unavailable.")
             try {
                 when (val result = coordinator.execute(
@@ -423,4 +428,107 @@ class DiffusionInferenceRepository(
     fun getRecommendedParams(model: LocalModelEntity): SdCppRecommendedParams? =
         getModelSetup(model.modelId)?.recommendedParams
 
+}
+
+internal fun exactDiffusionNativePreflight(
+    plan: DiffusionRunPlan,
+    result: DiffusionPreflightResult,
+): NativeLoadPreflight = when (result) {
+    is DiffusionPreflightResult.Fit -> if (result.report.matches(plan)) {
+        NativeLoadPreflight.Fit
+    } else {
+        NativeLoadPreflight.Invalid
+    }
+    is DiffusionPreflightResult.NoFit -> NativeLoadPreflight.NoFit
+    is DiffusionPreflightResult.InvalidModel -> NativeLoadPreflight.Invalid
+    is DiffusionPreflightResult.Unavailable -> NativeLoadPreflight.Unavailable
+}
+
+private fun DiffusionFitReport.matches(plan: DiffusionRunPlan): Boolean {
+    if (streamLayers != plan.layerStreaming || components.isEmpty() || backends.isEmpty()) {
+        return false
+    }
+    if (components.none {
+            it.role == DiffusionComponentRole.MODEL_BUNDLE ||
+                it.role == DiffusionComponentRole.DIFFUSION_MODEL
+        }
+    ) {
+        return false
+    }
+
+    val runtimeKind = plan.backend.toDiffusionBackendKind() ?: return false
+    val requiresCpu = plan.backend == BackendKind.CPU || plan.offloadToCpu ||
+        plan.keepClipOnCpu || plan.keepVaeOnCpu
+    val expectedKinds = buildSet {
+        add(runtimeKind)
+        if (requiresCpu) add(DiffusionBackendKind.CPU)
+    }
+    if (backends.size != expectedKinds.size || backends.map { it.kind }.toSet() != expectedKinds) {
+        return false
+    }
+    if (backends.any { backend ->
+            when (backend.kind) {
+                DiffusionBackendKind.CPU -> backend.deviceType != DiffusionBackendDeviceType.CPU
+                DiffusionBackendKind.CUDA,
+                DiffusionBackendKind.METAL,
+                DiffusionBackendKind.VULKAN,
+                -> backend.deviceType != DiffusionBackendDeviceType.DISCRETE_GPU &&
+                    backend.deviceType != DiffusionBackendDeviceType.INTEGRATED_GPU
+                DiffusionBackendKind.OPENCL,
+                DiffusionBackendKind.SYCL,
+                DiffusionBackendKind.OTHER,
+                -> true
+            }
+        }
+    ) {
+        return false
+    }
+
+    val expectedParameterPlacement = if (plan.offloadToCpu) {
+        DiffusionParameterPlacement.CPU
+    } else {
+        DiffusionParameterPlacement.DEFAULT
+    }
+    return components.all { component ->
+        component.parameterPlacement == expectedParameterPlacement &&
+            component.matchesRuntimePlacement(plan, runtimeKind, backends)
+    }
+}
+
+private fun com.debanshu777.diffusionrunner.DiffusionPreflightComponent.matchesRuntimePlacement(
+    plan: DiffusionRunPlan,
+    runtimeKind: DiffusionBackendKind,
+    backends: List<com.debanshu777.diffusionrunner.DiffusionPreflightBackend>,
+): Boolean {
+    val cpuRuntime = when (role) {
+        DiffusionComponentRole.LLM,
+        DiffusionComponentRole.CLIP_L,
+        DiffusionComponentRole.CLIP_G,
+        DiffusionComponentRole.T5XXL,
+        DiffusionComponentRole.TEXT_ENCODER,
+        -> plan.backend == BackendKind.CPU || plan.keepClipOnCpu
+        DiffusionComponentRole.VAE,
+        DiffusionComponentRole.TAESD,
+        -> plan.backend == BackendKind.CPU || plan.keepVaeOnCpu
+        DiffusionComponentRole.MODEL_BUNDLE,
+        DiffusionComponentRole.DIFFUSION_MODEL,
+        DiffusionComponentRole.OTHER,
+        -> plan.backend == BackendKind.CPU
+    }
+    if (cpuRuntime) {
+        return runtimePlacement == DiffusionRuntimePlacement.CPU && runtimeBackendMask == 0L
+    }
+    if (runtimePlacement != DiffusionRuntimePlacement.GPU || runtimeBackendMask.countOneBits() != 1) {
+        return false
+    }
+    val backendIndex = runtimeBackendMask.countTrailingZeroBits()
+    return backends.getOrNull(backendIndex)?.kind == runtimeKind
+}
+
+private fun BackendKind.toDiffusionBackendKind(): DiffusionBackendKind? = when (this) {
+    BackendKind.CPU -> DiffusionBackendKind.CPU
+    BackendKind.METAL -> DiffusionBackendKind.METAL
+    BackendKind.VULKAN -> DiffusionBackendKind.VULKAN
+    BackendKind.CUDA -> DiffusionBackendKind.CUDA
+    BackendKind.OTHER -> null
 }

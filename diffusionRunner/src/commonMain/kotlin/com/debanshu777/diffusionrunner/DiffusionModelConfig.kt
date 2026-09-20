@@ -1,5 +1,12 @@
 package com.debanshu777.diffusionrunner
 
+enum class DiffusionRuntimeBackend {
+    CPU,
+    METAL,
+    VULKAN,
+    CUDA,
+}
+
 data class DiffusionModelConfig(
     val modelPath: String,
     val vaePath: String = "",
@@ -7,6 +14,8 @@ data class DiffusionModelConfig(
     val clipLPath: String = "",
     val clipGPath: String = "",
     val t5xxlPath: String = "",
+    /** Runtime graph placement. Parameter residency is controlled separately by [offloadToCpu]. */
+    val runtimeBackend: DiffusionRuntimeBackend = DiffusionRuntimeBackend.CPU,
     val offloadToCpu: Boolean = false,
     val keepClipOnCpu: Boolean = false,
     val keepVaeOnCpu: Boolean = false,

@@ -129,6 +129,7 @@ endif()
 
 foreach(_diffusion_test IN ITEMS
         diffusion_bundled_components_test
+        diffusion_runtime_backend_test
         diffusion_stream_layers_test
         diffusion_context_publication_test)
     add_executable(

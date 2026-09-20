@@ -270,6 +270,19 @@ class DiffusionRunPlanGeneratorTest {
     }
 
     @Test
+    fun vulkanPlansExplicitlyPinClipAndVaeToCpu() {
+        val plans = generator.diffusionCandidates(
+            descriptor(),
+            workload(),
+            settings(backend = BackendKind.VULKAN),
+        )
+
+        assertTrue(plans.isNotEmpty())
+        assertTrue(plans.all { it.keepClipOnCpu })
+        assertTrue(plans.all { it.keepVaeOnCpu })
+    }
+
+    @Test
     fun planSnapshotsCallerOwnedCompromisesAndHasAStableCompleteIdentity() {
         val compromises = mutableListOf(DiffusionPlanCompromise.LOWER_RESOLUTION)
         val plan = DiffusionRunPlan(
