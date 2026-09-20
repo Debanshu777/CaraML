@@ -2,6 +2,8 @@
 
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -15,6 +17,28 @@ void expect(bool condition, const char *message) {
 int main() {
     using namespace caraml::diffusion;
 
+    static_assert(DIFFUSION_RUNTIME_BACKEND_CPU == 0);
+    static_assert(DIFFUSION_RUNTIME_BACKEND_METAL == 1);
+    static_assert(DIFFUSION_RUNTIME_BACKEND_VULKAN == 2);
+    static_assert(DIFFUSION_RUNTIME_BACKEND_CUDA == 3);
+
+    const std::vector<std::pair<int, std::string>> expected_assignments = {
+        {DIFFUSION_RUNTIME_BACKEND_CPU, "cpu"},
+        {DIFFUSION_RUNTIME_BACKEND_METAL, "metal"},
+        {DIFFUSION_RUNTIME_BACKEND_VULKAN, "vulkan,te=cpu,vae=cpu"},
+        {DIFFUSION_RUNTIME_BACKEND_CUDA, "cuda"},
+    };
+    for (const auto &[backend, expected] : expected_assignments) {
+        DiffusionModelConfig config;
+        config.model_path = "/models/model.gguf";
+        config.runtime_backend = backend;
+        std::string captured;
+        expect(diffusion_runner_core_capture_context_backend_for_test(config, captured),
+               "production context-backend resolution failed");
+        expect(captured == expected,
+               "production sd_ctx_params_t.backend did not match the requested runtime");
+    }
+
     std::string spec;
     expect(explicit_runtime_backend_spec(DIFFUSION_RUNTIME_BACKEND_CPU, spec) && spec == "cpu",
            "CPU plan must produce an explicit CPU runtime assignment");
@@ -27,21 +51,46 @@ int main() {
     expect(!explicit_runtime_backend_spec(-1, spec),
            "unknown runtime backends must fail closed");
 
-    expect(vulkan_runtime_requires_cpu_components(
-               DIFFUSION_RUNTIME_BACKEND_VULKAN,
-               false,
-               false),
+    const std::unordered_map<std::string, int> available_backends = {
+        {"cpu", DIFFUSION_BACKEND_CPU},
+        {"cuda0", DIFFUSION_BACKEND_CUDA},
+        {"metal0", DIFFUSION_BACKEND_METAL},
+        {"vulkan0", DIFFUSION_BACKEND_VULKAN},
+    };
+    const auto kind_for_assignment = [&](const std::string &assignment) {
+        const auto found = available_backends.find(assignment);
+        return found == available_backends.end() ? DIFFUSION_BACKEND_OTHER : found->second;
+    };
+    DiffusionModelConfig auto_fit_config;
+    auto_fit_config.auto_fit = true;
+    const std::string derived_non_vulkan = "diffusion=cuda0,te=metal0,vae=cuda0";
+    expect(!component_requires_vulkan_cpu_safety(
+               auto_fit_config,
+               derived_non_vulkan,
+               "te",
+               kind_for_assignment),
+           "ambient Vulkan must not CPU-pin an auto-fit Metal text encoder");
+    expect(!component_requires_vulkan_cpu_safety(
+               auto_fit_config,
+               derived_non_vulkan,
+               "vae",
+               kind_for_assignment),
+           "ambient Vulkan must not CPU-pin an auto-fit CUDA VAE");
+    expect(component_requires_vulkan_cpu_safety(
+               auto_fit_config,
+               "diffusion=cuda0,te=vulkan0,vae=metal0",
+               "te",
+               kind_for_assignment),
+           "an auto-fit component actually assigned to Vulkan must retain CPU safety");
+
+    DiffusionModelConfig explicit_vulkan_config;
+    explicit_vulkan_config.runtime_backend = DIFFUSION_RUNTIME_BACKEND_VULKAN;
+    expect(component_requires_vulkan_cpu_safety(
+               explicit_vulkan_config,
+               "vulkan",
+               "te",
+               kind_for_assignment),
            "an explicit Vulkan plan must keep unsafe components on CPU");
-    expect(!vulkan_runtime_requires_cpu_components(
-               DIFFUSION_RUNTIME_BACKEND_CUDA,
-               false,
-               true),
-           "an explicit CUDA plan must not be changed by an ambient Vulkan device");
-    expect(vulkan_runtime_requires_cpu_components(
-               DIFFUSION_RUNTIME_BACKEND_CPU,
-               true,
-               true),
-           "auto-fit must retain Vulkan safety when its resolved backend is not explicit");
 
     const std::vector<PreflightTensorEvidence> bundled = {
         {"model.diffusion_model.input.weight", 1'000},

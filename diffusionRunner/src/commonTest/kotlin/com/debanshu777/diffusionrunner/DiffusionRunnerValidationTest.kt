@@ -16,6 +16,10 @@ class DiffusionRunnerValidationTest {
             ),
             DiffusionRuntimeBackend.entries,
         )
+        assertEquals(
+            listOf(0, 1, 2, 3),
+            DiffusionRuntimeBackend.entries.map { it.nativeValue },
+        )
         assertEquals(DiffusionRuntimeBackend.CPU, modelConfig().runtimeBackend)
     }
 

@@ -141,14 +141,14 @@ Create a **separate** Gradle module + CMake project. Do not add here unless it m
 - Android `artifact_fs` now opens the trusted app-owned models root directly instead of traversing `/`; a host regression covers search-only ancestors and final-root symlink rejection
 - Added a strict versioned native-fixture manifest, fixed-host HTTPS acquisition with redirect/size/digest enforcement, generated corrupt fixtures, and isolated opt-in runner parity CI; normal JVM verification performs no fixture download
 - Desktop native hardening now verifies bounded typed calibration inputs, token-owned lock-free cancellation, and timed operation admission; iOS builds export the same calibrated backend bridge
-- `verifyProject` now builds and executes all five stable-diffusion native preflight regressions through CTest, including explicit runtime-backend assignment and CPU-placement coverage
+- `verifyProject` now builds and executes all five stable-diffusion native preflight regressions through CTest, including the production `sd_ctx_params_t.backend` assignment path and component-selected Vulkan safety
 - Stable-diffusion native builds now expose bounded metadata-only preflight and use the same pinned backend-fit resolver for preflight and actual context creation
 - Desktop native tests cover bundled-role placement, pinned max-VRAM assignment, effective streaming constraints, and failure-atomic context publication
 - Desktop native verification now covers stream-scoped unload exclusion, cross-thread token calls, lock-free cancellation, exact quantization labels, and transient-handle cleanup
 - Desktop builds now find CMake through validated explicit/PATH executables and place and assert `artifact_fs` at one configuration-independent path before packaging and installed-image smoke tests
 - The bounded `artifact_fs` JNI target supplies strict UTF-8 POSIX `openat` and Windows no-reparse operations, creates fixed roots durably from a pinned platform parent, and is packaged into Desktop application images and Android APKs
 - Native bridge verification now covers Android arm64/x86_64 and iOS simulator builds; app-owned JNI/iOS exports contain C++ exceptions before they cross language boundaries
-- Stable-diffusion native config now carries a closed CPU/Metal/Vulkan/CUDA runtime assignment across desktop JNI and iOS FFI; Vulkan CLIP/VAE safety applies to Vulkan execution without mutating explicit CUDA or Metal plans
+- Stable-diffusion native config now carries stable CPU/Metal/Vulkan/CUDA integers across desktop JNI and iOS FFI; production resolution assigns that exact runtime to `sd_ctx_params_t.backend`
 - Fix: ggml-vulkan `supports_op` for `GROUP_NORM`/`NORM` now requires F32 type, preventing `GGML_ABORT` crash when SD2 models load with F16 weights on Vulkan
 - `GgmlUnified.cmake` now builds both llama.cpp and stable-diffusion.cpp from single GGML
 - Vulkan autodetect via NDK glslc (Android arm64)

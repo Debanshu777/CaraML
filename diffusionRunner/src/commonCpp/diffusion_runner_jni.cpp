@@ -119,13 +119,13 @@ struct OwnedDiffusionModelConfig {
             env->DeleteLocalRef(value);
             return false;
         }
-        const jmethodID ordinal = env->GetMethodID(enum_class, "ordinal", "()I");
-        if (!ordinal || env->ExceptionCheck()) {
+        const jmethodID native_value = env->GetMethodID(enum_class, "getNativeValue", "()I");
+        if (!native_value || env->ExceptionCheck()) {
             env->DeleteLocalRef(enum_class);
             env->DeleteLocalRef(value);
             return false;
         }
-        values.runtime_backend = env->CallIntMethod(value, ordinal);
+        values.runtime_backend = env->CallIntMethod(value, native_value);
         const bool success = !env->ExceptionCheck();
         env->DeleteLocalRef(enum_class);
         env->DeleteLocalRef(value);

@@ -34,6 +34,7 @@ import com.debanshu777.diffusionrunner.DiffusionBackendKind
 import com.debanshu777.diffusionrunner.DiffusionComponentRole
 import com.debanshu777.diffusionrunner.DiffusionFitReport
 import com.debanshu777.diffusionrunner.DiffusionParameterPlacement
+import com.debanshu777.diffusionrunner.DiffusionPreflightComponent
 import com.debanshu777.diffusionrunner.DiffusionPreflightResult
 import com.debanshu777.diffusionrunner.DiffusionRunner
 import com.debanshu777.diffusionrunner.DiffusionRuntimePlacement
@@ -155,6 +156,7 @@ class DiffusionInferenceRepository(
                 }.getOrElse { return@admissionController NativeLoadPreflight.Invalid }
                 exactDiffusionNativePreflight(
                     candidatePlan,
+                    candidateExecution.model,
                     runner.preflightModel(candidateExecution.model),
                 )
             } ?: return@withContext ModelLoadResult.Error("Load admission is unavailable.")
@@ -432,9 +434,10 @@ class DiffusionInferenceRepository(
 
 internal fun exactDiffusionNativePreflight(
     plan: DiffusionRunPlan,
+    config: DiffusionModelConfig,
     result: DiffusionPreflightResult,
 ): NativeLoadPreflight = when (result) {
-    is DiffusionPreflightResult.Fit -> if (result.report.matches(plan)) {
+    is DiffusionPreflightResult.Fit -> if (result.report.matches(plan, config)) {
         NativeLoadPreflight.Fit
     } else {
         NativeLoadPreflight.Invalid
@@ -444,14 +447,12 @@ internal fun exactDiffusionNativePreflight(
     is DiffusionPreflightResult.Unavailable -> NativeLoadPreflight.Unavailable
 }
 
-private fun DiffusionFitReport.matches(plan: DiffusionRunPlan): Boolean {
-    if (streamLayers != plan.layerStreaming || components.isEmpty() || backends.isEmpty()) {
-        return false
-    }
-    if (components.none {
-            it.role == DiffusionComponentRole.MODEL_BUNDLE ||
-                it.role == DiffusionComponentRole.DIFFUSION_MODEL
-        }
+private fun DiffusionFitReport.matches(
+    plan: DiffusionRunPlan,
+    config: DiffusionModelConfig,
+): Boolean {
+    if (streamLayers != plan.layerStreaming || components.isEmpty() || backends.isEmpty() ||
+        !components.matchConfiguredComponentRoles(config)
     ) {
         return false
     }
@@ -493,6 +494,79 @@ private fun DiffusionFitReport.matches(plan: DiffusionRunPlan): Boolean {
         component.parameterPlacement == expectedParameterPlacement &&
             component.matchesRuntimePlacement(plan, runtimeKind, backends)
     }
+}
+
+private data class ConfiguredDiffusionComponent(
+    val role: DiffusionComponentRole,
+    val path: String,
+)
+
+private fun DiffusionModelConfig.configuredComponentBindings(): List<ConfiguredDiffusionComponent> {
+    val split = vaePath.isNotEmpty() || llmPath.isNotEmpty() || clipLPath.isNotEmpty() ||
+        clipGPath.isNotEmpty() || t5xxlPath.isNotEmpty()
+    return buildList {
+        add(
+            ConfiguredDiffusionComponent(
+                role = if (split) {
+                    DiffusionComponentRole.DIFFUSION_MODEL
+                } else {
+                    DiffusionComponentRole.MODEL_BUNDLE
+                },
+                path = modelPath,
+            ),
+        )
+        if (vaePath.isNotEmpty()) add(ConfiguredDiffusionComponent(DiffusionComponentRole.VAE, vaePath))
+        if (llmPath.isNotEmpty()) add(ConfiguredDiffusionComponent(DiffusionComponentRole.LLM, llmPath))
+        if (clipLPath.isNotEmpty()) add(ConfiguredDiffusionComponent(DiffusionComponentRole.CLIP_L, clipLPath))
+        if (clipGPath.isNotEmpty()) add(ConfiguredDiffusionComponent(DiffusionComponentRole.CLIP_G, clipGPath))
+        if (t5xxlPath.isNotEmpty()) add(ConfiguredDiffusionComponent(DiffusionComponentRole.T5XXL, t5xxlPath))
+        if (taesdPath.isNotEmpty()) add(ConfiguredDiffusionComponent(DiffusionComponentRole.TAESD, taesdPath))
+    }
+}
+
+private fun List<DiffusionPreflightComponent>
+    .matchConfiguredComponentRoles(config: DiffusionModelConfig): Boolean {
+    val reportedRoles = map { it.role }
+    val reportedOrdinals = map { it.ordinal }
+    if (reportedRoles.toSet().size != reportedRoles.size ||
+        reportedOrdinals.toSet() != indices.toSet()
+    ) {
+        return false
+    }
+
+    val configured = config.configuredComponentBindings()
+    if (configured.isEmpty() || configured.any { it.path.isEmpty() }) return false
+    val split = configured.first().role == DiffusionComponentRole.DIFFUSION_MODEL
+    val configuredRoles = configured.mapTo(mutableSetOf()) { it.role }
+    if (split) {
+        if (size != configured.size) return false
+        val reportedByOrdinal = associateBy { it.ordinal }
+        // Native declares split components in this exact role/path order. The
+        // ordinal binds each private path without echoing it across the ABI.
+        return configured.withIndex().all { (ordinal, expected) ->
+            reportedByOrdinal[ordinal]?.role == expected.role
+        }
+    }
+
+    if (reportedRoles.none {
+            it == DiffusionComponentRole.MODEL_BUNDLE ||
+                it == DiffusionComponentRole.DIFFUSION_MODEL
+        }
+    ) {
+        return false
+    }
+    val logicalSourceRoles = reportedRoles.mapTo(mutableSetOf()) { role ->
+        when (role) {
+            DiffusionComponentRole.MODEL_BUNDLE,
+            DiffusionComponentRole.DIFFUSION_MODEL,
+            DiffusionComponentRole.VAE,
+            DiffusionComponentRole.TEXT_ENCODER,
+            DiffusionComponentRole.OTHER,
+            -> DiffusionComponentRole.MODEL_BUNDLE
+            else -> role
+        }
+    }
+    return logicalSourceRoles == configuredRoles
 }
 
 private fun com.debanshu777.diffusionrunner.DiffusionPreflightComponent.matchesRuntimePlacement(

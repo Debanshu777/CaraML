@@ -1,10 +1,10 @@
 package com.debanshu777.diffusionrunner
 
-enum class DiffusionRuntimeBackend {
-    CPU,
-    METAL,
-    VULKAN,
-    CUDA,
+enum class DiffusionRuntimeBackend(val nativeValue: Int) {
+    CPU(0),
+    METAL(1),
+    VULKAN(2),
+    CUDA(3),
 }
 
 data class DiffusionModelConfig(

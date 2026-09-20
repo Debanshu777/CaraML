@@ -77,14 +77,6 @@ inline bool explicit_runtime_backend_spec(int runtime_backend, std::string &dest
     }
 }
 
-inline bool vulkan_runtime_requires_cpu_components(
-        int runtime_backend,
-        bool auto_fit,
-        bool vulkan_gpu_available) {
-    return runtime_backend == DIFFUSION_RUNTIME_BACKEND_VULKAN ||
-        (auto_fit && vulkan_gpu_available);
-}
-
 inline std::string assignment_value(const std::string &spec, const std::string &module) {
     std::string default_value;
     std::string exact_value;
@@ -107,6 +99,29 @@ inline std::string assignment_value(const std::string &spec, const std::string &
         start = end + 1;
     }
     return exact_value.empty() ? default_value : exact_value;
+}
+
+inline bool component_requires_vulkan_cpu_safety(
+        const DiffusionModelConfig &config,
+        const std::string &runtime_spec,
+        const std::string &module,
+        const std::function<int(const std::string &)> &backend_kind_for_assignment) {
+    if (!config.auto_fit) {
+        return config.runtime_backend == DIFFUSION_RUNTIME_BACKEND_VULKAN;
+    }
+
+    const std::string assignment = assignment_value(runtime_spec, module);
+    size_t start = 0;
+    do {
+        const size_t end = assignment.find('&', start);
+        const std::string token = canonical_backend_name(assignment.substr(
+            start,
+            end == std::string::npos ? std::string::npos : end - start));
+        if (backend_kind_for_assignment(token) == DIFFUSION_BACKEND_VULKAN) return true;
+        if (end == std::string::npos) break;
+        start = end + 1;
+    } while (start <= assignment.size());
+    return false;
 }
 
 inline int component_role_for_tensor(const std::string &name) {

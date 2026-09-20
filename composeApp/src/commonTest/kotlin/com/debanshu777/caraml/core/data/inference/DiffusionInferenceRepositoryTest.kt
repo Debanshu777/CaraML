@@ -10,6 +10,7 @@ import com.debanshu777.diffusionrunner.DiffusionBackendDeviceType
 import com.debanshu777.diffusionrunner.DiffusionBackendKind
 import com.debanshu777.diffusionrunner.DiffusionFitReport
 import com.debanshu777.diffusionrunner.DiffusionMemoryConfidence
+import com.debanshu777.diffusionrunner.DiffusionModelConfig
 import com.debanshu777.diffusionrunner.DiffusionParameterPlacement
 import com.debanshu777.diffusionrunner.DiffusionPreflightBackend
 import com.debanshu777.diffusionrunner.DiffusionPreflightComponent
@@ -25,6 +26,7 @@ class DiffusionInferenceRepositoryTest {
     fun cpuPlanRejectsGpuFirstNativeExecution() {
         val result = exactDiffusionNativePreflight(
             cpuPlan(),
+            bundledConfig(),
             fit(
                 components = listOf(
                     component(
@@ -45,6 +47,7 @@ class DiffusionInferenceRepositoryTest {
     fun cpuPlanAcceptsOnlyExplicitCpuRuntimeAndParameters() {
         val result = exactDiffusionNativePreflight(
             cpuPlan(),
+            bundledConfig(),
             fit(
                 components = listOf(
                     component(
@@ -111,9 +114,15 @@ class DiffusionInferenceRepositoryTest {
             ),
         )
 
-        assertEquals(NativeLoadPreflight.Fit, exactDiffusionNativePreflight(plan, matching))
-        assertEquals(NativeLoadPreflight.Invalid, exactDiffusionNativePreflight(plan, wrongVaePlacement))
-        assertEquals(NativeLoadPreflight.Invalid, exactDiffusionNativePreflight(plan, wrongBackend))
+        assertEquals(NativeLoadPreflight.Fit, exactDiffusionNativePreflight(plan, bundledConfig(), matching))
+        assertEquals(
+            NativeLoadPreflight.Invalid,
+            exactDiffusionNativePreflight(plan, bundledConfig(), wrongVaePlacement),
+        )
+        assertEquals(
+            NativeLoadPreflight.Invalid,
+            exactDiffusionNativePreflight(plan, bundledConfig(), wrongBackend),
+        )
     }
 
     @Test
@@ -130,7 +139,93 @@ class DiffusionInferenceRepositoryTest {
             streamLayers = true,
         )
 
-        assertEquals(NativeLoadPreflight.Invalid, exactDiffusionNativePreflight(cpuPlan(), report))
+        assertEquals(
+            NativeLoadPreflight.Invalid,
+            exactDiffusionNativePreflight(cpuPlan(), bundledConfig(), report),
+        )
+    }
+
+    @Test
+    fun splitConfigAcceptsExactlyConfiguredRolesAndPlacements() {
+        val (plan, matching) = matchingSplitCudaPreflight()
+
+        assertEquals(
+            NativeLoadPreflight.Fit,
+            exactDiffusionNativePreflight(plan, splitConfig(), matching),
+        )
+    }
+
+    @Test
+    fun splitConfigRejectsAnOmittedConfiguredComponent() {
+        val (plan, matching) = matchingSplitCudaPreflight()
+        val omittedVae = matching.copy(
+            report = matching.report.copy(
+                components = matching.report.components.filterNot {
+                    it.role == DiffusionComponentRole.VAE
+                },
+            ),
+        )
+
+        assertEquals(
+            NativeLoadPreflight.Invalid,
+            exactDiffusionNativePreflight(plan, splitConfig(), omittedVae),
+        )
+    }
+
+    @Test
+    fun splitConfigRejectsAnUnconfiguredExtraComponent() {
+        val (plan, matching) = matchingSplitCudaPreflight()
+        val withExtra = matching.copy(
+            report = matching.report.copy(
+                components = matching.report.components + component(
+                    role = DiffusionComponentRole.T5XXL,
+                    runtime = DiffusionRuntimePlacement.CPU,
+                    params = DiffusionParameterPlacement.DEFAULT,
+                    ordinal = 3,
+                ),
+            ),
+        )
+
+        assertEquals(
+            NativeLoadPreflight.Invalid,
+            exactDiffusionNativePreflight(plan, splitConfig(), withExtra),
+        )
+    }
+
+    @Test
+    fun splitConfigRejectsADuplicateConfiguredRole() {
+        val (plan, matching) = matchingSplitCudaPreflight()
+        val withDuplicate = matching.copy(
+            report = matching.report.copy(
+                components = matching.report.components + matching.report.components.last().copy(ordinal = 3),
+            ),
+        )
+
+        assertEquals(
+            NativeLoadPreflight.Invalid,
+            exactDiffusionNativePreflight(plan, splitConfig(), withDuplicate),
+        )
+    }
+
+    @Test
+    fun splitConfigRejectsSwappedClipAndVaePlacements() {
+        val (plan, matching) = matchingSplitCudaPreflight()
+        val swapped = matching.copy(
+            report = matching.report.copy(
+                components = matching.report.components.map { component ->
+                    when (component.role) {
+                        DiffusionComponentRole.CLIP_L -> component.copy(role = DiffusionComponentRole.VAE)
+                        DiffusionComponentRole.VAE -> component.copy(role = DiffusionComponentRole.CLIP_L)
+                        else -> component
+                    }
+                },
+            ),
+        )
+
+        assertEquals(
+            NativeLoadPreflight.Invalid,
+            exactDiffusionNativePreflight(plan, splitConfig(), swapped),
+        )
     }
 
     private fun cpuPlan() = plan(
@@ -149,6 +244,7 @@ class DiffusionInferenceRepositoryTest {
         backend: BackendKind,
         keepClipOnCpu: Boolean,
         keepVaeOnCpu: Boolean,
+        offloadToCpu: Boolean = true,
     ) = DiffusionRunPlan(
         mode = DiffusionMode.IMAGE,
         width = 512,
@@ -157,7 +253,7 @@ class DiffusionInferenceRepositoryTest {
         batchSize = 1,
         steps = 20,
         vaeTiling = false,
-        offloadToCpu = true,
+        offloadToCpu = offloadToCpu,
         keepClipOnCpu = keepClipOnCpu,
         keepVaeOnCpu = keepVaeOnCpu,
         maxVramBytes = null,
@@ -167,6 +263,50 @@ class DiffusionInferenceRepositoryTest {
         memoryTopology = if (backend == BackendKind.CPU) MemoryTopology.UNKNOWN else MemoryTopology.DISCRETE,
         compromises = emptyList(),
     )
+
+    private fun bundledConfig() = DiffusionModelConfig(modelPath = "/models/bundle.gguf")
+
+    private fun splitConfig() = DiffusionModelConfig(
+        modelPath = "/models/diffusion.gguf",
+        vaePath = "/models/vae.gguf",
+        clipLPath = "/models/clip-l.gguf",
+    )
+
+    private fun matchingSplitCudaPreflight(): Pair<DiffusionRunPlan, DiffusionPreflightResult.Fit> {
+        val plan = plan(
+            backend = BackendKind.CUDA,
+            keepClipOnCpu = false,
+            keepVaeOnCpu = false,
+            offloadToCpu = false,
+        )
+        return plan to fit(
+            components = listOf(
+                component(
+                    role = DiffusionComponentRole.DIFFUSION_MODEL,
+                    runtime = DiffusionRuntimePlacement.GPU,
+                    backendMask = 1L,
+                    params = DiffusionParameterPlacement.DEFAULT,
+                ),
+                component(
+                    role = DiffusionComponentRole.VAE,
+                    runtime = DiffusionRuntimePlacement.GPU,
+                    backendMask = 1L,
+                    params = DiffusionParameterPlacement.DEFAULT,
+                    ordinal = 1,
+                ),
+                component(
+                    role = DiffusionComponentRole.CLIP_L,
+                    runtime = DiffusionRuntimePlacement.GPU,
+                    backendMask = 1L,
+                    params = DiffusionParameterPlacement.DEFAULT,
+                    ordinal = 2,
+                ),
+            ),
+            backends = listOf(
+                backend(DiffusionBackendKind.CUDA, ordinal = 0),
+            ),
+        )
+    }
 
     private fun fit(
         components: List<DiffusionPreflightComponent>,

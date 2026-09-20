@@ -278,3 +278,9 @@ DiffusionModelFeatureSupportNative diffusion_runner_core_probe_model_features(
     const char *quantization,
     int mode);
 std::string diffusion_runner_core_engine_version();
+
+#ifdef CARAML_DIFFUSION_NATIVE_TESTING
+bool diffusion_runner_core_capture_context_backend_for_test(
+    const DiffusionModelConfig &config,
+    std::string &backend);
+#endif
