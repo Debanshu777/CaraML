@@ -62,11 +62,131 @@ import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChatViewModelQuarantineRetryTest {
+    @Test
+    fun newerSelectionAtNativeBoundaryStopsStaleRetryBeforeTextLoad() = runTest {
+        val staleReleaseEntered = CompletableDeferred<Unit>()
+        val allowStaleReleaseToReturn = CompletableDeferred<Unit>()
+        var diffusionReleaseCalls = 0
+        val scenario = scenario(
+            releaseDiffusionModel = {
+                diffusionReleaseCalls += 1
+                if (diffusionReleaseCalls == 2) {
+                    staleReleaseEntered.complete(Unit)
+                    withContext(NonCancellable) { allowStaleReleaseToReturn.await() }
+                }
+            },
+        ) { _ -> }
+
+        withScenario(scenario) {
+            advanceUntilIdle()
+            scenario.assertRetryActionFor(scenario.modelA.id)
+            assertEquals(1, scenario.inference.unloadCalls)
+
+            scenario.viewModel.retryPendingLoad()
+            testScheduler.runCurrent()
+            assertTrue(staleReleaseEntered.isCompleted)
+
+            scenario.viewModel.selectModel(scenario.modelB)
+            testScheduler.runCurrent()
+
+            assertIs<ChatUiState.ModelLoading>(scenario.viewModel.uiState.value)
+            assertEquals(listOf(scenario.requestA), scenario.inference.loadRequests)
+            assertEquals(listOf(scenario.requestA), scenario.inference.permissionRequests)
+            assertEquals(2, diffusionReleaseCalls)
+            assertEquals(1, scenario.inference.unloadCalls)
+            assertEquals(emptyList(), scenario.diffusionLoadRequests)
+
+            allowStaleReleaseToReturn.complete(Unit)
+            advanceUntilIdle()
+
+            scenario.assertReadyFor(scenario.modelB, MODEL_B_CONTEXT)
+            assertEquals(
+                listOf(scenario.requestA, scenario.requestB),
+                scenario.inference.loadRequests,
+            )
+            assertEquals(3, diffusionReleaseCalls)
+            assertEquals(1, scenario.inference.unloadCalls)
+            assertEquals(emptyList(), scenario.diffusionLoadRequests)
+            assertEquals(listOf(scenario.requestA), scenario.inference.permissionRequests)
+        }
+    }
+
+    @Test
+    fun staleNativeResultsCannotCommitSuccessFailureOrAdmissionOverNewerSelection() = runTest {
+        StaleRetryOutcome.entries.forEach { outcome ->
+            val staleLoadEntered = CompletableDeferred<Unit>()
+            val allowStaleLoadToReturn = CompletableDeferred<Unit>()
+            var diffusionReleaseCalls = 0
+            val scenario = scenario(
+                releaseDiffusionModel = { diffusionReleaseCalls += 1 },
+                loadOverride = { request ->
+                    if (request.model.id != 7L) {
+                        null
+                    } else {
+                        staleLoadEntered.complete(Unit)
+                        withContext(NonCancellable) { allowStaleLoadToReturn.await() }
+                        outcome.result(request)
+                    }
+                },
+            ) { _ -> }
+
+            withScenario(scenario) {
+                advanceUntilIdle()
+                scenario.assertRetryActionFor(scenario.modelA.id)
+
+                scenario.viewModel.retryPendingLoad()
+                testScheduler.runCurrent()
+                assertTrue(staleLoadEntered.isCompleted)
+
+                scenario.viewModel.selectModel(scenario.modelB)
+                testScheduler.runCurrent()
+                val statesAfterNewerSelection = scenario.states.size
+
+                assertIs<ChatUiState.ModelLoading>(scenario.viewModel.uiState.value)
+                assertEquals(
+                    listOf(
+                        scenario.requestA,
+                        scenario.requestA.copy(riskAcknowledgement = null),
+                    ),
+                    scenario.inference.loadRequests,
+                )
+                assertEquals(2, diffusionReleaseCalls)
+                assertEquals(1, scenario.inference.unloadCalls)
+                assertEquals(emptyList(), scenario.diffusionLoadRequests)
+                assertEquals(listOf(scenario.requestA), scenario.inference.permissionRequests)
+
+                allowStaleLoadToReturn.complete(Unit)
+                advanceUntilIdle()
+
+                scenario.assertReadyFor(scenario.modelB, MODEL_B_CONTEXT)
+                assertEquals(
+                    listOf(
+                        scenario.requestA,
+                        scenario.requestA.copy(riskAcknowledgement = null),
+                        scenario.requestB,
+                    ),
+                    scenario.inference.loadRequests,
+                )
+                assertEquals(3, diffusionReleaseCalls)
+                assertEquals(1, scenario.inference.unloadCalls)
+                assertEquals(emptyList(), scenario.diffusionLoadRequests)
+                assertEquals(listOf(scenario.requestA), scenario.inference.permissionRequests)
+                assertFalse(
+                    scenario.states.drop(statesAfterNewerSelection).any { state ->
+                        state.isTerminalStateFor(scenario.modelA)
+                    },
+                    "Stale $outcome result committed after model B became current",
+                )
+            }
+        }
+    }
+
     @Test
     fun stalePermissionCompletionCannotLoadOverNewerSelection() = runTest {
         val permissionStarted = CompletableDeferred<Unit>()
@@ -212,6 +332,8 @@ class ChatViewModelQuarantineRetryTest {
     }
 
     private fun TestScope.scenario(
+        releaseDiffusionModel: suspend () -> Unit = {},
+        loadOverride: suspend (LoadRequest) -> ModelLoadResult? = { null },
         allowExplicitRetry: suspend (LoadRequest) -> Unit,
     ): QuarantineRetryScenario {
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -223,16 +345,20 @@ class ChatViewModelQuarantineRetryTest {
         val inference = QuarantineRetryInferenceRepository(
             quarantinedRequest = requestA,
             allowRetry = allowExplicitRetry,
+            loadOverride = loadOverride,
         )
         val resolver = StaticRetryResolver(mapOf(modelA.id to requestA, modelB.id to requestB))
         val models = LocalModelRepository(RetryLocalModelDao(listOf(modelA, modelB)))
         val settings = RetrySettingsRepository()
+        val diffusionLoadRequests = mutableListOf<LoadRequest>()
         return QuarantineRetryScenario(
             modelA = modelA,
             modelB = modelB,
             requestA = requestA,
             requestB = requestB,
             inference = inference,
+            diffusionLoadRequests = diffusionLoadRequests,
+            states = mutableListOf(),
             viewModel = ChatViewModel(
                 getAvailableModels = GetAvailableModelsUseCase(models, ChatConfig()),
                 generateResponse = GenerateResponseUseCase(inference),
@@ -250,7 +376,11 @@ class ChatViewModelQuarantineRetryTest {
                 ),
                 installedModelLoadRequestResolver = resolver,
                 modelLoadDispatcher = dispatcher,
-                releaseDiffusionModel = {},
+                releaseDiffusionModel = releaseDiffusionModel,
+                loadDiffusionModel = { request ->
+                    diffusionLoadRequests += request
+                    error("Diffusion loader must not run for text-model retries")
+                },
             ),
         )
     }
@@ -260,7 +390,7 @@ class ChatViewModelQuarantineRetryTest {
         test: suspend kotlinx.coroutines.test.TestScope.() -> Unit,
     ) {
         val collection = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
-            scenario.viewModel.uiState.collect()
+            scenario.viewModel.uiState.collect { scenario.states += it }
         }
         try {
             test()
@@ -282,6 +412,17 @@ class ChatViewModelQuarantineRetryTest {
         assertEquals(model, state.selectedModel)
         assertEquals(contextSize, state.contextLimit)
     }
+
+    private fun ChatUiState.isTerminalStateFor(model: LocalModelEntity): Boolean = when (this) {
+        is ChatUiState.Ready -> selectedModel == model || contextLimit == MODEL_A_CONTEXT
+        is ChatUiState.ModelError -> message == STALE_RETRY_ERROR
+        is ChatUiState.LoadActionRequired -> when (val pending = action) {
+            is PendingLoadAction.ConfirmRisk -> pending.request.model == model
+            is PendingLoadAction.AcceptAlternative -> pending.original.model == model
+            is PendingLoadAction.RetryQuarantined -> pending.request.model == model
+        }
+        else -> false
+    }
 }
 
 private data class QuarantineRetryScenario(
@@ -290,6 +431,8 @@ private data class QuarantineRetryScenario(
     val requestA: LoadRequest,
     val requestB: LoadRequest,
     val inference: QuarantineRetryInferenceRepository,
+    val diffusionLoadRequests: MutableList<LoadRequest>,
+    val states: MutableList<ChatUiState>,
     val viewModel: ChatViewModel,
 )
 
@@ -308,10 +451,13 @@ private class StaticRetryResolver(
 private class QuarantineRetryInferenceRepository(
     private val quarantinedRequest: LoadRequest,
     private val allowRetry: suspend (LoadRequest) -> Unit,
+    private val loadOverride: suspend (LoadRequest) -> ModelLoadResult?,
 ) : InferenceRepository {
     val loadRequests = mutableListOf<LoadRequest>()
     val permissionRequests = mutableListOf<LoadRequest>()
     val events = mutableListOf<String>()
+    var unloadCalls: Int = 0
+        private set
 
     override suspend fun loadModel(request: LoadRequest): ModelLoadResult {
         loadRequests += request
@@ -327,6 +473,7 @@ private class QuarantineRetryInferenceRepository(
                 ),
             )
         }
+        loadOverride(request)?.let { return it }
         return ModelLoadResult.Success(
             contextSize = if (request.model.id == quarantinedRequest.model.id) {
                 MODEL_A_CONTEXT
@@ -342,7 +489,9 @@ private class QuarantineRetryInferenceRepository(
         allowRetry(request)
     }
 
-    override suspend fun unloadModel() = Unit
+    override suspend fun unloadModel() {
+        unloadCalls += 1
+    }
     override fun generateResponse(userPrompt: String): Flow<InferenceChunk> = emptyFlow()
     override fun cancelGeneration() = Unit
     override fun getContextUsed(): Int = 0
@@ -354,6 +503,24 @@ private class QuarantineRetryInferenceRepository(
     override suspend fun resetContext() = Unit
     override fun getRuntimeConfigString(): String = ""
     override fun currentGenerationObservation(): InferenceObservationPlan? = null
+}
+
+private enum class StaleRetryOutcome {
+    SUCCESS,
+    FAILURE,
+    ADMISSION;
+
+    fun result(request: LoadRequest): ModelLoadResult = when (this) {
+        SUCCESS -> ModelLoadResult.Success(MODEL_A_CONTEXT)
+        FAILURE -> ModelLoadResult.Error(STALE_RETRY_ERROR)
+        ADMISSION -> ModelLoadResult.AdmissionRequired(
+            LoadAdmission.ConfirmationRequired(
+                request = request,
+                reason = LoadAdmissionReason.RISK_ACKNOWLEDGEMENT_REQUIRED,
+                explicitRetryRequired = false,
+            ),
+        )
+    }
 }
 
 private class RetrySettingsRepository : SettingsRepository {
@@ -490,3 +657,4 @@ private fun retryRequest(
 
 private const val MODEL_A_CONTEXT = 1_111
 private const val MODEL_B_CONTEXT = 2_222
+private const val STALE_RETRY_ERROR = "stale model A failure"

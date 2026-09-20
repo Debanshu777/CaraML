@@ -59,6 +59,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.concurrent.atomics.AtomicLong
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
@@ -106,6 +108,12 @@ sealed interface PendingLoadAction {
     data class RetryQuarantined(val request: LoadRequest) : PendingLoadAction
 }
 
+private data class ModelLoadAttempt(
+    val model: LocalModelEntity,
+    val mode: GenerationMode,
+    val generation: Long,
+)
+
 @OptIn(ExperimentalAtomicApi::class)
 class ChatViewModel(
     getAvailableModels: GetAvailableModelsUseCase,
@@ -118,6 +126,7 @@ class ChatViewModel(
     private val installedModelLoadRequestResolver: InstalledModelLoadResolver,
     private val modelLoadDispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val releaseDiffusionModel: suspend () -> Unit = diffusionRepository::release,
+    private val loadDiffusionModel: suspend (LoadRequest) -> ModelLoadResult = diffusionRepository::loadModel,
 ) : ViewModel() {
 
     private val _topModels: StateFlow<ImmutableList<LocalModelEntity>> =
@@ -187,6 +196,8 @@ class ChatViewModel(
 
     private var modelLoadJob: Job? = null
     private val modelLoadGeneration = AtomicLong(0L)
+    private val modelLoadOwnership = Mutex()
+    private var modelLoadOwnerGeneration = 0L
     private var generationJob: Job? = null
     private val pendingLoadActionGate = PendingLoadActionGate()
 
@@ -345,30 +356,16 @@ class ChatViewModel(
     }
 
     private fun loadSelectedModel(model: LocalModelEntity) {
-        startModelLoad(model) { mode, _ ->
+        startModelLoad(model) { attempt ->
             loadInstalledModel(
                 model = model,
-                mode = mode,
+                mode = attempt.mode,
                 resolve = installedModelLoadRequestResolver::resolve,
                 loadText = { request ->
-                    loadExactModelForMode(
-                        mode = GenerationMode.Text,
-                        request = request,
-                        unloadText = inferenceRepository::unloadModel,
-                        releaseDiffusion = releaseDiffusionModel,
-                        loadText = inferenceRepository::loadModel,
-                        loadDiffusion = diffusionRepository::loadModel,
-                    )
+                    loadExactModelForAttempt(attempt, GenerationMode.Text, request)
                 },
                 loadDiffusion = { request ->
-                    loadExactModelForMode(
-                        mode = mode,
-                        request = request,
-                        unloadText = inferenceRepository::unloadModel,
-                        releaseDiffusion = releaseDiffusionModel,
-                        loadText = inferenceRepository::loadModel,
-                        loadDiffusion = diffusionRepository::loadModel,
-                    )
+                    loadExactModelForAttempt(attempt, attempt.mode, request)
                 },
             )
         }
@@ -376,7 +373,7 @@ class ChatViewModel(
 
     private fun startModelLoad(
         model: LocalModelEntity,
-        load: suspend (GenerationMode, Long) -> ModelLoadResult,
+        load: suspend (ModelLoadAttempt) -> ModelLoadResult,
     ) {
         val previousJob = modelLoadJob
         modelLoadJob?.cancel()
@@ -389,35 +386,98 @@ class ChatViewModel(
             return
         }
         val loadGeneration = modelLoadGeneration.fetchAndAdd(1L) + 1L
-
-        _internal.value = InternalChatState.ModelLoading
+        val attempt = ModelLoadAttempt(model, mode, loadGeneration)
 
         modelLoadJob = viewModelScope.launch(modelLoadDispatcher) {
+            // Claim first, then release the ownership lock before joining. A successor is therefore
+            // current while it waits for its predecessor, without deadlocking that predecessor's exit.
+            claimModelLoad(attempt)
             // Wait for the previous job to fully complete (including any in-progress JNI call)
             // before we start new native operations. Without this, a cancelled job that is still
             // inside a blocking JNI call races with our unloadModel() → double-free crash.
             awaitPreviousModelLoad(previousJob)
-            ensureCurrentModelLoad(model, mode, loadGeneration)
 
-            val result = load(mode, loadGeneration)
-            ensureCurrentModelLoad(model, mode, loadGeneration)
-            when (result) {
-                is ModelLoadResult.Success -> {
-                    if (mode == GenerationMode.Image || mode == GenerationMode.Video) {
-                        _currentDiffusionParams.value = diffusionRepository.getRecommendedParams(model)
+            val result = load(attempt)
+            withContext(Dispatchers.Main.immediate) {
+                withCurrentModelLoad(attempt) {
+                    when (result) {
+                        is ModelLoadResult.Success -> {
+                            if (mode == GenerationMode.Image || mode == GenerationMode.Video) {
+                                _currentDiffusionParams.value = diffusionRepository.getRecommendedParams(model)
+                            }
+                            _internal.value = InternalChatState.ReadyCore(
+                                contextLimit = result.contextSize,
+                                isGenerating = false,
+                            )
+                        }
+                        is ModelLoadResult.Error -> {
+                            _internal.value = InternalChatState.ModelError(result.message)
+                        }
+                        is ModelLoadResult.AdmissionRequired -> handleAdmission(result.admission)
                     }
-                    _internal.value = InternalChatState.ReadyCore(
-                        contextLimit = result.contextSize,
-                        isGenerating = false,
-                    )
                 }
-                is ModelLoadResult.Error -> {
-                    _internal.value = InternalChatState.ModelError(result.message)
-                }
-                is ModelLoadResult.AdmissionRequired -> handleAdmission(result.admission)
             }
         }
     }
+
+    private suspend fun claimModelLoad(attempt: ModelLoadAttempt) {
+        withContext(Dispatchers.Main.immediate) {
+            modelLoadOwnership.withLock {
+                currentCoroutineContext().ensureActive()
+                if (!isCurrentModelLoadRequest(attempt)) {
+                    throw CancellationException("Stale model load attempt")
+                }
+                modelLoadOwnerGeneration = attempt.generation
+                _internal.value = InternalChatState.ModelLoading
+            }
+        }
+    }
+
+    private suspend fun <T> withCurrentModelLoad(
+        attempt: ModelLoadAttempt,
+        action: suspend () -> T,
+    ): T {
+        // The current-owner check and the protected action share one critical section. A newer
+        // attempt cannot claim ownership between validation and JNI entry or a terminal state write.
+        modelLoadOwnership.lock()
+        try {
+            currentCoroutineContext().ensureActive()
+            if (modelLoadOwnerGeneration != attempt.generation ||
+                !isCurrentModelLoadRequest(attempt)
+            ) {
+                throw CancellationException("Stale model load attempt")
+            }
+            return action()
+        } finally {
+            modelLoadOwnership.unlock()
+        }
+    }
+
+    private fun isCurrentModelLoadRequest(attempt: ModelLoadAttempt): Boolean =
+        modelLoadGeneration.load() == attempt.generation &&
+            _selectedModel.value == attempt.model &&
+            _generationMode.value == attempt.mode
+
+    private suspend fun loadExactModelForAttempt(
+        attempt: ModelLoadAttempt,
+        mode: GenerationMode,
+        request: LoadRequest,
+    ): ModelLoadResult = loadExactModelForMode(
+        mode = mode,
+        request = request,
+        unloadText = {
+            withCurrentModelLoad(attempt) { inferenceRepository.unloadModel() }
+        },
+        releaseDiffusion = {
+            withCurrentModelLoad(attempt) { releaseDiffusionModel() }
+        },
+        loadText = { exact ->
+            withCurrentModelLoad(attempt) { inferenceRepository.loadModel(exact) }
+        },
+        loadDiffusion = { exact ->
+            withCurrentModelLoad(attempt) { loadDiffusionModel(exact) }
+        },
+    )
 
     private fun handleAdmission(admission: LoadAdmission) {
         pendingLoadActionGate.close()
@@ -485,15 +545,14 @@ class ChatViewModel(
             as? PendingLoadAction.RetryQuarantined ?: return
         if (!pendingLoadActionGate.tryConsume()) return
         if (_selectedModel.value != action.request.model) return
-        startModelLoad(action.request.model) { mode, loadGeneration ->
-            retryQuarantinedLoad(action.request, mode, loadGeneration)
+        startModelLoad(action.request.model) { attempt ->
+            retryQuarantinedLoad(action.request, attempt)
         }
     }
 
     private suspend fun retryQuarantinedLoad(
         request: LoadRequest,
-        mode: GenerationMode,
-        loadGeneration: Long,
+        attempt: ModelLoadAttempt,
     ): ModelLoadResult {
         try {
             when (request.plan) {
@@ -505,34 +564,13 @@ class ChatViewModel(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Throwable) {
-            ensureCurrentModelLoad(request.model, mode, loadGeneration)
             return ModelLoadResult.Error("The model cannot be retried right now.")
         }
-        ensureCurrentModelLoad(request.model, mode, loadGeneration)
-        val result = loadExactModelForMode(
-            mode = mode,
+        return loadExactModelForAttempt(
+            attempt = attempt,
+            mode = attempt.mode,
             request = request.copy(riskAcknowledgement = null),
-            unloadText = inferenceRepository::unloadModel,
-            releaseDiffusion = releaseDiffusionModel,
-            loadText = inferenceRepository::loadModel,
-            loadDiffusion = diffusionRepository::loadModel,
         )
-        ensureCurrentModelLoad(request.model, mode, loadGeneration)
-        return result
-    }
-
-    private suspend fun ensureCurrentModelLoad(
-        model: LocalModelEntity,
-        mode: GenerationMode,
-        loadGeneration: Long,
-    ) {
-        currentCoroutineContext().ensureActive()
-        if (modelLoadGeneration.load() != loadGeneration ||
-            _selectedModel.value != model ||
-            _generationMode.value != mode
-        ) {
-            throw CancellationException("Stale model load attempt")
-        }
     }
 
     fun cancelPendingLoad() {
@@ -549,15 +587,8 @@ class ChatViewModel(
     }
 
     private fun resumeExactLoad(request: LoadRequest) {
-        startModelLoad(request.model) { mode, _ ->
-            loadExactModelForMode(
-                mode = mode,
-                request = request,
-                unloadText = inferenceRepository::unloadModel,
-                releaseDiffusion = releaseDiffusionModel,
-                loadText = inferenceRepository::loadModel,
-                loadDiffusion = diffusionRepository::loadModel,
-            )
+        startModelLoad(request.model) { attempt ->
+            loadExactModelForAttempt(attempt, attempt.mode, request)
         }
     }
 
