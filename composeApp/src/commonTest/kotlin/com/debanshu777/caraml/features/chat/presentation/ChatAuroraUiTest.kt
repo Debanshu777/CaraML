@@ -205,7 +205,7 @@ class ChatAuroraUiTest {
 
     @Test
     fun everyGenerationModeHasSpecificHumanCopy() {
-        assertEquals("Think locally. Stay private.", emptyStateCopy(GenerationMode.Text).title)
+        assertEquals("Start with a private thought.", emptyStateCopy(GenerationMode.Text).title)
         assertEquals("Create without the cloud.", emptyStateCopy(GenerationMode.Image).title)
         assertEquals("Set ideas in motion.", emptyStateCopy(GenerationMode.Video).title)
     }

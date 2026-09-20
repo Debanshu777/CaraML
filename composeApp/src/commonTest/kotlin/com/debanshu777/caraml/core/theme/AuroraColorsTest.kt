@@ -4,15 +4,37 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.materialkolor.hct.Hct
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 class AuroraColorsTest {
+    @Test
+    fun warmSeedBuildsDistinctVioletAndGreenFocalHarmonies() {
+        val seed = Color(0xFFEFD04B)
+        val scheme = darkColorScheme(
+            primary = Color(0xFFDDB8F7),
+            secondary = Color(0xFFD0C86F),
+            tertiary = Color(0xFFB9CB7B),
+        )
+
+        val colors = scheme.toAuroraColors(isDark = true, focalSeed = seed)
+        val primaryHue = Hct.fromInt(seed.toArgb()).hue
+        val violetHue = Hct.fromInt(colors.focusSecondary.toArgb()).hue
+        val greenHue = Hct.fromInt(colors.focusTertiary.toArgb()).hue
+
+        assertEquals(seed.copy(alpha = 0.78f), colors.focusPrimary)
+        assertEquals(Color.Black, colors.onFocusPrimary)
+        assertEquals(220.0, clockwiseHueDistance(primaryHue, violetHue), 10.0)
+        assertEquals(75.0, clockwiseHueDistance(primaryHue, greenHue), 10.0)
+    }
+
     @Test
     fun auroraColorsComeFromSemanticSchemeRoles() {
         val scheme = lightColorScheme(
@@ -38,7 +60,8 @@ class AuroraColorsTest {
         assertEquals(scheme.surfaceContainerHigh, colors.selectedSurface)
         assertEquals(scheme.outlineVariant.copy(alpha = 0.48f), colors.divider)
         assertEquals(scheme.primary.copy(alpha = 0.78f), colors.focusPrimary)
-        assertEquals(scheme.tertiary.copy(alpha = 0.70f), colors.focusTertiary)
+        assertEquals(0.74f, colors.focusSecondary.alpha, 0.005f)
+        assertEquals(0.70f, colors.focusTertiary.alpha, 0.005f)
     }
 
     @Test
@@ -117,3 +140,5 @@ class AuroraColorsTest {
         assertNull(AppPrismTypography.detailTitleExpanded.fontFamily)
     }
 }
+
+private fun clockwiseHueDistance(from: Double, to: Double): Double = (to - from + 360.0) % 360.0

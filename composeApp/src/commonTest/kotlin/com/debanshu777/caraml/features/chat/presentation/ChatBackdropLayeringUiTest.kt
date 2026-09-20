@@ -45,7 +45,7 @@ class ChatBackdropLayeringUiTest {
                         },
                     ) {
                         ChatScreenContent(
-                            uiState = ChatUiState.NoModels,
+                            uiState = ChatUiState.ModelLoading,
                             streamingState = StreamingState(),
                             onSelectModel = {},
                             onSendMessage = {},

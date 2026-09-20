@@ -2,6 +2,7 @@ package com.debanshu777.caraml.features.chat.presentation
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -27,6 +29,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Menu
@@ -54,6 +57,11 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -67,8 +75,10 @@ import com.debanshu777.caraml.core.drawer.LocalNavigationMenuAction
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
+import com.debanshu777.caraml.core.theme.auroraColors
 import com.debanshu777.caraml.core.ui.components.CaraMLPane
 import com.debanshu777.caraml.core.ui.components.AuroraFocalSurface
+import com.debanshu777.caraml.core.ui.components.CommandSurface
 import com.debanshu777.caraml.core.ui.components.FocalEntrance
 import com.debanshu777.caraml.core.ui.layout.AppContentKind
 import com.debanshu777.caraml.core.ui.layout.AppNavigationLayout
@@ -88,9 +98,7 @@ import com.debanshu777.caraml.features.chat.presentation.components.GenerationSt
 import com.debanshu777.caraml.features.chat.presentation.components.ModelErrorScreen
 import com.debanshu777.caraml.features.chat.presentation.components.ModelLoadingScreen
 import com.debanshu777.caraml.features.chat.presentation.components.ModelSelectorTopBar
-import com.debanshu777.caraml.features.chat.presentation.components.NoCompatibleModelsScreen
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
-import com.debanshu777.caraml.features.chat.presentation.components.NoModelsScreen
 
 internal val LocalCreateSafeDrawingInsetsOverride =
     staticCompositionLocalOf<WindowInsets?> { null }
@@ -103,8 +111,8 @@ data class ChatEmptyStateCopy(
 
 internal fun emptyStateCopy(mode: GenerationMode): ChatEmptyStateCopy = when (mode) {
     GenerationMode.Text -> ChatEmptyStateCopy(
-        title = "Think locally. Stay private.",
-        supportingText = "Ask anything — your prompt and model stay on this device.",
+        title = "Start with a private thought.",
+        supportingText = "Ask a question, shape an idea, or begin writing. Nothing leaves this device.",
     )
     GenerationMode.Image -> ChatEmptyStateCopy(
         title = "Create without the cloud.",
@@ -210,7 +218,11 @@ fun ChatScreenContent(
     }
 
     CreateRouteCanvas(
-        focal = uiState is ChatUiState.Ready && uiState.messages.isEmpty(),
+        focal = when (uiState) {
+            is ChatUiState.Ready -> uiState.messages.isEmpty()
+            ChatUiState.NoModels, is ChatUiState.NoModelsForMode -> true
+            else -> false
+        },
         modifier = modifier,
     ) {
     Scaffold(
@@ -308,8 +320,10 @@ fun ChatScreenContent(
             when (uiState) {
                 is ChatUiState.NoModels -> {
                     CreateStateViewport {
-                        NoModelsScreen(
-                            onDownloadModelClick = onNavigateToSearch,
+                        CreateUnavailableWorkspace(
+                            mode = generationMode,
+                            supportingText = "Choose a local model to begin. Your prompts and responses stay on this device.",
+                            onBrowseModels = onNavigateToSearch,
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
@@ -317,9 +331,14 @@ fun ChatScreenContent(
 
                 is ChatUiState.NoModelsForMode -> {
                     CreateStateViewport {
-                        NoCompatibleModelsScreen(
+                        CreateUnavailableWorkspace(
                             mode = uiState.mode,
-                            onDownloadModelClick = onNavigateToSearch,
+                            supportingText = when (uiState.mode) {
+                                GenerationMode.Text -> "Choose a local language model to begin."
+                                GenerationMode.Image -> "Choose a local image model to begin."
+                                GenerationMode.Video -> "Choose a local video model to begin."
+                            },
+                            onBrowseModels = onNavigateToSearch,
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
@@ -464,6 +483,7 @@ private fun AnimatedCreateEmptyState(
     modifier: Modifier = Modifier,
 ) {
     val motion = LocalAuroraMotionPolicy.current
+    val focalAccent = MaterialTheme.auroraColors.focusPrimary.copy(alpha = 1f)
     Crossfade(
         targetState = mode,
         modifier = modifier,
@@ -480,22 +500,131 @@ private fun AnimatedCreateEmptyState(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(min = 360.dp)
                 .testTag("create-empty-state")
                 .padding(horizontal = LocalSpacing.current.l, vertical = LocalSpacing.current.xl),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.s),
         ) {
+            WorkspaceGlyph()
             Text(
-                text = copy.title,
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onSurface,
+                text = "${targetMode.name.uppercase()} WORKSPACE",
+                style = MaterialTheme.typography.labelSmall,
+                color = focalAccent,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = androidx.compose.ui.unit.TextUnit.Unspecified,
                 textAlign = TextAlign.Center,
             )
             Text(
+                modifier = Modifier.heightIn(min = 96.dp),
+                text = copy.title,
+                style = MaterialTheme.typography.displaySmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.ExtraBold,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                modifier = Modifier.heightIn(min = 72.dp),
                 text = copy.supportingText,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CreateUnavailableWorkspace(
+    mode: GenerationMode,
+    supportingText: String,
+    onBrowseModels: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val copy = emptyStateCopy(mode)
+    val focalAccent = MaterialTheme.auroraColors.focusPrimary.copy(alpha = 1f)
+    Column(
+        modifier = modifier
+            .testTag("create-empty-state")
+            .padding(horizontal = LocalSpacing.current.l, vertical = LocalSpacing.current.xl),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.m),
+    ) {
+        WorkspaceGlyph()
+        Text(
+            text = "${mode.name.uppercase()} WORKSPACE",
+            style = MaterialTheme.typography.labelSmall,
+            color = focalAccent,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+        )
+        Text(
+            modifier = Modifier.heightIn(min = 96.dp),
+            text = copy.title,
+            style = MaterialTheme.typography.displaySmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.ExtraBold,
+            textAlign = TextAlign.Center,
+        )
+        Text(
+            modifier = Modifier.heightIn(min = 72.dp),
+            text = supportingText,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+        CommandSurface(
+            focused = false,
+            active = false,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onBrowseModels)
+                .semantics(mergeDescendants = true) {
+                    contentDescription = "Browse models"
+                },
+            contentPadding = PaddingValues(horizontal = LocalSpacing.current.l),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    text = "Browse models",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Icon(
+                    imageVector = Icons.AutoMirrored.Default.ArrowForward,
+                    contentDescription = null,
+                    tint = focalAccent,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorkspaceGlyph() {
+    val focalAccent = MaterialTheme.auroraColors.focusPrimary.copy(alpha = 1f)
+    Surface(
+        modifier = Modifier
+            .size(52.dp)
+            .clearAndSetSemantics { },
+        color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.78f),
+        contentColor = focalAccent,
+        shape = MaterialTheme.shapes.large,
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant,
+        ),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = "I",
+                style = MaterialTheme.typography.headlineSmall,
+                fontFamily = FontFamily.Monospace,
+                color = focalAccent,
             )
         }
     }

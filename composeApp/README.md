@@ -205,12 +205,12 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 <!-- Updated at end of each AI-assisted development session -->
 
 - Active conversations now enter Focus Mode: persistent navigation and Create chrome disappear, the thread reclaims the canvas, and one accessible action opens the existing sidebar without replacing the production composer
-- Rebuilt the shared UI as a sidebar-first Prism workbench: compact windows reveal a modal left panel without moving content, tablets use a compact rail, and wider workspaces use a labeled sidebar with contextual generation modes
-- Create now centers one focused command composer, keeps Text, Image, and Video as local modes, and exposes explicit empty, preparation, generation, completion, and failure states
-- Model Hub now uses one compact registry hierarchy, while Details prioritizes exact artifacts and renders durable pause/resume/cancel/retry state without sacrificing compact or large-text reachability
+- Rebuilt the shared UI as a calm sidebar-first local AI workbench: compact windows reveal a modal left panel without moving content, tablets use a compact rail, and wider workspaces use a labeled contextual sidebar
+- Create now owns the full canvas with the baseline yellow/violet/green grain-backed atmosphere, a connected Text/Image/Video control, the production composer, truthful no-model action, and explicit generation states
+- Model Hub now uses one flat compact registry hierarchy, while Details integrates model identity into the route canvas and preserves exact durable artifact controls without sacrificing compact or large-text reachability
 - Android uses UIDT/foreground WorkManager notifications, iOS reconnects to a stable background URLSession, and Desktop recovers persisted download checkpoints at startup
 - Settings now uses a dense list hierarchy with exclusive selections and disclosure rows; rich grain-backed gradients are limited to the Details overview and appearance preview, while the shared backdrop stays faint and interaction surfaces stay matte
-- Final sidebar verification covers focused and repository-wide JVM/native gates, Android debug assembly, and iOS simulator compilation; the fresh physical-device visual and animation matrix is explicitly unverified because the Pixel was no longer attached at the final checkpoint
+- Final verification covers 784 Compose JVM tests, the 912-test repository gate plus native tests, Android debug assembly, iOS simulator compilation, and an inspected Pixel 9 compact Create capture; active chat and populated model states remain device-unverified because no local model was downloaded
 - Added a strict 16-case recommendation corpus, analytical timing coverage, exact assessed-artifact selection handoff, and explicit release gating; unmeasured outcomes remain null and production remains `LEGACY`
 - Recommendations now learn only from byte-bound descriptors, phase-specific raw memory evidence, full run-plan fingerprints, and trustworthy process-memory counters; stale identities and unresponsive native probes fail closed
 - Exact model selections now derive directory targets only from verified storage roots, bind every native-consumed component path, keep multi-sequence planning analytical, and reject it at native admission

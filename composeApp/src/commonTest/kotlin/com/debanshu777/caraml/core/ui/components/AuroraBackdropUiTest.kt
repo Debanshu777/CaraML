@@ -400,9 +400,7 @@ class AuroraBackdropUiTest {
                 MaterialTheme(
                     colorScheme = darkColorScheme(
                         surface = Color(0xFF0E1018),
-                        primary = Color(0xFF276BFF),
-                        secondary = Color(0xFF00D59C),
-                        tertiary = Color(0xFFFF3F92),
+                        primary = Color(0xFFF9A825),
                     ),
                 ) {
                     AuroraFocalSurface(
@@ -420,9 +418,9 @@ class AuroraBackdropUiTest {
         val secondary = pixels.averagePatch(0.88f, 0.18f)
         val tertiary = pixels.averagePatch(0.74f, 0.82f)
 
-        assertTrue(primary.blue > primary.red && primary.blue > primary.green)
-        assertTrue(secondary.green > secondary.red && secondary.green > secondary.blue)
-        assertTrue(tertiary.red > tertiary.green)
+        assertTrue(primary.red > primary.blue && primary.green > primary.blue)
+        assertTrue(secondary.red > secondary.green && secondary.blue > secondary.green)
+        assertTrue(tertiary.green > tertiary.red && tertiary.green > tertiary.blue)
         assertTrue(
             pixels.highFrequencyEnergy() >= 0.0025f,
             "focal field must share the deterministic grain treatment",

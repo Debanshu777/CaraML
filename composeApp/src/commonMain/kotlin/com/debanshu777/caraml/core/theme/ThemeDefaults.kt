@@ -7,12 +7,12 @@ import androidx.compose.ui.graphics.Color
  * in the Appearance settings picker.
  */
 object ThemeDefaults {
-    /** Material You reference purple — used as the brand seed for first-launch. */
-    val DEFAULT_SEED_COLOR: Color = Color(0xFF6750A4)
+    /** Baseline yellow — the first-launch anchor for the CaraML focal workspace. */
+    val DEFAULT_SEED_COLOR: Color = Color(0xFFEFD04B)
 
     val DEFAULT_THEME_MODE: ThemeMode = ThemeMode.SYSTEM
 
-    val DEFAULT_PALETTE_STYLE: ThemePaletteStyle = ThemePaletteStyle.TONAL_SPOT
+    val DEFAULT_PALETTE_STYLE: ThemePaletteStyle = ThemePaletteStyle.EXPRESSIVE
 
     /**
      * Twelve seed colors covering the M3 reference hues. Kept in a stable order
@@ -25,7 +25,7 @@ object ThemeDefaults {
         Color(0xFF00897B), // Teal
         Color(0xFF2E7D32), // Forest
         Color(0xFFAFB42B), // Chartreuse
-        Color(0xFFF9A825), // Amber
+        Color(0xFFEFD04B), // Baseline yellow
         Color(0xFFEF6C00), // Burnt orange
         Color(0xFFD81B60), // Magenta
         Color(0xFFC62828), // Crimson

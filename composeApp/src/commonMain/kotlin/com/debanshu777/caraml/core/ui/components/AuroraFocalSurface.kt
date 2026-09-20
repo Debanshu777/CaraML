@@ -68,7 +68,7 @@ fun AuroraFocalSurface(
                 )
                 val secondary = Brush.radialGradient(
                     colors = listOf(
-                        colors.secondaryGlow.copy(alpha = 0.38f * revealProgress),
+                        colors.focusSecondary.copy(alpha = 0.38f * revealProgress),
                         Color.Transparent,
                     ),
                     center = Offset(size.width * 0.94f, size.height * 0.18f),

@@ -192,18 +192,18 @@ class SettingsWorkbenchUiTest {
                 "Selected theme System",
                 useUnmergedTree = true,
             ).assertDoesNotExist()
-            onNodeWithContentDescription("Seed color 1").performScrollTo()
+            onNodeWithContentDescription("Seed color 7").performScrollTo()
             onNodeWithTag(
-                "Selected seed color 1",
+                "Selected seed color 7",
                 useUnmergedTree = true,
             ).assertIsDisplayed()
             onNodeWithContentDescription(
-                "Selected seed color 1",
+                "Selected seed color 7",
                 useUnmergedTree = true,
             ).assertDoesNotExist()
-            onNodeWithContentDescription("Palette Tonal Spot, selected").performScrollTo()
+            onNodeWithContentDescription("Palette Expressive, selected").performScrollTo()
             onNodeWithTag(
-                "Selected palette Tonal Spot",
+                "Selected palette Expressive",
                 useUnmergedTree = true,
             ).assertIsDisplayed()
             onNodeWithContentDescription("Risk tolerance Balanced, selected")
@@ -250,9 +250,9 @@ class SettingsWorkbenchUiTest {
             listOf(
                 "Theme System, selected" to true,
                 "Theme Light, not selected" to false,
-                "Seed color 1" to true,
+                "Seed color 7" to true,
                 "Seed color 2" to false,
-                "Palette Tonal Spot, selected" to true,
+                "Palette Expressive, selected" to true,
                 "Palette Vibrant, not selected" to false,
                 "Risk tolerance Balanced, selected" to true,
                 "Risk tolerance Experimental, not selected" to false,
@@ -329,7 +329,7 @@ class SettingsWorkbenchUiTest {
                 .performScrollTo()
                 .performClick()
                 .assertIsSelected()
-            onNodeWithContentDescription("Seed color 1").assertIsNotSelected()
+            onNodeWithContentDescription("Seed color 7").assertIsNotSelected()
             onAllNodes(
                 SemanticsMatcher.expectValue(SemanticsProperties.Selected, true) and
                     SemanticsMatcher.expectValue(
@@ -354,8 +354,8 @@ class SettingsWorkbenchUiTest {
 
         listOf(
             "theme" to onNodeWithContentDescription("Theme System, selected"),
-            "seed" to onNodeWithContentDescription("Seed color 1"),
-            "palette" to onNodeWithContentDescription("Palette Tonal Spot, selected"),
+            "seed" to onNodeWithContentDescription("Seed color 7"),
+            "palette" to onNodeWithContentDescription("Palette Expressive, selected"),
             "recommendation" to
                 onNodeWithContentDescription("Risk tolerance Balanced, selected"),
             "KV cache" to onNodeWithContentDescription("KV cache Auto, selected"),

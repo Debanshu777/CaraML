@@ -76,6 +76,7 @@ import com.debanshu777.caraml.features.chat.data.InferenceMetrics
 import com.debanshu777.caraml.features.chat.data.MessageRole
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
 import com.debanshu777.caraml.features.chat.presentation.components.MessageBubble
+import com.debanshu777.caraml.features.chat.presentation.components.GenerationModeSwitcher
 import com.debanshu777.caraml.features.chat.presentation.components.ModelSelectorTopBar
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 import kotlinx.collections.immutable.persistentListOf
@@ -285,6 +286,46 @@ class CreateWorkbenchUiTest {
     }
 
     @Test
+    fun compactModeSwitcherUsesAConnectedTonalSelectionInsteadOfUnderlineChrome() =
+        runComposeUiTest {
+            val selectedColor = Color(0xFFFFD84D)
+            val hostColor = Color(0xFFB00020)
+            setContent {
+                MaterialTheme(
+                    colorScheme = darkColorScheme(
+                        primary = selectedColor,
+                        onPrimary = Color.Black,
+                        surfaceContainerLow = Color(0xFF171A18),
+                    ),
+                ) {
+                    Box(
+                        Modifier
+                            .requiredSize(width = 330.dp, height = 56.dp)
+                            .background(hostColor),
+                    ) {
+                        GenerationModeSwitcher(
+                            mode = GenerationMode.Text,
+                            onModeSelected = {},
+                        )
+                    }
+                }
+            }
+
+            val selected = onNodeWithContentDescription(
+                "Text mode, selected",
+                useUnmergedTree = true,
+            ).captureToImage().toPixelMap()
+            val fill = selected[6, selected.height / 2]
+            assertTrue(
+                abs(fill.red - selectedColor.red) < 0.03f &&
+                    abs(fill.green - selectedColor.green) < 0.03f &&
+                    abs(fill.blue - selectedColor.blue) < 0.03f,
+                "The selected mode must be a connected tonal segment, not a transparent tab; " +
+                    "sampled $fill",
+            )
+        }
+
+    @Test
     fun emptyCreateHasOneStatementAndOneCommandSurfaceWithoutOuterCard() = runComposeUiTest {
         val backdrop = Color.Magenta
         setContent {
@@ -304,8 +345,8 @@ class CreateWorkbenchUiTest {
             }
         }
 
-        onAllNodesWithText("Think locally. Stay private.").assertCountEquals(1)
-        onAllNodesWithText("Ask anything — your prompt and model stay on this device.")
+        onAllNodesWithText("Start with a private thought.").assertCountEquals(1)
+        onAllNodesWithText("Ask a question, shape an idea, or begin writing. Nothing leaves this device.")
             .assertCountEquals(1)
         onNodeWithTag("create-command").assertIsDisplayed()
 
@@ -355,6 +396,49 @@ class CreateWorkbenchUiTest {
             onAllNodesWithText("Last session").assertCountEquals(0)
             onAllNodesWithText("Recent local sessions").assertCountEquals(0)
             onAllNodesWithText("Local only").assertCountEquals(0)
+        }
+
+    @Test
+    fun noModelsUsesTheSameFocalWorkspaceHierarchyWithATruthfulModelAction() =
+        runComposeUiTest {
+            var browseRequests = 0
+            setContent {
+                MaterialTheme {
+                    Box(
+                        Modifier
+                            .requiredSize(width = 420.dp, height = 800.dp)
+                            .testTag("no-model-host"),
+                    ) {
+                        CreateTestLocals {
+                            ChatScreenContent(
+                                uiState = ChatUiState.NoModels,
+                                streamingState = StreamingState(),
+                                onSelectModel = {},
+                                onSendMessage = {},
+                                onCancelGeneration = {},
+                                onNavigateToSearch = { browseRequests += 1 },
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    }
+                }
+            }
+
+            val hostBounds = onNodeWithTag("no-model-host", useUnmergedTree = true)
+                .fetchSemanticsNode().boundsInRoot
+            val focalBounds = onNodeWithTag("create-focal-canvas", useUnmergedTree = true)
+                .assertIsDisplayed()
+                .fetchSemanticsNode().boundsInRoot
+            assertEquals(hostBounds, focalBounds)
+            onNodeWithText("TEXT WORKSPACE").assertIsDisplayed()
+            onNodeWithText("Start with a private thought.").assertIsDisplayed()
+            onNodeWithText(
+                "Choose a local model to begin. Your prompts and responses stay on this device.",
+            ).assertIsDisplayed()
+            onAllNodesWithText("I").assertCountEquals(0)
+            onAllNodesWithText("No models downloaded yet").assertCountEquals(0)
+            onNodeWithText("Browse models").assertIsDisplayed().performClick()
+            runOnIdle { assertEquals(1, browseRequests) }
         }
 
     @Test
@@ -566,7 +650,7 @@ class CreateWorkbenchUiTest {
 
             runOnIdle { mode = GenerationMode.Image }
             mainClock.advanceTimeByFrame()
-            onNodeWithText("Think locally. Stay private.").assertExists()
+            onNodeWithText("Start with a private thought.").assertExists()
             val entering = onNodeWithText("Create without the cloud.")
                 .fetchSemanticsNode().positionInRoot
             mainClock.advanceTimeBy(220)
@@ -792,7 +876,7 @@ class CreateWorkbenchUiTest {
             }
 
             show(ChatUiState.NoModels)
-            onNodeWithText("Download Model").performScrollTo().assertIsDisplayed().performClick()
+            onNodeWithText("Browse models").performScrollTo().assertIsDisplayed().performClick()
             runOnIdle { assertEquals(1, modelHubNavigations) }
 
             show(ChatUiState.NoModelsForMode(GenerationMode.Video))
