@@ -4,6 +4,10 @@ import com.debanshu777.caraml.core.recommendation.storage.EncodedModelEvidence
 import com.debanshu777.caraml.core.recommendation.storage.InstalledEvidenceState
 import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
+import com.debanshu777.huggingfacemanager.download.DownloadResponseProvenance
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -13,6 +17,80 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class IosDownloadResponseBoundTest {
+    @Test
+    fun validatedCompletionRoundTripRetainsActualResponseForProcessDeathRecovery() {
+        val descriptor = descriptor(expectedBytes = 10L)
+        val completion = IosValidatedCompletionEnvelope.create(
+            taskDescription = descriptor.encode(),
+            platformTaskId = "41",
+            completedBytes = 10L,
+            response = requireNotNull(
+                DownloadResponseProvenance.validate("https://cdn-lfs.huggingface.co/model.gguf", 206),
+            ),
+        )
+        val encoded = IosValidatedCompletionEnvelopeCodec.encode(completion)
+
+        assertEquals(completion, IosValidatedCompletionEnvelopeCodec.decode(encoded))
+        assertEquals("https://cdn-lfs.huggingface.co", completion.response.origin)
+        assertEquals(206, completion.response.statusCode)
+        assertEquals("${"b".repeat(64)}.download", completion.captureRelativePath)
+    }
+
+    @Test
+    fun completionEnvelopeRejectsCorruptResponseAndIdentityInsteadOfFabricatingDefaults() {
+        val descriptor = descriptor(expectedBytes = 10L)
+        val valid = IosValidatedCompletionEnvelope.create(
+            taskDescription = descriptor.encode(),
+            platformTaskId = "42",
+            completedBytes = 10L,
+            response = requireNotNull(DownloadResponseProvenance.validate("https://huggingface.co/model.gguf", 200)),
+        )
+        val encoded = IosValidatedCompletionEnvelopeCodec.encode(valid)
+
+        assertNull(
+            IosValidatedCompletionEnvelopeCodec.decode(
+                encoded.replace("https://huggingface.co", "https://attacker.example"),
+            ),
+        )
+        assertNull(
+            IosValidatedCompletionEnvelopeCodec.decode(
+                encoded.replace("\"completedBytes\":10", "\"completedBytes\":9"),
+            ),
+        )
+        assertNull(IosValidatedCompletionEnvelopeCodec.decode("x".repeat(4_096)))
+    }
+
+    @Test
+    fun callbackAndReconciliationJoinOneExactImportFlight() = runTest {
+        val flights = IosCompletionSingleFlight()
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        var imports = 0
+        val key = IosCompletionFlightKey(
+            batchId = "a".repeat(64),
+            artifactId = "b".repeat(64),
+            platformTaskId = "43",
+        )
+
+        val callback = async {
+            flights.runOrJoin(key) {
+                imports += 1
+                entered.complete(Unit)
+                release.await()
+            }
+        }
+        entered.await()
+        val reconciliation = async {
+            flights.runOrJoin(key) { imports += 1 }
+        }
+        release.complete(Unit)
+        callback.await()
+        reconciliation.await()
+
+        assertEquals(1, imports)
+        assertFalse(flights.isActive(key))
+    }
+
     @Test
     fun restoredTaskRejectsSameSizeScopedRequestChangedSinceRegistration() {
         val oldRequest = request(remoteObjectId = "b".repeat(40))

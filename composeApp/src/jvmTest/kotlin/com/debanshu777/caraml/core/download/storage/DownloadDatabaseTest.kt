@@ -442,6 +442,48 @@ class DownloadDatabaseTest {
     }
 
     @Test
+    fun completionTransitionsOnlyTheExactBoundPlatformGeneration() = runTest {
+        val database = openDatabase("platform-completion-generation")
+        val store = RoomDownloadTaskStore(database.downloadTaskDao())
+        try {
+            val batchId = store.create(request(), nowEpochMs = 1L)
+            val artifact = store.getBatch(batchId)!!.artifacts.single()
+            assertTrue(store.bindPlatformTask(batchId, "ios-old", 2L))
+            assertTrue(store.claim(artifact.artifactId, "ios-import", 3L, Long.MAX_VALUE))
+            assertTrue(store.bindPlatformTask(batchId, "ios-replacement", 4L))
+
+            assertFalse(
+                store.transitionPlatformTask(
+                    artifactId = artifact.artifactId,
+                    platformTaskId = "ios-old",
+                    state = DownloadArtifactState.VERIFYING,
+                    failureCode = null,
+                    completedBytes = artifact.expectedBytes,
+                    nowEpochMs = 5L,
+                ),
+            )
+            assertTrue(
+                store.transitionPlatformTask(
+                    artifactId = artifact.artifactId,
+                    platformTaskId = "ios-replacement",
+                    state = DownloadArtifactState.VERIFYING,
+                    failureCode = null,
+                    completedBytes = artifact.expectedBytes,
+                    nowEpochMs = 6L,
+                ),
+            )
+
+            val persisted = database.downloadTaskDao().requireArtifact(artifact.artifactId)
+            assertEquals(DownloadArtifactState.VERIFYING.name, persisted.state)
+            assertEquals(artifact.expectedBytes, persisted.bytesReceived)
+            assertNull(persisted.platformTaskId)
+            assertNull(persisted.leaseOwner)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun reopeningDatabasePreservesPausedCheckpointAndIntent() = runTest {
         val directory = Files.createTempDirectory("caraml-download-db-reopen")
         val dbPath = directory.resolve("downloads.db").toString()

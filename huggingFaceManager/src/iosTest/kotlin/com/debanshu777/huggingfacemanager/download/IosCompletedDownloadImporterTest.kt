@@ -63,8 +63,12 @@ class IosCompletedDownloadImporterTest {
                     path = identity.relativePath,
                     metadata = metadata,
                     temporaryFilePath = temporary.toString(),
-                    finalResponseUrl = "https://huggingface.co/org/model/resolve/main/model.gguf",
-                    statusCode = 200,
+                    response = requireNotNull(
+                        DownloadResponseProvenance.validate(
+                            "https://huggingface.co/org/model/resolve/main/model.gguf",
+                            200,
+                        ),
+                    ),
                 )
             }
 

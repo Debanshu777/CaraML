@@ -1,6 +1,5 @@
 package com.debanshu777.huggingfacemanager.download
 
-import io.ktor.http.URLBuilder
 import okio.Buffer
 import okio.Path
 import okio.Path.Companion.toPath
@@ -24,12 +23,13 @@ class IosCompletedDownloadImporter internal constructor(
         path: String,
         metadata: DownloadMetadataDTO,
         temporaryFilePath: String,
-        finalResponseUrl: String,
-        statusCode: Int,
+        response: DownloadResponseProvenance,
     ): DownloadProgressDTO {
         requireImmutableArtifactWriteMetadata(metadata)
         validateDownloadArguments(modelId, path, metadata)
-        require(acceptsResponse(finalResponseUrl, statusCode)) { "Unexpected download response" }
+        require(DownloadResponseProvenance.validate(response.origin, response.statusCode) == response) {
+            "Unexpected download response"
+        }
 
         val identity = metadata.artifact
         val modelRoot = pathProvider.getModelsStorageDirectory(modelId).toPath(normalize = true)
@@ -98,14 +98,4 @@ class IosCompletedDownloadImporter internal constructor(
         }
     }
 
-    fun acceptsResponse(value: String, statusCode: Int): Boolean {
-        if (statusCode !in 200..299) return false
-        val url = runCatching { URLBuilder(value).build() }.getOrNull() ?: return false
-        if (url.protocol.name != "https" || url.host.isBlank()) return false
-        val host = url.host.lowercase()
-        return host == "huggingface.co" ||
-            host.endsWith(".huggingface.co") ||
-            host == "hf.co" || host.endsWith(".hf.co") ||
-            host == "xethub.hf.co" || host.endsWith(".xethub.hf.co")
-    }
 }

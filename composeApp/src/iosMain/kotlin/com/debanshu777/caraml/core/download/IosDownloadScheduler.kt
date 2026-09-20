@@ -4,11 +4,15 @@ package com.debanshu777.caraml.core.download
 
 import com.debanshu777.huggingfacemanager.download.ArtifactFileAccessException
 import com.debanshu777.huggingfacemanager.download.ArtifactVerificationException
+import com.debanshu777.huggingfacemanager.download.DownloadResponseProvenance
 import com.debanshu777.huggingfacemanager.download.IosCompletedDownloadImporter
 import com.debanshu777.huggingfacemanager.download.artifactDownloadUrl
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okio.FileSystem
 import okio.Path.Companion.toPath
@@ -38,7 +42,7 @@ import kotlin.time.Clock
 private const val BACKGROUND_SESSION_ID = "com.debanshu777.caraml.model-downloads"
 
 /** iOS-native durable driver backed by one stable background URLSession. */
-class IosDownloadScheduler(
+class IosDownloadScheduler internal constructor(
     private val store: DownloadTaskStore,
     private val finalizer: BatchFinalizer,
     private val importer: IosCompletedDownloadImporter,
@@ -56,6 +60,9 @@ class IosDownloadScheduler(
     private val progressCheckpointsLock = NSLock()
     private val responseBound = IosDownloadResponseBound()
     private val responseBoundLock = NSLock()
+    private val importFlights = IosCompletionSingleFlight()
+    private val finalizationMutex = Mutex()
+    private val restorationReady = CompletableDeferred<Unit>()
     private val delegate = IosDownloadDelegate(this)
     private val delegateQueue = NSOperationQueue().apply { maxConcurrentOperationCount = 1 }
     private val session: NSURLSession by lazy {
@@ -71,10 +78,11 @@ class IosDownloadScheduler(
     }
 
     override suspend fun enqueue(batchId: String) {
-        enqueue(batchId, ignoredTaskId = null)
+        restorationReady.await()
+        enqueueAfterRestoration(batchId, ignoredTaskId = null)
     }
 
-    private suspend fun enqueue(batchId: String, ignoredTaskId: ULong?) {
+    private suspend fun enqueueAfterRestoration(batchId: String, ignoredTaskId: ULong?) {
         requireBatchId(batchId)
         val batchAlreadyOwned = activeTasks().any { task ->
             task.taskIdentifier != ignoredTaskId && task.activeTaskKey()?.batchId == batchId
@@ -121,12 +129,12 @@ class IosDownloadScheduler(
                 } finally {
                     store.releaseLease(artifact.artifactId, owner, nowEpochMs())
                 }
-                enqueue(batchId)
+                enqueueAfterRestoration(batchId, ignoredTaskId = null)
             }
             return
         }
-        completedFileStore.existingPath(artifact.artifactId)?.let { capturedPath ->
-            scope.launch { recoverCapturedFile(batch.batchId, artifact.artifactId, capturedPath) }
+        completedFileStore.read(artifact.artifactId)?.let { completion ->
+            launchCapturedImport(completion)
             return
         }
 
@@ -186,6 +194,25 @@ class IosDownloadScheduler(
     }
 
     override suspend fun reconcile(liveBatchIds: Set<String>) {
+        try {
+            reconcileRestoredTasks(liveBatchIds)
+            liveBatchIds.forEach batchLoop@{ batchId ->
+                val batch = store.getBatch(batchId) ?: return@batchLoop
+                batch.artifacts.forEach artifactLoop@{ artifact ->
+                    val completion = completedFileStore.read(artifact.artifactId) ?: return@artifactLoop
+                    if (completion.matches(batch, artifact)) {
+                        launchCapturedImport(completion)
+                    } else {
+                        completedFileStore.delete(artifact.artifactId)
+                    }
+                }
+            }
+        } finally {
+            restorationReady.complete(Unit)
+        }
+    }
+
+    private suspend fun reconcileRestoredTasks(liveBatchIds: Set<String>) {
         liveBatchIds.forEach(::requireBatchId)
         val restoreGeneration = withResponseBoundLock {
             responseBound.captureRestoreRegistrationGeneration()
@@ -255,7 +282,13 @@ class IosDownloadScheduler(
 
     override suspend fun isActive(batchId: String): Boolean {
         requireBatchId(batchId)
-        return activeTasks().any { it.activeTaskKey()?.batchId == batchId }
+        restorationReady.await()
+        if (activeTasks().any { it.activeTaskKey()?.batchId == batchId }) return true
+        val batch = store.getBatch(batchId) ?: return false
+        return batch.artifacts.any { artifact ->
+            val completion = completedFileStore.read(artifact.artifactId)
+            completion?.matches(batch, artifact) == true
+        }
     }
 
     fun handleBackgroundEvents(identifier: String, completionHandler: () -> Unit) {
@@ -410,101 +443,196 @@ class IosDownloadScheduler(
         }
         val finalUrl = response?.URL?.absoluteString
         val status = response?.statusCode?.toInt()
-        val capturedPath = runCatching { completedFileStore.capture(descriptor.artifactId, temporaryPath) }
-            .getOrElse {
-                launchTracked { failArtifact(descriptor.artifactId, DownloadFailureCode.SECURE_PATH, terminal = true) }
-                return
+        val provenance = if (finalUrl != null && status != null) {
+            DownloadResponseProvenance.validate(finalUrl, status)
+        } else {
+            null
         }
-        launchTracked tracked@{
-            val batch = store.getBatch(descriptor.batchId) ?: run {
-                completedFileStore.delete(descriptor.artifactId)
-                return@tracked
-            }
-            val artifact = batch.artifacts.firstOrNull { it.artifactId == descriptor.artifactId } ?: run {
-                completedFileStore.delete(descriptor.artifactId)
-                return@tracked
-            }
-            iosPersistedTaskBindingFailure(batch, descriptor)?.let { failure ->
-                failBoundedResponse(descriptor.key, failure)
-                return@tracked
-            }
-            if (finalUrl == null || status == null || !importer.acceptsResponse(finalUrl, status)) {
-                failArtifact(
-                    artifact.artifactId,
-                    DownloadFailureCode.HTTP,
+        if (provenance == null) {
+            downloadTask.cancel()
+            launchTracked {
+                transitionCurrentTaskFailure(
+                    descriptor = descriptor,
+                    platformTaskId = downloadTask.taskIdentifier.toString(),
+                    code = DownloadFailureCode.HTTP,
                     terminal = status == null || status in 400..499,
                 )
-                completedFileStore.delete(artifact.artifactId)
-                return@tracked
             }
-            try {
-                importer.import(
-                    modelId = artifact.request.metadata.artifact.repositoryId,
-                    path = artifact.request.metadata.artifact.relativePath,
-                    metadata = artifact.request.metadata,
-                    temporaryFilePath = capturedPath,
-                    finalResponseUrl = finalUrl,
-                    statusCode = status,
-                )
-                store.updateProgress(artifact.artifactId, artifact.expectedBytes, null, null, nowEpochMs())
-                store.setPlatformTaskId(artifact.artifactId, null, nowEpochMs())
-                store.transitionArtifact(
-                    artifact.artifactId,
-                    DownloadArtifactState.VERIFYING,
-                    null,
-                    nowEpochMs(),
-                )
-                progressCheckpointsLock.lock()
-                try {
-                    progressCheckpoints.remove(artifact.artifactId)
-                } finally {
-                    progressCheckpointsLock.unlock()
+            return
+        }
+        val completion = runCatching {
+            IosValidatedCompletionEnvelope.create(
+                taskDescription = requireNotNull(downloadTask.taskDescription),
+                platformTaskId = downloadTask.taskIdentifier.toString(),
+                completedBytes = completedBytes,
+                response = provenance,
+            )
+        }.getOrElse {
+            downloadTask.cancel()
+            launchTracked { failBoundedResponse(descriptor.key) }
+            return
+        }
+        val captured = runCatching { completedFileStore.capture(completion, temporaryPath) }
+            .getOrElse {
+                launchTracked {
+                    transitionCurrentTaskFailure(
+                        descriptor = descriptor,
+                        platformTaskId = downloadTask.taskIdentifier.toString(),
+                        code = DownloadFailureCode.SECURE_PATH,
+                        terminal = true,
+                    )
                 }
-                enqueue(batch.batchId, downloadTask.taskIdentifier)
-            } catch (_: ArtifactVerificationException) {
-                failArtifact(artifact.artifactId, DownloadFailureCode.INTEGRITY, terminal = true)
-            } catch (_: ArtifactFileAccessException) {
-                failArtifact(artifact.artifactId, DownloadFailureCode.SECURE_PATH, terminal = true)
-            } catch (_: Exception) {
-                failArtifact(artifact.artifactId, DownloadFailureCode.PLATFORM, terminal = false)
-            } finally {
-                completedFileStore.delete(artifact.artifactId)
+                return
+            }
+        launchCapturedImport(captured)
+    }
+
+    private fun launchCapturedImport(completion: IosValidatedCompletionEnvelope) {
+        launchTracked {
+            importFlights.runOrJoin(completion.key) {
+                importCapturedCompletion(completion)
             }
         }
     }
 
-    private suspend fun recoverCapturedFile(batchId: String, artifactId: String, capturedPath: String) {
-        val batch = store.getBatch(batchId) ?: return
-        val artifact = batch.artifacts.firstOrNull { it.artifactId == artifactId } ?: return
-        val descriptor = IosBackgroundTaskDescriptor(batchId, artifactId, artifact.expectedBytes)
-        iosPersistedTaskBindingFailure(batch, descriptor)?.let { failure ->
-            completedFileStore.delete(artifactId)
-            failArtifact(artifactId, failure, terminal = true)
+    private suspend fun importCapturedCompletion(expected: IosValidatedCompletionEnvelope) {
+        val completion = completedFileStore.read(expected.descriptor.artifactId)
+            ?.takeIf { it == expected }
+            ?: return
+        val descriptor = completion.descriptor
+        val batch = store.getBatch(descriptor.batchId) ?: run {
+            completedFileStore.delete(descriptor.artifactId)
             return
         }
-        try {
-            importer.import(
-                modelId = artifact.request.metadata.artifact.repositoryId,
-                path = artifact.request.metadata.artifact.relativePath,
-                metadata = artifact.request.metadata,
-                temporaryFilePath = capturedPath,
-                finalResponseUrl = "https://huggingface.co",
-                statusCode = 200,
-            )
-            store.updateProgress(artifactId, artifact.expectedBytes, null, null, nowEpochMs())
-            store.setPlatformTaskId(artifactId, null, nowEpochMs())
-            store.transitionArtifact(artifactId, DownloadArtifactState.VERIFYING, null, nowEpochMs())
-            completedFileStore.delete(artifactId)
-            enqueue(batchId)
-        } catch (_: ArtifactVerificationException) {
-            completedFileStore.delete(artifactId)
-            failArtifact(artifactId, DownloadFailureCode.INTEGRITY, terminal = true)
-        } catch (_: ArtifactFileAccessException) {
-            completedFileStore.delete(artifactId)
-            failArtifact(artifactId, DownloadFailureCode.SECURE_PATH, terminal = true)
-        } catch (_: Exception) {
-            failArtifact(artifactId, DownloadFailureCode.PLATFORM, terminal = false)
+        val artifact = batch.artifacts.firstOrNull { it.artifactId == descriptor.artifactId } ?: run {
+            completedFileStore.delete(descriptor.artifactId)
+            return
         }
+        if (!completion.matches(batch, artifact)) {
+            completedFileStore.delete(artifact.artifactId)
+            return
+        }
+        if (batch.userIntent != DownloadUserIntent.RUN) return
+        when (artifact.state) {
+            DownloadArtifactState.VERIFYING,
+            DownloadArtifactState.COMPLETED,
+            -> {
+                completedFileStore.delete(artifact.artifactId)
+                finishBatchIfReady(batch.batchId)
+                return
+            }
+            DownloadArtifactState.PAUSED,
+            DownloadArtifactState.WAITING_FOR_NETWORK,
+            -> return
+            DownloadArtifactState.CANCELLED,
+            DownloadArtifactState.FAILED_TERMINAL,
+            -> {
+                completedFileStore.delete(artifact.artifactId)
+                return
+            }
+            DownloadArtifactState.QUEUED,
+            DownloadArtifactState.FAILED_RETRYABLE,
+            -> if (!store.claim(
+                    artifact.artifactId,
+                    "ios-import-${completion.platformTaskId}",
+                    nowEpochMs(),
+                    Long.MAX_VALUE,
+                )
+            ) {
+                return
+            }
+            DownloadArtifactState.RUNNING -> Unit
+        }
+        try {
+            if (!importer.isPublished(artifact.request.metadata)) {
+                importer.import(
+                    modelId = artifact.request.metadata.artifact.repositoryId,
+                    path = artifact.request.metadata.artifact.relativePath,
+                    metadata = artifact.request.metadata,
+                    temporaryFilePath = completedFileStore.capturedPath(completion),
+                    response = completion.response,
+                )
+            }
+            val currentBatch = store.getBatch(batch.batchId) ?: run {
+                completedFileStore.delete(artifact.artifactId)
+                return
+            }
+            val currentArtifact = currentBatch.artifacts.firstOrNull { it.artifactId == artifact.artifactId }
+            if (currentArtifact == null || !completion.matches(currentBatch, currentArtifact)) {
+                completedFileStore.delete(artifact.artifactId)
+                return
+            }
+            if (currentBatch.userIntent != DownloadUserIntent.RUN ||
+                currentArtifact.state != DownloadArtifactState.RUNNING
+            ) {
+                return
+            }
+            val transitioned = store.transitionPlatformTask(
+                artifactId = artifact.artifactId,
+                platformTaskId = completion.platformTaskId,
+                state = DownloadArtifactState.VERIFYING,
+                failureCode = null,
+                completedBytes = artifact.expectedBytes,
+                nowEpochMs = nowEpochMs(),
+            )
+            if (!transitioned) {
+                completedFileStore.delete(artifact.artifactId)
+                return
+            }
+            clearProgressCheckpoint(artifact.artifactId)
+            completedFileStore.delete(artifact.artifactId)
+            enqueueAfterRestoration(batch.batchId, completion.platformTaskId.toULongOrNull())
+        } catch (cause: CancellationException) {
+            throw cause
+        } catch (_: ArtifactVerificationException) {
+            completedFileStore.delete(artifact.artifactId)
+            transitionCurrentTaskFailure(
+                descriptor,
+                completion.platformTaskId,
+                DownloadFailureCode.INTEGRITY,
+                terminal = true,
+            )
+        } catch (_: ArtifactFileAccessException) {
+            completedFileStore.delete(artifact.artifactId)
+            transitionCurrentTaskFailure(
+                descriptor,
+                completion.platformTaskId,
+                DownloadFailureCode.SECURE_PATH,
+                terminal = true,
+            )
+        } catch (_: Exception) {
+            completedFileStore.delete(artifact.artifactId)
+            transitionCurrentTaskFailure(
+                descriptor,
+                completion.platformTaskId,
+                DownloadFailureCode.PLATFORM,
+                terminal = false,
+            )
+        }
+    }
+
+    private suspend fun transitionCurrentTaskFailure(
+        descriptor: IosBackgroundTaskDescriptor,
+        platformTaskId: String,
+        code: DownloadFailureCode,
+        terminal: Boolean,
+    ): Boolean {
+        val batch = store.getBatch(descriptor.batchId) ?: return false
+        val artifact = batch.artifacts.firstOrNull { it.artifactId == descriptor.artifactId } ?: return false
+        if (artifact.platformTaskId != platformTaskId ||
+            iosPersistedTaskBindingFailure(batch, descriptor) != null ||
+            artifact.state in TERMINAL_ARTIFACT_STATES
+        ) {
+            return false
+        }
+        return store.transitionPlatformTask(
+            artifactId = artifact.artifactId,
+            platformTaskId = platformTaskId,
+            state = if (terminal) DownloadArtifactState.FAILED_TERMINAL else DownloadArtifactState.FAILED_RETRYABLE,
+            failureCode = code,
+            completedBytes = null,
+            nowEpochMs = nowEpochMs(),
+        )
     }
 
     internal fun didComplete(
@@ -538,6 +666,11 @@ class IosDownloadScheduler(
             val artifact = batch.artifacts.firstOrNull { it.artifactId == descriptor.artifactId } ?: return@tracked
             iosPersistedTaskBindingFailure(batch, descriptor)?.let { failure ->
                 failBoundedResponse(descriptor.key, failure)
+                return@tracked
+            }
+            val captured = completedFileStore.read(artifact.artifactId)
+            if (captured?.matches(batch, artifact) == true) {
+                importFlights.runOrJoin(captured.key) { importCapturedCompletion(captured) }
                 return@tracked
             }
             if (error == null) return@tracked
@@ -583,23 +716,29 @@ class IosDownloadScheduler(
     }
 
     private suspend fun finishBatchIfReady(batchId: String) {
-        val batch = store.getBatch(batchId) ?: return
-        if (batch.artifacts.any { it.state !in setOf(DownloadArtifactState.VERIFYING, DownloadArtifactState.COMPLETED) }) {
-            return
-        }
-        try {
-            finalizer.finalize(batchId)
-            batch.artifacts.filter { it.state == DownloadArtifactState.VERIFYING }.forEach { artifact ->
-                store.transitionArtifact(artifact.artifactId, DownloadArtifactState.COMPLETED, null, nowEpochMs())
+        finalizationMutex.withLock {
+            val batch = store.getBatch(batchId) ?: return@withLock
+            if (batch.artifacts.none { it.state == DownloadArtifactState.VERIFYING } ||
+                batch.artifacts.any {
+                    it.state !in setOf(DownloadArtifactState.VERIFYING, DownloadArtifactState.COMPLETED)
+                }
+            ) {
+                return@withLock
             }
-            notifyCompleted(batchId)
-        } catch (_: ArtifactVerificationException) {
-            batch.artifacts.filter { it.state == DownloadArtifactState.VERIFYING }.forEach { artifact ->
-                failArtifact(artifact.artifactId, DownloadFailureCode.INTEGRITY, terminal = true)
-            }
-        } catch (_: Exception) {
-            batch.artifacts.filter { it.state == DownloadArtifactState.VERIFYING }.forEach { artifact ->
-                failArtifact(artifact.artifactId, DownloadFailureCode.PLATFORM, terminal = false)
+            try {
+                finalizer.finalize(batchId)
+                batch.artifacts.filter { it.state == DownloadArtifactState.VERIFYING }.forEach { artifact ->
+                    store.transitionArtifact(artifact.artifactId, DownloadArtifactState.COMPLETED, null, nowEpochMs())
+                }
+                notifyCompleted(batchId)
+            } catch (_: ArtifactVerificationException) {
+                batch.artifacts.filter { it.state == DownloadArtifactState.VERIFYING }.forEach { artifact ->
+                    failArtifact(artifact.artifactId, DownloadFailureCode.INTEGRITY, terminal = true)
+                }
+            } catch (_: Exception) {
+                batch.artifacts.filter { it.state == DownloadArtifactState.VERIFYING }.forEach { artifact ->
+                    failArtifact(artifact.artifactId, DownloadFailureCode.PLATFORM, terminal = false)
+                }
             }
         }
     }
@@ -680,6 +819,16 @@ class IosDownloadScheduler(
 
     private fun NSURLSessionDownloadTask.activeTaskKey(): IosBackgroundTaskKey? =
         iosActiveTaskKey(taskDescription)
+
+    private fun IosValidatedCompletionEnvelope.matches(
+        batch: DownloadBatchSnapshot,
+        artifact: DownloadArtifactSnapshot,
+    ): Boolean =
+        descriptor.batchId == batch.batchId &&
+            descriptor.artifactId == artifact.artifactId &&
+            completedBytes == artifact.expectedBytes &&
+            platformTaskId == artifact.platformTaskId &&
+            iosPersistedTaskBindingFailure(batch, descriptor) == null
 
     private fun <T> withResponseBoundLock(block: () -> T): T {
         responseBoundLock.lock()
@@ -786,32 +935,109 @@ class IosResumeDataStore(
 }
 
 /** Captures URLSession's ephemeral completion file before the delegate callback returns. */
-class IosCompletedFileStore(
+internal class IosCompletedFileStore(
     private val directory: String,
 ) {
+    private val lock = NSLock()
+
     init {
         FileSystem.SYSTEM.createDirectories(directory.toPath(normalize = true))
     }
 
-    fun capture(artifactId: String, temporaryPath: String): String {
-        val target = validatedPath(artifactId).toPath(normalize = true)
-        FileSystem.SYSTEM.delete(target, mustExist = false)
-        FileSystem.SYSTEM.atomicMove(temporaryPath.toPath(normalize = true), target)
-        return target.toString()
+    fun capture(
+        completion: IosValidatedCompletionEnvelope,
+        temporaryPath: String,
+    ): IosValidatedCompletionEnvelope = withLock {
+        readUnlocked(completion.descriptor.artifactId)?.let { existing ->
+            check(existing == completion) { "Conflicting completed download" }
+            return@withLock existing
+        }
+        val target = payloadPath(completion.descriptor.artifactId)
+        val envelope = envelopePath(completion.descriptor.artifactId)
+        val envelopeTemporary = "$envelope.tmp".toPath(normalize = true)
+        try {
+            FileSystem.SYSTEM.delete(target, mustExist = false)
+            FileSystem.SYSTEM.atomicMove(temporaryPath.toPath(normalize = true), target)
+            val encoded = IosValidatedCompletionEnvelopeCodec.encode(completion)
+            FileSystem.SYSTEM.delete(envelopeTemporary, mustExist = false)
+            FileSystem.SYSTEM.write(envelopeTemporary) { writeUtf8(encoded) }
+            FileSystem.SYSTEM.delete(envelope, mustExist = false)
+            FileSystem.SYSTEM.atomicMove(envelopeTemporary, envelope)
+            completion
+        } catch (cause: Exception) {
+            runCatching { FileSystem.SYSTEM.delete(envelopeTemporary, mustExist = false) }
+            runCatching { FileSystem.SYSTEM.delete(envelope, mustExist = false) }
+            runCatching { FileSystem.SYSTEM.delete(target, mustExist = false) }
+            throw cause
+        }
     }
 
-    fun delete(artifactId: String) {
-        runCatching { FileSystem.SYSTEM.delete(validatedPath(artifactId).toPath(normalize = true), mustExist = false) }
+    fun read(artifactId: String): IosValidatedCompletionEnvelope? = withLock {
+        readUnlocked(artifactId)
     }
 
-    fun existingPath(artifactId: String): String? = validatedPath(artifactId)
-        .takeIf { FileSystem.SYSTEM.exists(it.toPath(normalize = true)) }
+    fun capturedPath(completion: IosValidatedCompletionEnvelope): String = withLock {
+        check(readUnlocked(completion.descriptor.artifactId) == completion) { "Invalid completed download" }
+        payloadPath(completion.descriptor.artifactId).toString()
+    }
 
-    private fun validatedPath(artifactId: String): String {
+    fun delete(artifactId: String) = withLock {
+        runCatching { FileSystem.SYSTEM.delete(payloadPath(artifactId), mustExist = false) }
+        runCatching { FileSystem.SYSTEM.delete(envelopePath(artifactId), mustExist = false) }
+        Unit
+    }
+
+    private fun readUnlocked(artifactId: String): IosValidatedCompletionEnvelope? {
+        val payload = payloadPath(artifactId)
+        val envelope = envelopePath(artifactId)
+        if (!FileSystem.SYSTEM.exists(envelope)) {
+            runCatching { FileSystem.SYSTEM.delete(payload, mustExist = false) }
+            return null
+        }
+        val envelopeMetadata = runCatching { FileSystem.SYSTEM.metadata(envelope) }.getOrNull()
+        val envelopeSize = envelopeMetadata?.size
+        if (envelopeMetadata?.isRegularFile != true || envelopeSize == null || envelopeSize !in 1L..2_048L) {
+            deleteUnlocked(payload, envelope)
+            return null
+        }
+        val encoded = runCatching { FileSystem.SYSTEM.read(envelope) { readUtf8() } }.getOrNull()
+        val completion = encoded?.let(IosValidatedCompletionEnvelopeCodec::decode)
+        val payloadMetadata = runCatching { FileSystem.SYSTEM.metadata(payload) }.getOrNull()
+        if (completion == null || completion.descriptor.artifactId != artifactId ||
+            completion.captureRelativePath != "$artifactId.download" ||
+            payloadMetadata?.isRegularFile != true || payloadMetadata.size != completion.completedBytes
+        ) {
+            deleteUnlocked(payload, envelope)
+            return null
+        }
+        return completion
+    }
+
+    private fun deleteUnlocked(payload: okio.Path, envelope: okio.Path) {
+        runCatching { FileSystem.SYSTEM.delete(payload, mustExist = false) }
+        runCatching { FileSystem.SYSTEM.delete(envelope, mustExist = false) }
+    }
+
+    private fun payloadPath(artifactId: String): okio.Path =
+        "${directory.trimEnd('/')}/${validatedArtifactId(artifactId)}.download".toPath(normalize = true)
+
+    private fun envelopePath(artifactId: String): okio.Path =
+        "${directory.trimEnd('/')}/${validatedArtifactId(artifactId)}.completion.json".toPath(normalize = true)
+
+    private fun validatedArtifactId(artifactId: String): String {
         require(artifactId.length == 64 && artifactId.all { it in '0'..'9' || it in 'a'..'f' }) {
             "Invalid download artifact"
         }
-        return "${directory.trimEnd('/')}/$artifactId.download"
+        return artifactId
+    }
+
+    private fun <T> withLock(block: () -> T): T {
+        lock.lock()
+        return try {
+            block()
+        } finally {
+            lock.unlock()
+        }
     }
 }
 

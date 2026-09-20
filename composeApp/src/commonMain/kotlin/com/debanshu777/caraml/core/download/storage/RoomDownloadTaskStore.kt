@@ -178,6 +178,37 @@ class RoomDownloadTaskStore(
         return dao.setPlatformTaskId(artifactId, platformTaskId, nowEpochMs) == 1
     }
 
+    override suspend fun transitionPlatformTask(
+        artifactId: String,
+        platformTaskId: String,
+        state: DownloadArtifactState,
+        failureCode: DownloadFailureCode?,
+        completedBytes: Long?,
+        nowEpochMs: Long,
+    ): Boolean {
+        require(platformTaskId.isNotBlank() && platformTaskId.length <= 128 && platformTaskId.none(Char::isISOControl))
+        require(state in PLATFORM_COMPLETION_STATES) { "Invalid platform completion state" }
+        require(completedBytes == null || completedBytes > 0L)
+        require(
+            if (state == DownloadArtifactState.VERIFYING) {
+                failureCode == null && completedBytes != null
+            } else {
+                failureCode != null && completedBytes == null
+            },
+        ) { "Invalid platform completion transition" }
+        val entity = dao.artifact(artifactId) ?: return false
+        val changed = dao.transitionPlatformTask(
+            artifactId = artifactId,
+            platformTaskId = platformTaskId,
+            nextState = state.name,
+            failureCode = failureCode?.name,
+            completedBytes = completedBytes,
+            nowEpochMs = nowEpochMs,
+        ) == 1
+        if (changed) refreshBatch(entity.batchId, nowEpochMs)
+        return changed
+    }
+
     override suspend fun bindPlatformTask(
         batchId: String,
         platformTaskId: String,
@@ -227,6 +258,14 @@ class RoomDownloadTaskStore(
         val state = deriveBatchState(states)
         val failure = artifacts.firstNotNullOfOrNull { it.failureCode }
         dao.updateBatchState(batchId, state.name, failure, nowEpochMs)
+    }
+
+    private companion object {
+        val PLATFORM_COMPLETION_STATES = setOf(
+            DownloadArtifactState.VERIFYING,
+            DownloadArtifactState.FAILED_RETRYABLE,
+            DownloadArtifactState.FAILED_TERMINAL,
+        )
     }
 }
 

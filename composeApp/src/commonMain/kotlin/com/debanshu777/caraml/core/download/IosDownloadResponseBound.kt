@@ -1,11 +1,22 @@
 package com.debanshu777.caraml.core.download
 
+import com.debanshu777.huggingfacemanager.download.DownloadResponseProvenance
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+
 private const val IOS_BACKGROUND_DESCRIPTOR_VERSION = "1"
 private const val IOS_BACKGROUND_ID_LENGTH = 64
 private const val IOS_BACKGROUND_MAX_ARTIFACT_BYTES = 1L shl 50
 private const val IOS_BACKGROUND_MAX_EXPECTED_BYTES_LENGTH = 16
 private const val IOS_BACKGROUND_MIN_DESCRIPTION_LENGTH = 135
 private const val IOS_BACKGROUND_MAX_DESCRIPTION_LENGTH = 150
+private const val IOS_COMPLETION_ENVELOPE_VERSION = 1
+private const val IOS_COMPLETION_ENVELOPE_MAX_BYTES = 2_048
 
 internal enum class IosBackgroundTaskDisposition(val code: String) {
     ACTIVE("a"),
@@ -109,6 +120,170 @@ internal data class IosBackgroundTaskDescriptor(
             if (!batchId.isCanonicalDownloadId() || !artifactId.isCanonicalDownloadId()) return null
             return IosBackgroundTaskKey(batchId, artifactId)
         }
+    }
+}
+
+internal data class IosCompletionFlightKey(
+    val batchId: String,
+    val artifactId: String,
+    val platformTaskId: String,
+) {
+    init {
+        require(batchId.isCanonicalDownloadId() && artifactId.isCanonicalDownloadId()) {
+            "Invalid completed download"
+        }
+        require(platformTaskId.isPlatformTaskId()) { "Invalid completed download" }
+    }
+}
+
+@ConsistentCopyVisibility
+internal data class IosValidatedCompletionEnvelope private constructor(
+    val taskDescription: String,
+    val descriptor: IosBackgroundTaskDescriptor,
+    val platformTaskId: String,
+    val completedBytes: Long,
+    val captureRelativePath: String,
+    val response: DownloadResponseProvenance,
+) {
+    val key: IosCompletionFlightKey
+        get() = IosCompletionFlightKey(descriptor.batchId, descriptor.artifactId, platformTaskId)
+
+    companion object {
+        fun create(
+            taskDescription: String,
+            platformTaskId: String,
+            completedBytes: Long,
+            response: DownloadResponseProvenance,
+        ): IosValidatedCompletionEnvelope {
+            val descriptor = requireNotNull(IosBackgroundTaskDescriptor.decode(taskDescription)) {
+                "Invalid completed download"
+            }
+            require(descriptor.disposition == IosBackgroundTaskDisposition.ACTIVE) {
+                "Invalid completed download"
+            }
+            require(platformTaskId.isPlatformTaskId() && completedBytes == descriptor.expectedBytes) {
+                "Invalid completed download"
+            }
+            require(DownloadResponseProvenance.validate(response.origin, response.statusCode) == response) {
+                "Invalid completed download"
+            }
+            return IosValidatedCompletionEnvelope(
+                taskDescription = taskDescription,
+                descriptor = descriptor,
+                platformTaskId = platformTaskId,
+                completedBytes = completedBytes,
+                captureRelativePath = "${descriptor.artifactId}.download",
+                response = response,
+            )
+        }
+    }
+}
+
+@Serializable
+private data class IosValidatedCompletionEnvelopeDto(
+    val version: Int,
+    val taskDescription: String,
+    val batchId: String,
+    val artifactId: String,
+    val platformTaskId: String,
+    val expectedBytes: Long,
+    val completedBytes: Long,
+    val captureRelativePath: String,
+    val responseOrigin: String,
+    val statusCode: Int,
+)
+
+internal object IosValidatedCompletionEnvelopeCodec {
+    private val json = Json {
+        encodeDefaults = true
+        ignoreUnknownKeys = false
+        isLenient = false
+    }
+
+    fun encode(value: IosValidatedCompletionEnvelope): String {
+        val encoded = json.encodeToString(
+            IosValidatedCompletionEnvelopeDto(
+                version = IOS_COMPLETION_ENVELOPE_VERSION,
+                taskDescription = value.taskDescription,
+                batchId = value.descriptor.batchId,
+                artifactId = value.descriptor.artifactId,
+                platformTaskId = value.platformTaskId,
+                expectedBytes = value.descriptor.expectedBytes,
+                completedBytes = value.completedBytes,
+                captureRelativePath = value.captureRelativePath,
+                responseOrigin = value.response.origin,
+                statusCode = value.response.statusCode,
+            ),
+        )
+        require(encoded.encodeToByteArray().size <= IOS_COMPLETION_ENVELOPE_MAX_BYTES) {
+            "Invalid completed download"
+        }
+        return encoded
+    }
+
+    fun decode(value: String): IosValidatedCompletionEnvelope? {
+        if (value.length > IOS_COMPLETION_ENVELOPE_MAX_BYTES ||
+            value.encodeToByteArray().size > IOS_COMPLETION_ENVELOPE_MAX_BYTES
+        ) {
+            return null
+        }
+        val dto = runCatching { json.decodeFromString<IosValidatedCompletionEnvelopeDto>(value) }.getOrNull()
+            ?: return null
+        if (dto.version != IOS_COMPLETION_ENVELOPE_VERSION) return null
+        val response = DownloadResponseProvenance.validate(dto.responseOrigin, dto.statusCode) ?: return null
+        val completion = runCatching {
+            IosValidatedCompletionEnvelope.create(
+                taskDescription = dto.taskDescription,
+                platformTaskId = dto.platformTaskId,
+                completedBytes = dto.completedBytes,
+                response = response,
+            )
+        }.getOrNull() ?: return null
+        return completion.takeIf {
+            dto.batchId == it.descriptor.batchId &&
+                dto.artifactId == it.descriptor.artifactId &&
+                dto.expectedBytes == it.descriptor.expectedBytes &&
+                dto.captureRelativePath == it.captureRelativePath
+        }
+    }
+}
+
+/** Coalesces callback and startup recovery for one exact URLSession task generation. */
+internal class IosCompletionSingleFlight {
+    private val mutex = Mutex()
+    private val flights = mutableMapOf<IosCompletionFlightKey, CompletableDeferred<Unit>>()
+
+    suspend fun runOrJoin(key: IosCompletionFlightKey, block: suspend () -> Unit) {
+        val selection = mutex.withLock {
+            flights[key]?.let { FlightSelection.Follower(it) }
+                ?: CompletableDeferred<Unit>().let { deferred ->
+                    flights[key] = deferred
+                    FlightSelection.Leader(deferred)
+                }
+        }
+        when (selection) {
+            is FlightSelection.Follower -> selection.deferred.await()
+            is FlightSelection.Leader -> {
+                try {
+                    block()
+                    selection.deferred.complete(Unit)
+                } catch (cause: Throwable) {
+                    selection.deferred.completeExceptionally(cause)
+                    throw cause
+                } finally {
+                    mutex.withLock {
+                        if (flights[key] === selection.deferred) flights.remove(key)
+                    }
+                }
+            }
+        }
+    }
+
+    suspend fun isActive(key: IosCompletionFlightKey): Boolean = mutex.withLock { key in flights }
+
+    private sealed interface FlightSelection {
+        data class Leader(val deferred: CompletableDeferred<Unit>) : FlightSelection
+        data class Follower(val deferred: CompletableDeferred<Unit>) : FlightSelection
     }
 }
 

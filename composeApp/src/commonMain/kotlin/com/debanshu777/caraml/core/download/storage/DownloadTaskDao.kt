@@ -178,6 +178,33 @@ interface DownloadTaskDao {
     @Query(
         """
         UPDATE download_artifact
+        SET state = :nextState, failure_code = :failureCode,
+            bytes_received = COALESCE(:completedBytes, bytes_received),
+            platform_task_id = NULL,
+            lease_owner = NULL, lease_expires_at_epoch_ms = NULL, updated_at_epoch_ms = :nowEpochMs
+        WHERE artifact_id = :artifactId
+          AND platform_task_id = :platformTaskId
+          AND state = 'RUNNING'
+          AND (:completedBytes IS NULL OR :completedBytes = expected_bytes)
+          AND EXISTS (
+              SELECT 1 FROM download_batch
+              WHERE download_batch.batch_id = download_artifact.batch_id
+                AND download_batch.user_intent = 'RUN'
+          )
+        """,
+    )
+    suspend fun transitionPlatformTask(
+        artifactId: String,
+        platformTaskId: String,
+        nextState: String,
+        failureCode: String?,
+        completedBytes: Long?,
+        nowEpochMs: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE download_artifact
         SET platform_task_id = :platformTaskId, updated_at_epoch_ms = :nowEpochMs
         WHERE batch_id = :batchId
           AND state NOT IN ('COMPLETED', 'FAILED_TERMINAL', 'CANCELLED')

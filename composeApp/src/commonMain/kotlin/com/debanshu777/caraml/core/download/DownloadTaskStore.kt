@@ -23,6 +23,14 @@ interface DownloadTaskStore {
     ): Boolean
     suspend fun setUserIntent(batchId: String, intent: DownloadUserIntent, nowEpochMs: Long): Boolean
     suspend fun setPlatformTaskId(artifactId: String, platformTaskId: String?, nowEpochMs: Long): Boolean
+    suspend fun transitionPlatformTask(
+        artifactId: String,
+        platformTaskId: String,
+        state: DownloadArtifactState,
+        failureCode: DownloadFailureCode?,
+        completedBytes: Long?,
+        nowEpochMs: Long,
+    ): Boolean = false
     suspend fun bindPlatformTask(batchId: String, platformTaskId: String, nowEpochMs: Long): Boolean = false
     suspend fun pausePlatformTask(batchId: String, platformTaskId: String, nowEpochMs: Long): Boolean = false
     suspend fun checkpointCancellation(
