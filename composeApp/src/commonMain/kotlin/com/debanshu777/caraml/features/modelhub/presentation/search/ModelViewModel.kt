@@ -367,8 +367,6 @@ private sealed interface PendingDownloadForLater {
     ) : PendingDownloadForLater
 
     data class Smart(val modelId: String, val variantPath: String) : PendingDownloadForLater
-
-    data class Repair(val modelId: String) : PendingDownloadForLater
 }
 
 private val modelWorkloadFactory = InstalledModelWorkloadFactory()
@@ -1237,10 +1235,6 @@ class ModelViewModel(
                 requestedVariantPath = pending.variantPath,
                 downloadForLaterConfirmed = true,
             )
-            is PendingDownloadForLater.Repair -> startSetupComponentDownload(
-                pending.modelId,
-                downloadForLaterConfirmed = true,
-            )
         }
     }
 
@@ -1989,85 +1983,6 @@ class ModelViewModel(
             libraryName = detail?.libraryName,
             pipelineTag = detail?.pipelineTag,
         ).takeIf(List<DownloadMetadataDTO>::isNotEmpty)
-    }
-
-    /** Legacy: download only components (called explicitly from settings/fix flow). */
-    fun downloadSetupComponents(modelId: String) {
-        startSetupComponentDownload(modelId, downloadForLaterConfirmed = false)
-    }
-
-    private fun startSetupComponentDownload(
-        modelId: String,
-        downloadForLaterConfirmed: Boolean,
-    ) {
-        if (_isDownloading.value) return
-        _isDownloading.value = true
-        viewModelScope.launch {
-            _downloadError.update { null }
-            try {
-                val setup = getModelSetup(modelId) ?: throw ArtifactVerificationException()
-                val allComponents = setup.components.filter { it.required }
-                val componentMetadata = mutableMapOf<SdCppComponent, DownloadMetadataDTO>()
-                for (component in allComponents) {
-                    componentMetadata[component] = exactSetupComponentMetadata[component]
-                        ?: createMetadataForComponent(component)
-                }
-                val selectedPath = _selectedVariantPath.value ?: _ggufFiles.value.firstOrNull()?.path
-                    ?: throw ArtifactVerificationException()
-                val ownedArtifacts = createExactBundleMetadata(selectedPath, componentMetadata)
-                    ?: throw ArtifactVerificationException()
-                val selectedPaths = selectDiffusionFilesToDownload(
-                    _ggufFiles.value.filter { it.path.isNotBlank() },
-                    selectedPath,
-                ).mapTo(mutableSetOf()) { it.path }
-                val primaryMetadata = ownedArtifacts.filter {
-                    it.artifact.repositoryId == modelId && it.artifact.relativePath in selectedPaths
-                }
-                val ownedComponents = componentMetadata.mapValues { (_, metadata) ->
-                    ownedArtifacts.single { it.artifact == metadata.artifact }
-                }
-                downloadDiffusionBundle(
-                    modelId = modelId,
-                    triggeredPath = selectedPath,
-                    ownedMetadata = primaryMetadata,
-                    downloadForLaterConfirmed = downloadForLaterConfirmed,
-                )
-                downloadMissingComponents(
-                    modelId,
-                    downloadForLaterConfirmed = downloadForLaterConfirmed,
-                    preparedMetadata = ownedComponents,
-                )
-                if (!downloadManager.publishBundle(modelId, ownedArtifacts) ||
-                    !downloadManager.validateBundle(modelId, ownedArtifacts)
-                ) throw ArtifactVerificationException()
-                persistDiffusionModelRecord(modelId, primaryMetadata, modelTypeForCurrentBrowseMode())
-                refreshVerifiedDiffusionInstallation(modelId)
-            } catch (error: DownloadAdmissionRejected) {
-                if (error.admission is DownloadAdmission.ConfirmationRequired && !downloadForLaterConfirmed) {
-                    requestDownloadForLaterConfirmation(PendingDownloadForLater.Repair(modelId))
-                } else {
-                    _downloadError.value = downloadAdmissionErrorMessage(error.admission)
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: InsufficientStorageException) {
-                val required = formatBytes(e.requiredBytes)
-                val available = formatBytes(e.availableBytes)
-                _downloadError.update {
-                    "Not enough storage space. Need $required but only $available is available."
-                }
-                _setupComponents.update { list -> list.map { it.copy(progress = null) } }
-            } catch (_: ArtifactFileAccessException) {
-                _downloadError.update { "Model storage is unavailable. Please check storage access and try again." }
-                _setupComponents.update { list -> list.map { it.copy(progress = null) } }
-            } catch (_: Exception) {
-                _downloadError.update { "Download failed. Please check your connection and try again." }
-                _setupComponents.update { list -> list.map { it.copy(progress = null) } }
-            } finally {
-                _activeDownloadArtifact.value = null
-                _isDownloading.update { false }
-            }
-        }
     }
 
     private suspend fun createMetadataForComponent(component: SdCppComponent): DownloadMetadataDTO {

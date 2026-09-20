@@ -170,6 +170,7 @@ Network categories are `NoInternet`, `Unauthorized`, `RequestTimeout`, `RateLimi
 - Native iOS background-session results are imported from a no-follow regular-file descriptor, re-hashed, and committed through the same exact-artifact manifest transaction before becoming visible
 - Progress emissions are coalesced to percentage changes (or 1 MiB for unknown lengths), avoiding channel/UI pressure during multi-gigabyte downloads
 - Recommendation detail supports validated immutable-revision lookups; exact installed repair alone follows at most one exact same-Hub config redirect, while ordinary browse preserves no-redirect behavior
+- Validated bundle reads and bundle publication now preserve coroutine cancellation while waiting on real artifact-root locks instead of translating it into absence or a failure value
 - Added JVM loopback integration tests for success, HTTP failure, truncation, traversal, and final-file preservation
 - `nota-ai/bk-sdm-tiny` registry now sets `prediction=0` (EPS) — skips `is_using_v_parameterization_for_sd2()` probe; `offloadToCpu` reverted (moot since Vulkan is now disabled for diffusion at build level via `SD_VULKAN=OFF`)
 - `nota-ai/bk-sdm-tiny` registry entry now sets `prediction=0` (EPS) — prevents `is_using_v_parameterization_for_sd2()` probe from running a test UNet forward pass; SD1.x is always EPS, never V-pred

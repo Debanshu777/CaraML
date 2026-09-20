@@ -1,5 +1,6 @@
 package com.debanshu777.huggingfacemanager.download
 
+import kotlinx.coroutines.CancellationException
 import okio.Path
 import okio.Path.Companion.toPath
 
@@ -44,6 +45,8 @@ internal suspend fun readValidatedArtifactBundle(
             store.close()
         }
     }
+} catch (cancelled: CancellationException) {
+    throw cancelled
 } catch (_: Exception) {
     null
 }
@@ -62,6 +65,8 @@ internal suspend fun readValidatedArtifactManifest(
             store.close()
         }
     }
+} catch (cancelled: CancellationException) {
+    throw cancelled
 } catch (_: Exception) {
     null
 }
@@ -109,6 +114,8 @@ private suspend fun withBundleStore(
             store.close()
         }
     }
+} catch (cancelled: CancellationException) {
+    throw cancelled
 } catch (_: Exception) {
     false
 }

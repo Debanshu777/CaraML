@@ -126,6 +126,8 @@ class DownloadBatchRunner(
             }
             store.getBatch(batchId)?.let { progressSink(it) }
             DownloadRunResult.Completed
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (error: Exception) {
             val code = failureCode(error)
             val terminal = isTerminal(error)

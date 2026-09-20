@@ -187,6 +187,48 @@ class InstalledModelEvidenceRepairerTest {
     }
 
     @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun caseDistinctOwnersNeverShareRepairResult() = runTest {
+        val coordinator = InstalledModelPublicationCoordinator()
+        withFixture(ownerModelId = "Org/Model", coordinator = coordinator) { upper ->
+            withFixture(ownerModelId = "org/model", coordinator = coordinator) { lower ->
+                val fixtures = listOf(upper, lower).associateBy { it.model.modelId }
+                val firstLookupEntered = CompletableDeferred<Unit>()
+                val releaseFirstLookup = CompletableDeferred<Unit>()
+                val lookups = mutableListOf<String>()
+                val repairer = repairerFor(fixtures, coordinator) { repositoryId, _, _ ->
+                    lookups += repositoryId
+                    if (repositoryId == upper.model.modelId) {
+                        firstLookupEntered.complete(Unit)
+                        releaseFirstLookup.await()
+                    }
+                    InstalledDescriptorLookup.Ready(requireNotNull(fixtures[repositoryId]).descriptor)
+                }
+
+                val upperJob = async(start = CoroutineStart.UNDISPATCHED) {
+                    repairer.requireComplete(upper.model.modelId, GenerationMode.Text)
+                }
+                firstLookupEntered.await()
+                val lowerJob = async(start = CoroutineStart.UNDISPATCHED) {
+                    repairer.requireComplete(lower.model.modelId, GenerationMode.Text)
+                }
+                runCurrent()
+                assertEquals(listOf(upper.model.modelId), lookups)
+
+                releaseFirstLookup.complete(Unit)
+                val upperReady = assertIs<EvidenceRepairResult.Ready>(upperJob.await())
+                val lowerReady = assertIs<EvidenceRepairResult.Ready>(lowerJob.await())
+
+                assertEquals(upper.descriptor, upperReady.descriptor)
+                assertEquals(lower.descriptor, lowerReady.descriptor)
+                assertEquals(listOf(upper.model.modelId, lower.model.modelId), lookups)
+                assertEquals(1, upper.dao.upsertCalls)
+                assertEquals(1, lower.dao.upsertCalls)
+            }
+        }
+    }
+
+    @Test
     fun repairBlockedInLookupCannotOverwriteNewerFinalizerPublication() = runTest {
         withFixture { fixture ->
             val lookupEntered = CompletableDeferred<Unit>()
@@ -209,6 +251,44 @@ class InstalledModelEvidenceRepairerTest {
             assertEquals(replacement.descriptor, ready.descriptor)
             assertEquals(replacement.evidence, fixture.dao.entity)
             assertEquals(0, fixture.dao.compareAndSetCalls)
+        }
+    }
+
+    @Test
+    fun manifestSuccessCatalogFailureStaysFailClosedUntilFinalizerRetryConverges() = runTest {
+        withFixture { fixture ->
+            val replacement = fixture.replacementPublication("retry")
+
+            assertFailsWith<IllegalStateException> {
+                fixture.finalizer(
+                    replacement = replacement,
+                    catalogFailure = IllegalStateException("catalog unavailable"),
+                ).finalize(replacement.batch.batchId)
+            }
+
+            assertEquals(replacement.manifest, fixture.currentManifest)
+            assertEquals(fixture.model, fixture.currentModel)
+            assertEquals(null, fixture.dao.entity)
+            var staleLookups = 0
+            val rejected = assertIs<EvidenceRepairResult.Rejected>(
+                fixture.repairer { _, _, _ ->
+                    staleLookups += 1
+                    InstalledDescriptorLookup.Ready(fixture.descriptor)
+                }.requireComplete(fixture.model.modelId, GenerationMode.Text),
+            )
+            assertEquals(listOf(AssessmentReason.INVALID_METADATA), rejected.reasons)
+            assertEquals(0, staleLookups)
+            assertEquals(null, fixture.dao.entity)
+
+            fixture.finalizer(replacement).finalize(replacement.batch.batchId)
+            val ready = assertIs<EvidenceRepairResult.Ready>(
+                fixture.repairer { _, _, _ -> error("complete retry evidence must be reused") }
+                    .requireComplete(fixture.model.modelId, GenerationMode.Text),
+            )
+
+            assertEquals(replacement.model, fixture.currentModel)
+            assertEquals(replacement.evidence, fixture.dao.entity)
+            assertEquals(replacement.descriptor, ready.descriptor)
         }
     }
 
@@ -569,7 +649,10 @@ class InstalledModelEvidenceRepairerTest {
             )
         }
 
-        fun finalizer(replacement: ReplacementPublication): BatchFinalizer = ModelDownloadFinalizer(
+        fun finalizer(
+            replacement: ReplacementPublication,
+            catalogFailure: Throwable? = null,
+        ): BatchFinalizer = ModelDownloadFinalizer(
             store = SingleBatchStore(replacement.batch),
             bundlePublisher = object : BundlePublisher {
                 override suspend fun publish(
@@ -583,6 +666,7 @@ class InstalledModelEvidenceRepairerTest {
                 ): Boolean = currentManifest == replacement.manifest
             },
             catalogPublisher = ModelCatalogPublisher { _, _ ->
+                catalogFailure?.let { throw it }
                 currentModel = replacement.model
                 currentComponents = emptyList()
                 dao.entity = replacement.evidence

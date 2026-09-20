@@ -14,16 +14,30 @@ Repair no longer trusts caller-supplied model or component rows and no longer us
 ## Implementation
 
 - Added one Koin-singleton `InstalledModelPublicationCoordinator` shared by `ModelDownloadFinalizer` and `InstalledModelEvidenceRepairer`.
-- The coordinator validates and case-normalizes owner IDs before selecting one of 64 fixed mutex stripes. Construction is bounded to at most 256 stripes; no external-ID map grows over time.
-- Repair single-flight state is also bounded to one active entry per fixed stripe. Same-owner/same-mode callers share one lookup result; a stripe collision waits without retaining the publication lock.
+- The coordinator validates owner IDs and case-normalizes only their stripe hash before selecting one of 64 fixed mutex stripes. Construction is bounded to at most 256 stripes; no external-ID map grows over time.
+- Repair single-flight state is also bounded to one active entry per fixed stripe. Its flight key retains the exact validated owner plus mode, so case-distinct persistence owners can serialize on a shared stripe but never share a result. Same exact-owner/same-mode callers share one lookup result; a stripe collision waits without retaining the publication lock.
 - Finalizer evidence/topology validation now precedes every bundle-manifest side effect. The owner lock covers publish, post-publish validation, and transactional catalog/evidence commit as one process-local publication interval.
 - Added a Room `snapshotReady` transaction that captures exactly one Ready owner row, at most 64 linked components, and the raw evidence row.
 - Added Room evidence compare-and-set with insert-if-absent for a missing row and transactional observed-row equality before update for an existing row.
 - Added explicit-manifest persisted-artifact resolution so repair hashes the manifest captured under the owner lock instead of rereading a potentially newer manifest.
 - Changed repair input to owner ID plus generation mode; the repairer always rereads durable model/components rather than accepting stale caller state.
 - Preserved cancellation through owner-lock waits, remote lookup, hashing, and CAS. Single-flight cleanup completes in `NonCancellable`, while the original cancellation is rethrown to leaders and followers.
+- Preserved cancellation through the batch runner's finalizer wait and the production bundle read/publish adapters, so root-lock cancellation cannot become artifact failure, retry, manifest absence, or a false publication result.
 - Kept the existing cross-store failure boundary fail closed. If manifest publication succeeds but catalog publication throws, no rollback is attempted; a subsequent repair sees the manifest/catalog mismatch and cannot publish or claim Ready evidence.
-- Added concise root and `composeApp` Recent Changes entries. No schema version, persisted evidence format, remote API, logging, or native inference contract changed.
+- Removed the dormant `ModelViewModel` setup-component download entry point that directly published a bundle and rewrote Ready state outside the durable coordinator/finalizer path.
+- Added concise root, `composeApp`, and `huggingFaceManager` Recent Changes entries. No schema version, persisted evidence format, remote API, logging, or native inference contract changed.
+
+## Review follow-up
+
+The final review's three Important findings and one Minor finding are resolved:
+
+- Case-exact owners no longer coalesce in repair single-flight; normalized casing is confined to bounded stripe selection.
+- `DownloadBatchRunner` rethrows `CancellationException` from finalization before its failure/retry handling can mutate artifacts.
+- Production `validatedBundle`, manifest-read, and `publishBundle` adapters rethrow cancellation from real root-lock contention.
+- The uncalled direct `ModelViewModel` publication/Ready rewrite was deleted, including its confirmation-state branch; a source scan finds none of `downloadSetupComponents`, `startSetupComponentDownload`, or `PendingDownloadForLater.Repair`.
+- A manifest-success/catalog-failure regression proves repair rejects the mismatched durable state without lookup/write, then a subsequent finalizer retry converges manifest, catalog, and exact evidence.
+
+Review follow-up commit subject: `fix(models): harden publication coordination`.
 
 ## RED evidence
 
@@ -45,15 +59,40 @@ Initial focused command:
 
 The shared Gradle wrapper lock was unavailable in the filesystem sandbox, so every substantive Gradle run was repeated with the approved shared-cache permission. This was an environment permission boundary, not a product-test failure.
 
+Review-follow-up RED commands and observed failures:
+
+```text
+./gradlew :composeApp:jvmTest \
+  --tests '*InstalledModelEvidenceRepairerTest' \
+  --tests '*DownloadBatchRunnerTest' \
+  --no-daemon
+```
+
+Result before the production fixes: 16 tests ran with exactly two expected failures. The case-alias repair returned the uppercase owner's descriptor to the lowercase owner, and finalizer-lock cancellation recorded `FAILED_RETRYABLE`.
+
+```text
+./gradlew :huggingFaceManager:jvmTest \
+  --tests '*DownloadManagerJvmTest.cancelled*' \
+  --no-daemon
+```
+
+Result before the production fixes: two tests ran with exactly two expected failures because both real root-lock cancellation paths returned a value.
+
 ## Controlled race and CAS coverage
 
-Five controlled race tests pass:
+Nine controlled race/interleaving tests pass:
 
 1. `sameOwnerFinalizersHoldPublicationThroughCatalogCommit` forces the historical A-publish/A-validate/A-catalog-block/B-start schedule and proves B cannot publish until A's catalog commit completes; final manifest and catalog/evidence are B.
 2. `differentOwnerFinalizersCanPublishConcurrently` holds two distinct owner publications at a barrier and observes two active publishers.
 3. `repairBlockedInLookupCannotOverwriteNewerFinalizerPublication` captures A, blocks its metadata lookup, publishes complete exact B through the real finalizer, resumes A, and proves the repair returns B with zero stale CAS attempts.
 4. `concurrentRepairsSerializeToOneLookupAndOnePersistedRecord` starts eight same-owner repairs and observes exactly one remote lookup, one accepted write, and maximum lookup concurrency one.
 5. `differentOwnerRepairsCanPerformRemoteLookupConcurrently` holds two distinct owners in remote lookup simultaneously and observes maximum lookup concurrency two with one write per owner.
+6. `caseDistinctOwnersNeverShareRepairResult` runs `Org/Model` and `org/model` concurrently on the same normalized stripe and proves two exact snapshots, two lookups, two writes, and the correct distinct descriptors.
+7. `cancellationWhileFinalizerWaitsForOwnerLockNeverMarksArtifactFailed` blocks finalization on its owner lock, cancels the runner, and proves no retry/failure artifact transition or finalizer entry.
+8. `cancelledValidatedBundleRootLockWaitNeverReturnsAbsence` cancels a production validated-bundle read behind a real root lock and proves cancellation escapes rather than returning `null`.
+9. `cancelledPublishBundleRootLockWaitNeverReturnsFailureValue` cancels production publication behind a real root lock and proves cancellation escapes rather than returning `false`.
+
+One additional cross-store failure regression, `manifestSuccessCatalogFailureStaysFailClosedUntilFinalizerRetryConverges`, proves a successful manifest write followed by a throwing catalog publisher cannot be misreported by repair as stale Ready/evidence; a later finalizer retry converges successfully.
 
 Four focused CAS/cancellation checks pass:
 
@@ -71,6 +110,7 @@ Final impacted application command:
 ```text
 ./gradlew :composeApp:jvmTest \
   --tests '*ModelDownloadFinalizerTest' \
+  --tests '*DownloadBatchRunnerTest' \
   --tests '*InstalledModelEvidenceRepairerTest' \
   --tests '*InstalledModelPublicationCoordinatorTest' \
   --tests '*AppDatabaseMigrationTest' \
@@ -80,21 +120,24 @@ Final impacted application command:
   --tests '*AppModuleManifestSourceTest' \
   --tests '*PersistedModelEvidenceTest' \
   --tests '*LegacySuitabilityAdapterTest*' \
+  --tests '*ModelViewModelRecommendationTest' \
   --no-daemon
 ```
 
-Result: PASS, 109/109 tests across 11 suites, zero skipped/failures/errors.
+Result: PASS, 139/139 tests across 13 suites, zero skipped/failures/errors.
 
 Underlying manifest-store command:
 
 ```text
 ./gradlew :huggingFaceManager:jvmTest \
+  --tests '*DownloadManagerJvmTest' \
+  --tests '*ArtifactRootLockCoordinatorTest' \
   --tests '*ArtifactManifestStoreTest' \
   --tests '*ArtifactBundleManifestStoreTest' \
   --no-daemon
 ```
 
-Result: PASS, 20/20 tests across two suites, zero skipped/failures/errors.
+Result: PASS, 35/35 tests across four suites, zero skipped/failures/errors.
 
 ## Repository gate
 
@@ -106,7 +149,7 @@ Final repository command:
 ./gradlew verifyProject --no-daemon
 ```
 
-Result: PASS in 45 seconds. The gate ran 1,043/1,043 JVM tests across 139 suites plus 5/5 native CTests, with zero skipped JVM tests and zero failures/errors. Gradle reported 41 actionable tasks: 15 executed and 26 up to date.
+Result: PASS in 45 seconds. The gate ran 1,048/1,048 JVM tests across 139 suites plus 5/5 native CTests, with zero skipped JVM tests and zero failures/errors. JVM detail: `composeApp` 909 tests/115 suites, `huggingFaceManager` 91/15, `runner` 29/6, and `diffusionRunner` 19/3. Gradle reported 41 actionable tasks: 16 executed and 25 up to date.
 
 ## Self-review
 
@@ -117,13 +160,16 @@ Result: PASS in 45 seconds. The gate ran 1,043/1,043 JVM tests across 139 suites
 - Confirmed all repair write paths require both exact baseline equality and Room CAS; complete-evidence reuse also reacquires and baseline-checks before returning.
 - Confirmed baseline/CAS conflict handling rereads and revalidates current durable state rather than returning the stale candidate.
 - Confirmed same-owner coalescing is bounded, unrelated tested owners progress concurrently, and there is no externally keyed unbounded map.
-- Confirmed cancellation is rethrown and no payload, path, metadata, or exception detail is logged.
+- Confirmed exact-case owners cannot share repair flights even when they intentionally hash to the same normalized stripe.
+- Confirmed cancellation is rethrown by repair, the batch runner, and production bundle adapters, with no artifact failure mutation and no payload, path, metadata, or exception detail logged.
+- Confirmed no dormant `ModelViewModel` entry point remains that can publish a bundle or Ready catalog outside the durable finalizer.
 - Confirmed manifest/artifact/evidence validation remains strict and mismatch/failure behavior remains fail closed.
-- Confirmed README scope is limited to the root and affected `composeApp` module, and `git diff --check` is clean.
+- Confirmed README scope is limited to the root and affected `composeApp` and `huggingFaceManager` modules, and `git diff --check` is clean.
 
 ## Concerns and verification boundary
 
 - Fixed stripes intentionally bound memory. Two unrelated owners that hash to the same stripe can serialize, but there is no global repair/publication lock; the controlled distinct-owner tests prove independent stripes progress concurrently.
+- Persistence ownership remains case-exact. Case aliases intentionally select the same normalized stripe and may serialize conservatively, but exact flight keys prevent result sharing.
 - A manifest-success/catalog-failure interval is not rolled back. This follows the brief's permitted fail-closed option: the mismatched durable state is unavailable until a later install retry repairs it, and stale repair evidence cannot make it Ready.
 - Existing expect/actual, generic CMake architecture, missing `ccache`, and deprecated Compose-test warnings remain; no new warning is attributable to this fix.
 - Physical-device acceptance was not repeated because this patch changes process coordination and Room publication only; controlled JVM interleavings, real Room reopen/CAS tests, manifest validation suites, native CTests, and the full repository gate cover the changed boundary.

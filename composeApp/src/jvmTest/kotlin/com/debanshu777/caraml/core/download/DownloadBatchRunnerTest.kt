@@ -1,14 +1,21 @@
 package com.debanshu777.caraml.core.download
 
+import com.debanshu777.caraml.core.storage.catalog.InstalledModelPublicationCoordinator
 import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
 import com.debanshu777.huggingfacemanager.download.DownloadProgressDTO
 import com.debanshu777.huggingfacemanager.download.DownloadResumeMetadata
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class DownloadBatchRunnerTest {
@@ -67,6 +74,43 @@ class DownloadBatchRunnerTest {
             store.transitions,
         )
     }
+
+    @Test
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    fun cancellationWhileFinalizerWaitsForOwnerLockNeverMarksArtifactFailed() = runTest {
+        val store = RunnerStore(initialArtifactState = DownloadArtifactState.VERIFYING)
+        val coordinator = InstalledModelPublicationCoordinator()
+        val lockEntered = CompletableDeferred<Unit>()
+        val releaseLock = CompletableDeferred<Unit>()
+        var finalizerEntered = false
+        val lockHolder = async(start = CoroutineStart.UNDISPATCHED) {
+            coordinator.withOwnerPublication("owner/model") {
+                lockEntered.complete(Unit)
+                releaseLock.await()
+            }
+        }
+        lockEntered.await()
+        val runner = DownloadBatchRunner(
+            store = store,
+            transfer = RecordingTransfer(),
+            finalizer = BatchFinalizer {
+                coordinator.withOwnerPublication("owner/model") {
+                    finalizerEntered = true
+                }
+            },
+            clock = { 10L },
+            leaseOwner = { "cancelled-owner" },
+        )
+
+        val runnerJob = async(start = CoroutineStart.UNDISPATCHED) { runner.run("batch") {} }
+        runCurrent()
+        runnerJob.cancelAndJoin()
+        releaseLock.complete(Unit)
+        lockHolder.await()
+
+        assertFalse(finalizerEntered)
+        assertEquals(emptyList(), store.transitions)
+    }
 }
 
 private class RecordingTransfer(
@@ -96,7 +140,9 @@ private class RecordingTransfer(
     }
 }
 
-private class RunnerStore : DownloadTaskStore {
+private class RunnerStore(
+    initialArtifactState: DownloadArtifactState = DownloadArtifactState.QUEUED,
+) : DownloadTaskStore {
     private val identity = requireNotNull(
         DownloadArtifactIdentity.create("owner/model", "a".repeat(40), "model.gguf", "b".repeat(64), 10L),
     )
@@ -109,14 +155,17 @@ private class RunnerStore : DownloadTaskStore {
         ownerModelId = "owner/model",
         modelType = "text",
         displayName = "Model",
-        state = DownloadBatchState.QUEUED,
+        state = when (initialArtifactState) {
+            DownloadArtifactState.VERIFYING -> DownloadBatchState.VERIFYING
+            else -> DownloadBatchState.QUEUED
+        },
         userIntent = DownloadUserIntent.RUN,
         artifacts = listOf(
             DownloadArtifactSnapshot(
                 artifactId = "artifact",
                 batchId = "batch",
                 request = request,
-                state = DownloadArtifactState.QUEUED,
+                state = initialArtifactState,
                 userIntent = DownloadUserIntent.RUN,
                 bytesReceived = 4L,
                 expectedBytes = 10L,

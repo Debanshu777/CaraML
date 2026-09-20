@@ -31,13 +31,14 @@ class InstalledModelPublicationCoordinator(
         operationKey: String,
         block: suspend () -> T,
     ): T {
-        val ownerKey = normalizedOwnerKey(ownerModelId)
+        val exactOwnerKey = validatedOwnerKey(ownerModelId)
+        val stripeOwnerKey = exactOwnerKey.lowercase()
         require(
             operationKey.isNotBlank() && operationKey.length <= MAX_OPERATION_KEY_LENGTH &&
                 operationKey.none(Char::isISOControl),
         ) { "Invalid repair operation" }
-        val flightKey = "$ownerKey\u0000$operationKey"
-        val stripe = repairFlightStripes[stripeIndex(ownerKey)]
+        val flightKey = "$exactOwnerKey\u0000$operationKey"
+        val stripe = repairFlightStripes[stripeIndex(stripeOwnerKey)]
         while (true) {
             when (val selection = stripe.select(flightKey)) {
                 is FlightSelection.Follower -> return selection.flight.result.await().valueOrThrow()
@@ -114,14 +115,17 @@ class InstalledModelPublicationCoordinator(
     }
 }
 
-private fun normalizedOwnerKey(ownerModelId: String): String {
+private fun normalizedOwnerKey(ownerModelId: String): String =
+    validatedOwnerKey(ownerModelId).lowercase()
+
+private fun validatedOwnerKey(ownerModelId: String): String {
     require(ownerModelId.isNotEmpty() && ownerModelId == ownerModelId.trim() && ownerModelId.length <= 193) {
         "Invalid model identifier"
     }
     require('\\' !in ownerModelId) { "Invalid model identifier" }
     val segments = ownerModelId.split('/')
     require(segments.size in 1..2 && segments.all(::isSafeOwnerSegment)) { "Invalid model identifier" }
-    return ownerModelId.lowercase()
+    return ownerModelId
 }
 
 private fun isSafeOwnerSegment(segment: String): Boolean =

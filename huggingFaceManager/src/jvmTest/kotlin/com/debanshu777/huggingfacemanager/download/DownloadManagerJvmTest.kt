@@ -2,8 +2,12 @@ package com.debanshu777.huggingfacemanager.download
 
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
-import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.net.InetAddress
@@ -276,6 +280,33 @@ class DownloadManagerJvmTest {
     }
 
     @Test
+    fun cancelledValidatedBundleRootLockWaitNeverReturnsAbsence() = withTemporaryRoot { root ->
+        val storage = TestStoragePathProvider(root)
+        val manager = DownloadManager(storage, "https://huggingface.co")
+        val metadata = installArtifact(root)
+        runBlocking {
+            assertTrue(manager.publishBundle("org/model", listOf(metadata)))
+            assertRootLockCancellationDoesNotReturn(
+                root = modelFile(root, "org/model", "").absolutePath,
+                operation = { manager.validatedBundle("org/model") },
+            )
+        }
+    }
+
+    @Test
+    fun cancelledPublishBundleRootLockWaitNeverReturnsFailureValue() = withTemporaryRoot { root ->
+        val storage = TestStoragePathProvider(root)
+        val manager = DownloadManager(storage, "https://huggingface.co")
+        val metadata = installArtifact(root)
+        runBlocking {
+            assertRootLockCancellationDoesNotReturn(
+                root = modelFile(root, "org/model", "").absolutePath,
+                operation = { manager.publishBundle("org/model", listOf(metadata)) },
+            )
+        }
+    }
+
+    @Test
     fun unsafePathFailsBeforeNetworkAccess() = withTemporaryRoot { root ->
         val requests = AtomicInteger()
         withServer { exchange ->
@@ -316,6 +347,54 @@ class DownloadManagerJvmTest {
         libraryName = null,
         pipelineTag = null,
     )
+
+    private fun installArtifact(root: File): DownloadMetadataDTO {
+        val bytes = "installed-model".encodeToByteArray()
+        val metadata = metadata("model.gguf", bytes.size.toLong(), bytes.sha256Hex())
+        val modelRoot = modelFile(root, "org/model", "").apply { mkdirs() }
+        File(modelRoot, "model.gguf.part").writeBytes(bytes)
+        ArtifactManifestStore(modelRoot.absolutePath.toOkioPath()).commit(
+            relativePath = "model.gguf",
+            entry = requireNotNull(
+                ArtifactManifestEntry.create(
+                    logicalRole = metadata.logicalRole,
+                    identity = metadata.artifact,
+                    byteCount = bytes.size.toLong(),
+                    contentSha256 = bytes.sha256Hex(),
+                    bundleId = metadata.bundleId,
+                    localRelativePath = metadata.destinationRelativePath,
+                ),
+            ),
+        )
+        return metadata
+    }
+
+    private suspend fun <T> assertRootLockCancellationDoesNotReturn(
+        root: String,
+        operation: suspend () -> T,
+    ) = coroutineScope {
+        val lockEntered = CompletableDeferred<Unit>()
+        val releaseLock = CompletableDeferred<Unit>()
+        val lockHolder = async(start = CoroutineStart.UNDISPATCHED) {
+            ArtifactRootLockCoordinator.withRoots(listOf(root)) {
+                lockEntered.complete(Unit)
+                releaseLock.await()
+            }
+        }
+        lockEntered.await()
+        var returned = false
+        try {
+            val attempt = async(start = CoroutineStart.UNDISPATCHED) {
+                operation().also { returned = true }
+            }
+            attempt.cancelAndJoin()
+            assertTrue(attempt.isCancelled)
+            assertFalse(returned)
+        } finally {
+            releaseLock.complete(Unit)
+            lockHolder.await()
+        }
+    }
 }
 
 private fun ByteArray.sha256Hex(): String = okio.ByteString.of(*this).sha256().hex()
