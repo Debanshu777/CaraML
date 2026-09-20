@@ -247,6 +247,34 @@ class InstalledModelLoadRequestResolverTest {
     }
 
     @Test
+    fun acceleratedDeviceDoesNotInventCpuFallbackWhenFailedPrimaryWasAlreadyCpu() = runTest {
+        val fixture = Fixture().apply {
+            snapshots += acceleratedSnapshot()
+            settings += AppSettings(useGpu = true)
+            planForSnapshot = {
+                installedLlmPlan(backend = BackendKind.CPU, topology = MemoryTopology.UNIFIED)
+            }
+            recommendationForSnapshot = { snapshot ->
+                if (snapshot.hasAccelerator()) {
+                    RecommendationFixture(
+                        category = RecommendationCategory.NOT_SUITABLE,
+                        reasons = listOf(AssessmentReason.MEMORY_NO_FIT),
+                    )
+                } else {
+                    RecommendationFixture(RecommendationCategory.RECOMMENDED)
+                }
+            }
+        }
+
+        val blocked = assertIs<InstalledModelLoadResolution.NotAdmissible>(fixture.resolve())
+
+        assertEquals(AssessmentReason.MEMORY_NO_FIT, blocked.reason)
+        assertEquals(BackendKind.CPU, blocked.candidateBackend)
+        assertEquals(1, fixture.assessmentCalls)
+        assertEquals(0, fixture.strictRequestCalls)
+    }
+
+    @Test
     fun gpuNoPlanOffersCpuOnlyWhenCpuPolicyProducesAnExactPlan() = runTest {
         val fixture = Fixture().apply {
             snapshots += acceleratedSnapshot()
@@ -280,6 +308,34 @@ class InstalledModelLoadRequestResolverTest {
     }
 
     @Test
+    fun gpuNoPlanWithMixedBackendCandidateProvenanceFailsClosed() = runTest {
+        val fixture = Fixture().apply {
+            snapshots += acceleratedSnapshot()
+            settings += AppSettings(useGpu = true)
+            planForSnapshot = {
+                installedLlmPlan(backend = BackendKind.METAL, topology = MemoryTopology.UNIFIED)
+            }
+            additionalPlansForSnapshot = {
+                listOf(installedLlmPlan(backend = BackendKind.CPU, topology = MemoryTopology.UNIFIED))
+            }
+            recommendationForSnapshot = {
+                RecommendationFixture(
+                    category = RecommendationCategory.NOT_SUITABLE,
+                    reasons = listOf(AssessmentReason.NO_RUN_PLAN),
+                    selectPlan = false,
+                )
+            }
+        }
+
+        val blocked = assertIs<InstalledModelLoadResolution.NotAdmissible>(fixture.resolve())
+
+        assertEquals(AssessmentReason.NO_RUN_PLAN, blocked.reason)
+        assertEquals(null, blocked.candidateBackend)
+        assertEquals(1, fixture.assessmentCalls)
+        assertEquals(0, fixture.strictRequestCalls)
+    }
+
+    @Test
     fun invalidMetadataNeverTriggersCpuFallback() = runTest {
         val fixture = Fixture().apply {
             snapshots += acceleratedSnapshot()
@@ -296,7 +352,10 @@ class InstalledModelLoadRequestResolverTest {
         val result = fixture.resolve()
 
         assertEquals(
-            InstalledModelLoadResolution.NotAdmissible(AssessmentReason.INVALID_METADATA),
+            InstalledModelLoadResolution.NotAdmissible(
+                AssessmentReason.INVALID_METADATA,
+                candidateBackend = BackendKind.CPU,
+            ),
             result,
         )
         assertEquals(1, fixture.assessmentCalls)
@@ -320,7 +379,10 @@ class InstalledModelLoadRequestResolverTest {
         val result = fixture.resolve()
 
         assertEquals(
-            InstalledModelLoadResolution.NotAdmissible(AssessmentReason.UNSUPPORTED_ENGINE_FEATURE),
+            InstalledModelLoadResolution.NotAdmissible(
+                AssessmentReason.UNSUPPORTED_ENGINE_FEATURE,
+                candidateBackend = BackendKind.CPU,
+            ),
             result,
         )
         assertEquals(1, fixture.assessmentCalls)
@@ -350,7 +412,10 @@ class InstalledModelLoadRequestResolverTest {
         val result = fixture.resolve()
 
         assertEquals(
-            InstalledModelLoadResolution.NotAdmissible(AssessmentReason.MEMORY_NO_FIT),
+            InstalledModelLoadResolution.NotAdmissible(
+                AssessmentReason.MEMORY_NO_FIT,
+                candidateBackend = BackendKind.METAL,
+            ),
             result,
         )
         assertEquals(2, fixture.assessmentCalls)
@@ -550,7 +615,10 @@ class InstalledModelLoadRequestResolverTest {
         val result = fixture.resolver().resolve(fixture.model, GenerationMode.Text)
 
         assertEquals(
-            InstalledModelLoadResolution.NotAdmissible(AssessmentReason.RECOMMENDATION_EVIDENCE_INCOMPLETE),
+            InstalledModelLoadResolution.NotAdmissible(
+                AssessmentReason.RECOMMENDATION_EVIDENCE_INCOMPLETE,
+                candidateBackend = BackendKind.CPU,
+            ),
             result,
         )
         assertEquals(0, fixture.strictRequestCalls)
@@ -566,7 +634,10 @@ class InstalledModelLoadRequestResolverTest {
         val result = fixture.resolver().resolve(fixture.model, GenerationMode.Text)
 
         assertEquals(
-            InstalledModelLoadResolution.NotAdmissible(AssessmentReason.MEMORY_NO_FIT),
+            InstalledModelLoadResolution.NotAdmissible(
+                AssessmentReason.MEMORY_NO_FIT,
+                candidateBackend = BackendKind.CPU,
+            ),
             result,
         )
         assertEquals(1, fixture.assessmentCalls)
@@ -592,7 +663,10 @@ class InstalledModelLoadRequestResolverTest {
         val badKey = Fixture().apply { inconsistentAssessmentKey = true }
 
         assertEquals(
-            InstalledModelLoadResolution.NotAdmissible(AssessmentReason.NO_RUN_PLAN),
+            InstalledModelLoadResolution.NotAdmissible(
+                AssessmentReason.NO_RUN_PLAN,
+                candidateBackend = BackendKind.CPU,
+            ),
             noPlan.resolver().resolve(noPlan.model, GenerationMode.Text),
         )
         assertEquals(
@@ -685,6 +759,7 @@ class InstalledModelLoadRequestResolverTest {
         var recommendationForSnapshot: ((DeviceSnapshot) -> RecommendationFixture)? = null
         var cancellationStage: ResolverStage? = null
         var planForSnapshot: (DeviceSnapshot) -> RunPlan = { installedLlmPlan() }
+        var additionalPlansForSnapshot: (DeviceSnapshot) -> List<RunPlan> = { emptyList() }
 
         suspend fun resolve(): InstalledModelLoadResolution =
             resolver().resolve(model, GenerationMode.Text)
@@ -717,17 +792,17 @@ class InstalledModelLoadRequestResolverTest {
                 cancelAt(ResolverStage.ASSESSMENT)
                 assessmentCalls += 1
                 assessmentSnapshots += snapshot
-                val planAssessment = task6PlanAssessment(plan = planForSnapshot(snapshot))
+                val plans = listOf(planForSnapshot(snapshot)) + additionalPlansForSnapshot(snapshot)
                 task6Assessment(
-                    plans = listOf(planAssessment),
+                    plans = plans.map { plan -> task6PlanAssessment(plan = plan) },
                     assessmentKey = "installed-assessment",
                     innerAssessmentKey = if (inconsistentAssessmentKey) "stale-assessment" else "installed-assessment",
-                    innerTopology = planForSnapshot(snapshot).memoryTopology,
+                    innerTopology = plans.first().memoryTopology,
                 )
             },
             personalize = { assessment, snapshot, profile ->
                 personalizedProfiles += profile
-                val selected = assessment.planAssessments.values.single()
+                val selected = assessment.planAssessments.values.first()
                 val fixture = recommendationForSnapshot?.invoke(snapshot) ?: RecommendationFixture(
                     category = recommendationCategory,
                     reasons = recommendationReasons,

@@ -135,11 +135,25 @@ fun ChatScreen(
         onSelectModel = viewModel::selectModel,
         onSendMessage = viewModel::sendMessage,
         onCancelGeneration = viewModel::cancelGeneration,
-        onConfirmLoad = viewModel::confirmPendingLoad,
-        onAcceptAlternative = viewModel::acceptSaferPlan,
-        onRetryLoad = viewModel::retryPendingLoad,
+        onConfirmLoad = {
+            val action = (uiState as? ChatUiState.LoadActionRequired)?.action
+                as? PendingLoadAction.ConfirmRisk
+            if (action != null) viewModel.confirmPendingLoad(action)
+        },
+        onAcceptAlternative = {
+            val action = (uiState as? ChatUiState.LoadActionRequired)?.action
+            if (action != null) viewModel.acceptSaferPlan(action)
+        },
+        onRetryLoad = {
+            val action = (uiState as? ChatUiState.LoadActionRequired)?.action
+                as? PendingLoadAction.RetryQuarantined
+            if (action != null) viewModel.retryPendingLoad(action)
+        },
         onRetryCurrentModel = viewModel::retryCurrentModel,
-        onCancelLoad = viewModel::cancelPendingLoad,
+        onCancelLoad = {
+            val action = (uiState as? ChatUiState.LoadActionRequired)?.action
+            if (action != null) viewModel.cancelPendingLoad(action)
+        },
         loadMedia = viewModel::loadGeneratedMedia,
         onNavigateToSearch = onNavigateToSearch,
         onNavigateToModelDetail = onNavigateToModelDetail,

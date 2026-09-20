@@ -13,6 +13,9 @@ import com.debanshu777.caraml.core.recommendation.AssessedPlans
 import com.debanshu777.caraml.core.recommendation.AssessmentConfidence
 import com.debanshu777.caraml.core.recommendation.AssessmentReason
 import com.debanshu777.caraml.core.recommendation.Confidence
+import com.debanshu777.caraml.core.recommendation.DiffusionMode
+import com.debanshu777.caraml.core.recommendation.DiffusionPlanCompromise
+import com.debanshu777.caraml.core.recommendation.DiffusionRunPlan
 import com.debanshu777.caraml.core.recommendation.InferenceObservationPlan
 import com.debanshu777.caraml.core.recommendation.InstalledModelLoadResolution
 import com.debanshu777.caraml.core.recommendation.InstalledModelLoadPreparation
@@ -33,6 +36,7 @@ import com.debanshu777.caraml.core.recommendation.RiskAcknowledgement
 import com.debanshu777.caraml.core.recommendation.RepositoryCommit
 import com.debanshu777.caraml.core.recommendation.VerifiedArtifactLoadTarget
 import com.debanshu777.caraml.core.recommendation.task6LlmDescriptor
+import com.debanshu777.caraml.core.recommendation.task6DiffusionDescriptor
 import com.debanshu777.caraml.core.settings.AppSettings
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelDao
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
@@ -72,6 +76,107 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChatViewModelQuarantineRetryTest {
+    @Test
+    fun stalePendingActionCallbacksCannotAffectReplacementLoad() = runTest {
+        val cases = listOf(
+            StalePendingActionCase(InitialPendingAction.CONFIRM, StalePendingCallback.CONFIRM),
+            StalePendingActionCase(InitialPendingAction.ALTERNATIVE, StalePendingCallback.ACCEPT),
+            StalePendingActionCase(InitialPendingAction.SAFE_ALTERNATIVE, StalePendingCallback.ACCEPT),
+            StalePendingActionCase(InitialPendingAction.RETRY, StalePendingCallback.RETRY),
+            StalePendingActionCase(InitialPendingAction.CONFIRM, StalePendingCallback.CANCEL),
+        )
+
+        cases.forEach { case ->
+            val scenario = scenario(initialPendingAction = case.action) { _ -> }
+
+            withScenario(scenario) {
+                advanceUntilIdle()
+                val staleAction = assertIs<ChatUiState.LoadActionRequired>(
+                    scenario.viewModel.uiState.value,
+                    "Expected pending action for $case",
+                ).action
+                val loadsBeforeSwitch = scenario.inference.loadRequests.toList()
+                val permissionsBeforeSwitch = scenario.inference.permissionRequests.toList()
+
+                scenario.viewModel.selectModel(scenario.modelB)
+                case.callback.invoke(scenario.viewModel, staleAction)
+
+                advanceUntilIdle()
+
+                scenario.assertReadyFor(scenario.modelB, MODEL_B_CONTEXT)
+                assertEquals(loadsBeforeSwitch + scenario.requestB, scenario.inference.loadRequests)
+                assertEquals(permissionsBeforeSwitch, scenario.inference.permissionRequests)
+            }
+        }
+    }
+
+    @Test
+    fun pendingActionAcceptConfirmAndCancelUseRealRunnerReleaseOwnership() = runTest {
+        val cases = listOf(
+            StalePendingActionCase(InitialPendingAction.CONFIRM, StalePendingCallback.CONFIRM),
+            StalePendingActionCase(InitialPendingAction.ALTERNATIVE, StalePendingCallback.ACCEPT),
+            StalePendingActionCase(InitialPendingAction.SAFE_ALTERNATIVE, StalePendingCallback.ACCEPT),
+            StalePendingActionCase(InitialPendingAction.ALTERNATIVE, StalePendingCallback.CANCEL),
+        )
+
+        cases.forEach { case ->
+            val events = mutableListOf<String>()
+            var diffusionReleaseCalls = 0
+            val scenario = scenario(
+                initialPendingAction = case.action,
+                onUnload = { call -> events += "unload-text:$call" },
+                releaseDiffusionModel = {
+                    diffusionReleaseCalls += 1
+                    events += "release-diffusion:$diffusionReleaseCalls"
+                },
+                loadOverride = { request ->
+                    events += "load:${request.model.filename}"
+                    null
+                },
+            ) { _ -> }
+
+            withScenario(scenario) {
+                advanceUntilIdle()
+                val action = assertIs<ChatUiState.LoadActionRequired>(
+                    scenario.viewModel.uiState.value,
+                    "Expected pending action for $case",
+                ).action
+                assertEquals(1, scenario.inference.unloadCalls)
+                assertEquals(1, diffusionReleaseCalls)
+                events.clear()
+
+                case.callback.invoke(scenario.viewModel, action)
+                advanceUntilIdle()
+
+                when (case.callback) {
+                    StalePendingCallback.CANCEL -> {
+                        assertIs<ChatUiState.ModelError>(scenario.viewModel.uiState.value)
+                        assertEquals(emptyList(), events)
+                        assertEquals(1, scenario.inference.unloadCalls)
+                        assertEquals(1, diffusionReleaseCalls)
+                    }
+                    else -> {
+                        scenario.assertReadyFor(scenario.modelA, MODEL_A_CONTEXT)
+                        val expectedEvents = if (case.action == InitialPendingAction.SAFE_ALTERNATIVE) {
+                            listOf("load:a.gguf")
+                        } else {
+                            listOf("unload-text:2", "release-diffusion:2", "load:a.gguf")
+                        }
+                        assertEquals(expectedEvents, events)
+                        assertEquals(
+                            if (case.action == InitialPendingAction.SAFE_ALTERNATIVE) 1 else 2,
+                            scenario.inference.unloadCalls,
+                        )
+                        assertEquals(
+                            if (case.action == InitialPendingAction.SAFE_ALTERNATIVE) 1 else 2,
+                            diffusionReleaseCalls,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     @Test
     fun residentModelIsReleasedOnceBeforeReplacementAssessmentAndExactLoad() = runTest {
         val events = mutableListOf<String>()
@@ -134,6 +239,83 @@ class ChatViewModelQuarantineRetryTest {
                 events,
             )
             assertEquals(scenario.requestB, scenario.inference.loadRequests.last())
+        }
+    }
+
+    @Test
+    fun textAndDiffusionSwitchesReleaseBothRunnersOnceBeforeExactAssessmentAndLoad() = runTest {
+        val events = mutableListOf<String>()
+        var diffusionReleaseCalls = 0
+        val scenario = scenario(
+            includeDiffusionModel = true,
+            releaseDiffusionModel = {
+                diffusionReleaseCalls += 1
+                events += "release-diffusion:$diffusionReleaseCalls"
+            },
+            onUnload = { call -> events += "unload-text:$call" },
+            onPrepare = { model -> events += "prepare:${model.filename}" },
+            resolveOverride = { preparation, request ->
+                events += "assess:${preparation.model.filename}"
+                InstalledModelLoadResolution.Ready(request)
+            },
+            loadOverride = { request ->
+                events += "load-text:${request.model.filename}"
+                null
+            },
+            onDiffusionLoad = { request ->
+                events += "load-diffusion:${request.model.filename}"
+                ModelLoadResult.Success(0)
+            },
+        ) { _ -> }
+
+        withScenario(scenario) {
+            advanceUntilIdle()
+            scenario.assertRetryActionFor(scenario.modelA.id)
+            scenario.viewModel.retryPendingLoad()
+            advanceUntilIdle()
+            scenario.assertReadyFor(scenario.modelA, MODEL_A_CONTEXT)
+
+            events.clear()
+            val unloadsBeforeDiffusion = scenario.inference.unloadCalls
+            val diffusionReleasesBeforeDiffusion = diffusionReleaseCalls
+
+            scenario.viewModel.setGenerationMode(GenerationMode.Image)
+            advanceUntilIdle()
+
+            scenario.assertReadyFor(scenario.diffusionModel, 0)
+            assertEquals(unloadsBeforeDiffusion + 1, scenario.inference.unloadCalls)
+            assertEquals(diffusionReleasesBeforeDiffusion + 1, diffusionReleaseCalls)
+            assertEquals(
+                listOf(
+                    "prepare:model.safetensors",
+                    "unload-text:${unloadsBeforeDiffusion + 1}",
+                    "release-diffusion:${diffusionReleasesBeforeDiffusion + 1}",
+                    "assess:model.safetensors",
+                    "load-diffusion:model.safetensors",
+                ),
+                events,
+            )
+
+            events.clear()
+            val unloadsBeforeText = scenario.inference.unloadCalls
+            val diffusionReleasesBeforeText = diffusionReleaseCalls
+
+            scenario.viewModel.setGenerationMode(GenerationMode.Text)
+            advanceUntilIdle()
+
+            scenario.assertReadyFor(scenario.modelA, MODEL_A_CONTEXT)
+            assertEquals(unloadsBeforeText + 1, scenario.inference.unloadCalls)
+            assertEquals(diffusionReleasesBeforeText + 1, diffusionReleaseCalls)
+            assertEquals(
+                listOf(
+                    "prepare:a.gguf",
+                    "unload-text:${unloadsBeforeText + 1}",
+                    "release-diffusion:${diffusionReleasesBeforeText + 1}",
+                    "assess:a.gguf",
+                    "load-text:a.gguf",
+                ),
+                events,
+            )
         }
     }
 
@@ -770,33 +952,66 @@ class ChatViewModelQuarantineRetryTest {
             InstalledModelLoadPreparation.Ready,
             LoadRequest,
         ) -> InstalledModelLoadResolution? = { _, _ -> null },
+        initialPendingAction: InitialPendingAction = InitialPendingAction.RETRY,
+        includeDiffusionModel: Boolean = false,
+        onDiffusionLoad: suspend (LoadRequest) -> ModelLoadResult = {
+            ModelLoadResult.Success(0)
+        },
         allowExplicitRetry: suspend (LoadRequest) -> Unit,
     ): QuarantineRetryScenario {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
         val modelA = retryModel(id = 7L, suffix = "a")
         val modelB = retryModel(id = 8L, suffix = "b")
+        val diffusionModel = retryDiffusionModel()
         val requestA = retryRequest(modelA, assessmentKey = "assessment-a", acknowledged = true)
         val requestB = retryRequest(modelB, assessmentKey = "assessment-b", acknowledged = false)
+        val diffusionRequest = retryDiffusionRequest(diffusionModel)
         val inference = QuarantineRetryInferenceRepository(
             quarantinedRequest = requestA,
+            initialPendingAction = initialPendingAction,
             allowRetry = allowExplicitRetry,
             loadOverride = loadOverride,
             onUnload = onUnload,
         )
         val resolver = StaticRetryResolver(
-            requests = mapOf(modelA.id to requestA, modelB.id to requestB),
+            requests = buildMap {
+                put(modelA.id, requestA)
+                put(modelB.id, requestB)
+                if (includeDiffusionModel) put(diffusionModel.id, diffusionRequest)
+            },
             onPrepare = onPrepare,
-            resolveOverride = resolveOverride,
+            resolveOverride = { preparation, request ->
+                if (initialPendingAction == InitialPendingAction.SAFE_ALTERNATIVE &&
+                    preparation.model == modelA
+                ) {
+                    InstalledModelLoadResolution.SafeAlternative(
+                        primaryReason = AssessmentReason.MEMORY_NO_FIT,
+                        saferRequest = request.copy(
+                            riskAcknowledgement = null,
+                            backendAlternative = null,
+                        ),
+                    )
+                } else {
+                    resolveOverride(preparation, request)
+                }
+            },
         )
-        val models = LocalModelRepository(RetryLocalModelDao(listOf(modelA, modelB)))
+        val availableModels = buildList {
+            add(modelA)
+            add(modelB)
+            if (includeDiffusionModel) add(diffusionModel)
+        }
+        val models = LocalModelRepository(RetryLocalModelDao(availableModels))
         val settings = RetrySettingsRepository()
         val diffusionLoadRequests = mutableListOf<LoadRequest>()
         return QuarantineRetryScenario(
             modelA = modelA,
             modelB = modelB,
+            diffusionModel = diffusionModel,
             requestA = requestA,
             requestB = requestB,
+            diffusionRequest = diffusionRequest,
             inference = inference,
             diffusionLoadRequests = diffusionLoadRequests,
             states = mutableListOf(),
@@ -820,7 +1035,7 @@ class ChatViewModelQuarantineRetryTest {
                 releaseDiffusionModel = releaseDiffusionModel,
                 loadDiffusionModel = { request ->
                     diffusionLoadRequests += request
-                    error("Diffusion loader must not run for text-model retries")
+                    onDiffusionLoad(request)
                 },
             ),
         )
@@ -870,8 +1085,10 @@ class ChatViewModelQuarantineRetryTest {
 private data class QuarantineRetryScenario(
     val modelA: LocalModelEntity,
     val modelB: LocalModelEntity,
+    val diffusionModel: LocalModelEntity,
     val requestA: LoadRequest,
     val requestB: LoadRequest,
+    val diffusionRequest: LoadRequest,
     val inference: QuarantineRetryInferenceRepository,
     val diffusionLoadRequests: MutableList<LoadRequest>,
     val states: MutableList<ChatUiState>,
@@ -890,13 +1107,17 @@ private class StaticRetryResolver(
         model: LocalModelEntity,
         expectedMode: GenerationMode,
     ): InstalledModelLoadPreparation {
-        assertEquals(GenerationMode.Text, expectedMode)
         onPrepare(model)
         val request = requireNotNull(requests[model.id])
         return InstalledModelLoadPreparation.Ready(
             model = model,
             expectedMode = expectedMode,
-            descriptor = task6LlmDescriptor(),
+            descriptor = when (expectedMode) {
+                GenerationMode.Text -> task6LlmDescriptor()
+                GenerationMode.Image,
+                GenerationMode.Video,
+                -> task6DiffusionDescriptor()
+            },
             artifact = requireNotNull(request.artifact),
         )
     }
@@ -912,6 +1133,7 @@ private class StaticRetryResolver(
 
 private class QuarantineRetryInferenceRepository(
     private val quarantinedRequest: LoadRequest,
+    private val initialPendingAction: InitialPendingAction,
     private val allowRetry: suspend (LoadRequest) -> Unit,
     private val loadOverride: suspend (LoadRequest) -> ModelLoadResult?,
     private val onUnload: suspend (Int) -> Unit,
@@ -925,16 +1147,33 @@ private class QuarantineRetryInferenceRepository(
     override suspend fun loadModel(request: LoadRequest): ModelLoadResult {
         loadRequests += request
         events += "load:${request.model.filename.substringBefore('.')}"
-        if (request.model.id == quarantinedRequest.model.id &&
+        if (initialPendingAction != InitialPendingAction.SAFE_ALTERNATIVE &&
+            request.model.id == quarantinedRequest.model.id &&
             loadRequests.count { it.model.id == quarantinedRequest.model.id } == 1
         ) {
-            return ModelLoadResult.AdmissionRequired(
-                LoadAdmission.ConfirmationRequired(
+            val admission = when (initialPendingAction) {
+                InitialPendingAction.CONFIRM -> LoadAdmission.ConfirmationRequired(
+                    request = quarantinedRequest,
+                    reason = LoadAdmissionReason.RISK_ACKNOWLEDGEMENT_REQUIRED,
+                    explicitRetryRequired = false,
+                )
+                InitialPendingAction.ALTERNATIVE -> LoadAdmission.AlternativeAvailable(
+                    original = quarantinedRequest,
+                    saferPlan = quarantinedRequest.plan,
+                    reason = LoadAdmissionReason.NATIVE_BACKEND_INCOMPATIBLE,
+                    saferRequest = quarantinedRequest.copy(
+                        riskAcknowledgement = null,
+                        backendAlternative = null,
+                    ),
+                )
+                InitialPendingAction.RETRY -> LoadAdmission.ConfirmationRequired(
                     request = quarantinedRequest,
                     reason = LoadAdmissionReason.SUSPECTED_PREVIOUS_CRASH,
                     explicitRetryRequired = true,
-                ),
-            )
+                )
+                InitialPendingAction.SAFE_ALTERNATIVE -> error("Unreachable static alternative")
+            }
+            return ModelLoadResult.AdmissionRequired(admission)
         }
         loadOverride(request)?.let { return it }
         return ModelLoadResult.Success(
@@ -967,6 +1206,34 @@ private class QuarantineRetryInferenceRepository(
     override suspend fun resetContext() = Unit
     override fun getRuntimeConfigString(): String = ""
     override fun currentGenerationObservation(): InferenceObservationPlan? = null
+}
+
+private data class StalePendingActionCase(
+    val action: InitialPendingAction,
+    val callback: StalePendingCallback,
+)
+
+private enum class InitialPendingAction {
+    CONFIRM,
+    ALTERNATIVE,
+    SAFE_ALTERNATIVE,
+    RETRY,
+}
+
+private enum class StalePendingCallback {
+    CONFIRM,
+    ACCEPT,
+    RETRY,
+    CANCEL;
+
+    fun invoke(viewModel: ChatViewModel, action: PendingLoadAction) {
+        when (this) {
+            CONFIRM -> viewModel.confirmPendingLoad(assertIs<PendingLoadAction.ConfirmRisk>(action))
+            ACCEPT -> viewModel.acceptSaferPlan(action)
+            RETRY -> viewModel.retryPendingLoad(assertIs<PendingLoadAction.RetryQuarantined>(action))
+            CANCEL -> viewModel.cancelPendingLoad(action)
+        }
+    }
 }
 
 private enum class StaleRetryOutcome {
@@ -1031,6 +1298,106 @@ private fun retryModel(id: Long, suffix: String) = LocalModelEntity(
     pipelineTag = "text-generation",
     componentStatus = LocalModelEntity.STATUS_READY,
 )
+
+private fun retryDiffusionModel(): LocalModelEntity {
+    val descriptor = task6DiffusionDescriptor()
+    return LocalModelEntity(
+        id = 9L,
+        modelId = descriptor.repositoryId,
+        filename = descriptor.components.first { it.isPrimary }.file.path,
+        localPath = "/private/diffusion",
+        sizeBytes = descriptor.components.sumOf { it.file.sizeBytes },
+        downloadedAt = 9L,
+        author = "owner",
+        libraryName = "diffusers",
+        pipelineTag = "text-to-image",
+        componentStatus = LocalModelEntity.STATUS_READY,
+    )
+}
+
+private fun retryDiffusionRequest(model: LocalModelEntity): LoadRequest {
+    val descriptor = task6DiffusionDescriptor()
+    val components = descriptor.components.mapIndexed { index, component ->
+        ResolvedArtifactComponent(
+            logicalRole = if (component.isPrimary) "model" else "vae",
+            repositoryId = component.file.repositoryId,
+            repositoryRelativePath = component.file.path,
+            localPath = "${model.localPath}/${component.file.path}",
+            byteCount = component.file.sizeBytes,
+            contentSha256 = (index + 1).toString().repeat(64),
+            identity = component.file,
+        )
+    }
+    val identity = ModelFileIdentity(
+        repositoryId = model.modelId,
+        revision = "d".repeat(64),
+        path = model.filename,
+        sizeBytes = components.sumOf(ResolvedArtifactComponent::byteCount),
+        gitOid = null,
+        lfsOid = "sha256:${"d".repeat(64)}",
+        xetHash = null,
+        evidence = emptyList(),
+    )
+    val plan = DiffusionRunPlan(
+        mode = DiffusionMode.IMAGE,
+        width = 1_024,
+        height = 1_024,
+        frameCount = 1,
+        batchSize = 1,
+        steps = 20,
+        vaeTiling = false,
+        offloadToCpu = true,
+        keepClipOnCpu = true,
+        keepVaeOnCpu = true,
+        maxVramBytes = null,
+        layerStreaming = false,
+        requiresUserAcceptance = false,
+        backend = BackendKind.CPU,
+        memoryTopology = MemoryTopology.UNIFIED,
+        compromises = listOf(DiffusionPlanCompromise.CPU_OFFLOAD),
+    )
+    val assessmentKey = "assessment-diffusion"
+    return LoadRequest(
+        model = model,
+        identity = identity,
+        observationIdentity = requireNotNull(ObservationModelIdentity.fromDescriptor(descriptor)),
+        plan = plan,
+        assessmentKey = assessmentKey,
+        artifact = ResolvedLocalArtifact(
+            identity = identity,
+            revisionIdentity = RevisionIdentity.HubCommit(
+                listOf(RepositoryCommit(model.modelId, descriptor.revision)),
+            ),
+            components = components,
+            loadTarget = VerifiedArtifactLoadTarget.Directory(
+                path = model.localPath,
+                storageOwner = model.modelId,
+                nativeConsumedRelativePaths = components.map(
+                    ResolvedArtifactComponent::repositoryRelativePath,
+                ),
+            ),
+        ),
+        assessedPlans = AssessedPlans(
+            values = listOf(
+                PlanAssessment(
+                    plan = plan,
+                    hostMemoryBytes = null,
+                    gpuMemoryBytes = null,
+                    sharedMemoryBytes = null,
+                    storageBytes = null,
+                    confidence = AssessmentConfidence(
+                        Confidence.LOW,
+                        Confidence.LOW,
+                        Confidence.LOW,
+                        Confidence.LOW,
+                    ),
+                    evidence = emptyList(),
+                ),
+            ),
+            assessmentKey = assessmentKey,
+        ),
+    )
+}
 
 private fun retryRequest(
     model: LocalModelEntity,

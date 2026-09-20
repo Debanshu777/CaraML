@@ -616,6 +616,11 @@ class CreateWorkbenchUiTest {
         runComposeUiTest {
             val request = loadRequestForUi()
             val alternativePlan = loadPlanForUi(contextTokens = 1_024)
+            val binding = PendingLoadBinding(
+                generation = 1L,
+                model = request.model,
+                mode = GenerationMode.Text,
+            )
             var state by mutableStateOf<ChatUiState>(ChatUiState.NoModels)
             var modelHubNavigations = 0
             var detailNavigation: Pair<String, ModelHubBrowseMode>? = null
@@ -713,7 +718,7 @@ class CreateWorkbenchUiTest {
                 assertEquals(3, modelHubNavigations)
             }
 
-            show(ChatUiState.LoadActionRequired(PendingLoadAction.ConfirmRisk(request)))
+            show(ChatUiState.LoadActionRequired(PendingLoadAction.ConfirmRisk(request, binding)))
             onNodeWithText("Continue").performScrollTo().assertIsDisplayed().performClick()
             onNodeWithText("Cancel").performScrollTo().assertIsDisplayed().performClick()
             runOnIdle {
@@ -723,7 +728,7 @@ class CreateWorkbenchUiTest {
 
             show(
                 ChatUiState.LoadActionRequired(
-                    PendingLoadAction.AcceptAlternative(request, alternativePlan),
+                    PendingLoadAction.AcceptAlternative(request, alternativePlan, binding),
                 ),
             )
             onNodeWithText("Use safer plan").performScrollTo().assertIsDisplayed().performClick()
@@ -733,7 +738,7 @@ class CreateWorkbenchUiTest {
                 assertEquals(2, cancelledLoads)
             }
 
-            show(ChatUiState.LoadActionRequired(PendingLoadAction.RetryQuarantined(request)))
+            show(ChatUiState.LoadActionRequired(PendingLoadAction.RetryQuarantined(request, binding)))
             onNodeWithText("Retry explicitly").performScrollTo().assertIsDisplayed().performClick()
             onNodeWithText("Cancel").performScrollTo().assertIsDisplayed().performClick()
             runOnIdle {

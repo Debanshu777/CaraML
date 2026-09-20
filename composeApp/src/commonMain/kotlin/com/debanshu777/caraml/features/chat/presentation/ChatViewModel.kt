@@ -94,11 +94,24 @@ private sealed class InternalChatState {
     ) : InternalChatState()
 }
 
+@ConsistentCopyVisibility
+data class PendingLoadBinding internal constructor(
+    val generation: Long,
+    val model: LocalModelEntity,
+    val mode: GenerationMode,
+)
+
 sealed interface PendingLoadAction {
-    data class ConfirmRisk(val request: LoadRequest) : PendingLoadAction
+    val binding: PendingLoadBinding
+
+    data class ConfirmRisk(
+        val request: LoadRequest,
+        override val binding: PendingLoadBinding,
+    ) : PendingLoadAction
     data class AcceptAlternative(
         val original: LoadRequest,
         val saferPlan: RunPlan,
+        override val binding: PendingLoadBinding,
         val saferRequest: LoadRequest = original.copy(
             plan = saferPlan,
             riskAcknowledgement = null,
@@ -107,8 +120,12 @@ sealed interface PendingLoadAction {
     ) : PendingLoadAction
     data class AcceptSafeAlternative(
         val saferRequest: LoadRequest,
+        override val binding: PendingLoadBinding,
     ) : PendingLoadAction
-    data class RetryQuarantined(val request: LoadRequest) : PendingLoadAction
+    data class RetryQuarantined(
+        val request: LoadRequest,
+        override val binding: PendingLoadBinding,
+    ) : PendingLoadAction
 }
 
 private data class ModelLoadAttempt(
@@ -281,6 +298,7 @@ class ChatViewModel(
         if (sel == null || !sel.matchesGenerationMode(mode)) {
             val next = pickRememberedModel(picker, mode) ?: picker.first()
             if (sel?.id != next.id) {
+                invalidatePendingLoadAction()
                 _internal.value = InternalChatState.ModelLoading
                 _selectedModel.value = next
             }
@@ -317,6 +335,7 @@ class ChatViewModel(
 
     fun setGenerationMode(mode: GenerationMode) {
         if (_generationMode.value == mode) return
+        invalidatePendingLoadAction()
         modelLoadJob?.cancel()
         signalGenerationCancellation()
         generationJob?.cancel()
@@ -361,6 +380,7 @@ class ChatViewModel(
     fun selectModel(model: LocalModelEntity) {
         if (!model.matchesGenerationMode(_generationMode.value)) return
 
+        invalidatePendingLoadAction()
         val selectionUnchanged = _selectedModel.value?.id == model.id
         _selectedModel.value = model
         if (selectionUnchanged) loadSelectedModel(model)
@@ -400,8 +420,9 @@ class ChatViewModel(
         load: suspend (ModelLoadAttempt) -> ModelLoadResult,
     ) {
         val mode = _generationMode.value
-        if (!model.matchesGenerationMode(mode)) return
+        if (!model.matchesGenerationMode(mode) || _selectedModel.value != model) return
 
+        invalidatePendingLoadAction()
         val previousJob = modelLoadJob
         modelLoadJob?.cancel()
         signalGenerationCancellation()
@@ -438,7 +459,7 @@ class ChatViewModel(
                         is ModelLoadResult.Error -> {
                             _internal.value = InternalChatState.ModelError(result.message)
                         }
-                        is ModelLoadResult.AdmissionRequired -> handleAdmission(result.admission)
+                        is ModelLoadResult.AdmissionRequired -> handleAdmission(attempt, result.admission)
                     }
                 }
             }
@@ -462,6 +483,7 @@ class ChatViewModel(
         state: InternalChatState,
         teardownKey: RunnerTeardownKey,
     ): Job {
+        invalidatePendingLoadAction()
         val teardownJob = startRunnerTeardown(teardownKey)
         _internal.value = state
         _selectedModel.value = null
@@ -595,6 +617,43 @@ class ChatViewModel(
             _selectedModel.value == attempt.model &&
             _generationMode.value == attempt.mode
 
+    private fun ModelLoadAttempt.toPendingLoadBinding() = PendingLoadBinding(
+        generation = generation,
+        model = model,
+        mode = mode,
+    )
+
+    private fun currentPendingLoadAction(): PendingLoadAction? =
+        (_internal.value as? InternalChatState.LoadActionRequired)?.action
+
+    private fun invalidatePendingLoadAction() {
+        pendingLoadActionGate.close()
+        if (_internal.value is InternalChatState.LoadActionRequired) {
+            _internal.value = InternalChatState.ModelLoading
+        }
+    }
+
+    private fun tryConsumePendingLoadAction(expected: PendingLoadAction): Boolean {
+        val binding = expected.binding
+        if (currentPendingLoadAction() != expected ||
+            modelLoadGeneration.load() != binding.generation ||
+            _selectedModel.value != binding.model ||
+            _generationMode.value != binding.mode ||
+            !expected.requestsMatch(binding.model)
+        ) {
+            return false
+        }
+        return pendingLoadActionGate.tryConsume()
+    }
+
+    private fun PendingLoadAction.requestsMatch(model: LocalModelEntity): Boolean = when (this) {
+        is PendingLoadAction.ConfirmRisk -> request.model == model
+        is PendingLoadAction.AcceptAlternative ->
+            original.model == model && saferRequest.model == model
+        is PendingLoadAction.AcceptSafeAlternative -> saferRequest.model == model
+        is PendingLoadAction.RetryQuarantined -> request.model == model
+    }
+
     private suspend fun loadExactModelForAttempt(
         attempt: ModelLoadAttempt,
         mode: GenerationMode,
@@ -609,14 +668,15 @@ class ChatViewModel(
         )
     }
 
-    private fun handleAdmission(admission: LoadAdmission) {
+    private fun handleAdmission(attempt: ModelLoadAttempt, admission: LoadAdmission) {
         pendingLoadActionGate.close()
+        val binding = attempt.toPendingLoadBinding()
         when (admission) {
             is LoadAdmission.ConfirmationRequired -> {
                 val action = if (admission.explicitRetryRequired) {
-                    PendingLoadAction.RetryQuarantined(admission.request)
+                    PendingLoadAction.RetryQuarantined(admission.request, binding)
                 } else {
-                    PendingLoadAction.ConfirmRisk(admission.request)
+                    PendingLoadAction.ConfirmRisk(admission.request, binding)
                 }
                 pendingLoadActionGate.open()
                 _internal.value = InternalChatState.LoadActionRequired(action)
@@ -627,6 +687,7 @@ class ChatViewModel(
                     PendingLoadAction.AcceptAlternative(
                         admission.original,
                         admission.saferPlan,
+                        binding,
                         admission.saferRequest,
                     ),
                 )
@@ -634,7 +695,7 @@ class ChatViewModel(
             is LoadAdmission.SafeAlternativeAvailable -> {
                 pendingLoadActionGate.open()
                 _internal.value = InternalChatState.LoadActionRequired(
-                    PendingLoadAction.AcceptSafeAlternative(admission.saferRequest),
+                    PendingLoadAction.AcceptSafeAlternative(admission.saferRequest, binding),
                 )
             }
             is LoadAdmission.TemporarilyUnavailable -> {
@@ -654,9 +715,12 @@ class ChatViewModel(
     }
 
     fun confirmPendingLoad() {
-        val action = (_internal.value as? InternalChatState.LoadActionRequired)?.action
-            as? PendingLoadAction.ConfirmRisk ?: return
-        if (!pendingLoadActionGate.tryConsume()) return
+        val action = currentPendingLoadAction() as? PendingLoadAction.ConfirmRisk ?: return
+        confirmPendingLoad(action)
+    }
+
+    fun confirmPendingLoad(action: PendingLoadAction.ConfirmRisk) {
+        if (!tryConsumePendingLoadAction(action)) return
         val now = Clock.System.now().toEpochMilliseconds()
         resumeExactLoad(
             action.request.copy(
@@ -670,21 +734,27 @@ class ChatViewModel(
     }
 
     fun acceptSaferPlan() {
-        val action = (_internal.value as? InternalChatState.LoadActionRequired)?.action ?: return
+        val action = currentPendingLoadAction() ?: return
+        acceptSaferPlan(action)
+    }
+
+    fun acceptSaferPlan(action: PendingLoadAction) {
         val request = when (action) {
             is PendingLoadAction.AcceptAlternative -> action.saferRequest
             is PendingLoadAction.AcceptSafeAlternative -> action.saferRequest
             else -> return
         }
-        if (!pendingLoadActionGate.tryConsume()) return
+        if (!tryConsumePendingLoadAction(action)) return
         resumeExactLoad(request.copy(riskAcknowledgement = null, backendAlternative = null))
     }
 
     fun retryPendingLoad() {
-        val action = (_internal.value as? InternalChatState.LoadActionRequired)?.action
-            as? PendingLoadAction.RetryQuarantined ?: return
-        if (!pendingLoadActionGate.tryConsume()) return
-        if (_selectedModel.value != action.request.model) return
+        val action = currentPendingLoadAction() as? PendingLoadAction.RetryQuarantined ?: return
+        retryPendingLoad(action)
+    }
+
+    fun retryPendingLoad(action: PendingLoadAction.RetryQuarantined) {
+        if (!tryConsumePendingLoadAction(action)) return
         startModelLoad(action.request.model) { attempt ->
             retryQuarantinedLoad(action.request, attempt)
         }
@@ -714,8 +784,12 @@ class ChatViewModel(
     }
 
     fun cancelPendingLoad() {
-        if (_internal.value !is InternalChatState.LoadActionRequired) return
-        if (!pendingLoadActionGate.tryConsume()) return
+        val action = currentPendingLoadAction() ?: return
+        cancelPendingLoad(action)
+    }
+
+    fun cancelPendingLoad(action: PendingLoadAction) {
+        if (!tryConsumePendingLoadAction(action)) return
         _internal.value = InternalChatState.ModelError("Model loading was cancelled.")
     }
 

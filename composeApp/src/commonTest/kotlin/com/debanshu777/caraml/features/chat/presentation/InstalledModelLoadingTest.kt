@@ -123,7 +123,6 @@ class InstalledModelLoadingTest {
                 InstalledModelLoadResolution.Ready(request)
             },
             loadText = { exact ->
-                calls += "release-diffusion"
                 calls += "text:${exact.assessmentKey}"
                 ModelLoadResult.Success(4_096)
             },
@@ -131,7 +130,7 @@ class InstalledModelLoadingTest {
         )
 
         assertEquals(4_096, assertIs<ModelLoadResult.Success>(result).contextSize)
-        assertEquals(listOf("resolve", "release-diffusion", "text:assessment"), calls)
+        assertEquals(listOf("resolve", "text:assessment"), calls)
     }
 
     @Test
@@ -148,7 +147,6 @@ class InstalledModelLoadingTest {
                 },
                 loadText = { error("text loader must not be called for $mode") },
                 loadDiffusion = { exact ->
-                    calls += "release-text"
                     calls += "diffusion:${exact.assessmentKey}"
                     ModelLoadResult.Success(0)
                 },
@@ -156,7 +154,7 @@ class InstalledModelLoadingTest {
 
             assertIs<ModelLoadResult.Success>(result)
             assertEquals(
-                listOf("resolve:$mode", "release-text", "diffusion:assessment"),
+                listOf("resolve:$mode", "diffusion:assessment"),
                 calls,
             )
         }

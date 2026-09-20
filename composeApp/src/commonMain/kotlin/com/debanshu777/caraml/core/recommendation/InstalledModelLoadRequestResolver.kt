@@ -19,7 +19,10 @@ sealed interface InstalledModelLoadResolution {
         val saferRequest: LoadRequest,
     ) : InstalledModelLoadResolution
     data object NeedsNetwork : InstalledModelLoadResolution
-    data class NotAdmissible(val reason: AssessmentReason) : InstalledModelLoadResolution
+    data class NotAdmissible(
+        val reason: AssessmentReason,
+        val candidateBackend: BackendKind? = null,
+    ) : InstalledModelLoadResolution
     data class Rejected(val reason: ArtifactIdentityRejection) : InstalledModelLoadResolution
     data object Failed : InstalledModelLoadResolution
 }
@@ -211,8 +214,9 @@ class InstalledModelLoadRequestResolver internal constructor(
         )
         if (cpuRequired) return primary
 
-        if (capturedSnapshot.hasAccelerator() &&
-            primary is InstalledModelLoadResolution.NotAdmissible &&
+        if (primary is InstalledModelLoadResolution.NotAdmissible &&
+            primary.candidateBackend != null &&
+            primary.candidateBackend != BackendKind.CPU &&
             primary.reason in STATIC_CPU_ALTERNATIVE_REASONS
         ) {
             return when (
@@ -289,10 +293,16 @@ class InstalledModelLoadRequestResolver internal constructor(
             return InstalledModelLoadResolution.Rejected(ArtifactIdentityRejection.INVALID_INPUT)
         }
         recommendation.nonAdmissibleReason(assessment)?.let { reason ->
-            return InstalledModelLoadResolution.NotAdmissible(reason)
+            return InstalledModelLoadResolution.NotAdmissible(
+                reason = reason,
+                candidateBackend = recommendation.candidateBackendIn(assessment),
+            )
         }
         val selected = recommendation.selectedPlan as? RunPlan
-            ?: return InstalledModelLoadResolution.NotAdmissible(AssessmentReason.NO_RUN_PLAN)
+            ?: return InstalledModelLoadResolution.NotAdmissible(
+                reason = AssessmentReason.NO_RUN_PLAN,
+                candidateBackend = recommendation.candidateBackendIn(assessment),
+            )
         if (!selected.matches(expectedMode) || !selected.matches(workload) ||
             requireCpu && selected.backend != BackendKind.CPU
         ) {
@@ -315,6 +325,25 @@ class InstalledModelLoadRequestResolver internal constructor(
     private fun ModelAssessment.hasConsistentKeys(): Boolean =
         assessmentKey.isNotBlank() && assessmentKey == planAssessments.assessmentKey &&
             compatibility == planAssessments.compatibility
+
+    private fun PersonalizedRecommendation.candidateBackendIn(
+        assessment: ModelAssessment,
+    ): BackendKind? {
+        val selected = selectedPlan
+        if (selected == null) {
+            if (selectedPlanAssessment != null) return null
+            val candidatePlans = assessment.planAssessments.values.map { candidate ->
+                candidate.plan as? RunPlan ?: return null
+            }
+            return candidatePlans.map { it.backend }.distinct().singleOrNull()
+        }
+        val selectedRunPlan = selected as? RunPlan ?: return null
+        val matchingAssessment = assessment.planAssessments.values
+            .filter { it.plan.stableKey == selectedRunPlan.stableKey }
+            .singleOrNull()
+            ?: return null
+        return selectedRunPlan.backend.takeIf { selectedPlanAssessment == matchingAssessment }
+    }
 
     private fun PersonalizedRecommendation.nonAdmissibleReason(
         assessment: ModelAssessment,
@@ -399,9 +428,6 @@ class InstalledModelLoadRequestResolver internal constructor(
         evidence = evidence,
         budgetConfidence = budgetConfidence.copy(gpu = null),
     )
-
-    private fun DeviceSnapshot.hasAccelerator(): Boolean =
-        hardwareProfile.backends.any { it.kind != BackendKind.CPU }
 
     private fun HardwareProfile.cpuOnly(): HardwareProfile = HardwareProfile(
         cpuArchitecture = cpuArchitecture,
