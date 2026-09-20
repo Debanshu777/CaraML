@@ -204,6 +204,7 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 
 <!-- Updated at end of each AI-assisted development session -->
 
+- Android UIDT and WorkManager workers now await one startup-reconciliation barrier, prefer and preserve the exact UIDT when duplicate owners exist, and use generation-bound completion and Task Manager stop markers; user-stopped or orphaned UIDT transfers become resumable pauses while cancellation checkpoints atomically release exact leases
 - Exact native loading now acquires every expected plus current-candidate repository root on the download subsystem's shared lock, recovery-validates and exactly compares the authoritative owner bundle, then retains the lifetime through byte validation, marker cleanup, and native open/load; Git, LFS, and Xet bindings fail closed
 - Ready catalogs now require exact revision, object, bundle, digest, local generation, and complete current request-set bindings; the app/download Room stores support only their current schemas and destructively recreate stale ones, malformed current rows are isolated without terminating observers, Model Details controls carry exact revalidated batch/task IDs, and transactional removal prunes a generation only after its final owner is gone
 - Rebuilt the shared UI as a sidebar-first Prism workbench: compact windows reveal a modal left panel without moving content, tablets use a compact rail, and wider workspaces use a labeled sidebar with contextual generation modes

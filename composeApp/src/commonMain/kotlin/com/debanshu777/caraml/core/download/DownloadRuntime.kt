@@ -1,23 +1,29 @@
 package com.debanshu777.caraml.core.download
 
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
 
 class DownloadRuntime(
     private val reconciler: DownloadReconciler,
     private val scheduler: PlatformDownloadScheduler,
     private val scope: CoroutineScope,
 ) {
-    private var startup: Job? = null
+    private val startup: Deferred<Unit> = scope.async(start = CoroutineStart.LAZY) {
+        reconciler.reconcile()
+    }
 
     fun start() {
-        if (startup != null) return
-        startup = scope.launch { reconciler.reconcile() }
+        startup.start()
+    }
+
+    suspend fun awaitStartupReconciliation() {
+        startup.await()
     }
 
     suspend fun close() {
-        startup?.join()
+        startup.await()
         scheduler.reconcile(emptySet())
     }
 }

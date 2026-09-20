@@ -178,6 +178,40 @@ class RoomDownloadTaskStore(
         return dao.setPlatformTaskId(artifactId, platformTaskId, nowEpochMs) == 1
     }
 
+    override suspend fun bindPlatformTask(
+        batchId: String,
+        platformTaskId: String,
+        nowEpochMs: Long,
+    ): Boolean {
+        require(platformTaskId.isNotBlank() && platformTaskId.length <= 128 && platformTaskId.none(Char::isISOControl))
+        return dao.bindPlatformTask(batchId, platformTaskId, nowEpochMs) > 0
+    }
+
+    override suspend fun pausePlatformTask(
+        batchId: String,
+        platformTaskId: String,
+        nowEpochMs: Long,
+    ): Boolean {
+        require(platformTaskId.isNotBlank() && platformTaskId.length <= 128 && platformTaskId.none(Char::isISOControl))
+        val changed = dao.pausePlatformTask(batchId, platformTaskId, nowEpochMs)
+        if (changed) refreshBatch(batchId, nowEpochMs)
+        return changed
+    }
+
+    override suspend fun checkpointCancellation(
+        batchId: String,
+        artifactId: String,
+        owner: String,
+        nowEpochMs: Long,
+    ): Boolean {
+        require(owner.isNotBlank() && owner.length <= 128 && owner.none(Char::isISOControl))
+        val entity = dao.artifact(artifactId) ?: return false
+        if (entity.batchId != batchId) return false
+        val changed = dao.checkpointCancellation(artifactId, owner, nowEpochMs) == 1
+        if (changed) refreshBatch(batchId, nowEpochMs)
+        return changed
+    }
+
     override suspend fun releaseLease(artifactId: String, owner: String, nowEpochMs: Long): Boolean =
         dao.releaseLease(artifactId, owner, nowEpochMs) == 1
 

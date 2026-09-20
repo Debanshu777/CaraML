@@ -379,6 +379,69 @@ class DownloadDatabaseTest {
     }
 
     @Test
+    fun cancellationCheckpointAtomicallyTransitionsClaimAndReleasesExactLease() = runTest {
+        val database = openDatabase("cancellation-checkpoint")
+        val store = RoomDownloadTaskStore(database.downloadTaskDao())
+        try {
+            val batchId = store.create(request(), nowEpochMs = 1L)
+            val artifactId = store.getBatch(batchId)!!.artifacts.single().artifactId
+            assertTrue(store.claim(artifactId, owner = "worker-a", nowEpochMs = 2L, expiresAtEpochMs = 100L))
+
+            assertFalse(
+                store.checkpointCancellation(
+                    batchId = batchId,
+                    artifactId = artifactId,
+                    owner = "stale-worker",
+                    nowEpochMs = 3L,
+                ),
+            )
+            assertTrue(
+                store.checkpointCancellation(
+                    batchId = batchId,
+                    artifactId = artifactId,
+                    owner = "worker-a",
+                    nowEpochMs = 4L,
+                ),
+            )
+
+            val persisted = database.downloadTaskDao().requireArtifact(artifactId)
+            assertEquals(DownloadArtifactState.FAILED_RETRYABLE.name, persisted.state)
+            assertEquals(DownloadFailureCode.NETWORK.name, persisted.failureCode)
+            assertNull(persisted.leaseOwner)
+            assertNull(persisted.leaseExpiresAtEpochMs)
+            assertFalse(store.checkpointCancellation(batchId, artifactId, "worker-a", 5L))
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun userStopPausesOnlyTheExactBoundPlatformGeneration() = runTest {
+        val database = openDatabase("platform-stop-generation")
+        val store = RoomDownloadTaskStore(database.downloadTaskDao())
+        try {
+            val batchId = store.create(request(), nowEpochMs = 1L)
+            val artifactId = store.getBatch(batchId)!!.artifacts.single().artifactId
+            assertTrue(store.bindPlatformTask(batchId, "uidt-old", 2L))
+            assertTrue(store.bindPlatformTask(batchId, "uidt-replacement", 3L))
+
+            assertFalse(store.pausePlatformTask(batchId, "uidt-old", 4L))
+            assertEquals(DownloadUserIntent.RUN.name, database.downloadTaskDao().requireBatch(batchId).userIntent)
+            assertEquals("uidt-replacement", database.downloadTaskDao().requireArtifact(artifactId).platformTaskId)
+
+            assertTrue(store.pausePlatformTask(batchId, "uidt-replacement", 5L))
+            assertEquals(DownloadUserIntent.PAUSE.name, database.downloadTaskDao().requireBatch(batchId).userIntent)
+            val persisted = database.downloadTaskDao().requireArtifact(artifactId)
+            assertEquals(DownloadArtifactState.PAUSED.name, persisted.state)
+            assertNull(persisted.platformTaskId)
+            assertNull(persisted.leaseOwner)
+            assertFalse(store.pausePlatformTask(batchId, "uidt-replacement", 6L))
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun reopeningDatabasePreservesPausedCheckpointAndIntent() = runTest {
         val directory = Files.createTempDirectory("caraml-download-db-reopen")
         val dbPath = directory.resolve("downloads.db").toString()

@@ -7,8 +7,11 @@ class DownloadReconciler(
     private val clock: () -> Long,
 ) {
     suspend fun reconcile() {
+        val discovered = store.recoverableBatches()
+        scheduler.reconcile(discovered.mapTo(mutableSetOf(), DownloadBatchSnapshot::batchId))
+        // Platform reconciliation can consume a crash-durable stop marker and
+        // update Room, so use a fresh snapshot before deciding to re-enqueue.
         val batches = store.recoverableBatches()
-        scheduler.reconcile(batches.mapTo(mutableSetOf(), DownloadBatchSnapshot::batchId))
         batches.forEach { batch ->
             when (batch.userIntent) {
                 DownloadUserIntent.CANCEL -> {
@@ -23,16 +26,35 @@ class DownloadReconciler(
                 }
                 DownloadUserIntent.RUN -> {
                     val platformStillOwnsBatch = scheduler.isActive(batch.batchId)
+                    var pauseOrphan = false
                     batch.artifacts.forEach { artifact ->
                         when (artifact.state) {
                             DownloadArtifactState.RUNNING -> if (!platformStillOwnsBatch) {
-                                store.transitionArtifact(
-                                    artifact.artifactId,
-                                    DownloadArtifactState.FAILED_RETRYABLE,
-                                    DownloadFailureCode.PLATFORM,
-                                    clock(),
-                                )
-                                store.transitionArtifact(artifact.artifactId, DownloadArtifactState.QUEUED, null, clock())
+                                when (scheduler.orphanedRunningDisposition(batch.batchId)) {
+                                    OrphanedDownloadDisposition.PAUSE -> {
+                                        pauseOrphan = true
+                                        store.transitionArtifact(
+                                            artifact.artifactId,
+                                            DownloadArtifactState.PAUSED,
+                                            null,
+                                            clock(),
+                                        )
+                                    }
+                                    OrphanedDownloadDisposition.RETRY -> {
+                                        store.transitionArtifact(
+                                            artifact.artifactId,
+                                            DownloadArtifactState.FAILED_RETRYABLE,
+                                            DownloadFailureCode.PLATFORM,
+                                            clock(),
+                                        )
+                                        store.transitionArtifact(
+                                            artifact.artifactId,
+                                            DownloadArtifactState.QUEUED,
+                                            null,
+                                            clock(),
+                                        )
+                                    }
+                                }
                             }
                             DownloadArtifactState.WAITING_FOR_NETWORK,
                             DownloadArtifactState.FAILED_RETRYABLE,
@@ -40,7 +62,11 @@ class DownloadReconciler(
                             else -> Unit
                         }
                     }
-                    scheduler.enqueue(batch.batchId)
+                    if (pauseOrphan) {
+                        store.setUserIntent(batch.batchId, DownloadUserIntent.PAUSE, clock())
+                    } else if (!platformStillOwnsBatch) {
+                        scheduler.enqueue(batch.batchId)
+                    }
                 }
             }
         }

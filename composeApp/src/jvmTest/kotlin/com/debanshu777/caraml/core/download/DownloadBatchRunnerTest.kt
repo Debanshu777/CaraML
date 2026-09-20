@@ -12,8 +12,10 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -189,6 +191,65 @@ class DownloadBatchRunnerTest {
             root.deleteRecursively()
         }
     }
+
+    @Test
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    fun cancellationDuringClaimedTransferCheckpointsStateAndReleasesLease() = runTest {
+        val store = RunnerStore()
+        val transfer = object : ArtifactTransfer {
+            override fun download(
+                metadata: DownloadMetadataDTO,
+                resumeMetadata: DownloadResumeMetadata?,
+            ): Flow<DownloadProgressDTO> = flow { awaitCancellation() }
+        }
+        val runner = DownloadBatchRunner(
+            store = store,
+            transfer = transfer,
+            finalizer = BatchFinalizer { error("must not finalize") },
+            clock = { 10L },
+            leaseOwner = { "cancelled-transfer" },
+        )
+
+        val runnerJob = async(start = CoroutineStart.UNDISPATCHED) { runner.run("batch") {} }
+        runCurrent()
+        runnerJob.cancel(CancellationException("system stopped owner"))
+        assertFailsWith<CancellationException> { runnerJob.await() }
+
+        assertEquals(
+            listOf(DownloadArtifactState.RUNNING, DownloadArtifactState.FAILED_RETRYABLE),
+            store.transitions,
+        )
+        assertTrue(store.released)
+        assertTrue(store.releaseCalls >= 1)
+    }
+
+    @Test
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    fun cancellationPreservesOriginalFailureAndAttemptsReleaseWhenCheckpointFails() = runTest {
+        val store = RunnerStore(failCancellationCheckpoint = true)
+        val transfer = object : ArtifactTransfer {
+            override fun download(
+                metadata: DownloadMetadataDTO,
+                resumeMetadata: DownloadResumeMetadata?,
+            ): Flow<DownloadProgressDTO> = flow { awaitCancellation() }
+        }
+        val runner = DownloadBatchRunner(
+            store = store,
+            transfer = transfer,
+            finalizer = BatchFinalizer { error("must not finalize") },
+            clock = { 10L },
+            leaseOwner = { "cancelled-transfer" },
+        )
+
+        val runnerJob = async(start = CoroutineStart.UNDISPATCHED) { runner.run("batch") {} }
+        runCurrent()
+        val original = CancellationException("original cancellation")
+        runnerJob.cancel(original)
+        val thrown = assertFailsWith<CancellationException> { runnerJob.await() }
+
+        assertEquals("original cancellation", thrown.message)
+        assertTrue(store.releaseCalls >= 1)
+    }
 }
 
 private class RecordingTransfer(
@@ -242,6 +303,7 @@ private class CountingManifestTransfer(
 private class RunnerStore(
     initialArtifactState: DownloadArtifactState = DownloadArtifactState.QUEUED,
     private val batchAvailable: Boolean = true,
+    private val failCancellationCheckpoint: Boolean = false,
 ) : DownloadTaskStore {
     private val identity = requireNotNull(
         DownloadArtifactIdentity.create("owner/model", "a".repeat(40), "model.gguf", "b".repeat(64), 10L),
@@ -303,6 +365,25 @@ private class RunnerStore(
     }
     override suspend fun setUserIntent(batchId: String, intent: DownloadUserIntent, nowEpochMs: Long) = true
     override suspend fun setPlatformTaskId(artifactId: String, platformTaskId: String?, nowEpochMs: Long) = true
+    override suspend fun checkpointCancellation(
+        batchId: String,
+        artifactId: String,
+        owner: String,
+        nowEpochMs: Long,
+    ): Boolean {
+        if (failCancellationCheckpoint) error("checkpoint unavailable")
+        val next = when (batch.userIntent) {
+            DownloadUserIntent.PAUSE -> DownloadArtifactState.PAUSED
+            DownloadUserIntent.CANCEL -> DownloadArtifactState.CANCELLED
+            DownloadUserIntent.RUN -> DownloadArtifactState.FAILED_RETRYABLE
+        }
+        return transitionArtifact(
+            artifactId,
+            next,
+            DownloadFailureCode.NETWORK.takeIf { batch.userIntent == DownloadUserIntent.RUN },
+            nowEpochMs,
+        )
+    }
     override suspend fun releaseLease(artifactId: String, owner: String, nowEpochMs: Long): Boolean {
         releaseCalls += 1
         released = true
