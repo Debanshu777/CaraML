@@ -73,42 +73,44 @@ This proves the package update preserved the existing app/model data at the user
 
 ## Online acceptance
 
-Networking was enabled. Logcat was cleared immediately before selection and inspected with bounded filters. Selecting the existing MiniCPM artifact completed exact repair and reached the exact Llama/native route; there was no “needs to be reassessed” or legacy fallback error.
+Networking was enabled (`wifi_on=1`, `mobile_data=1`, Wi-Fi enabled, active default network present). The Library showed the preserved exact `openbmb/MiniCPM5-2B-GGUF / MiniCPM5-2B-Q4_K_M.gguf` card as `1.45 GB` and `Ready for chat.` before selection. Logcat was cleared immediately before the card tap and later read with a 3,000-line, two-tag allowlist.
 
-Safe native evidence:
+The GPU-enabled assessment surfaced the typed `Safer configuration available` action. Accepting `Use safer plan` kept the preference enabled but bound the separately assessed CPU request. Safe native evidence from the successful final online run:
 
-- exact model path supplied to the repository (path value was not logged in this report)
-- final runtime plan: context 4096, 4 threads, batch 256, GPU layers 0
-- model loaded in 629 ms
+- exact model path supplied (`model path supplied=1`; the path value was not logged)
+- final runtime plan: context 4096, 4 threads, batch 128, GPU layers 0
+- model loaded in 490 ms
 - native context ready; vocabulary size 130,560
-- Chat UI reached the loaded/ready state
+- generation completed with EOG
 
-Prompt: `Reply with exactly ONLINE_OK`
-Observed response: `ONLINE_OKONLINE_OK`
-Generation: 18 tokens, 3.84 tokens/s, 4.42 seconds.
+Prompt: `Reply with exactly EVIDENCE_ONLINE_OK`
+Observed response: `EVIDENCE_ONLINE_OKEVIDENCE_ONLINE_OK`
+Generation: 25 tokens, 4.13 tokens/s, 5.8 seconds (native log: 5,807 ms).
 
-The response duplicated the requested marker, but it was a successful non-empty native generation containing the deterministic marker.
+The response duplicated the requested marker, but it was a successful non-empty native generation containing the fixed marker.
 
 ## Offline restart acceptance
 
-After the online repair/load:
+After the online load:
 
 1. The current connectivity preferences were recorded.
 2. Wi-Fi and mobile data transports were disabled with `svc`; no reset/airplane/destructive mode was used.
 3. The app was force-stopped and relaunched without clearing data.
-4. The same installed MiniCPM artifact was selected.
-5. Exact native loading completed without a metadata/network prompt or fetch, proving the complete repaired evidence was persisted and reusable offline.
+4. The relaunch selected the persisted MiniCPM model and the GPU native preflight returned typed `INVALID_MODEL`.
+5. From the rendered `Try Another Model` action, the same preserved Library card was explicitly reselected while still offline.
+6. The typed `Use safer plan` action was accepted, binding the policy-approved CPU request without changing the GPU preference.
+7. Exact native loading completed without a metadata/network prompt or fetch, proving the complete repaired evidence was persisted and reusable offline.
 
 Safe native evidence:
 
 - exact model path supplied
 - final runtime plan: context 4096, GPU layers 0
-- model loaded in 609 ms
+- model loaded in 594 ms
 - native context and model became ready
 
-Prompt: `Reply with exactly OFFLINE_OK`
-Observed response: `OFFLINE_OKOFFLINE_OK`
-Generation: 19 tokens, 3.89 tokens/s, 4.62 seconds.
+Prompt: `Reply with exactly EVIDENCE_OFFLINE_OK`
+Observed response: `EVIDENCE_OFFLINE_OKEVIDENCE_OFFLINE_OK`
+Generation: 23 tokens, 3.76 tokens/s, 5.84 seconds (native log: 5,846 ms).
 
 The duplicated marker is noted as above; generation itself succeeded offline.
 
@@ -119,10 +121,10 @@ Restoration was completed before final verification:
 - global Wi-Fi preference: `1`
 - global mobile-data preference: `1`
 - Wi-Fi service: enabled
-- Wi-Fi transport: connected and validated
-- VPN over Wi-Fi: connected and validated
-- original GPU setting: enabled/restored
-- original KV setting: F16/F16 restored
+- active default network: present
+- validated Wi-Fi transport count: `2`
+- original GPU setting: enabled throughout final reacceptance and still checked afterward
+- original KV setting: F16/F16 throughout final reacceptance and still selected afterward
 
 No device connectivity or inference preference remains in the temporary acceptance configuration.
 
@@ -213,47 +215,243 @@ Result: both PASS; no legacy matches and no whitespace errors. The implementatio
 
 ### Exact final device sequence
 
-Primary UI inspection used semantic layout output throughout:
+This report-only evidence rerun changed no production or test code, so the already-passing focused/full suites and in-place install were not repeated. Primary UI inspection used semantic `android layout` before every coordinate input; no screenshot was needed.
+
+#### Online: exact selection, safer plan, and generation
+
+The connectivity baseline command was:
 
 ```text
-android layout --device=48221FDAQ003AT -p
-adb -s 48221FDAQ003AT shell input tap <layout-derived-x> <layout-derived-y>
-adb -s 48221FDAQ003AT shell input text 'Reply%swith%sexactly%sFINAL_ONLINE_OK'
+adb -s 48221FDAQ003AT shell settings get global wifi_on && adb -s 48221FDAQ003AT shell settings get global mobile_data && adb -s 48221FDAQ003AT shell dumpsys wifi | rg -m 1 'Wi-Fi is' && adb -s 48221FDAQ003AT shell dumpsys connectivity | rg -m 3 'Active default network|NetworkAgentInfo.*WIFI.*VALIDATED'
 ```
 
-Online final result: layout showed `FINAL_ONLINE_OKFINAL_ONLINE_OK`, 25 tokens, 4.01 tokens/s, 5.98 seconds. The repeated marker is model behavior; native generation succeeded.
-
-The offline sequence was:
+Safe bounded result (network identifiers omitted):
 
 ```text
-adb -s 48221FDAQ003AT shell svc wifi disable
-adb -s 48221FDAQ003AT shell svc data disable
-adb -s 48221FDAQ003AT shell dumpsys connectivity | rg -m 1 'Active default network'
-adb -s 48221FDAQ003AT shell am force-stop com.debanshu777.caraml
-adb -s 48221FDAQ003AT logcat -c
-adb -s 48221FDAQ003AT shell monkey -p com.debanshu777.caraml 1
+1
+1
+Wi-Fi is enabled
+Active default network: 258
+validated Wi-Fi transport present
+```
+
+The actual Library navigation and distinct model selection commands were:
+
+```text
 android layout --device=48221FDAQ003AT -p
-adb -s 48221FDAQ003AT shell input tap <layout-derived-x> <layout-derived-y>
-adb -s 48221FDAQ003AT shell input text 'Reply%swith%sexactly%sFINAL_OFFLINE_OK'
+adb -s 48221FDAQ003AT shell input tap 787 426
+android layout --device=48221FDAQ003AT -p
+adb -s 48221FDAQ003AT logcat -c && adb -s 48221FDAQ003AT shell input tap 540 1209
+android layout --device=48221FDAQ003AT -p
+android layout --device=48221FDAQ003AT -p
+```
+
+Relevant bounded layouts identified the actions before each tap:
+
+```text
+text: Library; interactions: clickable, focusable; center: [787,426]
+text: 1 downloaded model
+content-desc: Open model openbmb/MiniCPM5-2B-GGUF; center: [540,1209]
+text: MiniCPM5-2B-Q4_K_M.gguf
+text: by openbmb • text-generation • 1.45 GB • transformers
+content-desc: Ready for chat.; text: Ready
+text: Loading model...
+```
+
+The typed backend alternative layout and literal acceptance command were:
+
+```text
+text: Safer configuration available; center: [540,1085]
+text: A lower-resource configuration is available for this device.
+text: • batch reduced
+text: Use safer plan; interactions: clickable, focusable; center: [540,1502]
+text: Cancel; center: [540,1640]
+```
+
+```text
+adb -s 48221FDAQ003AT shell input tap 540 1502
+android layout --device=48221FDAQ003AT -p
+```
+
+The ready layout identified the exact model, prompt field, and send action:
+
+```text
+interactions: clickable, focusable, long-clickable; center: [540,2072]
+content-desc: Select model. Current model MiniCPM5-2B-GGUF; center: [488,2222]
+content-desc: Send message; center: [947,2222]
+```
+
+The literal focus/input/send sequence was:
+
+```text
+adb -s 48221FDAQ003AT shell input tap 540 2072
+android layout --device=48221FDAQ003AT -p
+adb -s 48221FDAQ003AT shell input text 'Reply%swith%sexactly%sEVIDENCE_ONLINE_OK'
+android layout --device=48221FDAQ003AT -p
+adb -s 48221FDAQ003AT shell input tap 947 1255
+android layout --device=48221FDAQ003AT -p
+android layout --device=48221FDAQ003AT -p
+```
+
+The focus/input layout was bounded to:
+
+```text
+state: focused; center: [540,1105]
+text: Reply with exactly EVIDENCE_ONLINE_OK; state: focused; center: [540,1071]
+content-desc: Send message; center: [947,1255]
+```
+
+Final online layout result:
+
+```text
+text: EVIDENCE_ONLINE_OKEVIDENCE_ONLINE_OK
+text: 4.13 tokens/s
+text: 25 tokens
+text: 5.8s
+```
+
+The literal bounded native-log command was:
+
+```text
 adb -s 48221FDAQ003AT logcat -d -v time -t 3000 -s LlamaRunner:I Inference:I '*:S'
 ```
 
-Before relaunch, `Active default network: none`; Wi-Fi was disabled and cellular `mDataConnectionState=-1`. After the offline force-stop/relaunch, layout again showed the typed safer-plan action without any metadata/network prompt, then `FINAL_OFFLINE_OKFINAL_OFFLINE_OK`, 23 tokens, 3.1 tokens/s, 7.07 seconds. The bounded log excerpt above proves exact CPU native load and generation; it contains no model path, prompt text, or user data.
-
-Restoration ran immediately after log capture even if the filtered log command had produced no match:
+Safe relevant excerpt:
 
 ```text
-adb -s 48221FDAQ003AT shell svc wifi enable
-adb -s 48221FDAQ003AT shell svc data enable
-adb -s 48221FDAQ003AT shell settings get global wifi_on
-adb -s 48221FDAQ003AT shell settings get global mobile_data
-adb -s 48221FDAQ003AT shell dumpsys wifi | rg -m 1 'Wi-Fi is'
-adb -s 48221FDAQ003AT shell dumpsys connectivity | rg -m 4 'Active default network|NetworkAgentInfo.*WIFI.*VALIDATED'
+device: cores=4/8, memMB=2017, gpu=true
+buildRunnerConfig: arch='llama', family=DENSE
+load: model path supplied=1
+load: Final params - n_ctx=4096, n_threads=4, n_threads_batch=4, n_batch=128, n_gpu_layers=0
+load: Model loaded in 490 ms
+load: Context ready, n_ctx=4096
+load: Model ready (vocab_size=130560)
+generate: promptLen=37, remainingCtx=4084, context=12/4096
+complete: tokens=25, tps=4.1, context=60/4096, elapsed=5807ms, stop=EOG
 ```
 
-Final result: Wi-Fi `1`, mobile data preference `1`, `Wi-Fi is enabled`, active default network present, and Wi-Fi plus VPN validated.
+#### Offline: force-stop/relaunch, exact reselection, safer plan, and generation
 
-Final semantic Library evidence after in-place installation remained `1 downloaded model`, `MiniCPM5-2B-Q4_K_M.gguf`, `openbmb/MiniCPM5-2B-GGUF`, `1.45 GB`, and `Ready for chat`. Final Settings layout showed `GPU acceleration (Vulkan)` checked and `KV cache F16/F16, selected` / `Current: F16/F16`.
+The literal disable and bounded verification commands were:
+
+```text
+adb -s 48221FDAQ003AT shell svc wifi disable && adb -s 48221FDAQ003AT shell svc data disable && adb -s 48221FDAQ003AT shell settings get global wifi_on && adb -s 48221FDAQ003AT shell settings get global mobile_data && adb -s 48221FDAQ003AT shell dumpsys wifi | rg -m 1 'Wi-Fi is' && adb -s 48221FDAQ003AT shell dumpsys connectivity | rg -m 1 'Active default network'
+adb -s 48221FDAQ003AT shell dumpsys telephony.registry | rg -m 4 'mDataConnectionState|mDataActivity'
+```
+
+Bounded result:
+
+```text
+0
+1
+Wi-Fi is disabled
+Active default network: none
+mDataActivity=0
+mDataConnectionState=-1
+```
+
+`mobile_data=1` is the preserved user preference; `svc data disable` is proved by the disconnected telephony state and absence of a default network.
+
+The exact in-place restart command was:
+
+```text
+adb -s 48221FDAQ003AT shell am force-stop com.debanshu777.caraml && adb -s 48221FDAQ003AT logcat -c && adb -s 48221FDAQ003AT shell monkey -p com.debanshu777.caraml 1 >/dev/null
+android layout --device=48221FDAQ003AT -p
+android layout --device=48221FDAQ003AT -p
+android layout --device=48221FDAQ003AT -p
+```
+
+The relaunch first showed `Loading model...`, then the typed persisted GPU attempt ended at:
+
+```text
+text: Unable to load model
+text: The native engine rejected this model before loading.
+text: Try Another Model; interactions: clickable, focusable; center: [540,1542]
+```
+
+No preference was changed. The literal recovery and exact offline reselection commands were:
+
+```text
+adb -s 48221FDAQ003AT shell input tap 540 1542
+android layout --device=48221FDAQ003AT -p
+adb -s 48221FDAQ003AT shell input tap 787 426
+android layout --device=48221FDAQ003AT -p
+adb -s 48221FDAQ003AT shell input tap 540 1209
+android layout --device=48221FDAQ003AT -p
+android layout --device=48221FDAQ003AT -p
+```
+
+The bounded layouts again proved `Library` at `[787,426]`, the exact preserved Ready card at `[540,1209]`, and then:
+
+```text
+text: Safer configuration available; center: [540,1085]
+text: Use safer plan; interactions: clickable, focusable; center: [540,1502]
+```
+
+The literal offline safer-plan and prompt/send sequence was:
+
+```text
+adb -s 48221FDAQ003AT shell input tap 540 1502
+android layout --device=48221FDAQ003AT -p
+adb -s 48221FDAQ003AT shell input tap 540 2072
+android layout --device=48221FDAQ003AT -p
+adb -s 48221FDAQ003AT shell input text 'Reply%swith%sexactly%sEVIDENCE_OFFLINE_OK'
+android layout --device=48221FDAQ003AT -p
+adb -s 48221FDAQ003AT shell input tap 947 1255
+android layout --device=48221FDAQ003AT -p
+```
+
+The layouts identified the ready prompt field at `[540,2072]`, its focused state at `[540,1105]`, `Reply with exactly EVIDENCE_OFFLINE_OK` at `[540,1071]`, and `content-desc: Send message` at `[947,1255]`. Final offline result:
+
+```text
+text: EVIDENCE_OFFLINE_OKEVIDENCE_OFFLINE_OK
+text: 3.76 tokens/s
+text: 23 tokens
+text: 5.84s
+```
+
+The same literal bounded log command was run offline:
+
+```text
+adb -s 48221FDAQ003AT logcat -d -v time -t 3000 -s LlamaRunner:I Inference:I '*:S'
+```
+
+It captured the complete typed GPU-invalid to approved-CPU to ready/generation chain without a filesystem path, prompt, or user data:
+
+```text
+device: cores=4/8, memMB=2129, gpu=true
+buildRunnerConfig: arch='llama', family=DENSE
+preflight: invalid (INVALID_MODEL)
+device: cores=4/8, memMB=2182, gpu=true
+buildRunnerConfig: arch='llama', family=DENSE
+load: model path supplied=1
+load: Final params - n_ctx=4096, n_threads=4, n_threads_batch=4, n_batch=128, n_gpu_layers=0
+load: Model loaded in 594 ms
+load: Context ready, n_ctx=4096
+load: Model ready (vocab_size=130560)
+generate: promptLen=38, remainingCtx=4084, context=12/4096
+complete: tokens=23, tps=3.8, context=57/4096, elapsed=5846ms, stop=EOG
+```
+
+Restoration ran immediately after bounded log capture:
+
+```text
+adb -s 48221FDAQ003AT shell svc wifi enable && adb -s 48221FDAQ003AT shell svc data enable
+adb -s 48221FDAQ003AT shell settings get global wifi_on && adb -s 48221FDAQ003AT shell settings get global mobile_data && adb -s 48221FDAQ003AT shell dumpsys wifi | rg -m 1 'Wi-Fi is' && adb -s 48221FDAQ003AT shell dumpsys connectivity | rg -m 1 'Active default network'
+adb -s 48221FDAQ003AT shell dumpsys connectivity | rg -c 'WIFI.*VALIDATED'
+```
+
+Bounded result:
+
+```text
+1
+1
+Wi-Fi is enabled
+Active default network: 259
+2
+```
+
+Final semantic Library evidence remained `1 downloaded model`, `MiniCPM5-2B-Q4_K_M.gguf`, `openbmb/MiniCPM5-2B-GGUF`, `1.45 GB`, and `Ready for chat`. Final Settings verification used only navigation/scroll input and showed `GPU acceleration (Vulkan)` checked plus `KV cache F16/F16, selected` / `Current: F16/F16`. No package clear, uninstall, preference toggle, database mutation, model deletion, or model replacement was performed.
 
 ### Why GPU was toggled in the earlier attempt
 
