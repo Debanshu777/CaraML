@@ -57,7 +57,11 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import kotlin.concurrent.atomics.AtomicLong
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.time.Clock
 
 private sealed class InternalChatState {
@@ -102,6 +106,7 @@ sealed interface PendingLoadAction {
     data class RetryQuarantined(val request: LoadRequest) : PendingLoadAction
 }
 
+@OptIn(ExperimentalAtomicApi::class)
 class ChatViewModel(
     getAvailableModels: GetAvailableModelsUseCase,
     private val generateResponse: GenerateResponseUseCase,
@@ -181,6 +186,7 @@ class ChatViewModel(
     val currentDiffusionParams: StateFlow<SdCppRecommendedParams?> = _currentDiffusionParams.asStateFlow()
 
     private var modelLoadJob: Job? = null
+    private val modelLoadGeneration = AtomicLong(0L)
     private var generationJob: Job? = null
     private val pendingLoadActionGate = PendingLoadActionGate()
 
@@ -339,7 +345,7 @@ class ChatViewModel(
     }
 
     private fun loadSelectedModel(model: LocalModelEntity) {
-        startModelLoad(model) { mode ->
+        startModelLoad(model) { mode, _ ->
             loadInstalledModel(
                 model = model,
                 mode = mode,
@@ -370,7 +376,7 @@ class ChatViewModel(
 
     private fun startModelLoad(
         model: LocalModelEntity,
-        load: suspend (GenerationMode) -> ModelLoadResult,
+        load: suspend (GenerationMode, Long) -> ModelLoadResult,
     ) {
         val previousJob = modelLoadJob
         modelLoadJob?.cancel()
@@ -382,6 +388,7 @@ class ChatViewModel(
         if (!model.matchesGenerationMode(mode)) {
             return
         }
+        val loadGeneration = modelLoadGeneration.fetchAndAdd(1L) + 1L
 
         _internal.value = InternalChatState.ModelLoading
 
@@ -390,8 +397,10 @@ class ChatViewModel(
             // before we start new native operations. Without this, a cancelled job that is still
             // inside a blocking JNI call races with our unloadModel() → double-free crash.
             awaitPreviousModelLoad(previousJob)
+            ensureCurrentModelLoad(model, mode, loadGeneration)
 
-            val result = load(mode)
+            val result = load(mode, loadGeneration)
+            ensureCurrentModelLoad(model, mode, loadGeneration)
             when (result) {
                 is ModelLoadResult.Success -> {
                     if (mode == GenerationMode.Image || mode == GenerationMode.Video) {
@@ -475,21 +484,54 @@ class ChatViewModel(
         val action = (_internal.value as? InternalChatState.LoadActionRequired)?.action
             as? PendingLoadAction.RetryQuarantined ?: return
         if (!pendingLoadActionGate.tryConsume()) return
-        _internal.value = InternalChatState.ModelLoading
-        viewModelScope.launch(modelLoadDispatcher) {
-            try {
-                when (action.request.plan) {
-                    is com.debanshu777.caraml.core.recommendation.LlmRunPlan ->
-                        inferenceRepository.allowExplicitRetry(action.request)
-                    is com.debanshu777.caraml.core.recommendation.DiffusionRunPlan ->
-                        diffusionRepository.allowExplicitRetry(action.request)
-                }
-                resumeExactLoad(action.request.copy(riskAcknowledgement = null))
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Throwable) {
-                _internal.value = InternalChatState.ModelError("The model cannot be retried right now.")
+        if (_selectedModel.value != action.request.model) return
+        startModelLoad(action.request.model) { mode, loadGeneration ->
+            retryQuarantinedLoad(action.request, mode, loadGeneration)
+        }
+    }
+
+    private suspend fun retryQuarantinedLoad(
+        request: LoadRequest,
+        mode: GenerationMode,
+        loadGeneration: Long,
+    ): ModelLoadResult {
+        try {
+            when (request.plan) {
+                is com.debanshu777.caraml.core.recommendation.LlmRunPlan ->
+                    inferenceRepository.allowExplicitRetry(request)
+                is com.debanshu777.caraml.core.recommendation.DiffusionRunPlan ->
+                    diffusionRepository.allowExplicitRetry(request)
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Throwable) {
+            ensureCurrentModelLoad(request.model, mode, loadGeneration)
+            return ModelLoadResult.Error("The model cannot be retried right now.")
+        }
+        ensureCurrentModelLoad(request.model, mode, loadGeneration)
+        val result = loadExactModelForMode(
+            mode = mode,
+            request = request.copy(riskAcknowledgement = null),
+            unloadText = inferenceRepository::unloadModel,
+            releaseDiffusion = releaseDiffusionModel,
+            loadText = inferenceRepository::loadModel,
+            loadDiffusion = diffusionRepository::loadModel,
+        )
+        ensureCurrentModelLoad(request.model, mode, loadGeneration)
+        return result
+    }
+
+    private suspend fun ensureCurrentModelLoad(
+        model: LocalModelEntity,
+        mode: GenerationMode,
+        loadGeneration: Long,
+    ) {
+        currentCoroutineContext().ensureActive()
+        if (modelLoadGeneration.load() != loadGeneration ||
+            _selectedModel.value != model ||
+            _generationMode.value != mode
+        ) {
+            throw CancellationException("Stale model load attempt")
         }
     }
 
@@ -507,7 +549,7 @@ class ChatViewModel(
     }
 
     private fun resumeExactLoad(request: LoadRequest) {
-        startModelLoad(request.model) { mode ->
+        startModelLoad(request.model) { mode, _ ->
             loadExactModelForMode(
                 mode = mode,
                 request = request,
