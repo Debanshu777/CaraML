@@ -6,6 +6,7 @@ Base: `7f938e0742883174c0f388b9de52e2dfa6617ff2`
 Commit subject: `refactor(models): remove legacy artifact loader`
 Review follow-up subject: `test(models): guard removed artifact loader symbols`
 Review follow-up 2 subject: `test(models): harden legacy loader syntax guard`
+Review follow-up 3 subject: `test(models): make legacy loader guard Kotlin-aware`
 
 ## Outcome
 
@@ -33,6 +34,10 @@ A deliberate temporary `resolvePersistedHub` mutation produced the intended RED:
 The second review found one Minor test-only weakness: the first follow-up's comment-removal regex was not Kotlin string, raw-string, or nested-comment aware. The regex preprocessor and whole-`commonMain` token scan are now gone. The structural guard reads only `LocalArtifactIdentityResolver.kt` and uses declaration/call/type/constant-shaped patterns for every removed API, helper, model, constant, sidecar path literal, `RevisionIdentity.LocalContent`, and the legacy resolving request overload.
 
 Permanent mutation fixtures prove URL, raw-string, and nested-comment prose does not match while every removed syntax shape does. A harmless temporary real-resolver mutation containing those documentation forms passed all 3 structural tests. Replacing it with real `resolvePersistedHub()` and `readSidecar()` declaration/call syntax produced the intended RED: 3 structural tests ran and the production-source assertion failed. Both mutations were removed; the post-revert resolver and structural suites passed 18/18 tests across 2 suites. Production remains untouched.
+
+The third and final hardening review found one remaining Minor test gap: shaped regexes against unsanitized source could still match code-shaped text inside strings or comments. The guard now uses a small Kotlin-aware lexical pass with explicit code, normal-string, raw-string, character, line-comment, and nested-block-comment states. It preserves code plus line positions, blanks non-code regions, honors escapes, treats templates conservatively as string content, and keeps unterminated non-code blank through EOF. Exact normal-string sidecar path literals are captured as lexical tokens and accepted only in assignment, path, or call-argument code context.
+
+The ignored-source fixture places real-looking legacy declarations, calls, types, constants, URLs, escapes, and the sidecar filename inside normal strings/templates, raw strings, chars, line comments, and nested block comments; it remains clean and proves output length/newline preservation. Unterminated normal/raw/char/comment fixtures prove conservative EOF behavior. The detection fixture covers all prior symbols plus `reuseUnchanged`, `toSidecar`, `readBounded`, `LEGACY_MANIFEST_VERSION`, `MAX_MANIFEST_BYTES`, and `MAX_CHANGE_STAMP_LENGTH`. A temporary real resolver alias/helper/constant chain produced the intended RED: 4 structural tests ran and the production-source assertion failed. After immediate reversion, the resolver and structural suites passed 19/19 tests across 2 suites. Production remains untouched.
 
 ## RED evidence
 
@@ -85,7 +90,7 @@ The underlying manifest-store suites passed 20/20 tests:
 
 ## Structural proof
 
-The production source scan returned no matches for `allowLegacyFallback`, `resolveLegacy`, `resolvePersistedHub`, `readSidecar`, `writeSidecar`, `deletePart`, `sidecarPath`, `RevisionIdentity.LocalContent`, `.caraml-local-identity-v1.json`, `LegacyIdentitySidecar`, `SidecarComponent`, `MANIFEST_FILE_NAME`, or `suspend fun createLoadRequest(`. A separate scan confirmed `LegacySuitabilityAdapter` remains in its recommendation source and Koin registration. The automated guard checks the resolver with syntax-shaped patterns rather than preprocessing comments or scanning generic tokens across unrelated production sources.
+The production source scan returned no matches for `allowLegacyFallback`, `resolveLegacy`, `resolvePersistedHub`, `readSidecar`, `writeSidecar`, `deletePart`, `sidecarPath`, `reuseUnchanged`, `toSidecar`, `readBounded`, `RevisionIdentity.LocalContent`, `.caraml-local-identity-v1.json`, `LegacyIdentitySidecar`, `SidecarComponent`, `MANIFEST_FILE_NAME`, `LEGACY_MANIFEST_VERSION`, `MAX_MANIFEST_BYTES`, `MAX_CHANGE_STAMP_LENGTH`, or `suspend fun createLoadRequest(`. A separate scan confirmed `LegacySuitabilityAdapter` remains in its recommendation source and Koin registration. The automated guard lexically isolates code in `LocalArtifactIdentityResolver.kt` before applying resolver-scoped syntax patterns; generic tokens in strings, comments, tests, or unrelated manifest stores cannot trip it.
 
 `git diff --check` passed.
 
@@ -95,7 +100,7 @@ The production source scan returned no matches for `allowLegacyFallback`, `resol
 ./gradlew verifyProject --no-daemon
 ```
 
-Final clean-state result after review follow-up 2: PASS in 43 seconds. The gate ran 1,060/1,060 JVM tests across 142 suites plus 5/5 native CTests, with zero skipped JVM tests and zero failures/errors. JVM detail: `composeApp` 921 tests/118 suites, `huggingFaceManager` 91/15, `runner` 29/6, and `diffusionRunner` 19/3. Gradle reported 41 actionable tasks: 14 executed and 27 up to date.
+Final clean-state result after review follow-up 3: PASS in 42 seconds. The gate ran 1,061/1,061 JVM tests across 142 suites plus 5/5 native CTests, with zero skipped JVM tests and zero failures/errors. JVM detail: `composeApp` 922 tests/118 suites, `huggingFaceManager` 91/15, `runner` 29/6, and `diffusionRunner` 19/3. Gradle reported 41 actionable tasks: 14 executed and 27 up to date.
 
 ## Security and scope review
 
