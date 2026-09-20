@@ -114,6 +114,17 @@ private data class ModelLoadAttempt(
     val generation: Long,
 )
 
+private data class RunnerTeardownAttempt(
+    val generation: Long,
+)
+
+private sealed interface RunnerTeardownKey {
+    data object NoModels : RunnerTeardownKey
+    data class NoModelsForMode(val mode: GenerationMode) : RunnerTeardownKey
+    data object UnsupportedVideo : RunnerTeardownKey
+    data object Cleared : RunnerTeardownKey
+}
+
 @OptIn(ExperimentalAtomicApi::class)
 class ChatViewModel(
     getAvailableModels: GetAvailableModelsUseCase,
@@ -198,17 +209,13 @@ class ChatViewModel(
     private val modelLoadGeneration = AtomicLong(0L)
     private val modelLoadOwnership = Mutex()
     private var modelLoadOwnerGeneration = 0L
+    private var runnersRequireTeardown = true
+    private var lastRunnerTeardownKey: RunnerTeardownKey? = null
+    private var lastRunnerTeardownJob: Job? = null
     private var generationJob: Job? = null
     private val pendingLoadActionGate = PendingLoadActionGate()
 
     private val teardownScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-
-    private suspend fun releaseAllRunners() {
-        withContext(Dispatchers.Default) {
-            inferenceRepository.unloadModel()
-            diffusionRepository.release()
-        }
-    }
 
     init {
         combine(_topModels, _generationMode) { models, mode -> models to mode }
@@ -216,8 +223,8 @@ class ChatViewModel(
             .launchIn(viewModelScope)
 
         _selectedModel
+            .distinctUntilChanged { old, new -> old?.id == new?.id }
             .filterNotNull()
-            .distinctUntilChanged { old, new -> old.id == new.id }
             .onEach { model -> loadSelectedModel(model) }
             .launchIn(viewModelScope)
 
@@ -244,24 +251,27 @@ class ChatViewModel(
         mode: GenerationMode,
     ) {
         if (mode == GenerationMode.Video && !diffusionRepository.supportsVideoGeneration()) {
-            releaseAllRunners()
-            _internal.value = InternalChatState.ModelError(
-                "Video generation is not available on this platform yet."
-            )
-            _selectedModel.value = null
+            transitionWithoutModel(
+                state = InternalChatState.ModelError(
+                    "Video generation is not available on this platform yet."
+                ),
+                teardownKey = RunnerTeardownKey.UnsupportedVideo,
+            ).join()
             return
         }
         if (models.isEmpty()) {
-            releaseAllRunners()
-            _internal.value = InternalChatState.NoModels
-            _selectedModel.value = null
+            transitionWithoutModel(
+                state = InternalChatState.NoModels,
+                teardownKey = RunnerTeardownKey.NoModels,
+            ).join()
             return
         }
         val picker = models.filterForMode(mode)
         if (picker.isEmpty()) {
-            releaseAllRunners()
-            _internal.value = InternalChatState.NoModelsForMode(mode)
-            _selectedModel.value = null
+            transitionWithoutModel(
+                state = InternalChatState.NoModelsForMode(mode),
+                teardownKey = RunnerTeardownKey.NoModelsForMode(mode),
+            ).join()
             return
         }
         val sel = _selectedModel.value
@@ -295,11 +305,11 @@ class ChatViewModel(
     override fun onCleared() {
         super.onCleared()
         signalGenerationCancellation()
-        teardownScope.launch {
-            inferenceRepository.unloadModel()
-            diffusionRepository.release()
-            generatedMediaStore.clear()
-        }
+        startRunnerTeardown(
+            key = RunnerTeardownKey.Cleared,
+            scope = teardownScope,
+            clearGeneratedMedia = true,
+        )
     }
 
     fun setGenerationMode(mode: GenerationMode) {
@@ -311,26 +321,29 @@ class ChatViewModel(
         _generationMode.value = mode
 
         if (mode == GenerationMode.Video && !diffusionRepository.supportsVideoGeneration()) {
-            _selectedModel.value = null
-            _internal.value = InternalChatState.ModelError(
-                "Video generation is not available on this platform yet."
+            transitionWithoutModel(
+                state = InternalChatState.ModelError(
+                    "Video generation is not available on this platform yet."
+                ),
+                teardownKey = RunnerTeardownKey.UnsupportedVideo,
             )
-            viewModelScope.launch(Dispatchers.Default) { releaseAllRunners() }
             return
         }
 
         val models = _topModels.value
         val picker = models.filterForMode(mode)
         if (models.isEmpty()) {
-            _internal.value = InternalChatState.NoModels
-            _selectedModel.value = null
-            viewModelScope.launch(Dispatchers.Default) { releaseAllRunners() }
+            transitionWithoutModel(
+                state = InternalChatState.NoModels,
+                teardownKey = RunnerTeardownKey.NoModels,
+            )
             return
         }
         if (picker.isEmpty()) {
-            _internal.value = InternalChatState.NoModelsForMode(mode)
-            _selectedModel.value = null
-            viewModelScope.launch(Dispatchers.Default) { releaseAllRunners() }
+            transitionWithoutModel(
+                state = InternalChatState.NoModelsForMode(mode),
+                teardownKey = RunnerTeardownKey.NoModelsForMode(mode),
+            )
             return
         }
         val previous = _selectedModel.value
@@ -387,6 +400,8 @@ class ChatViewModel(
         }
         val loadGeneration = modelLoadGeneration.fetchAndAdd(1L) + 1L
         val attempt = ModelLoadAttempt(model, mode, loadGeneration)
+        lastRunnerTeardownKey = null
+        lastRunnerTeardownJob = null
 
         modelLoadJob = viewModelScope.launch(modelLoadDispatcher) {
             // Claim first, then release the ownership lock before joining. A successor is therefore
@@ -433,6 +448,58 @@ class ChatViewModel(
         }
     }
 
+    private fun transitionWithoutModel(
+        state: InternalChatState,
+        teardownKey: RunnerTeardownKey,
+    ): Job {
+        val teardownJob = startRunnerTeardown(teardownKey)
+        _internal.value = state
+        _selectedModel.value = null
+        return teardownJob
+    }
+
+    private fun startRunnerTeardown(
+        key: RunnerTeardownKey,
+        scope: CoroutineScope = viewModelScope,
+        clearGeneratedMedia: Boolean = false,
+    ): Job {
+        if (lastRunnerTeardownKey == key) {
+            lastRunnerTeardownJob?.takeUnless { it.isCancelled }?.let { return it }
+        }
+
+        val previousJob = modelLoadJob
+        previousJob?.cancel()
+        val generation = modelLoadGeneration.fetchAndAdd(1L) + 1L
+        val attempt = RunnerTeardownAttempt(generation)
+        val teardownJob = scope.launch(modelLoadDispatcher) {
+            try {
+                claimRunnerTeardown(attempt)
+                awaitPreviousModelLoad(previousJob)
+                teardownRunners(attempt)
+            } finally {
+                if (clearGeneratedMedia) {
+                    withContext(kotlinx.coroutines.NonCancellable) {
+                        generatedMediaStore.clear()
+                    }
+                }
+            }
+        }
+        modelLoadJob = teardownJob
+        lastRunnerTeardownKey = key
+        lastRunnerTeardownJob = teardownJob
+        return teardownJob
+    }
+
+    private suspend fun claimRunnerTeardown(attempt: RunnerTeardownAttempt) {
+        modelLoadOwnership.withLock {
+            currentCoroutineContext().ensureActive()
+            if (modelLoadGeneration.load() != attempt.generation) {
+                throw CancellationException("Stale runner teardown attempt")
+            }
+            modelLoadOwnerGeneration = attempt.generation
+        }
+    }
+
     private suspend fun <T> withCurrentModelLoad(
         attempt: ModelLoadAttempt,
         action: suspend () -> T,
@@ -453,6 +520,53 @@ class ChatViewModel(
         }
     }
 
+    private suspend fun teardownRunners(attempt: RunnerTeardownAttempt) {
+        modelLoadOwnership.lock()
+        try {
+            currentCoroutineContext().ensureActive()
+            if (modelLoadOwnerGeneration != attempt.generation ||
+                modelLoadGeneration.load() != attempt.generation
+            ) {
+                throw CancellationException("Stale runner teardown attempt")
+            }
+            if (!runnersRequireTeardown) return
+            withContext(kotlinx.coroutines.NonCancellable) {
+                try {
+                    inferenceRepository.unloadModel()
+                } finally {
+                    releaseDiffusionModel()
+                }
+                runnersRequireTeardown = false
+            }
+        } finally {
+            modelLoadOwnership.unlock()
+        }
+    }
+
+    private suspend fun unloadTextRunner(attempt: ModelLoadAttempt) {
+        withCurrentModelLoad(attempt) { inferenceRepository.unloadModel() }
+    }
+
+    private suspend fun releaseDiffusionRunner(attempt: ModelLoadAttempt) {
+        withCurrentModelLoad(attempt) { releaseDiffusionModel() }
+    }
+
+    private suspend fun loadTextRunner(
+        attempt: ModelLoadAttempt,
+        request: LoadRequest,
+    ): ModelLoadResult = withCurrentModelLoad(attempt) {
+        runnersRequireTeardown = true
+        inferenceRepository.loadModel(request)
+    }
+
+    private suspend fun loadDiffusionRunner(
+        attempt: ModelLoadAttempt,
+        request: LoadRequest,
+    ): ModelLoadResult = withCurrentModelLoad(attempt) {
+        runnersRequireTeardown = true
+        loadDiffusionModel(request)
+    }
+
     private fun isCurrentModelLoadRequest(attempt: ModelLoadAttempt): Boolean =
         modelLoadGeneration.load() == attempt.generation &&
             _selectedModel.value == attempt.model &&
@@ -465,18 +579,10 @@ class ChatViewModel(
     ): ModelLoadResult = loadExactModelForMode(
         mode = mode,
         request = request,
-        unloadText = {
-            withCurrentModelLoad(attempt) { inferenceRepository.unloadModel() }
-        },
-        releaseDiffusion = {
-            withCurrentModelLoad(attempt) { releaseDiffusionModel() }
-        },
-        loadText = { exact ->
-            withCurrentModelLoad(attempt) { inferenceRepository.loadModel(exact) }
-        },
-        loadDiffusion = { exact ->
-            withCurrentModelLoad(attempt) { loadDiffusionModel(exact) }
-        },
+        unloadText = { unloadTextRunner(attempt) },
+        releaseDiffusion = { releaseDiffusionRunner(attempt) },
+        loadText = { exact -> loadTextRunner(attempt, exact) },
+        loadDiffusion = { exact -> loadDiffusionRunner(attempt, exact) },
     )
 
     private fun handleAdmission(admission: LoadAdmission) {

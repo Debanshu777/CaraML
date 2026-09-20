@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.features.chat.presentation
 
+import androidx.lifecycle.ViewModelStore
 import com.debanshu777.caraml.core.data.inference.DiffusionInferenceRepository
 import com.debanshu777.caraml.core.data.inference.InferenceRepository
 import com.debanshu777.caraml.core.data.inference.ModelLoadResult
@@ -60,6 +61,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -69,6 +71,212 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChatViewModelQuarantineRetryTest {
     @Test
+    fun modeWithoutModelsWaitsForAdmittedNativeLoadBeforeSingleTeardownAndCanSelectAgain() = runTest {
+        val staleLoadEntered = CompletableDeferred<Unit>()
+        val allowStaleLoadToReturn = CompletableDeferred<Unit>()
+        val teardownUnloadEntered = CompletableDeferred<Unit>()
+        val runnerEvents = mutableListOf<String>()
+        var diffusionReleaseCalls = 0
+        val scenario = scenario(
+            releaseDiffusionModel = {
+                diffusionReleaseCalls += 1
+                runnerEvents += "release-diffusion:$diffusionReleaseCalls"
+            },
+            onUnload = { call ->
+                runnerEvents += "unload-text:$call"
+                if (call == 2) teardownUnloadEntered.complete(Unit)
+            },
+            loadOverride = { request ->
+                if (request.model.id != 7L || staleLoadEntered.isCompleted) {
+                    null
+                } else {
+                    runnerEvents += "load-a-start"
+                    staleLoadEntered.complete(Unit)
+                    withContext(NonCancellable) { allowStaleLoadToReturn.await() }
+                    runnerEvents += "load-a-end"
+                    ModelLoadResult.Success(MODEL_A_CONTEXT)
+                }
+            },
+        ) { _ -> }
+
+        withScenario(scenario) {
+            advanceUntilIdle()
+            scenario.assertRetryActionFor(scenario.modelA.id)
+
+            scenario.viewModel.retryPendingLoad()
+            testScheduler.runCurrent()
+            assertTrue(staleLoadEntered.isCompleted)
+            assertEquals(1, scenario.inference.unloadCalls)
+            assertEquals(3, diffusionReleaseCalls)
+            assertEquals(
+                listOf(
+                    scenario.requestA,
+                    scenario.requestA.copy(riskAcknowledgement = null),
+                ),
+                scenario.inference.loadRequests,
+            )
+            assertEquals(listOf(scenario.requestA), scenario.inference.permissionRequests)
+            assertEquals(emptyList(), scenario.diffusionLoadRequests)
+
+            try {
+                scenario.viewModel.setGenerationMode(GenerationMode.Image)
+                testScheduler.runCurrent()
+
+                val teardownOverlappedNativeLoad = withContext(Dispatchers.Default) {
+                    withTimeoutOrNull(250) {
+                        teardownUnloadEntered.await()
+                        true
+                    } ?: false
+                }
+                assertFalse(
+                    teardownOverlappedNativeLoad,
+                    "Full teardown entered while model A was still inside native load",
+                )
+                assertIs<ChatUiState.NoModelsForMode>(scenario.viewModel.uiState.value)
+                assertEquals(1, scenario.inference.unloadCalls)
+                assertEquals(3, diffusionReleaseCalls)
+            } finally {
+                allowStaleLoadToReturn.complete(Unit)
+                advanceUntilIdle()
+            }
+
+            assertTrue(teardownUnloadEntered.isCompleted)
+            assertEquals(2, scenario.inference.unloadCalls)
+            assertEquals(4, diffusionReleaseCalls)
+            assertTrue(
+                runnerEvents.indexOf("load-a-end") < runnerEvents.indexOf("unload-text:2"),
+                "Teardown must begin only after the admitted native load returns",
+            )
+
+            scenario.viewModel.setGenerationMode(GenerationMode.Text)
+            advanceUntilIdle()
+
+            scenario.assertReadyFor(scenario.modelA, MODEL_A_CONTEXT)
+            assertEquals(2, scenario.inference.unloadCalls)
+            assertEquals(5, diffusionReleaseCalls)
+            assertEquals(
+                listOf(
+                    scenario.requestA,
+                    scenario.requestA.copy(riskAcknowledgement = null),
+                    scenario.requestA,
+                ),
+                scenario.inference.loadRequests,
+            )
+            assertEquals(emptyList(), scenario.diffusionLoadRequests)
+            assertEquals(
+                listOf(
+                    "unload-text:1",
+                    "release-diffusion:1",
+                    "release-diffusion:2",
+                    "release-diffusion:3",
+                    "load-a-start",
+                    "load-a-end",
+                    "unload-text:2",
+                    "release-diffusion:4",
+                    "release-diffusion:5",
+                ),
+                runnerEvents,
+            )
+        }
+    }
+
+    @Test
+    fun clearWaitsForAdmittedNativeLoadThenTearsDownOnceWithoutUiMutation() = runTest {
+        val staleLoadEntered = CompletableDeferred<Unit>()
+        val allowStaleLoadToReturn = CompletableDeferred<Unit>()
+        val teardownUnloadEntered = CompletableDeferred<Unit>()
+        val runnerEvents = mutableListOf<String>()
+        var diffusionReleaseCalls = 0
+        val scenario = scenario(
+            releaseDiffusionModel = {
+                diffusionReleaseCalls += 1
+                runnerEvents += "release-diffusion:$diffusionReleaseCalls"
+            },
+            onUnload = { call ->
+                runnerEvents += "unload-text:$call"
+                if (call == 2) teardownUnloadEntered.complete(Unit)
+            },
+            loadOverride = { request ->
+                if (request.model.id != 7L || staleLoadEntered.isCompleted) {
+                    null
+                } else {
+                    runnerEvents += "load-a-start"
+                    staleLoadEntered.complete(Unit)
+                    withContext(NonCancellable) { allowStaleLoadToReturn.await() }
+                    runnerEvents += "load-a-end"
+                    ModelLoadResult.Success(MODEL_A_CONTEXT)
+                }
+            },
+        ) { _ -> }
+        val store = ViewModelStore().also { it.put("chat", scenario.viewModel) }
+
+        withScenario(scenario) {
+            advanceUntilIdle()
+            scenario.assertRetryActionFor(scenario.modelA.id)
+
+            scenario.viewModel.retryPendingLoad()
+            testScheduler.runCurrent()
+            assertTrue(staleLoadEntered.isCompleted)
+            assertEquals(1, scenario.inference.unloadCalls)
+            assertEquals(3, diffusionReleaseCalls)
+            assertEquals(
+                listOf(
+                    scenario.requestA,
+                    scenario.requestA.copy(riskAcknowledgement = null),
+                ),
+                scenario.inference.loadRequests,
+            )
+            assertEquals(listOf(scenario.requestA), scenario.inference.permissionRequests)
+            assertEquals(emptyList(), scenario.diffusionLoadRequests)
+            val statesBeforeClear = scenario.states.toList()
+
+            try {
+                store.clear()
+                testScheduler.runCurrent()
+
+                val teardownOverlappedNativeLoad = withContext(Dispatchers.Default) {
+                    withTimeoutOrNull(250) {
+                        teardownUnloadEntered.await()
+                        true
+                    } ?: false
+                }
+                assertFalse(
+                    teardownOverlappedNativeLoad,
+                    "ViewModel clear teardown entered while model A was still inside native load",
+                )
+                assertEquals(1, scenario.inference.unloadCalls)
+                assertEquals(3, diffusionReleaseCalls)
+                assertEquals(statesBeforeClear, scenario.states)
+            } finally {
+                allowStaleLoadToReturn.complete(Unit)
+                advanceUntilIdle()
+            }
+
+            assertTrue(teardownUnloadEntered.isCompleted)
+            assertEquals(2, scenario.inference.unloadCalls)
+            assertEquals(4, diffusionReleaseCalls)
+            assertEquals(statesBeforeClear, scenario.states)
+            assertTrue(
+                runnerEvents.indexOf("load-a-end") < runnerEvents.indexOf("unload-text:2"),
+                "Clear teardown must begin only after the admitted native load returns",
+            )
+            assertEquals(
+                listOf(
+                    "unload-text:1",
+                    "release-diffusion:1",
+                    "release-diffusion:2",
+                    "release-diffusion:3",
+                    "load-a-start",
+                    "load-a-end",
+                    "unload-text:2",
+                    "release-diffusion:4",
+                ),
+                runnerEvents,
+            )
+        }
+    }
+
+    @Test
     fun newerSelectionAtNativeBoundaryStopsStaleRetryBeforeTextLoad() = runTest {
         val staleReleaseEntered = CompletableDeferred<Unit>()
         val allowStaleReleaseToReturn = CompletableDeferred<Unit>()
@@ -76,7 +284,7 @@ class ChatViewModelQuarantineRetryTest {
         val scenario = scenario(
             releaseDiffusionModel = {
                 diffusionReleaseCalls += 1
-                if (diffusionReleaseCalls == 2) {
+                if (diffusionReleaseCalls == 3) {
                     staleReleaseEntered.complete(Unit)
                     withContext(NonCancellable) { allowStaleReleaseToReturn.await() }
                 }
@@ -98,7 +306,7 @@ class ChatViewModelQuarantineRetryTest {
             assertIs<ChatUiState.ModelLoading>(scenario.viewModel.uiState.value)
             assertEquals(listOf(scenario.requestA), scenario.inference.loadRequests)
             assertEquals(listOf(scenario.requestA), scenario.inference.permissionRequests)
-            assertEquals(2, diffusionReleaseCalls)
+            assertEquals(3, diffusionReleaseCalls)
             assertEquals(1, scenario.inference.unloadCalls)
             assertEquals(emptyList(), scenario.diffusionLoadRequests)
 
@@ -110,7 +318,7 @@ class ChatViewModelQuarantineRetryTest {
                 listOf(scenario.requestA, scenario.requestB),
                 scenario.inference.loadRequests,
             )
-            assertEquals(3, diffusionReleaseCalls)
+            assertEquals(4, diffusionReleaseCalls)
             assertEquals(1, scenario.inference.unloadCalls)
             assertEquals(emptyList(), scenario.diffusionLoadRequests)
             assertEquals(listOf(scenario.requestA), scenario.inference.permissionRequests)
@@ -156,7 +364,7 @@ class ChatViewModelQuarantineRetryTest {
                     ),
                     scenario.inference.loadRequests,
                 )
-                assertEquals(2, diffusionReleaseCalls)
+                assertEquals(3, diffusionReleaseCalls)
                 assertEquals(1, scenario.inference.unloadCalls)
                 assertEquals(emptyList(), scenario.diffusionLoadRequests)
                 assertEquals(listOf(scenario.requestA), scenario.inference.permissionRequests)
@@ -173,7 +381,7 @@ class ChatViewModelQuarantineRetryTest {
                     ),
                     scenario.inference.loadRequests,
                 )
-                assertEquals(3, diffusionReleaseCalls)
+                assertEquals(4, diffusionReleaseCalls)
                 assertEquals(1, scenario.inference.unloadCalls)
                 assertEquals(emptyList(), scenario.diffusionLoadRequests)
                 assertEquals(listOf(scenario.requestA), scenario.inference.permissionRequests)
@@ -333,6 +541,7 @@ class ChatViewModelQuarantineRetryTest {
 
     private fun TestScope.scenario(
         releaseDiffusionModel: suspend () -> Unit = {},
+        onUnload: suspend (Int) -> Unit = {},
         loadOverride: suspend (LoadRequest) -> ModelLoadResult? = { null },
         allowExplicitRetry: suspend (LoadRequest) -> Unit,
     ): QuarantineRetryScenario {
@@ -346,6 +555,7 @@ class ChatViewModelQuarantineRetryTest {
             quarantinedRequest = requestA,
             allowRetry = allowExplicitRetry,
             loadOverride = loadOverride,
+            onUnload = onUnload,
         )
         val resolver = StaticRetryResolver(mapOf(modelA.id to requestA, modelB.id to requestB))
         val models = LocalModelRepository(RetryLocalModelDao(listOf(modelA, modelB)))
@@ -452,6 +662,7 @@ private class QuarantineRetryInferenceRepository(
     private val quarantinedRequest: LoadRequest,
     private val allowRetry: suspend (LoadRequest) -> Unit,
     private val loadOverride: suspend (LoadRequest) -> ModelLoadResult?,
+    private val onUnload: suspend (Int) -> Unit,
 ) : InferenceRepository {
     val loadRequests = mutableListOf<LoadRequest>()
     val permissionRequests = mutableListOf<LoadRequest>()
@@ -491,6 +702,7 @@ private class QuarantineRetryInferenceRepository(
 
     override suspend fun unloadModel() {
         unloadCalls += 1
+        onUnload(unloadCalls)
     }
     override fun generateResponse(userPrompt: String): Flow<InferenceChunk> = emptyFlow()
     override fun cancelGeneration() = Unit
