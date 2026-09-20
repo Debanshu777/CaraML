@@ -2,6 +2,7 @@ package com.debanshu777.caraml.core.storage.catalog
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -16,6 +17,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlin.coroutines.CoroutineContext
 
 class InstalledModelPublicationCoordinatorTest {
     @Test
@@ -198,6 +200,96 @@ class InstalledModelPublicationCoordinatorTest {
         assertEquals(2, calls)
         assertEquals(1, failures.count { it is CancellationException })
         val exhausted = failures.single { it !is CancellationException }
-        assertIs<IllegalStateException>(exhausted)
+        assertIs<RepairFlightRetryExhaustedException>(exhausted)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun followersJoiningSuccessorCannotRollGenerationPastSharedExhaustion() = runTest {
+        val coordinator = InstalledModelPublicationCoordinator()
+        val rootEntered = CompletableDeferred<Unit>()
+        val successorEntered = CompletableDeferred<Unit>()
+        val delayedDispatcher = ManualDispatcher()
+        var calls = 0
+        val block: suspend () -> String = {
+            calls += 1
+            when (calls) {
+                1 -> {
+                    rootEntered.complete(Unit)
+                    awaitCancellation()
+                }
+                2 -> {
+                    successorEntered.complete(Unit)
+                    awaitCancellation()
+                }
+                else -> "unexpected-$calls"
+            }
+        }
+        val root = async(start = CoroutineStart.UNDISPATCHED) {
+            coordinator.coalesceRepair("owner/model", "Text", block)
+        }
+        rootEntered.await()
+        val delayedRootFollower = async(
+            context = delayedDispatcher,
+            start = CoroutineStart.UNDISPATCHED,
+        ) {
+            runCatching { coordinator.coalesceRepair("owner/model", "Text", block) }
+        }
+        val successor = async(start = CoroutineStart.UNDISPATCHED) {
+            coordinator.coalesceRepair("owner/model", "Text", block)
+        }
+
+        root.cancelAndJoin()
+        runCurrent()
+        successorEntered.await()
+        val activeSuccessorState = coordinator.repairCoordinationSnapshot()
+        assertEquals(1, activeSuccessorState.activeGenerationCount)
+        assertEquals(2, activeSuccessorState.retainedOutcomeCount)
+        assertEquals(2, activeSuccessorState.maximumOutcomesPerGeneration)
+        val rollingFollowers = List(4) {
+            async(start = CoroutineStart.UNDISPATCHED) {
+                runCatching { coordinator.coalesceRepair("owner/model", "Text", block) }
+            }
+        }
+
+        successor.cancelAndJoin()
+        runCurrent()
+        val rollingFailures = rollingFollowers.awaitAll().map { it.exceptionOrNull() }
+        val exhaustedState = coordinator.repairCoordinationSnapshot()
+
+        assertEquals(1, delayedDispatcher.queuedTaskCount)
+        delayedDispatcher.runAll()
+        val delayedFailure = delayedRootFollower.await().exceptionOrNull()
+
+        assertEquals(2, calls)
+        assertTrue(rollingFailures.all { it is RepairFlightRetryExhaustedException })
+        assertEquals(0, exhaustedState.activeGenerationCount)
+        assertEquals(0, exhaustedState.retainedOutcomeCount)
+        assertEquals(2, exhaustedState.maximumOutcomesPerGeneration)
+        assertIs<RepairFlightRetryExhaustedException>(delayedFailure)
+
+        assertEquals(
+            "fresh",
+            coordinator.coalesceRepair("owner/model", "Text") {
+                calls += 1
+                "fresh"
+            },
+        )
+        assertEquals(3, calls)
+    }
+
+    private class ManualDispatcher : CoroutineDispatcher() {
+        private val queued = ArrayDeque<Runnable>()
+
+        val queuedTaskCount: Int
+            get() = queued.size
+
+        override fun dispatch(context: CoroutineContext, block: Runnable) {
+            queued.addLast(block)
+        }
+
+        fun runAll() {
+            while (queued.isNotEmpty()) queued.removeFirst().run()
+        }
     }
 }
