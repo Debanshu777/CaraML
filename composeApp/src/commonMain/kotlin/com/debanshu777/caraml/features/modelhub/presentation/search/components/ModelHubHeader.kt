@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.prism
 
 @Composable
 fun ModelHubHeader(
@@ -35,13 +36,13 @@ fun ModelHubHeader(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.prism.sectionTitle,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             summary?.let {
                 Text(
                     text = it,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.prism.denseMetadata,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

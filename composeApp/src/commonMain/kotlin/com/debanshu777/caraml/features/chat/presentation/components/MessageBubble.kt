@@ -52,6 +52,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.LocalSpacing
+import com.debanshu777.caraml.core.theme.prismShapes
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
 import com.debanshu777.caraml.core.ui.components.CaraMLPane
 import com.debanshu777.caraml.core.ui.graphics.decodePngToImageBitmap
@@ -122,7 +123,7 @@ fun MessageBubble(
             if (message.text.isNotEmpty()) {
                 CaraMLPane(
                     level = AuroraSurfaceLevel.Pane,
-                    shape = MaterialTheme.shapes.medium,
+                    shape = MaterialTheme.prismShapes.pane,
                 ) {
                     Text(
                         modifier = Modifier.padding(LocalSpacing.current.m),
@@ -203,7 +204,7 @@ fun MessageBubble(
                     modifier = Modifier
                         .padding(top = LocalSpacing.current.s)
                         .heightIn(max = 320.dp)
-                        .clip(MaterialTheme.shapes.medium),
+                        .clip(MaterialTheme.prismShapes.pane),
                     contentScale = ContentScale.Fit
                 )
             }
@@ -239,7 +240,7 @@ fun MessageBubble(
                             contentDescription = "Generated video frame ${index + 1}",
                             modifier = Modifier
                                 .size(120.dp)
-                                .clip(MaterialTheme.shapes.small),
+                                .clip(MaterialTheme.prismShapes.control),
                             contentScale = ContentScale.Crop
                         )
                     }
@@ -338,7 +339,7 @@ private fun ThoughtsDisclosure(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 48.dp)
-                .clip(MaterialTheme.shapes.small)
+                .clip(MaterialTheme.prismShapes.control)
                 .clickable(
                     onClickLabel = if (expanded) "Collapse thoughts" else "Expand thoughts",
                     role = Role.Button,
@@ -401,7 +402,7 @@ private fun ThoughtsDisclosure(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = LocalSpacing.current.xs)
-                    .clip(MaterialTheme.shapes.small)
+                    .clip(MaterialTheme.prismShapes.pane)
                     .background(MaterialTheme.colorScheme.surfaceContainerLow)
                     .padding(LocalSpacing.current.m),
             )

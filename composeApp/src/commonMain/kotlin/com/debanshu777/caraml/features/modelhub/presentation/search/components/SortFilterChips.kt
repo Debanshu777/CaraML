@@ -1,10 +1,8 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search.components
 
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -29,8 +27,7 @@ fun SortFilterChips(
 ) {
     Row(
         modifier = modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
+            .fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         ModelSortAndFilterControls(
@@ -43,11 +40,12 @@ fun SortFilterChips(
             onMinParamsChange = onMinParamsChange,
             onMaxParamsChange = onMaxParamsChange,
             onFiltersApplied = onFiltersApplied,
+            expand = true,
         )
     }
 }
 
-/** Source-compatible bridge to the single-band Prism toolbar. */
+/** Source-compatible bridge to the responsive Prism toolbar. */
 @Composable
 fun ModelHubBrowseControls(
     browseMode: ModelHubBrowseMode,

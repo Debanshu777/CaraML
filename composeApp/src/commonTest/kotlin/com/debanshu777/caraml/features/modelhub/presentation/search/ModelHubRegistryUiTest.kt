@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
@@ -32,11 +33,16 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.debanshu777.caraml.core.platform.DeviceHints
 import com.debanshu777.caraml.core.recommendation.PersonalizedRecommendation
 import com.debanshu777.caraml.core.recommendation.RecommendationCategory
 import com.debanshu777.caraml.core.recommendation.RecommendationProfile
@@ -98,7 +104,7 @@ class ModelHubRegistryUiTest {
             useUnmergedTree = true,
         )
         val metadata = onNodeWithText(
-            "Text generation • 12345 downloads • 678 likes • 7B params",
+            "Text generation • 12.3K downloads • 7B params",
             useUnmergedTree = true,
         )
         owner.assertIsDisplayed()
@@ -153,10 +159,18 @@ class ModelHubRegistryUiTest {
                     "narrow=$narrowOwnerWidth wide=$wideOwnerWidth",
             )
 
-            val narrowMetadataWidth = onNodeWithText("iiiiiiii downloads", useUnmergedTree = true)
-                .fetchSemanticsNode().boundsInRoot.width
-            val wideMetadataWidth = onNodeWithText("WWWWWWWW downloads", useUnmergedTree = true)
-                .fetchSemanticsNode().boundsInRoot.width
+            val narrowMetadataLayout = mutableListOf<TextLayoutResult>()
+            onNodeWithText("iiiiiiii downloads", useUnmergedTree = true)
+                .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action ->
+                    action(narrowMetadataLayout)
+                }
+            val wideMetadataLayout = mutableListOf<TextLayoutResult>()
+            onNodeWithText("WWWWWWWW downloads", useUnmergedTree = true)
+                .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action ->
+                    action(wideMetadataLayout)
+                }
+            val narrowMetadataWidth = narrowMetadataLayout.single().getLineRight(0)
+            val wideMetadataWidth = wideMetadataLayout.single().getLineRight(0)
             assertTrue(
                 wideMetadataWidth >= narrowMetadataWidth + 12f,
                 "Mixed prose metadata must use proportional body typography; " +
@@ -202,6 +216,25 @@ class ModelHubRegistryUiTest {
 
         onNodeWithTag("model-summary").assertIsDisplayed()
         onNodeWithTag("model-results").assertIsDisplayed()
+        val titleLayouts = mutableListOf<TextLayoutResult>()
+        onNodeWithText("Models", useUnmergedTree = true)
+            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action ->
+                assertTrue(action(titleLayouts))
+            }
+        val summaryLayouts = mutableListOf<TextLayoutResult>()
+        onNodeWithText("24 models · 2 filters", useUnmergedTree = true)
+            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action ->
+                assertTrue(action(summaryLayouts))
+            }
+        with(titleLayouts.single().layoutInput.style) {
+            assertEquals(16.sp, fontSize)
+            assertEquals(22.sp, lineHeight)
+            assertEquals(FontWeight.SemiBold, fontWeight)
+        }
+        with(summaryLayouts.single().layoutInput.style) {
+            assertEquals(14.sp, fontSize)
+            assertEquals(20.sp, lineHeight)
+        }
         onNodeWithText("Retry").performClick()
         runOnIdle { assertEquals(1, retries) }
     }
@@ -294,13 +327,57 @@ class ModelHubRegistryUiTest {
         val pixels = onNodeWithTag("model-context").captureToImage().toPixelMap()
         assertEquals(
             canvas,
-            pixels[1, pixels.height / 2],
+            pixels[1, 1],
             "Secondary device context must sit directly on the route canvas",
         )
     }
 
     @Test
-    fun browseToolbarFitsOneHorizontalBandAt360dp() = runComposeUiTest {
+    fun compactContextKeepsStorageDeviceAndProfileVisibleWithoutHorizontalScrolling() =
+        runComposeUiTest {
+            setContent {
+                AtDensityOne {
+                    MaterialTheme {
+                        Box(Modifier.width(360.dp)) {
+                            ModelHubOverview(
+                                storageInfo = StorageInfoUiState(
+                                    totalDeviceBytes = 8_589_934_592L,
+                                    availableDeviceBytes = 6_442_450_944L,
+                                    usedByModelsBytes = 2_147_483_648L,
+                                    deviceHints = DeviceHints(
+                                        performanceCoreCount = 4,
+                                        totalCoreCount = 8,
+                                        memoryBudgetMB = 1_843,
+                                        gpuBackendAvailable = true,
+                                    ),
+                                ),
+                                profile = RecommendationProfile(),
+                                onOpenProfile = {},
+                            )
+                        }
+                    }
+                }
+            }
+
+            val context = onNodeWithTag("model-context").fetchSemanticsNode()
+            assertEquals(
+                null,
+                context.config.getOrNull(SemanticsProperties.HorizontalScrollAxisRange),
+                "Storage, device, and profile context must wrap instead of restoring a clipped scroll",
+            )
+            onNodeWithText("Device profile").assertIsDisplayed().performClick()
+            listOf("Storage", "Device", "Profile").forEach { label ->
+                val bounds = onNodeWithText(label, useUnmergedTree = true)
+                    .assertIsDisplayed()
+                    .fetchSemanticsNode().boundsInRoot
+                assertTrue(bounds.left >= context.boundsInRoot.left, "$label starts outside context")
+                assertTrue(bounds.right <= context.boundsInRoot.right, "$label ends outside context")
+            }
+        }
+
+    @Test
+    fun browseToolbarKeepsEveryControlVisibleWithoutHorizontalScrollingAt360dp() =
+        runComposeUiTest {
         setContent {
             AtDensityOne {
                 MaterialTheme {
@@ -323,26 +400,69 @@ class ModelHubRegistryUiTest {
             }
         }
 
-        onNodeWithTag("model-toolbar").assertIsDisplayed()
-        val controlY = listOf("Text", "Image", "Video", "Sort", "Filters").map { label ->
-            onNodeWithText(label, substring = true)
-                .fetchSemanticsNode().boundsInRoot.center.y
-        }
-        assertTrue(
-            controlY.max() - controlY.min() < 1f,
-            "Every browse control must occupy one horizontal band; centers were $controlY",
+        val toolbar = onNodeWithTag("model-toolbar").assertIsDisplayed().fetchSemanticsNode()
+        assertEquals(
+            null,
+            toolbar.config.getOrNull(SemanticsProperties.HorizontalScrollAxisRange),
+            "Browse controls must not preserve a clipped horizontal scroll position",
         )
+        listOf("Text", "Image", "Video", "Sort", "Filters").forEach { label ->
+            val bounds = onNodeWithText(label, substring = true)
+                .fetchSemanticsNode().boundsInRoot
+            assertTrue(bounds.left >= toolbar.boundsInRoot.left, "$label starts outside the toolbar")
+            assertTrue(bounds.right <= toolbar.boundsInRoot.right, "$label ends outside the toolbar")
+        }
         onNodeWithText("Minimum parameters").assertDoesNotExist()
         onNodeWithText("Maximum parameters").assertDoesNotExist()
     }
 
     @Test
-    fun oneLineModelRowIsAtMost148DpAndHasNoCardOutline() = runComposeUiTest {
+    fun compactContextStartsAsOneDecisionSummaryAndRevealsTechnicalEvidenceOnDemand() =
+        runComposeUiTest {
+            setContent {
+                AtDensityOne {
+                    MaterialTheme {
+                        Box(Modifier.width(360.dp)) {
+                            ModelHubOverview(
+                                storageInfo = StorageInfoUiState(
+                                    totalDeviceBytes = 228L * 1024 * 1024 * 1024,
+                                    availableDeviceBytes = 197L * 1024 * 1024 * 1024,
+                                    usedByModelsBytes = 0L,
+                                    deviceHints = DeviceHints(
+                                        performanceCoreCount = 4,
+                                        totalCoreCount = 8,
+                                        memoryBudgetMB = 1_920,
+                                        gpuBackendAvailable = true,
+                                    ),
+                                ),
+                                profile = RecommendationProfile(),
+                                onOpenProfile = {},
+                            )
+                        }
+                    }
+                }
+            }
+
+            onNodeWithText("Device profile").assertIsDisplayed()
+            onNodeWithText("197 GB free · Balanced").assertIsDisplayed()
+            listOf("Storage", "Device", "Profile").forEach { label ->
+                onNodeWithText(label, useUnmergedTree = true).assertDoesNotExist()
+            }
+
+            onNodeWithText("Device profile").performClick()
+            listOf("Storage", "Device", "Profile").forEach { label ->
+                onNodeWithText(label, useUnmergedTree = true).assertIsDisplayed()
+            }
+        }
+
+    @Test
+    fun oneLineModelRowUsesOneRoundedSurfaceWithoutReturningToOutlinedCardChrome() =
+        runComposeUiTest {
         val pageColor = Color(0xFFF8FAFC)
-        val oldCardColor = Color(0xFFB91C1C)
+        val rowColor = Color(0xFFD7E4E8)
         val scheme = lightColorScheme(
             surface = pageColor,
-            surfaceContainer = oldCardColor,
+            surfaceContainerLow = rowColor,
         )
         setContent {
             AtDensityOne {
@@ -368,12 +488,51 @@ class ModelHubRegistryUiTest {
         val bounds = row.fetchSemanticsNode().boundsInRoot
         assertTrue(bounds.height <= 148f, "A simple registry row was ${bounds.height}dp tall")
         val pixels = row.captureToImage().toPixelMap()
-        val neutralEdge = pixels[1, (pixels.height / 2).coerceAtLeast(1)]
-        assertColorNear(pageColor, neutralEdge, "Registry rows must not paint independent card chrome at the page edge")
+        val roundedCorner = pixels[1, 1]
+        val filledTopEdge = pixels[pixels.width / 2, 1]
+        assertColorNear(pageColor, roundedCorner, "Rounded row corner must reveal the page canvas")
+        assertTrue(
+            filledTopEdge.registryColorDistance(roundedCorner) >= 0.05f,
+            "The rounded registry row must own a quiet tonal surface",
+        )
     }
 
     @Test
-    fun simpleProductionStatusRowDoesNotReserveAnEmptyAccessoryBand() = runComposeUiTest {
+    fun compactModelMetadataWrapsWithoutEllipsisOrVisualOverflow() = runComposeUiTest {
+        val metadata = "image-text-to-text · 27B · 2.2M downloads"
+        setContent {
+            AtDensityOne {
+                MaterialTheme {
+                    Box(Modifier.width(360.dp)) {
+                        ModelResultCard(
+                            title = "org/a-long-but-readable-model-name",
+                            author = "org",
+                            metadata = metadata,
+                            status = { Text("Needs information") },
+                            onClick = {},
+                        )
+                    }
+                }
+            }
+        }
+
+        val layouts = mutableListOf<TextLayoutResult>()
+        onNodeWithText(metadata, useUnmergedTree = true)
+            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action ->
+                assertTrue(action(layouts))
+            }
+        val layout = layouts.single()
+        assertTrue(layout.lineCount <= 2, "Compact metadata should need at most two lines")
+        assertTrue(
+            !layout.hasVisualOverflow,
+            "Compact metadata must not be ellipsized or clipped; " +
+                "lines=${layout.lineCount} size=${layout.size} " +
+                "width=${layout.didOverflowWidth} height=${layout.didOverflowHeight}",
+        )
+    }
+
+    @Test
+    fun compactProductionStatusRowGivesIdentityTheFullReadableWidth() = runComposeUiTest {
         setContent {
             AtDensityOne {
                 MaterialTheme {
@@ -401,14 +560,12 @@ class ModelHubRegistryUiTest {
         onNodeWithText("Selected variant:", substring = true).assertDoesNotExist()
 
         val rowBounds = row.fetchSemanticsNode().boundsInRoot
-        val identityBounds = title.fetchSemanticsNode().boundsInRoot
-            .expandToInclude(metadata.fetchSemanticsNode().boundsInRoot)
+        val metadataBounds = metadata.fetchSemanticsNode().boundsInRoot
         val statusBounds = status.fetchSemanticsNode().boundsInRoot
-        assertTrue(rowBounds.height <= 148f, "Simple status row was ${rowBounds.height}dp tall")
+        assertTrue(rowBounds.height <= 172f, "Simple status row was ${rowBounds.height}dp tall")
         assertTrue(
-            statusBounds.center.y in identityBounds.top..identityBounds.bottom,
-            "An absent trailing accessory must not push status below identity; " +
-                "identity=$identityBounds status=$statusBounds",
+            statusBounds.top >= metadataBounds.bottom,
+            "Compact status belongs below identity metadata; metadata=$metadataBounds status=$statusBounds",
         )
     }
 
@@ -444,12 +601,12 @@ class ModelHubRegistryUiTest {
         val titleBounds = title.fetchSemanticsNode().boundsInRoot
         val statusBounds = status.fetchSemanticsNode().boundsInRoot
         assertTrue(
-            statusBounds.left > titleBounds.left,
-            "Registry state should occupy a distinct trailing slot instead of a stacked card section",
+            titleBounds.width >= 280f,
+            "Long names need the compact content width before status; width=${titleBounds.width}",
         )
         assertTrue(
-            titleBounds.right <= statusBounds.left || titleBounds.bottom <= statusBounds.top,
-            "Long title and state must not overlap: title=$titleBounds status=$statusBounds",
+            statusBounds.top >= metadata.fetchSemanticsNode().boundsInRoot.bottom,
+            "Long-name status must follow metadata without competing for title width",
         )
     }
 
@@ -536,6 +693,9 @@ private fun AtDensityOne(content: @Composable () -> Unit) {
 private fun assertColorNear(expected: Color, actual: Color, message: String) {
     assertTrue(colorsNear(expected, actual), "$message. Expected $expected, found $actual")
 }
+
+private fun Color.registryColorDistance(other: Color): Float =
+    abs(red - other.red) + abs(green - other.green) + abs(blue - other.blue)
 
 private fun colorsNear(expected: Color, actual: Color, tolerance: Float = 0.02f): Boolean =
     abs(expected.red - actual.red) <= tolerance &&

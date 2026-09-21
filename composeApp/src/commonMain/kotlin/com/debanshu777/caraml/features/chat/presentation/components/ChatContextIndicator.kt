@@ -33,6 +33,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.prismShapes
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.features.chat.data.LiveGenerationStats
 import kotlinx.coroutines.delay
@@ -76,7 +77,7 @@ internal fun ContextProgressIndicator(
     Row(
         modifier = modifier
             .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-            .clip(MaterialTheme.shapes.small)
+            .clip(MaterialTheme.prismShapes.control)
             .clickable(
                 onClickLabel = actionLabel,
                 role = Role.Button,

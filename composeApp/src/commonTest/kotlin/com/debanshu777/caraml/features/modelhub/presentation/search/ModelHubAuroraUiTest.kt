@@ -86,6 +86,49 @@ class ModelHubAuroraUiTest {
     }
 
     @Test
+    fun darkModelContextUsesReadableSemanticIconColor() = runComposeUiTest {
+        val surface = Color(0xFF07191D)
+        val scheme = darkColorScheme(
+            surface = surface,
+            onSurfaceVariant = Color(0xFFB8CACA),
+        )
+        setContent {
+            CompositionLocalProvider(LocalDensity provides Density(1f)) {
+                MaterialTheme(colorScheme = scheme) {
+                    Box(
+                        Modifier
+                            .width(360.dp)
+                            .background(surface),
+                    ) {
+                        ModelHubOverview(
+                            storageInfo = StorageInfoUiState(
+                                totalDeviceBytes = 8_589_934_592L,
+                                availableDeviceBytes = 6_442_450_944L,
+                                usedByModelsBytes = 2_147_483_648L,
+                            ),
+                            profile = null,
+                            onOpenProfile = null,
+                        )
+                    }
+                }
+            }
+        }
+
+        val context = onNodeWithTag("model-context").fetchSemanticsNode().boundsInRoot
+        val storage = onNodeWithText("Storage", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        val pixels = onNodeWithTag("model-context").captureToImage().toPixelMap()
+        val iconRight = (storage.left - context.left - 2f).toInt().coerceAtLeast(1)
+        var iconContrast = 1f
+        for (y in 0 until pixels.height) {
+            for (x in 0 until minOf(iconRight, pixels.width)) {
+                iconContrast = maxOf(iconContrast, contrastRatio(pixels[x, y], surface))
+            }
+        }
+        assertTrue(iconContrast >= 3f, "Storage icon contrast was $iconContrast:1")
+    }
+
+    @Test
     fun modelResultRowKeepsTechnicalHierarchyAndTrailingState() = runComposeUiTest {
         var opened = 0
         setContent {
@@ -118,8 +161,8 @@ class ModelHubAuroraUiTest {
             .fetchSemanticsNode().positionInRoot.y
         assertTrue(authorY < titleY)
         assertTrue(titleY < metadataY)
-        assertTrue(statusBounds.left > titleBounds.left)
-        assertTrue(titleBounds.right <= statusBounds.left || titleBounds.bottom <= statusBounds.top)
+        assertTrue(statusBounds.left == titleBounds.left)
+        assertTrue(statusBounds.top >= metadataY)
         onNodeWithContentDescription("Open model org/tiny-model")
             .assertWidthIsAtLeast(48.dp)
             .assertHeightIsAtLeast(48.dp)
@@ -202,7 +245,8 @@ class ModelHubAuroraUiTest {
             }
 
             onNodeWithTag("model-context").performScrollTo().assertIsDisplayed()
-            onNodeWithText("Storage").assertIsDisplayed()
+            onNodeWithText("Device profile").performClick()
+            onNodeWithText("Storage").performScrollTo().assertIsDisplayed()
             val title = onNodeWithText("large-text-model", useUnmergedTree = true)
             val status = onNodeWithText("Recommended", useUnmergedTree = true)
             val action = onNodeWithText("Download", useUnmergedTree = true)
@@ -217,6 +261,12 @@ class ModelHubAuroraUiTest {
                 .performScrollTo()
                 .assertIsDisplayed()
         }
+}
+
+private fun contrastRatio(first: Color, second: Color): Float {
+    val lighter = maxOf(first.luminance(), second.luminance())
+    val darker = minOf(first.luminance(), second.luminance())
+    return (lighter + 0.05f) / (darker + 0.05f)
 }
 
 @Composable

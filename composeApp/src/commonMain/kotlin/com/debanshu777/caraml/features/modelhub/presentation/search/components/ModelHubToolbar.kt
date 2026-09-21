@@ -1,7 +1,7 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search.components
 
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -44,6 +45,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
+import com.debanshu777.caraml.core.theme.LocalSpacing
+import com.debanshu777.caraml.core.theme.auroraColors
+import com.debanshu777.caraml.core.theme.prismShapes
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelOrdering
 import com.debanshu777.huggingfacemanager.model.ModelSort
@@ -65,30 +69,65 @@ fun ModelHubToolbar(
     modifier: Modifier = Modifier,
     onFiltersApplied: () -> Unit = {},
 ) {
-    Row(
+    val spacing = LocalSpacing.current
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
             .testTag("model-toolbar"),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        ModelKindControls(
-            browseMode = browseMode,
-            onBrowseModeChange = onBrowseModeChange,
-        )
-        if (showSortFilters) {
-            ModelSortAndFilterControls(
-                ordering = ordering,
-                sort = sort,
-                minParams = minParams,
-                maxParams = maxParams,
-                onSortChange = onSortChange,
-                onOrderingChange = onOrderingChange,
-                onMinParamsChange = onMinParamsChange,
-                onMaxParamsChange = onMaxParamsChange,
-                onFiltersApplied = onFiltersApplied,
-            )
+        val compact = maxWidth < 600.dp
+        if (compact) {
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.s)) {
+                ModelKindControls(
+                    browseMode = browseMode,
+                    onBrowseModeChange = onBrowseModeChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    equalWidth = true,
+                )
+                if (showSortFilters) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(spacing.s),
+                    ) {
+                        ModelSortAndFilterControls(
+                            ordering = ordering,
+                            sort = sort,
+                            minParams = minParams,
+                            maxParams = maxParams,
+                            onSortChange = onSortChange,
+                            onOrderingChange = onOrderingChange,
+                            onMinParamsChange = onMinParamsChange,
+                            onMaxParamsChange = onMaxParamsChange,
+                            onFiltersApplied = onFiltersApplied,
+                            expand = true,
+                        )
+                    }
+                }
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(spacing.s),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ModelKindControls(
+                    browseMode = browseMode,
+                    onBrowseModeChange = onBrowseModeChange,
+                )
+                if (showSortFilters) {
+                    ModelSortAndFilterControls(
+                        ordering = ordering,
+                        sort = sort,
+                        minParams = minParams,
+                        maxParams = maxParams,
+                        onSortChange = onSortChange,
+                        onOrderingChange = onOrderingChange,
+                        onMinParamsChange = onMinParamsChange,
+                        onMaxParamsChange = onMaxParamsChange,
+                        onFiltersApplied = onFiltersApplied,
+                    )
+                }
+            }
         }
     }
 }
@@ -97,9 +136,12 @@ fun ModelHubToolbar(
 private fun ModelKindControls(
     browseMode: ModelHubBrowseMode,
     onBrowseModeChange: (ModelHubBrowseMode) -> Unit,
+    modifier: Modifier = Modifier,
+    equalWidth: Boolean = false,
 ) {
+    val colors = MaterialTheme.auroraColors
     Row(
-        modifier = Modifier
+        modifier = modifier
             .selectableGroup()
             .testTag("model-kind-group"),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -128,12 +170,18 @@ private fun ModelKindControls(
                     null
                 },
                 modifier = Modifier
+                    .then(if (equalWidth) Modifier.weight(1f) else Modifier)
                     .heightIn(min = 48.dp)
                     .semantics {
                         this.selected = selected
                         role = Role.RadioButton
                     },
-                shape = MaterialTheme.shapes.small,
+                shape = MaterialTheme.prismShapes.control,
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = colors.focusPrimary,
+                    selectedLabelColor = colors.onFocusPrimary,
+                    selectedLeadingIconColor = colors.onFocusPrimary,
+                ),
             )
         }
     }
@@ -150,6 +198,7 @@ internal fun RowScope.ModelSortAndFilterControls(
     onMinParamsChange: (ParameterRange) -> Unit,
     onMaxParamsChange: (ParameterRange) -> Unit,
     onFiltersApplied: () -> Unit = {},
+    expand: Boolean = false,
 ) {
     var orderingExpanded by remember { mutableStateOf(false) }
     var filtersExpanded by remember { mutableStateOf(false) }
@@ -166,12 +215,13 @@ internal fun RowScope.ModelSortAndFilterControls(
     OutlinedButton(
         onClick = { orderingExpanded = true },
         modifier = Modifier
+            .then(if (expand) Modifier.weight(1f) else Modifier)
             .heightIn(min = 48.dp)
             .semantics {
                 contentDescription = "Sort models"
                 stateDescription = orderingLabel
             },
-        shape = MaterialTheme.shapes.small,
+        shape = MaterialTheme.prismShapes.control,
     ) {
         Text("Sort")
         Icon(
@@ -183,6 +233,7 @@ internal fun RowScope.ModelSortAndFilterControls(
     OutlinedButton(
         onClick = { filtersExpanded = true },
         modifier = Modifier
+            .then(if (expand) Modifier.weight(1f) else Modifier)
             .heightIn(min = 48.dp)
             .semantics {
                 contentDescription = if (activeFilterCount == 0) {
@@ -192,7 +243,7 @@ internal fun RowScope.ModelSortAndFilterControls(
                 }
                 stateDescription = "$activeFilterCount active filters"
             },
-        shape = MaterialTheme.shapes.small,
+        shape = MaterialTheme.prismShapes.control,
     ) {
         Icon(
             imageVector = Icons.Default.Tune,
@@ -236,7 +287,7 @@ private fun OrderingSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = MaterialTheme.prismShapes.modal,
         containerColor = AuroraSurfaceLevel.Floating.containerColor(MaterialTheme.colorScheme),
     ) {
         Column(
@@ -286,7 +337,7 @@ private fun ModelFilterSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = MaterialTheme.prismShapes.modal,
         containerColor = AuroraSurfaceLevel.Floating.containerColor(MaterialTheme.colorScheme),
     ) {
         Column(
@@ -368,7 +419,7 @@ private fun SelectionRow(
                 role = Role.RadioButton,
                 onClick = onClick,
             ),
-        shape = MaterialTheme.shapes.small,
+        shape = MaterialTheme.prismShapes.control,
         color = if (selected) {
             MaterialTheme.colorScheme.secondaryContainer
         } else {

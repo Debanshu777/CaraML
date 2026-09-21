@@ -76,6 +76,7 @@ import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
 import com.debanshu777.caraml.core.theme.auroraColors
+import com.debanshu777.caraml.core.theme.prismShapes
 import com.debanshu777.caraml.core.ui.components.CaraMLPane
 import com.debanshu777.caraml.core.ui.components.AuroraFocalSurface
 import com.debanshu777.caraml.core.ui.components.CommandSurface
@@ -613,7 +614,7 @@ private fun WorkspaceGlyph() {
             .clearAndSetSemantics { },
         color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.78f),
         contentColor = focalAccent,
-        shape = MaterialTheme.shapes.large,
+        shape = MaterialTheme.prismShapes.focal,
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
             MaterialTheme.colorScheme.outlineVariant,

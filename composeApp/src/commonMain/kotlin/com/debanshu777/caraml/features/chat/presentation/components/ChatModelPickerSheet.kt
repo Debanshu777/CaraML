@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.prismShapes
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.storage.localmodel.displayFilename
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
@@ -47,7 +48,7 @@ fun ChatModelPickerSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = MaterialTheme.prismShapes.modal,
         containerColor = AuroraSurfaceLevel.Floating.containerColor(MaterialTheme.colorScheme),
     ) {
         LazyColumn(

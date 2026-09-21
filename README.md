@@ -219,6 +219,9 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 
 <!-- This section is updated at the end of each AI-assisted development session -->
 
+- Expanded the documented [CaraML Prism design system](docs/caraml-design-system.md) with app-wide information hierarchy, progressive-disclosure, rounded-surface, compact reflow, and data-heavy toolbar guidance
+- Compact Models now collapses device diagnostics into one remembered summary, uses rounded wrapping result panes and compact metrics, and prioritizes the command and first useful result over secondary facts
+- Artifact now presents identity and the download decision before collapsed technical metadata, with rounded focal/file surfaces and production-component previews at 360–412dp including 200% text
 - Added conversation Focus Mode: after the first message, Create removes persistent navigation and page chrome, expands the thread across the canvas, and keeps one accessible sidebar trigger beside the existing composer
 - Rebuilt CaraML as a calm sidebar-first local AI workbench: compact windows use a stationary-content modal panel, tablets use a compact rail, and wider workspaces use a labeled contextual sidebar
 - Reframed Create as a full-canvas workspace with the baseline yellow/violet/green grain-backed atmosphere, connected Text/Image/Video control, the production composer, truthful no-model action, and distraction-free Focus Mode once a conversation begins
@@ -226,7 +229,7 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 - Model downloads now use a persistent resumable queue with exact-artifact verification; Android uses UIDT/foreground notifications, iOS reconnects to a background URLSession, and Desktop resumes on relaunch
 - Reorganized Settings as a dense, accessible list with exclusive selections, disclosure rows, and the app's single contextual appearance preview
 - Added a restrained static ambient field and two deliberate grain-backed focal gradients—Details overview and the Settings appearance preview—while keeping navigation, lists, filters, cards, and the composer matte
-- Verified the final baseline correction with 784 Compose JVM tests, the 912-test repository gate plus native tests, Android debug assembly, iOS simulator compilation, and an inspected Pixel 9 compact Create capture; active chat and populated model states remain device-unverified because no local model was downloaded
+- Verified the design-system correction with 788 Compose JVM tests, the 916-test repository gate plus five native tests, Android debug assembly, iOS simulator compilation, and inspected Pixel 9 compact Create, Models-empty, and Settings captures; populated model and Artifact states remain device-unverified because the live registry returned no models
 - Added versioned recommendation/native fixture gates, opt-in real-runner parity, pinned CI jobs, and exact artifact-bound model selection; production remains on the legacy display path until measured physical-device and pinned-runner release evidence exists
 - Added opt-in device calibration with byte-bound descriptor identity, phase-specific raw memory baselines, full run-plan fingerprints, real process-memory provenance, and fail-closed quarantine after unresponsive native probes
 - Model loads now derive typed directory targets only from verified storage roots, bind every native-consumed path to revalidated bytes, and keep multi-sequence plans analytical until strict native admission

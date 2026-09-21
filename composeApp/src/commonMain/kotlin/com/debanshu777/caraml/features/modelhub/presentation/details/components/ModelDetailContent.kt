@@ -6,11 +6,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -19,6 +17,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -33,7 +33,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -53,6 +52,8 @@ import com.debanshu777.caraml.core.theme.AppTechnicalLabel
 import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.theme.auroraColors
 import com.debanshu777.caraml.core.theme.prism
+import com.debanshu777.caraml.core.theme.prismShapes
+import com.debanshu777.caraml.core.ui.components.CaraMLPane
 import com.debanshu777.caraml.core.ui.components.CaraMLSectionHeader
 import com.debanshu777.caraml.core.ui.components.AuroraFocalSurface
 import com.debanshu777.caraml.core.ui.components.SignalRail
@@ -64,6 +65,7 @@ import com.debanshu777.caraml.features.modelhub.domain.RecommendedModelUiState
 import com.debanshu777.caraml.features.modelhub.presentation.search.GgufFileUiState
 import com.debanshu777.caraml.features.modelhub.presentation.search.InstallBundleUiState
 import com.debanshu777.caraml.features.modelhub.presentation.search.relevantDownloadTask
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.formatCompactMetric
 import com.debanshu777.caraml.core.download.DownloadBatchSnapshot
 import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
@@ -209,7 +211,6 @@ fun ModelDetailContent(
                         description = modelSetup?.description,
                         expanded = false,
                     )
-                    ModelMetadataSection(model)
                     ModelRecommendationSection(
                         recommendationState = recommendationState,
                         onRecommendationInfoClick = onRecommendationInfoClick,
@@ -244,6 +245,7 @@ fun ModelDetailContent(
                             footerOwnedArtifact = compactArtifactAction?.artifact,
                         )
                     }
+                    ModelMetadataSection(model)
                 }
                 if (showInstallBundle) {
                     InstallBundleActionFooter(
@@ -293,10 +295,9 @@ private fun ModelOverviewSection(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("detail-overview"),
-        shape = RectangleShape,
     ) {
         Column(
-            modifier = Modifier.padding(spacing.l),
+            modifier = Modifier.padding(spacing.xl),
             verticalArrangement = Arrangement.spacedBy(spacing.s),
         ) {
             owner?.let {
@@ -339,10 +340,16 @@ private fun ModelOverviewSection(
                     verticalArrangement = Arrangement.spacedBy(spacing.xs),
                 ) {
                     model.downloads?.let { count ->
-                        ModelMetric(Icons.Default.Download, "$count downloads")
+                        ModelMetric(
+                            Icons.Default.Download,
+                            "${formatCompactMetric(count.toLong())} downloads",
+                        )
                     }
                     model.likes?.let { count ->
-                        ModelMetric(Icons.Default.FavoriteBorder, "$count likes")
+                        ModelMetric(
+                            Icons.Default.FavoriteBorder,
+                            "${formatCompactMetric(count.toLong())} likes",
+                        )
                     }
                 }
             }
@@ -409,7 +416,12 @@ private fun ModelMetadataSection(model: ModelDetailResponse) {
     if (entries.isEmpty() && tags.isEmpty()) return
 
     val spacing = LocalSpacing.current
-    var expanded by rememberSaveable(model.modelId, model.id) { mutableStateOf(false) }
+    var detailsVisible by rememberSaveable(model.modelId, model.id, "details-visible") {
+        mutableStateOf(false)
+    }
+    var expanded by rememberSaveable(model.modelId, model.id, "details-expanded") {
+        mutableStateOf(false)
+    }
     val primaryEntries = entries.take(PRIMARY_METADATA_COUNT)
     val displayedEntries = if (expanded) entries else primaryEntries
     val hasDisclosure = entries.size > PRIMARY_METADATA_COUNT || tags.isNotEmpty()
@@ -419,42 +431,96 @@ private fun ModelMetadataSection(model: ModelDetailResponse) {
             .testTag("detail-metadata"),
         verticalArrangement = Arrangement.spacedBy(spacing.s),
     ) {
-        CaraMLSectionHeader(title = "Metadata")
-        displayedEntries.forEach { entry ->
-            DetailRow(entry.label, entry.value)
-            HorizontalDivider(
-                color = MaterialTheme.auroraColors.divider,
-                thickness = 1.dp,
-            )
-        }
-        if (expanded && tags.isNotEmpty()) {
-            Text(
-                text = "Tags",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            FlowRow(
+        Surface(
+            onClick = { detailsVisible = !detailsVisible },
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.prismShapes.control,
+            color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f),
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = spacing.l, vertical = spacing.m),
                 horizontalArrangement = Arrangement.spacedBy(spacing.s),
-                verticalArrangement = Arrangement.spacedBy(spacing.xs),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                tags.take(MAX_VISIBLE_DETAIL_TAGS).forEach { tag ->
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = tag,
-                        style = AppTechnicalLabel,
+                        text = "Technical details",
+                        style = MaterialTheme.typography.prism.sectionTitle,
+                    )
+                    Text(
+                        text = "${entries.size} properties${if (tags.isNotEmpty()) " · ${tags.size} tags" else ""}",
+                        style = MaterialTheme.typography.prism.denseMetadata,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.semantics {
-                            contentDescription = "Tag: $tag"
-                        },
                     )
                 }
+                Icon(
+                    imageVector = if (detailsVisible) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = if (detailsVisible) {
+                        "Collapse technical details"
+                    } else {
+                        "Expand technical details"
+                    },
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
-        if (hasDisclosure) {
-            TextButton(
-                onClick = { expanded = !expanded },
-                modifier = Modifier.align(Alignment.Start),
-            ) {
-                Text(if (expanded) "Show less" else "Show all")
+        if (detailsVisible) {
+            CaraMLPane(modifier = Modifier.fillMaxWidth()) {
+                displayedEntries.forEachIndexed { index, entry ->
+                    DetailRow(
+                        label = entry.label,
+                        value = entry.value,
+                        modifier = Modifier.padding(
+                            horizontal = spacing.l,
+                            vertical = spacing.m,
+                        ),
+                    )
+                    if (index != displayedEntries.lastIndex || expanded && tags.isNotEmpty()) {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = spacing.l),
+                            color = MaterialTheme.auroraColors.divider,
+                            thickness = 1.dp,
+                        )
+                    }
+                }
+                if (expanded && tags.isNotEmpty()) {
+                    Column(
+                        modifier = Modifier.padding(spacing.l),
+                        verticalArrangement = Arrangement.spacedBy(spacing.s),
+                    ) {
+                        Text(
+                            text = "Tags",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(spacing.s),
+                            verticalArrangement = Arrangement.spacedBy(spacing.xs),
+                        ) {
+                            tags.take(MAX_VISIBLE_DETAIL_TAGS).forEach { tag ->
+                                Text(
+                                    text = tag,
+                                    style = AppTechnicalLabel,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.semantics {
+                                        contentDescription = "Tag: $tag"
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+                if (hasDisclosure) {
+                    TextButton(
+                        onClick = { expanded = !expanded },
+                        modifier = Modifier.padding(horizontal = spacing.s),
+                    ) {
+                        Text(if (expanded) "Show less" else "Show all")
+                    }
+                }
             }
         }
     }
@@ -583,37 +649,45 @@ private fun ArtifactFileRow(
     onDownloadClick: () -> Unit,
 ) {
     val colors = MaterialTheme.auroraColors
-    Row(
-        modifier = Modifier
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.prismShapes.pane,
+        color = if (recommended) colors.selectedSurface else MaterialTheme.colorScheme.surfaceContainerLow,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+    ) {
+        Box(
+            modifier = Modifier
             .fillMaxWidth()
-            .height(IntrinsicSize.Min)
-            .background(if (recommended) colors.selectedSurface else MaterialTheme.colorScheme.surface)
             .semantics {
                 selected = recommended
                 if (recommended) stateDescription = "Recommended artifact"
             }
             .testTag("detail-artifact:${item.path}"),
-    ) {
-        if (recommended) {
-            SignalRail(tone = SignalTone.Accent)
+        ) {
+            GgufFileTechnicalRow(
+                filename = item.path.ifEmpty { item.filename },
+                sizeBytes = item.sizeBytes,
+                isDownloaded = item.isDownloaded,
+                progress = item.progress,
+                isDownloading = isActiveDownload,
+                onDownloadClick = onDownloadClick,
+                modifier = Modifier.fillMaxWidth(),
+                downloadEnabled = downloadEnabled,
+                interactionLocked = interactionLocked,
+                durableState = durableState,
+                onPause = onPause,
+                onResume = onResume,
+                onCancel = onCancel,
+                onRetry = onRetry,
+                showDownloadAction = showDownloadAction,
+                containerColor = androidx.compose.ui.graphics.Color.Transparent,
+            )
+            if (recommended) {
+                Box(Modifier.matchParentSize()) {
+                    SignalRail(tone = SignalTone.Accent)
+                }
+            }
         }
-        GgufFileTechnicalRow(
-            filename = item.path.ifEmpty { item.filename },
-            sizeBytes = item.sizeBytes,
-            isDownloaded = item.isDownloaded,
-            progress = item.progress,
-            isDownloading = isActiveDownload,
-            onDownloadClick = onDownloadClick,
-            modifier = Modifier.weight(1f),
-            downloadEnabled = downloadEnabled,
-            interactionLocked = interactionLocked,
-            durableState = durableState,
-            onPause = onPause,
-            onResume = onResume,
-            onCancel = onCancel,
-            onRetry = onRetry,
-            showDownloadAction = showDownloadAction,
-        )
     }
 }
 
@@ -632,6 +706,7 @@ private fun ArtifactDownloadActionFooter(
 ) {
     Surface(
         modifier = modifier,
+        shape = MaterialTheme.prismShapes.command,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         tonalElevation = 2.dp,
     ) {

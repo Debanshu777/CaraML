@@ -9,6 +9,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
@@ -86,6 +87,19 @@ internal fun navigationTransitionFamily(target: NavKey?): NavigationTransitionFa
     } else {
         NavigationTransitionFamily.Peer
     }
+
+internal fun returnFromModelSelection(backStack: NavBackStack<NavKey>) {
+    if (backStack.lastOrNull() != AppScreen.Search) return
+
+    Snapshot.withMutableSnapshot {
+        if (backStack.size > 1) {
+            backStack.removeLastOrNull()
+        } else {
+            backStack.clear()
+            backStack.add(AppScreen.Home)
+        }
+    }
+}
 
 internal fun navigationTransitionDescriptor(
     family: NavigationTransitionFamily,
@@ -242,9 +256,7 @@ fun NavigationHost(
                                 mode = recommendationRolloutModeSource.current(),
                                 selectLegacy = {
                                     chatViewModel.selectModel(model)
-                                    if (backStack.lastOrNull() == AppScreen.Search) {
-                                        backStack.removeLastOrNull()
-                                    }
+                                    returnFromModelSelection(backStack)
                                 },
                                 selectAssessed = {
                                     val recommendationStates = modelViewModel.recommendedModels.value
@@ -254,9 +266,7 @@ fun NavigationHost(
                                             states = recommendationStates,
                                         )
                                         chatViewModel.selectModel(model, loadRequest)
-                                        if (backStack.lastOrNull() == AppScreen.Search) {
-                                            backStack.removeLastOrNull()
-                                        }
+                                        returnFromModelSelection(backStack)
                                     }
                                 },
                             )

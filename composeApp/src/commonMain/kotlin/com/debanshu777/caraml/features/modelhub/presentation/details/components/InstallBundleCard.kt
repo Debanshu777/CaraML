@@ -343,6 +343,7 @@ private fun ComponentRow(
     component: SetupComponentUiState,
     modifier: Modifier = Modifier,
 ) {
+    val spacing = LocalSpacing.current
     val motion = LocalAuroraMotionPolicy.current
     val reportedProgress = component.progress
         ?.takeIf { it >= 0f }
@@ -361,8 +362,8 @@ private fun ComponentRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                .padding(vertical = spacing.m),
+            horizontalArrangement = Arrangement.spacedBy(spacing.m),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             when {
@@ -397,8 +398,8 @@ private fun ComponentRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(spacing.s),
+                    verticalArrangement = Arrangement.spacedBy(spacing.s),
                 ) {
                     Text(
                         text = component.repoId.substringAfterLast('/'),

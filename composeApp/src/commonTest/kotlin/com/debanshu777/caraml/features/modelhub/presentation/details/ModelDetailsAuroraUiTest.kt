@@ -2,6 +2,7 @@
 
 package com.debanshu777.caraml.features.modelhub.presentation.details
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -18,7 +20,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
@@ -28,6 +35,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertWidthIsAtLeast
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
@@ -82,6 +90,48 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class ModelDetailsAuroraUiTest {
+
+    @Test
+    fun darkGgufRowsPaintReadableIdentityAndDownloadActionOnTheRouteCanvas() =
+        runComposeUiTest {
+            val surface = Color(0xFF07191D)
+            val scheme = darkColorScheme(
+                surface = surface,
+                onSurface = Color(0xFFE5F2F2),
+                onSurfaceVariant = Color(0xFFB8CACA),
+            )
+            setContent {
+                CompositionLocalProvider(LocalDensity provides Density(1f)) {
+                    MaterialTheme(colorScheme = scheme) {
+                        Box(
+                            Modifier
+                                .width(360.dp)
+                                .background(surface),
+                        ) {
+                            GgufFileListItem(
+                                filename = "Qwen3.8-27B-Q4_K_M.gguf",
+                                sizeBytes = 902_823_936L,
+                                isDownloaded = false,
+                                progress = null,
+                                isDownloading = false,
+                                onDownloadClick = {},
+                                modifier = Modifier.testTag("dark-gguf-row"),
+                            )
+                        }
+                    }
+                }
+            }
+
+            val identityContrast = onNodeWithText("Qwen3.8-27B-Q4_K_M.gguf")
+                .captureToImage()
+                .maximumContrastAgainst(surface)
+            val actionContrast = onNodeWithContentDescription(
+                "Download Qwen3.8-27B-Q4_K_M.gguf",
+            ).captureToImage().maximumContrastAgainst(surface)
+
+            assertTrue(identityContrast >= 4.5f, "File identity contrast was $identityContrast:1")
+            assertTrue(actionContrast >= 3f, "Download icon contrast was $actionContrast:1")
+        }
 
     @Test
     fun repositoryHeadingSeparatesOwnerFromNameWithoutRepeatingEither() {
@@ -162,6 +212,7 @@ class ModelDetailsAuroraUiTest {
         onNodeWithText(createdAt).assertDoesNotExist()
         onNodeWithText("3 Jul 2026").assertDoesNotExist()
 
+        onNodeWithText("Technical details").performScrollTo().performClick()
         onNodeWithText(baseModel).performScrollTo().assertIsDisplayed()
         val baseLabelBounds = onNodeWithText("Base model").fetchSemanticsNode().boundsInRoot
         val baseValueBounds = onNodeWithText(baseModel).fetchSemanticsNode().boundsInRoot
@@ -1134,6 +1185,20 @@ private fun setupComponent(
     progress = null,
     required = true,
 )
+
+private fun ImageBitmap.maximumContrastAgainst(background: Color): Float {
+    val pixels = toPixelMap()
+    var maximum = 1f
+    for (y in 0 until pixels.height) {
+        for (x in 0 until pixels.width) {
+            val foreground = pixels[x, y]
+            val lighter = maxOf(foreground.luminance(), background.luminance())
+            val darker = minOf(foreground.luminance(), background.luminance())
+            maximum = maxOf(maximum, (lighter + 0.05f) / (darker + 0.05f))
+        }
+    }
+    return maximum
+}
 
 @Composable
 private fun AtTwoHundredPercentFontScale(content: @Composable () -> Unit) {

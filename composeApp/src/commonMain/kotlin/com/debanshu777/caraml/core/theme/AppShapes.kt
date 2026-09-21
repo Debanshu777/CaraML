@@ -15,9 +15,8 @@ import androidx.compose.ui.unit.dp
  * | `large`          | 24dp   | Sheets and large surfaces                  |
  * | `extraLarge`     | 24dp   | Dialogs, modal bottom sheets               |
  *
- * Use these via `MaterialTheme.shapes.medium` instead of literal
- * `RoundedCornerShape(12.dp)` so radii stay consistent and respond to any
- * future global shape change in one place.
+ * Material 3 still receives these base tokens, while feature code selects the
+ * semantic roles exposed by [AppPrismShapes] instead of a size name or literal radius.
  */
 val AppShapes: Shapes = Shapes(
     extraSmall = RoundedCornerShape(8.dp),

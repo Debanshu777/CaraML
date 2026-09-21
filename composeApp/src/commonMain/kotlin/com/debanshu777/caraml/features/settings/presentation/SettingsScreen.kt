@@ -46,6 +46,7 @@ import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.theme.ThemeViewModel
 import com.debanshu777.caraml.core.theme.auroraColors
 import com.debanshu777.caraml.core.theme.prism
+import com.debanshu777.caraml.core.theme.prismShapes
 import com.debanshu777.caraml.core.ui.components.CaraMLPrimaryTopBar
 import com.debanshu777.caraml.core.ui.layout.AppContentKind
 import com.debanshu777.caraml.core.ui.layout.ResponsiveContentPane
@@ -221,7 +222,7 @@ private fun CalibrationSetting(
         modifier = modifier
             .fillMaxWidth()
             .testTag("settings-calibration-group"),
-        shape = MaterialTheme.shapes.medium,
+        shape = MaterialTheme.prismShapes.pane,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
         Column(

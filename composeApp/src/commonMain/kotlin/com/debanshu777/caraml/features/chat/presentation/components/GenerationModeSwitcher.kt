@@ -21,6 +21,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.auroraColors
+import com.debanshu777.caraml.core.theme.prismShapes
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
 
 /**
@@ -39,7 +40,7 @@ fun GenerationModeSwitcher(
             .fillMaxWidth()
             .selectableGroup(),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
-        shape = MaterialTheme.shapes.medium,
+        shape = MaterialTheme.prismShapes.command,
     ) {
         Row(modifier = Modifier.fillMaxWidth()) {
             GenerationMode.entries.forEach { item ->
@@ -49,7 +50,7 @@ fun GenerationModeSwitcher(
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 48.dp)
-                        .clip(MaterialTheme.shapes.small)
+                        .clip(MaterialTheme.prismShapes.control)
                         .selectable(
                             selected = selected,
                             onClick = { onModeSelected(item) },
@@ -67,10 +68,10 @@ fun GenerationModeSwitcher(
                     } else {
                         MaterialTheme.colorScheme.surfaceContainerLow
                     },
-                    shape = MaterialTheme.shapes.small,
+                    shape = MaterialTheme.prismShapes.control,
                 ) {
                     Text(
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 13.dp),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
                         text = label,
                         style = MaterialTheme.typography.labelLarge,
                         color = if (selected) {

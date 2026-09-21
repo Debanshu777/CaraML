@@ -6,6 +6,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import com.debanshu777.caraml.core.theme.prismShapes
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
 
 @Composable
@@ -15,7 +16,7 @@ fun DownloadForLaterConfirmationDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = MaterialTheme.prismShapes.modal,
         containerColor = AuroraSurfaceLevel.Floating.containerColor(MaterialTheme.colorScheme),
         title = { Text("Download for later") },
         text = {

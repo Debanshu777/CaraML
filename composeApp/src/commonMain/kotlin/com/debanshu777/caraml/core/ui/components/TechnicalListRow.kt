@@ -4,12 +4,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -28,6 +27,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.auroraColors
+import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.theme.prism
 
 @Composable
@@ -148,9 +148,8 @@ private fun TechnicalListRowImpl(
     trailing: (@Composable () -> Unit)?,
 ) {
     val colors = MaterialTheme.auroraColors
+    val spacing = LocalSpacing.current
     val showSignal = emphasized || signalTone != null
-    val stackAccessories = LocalDensity.current.fontScale >= 1.5f ||
-        (status != null && trailing != null)
     val interactionModifier = when {
         selectionEnabled -> Modifier.selectable(
             selected = selected,
@@ -165,39 +164,39 @@ private fun TechnicalListRowImpl(
         else -> Modifier
     }
 
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(IntrinsicSize.Min)
-            .background(if (emphasized) colors.selectedSurface else Color.Transparent)
-            .then(interactionModifier)
-            .semantics(mergeDescendants = true) {
-                contentDescription?.let { this.contentDescription = it }
-            },
-    ) {
-        if (showSignal) {
-            SignalRail(tone = signalTone ?: SignalTone.Accent)
-        }
-        Column(modifier = Modifier.weight(1f)) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                leading?.let {
-                    Box(
-                        modifier = Modifier.size(24.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        it()
-                    }
-                    Spacer(modifier = Modifier.width(12.dp))
-                }
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val stackAccessories = maxWidth < 480.dp ||
+            LocalDensity.current.fontScale >= 1.5f ||
+            (status != null && trailing != null)
+        Box(
+            modifier = modifier
+                .fillMaxWidth()
+                .background(if (emphasized) colors.selectedSurface else Color.Transparent)
+                .then(interactionModifier)
+                .semantics(mergeDescendants = true) {
+                    contentDescription?.let { this.contentDescription = it }
+                },
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = spacing.l, vertical = spacing.m),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    leading?.let {
+                        Box(
+                            modifier = Modifier.size(24.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            it()
+                        }
+                        Spacer(modifier = Modifier.width(spacing.m))
+                    }
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(spacing.xs),
+                    ) {
                     eyebrow?.let {
                         Text(
                             text = it,
@@ -219,40 +218,50 @@ private fun TechnicalListRowImpl(
                             text = it,
                             style = MaterialTheme.typography.prism.denseMetadata,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(end = spacing.xs),
+                            softWrap = true,
                         )
                     }
-                    if (stackAccessories && (status != null || trailing != null)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            status?.invoke()
-                            trailing?.let {
-                                Spacer(modifier = Modifier.width(8.dp))
-                                it()
+                        if (stackAccessories && (status != null || trailing != null)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.Start,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                status?.invoke()
+                                trailing?.let {
+                                    Spacer(modifier = Modifier.width(spacing.s))
+                                    it()
+                                }
                             }
                         }
                     }
+                    if (!stackAccessories) {
+                        status?.let {
+                            Spacer(modifier = Modifier.width(spacing.s))
+                            it()
+                        }
+                        trailing?.let {
+                            Spacer(modifier = Modifier.width(spacing.s))
+                            it()
+                        }
+                    }
                 }
-                if (!stackAccessories) {
-                    status?.let {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        it()
-                    }
-                    trailing?.let {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        it()
-                    }
+                HorizontalDivider(
+                    modifier = Modifier.padding(
+                        start = if (leading == null) spacing.l else spacing.l + 36.dp,
+                    ),
+                    thickness = 1.dp,
+                    color = colors.divider,
+                )
+            }
+            if (showSignal) {
+                Box(Modifier.matchParentSize()) {
+                    SignalRail(tone = signalTone ?: SignalTone.Accent)
                 }
             }
-            HorizontalDivider(
-                modifier = Modifier.padding(start = if (leading == null) 16.dp else 52.dp),
-                thickness = 1.dp,
-                color = colors.divider,
-            )
         }
     }
 }

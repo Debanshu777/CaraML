@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.auroraColors
+import com.debanshu777.caraml.core.theme.prismShapes
 
 @Composable
 fun CommandSurface(
@@ -23,7 +24,7 @@ fun CommandSurface(
 ) {
     val colors = MaterialTheme.auroraColors
     val emphasized = focused || active
-    val shape = MaterialTheme.shapes.medium
+    val shape = MaterialTheme.prismShapes.command
     val outerTreatment = if (emphasized) {
         Modifier.background(color = colors.focusPrimary.copy(alpha = 0.20f), shape = shape)
     } else {

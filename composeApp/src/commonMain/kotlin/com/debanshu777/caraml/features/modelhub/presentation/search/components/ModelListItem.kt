@@ -29,8 +29,7 @@ fun ModelListItem(
         metadata = buildString {
             model.pipelineTag?.let(::append)
             if (isNotEmpty()) append(" • ")
-            append("${model.downloads ?: 0} downloads")
-            append(" • ${model.likes ?: 0} likes")
+            append("${formatCompactMetric((model.downloads ?: 0).toLong())} downloads")
             model.numParameters?.let { append(" • ${formatParams(it)} params") }
         },
         status = {

@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.prismShapes
 
 @Composable
 fun StatusMark(
@@ -31,7 +32,7 @@ fun StatusMark(
         modifier = modifier.semantics(mergeDescendants = true) {
             stateDescription = contentDescription
         },
-        shape = MaterialTheme.shapes.extraSmall,
+        shape = MaterialTheme.prismShapes.status,
         color = containerColor,
         contentColor = contentColor,
     ) {

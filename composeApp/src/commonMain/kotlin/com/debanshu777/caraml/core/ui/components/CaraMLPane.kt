@@ -11,6 +11,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
 import com.debanshu777.caraml.core.theme.auroraColors
+import com.debanshu777.caraml.core.theme.prismShapes
 
 /**
  * A meaningful tonal group. Prism panes are borderless by default; [showBorder]
@@ -20,7 +21,7 @@ import com.debanshu777.caraml.core.theme.auroraColors
 fun CaraMLPane(
     modifier: Modifier = Modifier,
     level: AuroraSurfaceLevel = AuroraSurfaceLevel.Pane,
-    shape: Shape = MaterialTheme.shapes.medium,
+    shape: Shape = MaterialTheme.prismShapes.pane,
     showBorder: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {

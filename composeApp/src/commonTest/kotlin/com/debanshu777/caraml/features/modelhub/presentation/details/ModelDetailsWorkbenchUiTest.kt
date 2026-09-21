@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.ComposeUiTest
@@ -51,6 +52,7 @@ import com.debanshu777.caraml.core.recommendation.QuantizationEvidence
 import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
 import com.debanshu777.caraml.features.modelhub.domain.RecommendedModelUiState
 import com.debanshu777.caraml.features.modelhub.presentation.details.components.ModelDetailContent
+import com.debanshu777.caraml.features.modelhub.presentation.details.components.GgufFileListItem
 import com.debanshu777.caraml.features.modelhub.presentation.search.GgufFileUiState
 import com.debanshu777.caraml.features.modelhub.presentation.search.InstallBundleUiState
 import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
@@ -130,7 +132,7 @@ class ModelDetailsWorkbenchUiTest {
     }
 
     @Test
-    fun compactDetailsUsesSectionsAndDividersInsteadOfStackedOutlinedCards() =
+    fun compactDetailsUsesRoundedHierarchyWithoutStackedOutlinedCards() =
         runComposeUiTest {
             val fixture = workbenchGgufFixture()
             val scheme = workbenchColorScheme()
@@ -182,16 +184,16 @@ class ModelDetailsWorkbenchUiTest {
             val metadataPixels = metadataNode
                 .captureToImage()
                 .toPixelMap()
-            val metadataEdge = metadataPixels[metadataPixels.width - 4, 4]
+            val metadataCorner = metadataPixels[1, 1]
             assertTrue(
-                metadataEdge.colorDistance(scheme.surface) <= 0.025f,
-                "Metadata should sit on the page canvas instead of an independent card",
+                metadataCorner.colorDistance(scheme.surface) <= 0.025f,
+                "Rounded technical-details corner should reveal the page canvas",
             )
             onNodeWithTag("detail-files").performScrollTo().assertIsDisplayed()
         }
 
     @Test
-    fun detailIdentityIsAnEdgeAlignedFieldWithoutARedundantOverviewCardHeading() =
+    fun detailIdentityUsesOneRoundedFocalSurfaceWithoutARedundantOverviewHeading() =
         runComposeUiTest {
             val canvas = Color.Magenta
             setContent {
@@ -216,11 +218,90 @@ class ModelDetailsWorkbenchUiTest {
 
             onAllNodes(hasText("Overview")).assertCountEquals(0)
             val pixels = onNodeWithTag("detail-overview").captureToImage().toPixelMap()
+            assertEquals(canvas, pixels[1, 1], "Rounded overview corner must reveal the page canvas")
             assertTrue(
-                pixels[0, 0] != canvas,
-                "The identity field must reach its aligned section edge instead of clipping into a card",
+                pixels[pixels.width / 2, 1].colorDistance(canvas) >= 0.05f,
+                "The rounded identity field must retain its focal treatment",
             )
         }
+
+    @Test
+    fun compactHierarchyPutsDecisionContentBeforeCollapsedTechnicalEvidence() =
+        runComposeUiTest {
+            val fixture = workbenchGgufFixture()
+            setContent {
+                CompositionLocalProvider(LocalDensity provides Density(1f)) {
+                    MaterialTheme {
+                        Box(Modifier.width(412.dp).height(915.dp)) {
+                            ModelDetailContent(
+                                model = workbenchMetadataModel(fixture.repositoryId),
+                                ggufFiles = fixture.files,
+                                isDownloading = false,
+                                onDownloadClick = { _, _, _ -> },
+                                recommendationState = fixture.recommendation,
+                            )
+                        }
+                    }
+                }
+            }
+
+            onNodeWithText("Pipeline").assertDoesNotExist()
+            val deviceFit = onNodeWithText("Device fit").fetchSemanticsNode().boundsInRoot
+            val files = onNodeWithText("GGUF files").fetchSemanticsNode().boundsInRoot
+            val technical = onNodeWithText("Technical details")
+                .fetchSemanticsNode().boundsInRoot
+            assertTrue(deviceFit.top < files.top, "Device decision should precede artifacts")
+            assertTrue(files.top < technical.top, "Technical evidence should follow artifact choice")
+
+            onNodeWithText("Technical details").performClick()
+            onNodeWithText("Pipeline").assertExists()
+            onNodeWithText("License").assertExists()
+        }
+
+    @Test
+    fun compactGgufRowGivesFilenameThenSizeAndActionTheirOwnBands() = runComposeUiTest {
+        val pageColor = Color.Magenta
+        val filename = "Qwen3.8-27B-Uncensored-HauhauCS-Aggressive-FastMTP-32K.gguf"
+        setContent {
+            CompositionLocalProvider(LocalDensity provides Density(1f)) {
+                MaterialTheme {
+                    Box(
+                        Modifier
+                            .width(360.dp)
+                            .background(pageColor),
+                    ) {
+                        GgufFileListItem(
+                            filename = filename,
+                            sizeBytes = 902_823_936L,
+                            isDownloaded = false,
+                            progress = null,
+                            isDownloading = false,
+                            onDownloadClick = {},
+                            modifier = Modifier.testTag("compact-gguf-row"),
+                        )
+                    }
+                }
+            }
+        }
+
+        val layouts = mutableListOf<TextLayoutResult>()
+        val filenameNode = onNodeWithText(filename, useUnmergedTree = true)
+        filenameNode.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action ->
+            assertTrue(action(layouts))
+        }
+        assertTrue(!layouts.single().hasVisualOverflow, "GGUF filename must remain readable")
+        val filenameBounds = filenameNode.fetchSemanticsNode().boundsInRoot
+        val sizeBounds = onNodeWithText("861 MB", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        assertTrue(sizeBounds.top >= filenameBounds.bottom, "Size belongs below the filename")
+
+        val pixels = onNodeWithTag("compact-gguf-row").captureToImage().toPixelMap()
+        assertEquals(pageColor, pixels[1, 1], "Rounded file-row corner must reveal the page")
+        assertTrue(
+            pixels[pixels.width / 2, 1].colorDistance(pageColor) >= 0.05f,
+            "File row must own a rounded tonal surface",
+        )
+    }
 
     @Test
     fun longRepositoryNameWrapsBelowOwnerWithoutRepeatingOwner() = runComposeUiTest {
@@ -274,6 +355,7 @@ class ModelDetailsWorkbenchUiTest {
         }
 
         onNodeWithTag("detail-metadata").performScrollTo().assertIsDisplayed()
+        onNodeWithText("Technical details").performClick()
         onNodeWithText("Library").assertExists()
         onNodeWithText("Pipeline").assertExists()
         onNodeWithText("License").assertExists()
@@ -323,6 +405,7 @@ class ModelDetailsWorkbenchUiTest {
         }
 
         onNodeWithTag("detail-metadata").performScrollTo().assertIsDisplayed()
+        onNodeWithText("Technical details").performClick()
         onNodeWithText("Library").assertDoesNotExist()
         onNodeWithText("Pipeline").assertDoesNotExist()
         onNodeWithText("License").assertDoesNotExist()

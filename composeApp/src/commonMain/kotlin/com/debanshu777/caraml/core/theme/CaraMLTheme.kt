@@ -12,6 +12,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.MotionDurationScale
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.core.ui.motion.auroraMotionPolicy
 import com.materialkolor.DynamicMaterialTheme
@@ -54,8 +56,17 @@ fun CaraMLTheme(
         style = preferences.paletteStyle.toMaterialKolor(),
         animate = true,
     ) {
+        val generatedScheme = MaterialTheme.colorScheme
+        val appPrimary = preferences.seedColor
+        val appOnPrimary = if (appPrimary.luminance() > 0.179f) Color.Black else Color.White
+        val appColorScheme = remember(generatedScheme, appPrimary, appOnPrimary) {
+            generatedScheme.copy(
+                primary = appPrimary,
+                onPrimary = appOnPrimary,
+            )
+        }
         MaterialExpressiveTheme(
-            colorScheme = MaterialTheme.colorScheme,
+            colorScheme = appColorScheme,
             shapes = AppShapes,
             typography = AppTypography,
             motionScheme = AppMotionScheme,

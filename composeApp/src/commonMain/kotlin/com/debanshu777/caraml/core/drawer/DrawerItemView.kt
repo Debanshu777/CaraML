@@ -22,6 +22,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.auroraColors
+import com.debanshu777.caraml.core.theme.prismShapes
 import com.debanshu777.caraml.core.ui.components.SignalRail
 import com.debanshu777.caraml.core.ui.components.SignalTone
 
@@ -39,7 +40,7 @@ fun DrawerItemView(
             .fillMaxWidth()
             .height(IntrinsicSize.Min)
             .heightIn(min = 48.dp)
-            .clip(MaterialTheme.shapes.medium)
+            .clip(MaterialTheme.prismShapes.control)
             .background(if (selected) colors.selectedSurface else androidx.compose.ui.graphics.Color.Transparent)
             .selectable(
                 selected = selected,

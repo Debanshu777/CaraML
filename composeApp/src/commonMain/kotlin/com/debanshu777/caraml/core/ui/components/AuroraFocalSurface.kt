@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Shape
 import com.debanshu777.caraml.core.theme.auroraColors
+import com.debanshu777.caraml.core.theme.prismShapes
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 
 enum class FocalEntrance {
@@ -29,7 +30,7 @@ enum class FocalEntrance {
 @Composable
 fun AuroraFocalSurface(
     modifier: Modifier = Modifier,
-    shape: Shape = MaterialTheme.shapes.large,
+    shape: Shape = MaterialTheme.prismShapes.focal,
     entrance: FocalEntrance = FocalEntrance.None,
     content: @Composable BoxScope.() -> Unit,
 ) {

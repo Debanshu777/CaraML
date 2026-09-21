@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.prismShapes
 
 enum class StatusTone {
     Neutral,
@@ -38,12 +39,12 @@ fun CaraMLStatusPill(
         modifier = modifier.semantics(mergeDescendants = true) {
             this.contentDescription = contentDescription
         },
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = MaterialTheme.prismShapes.status,
         color = containerColor,
         contentColor = contentColor,
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.Center,
         ) {
             icon?.let {
@@ -52,7 +53,7 @@ fun CaraMLStatusPill(
                     contentDescription = null,
                     modifier = Modifier.size(16.dp),
                 )
-                Spacer(modifier = Modifier.size(6.dp))
+                Spacer(modifier = Modifier.size(4.dp))
             }
             Text(text = label, style = MaterialTheme.typography.labelMedium)
         }

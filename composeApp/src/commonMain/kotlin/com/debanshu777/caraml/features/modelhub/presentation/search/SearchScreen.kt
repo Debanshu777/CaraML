@@ -2,13 +2,14 @@ package com.debanshu777.caraml.features.modelhub.presentation.search
 
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,6 +30,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -69,6 +71,8 @@ import com.debanshu777.caraml.core.rating.ui.RecommendationDetailsSheet
 import com.debanshu777.caraml.core.rating.ui.recommendationPresentation
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
 import com.debanshu777.caraml.core.theme.LocalSpacing
+import com.debanshu777.caraml.core.theme.auroraColors
+import com.debanshu777.caraml.core.theme.prismShapes
 import com.debanshu777.caraml.core.ui.components.CaraMLPrimaryTopBar
 import com.debanshu777.caraml.core.ui.layout.AppContentKind
 import com.debanshu777.caraml.core.ui.layout.ResponsiveContentPane
@@ -735,6 +739,7 @@ internal fun <T> LazyListScope.modelHubResultItems(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .padding(bottom = LocalSpacing.current.m)
                     .animateItem(
                         fadeInSpec = null,
                         placementSpec = if (motion.spatialTransitionsEnabled) {
@@ -792,7 +797,7 @@ private fun RecommendationProfileEditorSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = MaterialTheme.prismShapes.modal,
         containerColor = AuroraSurfaceLevel.Floating.containerColor(MaterialTheme.colorScheme),
     ) {
         Column(
@@ -1001,7 +1006,7 @@ internal fun DownloadedTabContent(
     if (showDeleteConfirm) {
         AlertDialog(
             onDismissRequest = { if (!isDeleting) showDeleteConfirm = false },
-            shape = MaterialTheme.shapes.extraLarge,
+            shape = MaterialTheme.prismShapes.modal,
             containerColor = AuroraSurfaceLevel.Floating.containerColor(MaterialTheme.colorScheme),
             title = { Text("Remove downloads?") },
             text = { Text("Remove selected downloads from this device?") },
@@ -1028,18 +1033,20 @@ internal fun DownloadedTabContent(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LibraryReadinessToolbar(
     selected: ReadinessFilter,
     onSelected: (ReadinessFilter) -> Unit,
 ) {
-    Row(
+    val colors = MaterialTheme.auroraColors
+    FlowRow(
         modifier = Modifier
             .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
             .selectableGroup()
             .testTag("model-toolbar"),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         ReadinessFilter.entries.forEach { filter ->
             val label = when (filter) {
@@ -1070,7 +1077,12 @@ private fun LibraryReadinessToolbar(
                         this.selected = selected == filter
                         role = Role.RadioButton
                     },
-                shape = MaterialTheme.shapes.small,
+                shape = MaterialTheme.prismShapes.control,
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = colors.focusPrimary,
+                    selectedLabelColor = colors.onFocusPrimary,
+                    selectedLeadingIconColor = colors.onFocusPrimary,
+                ),
             )
         }
     }

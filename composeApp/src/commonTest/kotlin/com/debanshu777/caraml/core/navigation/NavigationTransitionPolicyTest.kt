@@ -1,11 +1,25 @@
 package com.debanshu777.caraml.core.navigation
 
+import androidx.navigation3.runtime.NavBackStack
+import androidx.navigation3.runtime.NavKey
 import com.debanshu777.caraml.core.ui.motion.auroraMotionPolicy
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class NavigationTransitionPolicyTest {
+
+    @Test
+    fun modelSelectionReturnsToCreateWithoutEverEmptyingRootedModelsStack() {
+        val rootedModels = NavBackStack<NavKey>(AppScreen.Search)
+        val nestedModels = NavBackStack<NavKey>(AppScreen.Home, AppScreen.Search)
+
+        returnFromModelSelection(rootedModels)
+        returnFromModelSelection(nestedModels)
+
+        assertEquals(listOf(AppScreen.Home), rootedModels.toList())
+        assertEquals(listOf(AppScreen.Home), nestedModels.toList())
+    }
 
     @Test
     fun primaryDestinationsUsePeerMotionAndDetailsUseHierarchicalMotion() {

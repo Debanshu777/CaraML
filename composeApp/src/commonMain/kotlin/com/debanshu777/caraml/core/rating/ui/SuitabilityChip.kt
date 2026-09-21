@@ -25,6 +25,7 @@ import androidx.compose.ui.semantics.semantics
 import com.debanshu777.caraml.core.recommendation.PersonalizedRecommendation
 import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
 import com.debanshu777.caraml.core.rating.SuitabilityRating
+import com.debanshu777.caraml.core.theme.prismShapes
 
 @Composable
 fun RecommendationStatusChip(
@@ -38,7 +39,7 @@ fun RecommendationStatusChip(
     } else {
         Surface(
             modifier = modifier,
-            shape = MaterialTheme.shapes.small,
+            shape = MaterialTheme.prismShapes.status,
             color = MaterialTheme.colorScheme.surfaceVariant,
         ) {
             Text(
@@ -48,7 +49,7 @@ fun RecommendationStatusChip(
                     DescriptorState.NEEDS_INFORMATION -> "Needs information"
                     DescriptorState.ASSESSED -> "Needs information"
                 },
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                 style = MaterialTheme.typography.labelMedium,
             )
         }
@@ -74,7 +75,7 @@ fun SuitabilityChip(
         modifier = modifier
             .heightIn(min = if (onInfoClick != null) 48.dp else 0.dp)
             .semantics { contentDescription = recommendationSemantics(recommendation) },
-        shape = MaterialTheme.shapes.small,
+        shape = MaterialTheme.prismShapes.status,
         color = recommendation.category.containerColor(),
         contentColor = recommendation.category.onContainerColor(),
         tonalElevation = 1.dp,
@@ -82,8 +83,8 @@ fun SuitabilityChip(
         Row(
             modifier = Modifier
                 .let { if (onInfoClick != null) it.clickable { onInfoClick() } else it }
-                .padding(horizontal = 10.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -107,7 +108,7 @@ fun SuitabilityChip(
 ) {
     Surface(
         modifier = modifier,
-        shape = MaterialTheme.shapes.small,
+        shape = MaterialTheme.prismShapes.status,
         color = rating.containerColor(),
         tonalElevation = 1.dp,
     ) {
@@ -115,7 +116,7 @@ fun SuitabilityChip(
             modifier = Modifier
                 .let { if (onInfoClick != null) it.clickable { onInfoClick() } else it }
                 .padding(horizontal = 8.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             androidx.compose.foundation.layout.Box(

@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
@@ -16,6 +17,8 @@ import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -31,6 +34,7 @@ import com.debanshu777.caraml.core.recommendation.RecommendationCategory
 import com.debanshu777.caraml.core.ui.components.SignalTone
 import com.debanshu777.caraml.core.ui.components.StatusMark
 import com.debanshu777.caraml.core.ui.components.TechnicalListRow
+import com.debanshu777.caraml.core.theme.prismShapes
 import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
 
 @Composable
@@ -48,18 +52,25 @@ fun ModelResultCard(
     val trailingContent: (@Composable () -> Unit)? = trailing?.let { content ->
         { Row(content = content) }
     }
-    TechnicalListRow(
-        title = identity.title,
-        eyebrow = identity.owner,
-        metadata = metadata,
-        contentDescription = "Open model $title",
-        emphasized = highlighted,
-        signalTone = if (highlighted) SignalTone.Accent else null,
-        onClick = onClick,
-        modifier = modifier.testTag("model-row:$title"),
-        status = status,
-        trailing = trailingContent,
-    )
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.prismShapes.pane,
+        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.76f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+    ) {
+        TechnicalListRow(
+            title = identity.title,
+            eyebrow = identity.owner,
+            metadata = metadata,
+            contentDescription = "Open model $title",
+            emphasized = highlighted,
+            signalTone = if (highlighted) SignalTone.Accent else null,
+            onClick = onClick,
+            modifier = Modifier.testTag("model-row:$title"),
+            status = status,
+            trailing = trailingContent,
+        )
+    }
 }
 
 @Composable

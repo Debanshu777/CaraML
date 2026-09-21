@@ -14,6 +14,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
@@ -160,7 +161,8 @@ class ModelHubControlsUiTest {
     }
 
     @Test
-    fun compactBrowseControlsUseOneBandAndPutRangesBehindFilters() = runComposeUiTest {
+    fun compactBrowseControlsWrapIntoTwoCompleteBandsWithoutHorizontalClipping() =
+        runComposeUiTest {
         val controlWidth = 320.dp
         var applyCalls = 0
         setContent {
@@ -184,10 +186,28 @@ class ModelHubControlsUiTest {
             }
         }
 
-        val kindPositions = listOf("Text", "Image", "Video", "Sort", "Filters").map {
-            onNodeWithText(it).fetchSemanticsNode().positionInRoot.y
+        val toolbar = onNodeWithTag("model-toolbar").fetchSemanticsNode()
+        assertEquals(
+            null,
+            toolbar.config.getOrNull(SemanticsProperties.HorizontalScrollAxisRange),
+            "Essential browse controls must wrap rather than hide in a horizontally scrolled row",
+        )
+        val kindBounds = listOf("Text", "Image", "Video").map { label ->
+            onNode(hasText(label) and isSelectable()).fetchSemanticsNode().boundsInRoot
         }
-        assertTrue(kindPositions.max() - kindPositions.min() < 1f)
+        val sortBounds = onNodeWithContentDescription("Sort models")
+            .fetchSemanticsNode().boundsInRoot
+        val filterBounds = onNodeWithContentDescription("Filters")
+            .fetchSemanticsNode().boundsInRoot
+
+        assertTrue(kindBounds.maxOf { it.center.y } - kindBounds.minOf { it.center.y } < 1f)
+        assertTrue(sortBounds.center.y == filterBounds.center.y)
+        assertTrue(sortBounds.top >= kindBounds.maxOf { it.bottom })
+        (kindBounds + listOf(sortBounds, filterBounds)).forEach { bounds ->
+            assertTrue(bounds.left >= toolbar.boundsInRoot.left)
+            assertTrue(bounds.right <= toolbar.boundsInRoot.right)
+            assertTrue(bounds.width >= 48f)
+        }
         listOf("Sort models", "Filters").forEach { description ->
             val control = onNodeWithContentDescription(description).fetchSemanticsNode()
             assertEquals(AppShapes.small, control.config[SemanticsProperties.Shape])
@@ -195,7 +215,7 @@ class ModelHubControlsUiTest {
         onNodeWithText("Min: 0").assertDoesNotExist()
         onNodeWithText("Max: 6B").assertDoesNotExist()
 
-        onNodeWithText("Filters").performScrollTo().performClick()
+        onNodeWithText("Filters").performClick()
         onNodeWithText("Minimum parameters").assertIsDisplayed()
         onNodeWithText("Maximum parameters")
             .performScrollTo()

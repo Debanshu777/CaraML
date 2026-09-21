@@ -39,6 +39,7 @@ import com.debanshu777.caraml.core.theme.ThemeDefaults
 import com.debanshu777.caraml.core.theme.ThemeMode
 import com.debanshu777.caraml.core.theme.ThemePaletteStyle
 import com.debanshu777.caraml.core.theme.ThemeViewModel
+import com.debanshu777.caraml.core.theme.prismShapes
 import com.debanshu777.caraml.core.ui.components.AuroraFocalSurface
 
 /** Appearance preferences hosted in [SettingsScreen]. */
@@ -196,7 +197,7 @@ internal fun AuroraThemePreview(modifier: Modifier = Modifier) {
             .semantics(mergeDescendants = true) {
                 contentDescription = "Current Aurora theme preview"
             },
-        shape = MaterialTheme.shapes.large,
+        shape = MaterialTheme.prismShapes.focal,
     ) {
         Column(
             modifier = Modifier

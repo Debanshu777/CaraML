@@ -3,11 +3,14 @@ package com.debanshu777.caraml.features.modelhub.presentation.details.components
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -15,16 +18,17 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
@@ -32,6 +36,7 @@ import com.debanshu777.caraml.core.download.DownloadArtifactState
 import com.debanshu777.caraml.core.theme.AppTechnicalLabel
 import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.theme.auroraColors
+import com.debanshu777.caraml.core.theme.prismShapes
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 
 @Composable
@@ -87,6 +92,7 @@ internal fun GgufFileTechnicalRow(
     onCancel: () -> Unit = {},
     onRetry: () -> Unit = {},
     showDownloadAction: Boolean = true,
+    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerLow,
 ) {
     val hasDirectory = filename.contains('/')
     val displayName = filename.substringAfterLast('/')
@@ -122,73 +128,137 @@ internal fun GgufFileTechnicalRow(
         Modifier
     }
 
-    Column(
+    Surface(
         modifier = modifier
             .fillMaxWidth()
             .then(downloadStateSemantics),
+        shape = MaterialTheme.prismShapes.pane,
+        color = containerColor,
+        contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                if (directory != null) {
-                    Text(
-                        text = directory,
-                        style = AppTechnicalLabel,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
+        BoxWithConstraints {
+            val compact = maxWidth < 480.dp
+            val spacing = LocalSpacing.current
+            if (compact) {
+                Column(
+                    modifier = Modifier.padding(spacing.l),
+                    verticalArrangement = Arrangement.spacedBy(spacing.s),
+                ) {
+                    ArtifactIdentity(
+                        directory = directory,
+                        displayName = displayName,
+                        maxNameLines = 2,
                     )
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = displayName,
-                        style = AppTechnicalLabel,
-                        modifier = Modifier.weight(1f)
-                    )
-                    if (sizeBytes != null) {
-                        Text(
-                            formatFileSize(sizeBytes),
-                            style = AppTechnicalLabel,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                    if (reportedProgress != null) {
+                        ArtifactProgress(reportedProgress, displayedProgress)
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        sizeBytes?.let {
+                            Text(
+                                formatFileSize(it),
+                                style = AppTechnicalLabel,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Spacer(Modifier.weight(1f))
+                        GgufFileAction(
+                            filename = filename,
+                            isDownloaded = isDownloaded,
+                            isDownloading = isDownloading,
+                            downloadEnabled = downloadEnabled,
+                            interactionLocked = interactionLocked,
+                            durableState = durableState,
+                            onDownloadClick = onDownloadClick,
+                            onPause = onPause,
+                            onResume = onResume,
+                            onCancel = onCancel,
+                            onRetry = onRetry,
+                            showAction = showDownloadAction,
                         )
                     }
                 }
-                if (reportedProgress != null) {
-                    LinearProgressIndicator(
-                        progress = { displayedProgress },
-                        modifier = Modifier.fillMaxWidth().padding(top = LocalSpacing.current.xs)
-                    )
-                    Text(
-                        "${(reportedProgress * 100f).toInt()}%",
-                        style = AppTechnicalLabel,
+            } else {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = spacing.l, vertical = spacing.m),
+                    horizontalArrangement = Arrangement.spacedBy(spacing.s),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(spacing.xs),
+                    ) {
+                        ArtifactIdentity(directory = directory, displayName = displayName)
+                        if (reportedProgress != null) {
+                            ArtifactProgress(reportedProgress, displayedProgress)
+                        }
+                    }
+                    sizeBytes?.let {
+                        Text(
+                            formatFileSize(it),
+                            style = AppTechnicalLabel,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    GgufFileAction(
+                        filename = filename,
+                        isDownloaded = isDownloaded,
+                        isDownloading = isDownloading,
+                        downloadEnabled = downloadEnabled,
+                        interactionLocked = interactionLocked,
+                        durableState = durableState,
+                        onDownloadClick = onDownloadClick,
+                        onPause = onPause,
+                        onResume = onResume,
+                        onCancel = onCancel,
+                        onRetry = onRetry,
+                        showAction = showDownloadAction,
                     )
                 }
             }
-            GgufFileAction(
-                filename = filename,
-                isDownloaded = isDownloaded,
-                isDownloading = isDownloading,
-                downloadEnabled = downloadEnabled,
-                interactionLocked = interactionLocked,
-                durableState = durableState,
-                onDownloadClick = onDownloadClick,
-                onPause = onPause,
-                onResume = onResume,
-                onCancel = onCancel,
-                onRetry = onRetry,
-                showAction = showDownloadAction,
+        }
+    }
+}
+
+@Composable
+private fun ArtifactIdentity(
+    directory: String?,
+    displayName: String,
+    maxNameLines: Int = 2,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.xs)) {
+        if (directory != null) {
+            Text(
+                text = directory,
+                style = AppTechnicalLabel,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
             )
         }
-        HorizontalDivider(
-            modifier = Modifier.padding(start = 16.dp),
-            color = MaterialTheme.auroraColors.divider,
-            thickness = 1.dp,
+        Text(
+            text = displayName,
+            style = AppTechnicalLabel,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = maxNameLines,
         )
     }
+}
+
+@Composable
+private fun ArtifactProgress(reportedProgress: Float, displayedProgress: Float) {
+    LinearProgressIndicator(
+        progress = { displayedProgress },
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Text(
+        "${(reportedProgress * 100f).toInt()}%",
+        style = AppTechnicalLabel,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 @Composable
@@ -222,19 +292,31 @@ internal fun GgufFileAction(
                     DownloadArtifactState.QUEUED,
                     DownloadArtifactState.WAITING_FOR_NETWORK,
                     -> IconButton(onClick = onPause, modifier = Modifier.size(48.dp)) {
-                        Icon(Icons.Default.Pause, contentDescription = "Pause download $filename")
+                        Icon(
+                            Icons.Default.Pause,
+                            contentDescription = "Pause download $filename",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
                     }
                     DownloadArtifactState.PAUSED -> IconButton(
                         onClick = onResume,
                         modifier = Modifier.size(48.dp),
                     ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = "Resume download $filename")
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            contentDescription = "Resume download $filename",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
                     }
                     DownloadArtifactState.FAILED_RETRYABLE -> IconButton(
                         onClick = onRetry,
                         modifier = Modifier.size(48.dp),
                     ) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Retry download $filename")
+                        Icon(
+                            Icons.Default.Refresh,
+                            contentDescription = "Retry download $filename",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
                     }
                     else -> Unit
                 }
@@ -243,7 +325,11 @@ internal fun GgufFileAction(
                     )
                 ) {
                     IconButton(onClick = onCancel, modifier = Modifier.size(48.dp)) {
-                        Icon(Icons.Default.Close, contentDescription = "Cancel download $filename")
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Cancel download $filename",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
                     }
                 }
             }
@@ -253,7 +339,11 @@ internal fun GgufFileAction(
             modifier = Modifier.size(48.dp),
             enabled = downloadEnabled && !interactionLocked && !isDownloading,
         ) {
-            Icon(Icons.Default.Download, contentDescription = "Download $filename")
+            Icon(
+                Icons.Default.Download,
+                contentDescription = "Download $filename",
+                tint = MaterialTheme.colorScheme.onSurface,
+            )
         }
     }
 }
