@@ -51,7 +51,6 @@ class DeviceSnapshotProvider internal constructor(
     }
 
     private fun captureBlocking(reusedHardwareProfile: HardwareProfile? = null): DeviceSnapshot {
-        val now = clock()
         val providerEvidence = mutableListOf<Evidence>()
         val profile = reusedHardwareProfile ?: readHardware(providerEvidence)
         val backends = if (reusedHardwareProfile == null) {
@@ -61,7 +60,8 @@ class DeviceSnapshotProvider internal constructor(
         }
         val resolvedProfile = if (reusedHardwareProfile == null) profile.withBackends(backends) else profile
 
-        val rawResources = readResources(now, providerEvidence)
+        val rawResources = readResources(providerEvidence)
+        val now = clock()
         val normalized = normalizeResources(rawResources, resolvedProfile.memoryTopology, providerEvidence)
         val storage = readStorage(providerEvidence)
         val fresh = normalized.isFreshAt(now)
@@ -227,10 +227,7 @@ class DeviceSnapshotProvider internal constructor(
         BudgetReading.Absent
     }
 
-    private fun readResources(
-        now: Long,
-        evidence: MutableList<Evidence>,
-    ): ResourceSnapshot = try {
+    private fun readResources(evidence: MutableList<Evidence>): ResourceSnapshot = try {
         resourceSnapshotSource()
     } catch (cancellation: CancellationException) {
         throw cancellation
@@ -251,7 +248,7 @@ class DeviceSnapshotProvider internal constructor(
             lowMemory = null,
             thermalState = ThermalState.UNKNOWN,
             powerPolicyState = PowerPolicyState.UNKNOWN,
-            capturedAtEpochMs = now,
+            capturedAtEpochMs = clock(),
             evidence = emptyList(),
         )
     }

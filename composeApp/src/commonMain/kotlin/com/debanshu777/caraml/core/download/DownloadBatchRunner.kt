@@ -9,8 +9,11 @@ import com.debanshu777.huggingfacemanager.download.DownloadProgressDTO
 import com.debanshu777.huggingfacemanager.download.DownloadResumeMetadata
 import com.debanshu777.huggingfacemanager.download.InsufficientStorageException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.random.Random
 
 sealed interface DownloadRunResult {
@@ -69,6 +72,21 @@ class DownloadBatchRunner(
             DownloadUserIntent.RUN -> Unit
         }
 
+        val unscoped = initial.artifacts.filterNot { it.request.metadata.usesImmutableStorageLayout }
+        if (unscoped.isNotEmpty()) {
+            unscoped.forEach { artifact ->
+                if (artifact.state.canTransitionTo(DownloadArtifactState.FAILED_TERMINAL)) {
+                    store.transitionArtifact(
+                        artifact.artifactId,
+                        DownloadArtifactState.FAILED_TERMINAL,
+                        DownloadFailureCode.SECURE_PATH,
+                        clock(),
+                    )
+                }
+            }
+            return DownloadRunResult.Failed(DownloadFailureCode.SECURE_PATH)
+        }
+
         val verifyingArtifacts = mutableListOf<String>()
         for (initialArtifact in initial.artifacts) {
             if (initialArtifact.state == DownloadArtifactState.COMPLETED) continue
@@ -76,10 +94,17 @@ class DownloadBatchRunner(
                 verifyingArtifacts += initialArtifact.artifactId
                 continue
             }
-            if (runCatching { transfer.isPublished(initialArtifact.request.metadata) }.getOrDefault(false)) {
+            val isPublished = try {
+                transfer.isPublished(initialArtifact.request.metadata)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                false
+            }
+            if (isPublished) {
                 val owner = leaseOwner().take(128)
-                if (store.claim(initialArtifact.artifactId, owner, clock(), clock() + LEASE_DURATION_MS)) {
-                    try {
+                try {
+                    if (store.claim(initialArtifact.artifactId, owner, clock(), clock() + LEASE_DURATION_MS)) {
                         store.updateProgress(
                             initialArtifact.artifactId,
                             initialArtifact.expectedBytes,
@@ -94,28 +119,31 @@ class DownloadBatchRunner(
                             clock(),
                         )
                         verifyingArtifacts += initialArtifact.artifactId
-                    } finally {
-                        store.releaseLease(initialArtifact.artifactId, owner, clock())
                     }
+                } catch (cancelled: CancellationException) {
+                    checkpointCancellation(batchId, initialArtifact.artifactId, owner)
+                    throw cancelled
+                } finally {
+                    releaseLease(initialArtifact.artifactId, owner)
                 }
                 continue
             }
             val owner = leaseOwner().take(128)
-            if (!store.claim(initialArtifact.artifactId, owner, clock(), clock() + LEASE_DURATION_MS)) continue
             try {
+                if (!store.claim(initialArtifact.artifactId, owner, clock(), clock() + LEASE_DURATION_MS)) continue
                 val result = runArtifact(batchId, initialArtifact, progressSink)
                 if (result != null) return result
                 verifyingArtifacts += initialArtifact.artifactId
             } catch (cancelled: CancellationException) {
-                checkpointCancellation(batchId, initialArtifact.artifactId)
+                checkpointCancellation(batchId, initialArtifact.artifactId, owner)
                 throw cancelled
             } catch (stop: StopForIntent) {
-                checkpointCancellation(batchId, initialArtifact.artifactId)
+                checkpointCancellation(batchId, initialArtifact.artifactId, owner)
                 return stop.result
             } catch (error: Exception) {
                 return fail(initialArtifact.artifactId, error)
             } finally {
-                store.releaseLease(initialArtifact.artifactId, owner, clock())
+                releaseLease(initialArtifact.artifactId, owner)
             }
         }
 
@@ -126,6 +154,8 @@ class DownloadBatchRunner(
             }
             store.getBatch(batchId)?.let { progressSink(it) }
             DownloadRunResult.Completed
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (error: Exception) {
             val code = failureCode(error)
             val terminal = isTerminal(error)
@@ -181,17 +211,23 @@ class DownloadBatchRunner(
         return null
     }
 
-    private suspend fun checkpointCancellation(batchId: String, artifactId: String) {
-        val batch = store.getBatch(batchId) ?: return
-        when (batch.userIntent) {
-            DownloadUserIntent.PAUSE -> store.transitionArtifact(artifactId, DownloadArtifactState.PAUSED, null, clock())
-            DownloadUserIntent.CANCEL -> store.transitionArtifact(artifactId, DownloadArtifactState.CANCELLED, null, clock())
-            DownloadUserIntent.RUN -> store.transitionArtifact(
-                artifactId,
-                DownloadArtifactState.FAILED_RETRYABLE,
-                DownloadFailureCode.NETWORK,
-                clock(),
-            )
+    private suspend fun checkpointCancellation(batchId: String, artifactId: String, owner: String) {
+        withContext(NonCancellable) {
+            try {
+                withTimeoutOrNull(CLEANUP_TIMEOUT_MS) {
+                    store.checkpointCancellation(batchId, artifactId, owner, clock())
+                }
+            } catch (_: Exception) { }
+        }
+    }
+
+    private suspend fun releaseLease(artifactId: String, owner: String) {
+        withContext(NonCancellable) {
+            try {
+                withTimeoutOrNull(CLEANUP_TIMEOUT_MS) {
+                    store.releaseLease(artifactId, owner, clock())
+                }
+            } catch (_: Exception) { }
         }
     }
 
@@ -209,6 +245,7 @@ class DownloadBatchRunner(
 
     private fun failureCode(error: Exception): DownloadFailureCode = when (error) {
         is InsufficientStorageException -> DownloadFailureCode.STORAGE
+        is ReplacementCleanupException -> DownloadFailureCode.PLATFORM
         is ArtifactVerificationException -> DownloadFailureCode.INTEGRITY
         is ArtifactFileAccessException -> DownloadFailureCode.SECURE_PATH
         is DownloadHttpException -> DownloadFailureCode.HTTP
@@ -230,5 +267,6 @@ class DownloadBatchRunner(
         const val LEASE_DURATION_MS = 15 * 60 * 1000L
         const val PROGRESS_TIME_INTERVAL_MS = 500L
         const val PROGRESS_BYTES_INTERVAL = 1024L * 1024L
+        const val CLEANUP_TIMEOUT_MS = 5_000L
     }
 }

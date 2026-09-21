@@ -47,6 +47,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -156,6 +157,7 @@ fun ChatScreen(
         onConfirmLoad = viewModel::confirmPendingLoad,
         onAcceptAlternative = viewModel::acceptSaferPlan,
         onRetryLoad = viewModel::retryPendingLoad,
+        onRetryCurrentModel = viewModel::retryCurrentModel,
         onCancelLoad = viewModel::cancelPendingLoad,
         loadMedia = viewModel::loadGeneratedMedia,
         onNavigateToSearch = onNavigateToSearch,
@@ -176,10 +178,11 @@ fun ChatScreenContent(
     onSelectModel: (LocalModelEntity) -> Unit,
     onSendMessage: (String) -> Unit,
     onCancelGeneration: () -> Unit,
-    onConfirmLoad: () -> Unit = {},
-    onAcceptAlternative: () -> Unit = {},
-    onRetryLoad: () -> Unit = {},
-    onCancelLoad: () -> Unit = {},
+    onConfirmLoad: (PendingLoadAction.ConfirmRisk) -> Unit = {},
+    onAcceptAlternative: (PendingLoadAction) -> Unit = {},
+    onRetryLoad: (PendingLoadAction.RetryQuarantined) -> Unit = {},
+    onRetryCurrentModel: () -> Unit = {},
+    onCancelLoad: (PendingLoadAction) -> Unit = {},
     loadMedia: suspend (String) -> ByteArray? = { null },
     onNavigateToSearch: () -> Unit,
     onNavigateToModelDetail: (modelId: String, mode: ModelHubBrowseMode) -> Unit = { _, _ -> },
@@ -355,6 +358,9 @@ fun ChatScreenContent(
                     CreateStateViewport {
                         ModelErrorScreen(
                             errorMessage = uiState.message,
+                            onRetryCurrentModelClick = onRetryCurrentModel.takeIf {
+                                uiState.canRetryCurrentModel
+                            },
                             onTryAnotherModelClick = onNavigateToSearch,
                             modifier = Modifier.fillMaxWidth(),
                         )
@@ -380,14 +386,16 @@ fun ChatScreenContent(
 
                 is ChatUiState.LoadActionRequired -> {
                     CreateStateViewport {
-                        LoadActionRequiredScreen(
-                            action = uiState.action,
-                            onConfirmLoad = onConfirmLoad,
-                            onAcceptAlternative = onAcceptAlternative,
-                            onRetryLoad = onRetryLoad,
-                            onCancelLoad = onCancelLoad,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+                        key(uiState.action) {
+                            LoadActionRequiredScreen(
+                                action = uiState.action,
+                                onConfirmLoad = onConfirmLoad,
+                                onAcceptAlternative = onAcceptAlternative,
+                                onRetryLoad = onRetryLoad,
+                                onCancelLoad = onCancelLoad,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                     }
                 }
 
@@ -634,10 +642,10 @@ private fun WorkspaceGlyph() {
 @Composable
 private fun LoadActionRequiredScreen(
     action: PendingLoadAction,
-    onConfirmLoad: () -> Unit,
-    onAcceptAlternative: () -> Unit,
-    onRetryLoad: () -> Unit,
-    onCancelLoad: () -> Unit,
+    onConfirmLoad: (PendingLoadAction.ConfirmRisk) -> Unit,
+    onAcceptAlternative: (PendingLoadAction) -> Unit,
+    onRetryLoad: (PendingLoadAction.RetryQuarantined) -> Unit,
+    onCancelLoad: (PendingLoadAction) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val (title, detail) = when (action) {
@@ -645,12 +653,15 @@ private fun LoadActionRequiredScreen(
             "This configuration may put the device under heavy memory pressure."
         is PendingLoadAction.AcceptAlternative -> "Safer configuration available" to
             "A lower-resource configuration is available for this device."
+        is PendingLoadAction.AcceptSafeAlternative -> "Safer configuration available" to
+            "A lower-resource configuration is available for this device."
         is PendingLoadAction.RetryQuarantined -> "Previous load may have crashed" to
             "This exact configuration is paused. Retry it only if you accept the risk."
     }
     val compromises = when (action) {
         is PendingLoadAction.ConfirmRisk -> action.request.plan.compromises
         is PendingLoadAction.AcceptAlternative -> action.saferPlan.compromises
+        is PendingLoadAction.AcceptSafeAlternative -> action.saferRequest.plan.compromises
         is PendingLoadAction.RetryQuarantined -> action.request.plan.compromises
     }
     Column(
@@ -675,10 +686,13 @@ private fun LoadActionRequiredScreen(
                 }
                 Spacer(Modifier.height(LocalSpacing.current.l))
                 Button(
-                    onClick = when (action) {
-                        is PendingLoadAction.ConfirmRisk -> onConfirmLoad
-                        is PendingLoadAction.AcceptAlternative -> onAcceptAlternative
-                        is PendingLoadAction.RetryQuarantined -> onRetryLoad
+                    onClick = {
+                        when (action) {
+                            is PendingLoadAction.ConfirmRisk -> onConfirmLoad(action)
+                            is PendingLoadAction.AcceptAlternative -> onAcceptAlternative(action)
+                            is PendingLoadAction.AcceptSafeAlternative -> onAcceptAlternative(action)
+                            is PendingLoadAction.RetryQuarantined -> onRetryLoad(action)
+                        }
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -686,11 +700,15 @@ private fun LoadActionRequiredScreen(
                         when (action) {
                             is PendingLoadAction.ConfirmRisk -> "Continue"
                             is PendingLoadAction.AcceptAlternative -> "Use safer plan"
+                            is PendingLoadAction.AcceptSafeAlternative -> "Use safer plan"
                             is PendingLoadAction.RetryQuarantined -> "Retry explicitly"
                         },
                     )
                 }
-                OutlinedButton(onClick = onCancelLoad, modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(
+                    onClick = { onCancelLoad(action) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
                     Text("Cancel")
                 }
             }

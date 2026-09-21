@@ -791,6 +791,12 @@ private class FakeMetadataGateway : HuggingFaceMetadataGateway {
     override suspend fun getStrictDetail(repositoryId: String): Result<ModelDetailResponse, DataError.Network> =
         details[repositoryId]?.let { Result.Success(it) } ?: Result.Error(DataError.Network.Unknown)
 
+    override suspend fun getStrictDetail(
+        repositoryId: String,
+        revision: String,
+    ): Result<ModelDetailResponse, DataError.Network> =
+        details[repositoryId]?.let { Result.Success(it) } ?: Result.Error(DataError.Network.Unknown)
+
     override suspend fun getTree(
         repositoryId: String,
         revision: String,
@@ -801,6 +807,12 @@ private class FakeMetadataGateway : HuggingFaceMetadataGateway {
     }
 
     override suspend fun getConfig(
+        repositoryId: String,
+        revision: String,
+    ): Result<TransformerConfigResponse, DataError.Network> =
+        configs[repositoryId]?.let { Result.Success(it) } ?: Result.Error(DataError.Network.Unknown)
+
+    override suspend fun getExactConfig(
         repositoryId: String,
         revision: String,
     ): Result<TransformerConfigResponse, DataError.Network> =

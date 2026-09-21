@@ -24,13 +24,13 @@ internal fun ArtifactManifest.verifiedDiffusionLoadTarget(
         it.logicalRole == "model" && it.identity.repositoryId == ownerModelId
     } ?: return null
 
-    if (primary.localRelativePath !in NATIVE_DIFFUSERS_CONSUMED_PATHS) {
-        return VerifiedDiffusionLoadTarget.File(primary.localRelativePath)
+    if (primary.layoutRelativePath !in NATIVE_DIFFUSERS_CONSUMED_PATHS) {
+        return VerifiedDiffusionLoadTarget.File(primary.layoutRelativePath)
     }
 
     val coveredOwnerPaths = entries.asSequence()
         .filter { it.identity.repositoryId == ownerModelId }
-        .map { it.localRelativePath }
+        .map { it.layoutRelativePath }
         .toSet()
     return if (coveredOwnerPaths.containsAll(NATIVE_DIFFUSERS_CONSUMED_PATHS)) {
         VerifiedDiffusionLoadTarget.Directory
@@ -49,7 +49,7 @@ internal fun ArtifactManifest.isCompleteDiffusionInstallation(
             entry.logicalRole == component.role.name.lowercase() &&
                 entry.identity.repositoryId == component.repoId &&
                 entry.identity.relativePath == component.filePath &&
-                entry.localRelativePath == normalizedDiffusersRelativePath(component.filePath)
+                entry.layoutRelativePath == normalizedDiffusersRelativePath(component.filePath)
         } != null
     }
 }

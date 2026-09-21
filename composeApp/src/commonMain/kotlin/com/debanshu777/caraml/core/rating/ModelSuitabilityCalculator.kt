@@ -1,6 +1,7 @@
 package com.debanshu777.caraml.core.rating
 
 import com.debanshu777.caraml.core.platform.DeviceHints
+import com.debanshu777.caraml.core.recommendation.requiresCpuOnlyLlmExecution
 import kotlin.math.max
 import kotlin.math.min
 
@@ -123,19 +124,13 @@ object ModelSuitabilityCalculator {
         "gemma2" to ArchShape(42, 8, 256),
     )
 
-    /** GGUF architectures known to fall back to CPU on Vulkan-only GPUs (hybrid SSM + GDN graph unsupported). */
-    private val HYBRID_SSM_ARCHS = setOf(
-        "qwen3next", "qwen35", "jamba", "mamba", "ssm",
-        "recurrent_gemma", "granite_hybrid",
-    )
-
     private fun runnabilityWarnings(
         hints: DeviceHints,
         quantTag: String?,
         architecture: String?,
     ): List<String> {
         val out = mutableListOf<String>()
-        val isHybridSsm = architecture?.lowercase() in HYBRID_SSM_ARCHS
+        val isHybridSsm = architecture.requiresCpuOnlyLlmExecution()
         if (isHybridSsm) {
             out += "This architecture (hybrid SSM) falls back to CPU on this device's GPU — expect very slow generation."
         }

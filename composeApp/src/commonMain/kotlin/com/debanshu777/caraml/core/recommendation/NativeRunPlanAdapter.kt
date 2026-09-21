@@ -1,6 +1,8 @@
 package com.debanshu777.caraml.core.recommendation
 
+import com.debanshu777.caraml.core.platform.BackendKind
 import com.debanshu777.diffusionrunner.DiffusionModelConfig
+import com.debanshu777.diffusionrunner.DiffusionRuntimeBackend
 import com.debanshu777.runner.NativeRunnerConfig
 
 data class DiffusionExecutionConfig(
@@ -17,15 +19,17 @@ data class DiffusionExecutionConfig(
 object NativeRunPlanAdapter {
     fun toLlamaConfig(plan: LlmRunPlan, base: NativeRunnerConfig): NativeRunnerConfig {
         requireValid(plan)
+        val cpuOnly = plan.backend == BackendKind.CPU
         return base.copy(
             nCtx = plan.contextTokens,
             nBatch = plan.batchSize,
             nUbatch = plan.microBatchSize,
             typeK = plan.keyCacheType.nativeValue,
             typeV = plan.valueCacheType.nativeValue,
-            nGpuLayers = plan.gpuLayerCount ?: -1,
+            nGpuLayers = if (cpuOnly) 0 else plan.gpuLayerCount ?: -1,
+            offloadKqv = !cpuOnly && base.offloadKqv,
             useMmap = plan.useMmap,
-            autoFit = plan.gpuLayerCount == null,
+            autoFit = !cpuOnly && plan.gpuLayerCount == null,
         )
     }
 
@@ -37,6 +41,7 @@ object NativeRunPlanAdapter {
         require(plan.batchSize == 1) { "Unsupported diffusion execution configuration" }
         return DiffusionExecutionConfig(
             model = base.copy(
+                runtimeBackend = plan.backend.toDiffusionRuntimeBackend(),
                 offloadToCpu = plan.offloadToCpu,
                 keepClipOnCpu = plan.keepClipOnCpu,
                 keepVaeOnCpu = plan.keepVaeOnCpu,
@@ -58,6 +63,14 @@ object NativeRunPlanAdapter {
     private fun requireValid(plan: RunPlan) {
         require(validateRunPlan(plan) == null) { "Invalid execution configuration" }
     }
+}
+
+private fun BackendKind.toDiffusionRuntimeBackend(): DiffusionRuntimeBackend = when (this) {
+    BackendKind.CPU -> DiffusionRuntimeBackend.CPU
+    BackendKind.METAL -> DiffusionRuntimeBackend.METAL
+    BackendKind.VULKAN -> DiffusionRuntimeBackend.VULKAN
+    BackendKind.CUDA -> DiffusionRuntimeBackend.CUDA
+    BackendKind.OTHER -> throw IllegalArgumentException("Unsupported diffusion runtime backend")
 }
 
 private val KvCacheType.nativeValue: Int

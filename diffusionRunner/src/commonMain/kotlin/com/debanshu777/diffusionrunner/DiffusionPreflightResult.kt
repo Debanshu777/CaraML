@@ -4,8 +4,8 @@ import kotlinx.coroutines.CancellationException
 
 internal const val DIFFUSION_PREFLIGHT_MAX_COMPONENTS = 10
 internal const val DIFFUSION_PREFLIGHT_MAX_BACKENDS = 16
-internal const val DIFFUSION_PREFLIGHT_HEADER_FIELDS = 8
-internal const val DIFFUSION_PREFLIGHT_COMPONENT_FIELDS = 6
+internal const val DIFFUSION_PREFLIGHT_HEADER_FIELDS = 9
+internal const val DIFFUSION_PREFLIGHT_COMPONENT_FIELDS = 8
 internal const val DIFFUSION_PREFLIGHT_BACKEND_FIELDS = 6
 
 enum class DiffusionPreflightReason {
@@ -82,7 +82,9 @@ enum class DiffusionParameterPlacement {
 }
 
 data class DiffusionPreflightComponent(
-    val role: DiffusionComponentRole,
+    val sourceRole: DiffusionComponentRole,
+    val sourceOrdinal: Int,
+    val subdivisionRole: DiffusionComponentRole,
     val ordinal: Int,
     val parameterBytes: Long,
     val runtimePlacement: DiffusionRuntimePlacement,
@@ -142,13 +144,16 @@ internal fun decodeDiffusionPreflight(payload: LongArray?): DiffusionPreflightRe
     }
 
     val status = payload[0]
-    val componentCountLong = payload[6]
-    val backendCountLong = payload[7]
-    if (componentCountLong !in 0L..DIFFUSION_PREFLIGHT_MAX_COMPONENTS.toLong() ||
+    val sourceCountLong = payload[6]
+    val componentCountLong = payload[7]
+    val backendCountLong = payload[8]
+    if (sourceCountLong !in 0L..DIFFUSION_PREFLIGHT_MAX_COMPONENTS.toLong() ||
+        componentCountLong !in 0L..DIFFUSION_PREFLIGHT_MAX_COMPONENTS.toLong() ||
         backendCountLong !in 0L..DIFFUSION_PREFLIGHT_MAX_BACKENDS.toLong()
     ) {
         return malformedDiffusionPreflight()
     }
+    val sourceCount = sourceCountLong.toInt()
     val componentCount = componentCountLong.toInt()
     val backendCount = backendCountLong.toInt()
     val expectedSize = DIFFUSION_PREFLIGHT_HEADER_FIELDS +
@@ -165,7 +170,9 @@ internal fun decodeDiffusionPreflight(payload: LongArray?): DiffusionPreflightRe
             else -> malformedDiffusionPreflight()
         }
     }
-    if (componentCount == 0 || backendCount == 0) return malformedDiffusionPreflight()
+    if (sourceCount == 0 || componentCount == 0 || backendCount == 0) {
+        return malformedDiffusionPreflight()
+    }
 
     val architecture = payload[1].toBoundedIndex(DiffusionArchitecture.entries.size)
         ?.let(DiffusionArchitecture.entries::get) ?: return malformedDiffusionPreflight()
@@ -178,10 +185,11 @@ internal fun decodeDiffusionPreflight(payload: LongArray?): DiffusionPreflightRe
         1L -> true
         else -> return malformedDiffusionPreflight()
     }
-    val declaredMask = payload[5]
+    val declaredSourceMask = payload[5]
     val allowedComponentMask = (1L shl DiffusionComponentRole.entries.size) - 1L
-    if (declaredMask == 0L || declaredMask and allowedComponentMask.inv() != 0L ||
-        declaredMask.countOneBits() != componentCount
+    if (declaredSourceMask == 0L ||
+        declaredSourceMask and allowedComponentMask.inv() != 0L ||
+        declaredSourceMask.countOneBits() != sourceCount
     ) {
         return DiffusionPreflightResult.InvalidModel(
             DiffusionPreflightReason.INCOMPLETE_COMPONENT_EVIDENCE,
@@ -189,18 +197,36 @@ internal fun decodeDiffusionPreflight(payload: LongArray?): DiffusionPreflightRe
     }
 
     val components = ArrayList<DiffusionPreflightComponent>(componentCount)
-    var observedMask = 0L
+    val observedSourceRoles = arrayOfNulls<DiffusionComponentRole>(sourceCount)
+    val observedSubdivisions = mutableSetOf<Pair<Int, DiffusionComponentRole>>()
+    var observedSourceMask = 0L
     repeat(componentCount) { index ->
         val offset = DIFFUSION_PREFLIGHT_HEADER_FIELDS + index * DIFFUSION_PREFLIGHT_COMPONENT_FIELDS
-        val role = payload[offset].toBoundedIndex(DiffusionComponentRole.entries.size)
+        val sourceRole = payload[offset].toBoundedIndex(DiffusionComponentRole.entries.size)
             ?.let(DiffusionComponentRole.entries::get) ?: return malformedDiffusionPreflight()
-        if (payload[offset + 1] != index.toLong()) return malformedDiffusionPreflight()
-        val roleBit = 1L shl role.ordinal
-        if (observedMask and roleBit != 0L) return malformedDiffusionPreflight()
-        observedMask = observedMask or roleBit
-        val runtimePlacement = payload[offset + 3].toBoundedIndex(DiffusionRuntimePlacement.entries.size)
+        val sourceOrdinal = payload[offset + 1].toBoundedIndex(sourceCount)
+            ?: return malformedDiffusionPreflight()
+        val subdivisionRole = payload[offset + 2].toBoundedIndex(DiffusionComponentRole.entries.size)
+            ?.let(DiffusionComponentRole.entries::get) ?: return malformedDiffusionPreflight()
+        if (payload[offset + 3] != index.toLong()) return malformedDiffusionPreflight()
+        val existingSourceRole = observedSourceRoles[sourceOrdinal]
+        if (existingSourceRole != null && existingSourceRole != sourceRole) {
+            return incompleteDiffusionPreflight()
+        }
+        if (existingSourceRole == null) {
+            val sourceRoleBit = 1L shl sourceRole.ordinal
+            if (observedSourceMask and sourceRoleBit != 0L) {
+                return incompleteDiffusionPreflight()
+            }
+            observedSourceRoles[sourceOrdinal] = sourceRole
+            observedSourceMask = observedSourceMask or sourceRoleBit
+        }
+        if (!observedSubdivisions.add(sourceOrdinal to subdivisionRole)) {
+            return incompleteDiffusionPreflight()
+        }
+        val runtimePlacement = payload[offset + 5].toBoundedIndex(DiffusionRuntimePlacement.entries.size)
             ?.let(DiffusionRuntimePlacement.entries::get) ?: return malformedDiffusionPreflight()
-        val backendMask = payload[offset + 4]
+        val backendMask = payload[offset + 6]
         val allowedBackendMask = (1L shl backendCount) - 1L
         if (backendMask and allowedBackendMask.inv() != 0L ||
             (runtimePlacement == DiffusionRuntimePlacement.GPU && backendMask.countOneBits() != 1) ||
@@ -210,21 +236,21 @@ internal fun decodeDiffusionPreflight(payload: LongArray?): DiffusionPreflightRe
         ) {
             return malformedDiffusionPreflight()
         }
-        val parameterPlacement = payload[offset + 5].toBoundedIndex(DiffusionParameterPlacement.entries.size)
+        val parameterPlacement = payload[offset + 7].toBoundedIndex(DiffusionParameterPlacement.entries.size)
             ?.let(DiffusionParameterPlacement.entries::get) ?: return malformedDiffusionPreflight()
         components += DiffusionPreflightComponent(
-            role = role,
+            sourceRole = sourceRole,
+            sourceOrdinal = sourceOrdinal,
+            subdivisionRole = subdivisionRole,
             ordinal = index,
-            parameterBytes = payload[offset + 2],
+            parameterBytes = payload[offset + 4],
             runtimePlacement = runtimePlacement,
             runtimeBackendMask = backendMask,
             parameterPlacement = parameterPlacement,
         )
     }
-    if (observedMask != declaredMask) {
-        return DiffusionPreflightResult.InvalidModel(
-            DiffusionPreflightReason.INCOMPLETE_COMPONENT_EVIDENCE,
-        )
+    if (observedSourceRoles.any { it == null } || observedSourceMask != declaredSourceMask) {
+        return incompleteDiffusionPreflight()
     }
 
     val backends = ArrayList<DiffusionPreflightBackend>(backendCount)
@@ -262,3 +288,6 @@ private fun maxDiffusionPreflightFields() = DIFFUSION_PREFLIGHT_HEADER_FIELDS +
 
 private fun malformedDiffusionPreflight() =
     DiffusionPreflightResult.Unavailable(DiffusionPreflightReason.MALFORMED_NATIVE_PAYLOAD)
+
+private fun incompleteDiffusionPreflight() =
+    DiffusionPreflightResult.InvalidModel(DiffusionPreflightReason.INCOMPLETE_COMPONENT_EVIDENCE)

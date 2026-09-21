@@ -65,24 +65,56 @@ com.debanshu777.huggingfacemanager/
 Main entry point. Instantiated once and injected via Koin.
 
 ```kotlin
-val api = HuggingFaceApi(token = "hf_...")  // token optional for public models
+val api = createHuggingFaceApi()
 
 // Search models
-val results = api.searchModels(SearchModelsParams(query = "llama", filter = PipelineTag.TEXT_GENERATION))
+val results = api.searchModels(SearchModelsParams(query = "llama"))
 
 // Get model detail
 val detail = api.getModelDetail("bartowski/Meta-Llama-3.1-8B-Instruct-GGUF")
 
-// Get file tree (GGUF files + sizes)
-val files = api.getModelFileTree("bartowski/Meta-Llama-3.1-8B-Instruct-GGUF")
+// Get the strict recommendation projection at current HEAD or at one immutable commit
+val currentRecommendationDetail = api.getRecommendationModelDetail(modelId)
+val installedRecommendationDetail = api.getRecommendationModelDetail(modelId, revision)
 
-// Download a file
-api.downloadFile(
-    url = "https://huggingface.co/…/model.gguf",
-    destPath = "/path/to/model.gguf",
-    onProgress = { dto -> /* DownloadProgressDTO */ }
-)
+// Get the file tree and optional transformer config at the same immutable commit.
+// The ordinary config call preserves no-redirect browse behavior.
+val files = api.getModelFileTree(modelId, revision, ModelFileWeightFilter.GgufOnly)
+val config = api.getModelConfig(modelId, revision)
+
+// Exact installed-evidence repair alone may follow the validated Hub config redirect.
+val exactConfig = api.getModelConfig.forExactInstalledRepair(modelId, revision)
 ```
+
+The revision-qualified use-case signatures exposed by `HuggingFaceApi` are:
+
+```kotlin
+// GetRecommendationModelDetailUseCase
+suspend operator fun invoke(
+    modelId: String,
+    revision: String,
+): Result<ModelDetailResponse, DataError.Network>
+
+// GetModelFileTreeUseCase
+suspend operator fun invoke(
+    modelId: String,
+    revision: String,
+    weightFilter: ModelFileWeightFilter = ModelFileWeightFilter.GgufOnly,
+): Result<List<ModelFileTreeResponse>, DataError.Network>
+
+// GetModelConfigUseCase
+suspend operator fun invoke(
+    modelId: String,
+    revision: String,
+): Result<TransformerConfigResponse, DataError.Network>
+
+suspend fun forExactInstalledRepair(
+    modelId: String,
+    revision: String,
+): Result<TransformerConfigResponse, DataError.Network>
+```
+
+`revision` must be a validated 40–64 character hexadecimal commit. Revision-qualified detail, tree, and config requests are built from encoded path segments. Ordinary `getModelConfig(modelId, revision)` retains no-redirect browse semantics. Only `forExactInstalledRepair(modelId, revision)` may follow one bounded 307, and only when it targets `https://huggingface.co:443/api/resolve-cache/models/{same repository}/{same revision}/config.json`; all other redirects are rejected.
 
 ### DownloadProgressDTO
 
@@ -111,14 +143,16 @@ data class DownloadProgressDTO(
 
 ## Error Handling
 
-All API calls return `Result<T, HuggingFaceError>` (not thrown exceptions):
+All API calls return `Result<T, DataError.Network>`; coroutine cancellation is still thrown and must not be converted into a result:
 
 ```kotlin
 when (val result = api.searchModels(params)) {
     is Result.Success -> result.data  // List<Model>
-    is Result.Error -> result.error   // HuggingFaceError (network, parse, auth)
+    is Result.Error -> result.error   // DataError.Network
 }
 ```
+
+Network categories are `NoInternet`, `Unauthorized`, `RequestTimeout`, `RateLimited`, `ServerError`, `Serialization`, `Conflict`, `PayloadTooLarge`, `NotFound`, and `Unknown`. `NotFound` is compatibility-scoped: only optional revision-qualified config calls map HTTP 404 to `NotFound`, allowing callers to continue without `config.json`. Existing list, search, detail, and tree calls retain their previous 404 mapping. Invalid exact-repair redirects and malformed or oversized deterministic responses are not transient failures.
 
 ---
 
@@ -126,6 +160,10 @@ when (val result = api.searchModels(params)) {
 
 <!-- Updated at end of each Claude Code session -->
 
+- Manifest-backed storage inspection now reports only canonical immutable targets and checkpoints; root manifests allow bounded replacement headroom while a durable owner replacement plan keeps prior entries cleanup-retryable until explicit acknowledgement
+- Native iOS completion import accepts only a typed, allowlisted HTTPS response provenance captured from the real platform response; persisted recovery metadata is bounded and cannot synthesize URL or status defaults
+- A narrow shared artifact-root lifetime discovers and locks expected roots plus repositories from every bounded main/staged/previous owner-bundle recovery candidate, then recovery-validates without recursively locking and holds the same canonical locks used by download commit, iOS import, validation, and cleanup
+- Every download, publish, discard, and iOS import write requires a canonical `.caraml-artifacts/<bundle-digest>/...` destination; unscoped manifests are unreadable, invalid pending journals remain quarantined without exposing torn state, bundle digests reject ambiguous duplicate coordinates, and crash-recoverable pruning preserves other linked revisions
 - Downloads now resume verified staged files with validated `Range`/`If-Range` responses, safely restart on full responses, and preserve synchronized checkpoints without weakening root containment
 - Android downloads now pin the trusted app-owned models root directly, avoiding SELinux-forbidden reads of `/` while retaining descriptor-relative no-symlink artifact operations
 - Recommendation evidence consumes only bounded immutable Hub identities and sanitized metadata; profile reranking is network-free, and unknown, oversized, duplicate, or inconsistent fields remain unavailable rather than inferred
@@ -133,9 +171,10 @@ when (val result = api.searchModels(params)) {
 - Storage providers now reject symlinked model roots and require canonical model paths to remain beneath the canonical trusted models parent
 - Downloads require pinned artifact identities and roots, strict UTF-8 descriptor-relative regular-file operations, and idempotent rollback journals; the native backend is exercised from packaged Desktop images and Android APKs
 - Downloads now validate repository/file paths, prevent storage-root escape, stage into `.part` files, verify HTTP status and byte counts, sync/close before commit, and preserve existing files on failure across JVM, Android, and iOS
-- Native iOS background-session results are imported from a no-follow regular-file descriptor, re-hashed, and committed through the same exact-artifact manifest transaction before becoming visible
+- Native iOS background-session results stop before checkpoint mutation when manifest recovery is quarantined; otherwise they are imported from a no-follow regular-file descriptor, re-hashed, and committed through the same exact-artifact manifest transaction before becoming visible
 - Progress emissions are coalesced to percentage changes (or 1 MiB for unknown lengths), avoiding channel/UI pressure during multi-gigabyte downloads
-- Model detail/tree URLs are built from validated path segments; search, pagination, and filter inputs are bounded; network cancellation is propagated
+- Recommendation detail supports validated immutable-revision lookups; exact installed repair alone follows at most one exact same-Hub config redirect, while ordinary browse preserves no-redirect behavior
+- Validated bundle reads and bundle publication now preserve coroutine cancellation while waiting on real artifact-root locks instead of translating it into absence or a failure value
 - Added JVM loopback integration tests for success, HTTP failure, truncation, traversal, and final-file preservation
 - `nota-ai/bk-sdm-tiny` registry now sets `prediction=0` (EPS) — skips `is_using_v_parameterization_for_sd2()` probe; `offloadToCpu` reverted (moot since Vulkan is now disabled for diffusion at build level via `SD_VULKAN=OFF`)
 - `nota-ai/bk-sdm-tiny` registry entry now sets `prediction=0` (EPS) — prevents `is_using_v_parameterization_for_sd2()` probe from running a test UNet forward pass; SD1.x is always EPS, never V-pred

@@ -1,9 +1,28 @@
 package com.debanshu777.diffusionrunner
 
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
 class DiffusionRunnerValidationTest {
+    @Test
+    fun runtimeBackendContractIsClosedAndDefaultsToCpu() {
+        assertEquals(
+            listOf(
+                DiffusionRuntimeBackend.CPU,
+                DiffusionRuntimeBackend.METAL,
+                DiffusionRuntimeBackend.VULKAN,
+                DiffusionRuntimeBackend.CUDA,
+            ),
+            DiffusionRuntimeBackend.entries,
+        )
+        assertEquals(
+            listOf(0, 1, 2, 3),
+            DiffusionRuntimeBackend.entries.map { it.nativeValue },
+        )
+        assertEquals(DiffusionRuntimeBackend.CPU, modelConfig().runtimeBackend)
+    }
+
     @Test
     fun rejectsUnboundedOrMalformedMaxVramSpec() {
         val invalidSpecs = listOf(

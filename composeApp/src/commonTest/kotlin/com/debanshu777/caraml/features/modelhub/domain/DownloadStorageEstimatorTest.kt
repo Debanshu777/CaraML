@@ -9,6 +9,10 @@ import com.debanshu777.caraml.core.recommendation.ModelDescriptor
 import com.debanshu777.caraml.core.recommendation.ModelFileIdentity
 import com.debanshu777.caraml.core.recommendation.QuantizationEvidence
 import com.debanshu777.caraml.core.rating.SdArchitecture
+import com.debanshu777.caraml.core.download.DownloadArtifactRequest
+import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
+import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
+import com.debanshu777.huggingfacemanager.download.artifactBundleId
 import com.debanshu777.huggingfacemanager.sdcpp.ComponentRole
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -169,7 +173,115 @@ class DownloadStorageEstimatorTest {
             estimator.estimate(descriptor, LocalDownloadInventory.Empty, layout(descriptor, gib(20))),
         )
     }
+
+    @Test
+    fun exactPublishedScopedDestinationNeedsNoAdditionalBytesAtReserveBoundary() {
+        val request = request("weights/model.gguf", 100L)
+        val key = ArtifactStorageKey(request.metadata.artifact.repositoryId, request.metadata.destinationRelativePath)
+        val inventory = LocalDownloadInventory(
+            listOf(LocalDownloadArtifact(key.repositoryId, key.relativePath, finalBytes = 100L, exactPublished = true)),
+        )
+
+        val result = assertIs<StorageRequirement.Ready>(
+            estimator.estimate(
+                requests = listOf(request),
+                localInventory = inventory,
+                layout = requestLayout(key, freeBytes = 512L * 1024L * 1024L),
+            ),
+        )
+
+        assertEquals(0L, result.perVolume.getValue("models").additionalBytes)
+    }
+
+    @Test
+    fun repositoryRelativeFileCannotStandInForCanonicalScopedDestination() {
+        val request = request("weights/model.gguf", 100L)
+        val scopedKey = ArtifactStorageKey(request.metadata.artifact.repositoryId, request.metadata.destinationRelativePath)
+        val repositoryRelativeInventory = LocalDownloadInventory(
+            listOf(
+                LocalDownloadArtifact(
+                    request.metadata.artifact.repositoryId,
+                    request.metadata.artifact.relativePath,
+                    finalBytes = 100L,
+                    exactPublished = true,
+                ),
+            ),
+        )
+
+        val result = assertIs<StorageRequirement.Ready>(
+            estimator.estimate(
+                requests = listOf(request),
+                localInventory = repositoryRelativeInventory,
+                layout = requestLayout(scopedKey, freeBytes = gib(20)),
+            ),
+        )
+
+        assertEquals(200L, result.perVolume.getValue("models").additionalBytes)
+    }
+
+    @Test
+    fun manifestCheckpointControlsTheExactOneByteStorageBoundary() {
+        val request = request("weights/model.gguf", 100L)
+        val key = ArtifactStorageKey(request.metadata.artifact.repositoryId, request.metadata.destinationRelativePath)
+        val inventory = LocalDownloadInventory(
+            listOf(LocalDownloadArtifact(key.repositoryId, key.relativePath, partBytes = 40L)),
+        )
+        val reserve = 512L * 1024L * 1024L
+
+        assertIs<StorageRequirement.Ready>(
+            estimator.estimate(listOf(request), inventory, requestLayout(key, reserve + 160L)),
+        )
+        assertIs<StorageRequirement.Blocked>(
+            estimator.estimate(listOf(request), inventory, requestLayout(key, reserve + 159L)),
+        )
+    }
+
+    @Test
+    fun unverifiedFullTargetStillNeedsACompleteCheckpoint() {
+        val request = request("weights/model.gguf", 100L)
+        val key = ArtifactStorageKey(request.metadata.artifact.repositoryId, request.metadata.destinationRelativePath)
+        val inventory = LocalDownloadInventory(
+            listOf(LocalDownloadArtifact(key.repositoryId, key.relativePath, finalBytes = 100L, exactPublished = false)),
+        )
+
+        val result = assertIs<StorageRequirement.Ready>(
+            estimator.estimate(listOf(request), inventory, requestLayout(key, gib(20))),
+        )
+
+        assertEquals(100L, result.perVolume.getValue("models").additionalBytes)
+    }
 }
+
+private fun request(path: String, size: Long): DownloadArtifactRequest {
+    val identity = requireNotNull(
+        DownloadArtifactIdentity.create(
+            repositoryId = "org/model",
+            immutableRevision = "a".repeat(40),
+            relativePath = path,
+            remoteObjectId = "sha256:${"b".repeat(64)}",
+            expectedBytes = size,
+        ),
+    )
+    val bundleId = requireNotNull(artifactBundleId(listOf(identity)))
+    return DownloadArtifactRequest(
+        metadata = DownloadMetadataDTO(
+            artifact = identity,
+            logicalRole = "model",
+            sizeBytes = size,
+            author = null,
+            libraryName = null,
+            pipelineTag = null,
+            bundleId = bundleId,
+        ),
+        primary = true,
+    )
+}
+
+private fun requestLayout(key: ArtifactStorageKey, freeBytes: Long): DownloadStorageLayout =
+    DownloadStorageLayout(
+        volumes = mapOf("models" to StorageVolume(freeBytes)),
+        locations = mapOf(key to ArtifactStorageLocation("models", "models")),
+    )
 
 private fun descriptor(vararg files: ModelFileIdentity): ModelDescriptor = LlmModelDescriptor(
     repositoryId = "org/model",

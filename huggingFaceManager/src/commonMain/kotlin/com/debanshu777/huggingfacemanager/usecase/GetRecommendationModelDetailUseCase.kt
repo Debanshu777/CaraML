@@ -11,4 +11,10 @@ class GetRecommendationModelDetailUseCase(
     suspend operator fun invoke(
         modelId: String,
     ): Result<ModelDetailResponse, DataError.Network> = repository.getRecommendationModelDetail(modelId)
+
+    suspend operator fun invoke(
+        modelId: String,
+        revision: String,
+    ): Result<ModelDetailResponse, DataError.Network> =
+        repository.getRecommendationModelDetail(modelId, revision)
 }

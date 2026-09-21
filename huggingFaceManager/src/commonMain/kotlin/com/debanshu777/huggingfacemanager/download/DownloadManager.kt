@@ -26,4 +26,24 @@ expect class DownloadManager(
     suspend fun discardCheckpoint(metadata: DownloadMetadataDTO)
 
     suspend fun isPublished(metadata: DownloadMetadataDTO): Boolean
+
+    suspend fun inspectStorage(artifacts: List<DownloadMetadataDTO>): List<DownloadArtifactStorageSnapshot>?
+
+    suspend fun pendingBundleReplacement(
+        ownerModelId: String,
+        artifacts: List<DownloadMetadataDTO>,
+    ): ArtifactManifest?
+
+    suspend fun acknowledgeBundleReplacement(
+        ownerModelId: String,
+        artifacts: List<DownloadMetadataDTO>,
+    ): Boolean
 }
+
+data class DownloadArtifactStorageSnapshot(
+    val repositoryId: String,
+    val destinationRelativePath: String,
+    val targetBytes: Long?,
+    val stagedBytes: Long?,
+    val exactPublished: Boolean,
+)

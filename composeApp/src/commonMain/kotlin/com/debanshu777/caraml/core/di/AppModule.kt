@@ -18,6 +18,11 @@ import com.debanshu777.caraml.core.recommendation.LocalArtifactIdentityResolver
 import com.debanshu777.caraml.core.recommendation.ModelAssessmentRepository
 import com.debanshu777.caraml.core.recommendation.ModelDescriptorFactory
 import com.debanshu777.caraml.core.recommendation.InferenceObservationRecorder
+import com.debanshu777.caraml.core.recommendation.InstalledDescriptorMetadataSource
+import com.debanshu777.caraml.core.recommendation.InstalledModelEvidenceRepairer
+import com.debanshu777.caraml.core.recommendation.InstalledModelLoadRequestResolver
+import com.debanshu777.caraml.core.recommendation.InstalledModelManifestSource
+import com.debanshu777.caraml.core.recommendation.InstalledModelWorkloadFactory
 import com.debanshu777.caraml.core.recommendation.LlamaBackendCalibrationProbe
 import com.debanshu777.caraml.core.recommendation.QuickCalibrationRunner
 import com.debanshu777.caraml.core.recommendation.ReliableMemoryReading
@@ -31,7 +36,11 @@ import com.debanshu777.caraml.core.platform.DeviceCapabilities
 import com.debanshu777.caraml.core.platform.RunnerBackendCapabilitySource
 import com.debanshu777.caraml.core.storage.AppDatabase
 import com.debanshu777.caraml.core.recommendation.storage.RecommendationDatabaseOwner
+import com.debanshu777.caraml.core.recommendation.storage.PersistedModelEvidenceCodec
 import com.debanshu777.caraml.core.storage.component.ComponentRepository
+import com.debanshu777.caraml.core.storage.catalog.InstalledModelPublicationCoordinator
+import com.debanshu777.caraml.core.storage.catalog.InstalledModelRemovalService
+import com.debanshu777.caraml.core.storage.evidence.InstalledModelEvidenceRepository
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
 import com.debanshu777.caraml.core.download.ArtifactTransfer
 import com.debanshu777.caraml.core.download.BatchFinalizer
@@ -67,10 +76,11 @@ import com.debanshu777.caraml.features.modelhub.domain.HuggingFaceModelMetadataS
 import com.debanshu777.caraml.features.modelhub.domain.ModelMetadataSource
 import com.debanshu777.caraml.features.modelhub.domain.ModelRecommendationService
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelViewModel
-import com.debanshu777.caraml.features.modelhub.presentation.search.RecommendedModelLoadRequestResolver
 import com.debanshu777.caraml.features.settings.presentation.SettingsViewModel
 import com.debanshu777.huggingfacemanager.createHuggingFaceApi
 import com.debanshu777.huggingfacemanager.download.DownloadManager
+import com.debanshu777.huggingfacemanager.download.ArtifactRootLifetime
+import com.debanshu777.huggingfacemanager.download.artifactRootLifetime
 import com.debanshu777.runner.LlamaRunner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineScope
@@ -90,16 +100,30 @@ val appModule = module {
 
     single { get<AppDatabase>().localModelDao() }
     single { get<AppDatabase>().downloadedComponentDao() }
+    single { get<AppDatabase>().installedModelEvidenceDao() }
+    single { get<AppDatabase>().installedModelCatalogDao() }
     single { LocalModelRepository(get()) }
     single { ComponentRepository(get()) }
-    single { RecommendedModelLoadRequestResolver(get(), get()) }
+    single { InstalledModelEvidenceRepository(get()) }
     single { DownloadManager(get()) }
+    single<ArtifactRootLifetime> { artifactRootLifetime(get()) }
+    single { InstalledModelPublicationCoordinator() }
+    single { installedModelManifestSource(get<DownloadManager>()::validatedBundle) }
+    single {
+        val manifestSource = get<InstalledModelManifestSource>()
+        InstalledModelRemovalService(
+            catalog = get(),
+            storagePathProvider = get(),
+            manifestSource = { ownerModelId -> manifestSource(ownerModelId) },
+            publicationCoordinator = get(),
+        )
+    }
     single<DownloadTaskStore> { RoomDownloadTaskStore(get<DownloadDatabase>().downloadTaskDao()) }
     single<ArtifactTransfer> { DownloadManagerArtifactTransfer(get()) }
     single<DownloadCheckpointCleaner> { DownloadManagerCheckpointCleaner(get()) }
     single<BundlePublisher> { DownloadManagerBundlePublisher(get()) }
-    single<ModelCatalogPublisher> { RepositoryModelCatalogPublisher(get(), get(), get()) }
-    single<BatchFinalizer> { ModelDownloadFinalizer(get(), get(), get()) }
+    single<ModelCatalogPublisher> { RepositoryModelCatalogPublisher(get(), get()) }
+    single<BatchFinalizer> { ModelDownloadFinalizer(get(), get(), get(), get()) }
     single { DownloadBatchRunner(get(), get(), get(), { Clock.System.now().toEpochMilliseconds() }) }
     single { DownloadRuntimeScope(CoroutineScope(SupervisorJob() + Dispatchers.Default)) }
     single { DownloadReconciler(get(), get(), { Clock.System.now().toEpochMilliseconds() }) }
@@ -118,7 +142,7 @@ val appModule = module {
             clock = { Clock.System.now().toEpochMilliseconds() },
         )
     }
-    single { LoadSessionCoordinator(get()) }
+    single { LoadSessionCoordinator(get(), get()) }
 
     single { DeviceCapabilities() }
     single<BackendCapabilitySource> { RunnerBackendCapabilitySource(get(), get()) }
@@ -149,7 +173,34 @@ val appModule = module {
             clock = { Clock.System.now().toEpochMilliseconds() },
         )
     }
-    single<ModelMetadataSource> { HuggingFaceModelMetadataSource(get(), get()) }
+    single { HuggingFaceModelMetadataSource(get(), get()) }
+    single<ModelMetadataSource> { get<HuggingFaceModelMetadataSource>() }
+    single<InstalledDescriptorMetadataSource> { get<HuggingFaceModelMetadataSource>() }
+    single { PersistedModelEvidenceCodec() }
+    single {
+        InstalledModelEvidenceRepairer(
+            artifactResolver = get(),
+            catalog = get(),
+            evidenceRepository = get(),
+            metadataSource = get(),
+            manifestSource = get(),
+            publicationCoordinator = get(),
+            codec = get(),
+            clock = { Clock.System.now().toEpochMilliseconds() },
+        )
+    }
+    single { InstalledModelWorkloadFactory() }
+    single {
+        InstalledModelLoadRequestResolver(
+            componentRepository = get(),
+            evidenceRepairer = get(),
+            artifactResolver = get(),
+            snapshotProvider = get(),
+            assessmentRepository = get(),
+            settingsRepository = get(),
+            workloadFactory = get(),
+        )
+    }
     single {
         ModelRecommendationService(
             metadataSource = get(),
@@ -200,29 +251,13 @@ val appModule = module {
     single {
         LocalArtifactIdentityResolver(
             storagePathProvider = get(),
-            manifestSource = { ownerModelId ->
-                val downloadManager = get<DownloadManager>()
-                val linked = get<ComponentRepository>().getComponentsForModel(ownerModelId)
-                val primary = downloadManager.validatedBundle(ownerModelId)?.entries.orEmpty()
-                val external = linked.groupBy { it.repoId }.flatMap { (repoId, expected) ->
-                    val installed = downloadManager.validatedArtifacts(repoId)?.entries.orEmpty()
-                    expected.mapNotNull { component ->
-                        installed.singleOrNull {
-                            it.identity.repositoryId == component.repoId &&
-                                it.identity.relativePath == component.filePath &&
-                                it.logicalRole == component.role
-                        }
-                    }
-                }
-                (primary + external).takeIf { it.isNotEmpty() }?.let(ArtifactManifest::create)
-            },
+            manifestSource = get<InstalledModelManifestSource>()::invoke,
             hashingDispatcher = Dispatchers.Default,
         )
     }
 
     single {
         DiffusionInferenceRepository(
-            storagePathProvider = get(),
             runner = get(),
             deviceCapabilities = get(),
             settingsRepository = get(),
@@ -233,18 +268,15 @@ val appModule = module {
             artifactIdentityResolver = get(),
             loadSessionCoordinator = get(),
             engineVersion = NATIVE_LOAD_ENGINE_VERSION,
-            rolloutModeSource = get(),
             observationRecorder = get(),
         )
     }
 
     single<InferenceRepository> {
         LlamaInferenceRepository(
-            storagePathProvider = get(),
             runner = get(),
             deviceCapabilities = get(),
             settingsRepository = get(),
-            localModelRepository = get(),
             snapshotProvider = get(),
             suitabilityEngine = get(),
             recommendationPolicy = get(),
@@ -252,7 +284,6 @@ val appModule = module {
             artifactIdentityResolver = get(),
             loadSessionCoordinator = get(),
             engineVersion = NATIVE_LOAD_ENGINE_VERSION,
-            rolloutModeSource = get(),
             observationRecorder = get(),
         )
     }
@@ -282,7 +313,8 @@ val appModule = module {
     viewModel {
         DownloadedModelsViewModel(
             localModelRepository = get(),
-            storagePathProvider = get()
+            storagePathProvider = get(),
+            removalService = get(),
         )
     }
     viewModel {
@@ -304,14 +336,17 @@ val appModule = module {
             trackModelUsage = get(),
             inferenceRepository = get(),
             diffusionRepository = get(),
-            storagePathProvider = get(),
             generatedMediaStore = get(),
-            recommendationRolloutModeSource = get(),
+            installedModelLoadRequestResolver = get<InstalledModelLoadRequestResolver>(),
         )
     }
 }
 
 private const val NATIVE_LOAD_ENGINE_VERSION = "native-engine-v1"
+
+internal fun installedModelManifestSource(
+    validatedBundle: suspend (String) -> ArtifactManifest?,
+): InstalledModelManifestSource = InstalledModelManifestSource(validatedBundle)
 
 private class RecommendationCalibrationScope(val scope: CoroutineScope)
 class DownloadRuntimeScope(val scope: CoroutineScope)

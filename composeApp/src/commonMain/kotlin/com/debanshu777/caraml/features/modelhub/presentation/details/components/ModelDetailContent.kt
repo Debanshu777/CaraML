@@ -64,9 +64,7 @@ import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
 import com.debanshu777.caraml.features.modelhub.domain.RecommendedModelUiState
 import com.debanshu777.caraml.features.modelhub.presentation.search.GgufFileUiState
 import com.debanshu777.caraml.features.modelhub.presentation.search.InstallBundleUiState
-import com.debanshu777.caraml.features.modelhub.presentation.search.relevantDownloadTask
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.formatCompactMetric
-import com.debanshu777.caraml.core.download.DownloadBatchSnapshot
 import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
 import com.debanshu777.huggingfacemanager.model.ModelDetailResponse
@@ -98,11 +96,10 @@ fun ModelDetailContent(
     onRecommendationInfoClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     windowWidth: Dp? = null,
-    downloadBatches: List<DownloadBatchSnapshot> = emptyList(),
-    onPauseDownload: (String) -> Unit = {},
-    onResumeDownload: (String) -> Unit = {},
-    onCancelDownload: (String) -> Unit = {},
-    onRetryDownload: (String) -> Unit = {},
+    onPauseDownload: (String, String) -> Unit = { _, _ -> },
+    onResumeDownload: (String, String) -> Unit = { _, _ -> },
+    onCancelDownload: (String, String) -> Unit = { _, _ -> },
+    onRetryDownload: (String, String) -> Unit = { _, _ -> },
 ) {
     if (model == null) return
 
@@ -120,13 +117,8 @@ fun ModelDetailContent(
         primaryArtifactItem(recommendationState?.selectedDescriptor, ggufFiles)
             ?.takeUnless { it.isDownloaded }
     }
-    val compactArtifactTask = compactArtifactAction?.artifact?.let { artifact ->
-        durableArtifactTask(downloadBatches, artifact)
-    }
-    val selectedInstallArtifact = installBundleState.selectedVariantPath?.let { selectedPath ->
-        installBundleState.variants.singleOrNull { it.path == selectedPath }?.artifact
-    }
-    val durableBatch = relevantDownloadTask(downloadBatches, selectedInstallArtifact)?.batch
+    val compactArtifactTask = compactArtifactAction?.durableControl
+    val durableControl = installBundleState.durableControl
     val spacing = LocalSpacing.current
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
@@ -159,7 +151,6 @@ fun ModelDetailContent(
                             heading = weightFilesHeading,
                             emptyLabel = weightFilesEmptyLabel,
                             recommendationState = recommendationState,
-                            downloadBatches = downloadBatches,
                             onPauseDownload = onPauseDownload,
                             onResumeDownload = onResumeDownload,
                             onCancelDownload = onCancelDownload,
@@ -187,11 +178,11 @@ fun ModelDetailContent(
                                 .testTag("detail-files"),
                             recommendedVariantPath = recommendedVariant,
                             installEnabled = installEnabled,
-                            durableBatch = durableBatch,
-                            onPause = { durableBatch?.batchId?.let(onPauseDownload) },
-                            onResume = { durableBatch?.batchId?.let(onResumeDownload) },
-                            onCancel = { durableBatch?.batchId?.let(onCancelDownload) },
-                            onRetry = { durableBatch?.batchId?.let(onRetryDownload) },
+                            durableControl = durableControl,
+                            onPause = { durableControl?.let { onPauseDownload(it.batchId, it.artifactId) } },
+                            onResume = { durableControl?.let { onResumeDownload(it.batchId, it.artifactId) } },
+                            onCancel = { durableControl?.let { onCancelDownload(it.batchId, it.artifactId) } },
+                            onRetry = { durableControl?.let { onRetryDownload(it.batchId, it.artifactId) } },
                         )
                     }
                 }
@@ -237,7 +228,6 @@ fun ModelDetailContent(
                             heading = weightFilesHeading,
                             emptyLabel = weightFilesEmptyLabel,
                             recommendationState = recommendationState,
-                            downloadBatches = downloadBatches,
                             onPauseDownload = onPauseDownload,
                             onResumeDownload = onResumeDownload,
                             onCancelDownload = onCancelDownload,
@@ -255,11 +245,11 @@ fun ModelDetailContent(
                             .testTag("detail-action"),
                         onInstall = onSmartInstall,
                         installEnabled = installEnabled,
-                        durableBatch = durableBatch,
-                        onPause = { durableBatch?.batchId?.let(onPauseDownload) },
-                        onResume = { durableBatch?.batchId?.let(onResumeDownload) },
-                        onCancel = { durableBatch?.batchId?.let(onCancelDownload) },
-                        onRetry = { durableBatch?.batchId?.let(onRetryDownload) },
+                        durableControl = durableControl,
+                        onPause = { durableControl?.let { onPauseDownload(it.batchId, it.artifactId) } },
+                        onResume = { durableControl?.let { onResumeDownload(it.batchId, it.artifactId) } },
+                        onCancel = { durableControl?.let { onCancelDownload(it.batchId, it.artifactId) } },
+                        onRetry = { durableControl?.let { onRetryDownload(it.batchId, it.artifactId) } },
                     )
                 } else if (compactArtifactAction != null) {
                     ArtifactDownloadActionFooter(
@@ -267,11 +257,11 @@ fun ModelDetailContent(
                         item = compactArtifactAction,
                         isDownloading = isDownloading,
                         onDownloadClick = onDownloadClick,
-                        durableState = compactArtifactTask?.state,
-                        onPause = { compactArtifactTask?.batchId?.let(onPauseDownload) },
-                        onResume = { compactArtifactTask?.batchId?.let(onResumeDownload) },
-                        onCancel = { compactArtifactTask?.batchId?.let(onCancelDownload) },
-                        onRetry = { compactArtifactTask?.batchId?.let(onRetryDownload) },
+                        durableState = compactArtifactTask?.artifactState,
+                        onPause = { compactArtifactTask?.let { onPauseDownload(it.batchId, it.artifactId) } },
+                        onResume = { compactArtifactTask?.let { onResumeDownload(it.batchId, it.artifactId) } },
+                        onCancel = { compactArtifactTask?.let { onCancelDownload(it.batchId, it.artifactId) } },
+                        onRetry = { compactArtifactTask?.let { onRetryDownload(it.batchId, it.artifactId) } },
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("detail-action"),
@@ -570,11 +560,10 @@ private fun ModelFileVariantsSection(
     heading: String,
     emptyLabel: String,
     recommendationState: RecommendedModelUiState?,
-    downloadBatches: List<DownloadBatchSnapshot>,
-    onPauseDownload: (String) -> Unit,
-    onResumeDownload: (String) -> Unit,
-    onCancelDownload: (String) -> Unit,
-    onRetryDownload: (String) -> Unit,
+    onPauseDownload: (String, String) -> Unit,
+    onResumeDownload: (String, String) -> Unit,
+    onCancelDownload: (String, String) -> Unit,
+    onRetryDownload: (String, String) -> Unit,
     footerOwnedArtifact: DownloadArtifactIdentity? = null,
 ) {
     val spacing = LocalSpacing.current
@@ -598,7 +587,7 @@ private fun ModelFileVariantsSection(
             )
         } else {
             ggufFiles.forEach { item ->
-                val durableTask = durableArtifactTask(downloadBatches, item.artifact)
+                val durableTask = item.durableControl
                 val hasExactArtifact = item.artifact != null
                 val needsInformationOnly = recommendationState == null ||
                     recommendationState.descriptorState == DescriptorState.NEEDS_INFORMATION
@@ -616,13 +605,13 @@ private fun ModelFileVariantsSection(
                     recommended = isRecommendedArtifact,
                     isActiveDownload = isActiveDownload,
                     interactionLocked = isDownloading &&
-                        durableTask?.state !in durableArtifactControlStates,
+                        durableTask?.artifactState !in durableArtifactControlStates,
                     downloadEnabled = hasExactArtifact && (needsInformationOnly || matchesSelectedDescriptor),
-                    durableState = durableTask?.state,
-                    onPause = { durableTask?.batchId?.let(onPauseDownload) },
-                    onResume = { durableTask?.batchId?.let(onResumeDownload) },
-                    onCancel = { durableTask?.batchId?.let(onCancelDownload) },
-                    onRetry = { durableTask?.batchId?.let(onRetryDownload) },
+                    durableState = durableTask?.artifactState,
+                    onPause = { durableTask?.let { onPauseDownload(it.batchId, it.artifactId) } },
+                    onResume = { durableTask?.let { onResumeDownload(it.batchId, it.artifactId) } },
+                    onCancel = { durableTask?.let { onCancelDownload(it.batchId, it.artifactId) } },
+                    onRetry = { durableTask?.let { onRetryDownload(it.batchId, it.artifactId) } },
                     showDownloadAction = item.artifact != footerOwnedArtifact,
                     onDownloadClick = {
                         dispatchExactArtifactDownload(model, item, onDownloadClick)
@@ -776,18 +765,6 @@ private fun descriptorFiles(descriptor: ModelDescriptor?): List<ModelFileIdentit
         .filter { it.required || it.isPrimary }
         .map { it.file }
     null -> emptyList()
-}
-
-private data class DurableArtifactTask(
-    val batchId: String,
-    val state: DownloadArtifactState,
-)
-
-private fun durableArtifactTask(
-    batches: List<DownloadBatchSnapshot>,
-    artifact: DownloadArtifactIdentity?,
-): DurableArtifactTask? = relevantDownloadTask(batches, artifact)?.let { selection ->
-    DurableArtifactTask(selection.batch.batchId, selection.task.state)
 }
 
 private fun primaryDescriptorFile(descriptor: ModelDescriptor?): ModelFileIdentity? = when (descriptor) {

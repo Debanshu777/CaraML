@@ -129,6 +129,7 @@ endif()
 
 foreach(_diffusion_test IN ITEMS
         diffusion_bundled_components_test
+        diffusion_runtime_backend_test
         diffusion_stream_layers_test
         diffusion_context_publication_test)
     add_executable(
@@ -142,6 +143,10 @@ foreach(_diffusion_test IN ITEMS
     )
     add_test(NAME ${_diffusion_test} COMMAND ${_diffusion_test})
 endforeach()
+
+target_sources(diffusion_runtime_backend_test PRIVATE ${DIFFUSION_RUNNER_CORE_SOURCES})
+target_compile_definitions(diffusion_runtime_backend_test PRIVATE CARAML_DIFFUSION_NATIVE_TESTING)
+target_link_libraries(diffusion_runtime_backend_test PRIVATE stable-diffusion Threads::Threads)
 
 add_executable(
     diffusion_max_vram_test

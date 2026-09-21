@@ -111,6 +111,27 @@ struct OwnedDiffusionModelConfig {
     std::string max_vram;
     DiffusionModelConfig values = {};
 
+    bool read_runtime_backend(JNIEnv *env, jobject source, jfieldID field) {
+        jobject value = env->GetObjectField(source, field);
+        if (!value || env->ExceptionCheck()) return false;
+        jclass enum_class = env->GetObjectClass(value);
+        if (!enum_class || env->ExceptionCheck()) {
+            env->DeleteLocalRef(value);
+            return false;
+        }
+        const jmethodID native_value = env->GetMethodID(enum_class, "getNativeValue", "()I");
+        if (!native_value || env->ExceptionCheck()) {
+            env->DeleteLocalRef(enum_class);
+            env->DeleteLocalRef(value);
+            return false;
+        }
+        values.runtime_backend = env->CallIntMethod(value, native_value);
+        const bool success = !env->ExceptionCheck();
+        env->DeleteLocalRef(enum_class);
+        env->DeleteLocalRef(value);
+        return success;
+    }
+
     bool read(JNIEnv *env, jobject source) {
         if (!source) return false;
         jclass clazz = env->GetObjectClass(source);
@@ -122,6 +143,10 @@ struct OwnedDiffusionModelConfig {
         const jfieldID clipLPath = env->GetFieldID(clazz, "clipLPath", "Ljava/lang/String;");
         const jfieldID clipGPath = env->GetFieldID(clazz, "clipGPath", "Ljava/lang/String;");
         const jfieldID t5xxlPath = env->GetFieldID(clazz, "t5xxlPath", "Ljava/lang/String;");
+        const jfieldID runtimeBackend = env->GetFieldID(
+            clazz,
+            "runtimeBackend",
+            "Lcom/debanshu777/diffusionrunner/DiffusionRuntimeBackend;");
         const jfieldID offloadToCpu = env->GetFieldID(clazz, "offloadToCpu", "Z");
         const jfieldID keepClipOnCpu = env->GetFieldID(clazz, "keepClipOnCpu", "Z");
         const jfieldID keepVaeOnCpu = env->GetFieldID(clazz, "keepVaeOnCpu", "Z");
@@ -140,7 +165,7 @@ struct OwnedDiffusionModelConfig {
         const jfieldID autoFit = env->GetFieldID(clazz, "autoFit", "Z");
 
         const bool fields_ok = modelPath && vaePath && llmPath && clipLPath && clipGPath &&
-                t5xxlPath && offloadToCpu && keepClipOnCpu && keepVaeOnCpu &&
+                t5xxlPath && runtimeBackend && offloadToCpu && keepClipOnCpu && keepVaeOnCpu &&
                 diffusionFlashAttn && enableMmap && diffusionConvDirect &&
                 freeParamsImmediately && wtype && flowShift && nThreads && prediction &&
                 taesdPath && vaeTiling && maxVram && streamLayers && autoFit &&
@@ -159,7 +184,7 @@ struct OwnedDiffusionModelConfig {
                 read_string_field(env, source, t5xxlPath, t5xxl_path) &&
                 read_string_field(env, source, taesdPath, taesd_path) &&
                 read_string_field(env, source, maxVram, max_vram);
-        if (!strings_ok) {
+        if (!strings_ok || !read_runtime_backend(env, source, runtimeBackend)) {
             env->DeleteLocalRef(clazz);
             return false;
         }
@@ -261,19 +286,23 @@ Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativePreflightModel(
             native.quantization,
             native.memory_confidence,
             native.stream_layers ? 1 : 0,
-            native.declared_component_mask,
+            native.declared_source_mask,
+            native.source_count,
             native.component_count,
             native.backend_count,
         };
-        if (native.component_count < 0 || native.component_count > DIFFUSION_PREFLIGHT_MAX_COMPONENTS ||
+        if (native.source_count < 0 || native.source_count > DIFFUSION_PREFLIGHT_MAX_COMPONENTS ||
+            native.component_count < 0 || native.component_count > DIFFUSION_PREFLIGHT_MAX_COMPONENTS ||
             native.backend_count < 0 || native.backend_count > DIFFUSION_PREFLIGHT_MAX_BACKENDS) {
             return nullptr;
         }
-        payload.reserve(8 + native.component_count * 6 + native.backend_count * 6);
+        payload.reserve(9 + native.component_count * 8 + native.backend_count * 6);
         for (int index = 0; index < native.component_count; ++index) {
             const DiffusionPreflightComponentNative &component = native.components[index];
             payload.insert(payload.end(), {
-                component.role,
+                component.source_role,
+                component.source_ordinal,
+                component.subdivision_role,
                 component.ordinal,
                 component.parameter_bytes,
                 component.runtime_placement,

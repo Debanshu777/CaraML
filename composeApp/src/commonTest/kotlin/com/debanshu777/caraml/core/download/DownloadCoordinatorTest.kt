@@ -10,6 +10,24 @@ import kotlin.test.assertEquals
 
 class DownloadCoordinatorTest {
     @Test
+    fun resumeNeverSchedulesCorruptRowFilteredByTheStore() = runTest {
+        val calls = mutableListOf<String>()
+        val store = FakeDownloadTaskStore(calls, batchAvailable = false)
+        val coordinator = DownloadCoordinator(
+            store,
+            RecordingScheduler(calls),
+            DownloadNotificationPermissionController {},
+            DownloadCheckpointCleaner {},
+            { 10L },
+        )
+
+        coordinator.resume("batch")
+
+        assertEquals(emptyList(), calls)
+        assertEquals(DownloadUserIntent.RUN, store.snapshot.userIntent)
+    }
+
+    @Test
     fun enqueuePersistsBeforePermissionAndScheduling() = runTest {
         val calls = mutableListOf<String>()
         val store = FakeDownloadTaskStore(calls)
@@ -98,6 +116,7 @@ class DownloadCoordinatorTest {
                     primary = true,
                 ),
             ),
+            evidence = pendingEvidence(identity),
             downloadForLaterConfirmed = false,
             displayName = "Model",
         )
@@ -119,8 +138,10 @@ private class RecordingScheduler(
 
 private class FakeDownloadTaskStore(
     private val calls: MutableList<String>,
+    private val batchAvailable: Boolean = true,
 ) : DownloadTaskStore {
-    private val request = DownloadCoordinatorTestFixture.request
+    private val batchRequest = DownloadCoordinatorTestFixture.request
+    private val artifactRequest = batchRequest.artifacts.single()
     var snapshot = DownloadBatchSnapshot(
         batchId = "batch",
         ownerModelId = "owner/model",
@@ -132,13 +153,14 @@ private class FakeDownloadTaskStore(
             DownloadArtifactSnapshot(
                 artifactId = "artifact",
                 batchId = "batch",
-                request = request.artifacts.single(),
+                request = artifactRequest,
                 state = DownloadArtifactState.QUEUED,
                 userIntent = DownloadUserIntent.RUN,
                 bytesReceived = 0L,
                 expectedBytes = 10L,
             ),
         ),
+        evidence = batchRequest.evidence,
     )
 
     override suspend fun create(request: DownloadBatchRequest, nowEpochMs: Long): String {
@@ -146,8 +168,8 @@ private class FakeDownloadTaskStore(
         return "batch"
     }
     override fun observeForModel(modelId: String): Flow<List<DownloadBatchSnapshot>> = flowOf(listOf(snapshot))
-    override suspend fun getBatch(batchId: String): DownloadBatchSnapshot = snapshot
-    override suspend fun recoverableBatches(): List<DownloadBatchSnapshot> = listOf(snapshot)
+    override suspend fun getBatch(batchId: String): DownloadBatchSnapshot? = snapshot.takeIf { batchAvailable }
+    override suspend fun recoverableBatches(): List<DownloadBatchSnapshot> = listOfNotNull(snapshot.takeIf { batchAvailable })
     override suspend fun claim(artifactId: String, owner: String, nowEpochMs: Long, expiresAtEpochMs: Long) = true
     override suspend fun updateProgress(artifactId: String, bytesReceived: Long, entityTag: String?, lastModified: String?, nowEpochMs: Long) = true
     override suspend fun transitionArtifact(artifactId: String, state: DownloadArtifactState, failureCode: DownloadFailureCode?, nowEpochMs: Long): Boolean {
@@ -181,6 +203,7 @@ private object DownloadCoordinatorTestFixture {
         artifacts = listOf(
             DownloadArtifactRequest(DownloadMetadataDTO(identity, "model", 10L, null, null, null), true),
         ),
+        evidence = pendingEvidence(identity),
         downloadForLaterConfirmed = false,
         displayName = "Model",
     )

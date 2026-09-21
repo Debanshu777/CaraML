@@ -11,6 +11,7 @@ import com.debanshu777.caraml.core.recommendation.storage.getRecommendationRoomD
 import com.debanshu777.caraml.core.download.AndroidDownloadNotificationPermissionController
 import com.debanshu777.caraml.core.download.AndroidDownloadScheduler
 import com.debanshu777.caraml.core.download.DownloadNotificationPermissionController
+import com.debanshu777.caraml.core.download.DownloadTaskStore
 import com.debanshu777.caraml.core.download.PlatformDownloadScheduler
 import com.debanshu777.caraml.core.download.storage.DownloadDatabase
 import com.debanshu777.caraml.core.download.storage.getDownloadDatabaseBuilder
@@ -37,7 +38,8 @@ actual val platformHuggingFaceModule: Module = module {
             getDownloadDatabaseBuilder(context, get<StoragePathProvider>().getDownloadDatabasePath()),
         )
     }
-    single<PlatformDownloadScheduler> { AndroidDownloadScheduler(KoinPlatform.getKoin().get()) }
+    single { AndroidDownloadScheduler(get<Context>(), get<DownloadTaskStore>()) }
+    single<PlatformDownloadScheduler> { get<AndroidDownloadScheduler>() }
     single { AndroidDownloadNotificationPermissionController() }
     single<DownloadNotificationPermissionController> { get<AndroidDownloadNotificationPermissionController>() }
 

@@ -21,7 +21,9 @@ struct PreflightTensorEvidence {
 };
 
 struct PreflightComponentEvidence {
-    int role = DIFFUSION_COMPONENT_OTHER;
+    int source_role = DIFFUSION_COMPONENT_MODEL_BUNDLE;
+    int source_ordinal = 0;
+    int subdivision_role = DIFFUSION_COMPONENT_OTHER;
     int64_t parameter_bytes = 0;
     int runtime_placement = DIFFUSION_RUNTIME_DEFAULT;
     int64_t runtime_backend_mask = 0;
@@ -65,6 +67,18 @@ inline std::string canonical_backend_name(std::string value) {
     return lower_ascii(value.substr(first, last - first));
 }
 
+inline bool explicit_runtime_backend_spec(int runtime_backend, std::string &destination) {
+    switch (runtime_backend) {
+        case DIFFUSION_RUNTIME_BACKEND_CPU: destination = "cpu"; return true;
+        case DIFFUSION_RUNTIME_BACKEND_METAL: destination = "metal"; return true;
+        case DIFFUSION_RUNTIME_BACKEND_VULKAN: destination = "vulkan"; return true;
+        case DIFFUSION_RUNTIME_BACKEND_CUDA: destination = "cuda"; return true;
+        default:
+            destination.clear();
+            return false;
+    }
+}
+
 inline std::string assignment_value(const std::string &spec, const std::string &module) {
     std::string default_value;
     std::string exact_value;
@@ -89,6 +103,29 @@ inline std::string assignment_value(const std::string &spec, const std::string &
     return exact_value.empty() ? default_value : exact_value;
 }
 
+inline bool component_requires_vulkan_cpu_safety(
+        const DiffusionModelConfig &config,
+        const std::string &runtime_spec,
+        const std::string &module,
+        const std::function<int(const std::string &)> &backend_kind_for_assignment) {
+    if (!config.auto_fit) {
+        return config.runtime_backend == DIFFUSION_RUNTIME_BACKEND_VULKAN;
+    }
+
+    const std::string assignment = assignment_value(runtime_spec, module);
+    size_t start = 0;
+    do {
+        const size_t end = assignment.find('&', start);
+        const std::string token = canonical_backend_name(assignment.substr(
+            start,
+            end == std::string::npos ? std::string::npos : end - start));
+        if (backend_kind_for_assignment(token) == DIFFUSION_BACKEND_VULKAN) return true;
+        if (end == std::string::npos) break;
+        start = end + 1;
+    } while (start <= assignment.size());
+    return false;
+}
+
 inline int component_role_for_tensor(const std::string &name) {
     const auto contains = [&](const char *needle) {
         return name.find(needle) != std::string::npos;
@@ -110,6 +147,12 @@ inline int component_role_for_tensor(const std::string &name) {
     return DIFFUSION_COMPONENT_OTHER;
 }
 
+inline int declared_source_subdivision_role(int source_role) {
+    return source_role == DIFFUSION_COMPONENT_TAESD
+        ? DIFFUSION_COMPONENT_VAE
+        : source_role;
+}
+
 inline int parameter_placement_for_assignment(const std::string &assignment) {
     const std::string normalized = lower_ascii(assignment);
     if (normalized == "cpu") return DIFFUSION_PARAMS_CPU;
@@ -127,6 +170,8 @@ inline int runtime_placement_for_assignment(const std::string &assignment, int64
 
 inline std::vector<PreflightComponentEvidence> classify_bundled_components(
         const std::vector<PreflightTensorEvidence> &tensors,
+        int source_role,
+        int source_ordinal,
         const std::string &runtime_spec,
         const std::string &params_spec,
         const std::function<int64_t(const std::string &)> &backend_mask) {
@@ -159,11 +204,13 @@ inline std::vector<PreflightComponentEvidence> classify_bundled_components(
         const char *module = roles[index] == DIFFUSION_COMPONENT_DIFFUSION_MODEL ? "diffusion" :
             roles[index] == DIFFUSION_COMPONENT_VAE ? "vae" :
             roles[index] == DIFFUSION_COMPONENT_TEXT_ENCODER ? "te" : "";
-        const std::string runtime = module[0] ? assignment_value(runtime_spec, module) : "";
-        const std::string params = module[0] ? assignment_value(params_spec, module) : "";
+        const std::string runtime = assignment_value(runtime_spec, module);
+        const std::string params = assignment_value(params_spec, module);
         const int64_t mask = runtime.empty() || lower_ascii(runtime) == "cpu"
             ? 0 : backend_mask(runtime);
         result.push_back({
+            source_role,
+            source_ordinal,
             roles[index],
             totals[index],
             runtime_placement_for_assignment(runtime, mask),

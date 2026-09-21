@@ -14,6 +14,13 @@ enum DiffusionLogLevel {
 
 using DiffusionLogFn = std::function<void(DiffusionLogLevel level, const char *msg)>;
 
+enum DiffusionRuntimeBackendNative {
+    DIFFUSION_RUNTIME_BACKEND_CPU = 0,
+    DIFFUSION_RUNTIME_BACKEND_METAL = 1,
+    DIFFUSION_RUNTIME_BACKEND_VULKAN = 2,
+    DIFFUSION_RUNTIME_BACKEND_CUDA = 3,
+};
+
 struct DiffusionModelConfig {
     const char *model_path = "";
     const char *vae_path = "";
@@ -21,6 +28,7 @@ struct DiffusionModelConfig {
     const char *clip_l_path = "";
     const char *clip_g_path = "";
     const char *t5xxl_path = "";
+    int runtime_backend = DIFFUSION_RUNTIME_BACKEND_CPU;
     bool offload_to_cpu = false;
     bool keep_clip_on_cpu = false;
     bool keep_vae_on_cpu = false;
@@ -207,7 +215,9 @@ enum DiffusionBackendDeviceTypeNative {
 };
 
 struct DiffusionPreflightComponentNative {
-    int role = DIFFUSION_COMPONENT_MODEL_BUNDLE;
+    int source_role = DIFFUSION_COMPONENT_MODEL_BUNDLE;
+    int source_ordinal = 0;
+    int subdivision_role = DIFFUSION_COMPONENT_OTHER;
     int ordinal = 0;
     int64_t parameter_bytes = 0;
     int runtime_placement = DIFFUSION_RUNTIME_DEFAULT;
@@ -230,7 +240,8 @@ struct DiffusionPreflightResultNative {
     int quantization = DIFFUSION_QUANT_UNKNOWN;
     int memory_confidence = 0;
     bool stream_layers = false;
-    int64_t declared_component_mask = 0;
+    int64_t declared_source_mask = 0;
+    int source_count = 0;
     int component_count = 0;
     int backend_count = 0;
     DiffusionPreflightComponentNative components[DIFFUSION_PREFLIGHT_MAX_COMPONENTS]{};
@@ -270,3 +281,9 @@ DiffusionModelFeatureSupportNative diffusion_runner_core_probe_model_features(
     const char *quantization,
     int mode);
 std::string diffusion_runner_core_engine_version();
+
+#ifdef CARAML_DIFFUSION_NATIVE_TESTING
+bool diffusion_runner_core_capture_context_backend_for_test(
+    const DiffusionModelConfig &config,
+    std::string &backend);
+#endif

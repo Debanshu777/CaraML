@@ -10,8 +10,25 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class ArtifactBundleManifestStoreTest {
+    @Test
+    fun replacementPlanSurvivesRestartUntilCleanupIsAcknowledged() {
+        val fixture = BundleFixture("replacement-plan")
+        val old = fixture.installBundle("a".repeat(40), "old-main", "old-vae")
+        val replacement = fixture.installBundle("b".repeat(40), "new-main", "new-vae")
+        fixture.bundleStore().publish(old)
+
+        fixture.bundleStore().publish(replacement)
+
+        val reopened = fixture.bundleStore()
+        val currentDigest = requireNotNull(reopened.readValidated()).bundleDigest
+        assertEquals(old.toSet(), reopened.pendingPrevious(currentDigest)?.entries?.toSet())
+        assertTrue(reopened.acknowledgeReplacement(currentDigest))
+        assertNull(fixture.bundleStore().pendingPrevious(currentDigest))
+    }
+
     @Test
     fun crossRepositoryBundleRequiresEveryExactComponentBeforeAndAfterRestart() {
         val fixture = BundleFixture()
@@ -21,7 +38,8 @@ class ArtifactBundleManifestStoreTest {
         store.publish(entries)
         assertEquals(2, store.readValidated()?.entries?.size)
 
-        fixture.fs.write(fixture.vaeRoot / "vae.safetensors") { writeUtf8("substituted") }
+        val vaeEntry = entries.single { it.logicalRole == "vae" }
+        fixture.fs.write(fixture.vaeRoot / vaeEntry.localRelativePath) { writeUtf8("substituted") }
         assertNull(fixture.bundleStore().readValidated())
     }
 
@@ -46,18 +64,7 @@ class ArtifactBundleManifestStoreTest {
         val fixture = BundleFixture("preserve-valid")
         val old = fixture.installBundle("a".repeat(40), "old-main", "old-vae")
         fixture.bundleStore().publish(old)
-        val replacement = old.map { entry ->
-            requireNotNull(
-                ArtifactManifestEntry.create(
-                    logicalRole = entry.logicalRole,
-                    identity = entry.identity,
-                    byteCount = entry.byteCount,
-                    contentSha256 = entry.contentSha256,
-                    bundleId = "f".repeat(64),
-                    localRelativePath = entry.localRelativePath,
-                ),
-            )
-        }
+        val replacement = fixture.installBundle("b".repeat(40), "new-main", "new-vae")
         val crashing = fixture.bundleStore { phase ->
             if (phase == ManifestJournalPhase.PREPARED) throw BundleCrash()
         }
@@ -133,11 +140,22 @@ private class BundleFixture(suffix: String = "default") {
         bundleId: String,
     ): ArtifactManifestEntry {
         val bytes = value.encodeToByteArray()
+        val location = immutableArtifactStorageLocation(identity, bundleId)
         val entry = requireNotNull(
-            ArtifactManifestEntry.create(role, identity, bytes.size.toLong(), bytes.toByteString().sha256().hex(), bundleId),
+            ArtifactManifestEntry.create(
+                role,
+                identity,
+                bytes.size.toLong(),
+                bytes.toByteString().sha256().hex(),
+                bundleId,
+                location.localRelativePath,
+                location.layoutRelativePath,
+            ),
         )
-        fs.write(root / "${identity.relativePath}.part") { write(bytes) }
-        ArtifactManifestStore(root, fs).commit(identity.relativePath, entry)
+        val target = root / location.localRelativePath
+        fs.createDirectories(requireNotNull(target.parent))
+        fs.write("$target.part".toPath()) { write(bytes) }
+        ArtifactManifestStore(root, fs).commit(location.localRelativePath, entry)
         return entry
     }
 

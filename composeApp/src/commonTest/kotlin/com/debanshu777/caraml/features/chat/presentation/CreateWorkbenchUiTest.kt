@@ -83,6 +83,7 @@ import kotlinx.collections.immutable.persistentListOf
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class CreateWorkbenchUiTest {
@@ -833,12 +834,18 @@ class CreateWorkbenchUiTest {
         runComposeUiTest {
             val request = loadRequestForUi()
             val alternativePlan = loadPlanForUi(contextTokens = 1_024)
+            val binding = PendingLoadBinding(
+                generation = 1L,
+                model = request.model,
+                mode = GenerationMode.Text,
+            )
             var state by mutableStateOf<ChatUiState>(ChatUiState.NoModels)
             var modelHubNavigations = 0
             var detailNavigation: Pair<String, ModelHubBrowseMode>? = null
             var confirmedLoads = 0
             var acceptedAlternatives = 0
             var retriedLoads = 0
+            var retriedCurrentModels = 0
             var cancelledLoads = 0
 
             setContent {
@@ -854,6 +861,7 @@ class CreateWorkbenchUiTest {
                                 onConfirmLoad = { confirmedLoads += 1 },
                                 onAcceptAlternative = { acceptedAlternatives += 1 },
                                 onRetryLoad = { retriedLoads += 1 },
+                                onRetryCurrentModel = { retriedCurrentModels += 1 },
                                 onCancelLoad = { cancelledLoads += 1 },
                                 onNavigateToSearch = { modelHubNavigations += 1 },
                                 onNavigateToModelDetail = { modelId, mode ->
@@ -887,8 +895,23 @@ class CreateWorkbenchUiTest {
             onNodeWithText("Loading model...").performScrollTo().assertIsDisplayed()
 
             show(ChatUiState.ModelError("The selected model could not be opened."))
+            onAllNodesWithText("Retry current model").assertCountEquals(0)
+
+            show(
+                ChatUiState.ModelError(
+                    message = "The selected model could not be opened.",
+                    canRetryCurrentModel = true,
+                ),
+            )
+            onNodeWithText("Retry current model")
+                .performScrollTo()
+                .assertIsDisplayed()
+                .performClick()
             onNodeWithText("Try Another Model").performScrollTo().assertIsDisplayed().performClick()
-            runOnIdle { assertEquals(3, modelHubNavigations) }
+            runOnIdle {
+                assertEquals(1, retriedCurrentModels)
+                assertEquals(3, modelHubNavigations)
+            }
 
             show(
                 ChatUiState.MissingComponents(
@@ -913,7 +936,7 @@ class CreateWorkbenchUiTest {
                 assertEquals(3, modelHubNavigations)
             }
 
-            show(ChatUiState.LoadActionRequired(PendingLoadAction.ConfirmRisk(request)))
+            show(ChatUiState.LoadActionRequired(PendingLoadAction.ConfirmRisk(request, binding)))
             onNodeWithText("Continue").performScrollTo().assertIsDisplayed().performClick()
             onNodeWithText("Cancel").performScrollTo().assertIsDisplayed().performClick()
             runOnIdle {
@@ -923,7 +946,7 @@ class CreateWorkbenchUiTest {
 
             show(
                 ChatUiState.LoadActionRequired(
-                    PendingLoadAction.AcceptAlternative(request, alternativePlan),
+                    PendingLoadAction.AcceptAlternative(request, alternativePlan, binding),
                 ),
             )
             onNodeWithText("Use safer plan").performScrollTo().assertIsDisplayed().performClick()
@@ -933,12 +956,106 @@ class CreateWorkbenchUiTest {
                 assertEquals(2, cancelledLoads)
             }
 
-            show(ChatUiState.LoadActionRequired(PendingLoadAction.RetryQuarantined(request)))
+            show(ChatUiState.LoadActionRequired(PendingLoadAction.RetryQuarantined(request, binding)))
             onNodeWithText("Retry explicitly").performScrollTo().assertIsDisplayed().performClick()
             onNodeWithText("Cancel").performScrollTo().assertIsDisplayed().performClick()
             runOnIdle {
                 assertEquals(1, retriedLoads)
                 assertEquals(3, cancelledLoads)
+            }
+        }
+
+    @Test
+    fun loadActionButtonsSubmitTheExactRenderedActionAfterStateReplacement() =
+        runComposeUiTest {
+            val request = loadRequestForUi()
+            val alternativePlan = loadPlanForUi(contextTokens = 1_024)
+            val bindingA = PendingLoadBinding(
+                generation = 1L,
+                model = request.model,
+                mode = GenerationMode.Text,
+            )
+            val bindingB = bindingA.copy(generation = 2L)
+            val cases = listOf(
+                Triple(
+                    PendingLoadAction.ConfirmRisk(request, bindingA),
+                    PendingLoadAction.ConfirmRisk(request, bindingB),
+                    "Continue",
+                ),
+                Triple(
+                    PendingLoadAction.AcceptAlternative(request, alternativePlan, bindingA),
+                    PendingLoadAction.AcceptAlternative(request, alternativePlan, bindingB),
+                    "Use safer plan",
+                ),
+                Triple(
+                    PendingLoadAction.AcceptSafeAlternative(request, bindingA),
+                    PendingLoadAction.AcceptSafeAlternative(request, bindingB),
+                    "Use safer plan",
+                ),
+                Triple(
+                    PendingLoadAction.RetryQuarantined(request, bindingA),
+                    PendingLoadAction.RetryQuarantined(request, bindingB),
+                    "Retry explicitly",
+                ),
+            )
+            var state by mutableStateOf<ChatUiState>(ChatUiState.LoadActionRequired(cases.first().first))
+            val submitted = mutableListOf<PendingLoadAction>()
+
+            setContent {
+                MaterialTheme {
+                    CreateTestLocals {
+                        ChatScreenContent(
+                            uiState = state,
+                            streamingState = StreamingState(),
+                            onSelectModel = {},
+                            onSendMessage = {},
+                            onCancelGeneration = {},
+                            onConfirmLoad = { submitted += it },
+                            onAcceptAlternative = { submitted += it },
+                            onRetryLoad = { submitted += it },
+                            onCancelLoad = { submitted += it },
+                            onNavigateToSearch = {},
+                            modifier = Modifier.requiredSize(width = 420.dp, height = 360.dp),
+                        )
+                    }
+                }
+            }
+
+            cases.forEach { (actionA, actionB, buttonLabel) ->
+                runOnIdle { state = ChatUiState.LoadActionRequired(actionA) }
+                waitForIdle()
+                val oldPrimaryClick = requireNotNull(
+                    onNodeWithText(buttonLabel)
+                        .performScrollTo()
+                        .fetchSemanticsNode()
+                        .config[SemanticsActions.OnClick]
+                        .action,
+                )
+                val oldCancelClick = requireNotNull(
+                    onNodeWithText("Cancel")
+                        .performScrollTo()
+                        .fetchSemanticsNode()
+                        .config[SemanticsActions.OnClick]
+                        .action,
+                )
+
+                runOnIdle { state = ChatUiState.LoadActionRequired(actionB) }
+                waitForIdle()
+                runOnIdle {
+                    oldPrimaryClick()
+                    oldCancelClick()
+                }
+                onNodeWithText(buttonLabel).performScrollTo().performClick()
+                onNodeWithText("Cancel").performScrollTo().performClick()
+
+                runOnIdle {
+                    assertEquals(4, submitted.size)
+                    assertSame(actionA, submitted[0])
+                    assertSame(actionA, submitted[1])
+                    assertSame(actionB, submitted[2])
+                    assertSame(actionB, submitted[3])
+                    submitted.clear()
+                }
             }
         }
 

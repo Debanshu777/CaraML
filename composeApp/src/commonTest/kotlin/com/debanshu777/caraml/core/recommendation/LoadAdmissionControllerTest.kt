@@ -170,6 +170,114 @@ class LoadAdmissionControllerTest {
         assertEquals(0, preflightCalls)
     }
 
+    @Test
+    fun invalidNativePreflightIsDistinctFromArtifactIdentityFailure() = runTest {
+        val controller = controller(preflight = { NativeLoadPreflight.Invalid }) { _, _ ->
+            recommendation(RecommendationCategory.RECOMMENDED, requestedPlan)
+        }
+
+        val blocked = assertIs<LoadAdmission.Blocked>(controller.evaluate(request(), null))
+
+        assertEquals(LoadAdmissionReason.NATIVE_PREFLIGHT_INVALID, blocked.reason)
+    }
+
+    @Test
+    fun gpuInvalidWithCpuFitOffersTheAssessedCpuFallback() = runTest {
+        val gpuPlan = LlmRunPlan(
+            contextTokens = 4_096,
+            batchSize = 128,
+            microBatchSize = 64,
+            sequenceCount = 1,
+            keyCacheType = KvCacheType.Q8_0,
+            valueCacheType = KvCacheType.Q8_0,
+            backend = BackendKind.VULKAN,
+            memoryTopology = MemoryTopology.UNIFIED,
+            gpuLayerCount = 24,
+            compromises = emptyList(),
+        )
+        val gpuAssessment = AssessedPlans(
+            values = listOf(task6PlanAssessment(plan = gpuPlan)),
+            assessmentKey = ASSESSMENT_KEY,
+            memoryTopology = MemoryTopology.UNIFIED,
+        )
+        val cpuAssessment = AssessedPlans(
+            values = listOf(task6PlanAssessment(plan = requestedPlan)),
+            assessmentKey = ASSESSMENT_KEY,
+            memoryTopology = MemoryTopology.UNIFIED,
+        )
+        val cpuRequest = request().copy(plan = requestedPlan, assessedPlans = cpuAssessment)
+        val controller = controller(
+            preflight = { candidate ->
+                when (candidate.plan.backend) {
+                    BackendKind.CPU -> NativeLoadPreflight.Fit
+                    else -> NativeLoadPreflight.Invalid
+                }
+            },
+        ) { candidate, _ ->
+            recommendation(RecommendationCategory.RECOMMENDED, candidate.plan)
+        }
+
+        val alternative = assertIs<LoadAdmission.AlternativeAvailable>(
+            controller.evaluate(
+                request().copy(
+                    plan = gpuPlan,
+                    assessedPlans = gpuAssessment,
+                    backendAlternative = cpuRequest,
+                ),
+                null,
+            ),
+        )
+
+        assertEquals(gpuPlan.stableKey, alternative.original.plan.stableKey)
+        assertEquals(requestedPlan.stableKey, alternative.saferPlan.stableKey)
+        assertEquals(LoadAdmissionReason.NATIVE_BACKEND_INCOMPATIBLE, alternative.reason)
+        assertIs<LoadAdmission.Ready>(
+            controller.evaluate(alternative.saferRequest, null),
+        )
+    }
+
+    @Test
+    fun gpuInvalidWithCpuInvalidRemainsBlocked() = runTest {
+        val gpuPlan = LlmRunPlan(
+            contextTokens = 4_096,
+            batchSize = 128,
+            microBatchSize = 64,
+            sequenceCount = 1,
+            keyCacheType = KvCacheType.Q8_0,
+            valueCacheType = KvCacheType.Q8_0,
+            backend = BackendKind.VULKAN,
+            memoryTopology = MemoryTopology.UNIFIED,
+            gpuLayerCount = 24,
+            compromises = emptyList(),
+        )
+        val gpuAssessment = AssessedPlans(
+            values = listOf(task6PlanAssessment(plan = gpuPlan)),
+            assessmentKey = ASSESSMENT_KEY,
+            memoryTopology = MemoryTopology.UNIFIED,
+        )
+        val cpuAssessment = AssessedPlans(
+            values = listOf(task6PlanAssessment(plan = requestedPlan)),
+            assessmentKey = ASSESSMENT_KEY,
+            memoryTopology = MemoryTopology.UNIFIED,
+        )
+        val controller = controller(preflight = { NativeLoadPreflight.Invalid }) { candidate, _ ->
+            recommendation(RecommendationCategory.RECOMMENDED, candidate.plan)
+        }
+
+        val blocked = assertIs<LoadAdmission.Blocked>(
+            controller.evaluate(
+                request().copy(
+                    plan = gpuPlan,
+                    assessedPlans = gpuAssessment,
+                    backendAlternative = request().copy(plan = requestedPlan, assessedPlans = cpuAssessment),
+                ),
+                null,
+            ),
+        )
+
+        assertEquals(LoadAdmissionReason.NATIVE_PREFLIGHT_INVALID, blocked.reason)
+    }
+
     private fun controller(
         snapshot: DeviceSnapshot = snapshot(),
         clock: () -> Long = { 10_000L },

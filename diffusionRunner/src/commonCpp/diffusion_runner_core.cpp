@@ -274,6 +274,8 @@ static bool valid_model_config_native(const DiffusionModelConfig &config) {
         if (!bounded_string(paths[index], 4096, true)) return false;
     }
     return bounded_string(config.max_vram, 256, true) &&
+        config.runtime_backend >= DIFFUSION_RUNTIME_BACKEND_CPU &&
+        config.runtime_backend <= DIFFUSION_RUNTIME_BACKEND_CUDA &&
         (config.n_threads == -1 || (config.n_threads >= 1 && config.n_threads <= 1024)) &&
         valid_sd_weight_type(config.wtype) &&
         config.prediction >= -1 && config.prediction < PREDICTION_COUNT &&
@@ -448,6 +450,31 @@ static bool initialize_combined_loader(
     return true;
 }
 
+static bool collect_preflight_tensor_evidence(
+        ModelLoader &loader,
+        ggml_type override_type,
+        std::vector<caraml::diffusion::PreflightTensorEvidence> &tensors) {
+    tensors.clear();
+    tensors.reserve(loader.get_tensor_storage_map().size());
+    for (const auto &[name, source_storage] : loader.get_tensor_storage_map()) {
+        TensorStorage storage = source_storage;
+        if (is_unused_tensor(storage.name)) continue;
+        if (override_type != GGML_TYPE_COUNT &&
+            loader.tensor_should_be_converted(storage, override_type)) {
+            storage.type = override_type;
+        } else if (storage.expected_type != GGML_TYPE_COUNT &&
+            storage.expected_type != storage.type) {
+            storage.type = storage.expected_type;
+        }
+        const uint64_t tensor_bytes = storage.nbytes();
+        if (tensor_bytes > static_cast<uint64_t>(std::numeric_limits<int64_t>::max() - 64)) {
+            return false;
+        }
+        tensors.push_back({name, static_cast<int64_t>(tensor_bytes) + 64});
+    }
+    return !tensors.empty();
+}
+
 static std::string assignment_value(const std::string &spec, const std::string &module) {
     std::string default_value;
     std::string exact_value;
@@ -484,17 +511,19 @@ struct ResolvedModelPlan {
     bool valid = false;
 };
 
-static bool registry_has_vulkan_gpu() {
+static int backend_kind_for_assignment(const std::string &assignment) {
+    const std::string resolved = caraml::diffusion::canonical_backend_name(
+        sd_backend_resolve_name(assignment));
+    if (resolved.empty()) return DIFFUSION_BACKEND_OTHER;
     const size_t count = ggml_backend_dev_count();
     for (size_t index = 0; index < count; ++index) {
         ggml_backend_dev_t device = ggml_backend_dev_get(index);
-        if (device && diffusion_backend_kind(device) == DIFFUSION_BACKEND_VULKAN &&
-            (ggml_backend_dev_type(device) == GGML_BACKEND_DEVICE_TYPE_GPU ||
-                ggml_backend_dev_type(device) == GGML_BACKEND_DEVICE_TYPE_IGPU)) {
-            return true;
+        if (device && resolved == caraml::diffusion::canonical_backend_name(
+                ggml_backend_dev_name(device))) {
+            return diffusion_backend_kind(device);
         }
     }
-    return false;
+    return DIFFUSION_BACKEND_OTHER;
 }
 
 static ResolvedModelPlan resolve_model_plan(
@@ -521,10 +550,27 @@ static ResolvedModelPlan resolve_model_plan(
                 plan.params_spec)) {
             return plan;
         }
+    } else if (!caraml::diffusion::explicit_runtime_backend_spec(
+            config.runtime_backend,
+            plan.runtime_spec)) {
+        return plan;
     }
 
-    const bool force_clip_cpu = config.keep_clip_on_cpu || registry_has_vulkan_gpu();
-    const bool force_vae_cpu = config.keep_vae_on_cpu || registry_has_vulkan_gpu();
+    const auto resolved_backend_kind = [](const std::string &assignment) {
+        return backend_kind_for_assignment(assignment);
+    };
+    const bool force_clip_cpu = config.keep_clip_on_cpu ||
+        caraml::diffusion::component_requires_vulkan_cpu_safety(
+            config,
+            plan.runtime_spec,
+            "te",
+            resolved_backend_kind);
+    const bool force_vae_cpu = config.keep_vae_on_cpu ||
+        caraml::diffusion::component_requires_vulkan_cpu_safety(
+            config,
+            plan.runtime_spec,
+            "vae",
+            resolved_backend_kind);
     if (force_clip_cpu) append_assignment(plan.runtime_spec, "te", "cpu");
     if (force_vae_cpu) append_assignment(plan.runtime_spec, "vae", "cpu");
     if (config.offload_to_cpu) {
@@ -533,6 +579,41 @@ static ResolvedModelPlan resolve_model_plan(
     plan.valid = true;
     return plan;
 }
+
+static bool resolve_and_apply_model_plan(
+        const DiffusionModelConfig &config,
+        ModelLoader *initialized_loader,
+        ResolvedModelPlan &plan,
+        sd_ctx_params_t &params) {
+    plan = resolve_model_plan(config, initialized_loader);
+    if (!plan.valid) return false;
+    if (!plan.runtime_spec.empty()) params.backend = plan.runtime_spec.c_str();
+    if (!plan.params_spec.empty()) params.params_backend = plan.params_spec.c_str();
+    params.stream_layers = caraml::diffusion::effective_stream_layers(
+        config.stream_layers,
+        plan.runtime_spec,
+        plan.params_spec);
+    // The exact auto-fit result was resolved above. Do not let new_sd_ctx derive
+    // a second placement from a later memory/device snapshot.
+    params.auto_fit = false;
+    return true;
+}
+
+#ifdef CARAML_DIFFUSION_NATIVE_TESTING
+bool diffusion_runner_core_capture_context_backend_for_test(
+        const DiffusionModelConfig &config,
+        std::string &backend) {
+    if (config.auto_fit) return false;
+    sd_ctx_params_t params = {};
+    sd_ctx_params_init(&params);
+    ResolvedModelPlan plan;
+    if (!resolve_and_apply_model_plan(config, nullptr, plan, params) || !params.backend) {
+        return false;
+    }
+    backend = params.backend;
+    return !backend.empty();
+}
+#endif
 
 static int64_t backend_mask_for_assignment(
         const std::string &value,
@@ -612,10 +693,14 @@ int64_t diffusion_runner_core_load_model(const DiffusionModelConfig &config) {
             return 0;
         }
     }
-    ResolvedModelPlan resolved_plan = resolve_model_plan(
-        config,
-        config.auto_fit ? &fit_loader : nullptr);
-    if (!resolved_plan.valid) {
+    sd_ctx_params_t params = {};
+    sd_ctx_params_init(&params);
+    ResolvedModelPlan resolved_plan;
+    if (!resolve_and_apply_model_plan(
+            config,
+            config.auto_fit ? &fit_loader : nullptr,
+            resolved_plan,
+            params)) {
         dr_logf(DIFFUSION_LOG_ERROR, "load_model: backend placement could not be resolved");
         return 0;
     }
@@ -638,15 +723,8 @@ int64_t diffusion_runner_core_load_model(const DiffusionModelConfig &config) {
     }
 #else
     dr_logf(DIFFUSION_LOG_WARN,
-            "load_model: SD_USE_VULKAN NOT defined in this translation unit — "
-            "vulkan-aware workarounds (keep_clip_on_cpu, wtype=F16) are DISABLED here. "
-            "If sd.cpp was built with SD_USE_VULKAN, the backend will still pick Vulkan "
-            "and CLIP/VAE will crash with GGML_ABORT. Fix the CMake macro propagation.");
+            "load_model: diffusion runner was built without SD_USE_VULKAN");
 #endif
-
-    // Set up sd_ctx_params_t
-    sd_ctx_params_t params = {};
-    sd_ctx_params_init(&params);
 
     // Determine model path - if any of the component paths are set, use diffusion_model_path
     if (strlen(config.vae_path) > 0 || strlen(config.llm_path) > 0 ||
@@ -669,24 +747,10 @@ int64_t diffusion_runner_core_load_model(const DiffusionModelConfig &config) {
     // (see libraries/stable-diffusion.cpp/docs/backend.md, "Compatibility flags"). free_params_immediately
     // has no direct successor; params_backend=disk covers "reload+release" but that's a heavier
     // behavior change than "free after first use" so it is intentionally not auto-mapped here.
-    std::string backend_assignment = resolved_plan.runtime_spec;
-    std::string params_backend_assignment = resolved_plan.params_spec;
-    // ggml-vulkan on Android (Adreno/Mali) lacks F16 softmax/norm pipeline variants
-    // used by the CLIP transformer and VAE decoder. Submitting those graphs to the
-    // Vulkan backend triggers GGML_ABORT inside ggml_vk_op_get_pipeline.
-    // Mirror stable-diffusion.cpp's documented workaround: pin CLIP + VAE to the CPU
-    // backend whenever a Vulkan device is present. The heavy UNet stays on Vulkan.
-    // Caller opt-in (config flag = true) is preserved via OR.
-    if (!backend_assignment.empty()) params.backend = backend_assignment.c_str();
-    if (!params_backend_assignment.empty()) params.params_backend = params_backend_assignment.c_str();
+    // resolve_model_plan already encoded caller overrides and Vulkan's CLIP/VAE CPU
+    // safety into this exact assignment. An unrelated registered Vulkan device does
+    // not mutate an explicit CUDA or Metal plan.
     params.max_vram = config.max_vram[0] == '\0' ? nullptr : config.max_vram;
-    params.stream_layers = caraml::diffusion::effective_stream_layers(
-        config.stream_layers,
-        resolved_plan.runtime_spec,
-        resolved_plan.params_spec);
-    // Auto-fit was resolved above from the same loader assumptions; passing false
-    // prevents new_sd_ctx from recomputing a different placement against changing memory.
-    params.auto_fit = false;
 
     params.diffusion_flash_attn = config.diffusion_flash_attn;
     params.enable_mmap = config.enable_mmap;
@@ -1153,49 +1217,89 @@ DiffusionPreflightResultNative diffusion_runner_core_preflight(const DiffusionMo
         const ggml_type override_type = config.wtype >= 0
             ? static_cast<ggml_type>(config.wtype)
             : GGML_TYPE_COUNT;
-        int64_t declared_mask = 0;
-        int result_component_count = 0;
-        if (!has_split_components(config)) {
-            std::vector<caraml::diffusion::PreflightTensorEvidence> tensors;
-            tensors.reserve(combined_loader.get_tensor_storage_map().size());
-            for (const auto &[name, source_storage] : combined_loader.get_tensor_storage_map()) {
-                TensorStorage storage = source_storage;
-                if (is_unused_tensor(storage.name)) continue;
-                if (override_type != GGML_TYPE_COUNT &&
-                    combined_loader.tensor_should_be_converted(storage, override_type)) {
-                    storage.type = override_type;
-                } else if (storage.expected_type != GGML_TYPE_COUNT &&
-                    storage.expected_type != storage.type) {
-                    storage.type = storage.expected_type;
-                }
-                const uint64_t tensor_bytes = storage.nbytes();
-                if (tensor_bytes > static_cast<uint64_t>(std::numeric_limits<int64_t>::max() - 64)) {
-                    result.status = DIFFUSION_PREFLIGHT_INVALID;
-                    return result;
-                }
-                tensors.push_back({name, static_cast<int64_t>(tensor_bytes) + 64});
-            }
-            const auto classified = caraml::diffusion::classify_bundled_components(
-                tensors,
-                resolved_plan.runtime_spec,
-                resolved_plan.params_spec,
-                selected_backend_mask);
-            if (classified.empty() || classified.size() > DIFFUSION_PREFLIGHT_MAX_COMPONENTS) {
+        int64_t declared_source_mask = 0;
+        for (const DeclaredComponent &source : components) {
+            const int64_t source_bit = int64_t{1} << source.role;
+            if ((declared_source_mask & source_bit) != 0) {
                 result.status = DIFFUSION_PREFLIGHT_INVALID;
                 return result;
             }
-            for (size_t index = 0; index < classified.size(); ++index) {
-                const auto &source = classified[index];
-                DiffusionPreflightComponentNative &destination = result.components[index];
-                destination.role = source.role;
-                destination.ordinal = static_cast<int>(index);
-                destination.parameter_bytes = source.parameter_bytes;
-                destination.runtime_placement = source.runtime_placement;
-                destination.runtime_backend_mask = source.runtime_backend_mask;
-                destination.parameter_placement = source.parameter_placement;
-                declared_mask |= int64_t{1} << source.role;
+            declared_source_mask |= source_bit;
+        }
+        int result_component_count = 0;
+        if (!has_split_components(config)) {
+            const DeclaredComponent &bundle_source = components.front();
+            ModelLoader bundle_loader;
+            if (!bundle_loader.init_from_file(bundle_source.path, bundle_source.prefix)) {
+                result.status = DIFFUSION_PREFLIGHT_INVALID;
+                return result;
             }
-            result_component_count = static_cast<int>(classified.size());
+            bundle_loader.convert_tensors_name();
+            std::vector<caraml::diffusion::PreflightTensorEvidence> tensors;
+            if (!collect_preflight_tensor_evidence(bundle_loader, override_type, tensors)) {
+                result.status = DIFFUSION_PREFLIGHT_INVALID;
+                return result;
+            }
+            const auto classified = caraml::diffusion::classify_bundled_components(
+                tensors,
+                bundle_source.role,
+                0,
+                resolved_plan.runtime_spec,
+                resolved_plan.params_spec,
+                selected_backend_mask);
+            if (classified.empty() ||
+                classified.size() + components.size() - 1 > DIFFUSION_PREFLIGHT_MAX_COMPONENTS) {
+                result.status = DIFFUSION_PREFLIGHT_INVALID;
+                return result;
+            }
+            for (const auto &subdivision : classified) {
+                DiffusionPreflightComponentNative &destination =
+                    result.components[result_component_count];
+                destination.source_role = subdivision.source_role;
+                destination.source_ordinal = subdivision.source_ordinal;
+                destination.subdivision_role = subdivision.subdivision_role;
+                destination.ordinal = result_component_count;
+                destination.parameter_bytes = subdivision.parameter_bytes;
+                destination.runtime_placement = subdivision.runtime_placement;
+                destination.runtime_backend_mask = subdivision.runtime_backend_mask;
+                destination.parameter_placement = subdivision.parameter_placement;
+                ++result_component_count;
+            }
+
+            for (size_t source_index = 1; source_index < components.size(); ++source_index) {
+                const DeclaredComponent &source = components[source_index];
+                ModelLoader component_loader;
+                if (!component_loader.init_from_file(source.path, source.prefix)) {
+                    result.status = DIFFUSION_PREFLIGHT_INVALID;
+                    return result;
+                }
+                component_loader.convert_tensors_name();
+                const int64_t parameter_bytes =
+                    component_loader.get_params_mem_size(nullptr, override_type);
+                if (parameter_bytes < 0) {
+                    result.status = DIFFUSION_PREFLIGHT_INVALID;
+                    return result;
+                }
+
+                DiffusionPreflightComponentNative &destination =
+                    result.components[result_component_count];
+                destination.source_role = source.role;
+                destination.source_ordinal = static_cast<int>(source_index);
+                destination.subdivision_role =
+                    caraml::diffusion::declared_source_subdivision_role(source.role);
+                destination.ordinal = result_component_count;
+                destination.parameter_bytes = parameter_bytes;
+                const std::string runtime_value = assignment_value(
+                    resolved_plan.runtime_spec,
+                    source.module);
+                destination.runtime_backend_mask = selected_backend_mask(runtime_value);
+                destination.runtime_placement = runtime_placement_for(
+                    runtime_value,
+                    destination.runtime_backend_mask);
+                destination.parameter_placement = parameter_placement_for(
+                    assignment_value(resolved_plan.params_spec, source.module));
+                ++result_component_count;
+            }
         } else for (size_t index = 0; index < components.size(); ++index) {
             const DeclaredComponent &source = components[index];
             ModelLoader component_loader;
@@ -1210,11 +1314,14 @@ DiffusionPreflightResultNative diffusion_runner_core_preflight(const DiffusionMo
                 return result;
             }
 
-            DiffusionPreflightComponentNative &destination = result.components[index];
-            destination.role = source.role;
-            destination.ordinal = static_cast<int>(index);
+            DiffusionPreflightComponentNative &destination =
+                result.components[result_component_count];
+            destination.source_role = source.role;
+            destination.source_ordinal = static_cast<int>(index);
+            destination.subdivision_role =
+                caraml::diffusion::declared_source_subdivision_role(source.role);
+            destination.ordinal = result_component_count;
             destination.parameter_bytes = parameter_bytes;
-            declared_mask |= int64_t{1} << source.role;
 
             if (source.module[0] != '\0') {
                 const std::string runtime_value = assignment_value(
@@ -1227,7 +1334,7 @@ DiffusionPreflightResultNative diffusion_runner_core_preflight(const DiffusionMo
                 destination.parameter_placement = parameter_placement_for(
                     assignment_value(resolved_plan.params_spec, source.module));
             }
-            result_component_count = static_cast<int>(components.size());
+            ++result_component_count;
         }
 
         result.status = DIFFUSION_PREFLIGHT_FIT;
@@ -1238,7 +1345,8 @@ DiffusionPreflightResultNative diffusion_runner_core_preflight(const DiffusionMo
             config.stream_layers,
             resolved_plan.runtime_spec,
             resolved_plan.params_spec);
-        result.declared_component_mask = declared_mask;
+        result.declared_source_mask = declared_source_mask;
+        result.source_count = static_cast<int>(components.size());
         result.component_count = result_component_count;
         result.backend_count = static_cast<int>(selected_backends.backends.size());
     } catch (const std::bad_alloc &) {

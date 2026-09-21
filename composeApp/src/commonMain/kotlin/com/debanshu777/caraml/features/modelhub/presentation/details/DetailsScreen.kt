@@ -62,7 +62,6 @@ fun DetailsScreen(
     val downloadError by viewModel.downloadError.collectAsState()
     val showDownloadForLaterConfirmation by viewModel.showDownloadForLaterConfirmation.collectAsState()
     val installBundleState by viewModel.installBundleState.collectAsState()
-    val downloadBatches by viewModel.downloadBatches.collectAsState()
     val recommendations by viewModel.recommendedModels.collectAsState()
     val recommendationState = recommendations.firstOrNull { it.repositoryId == modelId }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -147,7 +146,6 @@ fun DetailsScreen(
                                 recommendationState = recommendationState,
                                 onRecommendationInfoClick = { recommendationSheetVisible = true },
                                 modifier = Modifier.fillMaxSize(),
-                                downloadBatches = downloadBatches,
                                 onPauseDownload = viewModel::pauseDownload,
                                 onResumeDownload = viewModel::resumeDownload,
                                 onCancelDownload = viewModel::cancelDownload,

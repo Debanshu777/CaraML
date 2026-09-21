@@ -1,6 +1,9 @@
 package com.debanshu777.caraml.core.download
 
+import com.debanshu777.caraml.core.recommendation.storage.EncodedModelEvidence
+import com.debanshu777.caraml.core.recommendation.storage.PersistedModelEvidenceCodec
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
+import com.debanshu777.huggingfacemanager.download.artifactBundleId
 import okio.Buffer
 
 private const val MAX_BATCH_ARTIFACTS = 64
@@ -51,6 +54,7 @@ data class DownloadBatchRequest(
     val ownerModelId: String,
     val modelType: String,
     val artifacts: List<DownloadArtifactRequest>,
+    val evidence: EncodedModelEvidence,
     val downloadForLaterConfirmed: Boolean,
     val displayName: String,
 ) {
@@ -65,8 +69,18 @@ data class DownloadBatchRequest(
         require(artifacts.filter(DownloadArtifactRequest::primary).all { it.metadata.artifact.repositoryId == ownerModelId }) {
             "Primary artifact does not belong to owner"
         }
-        require(artifacts.map { it.metadata.bundleId }.distinct().size == 1) { "Mismatched artifact bundle" }
+        require(artifacts.all { it.metadata.usesImmutableStorageLayout }) { "Invalid artifact destination" }
+        val expectedBundleId = requireNotNull(artifactBundleId(artifacts.map { it.metadata.artifact })) {
+            "Invalid artifact bundle"
+        }
+        require(artifacts.all { it.metadata.bundleId == expectedBundleId }) { "Mismatched artifact bundle" }
         require(artifacts.map(::downloadArtifactTaskId).distinct().size == artifacts.size) { "Duplicate artifact" }
+        require(
+            artifacts.distinctBy {
+                it.metadata.artifact.repositoryId to it.metadata.destinationRelativePath
+            }.size == artifacts.size,
+        ) { "Conflicting artifact destination" }
+        PersistedModelEvidenceCodec().decode(evidence)
         artifacts.forEach { request ->
             require(request.metadata.sizeBytes == request.metadata.artifact.expectedBytes) { "Missing exact artifact size" }
             listOfNotNull(
@@ -101,6 +115,7 @@ data class DownloadBatchSnapshot(
     val state: DownloadBatchState,
     val userIntent: DownloadUserIntent,
     val artifacts: List<DownloadArtifactSnapshot>,
+    val evidence: EncodedModelEvidence,
     val failureCode: DownloadFailureCode? = null,
 ) {
     val bytesReceived: Long get() = artifacts.sumOf(DownloadArtifactSnapshot::bytesReceived)
@@ -122,9 +137,13 @@ fun downloadArtifactTaskId(request: DownloadArtifactRequest): String {
     )
 }
 
+internal fun downloadBatchArtifactId(batchId: String, request: DownloadArtifactRequest): String =
+    canonicalSha256(batchId, downloadArtifactTaskId(request))
+
 fun downloadBatchId(request: DownloadBatchRequest): String = canonicalSha256(
     request.ownerModelId,
     request.modelType,
+    request.evidence.sha256,
     *request.artifacts.map(::downloadArtifactTaskId).sorted().toTypedArray(),
 )
 

@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.core.recommendation
 
+import com.debanshu777.caraml.core.platform.BackendKind
 import com.debanshu777.caraml.core.platform.DeviceSnapshot
 import com.debanshu777.caraml.core.platform.ThermalState
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
@@ -14,6 +15,7 @@ data class LoadRequest(
     val assessedPlans: AssessedPlans? = null,
     val profile: RecommendationProfile = RecommendationProfile(),
     val riskAcknowledgement: RiskAcknowledgement? = null,
+    val backendAlternative: LoadRequest? = null,
 )
 
 data class RiskAcknowledgement(
@@ -30,6 +32,8 @@ enum class LoadAdmissionReason {
     INSUFFICIENT_INFORMATION,
     NO_SAFE_CONFIGURATION,
     INVALID_MODEL,
+    NATIVE_PREFLIGHT_INVALID,
+    NATIVE_BACKEND_INCOMPATIBLE,
     NATIVE_PREFLIGHT_UNAVAILABLE,
     RISK_ACKNOWLEDGEMENT_REQUIRED,
     SUSPECTED_PREVIOUS_CRASH,
@@ -49,7 +53,26 @@ sealed interface LoadAdmission {
         val original: LoadRequest,
         val saferPlan: RunPlan,
         val reason: LoadAdmissionReason = LoadAdmissionReason.NO_SAFE_CONFIGURATION,
+        val saferRequest: LoadRequest = original.copy(
+            plan = saferPlan,
+            riskAcknowledgement = null,
+            backendAlternative = null,
+        ),
     ) : LoadAdmission
+
+    data class SafeAlternativeAvailable(
+        val saferRequest: LoadRequest,
+        val reason: LoadAdmissionReason = LoadAdmissionReason.NO_SAFE_CONFIGURATION,
+    ) : LoadAdmission {
+        init {
+            require(saferRequest.plan.backend == BackendKind.CPU)
+            require(saferRequest.backendAlternative == null)
+            require(saferRequest.riskAcknowledgement == null)
+            require(saferRequest.assessmentKey.isNotBlank())
+            require(saferRequest.assessedPlans?.assessmentKey == saferRequest.assessmentKey)
+            require(saferRequest.artifact?.identity == saferRequest.identity)
+        }
+    }
 
     data class TemporarilyUnavailable(
         val request: LoadRequest,
@@ -65,6 +88,7 @@ sealed interface LoadAdmission {
 sealed interface NativeLoadPreflight {
     data object Fit : NativeLoadPreflight
     data object NoFit : NativeLoadPreflight
+    data class BackendIncompatible(val saferRequest: LoadRequest) : NativeLoadPreflight
     data object Invalid : NativeLoadPreflight
     data object Unavailable : NativeLoadPreflight
 }
@@ -176,18 +200,63 @@ class LoadAdmissionController(
             return LoadAdmission.Blocked(request, LoadAdmissionReason.INVALID_MODEL)
         }
 
-        return when (nativePreflight(request)) {
+        return when (val preflight = classifyNativePreflight(request, snapshot)) {
             NativeLoadPreflight.Fit -> LoadAdmission.Ready(request)
             NativeLoadPreflight.NoFit -> fallback
                 ?.takeUnless { request.matches(it) }
                 ?.let { request.alternative(it, LoadAdmissionReason.NO_SAFE_CONFIGURATION) }
                 ?: LoadAdmission.Blocked(request, LoadAdmissionReason.NO_SAFE_CONFIGURATION)
-            NativeLoadPreflight.Invalid -> LoadAdmission.Blocked(request, LoadAdmissionReason.INVALID_MODEL)
+            is NativeLoadPreflight.BackendIncompatible -> request.alternative(
+                preflight.saferRequest,
+                LoadAdmissionReason.NATIVE_BACKEND_INCOMPATIBLE,
+            )
+            NativeLoadPreflight.Invalid -> LoadAdmission.Blocked(
+                request,
+                LoadAdmissionReason.NATIVE_PREFLIGHT_INVALID,
+            )
             NativeLoadPreflight.Unavailable -> LoadAdmission.TemporarilyUnavailable(
                 request,
                 LoadAdmissionReason.NATIVE_PREFLIGHT_UNAVAILABLE,
             )
         }
+    }
+
+    private suspend fun classifyNativePreflight(
+        request: LoadRequest,
+        snapshot: DeviceSnapshot,
+    ): NativeLoadPreflight {
+        val requestedResult = nativePreflight(request)
+        if (requestedResult != NativeLoadPreflight.Invalid) return requestedResult
+        val requestedPlan = request.plan as? LlmRunPlan ?: return requestedResult
+        if (requestedPlan.backend == BackendKind.CPU) return requestedResult
+        val alternative = request.backendAlternative ?: return requestedResult
+        val alternativePlan = alternative.plan as? LlmRunPlan ?: return requestedResult
+        if (alternativePlan.backend != BackendKind.CPU ||
+            validateRunPlan(alternativePlan) != null ||
+            request.matches(alternativePlan) ||
+            !alternative.isExactBackendAlternativeFor(request) ||
+            !artifactValidator(alternative)
+        ) {
+            return requestedResult
+        }
+        val recommendation = recommendationSource(alternative, snapshot)
+        if (!alternative.matches(recommendation.admissiblePlan() as? RunPlan)) return requestedResult
+        return if (nativePreflight(alternative) == NativeLoadPreflight.Fit) {
+            NativeLoadPreflight.BackendIncompatible(alternative)
+        } else {
+            requestedResult
+        }
+    }
+
+    private fun PersonalizedRecommendation.admissiblePlan(): PlanReference? = when (category) {
+        RecommendationCategory.RECOMMENDED,
+        RecommendationCategory.USABLE,
+        RecommendationCategory.RISKY,
+        -> selectedPlan
+        RecommendationCategory.NOT_SUITABLE -> fallbackPlan
+        RecommendationCategory.INCOMPATIBLE,
+        RecommendationCategory.NEEDS_INFORMATION,
+        -> null
     }
 
     suspend fun allowExplicitRetry(request: LoadRequest) {
@@ -198,6 +267,20 @@ class LoadAdmissionController(
 
     private fun LoadRequest.alternative(plan: RunPlan, reason: LoadAdmissionReason) =
         LoadAdmission.AlternativeAvailable(this, plan, reason)
+
+    private fun LoadRequest.alternative(request: LoadRequest, reason: LoadAdmissionReason) =
+        LoadAdmission.AlternativeAvailable(this, request.plan, reason, request)
+
+    private fun LoadRequest.isExactBackendAlternativeFor(original: LoadRequest): Boolean =
+        backendAlternative == null &&
+            riskAcknowledgement == null &&
+            model == original.model &&
+            identity == original.identity &&
+            observationIdentity == original.observationIdentity &&
+            artifact == original.artifact &&
+            profile == original.profile &&
+            assessmentKey.isNotBlank() &&
+            assessedPlans?.assessmentKey == assessmentKey
 
     private fun RiskAcknowledgement?.isValidFor(
         request: LoadRequest,

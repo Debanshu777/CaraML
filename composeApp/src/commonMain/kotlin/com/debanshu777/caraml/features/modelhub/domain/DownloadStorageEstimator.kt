@@ -4,7 +4,9 @@ import com.debanshu777.caraml.core.recommendation.DiffusionModelDescriptor
 import com.debanshu777.caraml.core.recommendation.LlmModelDescriptor
 import com.debanshu777.caraml.core.recommendation.ModelDescriptor
 import com.debanshu777.caraml.core.recommendation.ModelFileIdentity
+import com.debanshu777.caraml.core.recommendation.canonicalDownloadRemoteObjectId
 import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
+import com.debanshu777.caraml.core.download.DownloadArtifactRequest
 
 data class ArtifactStorageKey(val repositoryId: String, val relativePath: String)
 
@@ -22,6 +24,7 @@ data class LocalDownloadArtifact(
     val relativePath: String,
     val finalBytes: Long? = null,
     val partBytes: Long? = null,
+    val exactPublished: Boolean = false,
 )
 
 data class LocalDownloadInventory(val artifacts: List<LocalDownloadArtifact>) {
@@ -54,6 +57,51 @@ sealed interface StorageRequirement {
 }
 
 class DownloadStorageEstimator {
+    fun estimate(
+        requests: List<DownloadArtifactRequest>,
+        localInventory: LocalDownloadInventory,
+        layout: DownloadStorageLayout,
+    ): StorageRequirement {
+        if (requests.isEmpty() || requests.size > MAX_COMPONENTS || !inventoryIsValid(localInventory)) {
+            return StorageRequirement.NeedsInformation()
+        }
+        val inventory = localInventory.artifacts.associateBy {
+            ArtifactStorageKey(it.repositoryId, it.relativePath)
+        }
+        if (inventory.size != localInventory.artifacts.size) return StorageRequirement.NeedsInformation()
+        val finalGrowth = mutableMapOf<String, Long>()
+        val temporaryGrowth = mutableMapOf<String, Long>()
+        val seenTargets = mutableSetOf<ArtifactStorageKey>()
+        requests.forEach { request ->
+            val metadata = request.metadata
+            if (!metadata.usesImmutableStorageLayout || metadata.sizeBytes != metadata.artifact.expectedBytes) {
+                return StorageRequirement.NeedsInformation()
+            }
+            val key = ArtifactStorageKey(metadata.artifact.repositoryId, metadata.destinationRelativePath)
+            if (!seenTargets.add(key)) return StorageRequirement.NeedsInformation()
+            val location = layout.locations[key] ?: return StorageRequirement.NeedsInformation()
+            if (layout.volumes[location.finalVolume] == null || layout.volumes[location.temporaryVolume] == null) {
+                return StorageRequirement.NeedsInformation()
+            }
+            val local = inventory[key]
+            val expectedBytes = metadata.artifact.expectedBytes
+            if (local?.exactPublished == true && local.finalBytes != expectedBytes) {
+                return StorageRequirement.NeedsInformation()
+            }
+            val missingFinal = if (local?.finalBytes != null) 0L else expectedBytes
+            val missingTemporary = if (local?.exactPublished == true) 0L else {
+                checkedSubtract(expectedBytes, local?.partBytes ?: 0L)
+                    ?: return StorageRequirement.NeedsInformation()
+            }
+            finalGrowth.addChecked(location.finalVolume, missingFinal) ?: return StorageRequirement.NeedsInformation()
+            temporaryGrowth[location.temporaryVolume] = maxOf(
+                temporaryGrowth[location.temporaryVolume] ?: 0L,
+                missingTemporary,
+            )
+        }
+        return requirements(finalGrowth, temporaryGrowth, layout)
+    }
+
     fun estimate(
         descriptor: ModelDescriptor,
         localInventory: LocalDownloadInventory,
@@ -120,11 +168,12 @@ class DownloadStorageEstimator {
         inventory.artifacts.size <= MAX_COMPONENTS && inventory.artifacts.all {
             it.repositoryId.isNotBlank() && it.relativePath.isNotBlank() &&
                 (it.finalBytes == null || it.finalBytes >= 0L) &&
-                (it.partBytes == null || it.partBytes >= 0L)
+                (it.partBytes == null || it.partBytes >= 0L) &&
+                (!it.exactPublished || it.finalBytes != null)
         }
 
     private fun fileIsValid(descriptor: ModelDescriptor, file: ModelFileIdentity): Boolean {
-        val remoteObjectId = file.lfsOid?.let { "sha256:$it" } ?: file.xetHash ?: file.gitOid
+        val remoteObjectId = file.canonicalDownloadRemoteObjectId()
         if (DownloadArtifactIdentity.create(
                 repositoryId = file.repositoryId,
                 immutableRevision = file.revision,
@@ -137,6 +186,27 @@ class DownloadStorageEstimator {
         }
         return descriptor !is LlmModelDescriptor ||
             (file.repositoryId == descriptor.repositoryId && file.revision == descriptor.revision)
+    }
+
+    private fun requirements(
+        finalGrowth: Map<String, Long>,
+        temporaryGrowth: Map<String, Long>,
+        layout: DownloadStorageLayout,
+    ): StorageRequirement {
+        val requirements = linkedMapOf<String, VolumeStorageRequirement>()
+        for (volumeId in (finalGrowth.keys + temporaryGrowth.keys).sorted()) {
+            val free = layout.volumes[volumeId]?.freeBytes?.takeIf { it >= 0L }
+                ?: return StorageRequirement.NeedsInformation(requirements)
+            val additional = checkedAdd(finalGrowth[volumeId] ?: 0L, temporaryGrowth[volumeId] ?: 0L)
+                ?: return StorageRequirement.NeedsInformation(requirements)
+            val reserve = storageReserve(free) ?: return StorageRequirement.NeedsInformation(requirements)
+            requirements[volumeId] = VolumeStorageRequirement(additional, free, reserve)
+        }
+        val blocked = requirements.entries.firstOrNull { (_, value) ->
+            value.additionalBytes > (checkedSubtract(value.freeBytes, value.reserveBytes) ?: -1L)
+        }
+        return if (blocked == null) StorageRequirement.Ready(requirements)
+        else StorageRequirement.Blocked(blocked.key, requirements)
     }
 }
 

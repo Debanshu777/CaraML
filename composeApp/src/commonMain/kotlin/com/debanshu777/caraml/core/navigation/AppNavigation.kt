@@ -8,7 +8,6 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
@@ -22,23 +21,18 @@ import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.metadata
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
-import com.debanshu777.caraml.core.recommendation.RecommendationRolloutModeSource
 import com.debanshu777.caraml.features.chat.presentation.ChatScreen
 import com.debanshu777.caraml.features.chat.presentation.ChatViewModel
 import com.debanshu777.caraml.features.modelhub.presentation.details.DetailsScreen
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.DownloadedModelsViewModel
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelViewModel
-import com.debanshu777.caraml.features.modelhub.presentation.search.RecommendedModelLoadRequestResolver
 import com.debanshu777.caraml.features.modelhub.presentation.search.SearchScreen
-import com.debanshu777.caraml.features.modelhub.presentation.search.routeRecommendedModelSelection
 import com.debanshu777.caraml.features.settings.presentation.SettingsScreen
 import com.debanshu777.caraml.features.settings.presentation.SettingsViewModel
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 import com.debanshu777.caraml.core.ui.motion.AuroraMotionPolicy
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import org.koin.compose.viewmodel.koinViewModel
-import org.koin.compose.koinInject
-import kotlinx.coroutines.launch
 
 internal enum class NavigationTransitionFamily {
     Peer,
@@ -48,6 +42,13 @@ internal enum class NavigationTransitionFamily {
 internal enum class NavigationTransitionDirection {
     Forward,
     Pop,
+}
+
+internal fun returnHomeAfterModelSelection(backStack: NavBackStack<NavKey>) {
+    Snapshot.withMutableSnapshot {
+        backStack.clear()
+        backStack.add(AppScreen.Home)
+    }
 }
 
 internal enum class NavigationTransitionAxis {
@@ -217,9 +218,6 @@ fun NavigationHost(
     val motionPolicy = LocalAuroraMotionPolicy.current
     val detailOffsetPx = with(LocalDensity.current) { 16.dp.roundToPx() }
     val chatViewModel: ChatViewModel = koinViewModel()
-    val modelLoadRequestResolver: RecommendedModelLoadRequestResolver = koinInject()
-    val recommendationRolloutModeSource: RecommendationRolloutModeSource = koinInject()
-    val selectionScope = rememberCoroutineScope()
     NavigationTransitionDisplay(
         modifier = modifier,
         backStack = backStack,
@@ -252,24 +250,8 @@ fun NavigationHost(
                             backStack.add(AppScreen.Details(modelId, hubMode))
                         },
                         onSelectModelAndGoBack = { model ->
-                            routeRecommendedModelSelection(
-                                mode = recommendationRolloutModeSource.current(),
-                                selectLegacy = {
-                                    chatViewModel.selectModel(model)
-                                    returnFromModelSelection(backStack)
-                                },
-                                selectAssessed = {
-                                    val recommendationStates = modelViewModel.recommendedModels.value
-                                    selectionScope.launch {
-                                        val loadRequest = modelLoadRequestResolver.resolve(
-                                            model = model,
-                                            states = recommendationStates,
-                                        )
-                                        chatViewModel.selectModel(model, loadRequest)
-                                        returnFromModelSelection(backStack)
-                                    }
-                                },
-                            )
+                            chatViewModel.selectModel(model)
+                            returnHomeAfterModelSelection(backStack)
                         }
                     )
                 }

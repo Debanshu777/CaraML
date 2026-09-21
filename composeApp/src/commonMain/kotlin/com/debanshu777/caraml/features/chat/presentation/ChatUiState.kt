@@ -16,7 +16,10 @@ sealed interface ChatUiState {
 
     data object ModelLoading : ChatUiState
 
-    data class ModelError(val message: String) : ChatUiState
+    data class ModelError(
+        val message: String,
+        val canRetryCurrentModel: Boolean = false,
+    ) : ChatUiState
 
     data class MissingComponents(
         val missingComponentLabels: List<String>,

@@ -10,7 +10,11 @@ import org.koin.mp.KoinPlatform
 fun handleIosBackgroundDownloadEvents(identifier: String, completionHandler: () -> Unit) {
     initKoin()
     val koin = KoinPlatform.getKoin()
-    koin.get<DownloadRuntime>().start()
     val scheduler = koin.get<PlatformDownloadScheduler>() as? IosDownloadScheduler
-    if (scheduler == null) completionHandler() else scheduler.handleBackgroundEvents(identifier, completionHandler)
+    if (scheduler == null) {
+        completionHandler()
+        return
+    }
+    scheduler.handleBackgroundEvents(identifier, completionHandler)
+    koin.get<DownloadRuntime>().start()
 }

@@ -9,7 +9,11 @@ interface PlatformDownloadScheduler {
     suspend fun cancel(batchId: String)
     suspend fun reconcile(liveBatchIds: Set<String>)
     suspend fun isActive(batchId: String): Boolean = false
+    suspend fun orphanedRunningDisposition(batchId: String): OrphanedDownloadDisposition =
+        OrphanedDownloadDisposition.RETRY
 }
+
+enum class OrphanedDownloadDisposition { RETRY, PAUSE }
 
 fun interface DownloadNotificationPermissionController {
     fun requestIfNeeded()
@@ -71,6 +75,8 @@ class DownloadCoordinator(
     }
 
     suspend fun resume(batchId: String) {
+        val batch = store.getBatch(batchId) ?: return
+        if (batch.artifacts.any { !it.request.metadata.usesImmutableStorageLayout }) return
         if (store.setUserIntent(batchId, DownloadUserIntent.RUN, nowEpochMs())) {
             store.getBatch(batchId)?.artifacts
                 ?.filter { it.state == DownloadArtifactState.PAUSED }

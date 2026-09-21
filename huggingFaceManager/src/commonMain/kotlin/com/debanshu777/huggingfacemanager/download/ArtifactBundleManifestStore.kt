@@ -16,6 +16,13 @@ private data class BundlePublicationJournal(
     val bundleDigest: String,
 )
 
+@Serializable
+private data class BundleReplacementPlan(
+    val version: Int,
+    val nextBundleDigest: String,
+    val previousManifest: ArtifactManifest,
+)
+
 class ArtifactBundleManifestStore(
     private val ownerRoot: Path,
     private val fileSystem: FileSystem = FileSystem.SYSTEM,
@@ -26,7 +33,9 @@ class ArtifactBundleManifestStore(
     companion object {
         const val MANIFEST_FILE_NAME = ".caraml-bundle-v1.json"
         const val JOURNAL_FILE_NAME = ".caraml-bundle-v1.journal"
+        const val REPLACEMENT_PLAN_FILE_NAME = ".caraml-bundle-v1.replacement"
         private const val MAX_JOURNAL_BYTES = 256
+        private const val MAX_REPLACEMENT_PLAN_BYTES = ArtifactManifestStore.MAX_MANIFEST_BYTES + 512
     }
 
     private val manifestPath = ownerRoot / MANIFEST_FILE_NAME
@@ -34,15 +43,21 @@ class ArtifactBundleManifestStore(
     private val previousPath = "$manifestPath.previous".toPath()
     private val journalPath = ownerRoot / JOURNAL_FILE_NAME
     private val journalPartPath = "$journalPath.part".toPath()
+    private val replacementPlanPath = ownerRoot / REPLACEMENT_PLAN_FILE_NAME
+    private val replacementPlanPartPath = "$replacementPlanPath.part".toPath()
     private val durability = durability ?: artifactDurability(ownerRoot, fileSystem)
     private val secureRoot = if (fileSystem === FileSystem.SYSTEM) SecureArtifactRoot(ownerRoot) else null
     private val json = Json { encodeDefaults = true; ignoreUnknownKeys = false; isLenient = false }
 
     fun publish(entries: Collection<ArtifactManifestEntry>) {
         recover()
-        if (entries.map { it.bundleId }.toSet().size != 1) throw ArtifactVerificationException()
+        if (entries.isEmpty() || entries.size > MAX_BUNDLE_ENTRIES || entries.map { it.bundleId }.toSet().size != 1) {
+            throw ArtifactVerificationException()
+        }
         val manifest = ArtifactManifest.create(entries) ?: throw ArtifactVerificationException()
         if (!manifest.entries.all(artifactValidator)) throw ArtifactVerificationException()
+        prepareReplacementPlan(manifest)
+        if (readValidated()?.bundleDigest == manifest.bundleDigest) return
         writePart(manifest)
         writeJournal(BundlePublicationJournal(ArtifactManifest.VERSION, manifest.bundleDigest))
         phaseObserver(ManifestJournalPhase.PREPARED)
@@ -90,13 +105,29 @@ class ArtifactBundleManifestStore(
     }
 
     fun readValidated(): ArtifactManifest? = readManifest(manifestPath)?.takeIf { manifest ->
-        manifest.entries.map { it.bundleId }.toSet().size == 1 && manifest.entries.all(artifactValidator)
+        manifest.entries.size <= MAX_BUNDLE_ENTRIES && manifest.entries.map { it.bundleId }.toSet().size == 1 &&
+            manifest.entries.all(artifactValidator)
     }
 
-    internal fun readManifestOnly(): ArtifactManifest? =
-        sequenceOf(manifestPath, partPath, previousPath)
-            .mapNotNull(::readManifest)
-            .firstOrNull { manifest -> manifest.entries.map { it.bundleId }.toSet().size == 1 }
+    internal fun readRecoveryCandidates(): List<ArtifactManifest> =
+        (sequenceOf(manifestPath, partPath, previousPath).mapNotNull(::readManifest) +
+            listOfNotNull(readReplacementPlan()?.previousManifest).asSequence())
+            .filter { manifest -> manifest.entries.map { it.bundleId }.toSet().size == 1 }
+            .distinct()
+            .toList()
+
+    internal fun readManifestOnly(): ArtifactManifest? = readRecoveryCandidates().firstOrNull()
+
+    internal fun pendingPrevious(nextBundleDigest: String): ArtifactManifest? =
+        readReplacementPlan()?.takeIf { it.nextBundleDigest == nextBundleDigest }?.previousManifest
+
+    internal fun acknowledgeReplacement(nextBundleDigest: String): Boolean {
+        val plan = readReplacementPlan() ?: return true
+        if (plan.nextBundleDigest != nextBundleDigest || readValidated()?.bundleDigest != nextBundleDigest) return false
+        delete(replacementPlanPartPath)
+        delete(replacementPlanPath)
+        return !exists(replacementPlanPath)
+    }
 
     fun close() = secureRoot?.close()
 
@@ -127,6 +158,32 @@ class ArtifactBundleManifestStore(
         delete(journalPartPath)
         delete(journalPath)
     }
+
+    private fun prepareReplacementPlan(next: ArtifactManifest) {
+        val existingPlan = readReplacementPlan()
+        if (existingPlan != null) {
+            if (existingPlan.nextBundleDigest != next.bundleDigest) throw ArtifactVerificationException()
+            return
+        }
+        if (exists(replacementPlanPath)) throw ArtifactVerificationException()
+        val current = readValidated() ?: return
+        if (current.bundleDigest == next.bundleDigest) return
+        val plan = BundleReplacementPlan(ArtifactManifest.VERSION, next.bundleDigest, current)
+        val encoded = json.encodeToString(plan).encodeToByteArray()
+        if (encoded.size > MAX_REPLACEMENT_PLAN_BYTES) throw ArtifactVerificationException()
+        delete(replacementPlanPartPath)
+        write(replacementPlanPartPath, encoded)
+        move(replacementPlanPartPath, replacementPlanPath)
+    }
+
+    private fun readReplacementPlan(): BundleReplacementPlan? =
+        readBounded(replacementPlanPath, MAX_REPLACEMENT_PLAN_BYTES)?.let { bytes ->
+            runCatching { json.decodeFromString<BundleReplacementPlan>(bytes.decodeToString()) }.getOrNull()
+        }?.takeIf { plan ->
+            plan.version == ArtifactManifest.VERSION &&
+                plan.nextBundleDigest.length == 64 && plan.nextBundleDigest.all(::isAsciiHexDigit) &&
+                plan.previousManifest.entries.map { it.bundleId }.toSet().size == 1
+        }
 
     private fun writePart(manifest: ArtifactManifest) {
         val encoded = json.encodeToString(manifest).encodeToByteArray()
@@ -223,3 +280,5 @@ class ArtifactBundleManifestStore(
         return normalized.removePrefix("$root/")
     }
 }
+
+private const val MAX_BUNDLE_ENTRIES = 64

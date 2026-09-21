@@ -1,16 +1,20 @@
 package com.debanshu777.caraml.features.chat.presentation.components
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -137,14 +141,44 @@ fun ModelLoadingScreen(
 fun ModelErrorScreen(
     errorMessage: String,
     onTryAnotherModelClick: () -> Unit,
+    onRetryCurrentModelClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    CaraMLEmptyState(
-        icon = Icons.Default.Error,
-        title = "Unable to load model",
-        supportingText = errorMessage,
-        actionLabel = "Try Another Model",
-        onAction = onTryAnotherModelClick,
-        modifier = modifier.semantics(mergeDescendants = true) { stateDescription = "Error" },
-    )
+    val stateModifier = modifier.semantics(mergeDescendants = true) {
+        stateDescription = "Error"
+    }
+    if (onRetryCurrentModelClick == null) {
+        CaraMLEmptyState(
+            icon = Icons.Default.Error,
+            title = "Unable to load model",
+            supportingText = errorMessage,
+            actionLabel = "Try Another Model",
+            onAction = onTryAnotherModelClick,
+            modifier = stateModifier,
+        )
+    } else {
+        Column(
+            modifier = stateModifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            CaraMLEmptyState(
+                icon = Icons.Default.Error,
+                title = "Unable to load model",
+                supportingText = errorMessage,
+            )
+            Button(
+                onClick = onRetryCurrentModelClick,
+                modifier = Modifier.heightIn(min = 48.dp),
+            ) {
+                Text("Retry current model")
+            }
+            OutlinedButton(
+                onClick = onTryAnotherModelClick,
+                modifier = Modifier.heightIn(min = 48.dp),
+            ) {
+                Text("Try Another Model")
+            }
+        }
+    }
 }

@@ -2,6 +2,7 @@ package com.debanshu777.caraml.core.data.inference
 
 import com.debanshu777.caraml.core.benchmark.BenchmarkUtils
 import com.debanshu777.caraml.core.platform.AppLogger
+import com.debanshu777.caraml.core.platform.BackendKind
 import com.debanshu777.caraml.core.platform.DeviceCapabilities
 import com.debanshu777.caraml.core.platform.PlatformPaths
 import com.debanshu777.caraml.core.recommendation.DeviceSnapshotProvider
@@ -15,6 +16,7 @@ import com.debanshu777.caraml.core.recommendation.LoadAdmissionController
 import com.debanshu777.caraml.core.recommendation.LoadRecoveryRepository
 import com.debanshu777.caraml.core.recommendation.LoadRequest
 import com.debanshu777.caraml.core.recommendation.LoadSessionCoordinator
+import com.debanshu777.caraml.core.recommendation.LlmRunPlan
 import com.debanshu777.caraml.core.recommendation.LocalArtifactIdentityResolver
 import com.debanshu777.caraml.core.recommendation.NativeLoadPreflight
 import com.debanshu777.caraml.core.recommendation.NativeLoadOutcome
@@ -22,18 +24,15 @@ import com.debanshu777.caraml.core.recommendation.NativeRunPlanAdapter
 import com.debanshu777.caraml.core.recommendation.PersonalizedRecommendation
 import com.debanshu777.caraml.core.recommendation.RecommendationCategory
 import com.debanshu777.caraml.core.recommendation.RecommendationPolicy
-import com.debanshu777.caraml.core.recommendation.RecommendationRolloutMode
-import com.debanshu777.caraml.core.recommendation.RecommendationRolloutModeSource
 import com.debanshu777.caraml.core.recommendation.StableLoadFailure
 import com.debanshu777.caraml.core.recommendation.SuitabilityEngine
-import com.debanshu777.caraml.core.recommendation.toInferenceObservationPlan
 import com.debanshu777.caraml.core.recommendation.VerifiedArtifactLoadTarget
+import com.debanshu777.caraml.core.recommendation.requiresCpuOnlyLlmExecution
+import com.debanshu777.caraml.core.recommendation.toInferenceObservationPlan
 import com.debanshu777.caraml.core.settings.AppSettings
 import com.debanshu777.caraml.core.settings.KvQuantPreset
 import com.debanshu777.caraml.core.data.settings.SettingsRepository
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
-import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
-import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import com.debanshu777.runner.InferenceChunk
 import com.debanshu777.runner.LlamaRunner
 import com.debanshu777.runner.LlamaPreflightResult
@@ -52,11 +51,9 @@ import kotlinx.coroutines.withContext
 import kotlin.concurrent.Volatile
 
 class LlamaInferenceRepository(
-    private val storagePathProvider: StoragePathProvider,
     private val runner: LlamaRunner,
     private val deviceCapabilities: DeviceCapabilities,
     private val settingsRepository: SettingsRepository,
-    private val localModelRepository: LocalModelRepository? = null,
     private val snapshotProvider: DeviceSnapshotProvider? = null,
     private val suitabilityEngine: SuitabilityEngine? = null,
     private val recommendationPolicy: RecommendationPolicy? = null,
@@ -64,9 +61,6 @@ class LlamaInferenceRepository(
     private val artifactIdentityResolver: LocalArtifactIdentityResolver? = null,
     private val loadSessionCoordinator: LoadSessionCoordinator? = null,
     private val engineVersion: String = "native-engine-v1",
-    private val rolloutModeSource: RecommendationRolloutModeSource = RecommendationRolloutModeSource {
-        RecommendationRolloutMode.LEGACY
-    },
     private val observationRecorder: InferenceObservationRecorder? = null,
 ) : InferenceRepository {
 
@@ -85,9 +79,6 @@ class LlamaInferenceRepository(
          */
         private const val AUTO_FIT_CONTEXT_CAP = 16384
 
-        /** When true, skip GPU attempt on first load for hybrid-SSM archs (they always fail on Vulkan).
-         *  Task 1 self-learns after runtime failure regardless; disable if ggml-vulkan adds qwen35 support. */
-        private const val DENYLIST_HYBRID_SSM_VULKAN = true
     }
 
     /**
@@ -97,6 +88,7 @@ class LlamaInferenceRepository(
 
     private fun archFamily(arch: String?): ArchFamily = when {
         arch == null -> ArchFamily.UNKNOWN
+        arch.requiresCpuOnlyLlmExecution() -> ArchFamily.HYBRID_SSM
         arch in listOf(
             "qwen2", "llama", "gemma", "mistral", "phi3",
             "qwen3", "phi2", "stablelm", "falcon", "smollm3"
@@ -104,56 +96,8 @@ class LlamaInferenceRepository(
         arch in listOf(
             "qwen3moe", "deepseek2", "mixtral", "qwen2_moe"
         ) -> ArchFamily.MOE
-        arch in listOf(
-            "qwen3next", "qwen35", "jamba", "mamba", "ssm",
-            "recurrent_gemma", "granite_hybrid"
-        ) -> ArchFamily.HYBRID_SSM
         else -> ArchFamily.UNKNOWN
     }
-
-    /**
-     * Caches the result of llama_params_fit() so repeated loads of the same model
-     * skip the ~1.2s probe. Every input that changes the fit is part of the key;
-     * a failed cached load is invalidated and retried with a fresh fit.
-     */
-    private data class ParamsFitResult(val nGpuLayers: Int, val nCtx: Int)
-    private data class ParamsFitCacheKey(
-        val modelPath: String,
-        val memoryTierGb: Long,
-        val gpuEnabled: Boolean,
-        val requestedContext: Int,
-        val batchSize: Int,
-        val microBatchSize: Int,
-        val typeK: Int,
-        val typeV: Int,
-        val offloadKqv: Boolean,
-    )
-    private val paramsFitCache = mutableMapOf<ParamsFitCacheKey, ParamsFitResult>()
-
-    /**
-     * Model paths whose GPU (Vulkan) load has failed at runtime. On reload we
-     * skip the doomed ~3s GPU attempt and build a CPU config directly. Populated
-     * from loadModel when the GPU load falls back to CPU. Self-learning: covers
-     * any arch that fails at runtime, not just a hard-coded denylist.
-     */
-    private val gpuIncompatible = mutableSetOf<String>()
-
-    private fun paramsFitCacheKey(
-        modelPath: String,
-        memBudgetMB: Long,
-        gpuEnabled: Boolean,
-        config: NativeRunnerConfig,
-    ) = ParamsFitCacheKey(
-        modelPath = modelPath,
-        memoryTierGb = memBudgetMB / 1024,
-        gpuEnabled = gpuEnabled,
-        requestedContext = config.nCtx,
-        batchSize = config.nBatch,
-        microBatchSize = config.nUbatch,
-        typeK = config.typeK,
-        typeV = config.typeV,
-        offloadKqv = config.offloadKqv,
-    )
 
     /** Serializes every operation that reads or mutates the native model session. */
     private val nativeSession = NativeSessionGate()
@@ -181,7 +125,7 @@ class LlamaInferenceRepository(
             if (artifact.identity != request.identity) {
                 return@exclusive ModelLoadResult.Error("The installed model identity is invalid.")
             }
-            val plan = request.plan as? com.debanshu777.caraml.core.recommendation.LlmRunPlan
+            val plan = request.plan as? LlmRunPlan
                 ?: return@exclusive ModelLoadResult.Error("The selected model configuration is invalid.")
             val resolver = artifactIdentityResolver
                 ?: return@exclusive ModelLoadResult.Error("Load admission is unavailable.")
@@ -194,9 +138,13 @@ class LlamaInferenceRepository(
                 return@exclusive ModelLoadResult.Error("Failed to initialize. Please restart the app.")
             }
             val settings = currentSettings()
-            val base = buildRunnerConfig(request.model, settings.temperature, settings, modelPath)
-            val exactConfig = runCatching { NativeRunPlanAdapter.toLlamaConfig(plan, base) }
+            val architecture = request.observationIdentity.architectureFamily
+            val base = buildRunnerConfig(request.model, architecture, settings.temperature, settings)
+            val exactConfig = runCatching {
+                exactLlamaRunnerConfig(architecture, plan, base)
+            }
                 .getOrElse { return@exclusive ModelLoadResult.Error("The selected model configuration is invalid.") }
+                ?: return@exclusive ModelLoadResult.Error("The selected model configuration is invalid.")
             val loadObservation = request.toInferenceObservationPlan(engineVersion, InferenceObservationPhase.LOAD)
             val nextGenerationObservation =
                 request.toInferenceObservationPlan(engineVersion, InferenceObservationPhase.GENERATION)
@@ -219,17 +167,26 @@ class LlamaInferenceRepository(
                 return@exclusive ModelLoadResult.Error("Failed to initialize. Please restart the app.")
             }
             val controller = admissionController { candidate ->
-                val candidatePlan = candidate.plan as? com.debanshu777.caraml.core.recommendation.LlmRunPlan
+                val candidatePlan = candidate.plan as? LlmRunPlan
                     ?: return@admissionController NativeLoadPreflight.Invalid
                 val candidatePath = (candidate.artifact?.loadTarget as? VerifiedArtifactLoadTarget.File)?.path
                     ?: return@admissionController NativeLoadPreflight.Invalid
-                val config = runCatching { NativeRunPlanAdapter.toLlamaConfig(candidatePlan, base) }
+                val config = runCatching {
+                    exactLlamaRunnerConfig(candidate.observationIdentity.architectureFamily, candidatePlan, base)
+                }
                     .getOrElse { return@admissionController NativeLoadPreflight.Invalid }
-                when (runner.preflightModel(candidatePath, config)) {
+                    ?: return@admissionController NativeLoadPreflight.Invalid
+                when (val preflight = runner.preflightModel(candidatePath, config)) {
                     is LlamaPreflightResult.Fit -> NativeLoadPreflight.Fit
                     is LlamaPreflightResult.NoFit -> NativeLoadPreflight.NoFit
-                    is LlamaPreflightResult.InvalidModel -> NativeLoadPreflight.Invalid
-                    is LlamaPreflightResult.Unavailable -> NativeLoadPreflight.Unavailable
+                    is LlamaPreflightResult.InvalidModel -> {
+                        AppLogger.i(TAG) { "preflight: invalid (${preflight.reason})" }
+                        NativeLoadPreflight.Invalid
+                    }
+                    is LlamaPreflightResult.Unavailable -> {
+                        AppLogger.i(TAG) { "preflight: unavailable (${preflight.reason})" }
+                        NativeLoadPreflight.Unavailable
+                    }
                 }
             } ?: return@exclusive ModelLoadResult.Error("Load admission is unavailable.")
             try {
@@ -341,225 +298,11 @@ class LlamaInferenceRepository(
         loadSessionCoordinator?.allowExplicitRetry(request, engineVersion)
     }
 
-    override suspend fun loadModel(model: LocalModelEntity): ModelLoadResult =
-        nativeSession.exclusive {
-            if (rolloutModeSource.current() != RecommendationRolloutMode.LEGACY) {
-                return@exclusive ModelLoadResult.Error(
-                    "This installed model needs to be reassessed before it can be loaded safely.",
-                )
-            }
-            try {
-                val sizeMB = getModelFileSizeMB(model)
-                AppLogger.i(TAG) { "loadModel: modelId=${model.modelId}, sizeMB=$sizeMB" }
-
-                val modelPath = resolveModelPath(model)
-                if (modelPath.isBlank()) {
-                    return@exclusive ModelLoadResult.Error("Model path is invalid")
-                }
-                if (!storagePathProvider.isModelFileReadable(modelPath)) {
-                    return@exclusive ModelLoadResult.Error(
-                        "Model file not found or not readable. It may have been moved or deleted."
-                    )
-                }
-
-                val nativeLibDir = PlatformPaths.getNativeLibDir()
-                if (nativeLibDir.isBlank()) {
-                    return@exclusive ModelLoadResult.Error(
-                        "Failed to initialize. Please restart the app."
-                    )
-                }
-
-                // Unload inline — we already hold the lock, so no double-free risk.
-                if (nativeLoaded) {
-                    runner.unloadModel()
-                    nativeLoaded = false
-                    resetNativeSnapshots()
-                }
-
-                runner.initialize(nativeLibDir)
-
-                val settings = currentSettings()
-
-                var config = buildRunnerConfig(
-                    model = model,
-                    temperature = settings.temperature,
-                    settings = settings,
-                    modelPath = modelPath,
-                )
-                AppLogger.i(TAG) {
-                    "config: threads=${config.nThreads}/${config.nThreadsBatch}, " +
-                    "batch=${config.nBatch}, ctx=${config.nCtx}, " +
-                    "gpuLayers=${config.nGpuLayers}, kv=${config.typeK}/${config.typeV}"
-                }
-
-                var loaded = runner.loadModel(
-                    modelPath = modelPath,
-                    config = config,
-                )
-
-                // Cached fits can become stale when available device memory changes.
-                // Retry one fresh native fit before treating the GPU/model as incompatible.
-                if (!loaded && !config.autoFit) {
-                    paramsFitCache.keys.removeAll { it.modelPath == modelPath }
-                    config = buildRunnerConfig(
-                        model = model,
-                        temperature = settings.temperature,
-                        settings = settings,
-                        modelPath = modelPath,
-                        useFitCache = false,
-                    )
-                    loaded = runner.loadModel(modelPath = modelPath, config = config)
-                }
-
-                // A GPU load can fail for TWO very different reasons:
-                //   (a) Transient — the previously-loaded model's Vulkan buffers
-                //       haven't been fully released by the driver yet, so this
-                //       load hits a spurious device OOM. Retrying the SAME GPU
-                //       config after the failed attempt tore itself down usually
-                //       succeeds (driver memory is now reclaimed).
-                //   (b) Permanent — the arch/quant genuinely can't build a Vulkan
-                //       graph on this device (e.g. hybrid-SSM qwen35 throws
-                //       std::length_error inside ggml_vk_init). No retry will help.
-                // We MUST NOT record (a) as GPU-incompatible — doing so permanently
-                // and wrongly demotes a healthy GPU model to CPU for the rest of the
-                // session. So retry GPU ONCE first; only fall back to CPU (and only
-                // then record incompatibility) if the retry also fails.
-                if (!loaded && config.nGpuLayers != 0) {
-                    AppLogger.w(TAG, "loadModel: GPU load failed — retrying GPU once (may be transient driver memory)")
-                    loaded = runner.loadModel(modelPath = modelPath, config = config)
-                    if (loaded) {
-                        AppLogger.i(TAG) { "loadModel: GPU retry succeeded — transient failure, not recording incompatibility" }
-                    }
-                }
-
-                // If the GPU retry also failed, the incompatibility is genuine.
-                // Fall back to CPU-only and record the model so future loads skip
-                // the doomed GPU attempt.
-                val cpuFallbackConfig = if (!loaded && config.nGpuLayers != 0) {
-                    AppLogger.w(TAG, "loadModel: GPU load failed twice — falling back to CPU-only")
-                    val fallback = config.copy(
-                        nGpuLayers   = 0,
-                        offloadKqv   = false,
-                        nThreads     = config.nThreads.coerceAtLeast(config.nThreadsBatch),
-                        nThreadsBatch = config.nThreadsBatch,
-                    )
-                    loaded = runner.loadModel(modelPath = modelPath, config = fallback)
-                    if (loaded) {
-                        if (modelPath.isNotBlank()) {
-                            gpuIncompatible += modelPath
-                            AppLogger.w(TAG, "loadModel: recorded GPU-incompatible model — future loads skip GPU")
-                        }
-                        fallback
-                    } else null
-                } else null
-
-                val effectiveConfig = cpuFallbackConfig ?: config
-
-                if (!loaded) {
-                    return@exclusive ModelLoadResult.Error(
-                        "Failed to load model. The file may be corrupted or unsupported."
-                    )
-                }
-                nativeLoaded = true
-
-                // Backfill arch in DB from native metadata if not yet detected.
-                if (model.arch.isNullOrEmpty()) {
-                    try {
-                        val nativeArch = runner.getModelArchitecture()
-                        if (!nativeArch.isNullOrEmpty()) {
-                            AppLogger.i(TAG) { "loadModel: detected arch='$nativeArch', backfilling DB" }
-                            localModelRepository?.updateArch(model.modelId, nativeArch)
-                        }
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (_: Exception) { /* non-fatal */ }
-                }
-
-                val actualGpuLayers = runner.getGpuLayers()
-                AppLogger.i(TAG) {
-                    "loadModel: actual gpuLayers=$actualGpuLayers " +
-                    "(requested=${effectiveConfig.nGpuLayers})"
-                }
-                if (effectiveConfig.nGpuLayers != 0 && actualGpuLayers == 0) {
-                    AppLogger.w(
-                        TAG,
-                        message =
-                            "loadModel: GPU offload was requested but unavailable. " +
-                                    "Native safety net raised threads for CPU-only inference."
-
-                    )
-                }
-
-                val systemPrompt = settings.systemPrompt.ifBlank { FALLBACK_SYSTEM_PROMPT }
-
-                val spRet = runner.processSystemPrompt(systemPrompt)
-                if (spRet != 0) {
-                    runner.unloadModel()
-                    nativeLoaded = false
-                    resetNativeSnapshots()
-                    return@exclusive ModelLoadResult.Error(
-                        "Failed to initialize conversation context."
-                    )
-                }
-
-                val ctxSize = runner.getContextLimit()
-                updateNativeSnapshots()
-
-                // Phase 10: populate params_fit cache so the next load of this model
-                // skips the ~1.2s probe. Only cache the primary-config path; if we
-                // fell back to CPU (cpuFallbackConfig != null) the GPU load failed and
-                // we shouldn't cache misleading nGpuLayers=0 under a gpuEnabled key.
-                if (modelPath.isNotBlank() && config.autoFit && cpuFallbackConfig == null && actualGpuLayers >= 0) {
-                    val fitHints = deviceCapabilities.getDeviceHints()
-                    val gpuEnabled = settings.useGpu && fitHints.gpuBackendAvailable
-                    val fitCacheKey = paramsFitCacheKey(
-                        modelPath,
-                        fitHints.memoryBudgetMB,
-                        gpuEnabled,
-                        config,
-                    )
-                    paramsFitCache[fitCacheKey] = ParamsFitResult(nGpuLayers = actualGpuLayers, nCtx = ctxSize)
-                    AppLogger.i(TAG) {
-                        "loadModel: params_fit cached — gpuLayers=$actualGpuLayers, ctx=$ctxSize"
-                    }
-                }
-
-                // Store config string for benchmarking.
-                lastRuntimeConfig = BenchmarkUtils.formatRuntimeConfig(
-                    threads = effectiveConfig.nThreads,
-                    batchThreads = effectiveConfig.nThreadsBatch,
-                    batchSize = effectiveConfig.nBatch,
-                    contextLimit = runner.getContextLimit(),
-                    gpuLayers = runner.getGpuLayers(),
-                    typeK = effectiveConfig.typeK,
-                    typeV = effectiveConfig.typeV,
-                    flashAttn = effectiveConfig.flashAttn,
-                )
-
-                // Consolidated runtime telemetry for benchmarking/thermal analysis
-                AppLogger.i(TAG) {
-                    "loadModel: success - contextSize=$ctxSize, actualGpuLayers=$actualGpuLayers, " +
-                    "finalConfig(t=${effectiveConfig.nThreads}/${effectiveConfig.nThreadsBatch}, b=${effectiveConfig.nBatch}, " +
-                    "kv=${effectiveConfig.typeK}/${effectiveConfig.typeV})"
-                }
-                ModelLoadResult.Success(contextSize = ctxSize)
-            } catch (e: CancellationException) {
-                // Must rethrow — swallowing CancellationException breaks coroutine cancellation
-                // and can leave the native sampler in an invalid state for the next caller.
-                AppLogger.i(TAG) { "loadModel: cancelled" }
-                throw e
-            } catch (_: Exception) {
-                AppLogger.e(TAG, "loadModel: failed")
-                ModelLoadResult.Error("An error occurred while loading the model.")
-            }
-        }
-
     private fun buildRunnerConfig(
         model: LocalModelEntity,
+        architecture: String?,
         temperature: Float,
         settings: AppSettings,
-        modelPath: String = "",
-        useFitCache: Boolean = true,
     ): NativeRunnerConfig {
         val hints = deviceCapabilities.getDeviceHints()
         AppLogger.i(TAG) {
@@ -567,11 +310,10 @@ class LlamaInferenceRepository(
             "memMB=${hints.memoryBudgetMB}, gpu=${hints.gpuBackendAvailable}"
         }
         val gpuActive = hints.gpuBackendAvailable
-        val knownIncompatible = modelPath.isNotBlank() && modelPath in gpuIncompatible
-        val archDenied = DENYLIST_HYBRID_SSM_VULKAN && archFamily(model.arch) == ArchFamily.HYBRID_SSM
-        val gpuEnabled = settings.useGpu && gpuActive && !knownIncompatible && !archDenied
-        if (knownIncompatible || archDenied) {
-            AppLogger.i(TAG) { "buildRunnerConfig: GPU disabled for this model (incompatible=$knownIncompatible, archDenied=$archDenied)" }
+        val archDenied = architecture.requiresCpuOnlyLlmExecution()
+        val gpuEnabled = settings.useGpu && gpuActive && !archDenied
+        if (archDenied) {
+            AppLogger.i(TAG) { "buildRunnerConfig: GPU disabled for this model (archDenied=true)" }
         }
         val userRequestedCtx = (model.contextLength ?: 0).let { raw ->
             if (raw <= 0) AUTO_FIT_CONTEXT_CAP else raw.coerceAtMost(AUTO_FIT_CONTEXT_CAP)
@@ -592,8 +334,8 @@ class LlamaInferenceRepository(
         }
 
         // Phase 08: per-architecture adaptive batch size and flash attention.
-        val archFam = archFamily(model.arch)
-        AppLogger.i(TAG) { "buildRunnerConfig: arch='${model.arch}', family=$archFam" }
+        val archFam = archFamily(architecture)
+        AppLogger.i(TAG) { "buildRunnerConfig: arch='$architecture', family=$archFam" }
         val batchSize = when (archFam) {
             ArchFamily.DENSE -> if (hints.memoryBudgetMB >= 4096) 512 else 256
             ArchFamily.MOE -> 256
@@ -628,7 +370,7 @@ class LlamaInferenceRepository(
         // the Vulkan backend (assertion failure in the recurrent state compute graph).
         val nUbatch = if (gpuEnabled && archFam != ArchFamily.HYBRID_SSM) batchSize else batchSize / 2
 
-        val baseConfig = NativeRunnerConfig(
+        return NativeRunnerConfig(
             nCtx           = userRequestedCtx,
             nCtxMin        = 512,
             nThreads       = nThreads,
@@ -648,29 +390,6 @@ class LlamaInferenceRepository(
             cpuMaskBatch   = hints.perfCoreMask,
         )
 
-        val cacheKey = if (useFitCache && modelPath.isNotBlank()) {
-            paramsFitCacheKey(modelPath, hints.memoryBudgetMB, gpuEnabled, baseConfig)
-        } else {
-            null
-        }
-        val cachedFit = cacheKey?.let(paramsFitCache::get)
-        if (cachedFit != null) {
-            AppLogger.i(TAG) {
-                "buildRunnerConfig: params_fit cache hit — skipping probe " +
-                    "(nGpuLayers=${cachedFit.nGpuLayers}, nCtx=${cachedFit.nCtx})"
-            }
-        }
-
-        // Phase 10: use cached params_fit result to skip the ~1.2s probe on re-loads.
-        return if (cachedFit != null) {
-            baseConfig.copy(
-                nGpuLayers = cachedFit.nGpuLayers,
-                nCtx = cachedFit.nCtx,
-                autoFit = false,
-            )
-        } else {
-            baseConfig
-        }
     }
 
     private fun getModelFileSizeMB(model: LocalModelEntity): Long {
@@ -846,17 +565,20 @@ class LlamaInferenceRepository(
         generationObservation = null
     }
 
-    private fun resolveModelPath(model: LocalModelEntity): String {
-        if (model.localPath.isNotBlank() && storagePathProvider.fileExists(model.localPath)) {
-            return model.localPath
-        }
-        val dir = storagePathProvider.getModelsStorageDirectory(model.modelId)
-        return "$dir/${model.filename}"
-    }
-
     private suspend fun currentSettings(): AppSettings =
         settingsRepository.getSettings().first()
 
     private suspend fun currentSystemPrompt(): String =
         currentSettings().systemPrompt.ifBlank { FALLBACK_SYSTEM_PROMPT }
+}
+
+internal fun exactLlamaRunnerConfig(
+    architecture: String?,
+    plan: LlmRunPlan,
+    base: NativeRunnerConfig,
+): NativeRunnerConfig? {
+    if (architecture.requiresCpuOnlyLlmExecution() && plan.backend != BackendKind.CPU) {
+        return null
+    }
+    return NativeRunPlanAdapter.toLlamaConfig(plan, base)
 }

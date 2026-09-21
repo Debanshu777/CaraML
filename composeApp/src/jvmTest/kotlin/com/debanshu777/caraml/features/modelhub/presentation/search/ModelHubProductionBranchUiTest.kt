@@ -61,7 +61,6 @@ import com.debanshu777.caraml.core.settings.AppSettings
 import com.debanshu777.caraml.core.storage.component.ComponentRepository
 import com.debanshu777.caraml.core.storage.component.DownloadedComponentDao
 import com.debanshu777.caraml.core.storage.component.DownloadedComponentEntity
-import com.debanshu777.caraml.core.storage.component.ModelComponentLinkEntity
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelDao
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
@@ -72,6 +71,7 @@ import com.debanshu777.caraml.features.modelhub.domain.RecommendationVariantEval
 import com.debanshu777.caraml.features.modelhub.domain.RepositoryVariantSet
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.DownloadedModelsViewModel
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.ReadinessFilter
+import com.debanshu777.caraml.features.modelhub.presentation.modelHubTestDownloadCoordinator
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubStateKind
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubStateView
 import com.debanshu777.huggingfacemanager.HuggingFaceApi
@@ -572,6 +572,7 @@ private class TestModelHubEnvironment : AutoCloseable {
         deviceCapabilities = DeviceCapabilities(),
         recommendationService = testRecommendationService(),
         settingsRepository = TestSettingsRepository(),
+        downloadCoordinator = modelHubTestDownloadCoordinator(),
     )
 
     override fun close() {
@@ -711,13 +712,8 @@ private class TestLocalModelDao(initial: List<LocalModelEntity>) : LocalModelDao
 }
 
 private class TestDownloadedComponentDao : DownloadedComponentDao {
-    override suspend fun insertComponent(entity: DownloadedComponentEntity): Long = 0L
-    override suspend fun insertLink(entity: ModelComponentLinkEntity) = Unit
-    override suspend fun getByRepoAndPath(repoId: String, filePath: String): DownloadedComponentEntity? = null
-    override suspend fun isComponentDownloaded(repoId: String, filePath: String): Boolean = false
     override fun getAllComponents(): Flow<List<DownloadedComponentEntity>> = flowOf(emptyList())
     override suspend fun getComponentsForModel(modelId: String): List<DownloadedComponentEntity> = emptyList()
-    override suspend fun deleteByRepoAndPath(repoId: String, filePath: String) = Unit
 }
 
 private class TestStoragePathProvider : StoragePathProvider {

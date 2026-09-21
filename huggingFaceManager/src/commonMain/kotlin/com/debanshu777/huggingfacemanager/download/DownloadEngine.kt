@@ -27,6 +27,7 @@ internal fun downloadArtifact(
     localPath: String,
     resumeMetadata: DownloadResumeMetadata?,
 ): Flow<DownloadProgressDTO> = flow {
+    requireImmutableArtifactWriteMetadata(metadata)
     val request = validateDownloadArguments(modelId, path, metadata)
     val identity = metadata.artifact
 
@@ -38,7 +39,9 @@ internal fun downloadArtifact(
 
         var preserveCheckpoint = false
         try {
-            manifestStore.recover()
+            if (manifestStore.recover() == ArtifactManifestRecoveryResult.QUARANTINED) {
+                throw ArtifactVerificationException()
+            }
             val stagedBytes = manifestStore.stagedSize(destination)
             val requestedResume = resumeMetadata?.takeIf {
                 it.bytesReceived < identity.expectedBytes && stagedBytes == it.bytesReceived
@@ -122,6 +125,7 @@ internal fun downloadArtifact(
                     contentSha256 = contentSha256,
                     bundleId = metadata.bundleId,
                     localRelativePath = destination,
+                    layoutRelativePath = metadata.layoutRelativePath,
                 ) ?: throw ArtifactVerificationException()
                 manifestStore.commit(destination, entry)
                 check(!manifestStore.hasPendingTransaction()) {
@@ -192,13 +196,16 @@ internal suspend fun discardArtifactCheckpoint(
     pathProvider: StoragePathProvider,
     metadata: DownloadMetadataDTO,
 ) {
+    requireImmutableArtifactWriteMetadata(metadata)
     val identity = metadata.artifact
     validateDownloadArguments(identity.repositoryId, identity.relativePath, metadata)
     val modelRoot = pathProvider.getModelsStorageDirectory(identity.repositoryId).toPath(normalize = true)
     ArtifactRootLockCoordinator.withRoots(listOf(modelRoot.toString())) {
         val store = ArtifactManifestStore(modelRoot)
         try {
-            store.recover()
+            if (store.recover() == ArtifactManifestRecoveryResult.QUARANTINED) {
+                throw ArtifactVerificationException()
+            }
             store.discardStaged(metadata.destinationRelativePath)
         } finally {
             store.close()

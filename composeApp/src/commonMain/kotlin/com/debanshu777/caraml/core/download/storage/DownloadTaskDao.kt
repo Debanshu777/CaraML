@@ -71,11 +71,39 @@ interface DownloadTaskDao {
     @Query("SELECT * FROM download_batch WHERE state NOT IN ('COMPLETED', 'FAILED_TERMINAL', 'CANCELLED')")
     suspend fun recoverableBatches(): List<DownloadBatchWithArtifacts>
 
+    @Query(
+        """
+        UPDATE download_artifact
+        SET state = 'FAILED_TERMINAL', failure_code = 'SECURE_PATH', platform_task_id = NULL,
+            lease_owner = NULL, lease_expires_at_epoch_ms = NULL
+        WHERE batch_id = :batchId AND state NOT IN ('COMPLETED', 'FAILED_TERMINAL', 'CANCELLED')
+        """,
+    )
+    suspend fun quarantineMutableArtifacts(batchId: String)
+
+    @Query(
+        """
+        UPDATE download_batch
+        SET state = 'FAILED_TERMINAL', failure_code = 'SECURE_PATH'
+        WHERE batch_id = :batchId AND state NOT IN ('COMPLETED', 'FAILED_TERMINAL', 'CANCELLED')
+        """,
+    )
+    suspend fun quarantineMutableBatchRecord(batchId: String)
+
+    @Transaction
+    suspend fun quarantineMutableBatch(batchId: String) {
+        quarantineMutableArtifacts(batchId)
+        quarantineMutableBatchRecord(batchId)
+    }
+
     @Query("SELECT * FROM download_batch WHERE batch_id = :batchId")
     suspend fun requireBatch(batchId: String): DownloadBatchEntity
 
     @Query("SELECT * FROM download_artifact WHERE artifact_id = :artifactId")
     suspend fun requireArtifact(artifactId: String): DownloadArtifactEntity
+
+    @Query("SELECT * FROM download_artifact WHERE artifact_id = :artifactId")
+    suspend fun artifact(artifactId: String): DownloadArtifactEntity?
 
     @Query(
         """
@@ -85,6 +113,13 @@ interface DownloadTaskDao {
         WHERE artifact_id = :artifactId
           AND state IN ('QUEUED', 'FAILED_RETRYABLE', 'WAITING_FOR_NETWORK')
           AND (lease_owner IS NULL OR lease_expires_at_epoch_ms < :nowEpochMs)
+          AND length(bundle_id) = 64
+          AND bundle_id = lower(bundle_id)
+          AND bundle_id NOT GLOB '*[^0-9a-f]*'
+          AND destination_relative_path LIKE '.caraml-artifacts/' || bundle_id || '/%'
+          AND length(destination_relative_path) > length('.caraml-artifacts/' || bundle_id || '/')
+          AND destination_relative_path NOT LIKE '%/../%'
+          AND destination_relative_path NOT LIKE '%/./%'
         """,
     )
     suspend fun claim(
@@ -139,6 +174,125 @@ interface DownloadTaskDao {
         "UPDATE download_artifact SET platform_task_id = :platformTaskId, updated_at_epoch_ms = :nowEpochMs WHERE artifact_id = :artifactId",
     )
     suspend fun setPlatformTaskId(artifactId: String, platformTaskId: String?, nowEpochMs: Long): Int
+
+    @Query(
+        """
+        UPDATE download_artifact
+        SET state = :nextState, failure_code = :failureCode,
+            bytes_received = COALESCE(:completedBytes, bytes_received),
+            platform_task_id = NULL,
+            lease_owner = NULL, lease_expires_at_epoch_ms = NULL, updated_at_epoch_ms = :nowEpochMs
+        WHERE artifact_id = :artifactId
+          AND platform_task_id = :platformTaskId
+          AND state = 'RUNNING'
+          AND (:completedBytes IS NULL OR :completedBytes = expected_bytes)
+          AND EXISTS (
+              SELECT 1 FROM download_batch
+              WHERE download_batch.batch_id = download_artifact.batch_id
+                AND download_batch.user_intent = 'RUN'
+          )
+        """,
+    )
+    suspend fun transitionPlatformTask(
+        artifactId: String,
+        platformTaskId: String,
+        nextState: String,
+        failureCode: String?,
+        completedBytes: Long?,
+        nowEpochMs: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE download_artifact
+        SET platform_task_id = :platformTaskId, updated_at_epoch_ms = :nowEpochMs
+        WHERE batch_id = :batchId
+          AND state NOT IN ('COMPLETED', 'FAILED_TERMINAL', 'CANCELLED')
+          AND EXISTS (
+              SELECT 1 FROM download_batch
+              WHERE download_batch.batch_id = :batchId
+                AND download_batch.user_intent = 'RUN'
+          )
+        """,
+    )
+    suspend fun bindPlatformTask(
+        batchId: String,
+        platformTaskId: String,
+        nowEpochMs: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE download_artifact
+        SET state = 'PAUSED', failure_code = NULL, platform_task_id = NULL,
+            lease_owner = NULL, lease_expires_at_epoch_ms = NULL, updated_at_epoch_ms = :nowEpochMs
+        WHERE batch_id = :batchId
+          AND platform_task_id = :platformTaskId
+          AND state NOT IN ('COMPLETED', 'FAILED_TERMINAL', 'CANCELLED')
+          AND EXISTS (
+              SELECT 1 FROM download_batch
+              WHERE download_batch.batch_id = :batchId
+                AND download_batch.user_intent = 'RUN'
+          )
+        """,
+    )
+    suspend fun pausePlatformTaskArtifacts(
+        batchId: String,
+        platformTaskId: String,
+        nowEpochMs: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE download_batch
+        SET state = 'PAUSED', user_intent = 'PAUSE', failure_code = NULL,
+            updated_at_epoch_ms = :nowEpochMs
+        WHERE batch_id = :batchId AND user_intent = 'RUN'
+        """,
+    )
+    suspend fun pausePlatformTaskBatch(batchId: String, nowEpochMs: Long): Int
+
+    @Transaction
+    suspend fun pausePlatformTask(
+        batchId: String,
+        platformTaskId: String,
+        nowEpochMs: Long,
+    ): Boolean {
+        if (pausePlatformTaskArtifacts(batchId, platformTaskId, nowEpochMs) == 0) return false
+        return pausePlatformTaskBatch(batchId, nowEpochMs) == 1
+    }
+
+    @Query(
+        """
+        UPDATE download_artifact
+        SET state = CASE (
+                SELECT user_intent FROM download_batch
+                WHERE download_batch.batch_id = download_artifact.batch_id
+            )
+                WHEN 'PAUSE' THEN 'PAUSED'
+                WHEN 'CANCEL' THEN 'CANCELLED'
+                ELSE 'FAILED_RETRYABLE'
+            END,
+            failure_code = CASE (
+                SELECT user_intent FROM download_batch
+                WHERE download_batch.batch_id = download_artifact.batch_id
+            )
+                WHEN 'RUN' THEN 'NETWORK'
+                ELSE NULL
+            END,
+            lease_owner = NULL,
+            lease_expires_at_epoch_ms = NULL,
+            updated_at_epoch_ms = :nowEpochMs
+        WHERE artifact_id = :artifactId
+          AND state = 'RUNNING'
+          AND lease_owner = :owner
+        """,
+    )
+    suspend fun checkpointCancellation(
+        artifactId: String,
+        owner: String,
+        nowEpochMs: Long,
+    ): Int
 
     @Query(
         """

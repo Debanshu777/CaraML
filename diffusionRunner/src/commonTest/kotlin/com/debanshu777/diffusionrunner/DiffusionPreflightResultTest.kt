@@ -13,7 +13,7 @@ class DiffusionPreflightResultTest {
         val payload = successfulPreflightPayload().toMutableList().apply {
             this[5] = (1L shl DiffusionComponentRole.DIFFUSION_MODEL.ordinal) or
                 (1L shl DiffusionComponentRole.VAE.ordinal)
-            this[6] = 1L
+            this[7] = 1L
             repeat(DIFFUSION_PREFLIGHT_COMPONENT_FIELDS) {
                 removeAt(DIFFUSION_PREFLIGHT_HEADER_FIELDS + DIFFUSION_PREFLIGHT_COMPONENT_FIELDS)
             }
@@ -32,12 +32,12 @@ class DiffusionPreflightResultTest {
         assertIs<DiffusionPreflightResult.Unavailable>(decodeDiffusionPreflight(longArrayOf(0L)))
 
         val tooManyComponents = successfulPreflightPayload().also {
-            it[6] = DIFFUSION_PREFLIGHT_MAX_COMPONENTS.toLong() + 1L
+            it[7] = DIFFUSION_PREFLIGHT_MAX_COMPONENTS.toLong() + 1L
         }
         assertIs<DiffusionPreflightResult.Unavailable>(decodeDiffusionPreflight(tooManyComponents))
 
         val tooManyBackends = successfulPreflightPayload().also {
-            it[7] = DIFFUSION_PREFLIGHT_MAX_BACKENDS.toLong() + 1L
+            it[8] = DIFFUSION_PREFLIGHT_MAX_BACKENDS.toLong() + 1L
         }
         assertIs<DiffusionPreflightResult.Unavailable>(decodeDiffusionPreflight(tooManyBackends))
     }
@@ -45,7 +45,7 @@ class DiffusionPreflightResultTest {
     @Test
     fun negativeNativeSizeBecomesInvalidModel() {
         val payload = successfulPreflightPayload().also {
-            it[DIFFUSION_PREFLIGHT_HEADER_FIELDS + 2] = -1L
+            it[DIFFUSION_PREFLIGHT_HEADER_FIELDS + 4] = -1L
         }
 
         assertEquals(
@@ -65,12 +65,16 @@ class DiffusionPreflightResultTest {
         assertEquals(DiffusionMemoryConfidence.MEDIUM, fit.memoryConfidence)
         assertTrue(fit.streamLayers)
         assertEquals(2, fit.components.size)
-        assertEquals(DiffusionComponentRole.DIFFUSION_MODEL, fit.components[0].role)
+        assertEquals(DiffusionComponentRole.DIFFUSION_MODEL, fit.components[0].sourceRole)
+        assertEquals(0, fit.components[0].sourceOrdinal)
+        assertEquals(DiffusionComponentRole.DIFFUSION_MODEL, fit.components[0].subdivisionRole)
         assertEquals(4_000L, fit.components[0].parameterBytes)
         assertEquals(DiffusionRuntimePlacement.GPU, fit.components[0].runtimePlacement)
         assertEquals(1L, fit.components[0].runtimeBackendMask)
         assertEquals(DiffusionParameterPlacement.DISK, fit.components[0].parameterPlacement)
-        assertEquals(DiffusionComponentRole.VAE, fit.components[1].role)
+        assertEquals(DiffusionComponentRole.VAE, fit.components[1].sourceRole)
+        assertEquals(1, fit.components[1].sourceOrdinal)
+        assertEquals(DiffusionComponentRole.VAE, fit.components[1].subdivisionRole)
         assertEquals(DiffusionRuntimePlacement.CPU, fit.components[1].runtimePlacement)
         assertEquals(2, fit.backends.size)
         assertEquals(DiffusionBackendKind.METAL, fit.backends[0].kind)
@@ -92,9 +96,23 @@ class DiffusionPreflightResultTest {
         )
 
         val unknownBackendBit = successfulPreflightPayload().also {
-            it[DIFFUSION_PREFLIGHT_HEADER_FIELDS + 4] = 1L shl 7
+            it[DIFFUSION_PREFLIGHT_HEADER_FIELDS + 6] = 1L shl 7
         }
         assertIs<DiffusionPreflightResult.Unavailable>(decodeDiffusionPreflight(unknownBackendBit))
+    }
+
+    @Test
+    fun contradictorySourceRoleForOneOrdinalFailsClosed() {
+        val payload = successfulPreflightPayload().also {
+            val secondComponent = DIFFUSION_PREFLIGHT_HEADER_FIELDS +
+                DIFFUSION_PREFLIGHT_COMPONENT_FIELDS
+            it[secondComponent + 1] = 0L
+        }
+
+        assertEquals(
+            DiffusionPreflightReason.INCOMPLETE_COMPONENT_EVIDENCE,
+            assertIs<DiffusionPreflightResult.InvalidModel>(decodeDiffusionPreflight(payload)).reason,
+        )
     }
 
     @Test
@@ -247,9 +265,12 @@ class DiffusionPreflightResultTest {
             (1L shl DiffusionComponentRole.VAE.ordinal),
         2L,
         2L,
+        2L,
+        DiffusionComponentRole.DIFFUSION_MODEL.ordinal.toLong(), 0L,
         DiffusionComponentRole.DIFFUSION_MODEL.ordinal.toLong(), 0L, 4_000L,
         DiffusionRuntimePlacement.GPU.ordinal.toLong(), 1L,
         DiffusionParameterPlacement.DISK.ordinal.toLong(),
+        DiffusionComponentRole.VAE.ordinal.toLong(), 1L,
         DiffusionComponentRole.VAE.ordinal.toLong(), 1L, 1_000L,
         DiffusionRuntimePlacement.CPU.ordinal.toLong(), 0L,
         DiffusionParameterPlacement.CPU.ordinal.toLong(),

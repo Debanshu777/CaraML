@@ -26,6 +26,7 @@ actual class DownloadManager actual constructor(
         metadata: DownloadMetadataDTO,
         resumeMetadata: DownloadResumeMetadata?,
     ): Flow<DownloadProgressDTO> {
+        requireImmutableArtifactWriteMetadata(metadata)
         val request = validateDownloadArguments(modelId, path, metadata)
         val dirPath = pathProvider.getModelsStorageDirectory(request.modelId)
         val root = File(dirPath).toPath().toAbsolutePath().normalize()
@@ -62,4 +63,13 @@ actual class DownloadManager actual constructor(
 
     actual suspend fun isPublished(metadata: DownloadMetadataDTO): Boolean =
         isArtifactPublished(pathProvider, metadata)
+
+    actual suspend fun inspectStorage(artifacts: List<DownloadMetadataDTO>): List<DownloadArtifactStorageSnapshot>? =
+        inspectArtifactStorage(pathProvider, artifacts)
+
+    actual suspend fun pendingBundleReplacement(ownerModelId: String, artifacts: List<DownloadMetadataDTO>) =
+        pendingArtifactBundleReplacement(pathProvider, ownerModelId, artifacts)
+
+    actual suspend fun acknowledgeBundleReplacement(ownerModelId: String, artifacts: List<DownloadMetadataDTO>) =
+        acknowledgeArtifactBundleReplacement(pathProvider, ownerModelId, artifacts)
 }

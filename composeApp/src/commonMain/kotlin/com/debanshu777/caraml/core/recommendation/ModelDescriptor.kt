@@ -81,6 +81,11 @@ internal fun ModelFileIdentity.hasValidExactIdentity(): Boolean {
     return true
 }
 
+internal fun ModelFileIdentity.canonicalDownloadRemoteObjectId(): String? =
+    lfsOid?.let { value -> if (value.startsWith("sha256:")) value else "sha256:$value" }
+        ?: xetHash
+        ?: gitOid
+
 private fun isValidDescriptorRepositoryId(value: String): Boolean {
     if (value.isEmpty() || value != value.trim() || value.length > DescriptorLimits.MAX_MODEL_ID_LENGTH || '\\' in value) {
         return false

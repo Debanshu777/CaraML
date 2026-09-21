@@ -18,6 +18,7 @@ private const val MAX_TREE_PAGES = 64
 private const val MAX_TREE_ENTRIES = 4_096
 private const val MAX_CURSOR_LENGTH = 2_048
 private const val MAX_LINK_HEADER_LENGTH = 4_096
+private const val MAX_CONFIG_REDIRECT_LENGTH = 4_096
 private const val CONFIG_RESPONSE_LIMIT_BYTES = 1L * 1024L * 1024L
 
 internal const val RECOMMENDATION_METADATA_SCHEMA_VERSION = 1
@@ -99,7 +100,20 @@ class RemoteHuggingFaceApiService private constructor(
     suspend fun getRecommendationModelDetail(
         modelId: String,
     ): Result<ModelDetailResponse, DataError.Network> {
-        val url = modelDetailUrl(modelId) ?: return Result.Error(DataError.Network.Unknown)
+        val url = recommendationModelDetailUrl(modelId) ?: return Result.Error(DataError.Network.Unknown)
+
+        return clientWrapper.networkGetUsecase(
+            endpoint = url.toString(),
+            decode = { body -> RecommendationMetadataV1.decodeDetail(strictJson, body) },
+        )
+    }
+
+    suspend fun getRecommendationModelDetail(
+        modelId: String,
+        revision: String,
+    ): Result<ModelDetailResponse, DataError.Network> {
+        val url = recommendationModelDetailUrl(modelId, revision)
+            ?: return Result.Error(DataError.Network.Unknown)
 
         return clientWrapper.networkGetUsecase(
             endpoint = url.toString(),
@@ -115,9 +129,46 @@ class RemoteHuggingFaceApiService private constructor(
         }.build()
     }
 
+    private fun recommendationModelDetailUrl(modelId: String): Url? {
+        val url = modelDetailUrl(modelId) ?: return null
+        return URLBuilder(url).apply {
+            RECOMMENDATION_DETAIL_EXPANSIONS.forEach { parameters.append("expand", it) }
+        }.build()
+    }
+
+    private fun recommendationModelDetailUrl(modelId: String, revision: String): Url? {
+        val segments = validatedModelSegments(modelId) ?: return null
+        if (!isImmutableRevision(revision)) return null
+        return URLBuilder(trustedOrigin).apply {
+            appendPathSegments("api", "models")
+            appendPathSegments(segments, encodeSlash = true)
+            appendPathSegments("revision", revision)
+            RECOMMENDATION_DETAIL_EXPANSIONS.forEach { parameters.append("expand", it) }
+        }.build()
+    }
+
     suspend fun getModelConfig(
         modelId: String,
         revision: String,
+    ): Result<TransformerConfigResponse, DataError.Network> = getModelConfig(
+        modelId = modelId,
+        revision = revision,
+        followTrustedRedirect = false,
+    )
+
+    suspend fun getExactModelConfig(
+        modelId: String,
+        revision: String,
+    ): Result<TransformerConfigResponse, DataError.Network> = getModelConfig(
+        modelId = modelId,
+        revision = revision,
+        followTrustedRedirect = true,
+    )
+
+    private suspend fun getModelConfig(
+        modelId: String,
+        revision: String,
+        followTrustedRedirect: Boolean,
     ): Result<TransformerConfigResponse, DataError.Network> {
         val segments = validatedModelSegments(modelId)
             ?: return Result.Error(DataError.Network.Unknown)
@@ -129,8 +180,47 @@ class RemoteHuggingFaceApiService private constructor(
         return clientWrapper.networkGetUsecase(
             endpoint = url.toString(),
             maxResponseBytes = CONFIG_RESPONSE_LIMIT_BYTES,
+            distinguishNotFound = true,
+            trustedSingleRedirect = if (followTrustedRedirect) {
+                { location -> trustedConfigRedirect(location, segments, revision) }
+            } else {
+                null
+            },
             decode = { body -> strictJson.decodeFromString<TransformerConfigResponse>(body) },
         )
+    }
+
+    private fun trustedConfigRedirect(
+        location: String,
+        modelSegments: List<String>,
+        revision: String,
+    ): String? {
+        if (location.isEmpty() || location.length > MAX_CONFIG_REDIRECT_LENGTH || '#' in location ||
+            location.any { it.code < 32 || it.code == 127 }
+        ) {
+            return null
+        }
+        val target = try {
+            when {
+                location.startsWith("//") -> return null
+                location.startsWith('/') -> Url("$HUGGING_FACE_ORIGIN$location")
+                else -> Url(location)
+            }
+        } catch (_: IllegalArgumentException) {
+            return null
+        }
+        val expectedPath = URLBuilder(HUGGING_FACE_ORIGIN).apply {
+            appendPathSegments("api", "resolve-cache", "models")
+            appendPathSegments(modelSegments, encodeSlash = true)
+            appendPathSegments(revision, "config.json")
+        }.build().encodedPath
+        return target.toString().takeIf {
+            target.protocol == URLProtocol.HTTPS &&
+                target.host.equals(HUGGING_FACE_HOST, ignoreCase = true) &&
+                target.port == HUGGING_FACE_HTTPS_PORT &&
+                target.user == null && target.password == null && target.fragment.isEmpty() &&
+                target.encodedPath == expectedPath
+        }
     }
 
     suspend fun getModelFileTree(
@@ -272,11 +362,15 @@ class RemoteHuggingFaceApiService private constructor(
             segment.all { it.isLetterOrDigit() || it == '_' || it == '-' || it == '.' }
 
     private companion object {
+        val RECOMMENDATION_DETAIL_EXPANSIONS = listOf("library_name", "pipeline_tag", "sha", "tags")
         val NEXT_LINK = Regex("^<([^<>]+)>;\\s*rel=\\\"?next\\\"?$", RegexOption.IGNORE_CASE)
         const val MAX_MODEL_ID_LENGTH = 193
         const val MAX_REPOSITORY_SEGMENT_LENGTH = 96
         const val MAX_RELATIVE_PATH_LENGTH = 1_024
         const val MAX_PATH_SEGMENT_LENGTH = 255
+        const val HUGGING_FACE_HOST = "huggingface.co"
+        const val HUGGING_FACE_HTTPS_PORT = 443
+        const val HUGGING_FACE_ORIGIN = "https://huggingface.co"
     }
 }
 

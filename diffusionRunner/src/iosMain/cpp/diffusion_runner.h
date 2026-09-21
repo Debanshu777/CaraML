@@ -11,6 +11,7 @@ struct DiffusionModelConfigFFI {
     const char *clip_l_path;
     const char *clip_g_path;
     const char *t5xxl_path;
+    int runtime_backend;
     int offload_to_cpu;
     int keep_clip_on_cpu;
     int keep_vae_on_cpu;
