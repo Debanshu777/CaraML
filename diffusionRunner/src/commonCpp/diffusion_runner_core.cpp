@@ -42,6 +42,7 @@ struct SdHandle {
     float flow_shift = 0.0f;
     bool flow_shift_is_set = false;
     bool vae_tiling = false;
+    std::string model_version;
 };
 
 // Global state
@@ -221,6 +222,15 @@ static bool bounded_string(const char *value, size_t max_bytes, bool allow_empty
     return length <= max_bytes && (allow_empty || length > 0);
 }
 
+static bool safe_feature_label(const char *value, size_t max_bytes) {
+    if (!bounded_string(value, max_bytes, false)) return false;
+    for (size_t index = 0; value[index] != '\0'; ++index) {
+        const unsigned char byte = static_cast<unsigned char>(value[index]);
+        if (byte < 0x20 || byte > 0x7e) return false;
+    }
+    return true;
+}
+
 static bool valid_sd_weight_type(int value) {
     switch (value) {
         case -1:
@@ -279,6 +289,7 @@ static bool valid_model_config_native(const DiffusionModelConfig &config) {
         (config.n_threads == -1 || (config.n_threads >= 1 && config.n_threads <= 1024)) &&
         valid_sd_weight_type(config.wtype) &&
         config.prediction >= -1 && config.prediction < PREDICTION_COUNT &&
+        (!config.prefetch || config.segmented_compute) &&
         (!config.flow_shift_is_set || (std::isfinite(config.flow_shift) &&
             config.flow_shift >= -1000.0f && config.flow_shift <= 1000.0f));
 }
@@ -458,7 +469,6 @@ static bool collect_preflight_tensor_evidence(
     tensors.reserve(loader.get_tensor_storage_map().size());
     for (const auto &[name, source_storage] : loader.get_tensor_storage_map()) {
         TensorStorage storage = source_storage;
-        if (is_unused_tensor(storage.name)) continue;
         if (override_type != GGML_TYPE_COUNT &&
             loader.tensor_should_be_converted(storage, override_type)) {
             storage.type = override_type;
@@ -589,10 +599,9 @@ static bool resolve_and_apply_model_plan(
     if (!plan.valid) return false;
     if (!plan.runtime_spec.empty()) params.backend = plan.runtime_spec.c_str();
     if (!plan.params_spec.empty()) params.params_backend = plan.params_spec.c_str();
-    params.stream_layers = caraml::diffusion::effective_stream_layers(
-        config.stream_layers,
-        plan.runtime_spec,
-        plan.params_spec);
+    params.max_vram = config.max_vram[0] == '\0' ? nullptr : config.max_vram;
+    params.disable_segmented_compute = !config.segmented_compute;
+    params.disable_prefetch = !config.prefetch;
     // The exact auto-fit result was resolved above. Do not let new_sd_ctx derive
     // a second placement from a later memory/device snapshot.
     params.auto_fit = false;
@@ -600,9 +609,9 @@ static bool resolve_and_apply_model_plan(
 }
 
 #ifdef CARAML_DIFFUSION_NATIVE_TESTING
-bool diffusion_runner_core_capture_context_backend_for_test(
+bool diffusion_runner_core_capture_context_params_for_test(
         const DiffusionModelConfig &config,
-        std::string &backend) {
+        DiffusionContextParamsForTest &captured) {
     if (config.auto_fit) return false;
     sd_ctx_params_t params = {};
     sd_ctx_params_init(&params);
@@ -610,8 +619,13 @@ bool diffusion_runner_core_capture_context_backend_for_test(
     if (!resolve_and_apply_model_plan(config, nullptr, plan, params) || !params.backend) {
         return false;
     }
-    backend = params.backend;
-    return !backend.empty();
+    captured.backend = params.backend;
+    captured.params_backend = params.params_backend ? params.params_backend : "";
+    captured.max_vram = params.max_vram ? params.max_vram : "";
+    captured.segmented_compute = !params.disable_segmented_compute;
+    captured.prefetch = !params.disable_prefetch;
+    captured.auto_fit = params.auto_fit;
+    return !captured.backend.empty();
 }
 #endif
 
@@ -750,8 +764,6 @@ int64_t diffusion_runner_core_load_model(const DiffusionModelConfig &config) {
     // resolve_model_plan already encoded caller overrides and Vulkan's CLIP/VAE CPU
     // safety into this exact assignment. An unrelated registered Vulkan device does
     // not mutate an explicit CUDA or Metal plan.
-    params.max_vram = config.max_vram[0] == '\0' ? nullptr : config.max_vram;
-
     params.diffusion_flash_attn = config.diffusion_flash_attn;
     params.enable_mmap = config.enable_mmap;
     params.diffusion_conv_direct = config.diffusion_conv_direct;
@@ -806,6 +818,10 @@ int64_t diffusion_runner_core_load_model(const DiffusionModelConfig &config) {
             handle->flow_shift = config.flow_shift;
             handle->flow_shift_is_set = config.flow_shift_is_set;
             handle->vae_tiling = config.vae_tiling;
+            const char *model_version = sd_get_model_version_name(context);
+            if (safe_feature_label(model_version, 72)) {
+                handle->model_version = model_version;
+            }
             return handle;
         },
         [](const std::shared_ptr<SdHandle> &handle) {
@@ -941,12 +957,12 @@ PngResult diffusion_runner_core_txt2img(int64_t handle_id, const ImageGenConfig 
     return result;
 }
 
-std::vector<PngResult> diffusion_runner_core_video_gen(int64_t handle_id, const VideoGenConfig &config) {
-    std::vector<PngResult> results;
+VideoGenResultNative diffusion_runner_core_video_gen(int64_t handle_id, const VideoGenConfig &config) {
+    VideoGenResultNative output;
 
     auto handle = lookup_handle(handle_id);
     if (!handle) {
-        return results;
+        return output;
     }
 
     std::lock_guard<std::mutex> global_operation_lock(g_operation_mutex);
@@ -958,7 +974,7 @@ std::vector<PngResult> diffusion_runner_core_video_gen(int64_t handle_id, const 
         if (ctx && !handle->closing) sd_cancel_generation(ctx, SD_CANCEL_RESET);
         else ctx = nullptr;
     }
-    if (!ctx) return results;
+    if (!ctx) return output;
 
     // Set up generation parameters
     sd_vid_gen_params_t gen_params = {};
@@ -1012,19 +1028,21 @@ std::vector<PngResult> diffusion_runner_core_video_gen(int64_t handle_id, const 
 
     // Generate video frames
     int num_frames_out = 0;
+    int fps_out = 0;
     sd_image_t *images = nullptr;
     sd_audio_t *audio_out = nullptr;
-    bool gen_ok = generate_video(ctx, &gen_params, &images, &num_frames_out, &audio_out);
+    bool gen_ok = generate_video(
+        ctx, &gen_params, &images, &num_frames_out, &audio_out, &fps_out);
     SdImagesOwner images_owner(images, num_frames_out);
     if (audio_out) {
         free_sd_audio(audio_out);
     }
     if (!gen_ok || !images || num_frames_out <= 0) {
-        return results;
+        return output;
     }
 
     // Convert each frame to PNG
-    results.reserve(num_frames_out);
+    output.frames.reserve(num_frames_out);
     for (int i = 0; i < num_frames_out; i++) {
         PngResult result = {nullptr, 0};
 
@@ -1044,10 +1062,11 @@ std::vector<PngResult> diffusion_runner_core_video_gen(int64_t handle_id, const 
             }
         }
 
-        results.push_back(result);
+        output.frames.push_back(result);
     }
 
-    return results;
+    if (!output.frames.empty() && fps_out > 0) output.effective_fps = fps_out;
+    return output;
 }
 
 bool diffusion_runner_core_cancel_generation(int64_t handle_id) {
@@ -1341,10 +1360,8 @@ DiffusionPreflightResultNative diffusion_runner_core_preflight(const DiffusionMo
         result.architecture = architecture_code(version);
         result.quantization = dominant_quantization_code(combined_loader);
         result.memory_confidence = 1;
-        result.stream_layers = caraml::diffusion::effective_stream_layers(
-            config.stream_layers,
-            resolved_plan.runtime_spec,
-            resolved_plan.params_spec);
+        result.segmented_compute = config.segmented_compute;
+        result.prefetch = config.prefetch;
         result.declared_source_mask = declared_source_mask;
         result.source_count = static_cast<int>(components.size());
         result.component_count = result_component_count;
@@ -1357,15 +1374,6 @@ DiffusionPreflightResultNative diffusion_runner_core_preflight(const DiffusionMo
         result.status = DIFFUSION_PREFLIGHT_INVALID;
     }
     return result;
-}
-
-static bool safe_feature_label(const char *value, size_t max_bytes) {
-    if (!bounded_string(value, max_bytes, false)) return false;
-    for (size_t index = 0; value[index] != '\0'; ++index) {
-        const unsigned char byte = static_cast<unsigned char>(value[index]);
-        if (byte < 0x20 || byte > 0x7e) return false;
-    }
-    return true;
 }
 
 static bool supported_quantization_label(const std::string &label) {
@@ -1418,6 +1426,13 @@ std::string diffusion_runner_core_engine_version() {
     const char *version = sd_version();
     if (!version || !safe_feature_label(version, 72)) return {};
     return std::string("stable-diffusion.cpp-") + version;
+}
+
+std::string diffusion_runner_core_model_version(int64_t handle_id) {
+    auto handle = lookup_handle(handle_id);
+    if (!handle) return {};
+    std::lock_guard<std::mutex> operation_lock(handle->operation_mutex);
+    return handle->model_version;
 }
 
 /** Maps SDVersion enum to a compact family string for the Kotlin layer. */

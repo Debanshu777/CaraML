@@ -38,8 +38,10 @@ data class DiffusionModelConfig(
      * backend assignments such as `cuda0=6,vulkan0=2`.
      */
     val maxVram: String = "",
-    /** Stream diffusion layers from the parameter backend within [maxVram]. */
-    val streamLayers: Boolean = false,
+    /** Allow the native engine to split the graph within [maxVram]. */
+    val segmentedCompute: Boolean = false,
+    /** Prefetch the next segment while the current segment executes. */
+    val prefetch: Boolean = false,
     /** Ask the pinned native engine to derive component backend placement from model metadata. */
     val autoFit: Boolean = false,
 )

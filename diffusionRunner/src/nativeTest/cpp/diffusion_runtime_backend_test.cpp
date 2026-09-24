@@ -32,10 +32,10 @@ int main() {
         DiffusionModelConfig config;
         config.model_path = "/models/model.gguf";
         config.runtime_backend = backend;
-        std::string captured;
-        expect(diffusion_runner_core_capture_context_backend_for_test(config, captured),
+        DiffusionContextParamsForTest captured;
+        expect(diffusion_runner_core_capture_context_params_for_test(config, captured),
                "production context-backend resolution failed");
-        expect(captured == expected,
+        expect(captured.backend == expected,
                "production sd_ctx_params_t.backend did not match the requested runtime");
     }
 

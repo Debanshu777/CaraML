@@ -147,3 +147,7 @@ kotlin {
         }
     }
 }
+
+tasks.matching { it.name.startsWith("cinteropDiffusionRunner") }.configureEach {
+    inputs.file(layout.projectDirectory.file("src/iosMain/cpp/diffusion_runner.h"))
+}

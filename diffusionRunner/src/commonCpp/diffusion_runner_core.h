@@ -48,7 +48,8 @@ struct DiffusionModelConfig {
     bool vae_tiling = false;
     /** Bounded max-VRAM budget grammar consumed by the pinned native engine. */
     const char *max_vram = "";
-    bool stream_layers = false;
+    bool segmented_compute = false;
+    bool prefetch = false;
     bool auto_fit = false;
 };
 
@@ -100,7 +101,12 @@ int64_t diffusion_runner_core_load_model(const DiffusionModelConfig &config);
 
 PngResult diffusion_runner_core_txt2img(int64_t handle, const ImageGenConfig &config);
 
-std::vector<PngResult> diffusion_runner_core_video_gen(int64_t handle, const VideoGenConfig &config);
+struct VideoGenResultNative {
+    std::vector<PngResult> frames;
+    int effective_fps = 0;
+};
+
+VideoGenResultNative diffusion_runner_core_video_gen(int64_t handle, const VideoGenConfig &config);
 
 /** Signals the active generation for [handle] to stop as soon as possible. */
 bool diffusion_runner_core_cancel_generation(int64_t handle);
@@ -239,7 +245,8 @@ struct DiffusionPreflightResultNative {
     int architecture = DIFFUSION_ARCH_UNKNOWN;
     int quantization = DIFFUSION_QUANT_UNKNOWN;
     int memory_confidence = 0;
-    bool stream_layers = false;
+    bool segmented_compute = false;
+    bool prefetch = false;
     int64_t declared_source_mask = 0;
     int source_count = 0;
     int component_count = 0;
@@ -281,9 +288,19 @@ DiffusionModelFeatureSupportNative diffusion_runner_core_probe_model_features(
     const char *quantization,
     int mode);
 std::string diffusion_runner_core_engine_version();
+std::string diffusion_runner_core_model_version(int64_t handle);
 
 #ifdef CARAML_DIFFUSION_NATIVE_TESTING
-bool diffusion_runner_core_capture_context_backend_for_test(
+struct DiffusionContextParamsForTest {
+    std::string backend;
+    std::string params_backend;
+    std::string max_vram;
+    bool segmented_compute = false;
+    bool prefetch = false;
+    bool auto_fit = true;
+};
+
+bool diffusion_runner_core_capture_context_params_for_test(
     const DiffusionModelConfig &config,
-    std::string &backend);
+    DiffusionContextParamsForTest &captured);
 #endif

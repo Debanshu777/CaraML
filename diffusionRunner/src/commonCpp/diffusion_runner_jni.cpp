@@ -161,14 +161,15 @@ struct OwnedDiffusionModelConfig {
         const jfieldID taesdPath = env->GetFieldID(clazz, "taesdPath", "Ljava/lang/String;");
         const jfieldID vaeTiling = env->GetFieldID(clazz, "vaeTiling", "Z");
         const jfieldID maxVram = env->GetFieldID(clazz, "maxVram", "Ljava/lang/String;");
-        const jfieldID streamLayers = env->GetFieldID(clazz, "streamLayers", "Z");
+        const jfieldID segmentedCompute = env->GetFieldID(clazz, "segmentedCompute", "Z");
+        const jfieldID prefetch = env->GetFieldID(clazz, "prefetch", "Z");
         const jfieldID autoFit = env->GetFieldID(clazz, "autoFit", "Z");
 
         const bool fields_ok = modelPath && vaePath && llmPath && clipLPath && clipGPath &&
                 t5xxlPath && runtimeBackend && offloadToCpu && keepClipOnCpu && keepVaeOnCpu &&
                 diffusionFlashAttn && enableMmap && diffusionConvDirect &&
                 freeParamsImmediately && wtype && flowShift && nThreads && prediction &&
-                taesdPath && vaeTiling && maxVram && streamLayers && autoFit &&
+                taesdPath && vaeTiling && maxVram && segmentedCompute && prefetch && autoFit &&
                 !env->ExceptionCheck();
         if (!fields_ok) {
             env->DeleteLocalRef(clazz);
@@ -210,7 +211,8 @@ struct OwnedDiffusionModelConfig {
         values.taesd_path = taesd_path.c_str();
         values.vae_tiling = env->GetBooleanField(source, vaeTiling);
         values.max_vram = max_vram.c_str();
-        values.stream_layers = env->GetBooleanField(source, streamLayers);
+        values.segmented_compute = env->GetBooleanField(source, segmentedCompute);
+        values.prefetch = env->GetBooleanField(source, prefetch);
         values.auto_fit = env->GetBooleanField(source, autoFit);
 
         env->DeleteLocalRef(clazz);
@@ -285,7 +287,8 @@ Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativePreflightModel(
             native.architecture,
             native.quantization,
             native.memory_confidence,
-            native.stream_layers ? 1 : 0,
+            native.segmented_compute ? 1 : 0,
+            native.prefetch ? 1 : 0,
             native.declared_source_mask,
             native.source_count,
             native.component_count,
@@ -296,7 +299,7 @@ Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativePreflightModel(
             native.backend_count < 0 || native.backend_count > DIFFUSION_PREFLIGHT_MAX_BACKENDS) {
             return nullptr;
         }
-        payload.reserve(9 + native.component_count * 8 + native.backend_count * 6);
+        payload.reserve(10 + native.component_count * 8 + native.backend_count * 6);
         for (int index = 0; index < native.component_count; ++index) {
             const DiffusionPreflightComponentNative &component = native.components[index];
             payload.insert(payload.end(), {
@@ -399,6 +402,19 @@ Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeEngineVersion(
     }
 }
 
+JNIEXPORT jstring JNICALL
+Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeModelVersion(
+        JNIEnv *env, jobject /* thiz */, jlong handle) {
+    try {
+        const std::string version = diffusion_runner_core_model_version(handle);
+        if (version.empty() || version.size() > 72) return nullptr;
+        return env->NewStringUTF(version.c_str());
+    } catch (...) {
+        LOGE("nativeModelVersion: native failure");
+        return nullptr;
+    }
+}
+
 JNIEXPORT jbyteArray JNICALL
 Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeTxt2Img(JNIEnv *env, jobject thiz,
         jlong handle,
@@ -411,8 +427,13 @@ Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeTxt2Img(JNIEnv *env, 
         jlong seed,
         jint sampleMethod,
         jobjectArray loraPaths,
-        jfloatArray loraStrengths) {
+        jfloatArray loraStrengths,
+        jintArray effectiveFpsOut) {
     try {
+
+    if (!effectiveFpsOut || env->GetArrayLength(effectiveFpsOut) < 1 || env->ExceptionCheck()) {
+        return nullptr;
+    }
     // Set up ImageGenConfig
     std::string prompt_str = jstring_to_string(env, prompt);
     std::string negative_str = jstring_to_string(env, negative);
@@ -559,9 +580,11 @@ Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeVideoGen(JNIEnv *env,
     }
 
     // Generate video frames
-    PngResultsOwner results(diffusion_runner_core_video_gen(handle, gen_config));
+    VideoGenResultNative native_result = diffusion_runner_core_video_gen(handle, gen_config);
+    const jint effective_fps = native_result.effective_fps;
+    PngResultsOwner results(std::move(native_result.frames));
 
-    if (results.values.empty()) {
+    if (results.values.empty() || effective_fps <= 0) {
         return nullptr;
     }
 
@@ -600,6 +623,12 @@ Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeVideoGen(JNIEnv *env,
         }
     }
 
+    env->SetIntArrayRegion(effectiveFpsOut, 0, 1, &effective_fps);
+    if (env->ExceptionCheck()) {
+        env->DeleteLocalRef(frameArray);
+        env->DeleteLocalRef(byteArrayClass);
+        return nullptr;
+    }
     env->DeleteLocalRef(byteArrayClass);
     return frameArray;
     } catch (const std::bad_alloc &) {

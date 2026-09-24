@@ -30,7 +30,8 @@ struct DiffusionModelConfigFFI {
     /** Enable VAE tiling (1=on, 0=off). Library auto-picks tile sizes when on. */
     int vae_tiling;
     const char *max_vram;
-    int stream_layers;
+    int segmented_compute;
+    int prefetch;
     int auto_fit;
 };
 
@@ -87,6 +88,8 @@ int diffusion_runner_ios_probe_model_features(
     int capacity);
 /** Process-lifetime, bounded engine version string; null when unavailable. */
 const char *diffusion_runner_ios_engine_version(void);
+/** Bounded model version copied while the handle is loaded; null when unavailable. */
+const char *diffusion_runner_ios_model_version(long long handle);
 
 #ifdef __cplusplus
 }

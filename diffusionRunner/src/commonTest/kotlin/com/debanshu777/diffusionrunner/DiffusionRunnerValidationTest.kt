@@ -2,9 +2,26 @@ package com.debanshu777.diffusionrunner
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 
 class DiffusionRunnerValidationTest {
+    @Test
+    fun segmentedExecutionDefaultsAreConservativeAndVideoReportsEffectiveFps() {
+        val config = DiffusionModelConfig(modelPath = "/models/model.gguf")
+
+        assertFalse(config.segmentedCompute)
+        assertFalse(config.prefetch)
+        assertEquals(24, VideoGenResult(emptyList(), effectiveFps = 24).effectiveFps)
+    }
+
+    @Test
+    fun prefetchRequiresSegmentedCompute() {
+        assertFailsWith<IllegalArgumentException> {
+            validateModelConfig(modelConfig(segmentedCompute = false, prefetch = true))
+        }
+    }
+
     @Test
     fun runtimeBackendContractIsClosedAndDefaultsToCpu() {
         assertEquals(
@@ -73,8 +90,8 @@ class DiffusionRunnerValidationTest {
             modelConfig(wtype = 42),
             modelConfig(prediction = 6),
             modelConfig(flowShift = Float.NaN),
-            modelConfig(streamLayers = true, maxVram = "0"),
-            modelConfig(streamLayers = true, maxVram = "cuda0=0.0"),
+            modelConfig(segmentedCompute = true, maxVram = "0"),
+            modelConfig(segmentedCompute = true, maxVram = "cuda0=0.0"),
         )
 
         invalid.forEach { config ->
@@ -163,7 +180,8 @@ class DiffusionRunnerValidationTest {
         prediction: Int = -1,
         flowShift: Float = Float.POSITIVE_INFINITY,
         maxVram: String = "",
-        streamLayers: Boolean = false,
+        segmentedCompute: Boolean = false,
+        prefetch: Boolean = false,
     ) = DiffusionModelConfig(
         modelPath = modelPath,
         vaePath = vaePath,
@@ -172,6 +190,7 @@ class DiffusionRunnerValidationTest {
         prediction = prediction,
         flowShift = flowShift,
         maxVram = maxVram,
-        streamLayers = streamLayers,
+        segmentedCompute = segmentedCompute,
+        prefetch = prefetch,
     )
 }

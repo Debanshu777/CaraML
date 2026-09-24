@@ -18,7 +18,7 @@ suspend fun DiffusionRunner.generateImage(params: ImageGenParams): Result<ByteAr
         }
     }
 
-suspend fun DiffusionRunner.generateVideo(params: VideoGenParams): Result<List<ByteArray>> =
+suspend fun DiffusionRunner.generateVideo(params: VideoGenParams): Result<VideoGenResult> =
     withContext(Dispatchers.Default) {
         try {
             validateVideoGenParams(params)

@@ -3,6 +3,7 @@ package com.debanshu777.diffusionrunner
 expect class DiffusionRunner() {
     fun initialize(nativeLibDir: String)
     fun loadModel(config: DiffusionModelConfig): Boolean
+    fun modelVersion(): String?
     fun preflightModel(config: DiffusionModelConfig): DiffusionPreflightResult
     fun backendCapabilities(): List<DiffusionBackendCapability>
     fun probeModelFeatures(
@@ -11,7 +12,7 @@ expect class DiffusionRunner() {
         mode: DiffusionGenerationMode,
     ): DiffusionModelFeatureSupport
     fun txt2Img(params: ImageGenParams): ByteArray?
-    fun videoGen(params: VideoGenParams): List<ByteArray>?
+    fun videoGen(params: VideoGenParams): VideoGenResult?
     fun cancelGeneration(): Boolean
     fun supportsVideoGeneration(): Boolean
     fun release()

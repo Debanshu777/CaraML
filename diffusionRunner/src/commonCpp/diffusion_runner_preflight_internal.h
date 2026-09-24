@@ -221,19 +221,6 @@ inline std::vector<PreflightComponentEvidence> classify_bundled_components(
     return result;
 }
 
-inline bool effective_stream_layers(
-        bool requested,
-        const std::string &runtime_spec,
-        const std::string &params_spec) {
-    if (!requested) return false;
-    const std::string runtime = lower_ascii(assignment_value(runtime_spec, "diffusion"));
-    const std::string params = lower_ascii(assignment_value(params_spec, "diffusion"));
-    const bool params_are_cpu = params == "cpu" ||
-        ((params.empty() || params == "disk") && runtime == "cpu");
-    if (!params_are_cpu) return false;
-    return runtime.find('&') == std::string::npos;
-}
-
 inline size_t max_vram_bytes_for_backend(
         const std::string &spec,
         ggml_backend_t backend) {

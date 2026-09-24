@@ -11,9 +11,9 @@ class DiffusionPreflightResultTest {
     @Test
     fun preflightPayloadMustContainAllDeclaredComponents() {
         val payload = successfulPreflightPayload().toMutableList().apply {
-            this[5] = (1L shl DiffusionComponentRole.DIFFUSION_MODEL.ordinal) or
+            this[6] = (1L shl DiffusionComponentRole.DIFFUSION_MODEL.ordinal) or
                 (1L shl DiffusionComponentRole.VAE.ordinal)
-            this[7] = 1L
+            this[8] = 1L
             repeat(DIFFUSION_PREFLIGHT_COMPONENT_FIELDS) {
                 removeAt(DIFFUSION_PREFLIGHT_HEADER_FIELDS + DIFFUSION_PREFLIGHT_COMPONENT_FIELDS)
             }
@@ -32,12 +32,12 @@ class DiffusionPreflightResultTest {
         assertIs<DiffusionPreflightResult.Unavailable>(decodeDiffusionPreflight(longArrayOf(0L)))
 
         val tooManyComponents = successfulPreflightPayload().also {
-            it[7] = DIFFUSION_PREFLIGHT_MAX_COMPONENTS.toLong() + 1L
+            it[8] = DIFFUSION_PREFLIGHT_MAX_COMPONENTS.toLong() + 1L
         }
         assertIs<DiffusionPreflightResult.Unavailable>(decodeDiffusionPreflight(tooManyComponents))
 
         val tooManyBackends = successfulPreflightPayload().also {
-            it[8] = DIFFUSION_PREFLIGHT_MAX_BACKENDS.toLong() + 1L
+            it[9] = DIFFUSION_PREFLIGHT_MAX_BACKENDS.toLong() + 1L
         }
         assertIs<DiffusionPreflightResult.Unavailable>(decodeDiffusionPreflight(tooManyBackends))
     }
@@ -63,7 +63,8 @@ class DiffusionPreflightResultTest {
         assertEquals(DiffusionArchitecture.SDXL, fit.architecture)
         assertEquals(DiffusionQuantization.Q4_K, fit.quantization)
         assertEquals(DiffusionMemoryConfidence.MEDIUM, fit.memoryConfidence)
-        assertTrue(fit.streamLayers)
+        assertTrue(fit.segmentedCompute)
+        assertFalse(fit.prefetch)
         assertEquals(2, fit.components.size)
         assertEquals(DiffusionComponentRole.DIFFUSION_MODEL, fit.components[0].sourceRole)
         assertEquals(0, fit.components[0].sourceOrdinal)
@@ -261,6 +262,7 @@ class DiffusionPreflightResultTest {
         DiffusionQuantization.Q4_K.ordinal.toLong(),
         DiffusionMemoryConfidence.MEDIUM.ordinal.toLong(),
         1L,
+        0L,
         (1L shl DiffusionComponentRole.DIFFUSION_MODEL.ordinal) or
             (1L shl DiffusionComponentRole.VAE.ordinal),
         2L,

@@ -49,8 +49,11 @@ internal fun validateModelConfig(config: DiffusionModelConfig) {
         "flowShift is outside the supported range"
     }
     require(config.maxVram.isValidMaxVramSpec()) { "maxVram is invalid" }
-    require(!config.streamLayers || config.maxVram.isActiveMaxVramBudget()) {
-        "streamLayers requires an active maxVram budget"
+    require(!config.segmentedCompute || config.maxVram.isActiveMaxVramBudget()) {
+        "segmentedCompute requires an active maxVram budget"
+    }
+    require(!config.prefetch || config.segmentedCompute) {
+        "prefetch requires segmentedCompute"
     }
 }
 

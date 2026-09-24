@@ -76,7 +76,8 @@ static DiffusionModelConfig convert_model_config(const DiffusionModelConfigFFI &
     config.taesd_path = ffi_config.taesd_path ? ffi_config.taesd_path : "";
     config.vae_tiling = ffi_config.vae_tiling != 0;
     config.max_vram = ffi_config.max_vram ? ffi_config.max_vram : "";
-    config.stream_layers = ffi_config.stream_layers != 0;
+    config.segmented_compute = ffi_config.segmented_compute != 0;
+    config.prefetch = ffi_config.prefetch != 0;
     config.auto_fit = ffi_config.auto_fit != 0;
     return config;
 }
@@ -178,7 +179,7 @@ int diffusion_runner_ios_preflight(
         long long *output,
         int capacity) {
     return ffi_guard<int>("preflight", 0, [&]() {
-        constexpr int header_fields = 9;
+        constexpr int header_fields = 10;
         constexpr int component_fields = 8;
         constexpr int backend_fields = 6;
         if (!output || capacity < header_fields) return 0;
@@ -198,7 +199,8 @@ int diffusion_runner_ios_preflight(
         output[cursor++] = native.architecture;
         output[cursor++] = native.quantization;
         output[cursor++] = native.memory_confidence;
-        output[cursor++] = native.stream_layers ? 1 : 0;
+        output[cursor++] = native.segmented_compute ? 1 : 0;
+        output[cursor++] = native.prefetch ? 1 : 0;
         output[cursor++] = native.declared_source_mask;
         output[cursor++] = native.source_count;
         output[cursor++] = native.component_count;
@@ -272,6 +274,14 @@ const char *diffusion_runner_ios_engine_version(void) {
     static thread_local std::string version;
     return ffi_guard<const char *>("engine_version", nullptr, []() {
         version = diffusion_runner_core_engine_version();
+        return version.empty() ? nullptr : version.c_str();
+    });
+}
+
+const char *diffusion_runner_ios_model_version(long long handle) {
+    static thread_local std::string version;
+    return ffi_guard<const char *>("model_version", nullptr, [handle]() {
+        version = diffusion_runner_core_model_version(handle);
         return version.empty() ? nullptr : version.c_str();
     });
 }

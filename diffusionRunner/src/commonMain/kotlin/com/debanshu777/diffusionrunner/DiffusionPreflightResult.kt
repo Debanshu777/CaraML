@@ -4,7 +4,7 @@ import kotlinx.coroutines.CancellationException
 
 internal const val DIFFUSION_PREFLIGHT_MAX_COMPONENTS = 10
 internal const val DIFFUSION_PREFLIGHT_MAX_BACKENDS = 16
-internal const val DIFFUSION_PREFLIGHT_HEADER_FIELDS = 9
+internal const val DIFFUSION_PREFLIGHT_HEADER_FIELDS = 10
 internal const val DIFFUSION_PREFLIGHT_COMPONENT_FIELDS = 8
 internal const val DIFFUSION_PREFLIGHT_BACKEND_FIELDS = 6
 
@@ -105,7 +105,8 @@ data class DiffusionFitReport(
     val architecture: DiffusionArchitecture,
     val quantization: DiffusionQuantization,
     val memoryConfidence: DiffusionMemoryConfidence,
-    val streamLayers: Boolean,
+    val segmentedCompute: Boolean,
+    val prefetch: Boolean,
     val components: List<DiffusionPreflightComponent>,
     val backends: List<DiffusionPreflightBackend>,
 )
@@ -144,9 +145,9 @@ internal fun decodeDiffusionPreflight(payload: LongArray?): DiffusionPreflightRe
     }
 
     val status = payload[0]
-    val sourceCountLong = payload[6]
-    val componentCountLong = payload[7]
-    val backendCountLong = payload[8]
+    val sourceCountLong = payload[7]
+    val componentCountLong = payload[8]
+    val backendCountLong = payload[9]
     if (sourceCountLong !in 0L..DIFFUSION_PREFLIGHT_MAX_COMPONENTS.toLong() ||
         componentCountLong !in 0L..DIFFUSION_PREFLIGHT_MAX_COMPONENTS.toLong() ||
         backendCountLong !in 0L..DIFFUSION_PREFLIGHT_MAX_BACKENDS.toLong()
@@ -180,12 +181,18 @@ internal fun decodeDiffusionPreflight(payload: LongArray?): DiffusionPreflightRe
         ?.let(DiffusionQuantization.entries::get) ?: return malformedDiffusionPreflight()
     val confidence = payload[3].toBoundedIndex(DiffusionMemoryConfidence.entries.size)
         ?.let(DiffusionMemoryConfidence.entries::get) ?: return malformedDiffusionPreflight()
-    val streamLayers = when (payload[4]) {
+    val segmentedCompute = when (payload[4]) {
         0L -> false
         1L -> true
         else -> return malformedDiffusionPreflight()
     }
-    val declaredSourceMask = payload[5]
+    val prefetch = when (payload[5]) {
+        0L -> false
+        1L -> true
+        else -> return malformedDiffusionPreflight()
+    }
+    if (prefetch && !segmentedCompute) return malformedDiffusionPreflight()
+    val declaredSourceMask = payload[6]
     val allowedComponentMask = (1L shl DiffusionComponentRole.entries.size) - 1L
     if (declaredSourceMask == 0L ||
         declaredSourceMask and allowedComponentMask.inv() != 0L ||
@@ -275,7 +282,8 @@ internal fun decodeDiffusionPreflight(payload: LongArray?): DiffusionPreflightRe
             architecture = architecture,
             quantization = quantization,
             memoryConfidence = confidence,
-            streamLayers = streamLayers,
+            segmentedCompute = segmentedCompute,
+            prefetch = prefetch,
             components = components.toList(),
             backends = backends.toList(),
         ),

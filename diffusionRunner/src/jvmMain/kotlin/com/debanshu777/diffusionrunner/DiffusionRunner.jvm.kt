@@ -29,6 +29,9 @@ actual class DiffusionRunner {
         return handle != 0L
     }
 
+    actual fun modelVersion(): String? =
+        if (handle == 0L || !nativeAvailable) null else nativeModelVersion(handle)
+
     actual fun preflightModel(config: DiffusionModelConfig): DiffusionPreflightResult =
         runDiffusionPreflight(config) {
             requireNativeRuntime()
@@ -74,18 +77,19 @@ actual class DiffusionRunner {
         )
     }
 
-    actual fun videoGen(params: VideoGenParams): List<ByteArray>? {
+    actual fun videoGen(params: VideoGenParams): VideoGenResult? {
         if (handle == 0L) return null
         validateVideoGenParams(params)
+        val effectiveFps = IntArray(1)
         val frames = nativeVideoGen(
             handle, params.prompt, params.negativePrompt,
             params.width, params.height, params.videoFrames,
             params.steps, params.cfgScale, params.seed,
             params.sampleMethod.value,
             params.loraPaths.toTypedArray(),
-            params.loraStrengths.toFloatArray()
+            params.loraStrengths.toFloatArray(), effectiveFps,
         ) ?: return null
-        return frames.toList()
+        return VideoGenResult(frames.toList(), effectiveFps[0])
     }
 
     actual fun cancelGeneration(): Boolean =
@@ -122,6 +126,7 @@ actual class DiffusionRunner {
         mode: Int,
     ): LongArray?
     private external fun nativeEngineVersion(): String?
+    private external fun nativeModelVersion(handle: Long): String?
     private external fun nativeTxt2Img(
         handle: Long, prompt: String, negative: String,
         width: Int, height: Int, steps: Int,
@@ -134,7 +139,8 @@ actual class DiffusionRunner {
         width: Int, height: Int, videoFrames: Int,
         steps: Int, cfg: Float, seed: Long,
         sampleMethod: Int,
-        loraPaths: Array<String>?, loraStrengths: FloatArray?
+        loraPaths: Array<String>?, loraStrengths: FloatArray?,
+        effectiveFpsOut: IntArray,
     ): Array<ByteArray>?
 
     private external fun nativeRelease(handle: Long)

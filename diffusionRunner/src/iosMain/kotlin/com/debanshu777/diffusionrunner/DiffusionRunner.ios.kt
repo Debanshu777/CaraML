@@ -10,6 +10,7 @@ import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_backend_capabili
 import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_engine_version
 import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_init
 import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_load_model
+import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_model_version
 import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_preflight
 import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_probe_model_features
 import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_release
@@ -69,13 +70,17 @@ actual class DiffusionRunner {
                 taesd_path = config.taesdPath.cstr.ptr
                 vae_tiling = if (config.vaeTiling) 1 else 0
                 max_vram = config.maxVram.cstr.ptr
-                stream_layers = if (config.streamLayers) 1 else 0
+                segmented_compute = if (config.segmentedCompute) 1 else 0
+                prefetch = if (config.prefetch) 1 else 0
                 auto_fit = if (config.autoFit) 1 else 0
             }
             diffusion_runner_ios_load_model(ffiConfig)
         }
         return handle != 0L
     }
+
+    actual fun modelVersion(): String? =
+        if (handle == 0L) null else diffusion_runner_ios_model_version(handle)?.toKString()
 
     actual fun preflightModel(config: DiffusionModelConfig): DiffusionPreflightResult =
         runDiffusionPreflight(config) { safeConfig ->
@@ -187,7 +192,7 @@ actual class DiffusionRunner {
         }
     }
 
-    actual fun videoGen(params: VideoGenParams): List<ByteArray>? {
+    actual fun videoGen(params: VideoGenParams): VideoGenResult? {
         if (handle == 0L) return null
         validateVideoGenParams(params)
         return null
@@ -247,7 +252,8 @@ actual class DiffusionRunner {
             taesd_path = config.taesdPath.cstr.ptr
             vae_tiling = if (config.vaeTiling) 1 else 0
             max_vram = config.maxVram.cstr.ptr
-            stream_layers = if (config.streamLayers) 1 else 0
+            segmented_compute = if (config.segmentedCompute) 1 else 0
+            prefetch = if (config.prefetch) 1 else 0
             auto_fit = if (config.autoFit) 1 else 0
         }
 }
