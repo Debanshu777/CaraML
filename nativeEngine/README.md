@@ -26,7 +26,7 @@ nativeEngine/build/
     ├── macos/                       libllama_runner.dylib, libdiffusion_runner.dylib
     └── linux/                       libllama_runner.so, libdiffusion_runner.so
 
-# Android: output via AGP externalNativeBuild → composeApp APK
+# Android: output via AGP externalNativeBuild → androidApp APK
 composeApp/src/androidMain/jniLibs/arm64-v8a/
     llama_runner.so
     diffusion_runner.so
@@ -135,7 +135,8 @@ Create a **separate** Gradle module + CMake project. Do not add here unless it m
 
 <!-- Updated at end of each Claude Code session -->
 
-- Native dependency checkout now stops at public top-level engine pins; stable-diffusion and its native regression targets reuse llama.cpp's GGML headers with optional WebP/WebM integrations disabled, while llama fixes are applied to the isolated build-owned source tree
+- Native builds pin llama.cpp `f46bc30` and stable-diffusion.cpp `c92d73c`, compile both runners against one patched llama GGML tree, and verify the exact public gitlinks before project checks
+- Android's Vulkan build gates Intel Xe cooperative-matrix shaders on `glslc` capability; arm64-v8a/x86_64 APK packaging and iOS device/simulator one-GGML archive merges pass locally
 - Secure artifact storage now supports root-pinned append-only reopening for resumable transfers, with native regression coverage for concatenation and symlink/root replacement rejection
 - Android `artifact_fs` now opens the trusted app-owned models root directly instead of traversing `/`; a host regression covers search-only ancestors and final-root symlink rejection
 - Added a strict versioned native-fixture manifest, fixed-host HTTPS acquisition with redirect/size/digest enforcement, generated corrupt fixtures, and isolated opt-in runner parity CI; normal JVM verification performs no fixture download

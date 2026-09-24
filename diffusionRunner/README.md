@@ -152,7 +152,8 @@ The merged iOS `.a` includes both `llama_runner` and `diffusion_runner` objects.
 
 <!-- Updated at end of each Claude Code session -->
 
-- The stable-diffusion.cpp gitlink now targets a publicly fetchable upstream commit; CaraML builds it against llama.cpp's shared GGML and disables unused nested WebP/WebM integrations
+- The runner now targets stable-diffusion.cpp `c92d73c` against llama.cpp's single shared GGML, with segmented execution and prefetch represented and validated independently
+- JNI and iOS now expose bounded engine/model identity and effective video FPS; native load applies the exact admitted placement and max-VRAM plan with upstream auto-fit disabled
 - Opt-in native parity verifies bounded corrupt safetensors rejection and repeat-cleanup via `CARAML_NATIVE_PARITY=true ./gradlew :diffusionRunner:jvmTest`; successful diffusion load remains a physical-device gate because no small redistribution-safe fixture is pinned
 - `DiffusionModelConfig` now carries explicit CPU, Metal, Vulkan, or CUDA runtime placement independently of parameter residency; JNI and iOS use stable explicit integer values rather than enum ordinals
 - Preflight initializes and reports only devices selected by the resolved runtime/parameter plan; a failing unused registry device no longer invalidates a valid plan

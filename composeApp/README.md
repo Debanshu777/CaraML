@@ -204,6 +204,8 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 
 <!-- Updated at end of each AI-assisted development session -->
 
+- Native admission now carries exact placement, memory budget, segmentation, prefetch, and disabled upstream auto-fit through load; persisted assessment, calibration, and quarantine state is isolated under `caraml-native-20260923-f46bc30-c92d73c`
+- Low-risk September engine policy enables bounded llama lazy loading and trusted discrete-GPU diffusion segmentation/prefetch, while unknown native failures fail closed without an untyped OOM retry
 - Expanded the documented [CaraML Prism design system](../docs/caraml-design-system.md) with information hierarchy, progressive disclosure, consistent rounded surfaces, compact reflow, and data-heavy toolbar guidance
 - Compact Models now collapses device diagnostics into one remembered summary, uses rounded wrapping result panes and compact metrics, and prioritizes its command and first useful result
 - Artifact now puts device-fit and download decisions ahead of collapsed technical metadata, with rounded focal/file surfaces and 360–412dp production previews including 200% text

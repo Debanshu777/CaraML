@@ -134,7 +134,8 @@ The native `.so`/`.a`/`.dylib` is built by `:nativeEngine`, not this module. Thi
 
 <!-- Updated at end of each Claude Code session -->
 
-- The llama.cpp gitlink now targets a publicly fetchable upstream commit; CaraML-specific Metal, Vulkan, and preflight hardening remains in numbered patches applied to a build-owned copy
+- The runner now targets llama.cpp `f46bc30`, supports bounded lazy tensor loading and automatic integrated-GPU load mode, and exposes a sanitized bounded engine version across JNI and iOS
+- Preflight and load use the same exact admitted budget and placement; rebased ownership, bounds, logger, and Vulkan shader-capability patches are applied only to the build-owned source copy
 - Opt-in native parity verifies a digest-pinned tiny GGUF can preflight successfully and a bounded corrupt GGUF fails safely; run `CARAML_NATIVE_PARITY=true ./gradlew :runner:jvmTest`, while ordinary JVM tests remain fixture- and native-build-free
 - Calibration now uses typed memory-copy/GEMM windows, pre-reserved exact-token cancellation, bounded caller timeouts, and permanent fail-closed operation quarantine if an in-process native probe becomes unresponsive; LLM chunks expose native decode-only timing
 - Bounded llama.cpp preflight now shares a thread-independent stream session lease across prompt, token, and finalization calls, keeps cancellation lock-free, recognizes only exact pinned quantization labels, and releases transient native state on every exit

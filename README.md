@@ -81,7 +81,7 @@ git submodule update --init
 
 ```bash
 # Android (debug APK)
-./gradlew :composeApp:assembleDebug
+./gradlew :androidApp:assembleDebug
 
 # Desktop — build and run directly
 ./gradlew :composeApp:run
@@ -92,7 +92,7 @@ git submodule update --init
 ### Android with Vulkan GPU (experimental)
 
 ```bash
-./gradlew :composeApp:assembleDebug -PENABLE_VULKAN_ANDROID=true
+./gradlew :androidApp:assembleDebug -PENABLE_VULKAN_ANDROID=true
 ```
 
 Requires Vulkan SDK and `glslc` in PATH. Expected 5–8× token-per-second improvement on compatible GPUs (Mali, Adreno). See [`docs/vulkan-android-build-strategy.md`](./docs/vulkan-android-build-strategy.md).
@@ -219,7 +219,8 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 
 <!-- This section is updated at the end of each AI-assisted development session -->
 
-- CI now uses publicly fetchable top-level native-engine pins, skips unused historical nested stable-diffusion submodules, and applies llama.cpp fixes only to an isolated build-owned source copy
+- Native engines now use the exact 23 September pair (`llama.cpp` `f46bc30`, stable-diffusion.cpp `c92d73c`) with one shared patched GGML, exact admitted/effective plan checks, and version-namespaced persistence
+- Android packages both runners for arm64-v8a/x86_64, while iOS device and simulator archives merge both engines with exactly one GGML implementation
 - Expanded the documented [CaraML Prism design system](docs/caraml-design-system.md) with app-wide information hierarchy, progressive-disclosure, rounded-surface, compact reflow, and data-heavy toolbar guidance
 - Compact Models now collapses device diagnostics into one remembered summary, uses rounded wrapping result panes and compact metrics, and prioritizes the command and first useful result over secondary facts
 - Artifact now presents identity and the download decision before collapsed technical metadata, with rounded focal/file surfaces and production-component previews at 360–412dp including 200% text
