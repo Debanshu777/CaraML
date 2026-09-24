@@ -35,6 +35,8 @@ set(SD_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(SD_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(SD_BUILD_SHARED_GGML_LIB OFF CACHE BOOL "" FORCE)
 set(SD_USE_SYSTEM_GGML ON CACHE BOOL "" FORCE)
+set(SD_USE_UPSTREAM_GGML ON CACHE BOOL "" FORCE)
+set(SD_GGML_SOURCE_DIR "${LLAMA_SRC}/ggml" CACHE PATH "" FORCE)
 # CaraML writes generated media through its own bounded stores. Keep optional
 # stable-diffusion WebP/WebM submodules out of the native graph so a top-level
 # submodule checkout is sufficient and local builds match CI.
@@ -50,15 +52,14 @@ set(SD_MUSA OFF CACHE BOOL "" FORCE)
 
 add_subdirectory("${SD_SRC}" "${CMAKE_BINARY_DIR}/sd-build")
 
-# stable-diffusion includes a small set of private GGML headers using paths such
-# as `ggml/src/ggml-impl.h`. When SD_USE_SYSTEM_GGML is enabled, resolve those
-# paths against the same build-owned llama.cpp source that provides the linked
-# GGML targets instead of requiring stable-diffusion's nested GGML checkout.
-foreach(_sd_target stable-diffusion sd)
-    if(TARGET ${_sd_target})
-        target_include_directories(${_sd_target} PRIVATE "${LLAMA_SRC}")
-    endif()
-endforeach()
+get_property(_sd_ggml_include TARGET stable-diffusion PROPERTY SD_GGML_PRIVATE_INCLUDE_DIR)
+if(NOT _sd_ggml_include MATCHES "^${LLAMA_SRC}/ggml")
+    message(FATAL_ERROR "stable-diffusion.cpp is not using CaraML's pinned llama.cpp GGML tree")
+endif()
+get_target_property(_sd_compile_definitions stable-diffusion COMPILE_DEFINITIONS)
+if(NOT "SD_USE_UPSTREAM_GGML" IN_LIST _sd_compile_definitions)
+    message(FATAL_ERROR "stable-diffusion.cpp upstream-GGML compatibility mode is disabled")
+endif()
 
 # Phase 07: When GGML_BACKEND_DL=ON, ggml-cpu is built as a MODULE (dlopen-only)
 # and cannot be linked directly. Remove it from stable-diffusion's link deps.
