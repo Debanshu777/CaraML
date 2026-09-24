@@ -17,6 +17,7 @@ struct LlamaRunnerConfigFFI {
     int n_threads_batch;
     int n_batch;
     int n_ubatch;
+    int n_outputs_max_per_seq;
     int flash_attn;
     int offload_kqv;
     int type_k;
@@ -24,6 +25,7 @@ struct LlamaRunnerConfigFFI {
     int n_gpu_layers;
     int use_mmap;
     int use_mlock;
+    int lazy_mode;
     float temperature;
     int auto_fit;
     const char *cpu_mask;
@@ -82,6 +84,7 @@ struct LlamaModelFeatureSupportFFI {
 };
 
 void llama_runner_init(void);
+const char *llama_runner_engine_version(void);
 int llama_runner_load_model_v2(const char *model_path, struct LlamaRunnerConfigFFI config);
 struct LlamaPreflightResultFFI llama_runner_preflight_model(
     const char *model_path,

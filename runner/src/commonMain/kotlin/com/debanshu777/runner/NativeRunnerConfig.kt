@@ -1,5 +1,11 @@
 package com.debanshu777.runner
 
+enum class LlamaLazyMode(val nativeValue: Int) {
+    OFF(0),
+    AUTO(1),
+    ON(2),
+}
+
 data class NativeRunnerConfig(
     val nCtx: Int = 0,
     val nCtxMin: Int = 512,
@@ -7,6 +13,7 @@ data class NativeRunnerConfig(
     val nThreadsBatch: Int = 0,
     val nBatch: Int = 512,
     val nUbatch: Int = 512,
+    val nOutputsMaxPerSequence: Int = 0,
     val flashAttn: Int = -1,
     val offloadKqv: Boolean = true,
     val typeK: Int = 1,
@@ -14,6 +21,7 @@ data class NativeRunnerConfig(
     val nGpuLayers: Int = -1,
     val useMmap: Boolean = true,
     val useMlock: Boolean = false,
+    val lazyMode: LlamaLazyMode = LlamaLazyMode.AUTO,
     val temperature: Float = 0.3f,
     val autoFit: Boolean = true,
     val cpuMask: String = "",       // e.g. "4-7" or "4,5,6,7" or "" (no pinning)

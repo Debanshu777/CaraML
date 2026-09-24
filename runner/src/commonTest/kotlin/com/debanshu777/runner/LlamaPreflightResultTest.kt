@@ -4,9 +4,25 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class LlamaPreflightResultTest {
+    @Test
+    fun septemberRunnerDefaultsRemainBoundedAndAutomatic() {
+        val config = NativeRunnerConfig()
+
+        assertEquals(LlamaLazyMode.AUTO, config.lazyMode)
+        assertEquals(0, config.nOutputsMaxPerSequence)
+    }
+
+    @Test
+    fun engineVersionParserAcceptsOnlyBoundedStableLabels() {
+        assertNull(parseBoundedLlamaEngineVersion("x".repeat(97)))
+        assertNull(parseBoundedLlamaEngineVersion("version with spaces"))
+        assertEquals("llama.cpp-b123", parseBoundedLlamaEngineVersion("b123"))
+    }
+
     @Test
     fun malformedNativePayloadBecomesUnavailable() {
         val result = decodeLlamaPreflight(longArrayOf(1L))
@@ -80,6 +96,8 @@ class LlamaPreflightResultTest {
             "" to NativeRunnerConfig(),
             "bad\u0000path.gguf" to NativeRunnerConfig(),
             "/models/model.gguf" to NativeRunnerConfig(nUbatch = 513, nBatch = 512),
+            "/models/model.gguf" to NativeRunnerConfig(nOutputsMaxPerSequence = 513, nBatch = 512),
+            "/models/model.gguf" to NativeRunnerConfig(useMmap = false, lazyMode = LlamaLazyMode.ON),
         ).forEach { (path, config) ->
             var enteredNative = false
 

@@ -55,6 +55,7 @@ LlamaRunnerConfig to_core_config(const LlamaRunnerConfigFFI &ffi_config) {
     config.n_threads_batch = ffi_config.n_threads_batch;
     config.n_batch = ffi_config.n_batch;
     config.n_ubatch = ffi_config.n_ubatch;
+    config.n_outputs_max_per_seq = ffi_config.n_outputs_max_per_seq;
     config.flash_attn = ffi_config.flash_attn;
     config.offload_kqv = ffi_config.offload_kqv != 0;
     config.type_k = ffi_config.type_k;
@@ -62,6 +63,7 @@ LlamaRunnerConfig to_core_config(const LlamaRunnerConfigFFI &ffi_config) {
     config.n_gpu_layers = ffi_config.n_gpu_layers;
     config.use_mmap = ffi_config.use_mmap != 0;
     config.use_mlock = ffi_config.use_mlock != 0;
+    config.lazy_mode = ffi_config.lazy_mode;
     config.temperature = ffi_config.temperature;
     config.auto_fit = ffi_config.auto_fit != 0;
     config.cpu_mask = ffi_config.cpu_mask ? ffi_config.cpu_mask : "";
@@ -77,6 +79,14 @@ void llama_runner_init(void) {
     ffi_guard_void("init", []() {
         llama_runner_core_set_logger(ios_log);
         llama_runner_core_init(nullptr);
+    });
+}
+
+const char *llama_runner_engine_version(void) {
+    return ffi_guard<const char *>("engine_version", nullptr, []() {
+        thread_local std::string version;
+        version = llama_runner_core_engine_version();
+        return version.empty() ? nullptr : version.c_str();
     });
 }
 

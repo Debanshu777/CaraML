@@ -11,8 +11,9 @@ get_filename_component(LLAMA_SRC "${LLAMA_SRC}" ABSOLUTE)
 set(SD_SRC    "${REPO_ROOT}/libraries/stable-diffusion.cpp")
 
 # Fix GGML_MAX_NAME compatibility between llama.cpp and stable-diffusion.cpp
-# stable-diffusion.cpp requires GGML_MAX_NAME >= 128, but llama.cpp defaults to 64
-add_compile_definitions(GGML_MAX_NAME=128)
+# stable-diffusion.cpp requires GGML_MAX_NAME >= 160, but llama.cpp defaults to 64.
+# Define the candidate pair's stricter shared bound before either engine target exists.
+add_compile_definitions(GGML_MAX_NAME=160)
 
 # --- llama.cpp (brings in ggml + llama + common targets) ---
 if(NOT EXISTS "${LLAMA_SRC}/CMakeLists.txt")

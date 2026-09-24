@@ -15,6 +15,7 @@ import com.debanshu777.runner.cpp.llama_runner_get_gpu_layers
 import com.debanshu777.runner.cpp.llama_runner_get_model_architecture
 import com.debanshu777.runner.cpp.llama_runner_get_stop_reason
 import com.debanshu777.runner.cpp.llama_runner_init
+import com.debanshu777.runner.cpp.llama_runner_engine_version
 import com.debanshu777.runner.cpp.llama_runner_load_model_v2
 import com.debanshu777.runner.cpp.llama_runner_next_token
 import com.debanshu777.runner.cpp.llama_runner_preflight_model
@@ -46,11 +47,15 @@ actual class LlamaRunner {
     }
 
     @OptIn(ExperimentalForeignApi::class)
+    actual fun engineVersion(): String? =
+        parseBoundedLlamaEngineVersion(llama_runner_engine_version()?.toKString())
+
+    @OptIn(ExperimentalForeignApi::class)
     actual fun loadModel(
         modelPath: String,
         config: NativeRunnerConfig,
     ): Boolean {
-        validateLoadModelArgs(modelPath)
+        validateLoadModelArgs(modelPath, config)
         return withFfiConfig(config) { ffiConfig ->
             llama_runner_load_model_v2(modelPath, ffiConfig) != 0
         }
@@ -316,6 +321,7 @@ private inline fun <T> withFfiConfig(
             n_threads_batch = config.nThreadsBatch
             n_batch = config.nBatch
             n_ubatch = config.nUbatch
+            n_outputs_max_per_seq = config.nOutputsMaxPerSequence
             flash_attn = config.flashAttn
             offload_kqv = if (config.offloadKqv) 1 else 0
             type_k = config.typeK
@@ -323,6 +329,7 @@ private inline fun <T> withFfiConfig(
             n_gpu_layers = config.nGpuLayers
             use_mmap = if (config.useMmap) 1 else 0
             use_mlock = if (config.useMlock) 1 else 0
+            lazy_mode = config.lazyMode.nativeValue
             temperature = config.temperature
             auto_fit = if (config.autoFit) 1 else 0
             cpu_mask = cpuMask

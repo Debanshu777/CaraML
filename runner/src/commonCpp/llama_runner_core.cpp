@@ -205,6 +205,18 @@ static bool is_bounded_c_string(const char *value, size_t max_bytes) {
     return length > 0 && length <= max_bytes;
 }
 
+static bool is_bounded_engine_version(const char *value) {
+    if (!is_bounded_c_string(value, 72)) return false;
+    for (size_t index = 0; value[index] != '\0'; index++) {
+        const unsigned char byte = static_cast<unsigned char>(value[index]);
+        const bool accepted = (byte >= 'A' && byte <= 'Z') ||
+            (byte >= 'a' && byte <= 'z') || (byte >= '0' && byte <= '9') ||
+            byte == '.' || byte == '_' || byte == '+' || byte == '-';
+        if (!accepted) return false;
+    }
+    return true;
+}
+
 static bool is_valid_config(const LlamaRunnerConfig &config) {
     return config.n_ctx >= 0 && config.n_ctx <= 16777216 &&
         config.n_ctx_min >= 1 && config.n_ctx_min <= 16777216 &&
@@ -212,10 +224,13 @@ static bool is_valid_config(const LlamaRunnerConfig &config) {
         config.n_threads_batch >= 0 && config.n_threads_batch <= 1024 &&
         config.n_batch >= 1 && config.n_batch <= 1048576 &&
         config.n_ubatch >= 1 && config.n_ubatch <= config.n_batch &&
+        config.n_outputs_max_per_seq >= 0 && config.n_outputs_max_per_seq <= config.n_batch &&
         config.flash_attn >= -1 && config.flash_attn <= 1 &&
         config.type_k >= 0 && config.type_k < GGML_TYPE_COUNT &&
         config.type_v >= 0 && config.type_v < GGML_TYPE_COUNT &&
         config.n_gpu_layers >= -1 && config.n_gpu_layers <= 65536 &&
+        config.lazy_mode >= LLAMA_LAZY_MODE_OFF && config.lazy_mode <= LLAMA_LAZY_MODE_ON &&
+        !(config.lazy_mode == LLAMA_LAZY_MODE_ON && !config.use_mmap) &&
         std::isfinite(config.temperature) &&
         config.temperature >= 0.0f && config.temperature <= 10.0f;
 }
@@ -257,6 +272,7 @@ static FitPlan resolve_fit_plan(const char *model_path, const LlamaRunnerConfig 
         ? config.n_threads_batch : config.n_threads;
     plan.context_params.n_batch = config.n_batch;
     plan.context_params.n_ubatch = config.n_ubatch;
+    plan.context_params.n_outputs_max_per_seq = static_cast<uint32_t>(config.n_outputs_max_per_seq);
     plan.context_params.flash_attn_type = static_cast<llama_flash_attn_type>(config.flash_attn);
     plan.context_params.offload_kqv = config.offload_kqv;
     plan.context_params.type_k = static_cast<ggml_type>(config.type_k);
@@ -264,6 +280,7 @@ static FitPlan resolve_fit_plan(const char *model_path, const LlamaRunnerConfig 
     plan.model_params.load_mode = config.use_mlock
         ? (config.use_mmap ? LLAMA_LOAD_MODE_MMAP_MLOCK : LLAMA_LOAD_MODE_MLOCK)
         : (config.use_mmap ? LLAMA_LOAD_MODE_MMAP : LLAMA_LOAD_MODE_NONE);
+    plan.model_params.lazy_mode = static_cast<llama_lazy_mode>(config.lazy_mode);
 
     if (config.auto_fit) {
         if (config.n_gpu_layers == 0) {
@@ -278,6 +295,7 @@ static FitPlan resolve_fit_plan(const char *model_path, const LlamaRunnerConfig 
             plan.buffer_overrides.data(),
             plan.margins.data(),
             static_cast<uint32_t>(config.n_ctx_min),
+            nullptr,
             GGML_LOG_LEVEL_ERROR);
         if (plan.status != COMMON_PARAMS_FIT_STATUS_SUCCESS) {
             return plan;
@@ -783,6 +801,11 @@ void llama_runner_core_init(const char *backend_path) {
     g_backend_path = backend_path ? backend_path : "";
     g_backend_initialized = true;
     log_line(LLAMA_LOG_INFO, "init: Backend initialized");
+}
+
+std::string llama_runner_core_engine_version() {
+    const char *version = llama_version();
+    return is_bounded_engine_version(version) ? std::string(version) : std::string();
 }
 
 LlamaPreflightResultNative llama_runner_core_preflight(

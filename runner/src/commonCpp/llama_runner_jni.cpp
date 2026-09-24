@@ -87,6 +87,7 @@ bool read_runner_config(JNIEnv *env, jobject config_obj, LlamaRunnerConfig &conf
     const jfieldID n_threads_batch = field("nThreadsBatch", "I");
     const jfieldID n_batch = field("nBatch", "I");
     const jfieldID n_ubatch = field("nUbatch", "I");
+    const jfieldID n_outputs_max_per_seq = field("nOutputsMaxPerSequence", "I");
     const jfieldID flash_attn = field("flashAttn", "I");
     const jfieldID offload_kqv = field("offloadKqv", "Z");
     const jfieldID type_k = field("typeK", "I");
@@ -94,13 +95,14 @@ bool read_runner_config(JNIEnv *env, jobject config_obj, LlamaRunnerConfig &conf
     const jfieldID n_gpu_layers = field("nGpuLayers", "I");
     const jfieldID use_mmap = field("useMmap", "Z");
     const jfieldID use_mlock = field("useMlock", "Z");
+    const jfieldID lazy_mode = field("lazyMode", "Lcom/debanshu777/runner/LlamaLazyMode;");
     const jfieldID temperature = field("temperature", "F");
     const jfieldID auto_fit = field("autoFit", "Z");
     const jfieldID cpu_mask = field("cpuMask", "Ljava/lang/String;");
     const jfieldID cpu_mask_batch = field("cpuMaskBatch", "Ljava/lang/String;");
     if (!n_ctx || !n_ctx_min || !n_threads || !n_threads_batch || !n_batch ||
-        !n_ubatch || !flash_attn || !offload_kqv || !type_k || !type_v ||
-        !n_gpu_layers || !use_mmap || !use_mlock || !temperature || !auto_fit ||
+        !n_ubatch || !n_outputs_max_per_seq || !flash_attn || !offload_kqv || !type_k || !type_v ||
+        !n_gpu_layers || !use_mmap || !use_mlock || !lazy_mode || !temperature || !auto_fit ||
         !cpu_mask || !cpu_mask_batch) {
         return false;
     }
@@ -111,6 +113,7 @@ bool read_runner_config(JNIEnv *env, jobject config_obj, LlamaRunnerConfig &conf
     config.n_threads_batch = env->GetIntField(config_obj, n_threads_batch);
     config.n_batch = env->GetIntField(config_obj, n_batch);
     config.n_ubatch = env->GetIntField(config_obj, n_ubatch);
+    config.n_outputs_max_per_seq = env->GetIntField(config_obj, n_outputs_max_per_seq);
     config.flash_attn = env->GetIntField(config_obj, flash_attn);
     config.offload_kqv = env->GetBooleanField(config_obj, offload_kqv) != JNI_FALSE;
     config.type_k = env->GetIntField(config_obj, type_k);
@@ -120,6 +123,16 @@ bool read_runner_config(JNIEnv *env, jobject config_obj, LlamaRunnerConfig &conf
     config.use_mlock = env->GetBooleanField(config_obj, use_mlock) != JNI_FALSE;
     config.temperature = env->GetFloatField(config_obj, temperature);
     config.auto_fit = env->GetBooleanField(config_obj, auto_fit) != JNI_FALSE;
+    if (env->ExceptionCheck()) return false;
+
+    ScopedLocalRef lazy_mode_ref(env, env->GetObjectField(config_obj, lazy_mode));
+    if (!lazy_mode_ref.get() || env->ExceptionCheck()) return false;
+    ScopedLocalRef lazy_mode_class_ref(env, env->GetObjectClass(lazy_mode_ref.get()));
+    jclass lazy_mode_class = reinterpret_cast<jclass>(lazy_mode_class_ref.get());
+    if (!lazy_mode_class || env->ExceptionCheck()) return false;
+    const jfieldID lazy_mode_value = env->GetFieldID(lazy_mode_class, "nativeValue", "I");
+    if (!lazy_mode_value || env->ExceptionCheck()) return false;
+    config.lazy_mode = env->GetIntField(lazy_mode_ref.get(), lazy_mode_value);
     if (env->ExceptionCheck()) return false;
 
     ScopedLocalRef mask_ref(env, env->GetObjectField(config_obj, cpu_mask));
@@ -171,6 +184,14 @@ Java_com_debanshu777_runner_LlamaRunner_nativeInit(JNIEnv *env, jobject, jstring
         if (!path.get()) return;
         llama_runner_core_set_logger(platform_log);
         llama_runner_core_init(path.get());
+    });
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_debanshu777_runner_LlamaRunner_nativeEngineVersion(JNIEnv *env, jobject) {
+    return jni_guard<jstring>("nativeEngineVersion failed", nullptr, [&]() {
+        const std::string version = llama_runner_core_engine_version();
+        return version.empty() ? nullptr : env->NewStringUTF(version.c_str());
     });
 }
 

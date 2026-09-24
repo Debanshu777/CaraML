@@ -21,12 +21,22 @@ actual class LlamaRunner {
         nativeInit(nativeLibDir)
     }
 
+    actual fun engineVersion(): String? = if (nativeAvailable) {
+        try {
+            parseBoundedLlamaEngineVersion(nativeEngineVersion())
+        } catch (_: Throwable) {
+            null
+        }
+    } else {
+        null
+    }
+
     actual fun loadModel(
         modelPath: String,
         config: NativeRunnerConfig,
     ): Boolean {
         requireNativeRuntime()
-        validateLoadModelArgs(modelPath)
+        validateLoadModelArgs(modelPath, config)
         return nativeLoadModel(modelPath, config)
     }
 
@@ -155,6 +165,7 @@ actual class LlamaRunner {
         if (nativeAvailable) nativeGetModelArchitecture() else null
 
     private external fun nativeInit(libDir: String)
+    private external fun nativeEngineVersion(): String?
     private external fun nativeLoadModel(
         modelPath: String,
         config: NativeRunnerConfig,

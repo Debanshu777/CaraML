@@ -159,3 +159,7 @@ kotlin {
         }
     }
 }
+
+tasks.matching { it.name.startsWith("cinteropLlamaRunner") }.configureEach {
+    inputs.file(layout.projectDirectory.file("src/iosMain/cpp/llama_runner.h"))
+}

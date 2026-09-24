@@ -4,6 +4,7 @@ import kotlinx.coroutines.CancellationException
 
 private const val MAX_ARCHITECTURE_LABEL_BYTES = 64
 private const val MAX_QUANTIZATION_LABEL_BYTES = 32
+private const val MAX_ENGINE_VERSION_BYTES = 72
 
 enum class NativeFeatureState {
     SUPPORTED,
@@ -80,6 +81,17 @@ private fun String.isSafeNativeFeatureLabel(maxBytes: Int): Boolean {
     if (isEmpty() || length > maxBytes) return false
     val bytes = encodeToByteArray()
     return bytes.size <= maxBytes && bytes.all { byte -> byte.toInt() in 0x20..0x7e }
+}
+
+internal fun parseBoundedLlamaEngineVersion(rawVersion: String?): String? {
+    if (rawVersion == null || rawVersion.isEmpty() || rawVersion.length > MAX_ENGINE_VERSION_BYTES) {
+        return null
+    }
+    val valid = rawVersion.all { character ->
+        character in 'A'..'Z' || character in 'a'..'z' || character in '0'..'9' ||
+            character == '.' || character == '_' || character == '+' || character == '-'
+    }
+    return rawVersion.takeIf { valid }?.let { "llama.cpp-$it" }
 }
 
 private fun Long.toFeatureState(): NativeFeatureState? = when (this) {

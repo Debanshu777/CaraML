@@ -152,6 +152,7 @@ struct LlamaRunnerConfig {
     int n_threads_batch = 0;      // prompt processing threads (0 = same as n_threads)
     int n_batch        = 512;
     int n_ubatch       = 512;
+    int n_outputs_max_per_seq = 0;
     int flash_attn     = -1;      // -1=auto, 0=off, 1=on (maps to llama_flash_attn_type)
     bool offload_kqv   = true;
     int type_k         = 1;       // ggml_type for KV cache keys (1=F16, 8=Q8_0)
@@ -161,6 +162,7 @@ struct LlamaRunnerConfig {
     int n_gpu_layers   = -1;      // -1 = auto-fit (all layers), 0 = CPU only
     bool use_mmap      = true;
     bool use_mlock     = false;
+    int lazy_mode      = 1;       // 0=off, 1=auto, 2=on
 
     // Sampler
     float temperature  = 0.3f;
@@ -194,6 +196,7 @@ LlamaModelFeatureSupportNative llama_runner_core_probe_model_features(
 std::string llama_runner_core_generate(const char *prompt, int max_tokens, float temperature);
 void llama_runner_core_unload();
 void llama_runner_core_shutdown();
+std::string llama_runner_core_engine_version();
 
 bool llama_runner_core_start_generate(const char *prompt, int max_tokens, float temperature, const char *grammar);
 const char *llama_runner_core_next_token();

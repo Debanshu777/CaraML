@@ -214,6 +214,19 @@ void pinned_native_quantization_labels_are_exact() {
     }
 }
 
+void engine_version_is_bounded_and_stable() {
+    const std::string version = llama_runner_core_engine_version();
+    expect(!version.empty(), "candidate engine version was rejected");
+    expect(version.size() <= 72, "candidate engine version exceeded the persistence bound");
+    for (const unsigned char byte : version) {
+        expect(
+            (byte >= 'A' && byte <= 'Z') || (byte >= 'a' && byte <= 'z') ||
+                (byte >= '0' && byte <= '9') || byte == '.' || byte == '_' ||
+                byte == '+' || byte == '-',
+            "candidate engine version contained an unsafe byte");
+    }
+}
+
 void calibration_rejects_unbounded_requests_without_allocating() {
     const auto too_short = llama_runner_core_calibrate_backend(
         1, LLAMA_BACKEND_CPU, 499, 4LL * 1024LL * 1024LL);
@@ -418,6 +431,7 @@ int main() {
     repeated_initialization_is_idempotent();
     core_gate_blocks_discovery_but_not_atomic_cancellation();
     pinned_native_quantization_labels_are_exact();
+    engine_version_is_bounded_and_stable();
     calibration_rejects_unbounded_requests_without_allocating();
     calibration_cancellation_is_atomic_and_nonblocking();
     reserved_calibration_latches_cancel_before_native_entry();

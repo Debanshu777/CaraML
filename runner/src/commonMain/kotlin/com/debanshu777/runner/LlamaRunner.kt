@@ -3,6 +3,8 @@ package com.debanshu777.runner
 expect class LlamaRunner() {
     fun initialize(nativeLibDir: String)
 
+    fun engineVersion(): String?
+
     fun loadModel(
         modelPath: String,
         config: NativeRunnerConfig,

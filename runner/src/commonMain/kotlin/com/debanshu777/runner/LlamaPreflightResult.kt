@@ -142,14 +142,4 @@ private fun isValidPreflightPath(modelPath: String): Boolean =
     modelPath.isNotBlank() && '\u0000' !in modelPath && modelPath.encodeToByteArray().size <= 4_096
 
 private fun isValidPreflightConfig(config: NativeRunnerConfig): Boolean =
-    config.nCtx in 0..16_777_216 &&
-        config.nCtxMin in 1..16_777_216 &&
-        config.nThreads in 1..1_024 &&
-        config.nThreadsBatch in 0..1_024 &&
-        config.nBatch in 1..1_048_576 &&
-        config.nUbatch in 1..config.nBatch &&
-        config.flashAttn in -1..1 &&
-        config.typeK in 0..42 &&
-        config.typeV in 0..42 &&
-        config.nGpuLayers in -1..65_536 &&
-        config.temperature.isFinite() && config.temperature in 0.0f..10.0f
+    isValidNativeRunnerConfig(config)
