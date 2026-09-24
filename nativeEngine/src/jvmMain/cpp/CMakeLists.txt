@@ -37,6 +37,30 @@ endif()
 include("${CMAKE_CURRENT_LIST_DIR}/../../commonCpp/GgmlUnified.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/../../../../runner/src/commonCpp/LlamaRunnerCommon.cmake")
 
+function(caraml_assert_patched_source_contains source_path expected failure_message)
+    file(READ "${source_path}" _caraml_source)
+    string(FIND "${_caraml_source}" "${expected}" _caraml_match)
+    if(_caraml_match EQUAL -1)
+        message(FATAL_ERROR "${failure_message}")
+    endif()
+endfunction()
+
+caraml_assert_patched_source_contains(
+    "${LLAMA_SRC}/ggml/src/ggml-metal/ggml-metal-device.m"
+    "ggml_metal_compile_options_set_lang(options, props->has_tensor, props->has_bfloat)"
+    "CaraML Metal language safety patch is missing"
+)
+caraml_assert_patched_source_contains(
+    "${LLAMA_SRC}/ggml/src/ggml-vulkan/ggml-vulkan.cpp"
+    "op->src[0]->type == GGML_TYPE_F32 && op->type == GGML_TYPE_F32"
+    "CaraML Vulkan F32 admission patch is missing"
+)
+caraml_assert_patched_source_contains(
+    "${LLAMA_SRC}/common/fit.cpp"
+    "ScopedRestore<ggml_log_callback, void *>"
+    "CaraML fit-probe cleanup patch is missing"
+)
+
 set(JNI_INCLUDE_DIRS "")
 if(DEFINED ENV{JAVA_HOME})
     set(JAVA_HOME "$ENV{JAVA_HOME}")

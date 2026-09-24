@@ -11,6 +11,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace {
 
@@ -18,9 +19,17 @@ struct FakeModel {};
 struct FakeContext {};
 int fake_model_frees = 0;
 int fake_context_frees = 0;
+std::vector<std::string> cleanup_order;
 
-void free_fake_model(FakeModel *) { fake_model_frees++; }
-void free_fake_context(FakeContext *) { fake_context_frees++; }
+void free_fake_model(FakeModel *) {
+    fake_model_frees++;
+    cleanup_order.emplace_back("model");
+}
+void free_fake_context(FakeContext *) {
+    fake_context_frees++;
+    cleanup_order.emplace_back("context");
+}
+void restore_fake_logger(int, void *) { cleanup_order.emplace_back("logger"); }
 
 void expect(bool condition, const char *message) {
     if (!condition) {
@@ -92,10 +101,12 @@ void streamed_session_excludes_unload_between_tokens() {
 void exceptional_context_path_releases_both_handles() {
     fake_model_frees = 0;
     fake_context_frees = 0;
+    cleanup_order.clear();
     FakeModel model;
     FakeContext context;
 
     try {
+        caraml::ScopedRestore<int, void *> logger(0, nullptr, restore_fake_logger);
         caraml::ScopedModelContext<FakeModel, FakeContext> resources(
             free_fake_model,
             free_fake_context);
@@ -107,6 +118,9 @@ void exceptional_context_path_releases_both_handles() {
 
     expect(fake_context_frees == 1, "exceptional path did not release context");
     expect(fake_model_frees == 1, "exceptional path did not release model");
+    expect(
+        cleanup_order == std::vector<std::string>({"context", "model", "logger"}),
+        "native fit resources were not released before restoring the logger");
 }
 
 void repeated_initialization_is_idempotent() {

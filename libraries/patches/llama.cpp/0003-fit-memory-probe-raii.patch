@@ -1,16 +1,16 @@
 diff --git a/common/fit.cpp b/common/fit.cpp
-index c82d066ad..683c57490 100644
+index 877db92f6..990409376 100644
 --- a/common/fit.cpp
 +++ b/common/fit.cpp
-@@ -1,6 +1,7 @@
- #include "fit.h"
+@@ -2,6 +2,7 @@
  
+ #include "json.h"
  #include "log.h"
 +#include "scoped-model-context.h"
  
  #include "../src/llama-ext.h"
  
-@@ -51,6 +52,10 @@ static std::vector<llama_device_memory_data> common_get_device_memory_data_impl(
+@@ -52,23 +53,26 @@ static std::vector<llama_device_memory_data> common_get_device_memory_data_impl(
          const ggml_log_level level_eff = level >= ud->min_level ? level : GGML_LOG_LEVEL_DEBUG;
          ud->original_logger.callback(level_eff, text, ud->original_logger.user_data);
      }, &ud);
@@ -21,7 +21,7 @@ index c82d066ad..683c57490 100644
  
      llama_model_params mparams_copy = *mparams;
      mparams_copy.no_alloc  = true;
-@@ -58,16 +63,15 @@ static std::vector<llama_device_memory_data> common_get_device_memory_data_impl(
+     mparams_copy.load_mode = LLAMA_LOAD_MODE_NONE;
  
      llama_model * model = llama_model_load_from_file(path_model, mparams_copy);
      if (model == nullptr) {
@@ -40,7 +40,7 @@ index c82d066ad..683c57490 100644
  
      const size_t nd = llama_model_n_devices(model);
      std::vector<llama_device_memory_data> ret(nd + 1);
-@@ -142,10 +146,6 @@ static std::vector<llama_device_memory_data> common_get_device_memory_data_impl(
+@@ -146,10 +150,6 @@ static std::vector<llama_device_memory_data> common_get_device_memory_data_impl(
  
      common_memory_breakdown_print(ctx);
  

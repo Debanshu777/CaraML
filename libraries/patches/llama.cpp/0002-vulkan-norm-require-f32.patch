@@ -1,8 +1,8 @@
 diff --git a/ggml/src/ggml-vulkan/ggml-vulkan.cpp b/ggml/src/ggml-vulkan/ggml-vulkan.cpp
-index ff72fa60a..8b06ff784 100644
+index 45be2d347..2452d294a 100644
 --- a/ggml/src/ggml-vulkan/ggml-vulkan.cpp
 +++ b/ggml/src/ggml-vulkan/ggml-vulkan.cpp
-@@ -17911,10 +17911,12 @@ static bool ggml_backend_vk_device_supports_op(ggml_backend_dev_t dev, const ggm
+@@ -15349,10 +15349,11 @@ static bool ggml_backend_vk_device_supports_op(ggml_backend_dev_t dev, const ggm
          case GGML_OP_RMS_NORM:
              return true;
          case GGML_OP_GROUP_NORM:
@@ -10,19 +10,17 @@ index ff72fa60a..8b06ff784 100644
          case GGML_OP_NORM:
          case GGML_OP_L2_NORM:
 -            return op->src[0]->type == GGML_TYPE_F32 && op->type == GGML_TYPE_F32;
-+            // Only F32→F32 pipelines exist; non-F32 types fall back to CPU.
 +            return ggml_is_contiguous(op->src[0]) &&
 +                   op->src[0]->type == GGML_TYPE_F32 &&
 +                   op->type == GGML_TYPE_F32;
          case GGML_OP_ADD:
          case GGML_OP_SUB:
          case GGML_OP_MUL:
-@@ -18052,7 +18054,8 @@ static bool ggml_backend_vk_device_supports_op(ggml_backend_dev_t dev, const ggm
+@@ -15527,7 +15528,7 @@ static bool ggml_backend_vk_device_supports_op(ggml_backend_dev_t dev, const ggm
              return op->src[1]->type == GGML_TYPE_F32
                  && (op->type == GGML_TYPE_F32 || op->type == GGML_TYPE_F16);
          case GGML_OP_TIMESTEP_EMBEDDING:
 -            return op->src[0]->type == GGML_TYPE_F32;
-+            // Pipeline requires both src0 and dst to be F32.
 +            return op->src[0]->type == GGML_TYPE_F32 && op->type == GGML_TYPE_F32;
          case GGML_OP_CONV_2D_DW:
              return (op->src[0]->type == GGML_TYPE_F32 || op->src[0]->type == GGML_TYPE_F16)

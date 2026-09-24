@@ -1,26 +1,49 @@
 diff --git a/ggml/src/ggml-metal/ggml-metal-device.m b/ggml/src/ggml-metal/ggml-metal-device.m
-index 27cb16835..c7027d170 100644
+index 2039b77ce..582a11929 100644
 --- a/ggml/src/ggml-metal/ggml-metal-device.m
 +++ b/ggml/src/ggml-metal/ggml-metal-device.m
-@@ -227,6 +227,21 @@ ggml_metal_library_t ggml_metal_library_init(ggml_metal_device_t dev) {
+@@ -185,12 +185,21 @@
+ static void ggml_metal_device_disable_tensor(ggml_metal_device_t dev);
+ 
+ // the tensor API headers are exposed to the shader compiler only at Metal language version 4.0
+-static void ggml_metal_compile_options_set_lang(MTLCompileOptions * options, bool has_tensor) {
+-    if (!has_tensor) {
++static void ggml_metal_compile_options_set_lang(MTLCompileOptions * options, bool has_tensor, bool has_bfloat) {
++    if (has_tensor) {
++        options.languageVersion = (MTLLanguageVersion) MTLLanguageVersion4_0_GGML;
+         return;
+     }
+ 
+-    options.languageVersion = (MTLLanguageVersion) MTLLanguageVersion4_0_GGML;
++    if (!has_bfloat) {
++        return;
++    }
++
++    if (@available(macOS 15.0, iOS 18.0, tvOS 18.0, visionOS 2.0, *)) {
++        options.languageVersion = MTLLanguageVersion3_2;
++    } else if (@available(macOS 14.0, iOS 17.0, tvOS 17.0, *)) {
++        options.languageVersion = MTLLanguageVersion3_1;
++    }
+ }
+ 
+ // Parse a `#include "name"` line. Returns the quoted name in *include_name on
+@@ -332,7 +341,8 @@ ggml_metal_library_t ggml_metal_library_init(ggml_metal_device_t dev) {
+             @autoreleasepool {
                  MTLCompileOptions * options = [MTLCompileOptions new];
                  options.preprocessorMacros = prep;
+-                ggml_metal_compile_options_set_lang(options, ggml_metal_device_get_props(res->dev)->has_tensor);
++                const struct ggml_metal_device_props * props = ggml_metal_device_get_props(res->dev);
++                ggml_metal_compile_options_set_lang(options, props->has_tensor, props->has_bfloat);
  
-+                // Pin Metal shading language version >= 3.1 so the bf16
-+                // kernels in ggml-metal.metal (gated on
-+                // `__METAL_VERSION__ >= 310`) compile into the library. Some
-+                // hosts (notably JetBrains Runtime / older bundled SDKs)
-+                // otherwise default to a language version that strips them,
-+                // while ggml's C-side `has_bfloat` flag remains true based on
-+                // the GPU family check — bf16 ops then dispatch to a
-+                // non-existent Metal pipeline and segfault inside
-+                // `ggml_metal_encoder_set_pipeline`.
-+                if (@available(macOS 15.0, iOS 18.0, tvOS 18.0, visionOS 2.0, *)) {
-+                    options.languageVersion = MTLLanguageVersion3_2;
-+                } else if (@available(macOS 14.0, iOS 17.0, tvOS 17.0, *)) {
-+                    options.languageVersion = MTLLanguageVersion3_1;
-+                }
-+
-                 //[options setFastMathEnabled:false];
+                 lib = [device newLibraryWithSource:src options:options error:&error];
  
-                 library = [device newLibraryWithSource:src options:options error:&error];
+@@ -610,7 +620,8 @@ id<MTLLibrary> ggml_metal_compile_library(
+ 
+         MTLCompileOptions * options = [MTLCompileOptions new];
+         options.preprocessorMacros = prep;
+-        ggml_metal_compile_options_set_lang(options, ggml_metal_device_get_props(dev)->has_tensor);
++        const struct ggml_metal_device_props * props = ggml_metal_device_get_props(dev);
++        ggml_metal_compile_options_set_lang(options, props->has_tensor, props->has_bfloat);
+ 
+         library = [device newLibraryWithSource:src options:options error:&error];
+         if (error) {
