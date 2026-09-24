@@ -84,6 +84,20 @@ fun discoverLlamaPatches(): List<File> {
 val pinnedLlamaSourceDir = rootProject.layout.projectDirectory.dir("libraries/llama.cpp").asFile
 val patchedLlamaSourceDir = layout.buildDirectory.dir("patched-native-sources/llama.cpp")
 val patchedLlamaSourcePath = patchedLlamaSourceDir.get().asFile.absolutePath
+
+val verifyNativeSubmodulePins by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Verify the exact public native-engine gitlinks and clean checkouts"
+    workingDir(rootProject.projectDir)
+    commandLine(
+        "sh",
+        project.layout.projectDirectory
+            .file("src/nativeTest/scripts/native_submodule_pin_test.sh")
+            .asFile.absolutePath,
+    )
+    outputs.upToDateWhen { false }
+}
+
 val pinnedLlamaCommit = providers.exec {
     commandLine("git", "-C", pinnedLlamaSourceDir.absolutePath, "rev-parse", "--short=7", "HEAD")
 }.standardOutput.asText.map(String::trim)

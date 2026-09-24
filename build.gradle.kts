@@ -16,6 +16,7 @@ tasks.register("verifyProject") {
         ":huggingFaceManager:jvmTest",
         ":runner:jvmTest",
         ":diffusionRunner:jvmTest",
+        ":nativeEngine:verifyNativeSubmodulePins",
         ":nativeEngine:testDiffusionRunnerNativeDesktop",
         ":nativeEngine:testArtifactFsAndroidRootDesktop",
     )
