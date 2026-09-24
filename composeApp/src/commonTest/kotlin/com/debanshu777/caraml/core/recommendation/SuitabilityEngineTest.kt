@@ -3,6 +3,7 @@ package com.debanshu777.caraml.core.recommendation
 import com.debanshu777.caraml.core.platform.BackendKind
 import com.debanshu777.caraml.core.platform.MemoryTopology
 import com.debanshu777.caraml.core.rating.SdArchitecture
+import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -10,6 +11,39 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class SuitabilityEngineTest {
+    @Test
+    fun profiledDiscreteGpuEnablesSegmentedComputeAndPrefetchOnlyWithTrustedHeadroom() {
+        val workload = InstalledModelWorkloadFactory()
+            .createForBrowse(ModelHubBrowseMode.DiffusionImage) as DiffusionWorkloadConfig
+        val profiled = task6Hardware(
+            backend = BackendKind.CUDA,
+            topology = MemoryTopology.DISCRETE,
+            backends = listOf(
+                task6Backend(
+                    kind = BackendKind.CUDA,
+                    additionalAllocatableBytes = 4L * 1_073_741_824L,
+                    headroomConfidence = Confidence.HIGH,
+                ),
+            ),
+        )
+        val untrusted = task6Hardware(
+            backend = BackendKind.CUDA,
+            topology = MemoryTopology.DISCRETE,
+        )
+
+        val profiledPlans = engine(SupportEvidence.Supported)
+            .assessPlans(task6DiffusionDescriptor(), profiled, workload)
+            .values.map { it.plan as DiffusionRunPlan }
+        val untrustedPlans = engine(SupportEvidence.Supported)
+            .assessPlans(task6DiffusionDescriptor(), untrusted, workload)
+            .values.map { it.plan as DiffusionRunPlan }
+
+        assertTrue(profiledPlans.any { it.segmentedCompute && it.maxVramBytes != null })
+        assertTrue(profiledPlans.any { it.prefetch })
+        assertTrue(profiledPlans.none { it.prefetch && !it.segmentedCompute })
+        assertTrue(untrustedPlans.none { it.segmentedCompute || it.prefetch })
+    }
+
     @Test
     fun hardCompatibilityRunsBeforeCandidateGenerationAndEstimation() {
         val engine = engine(

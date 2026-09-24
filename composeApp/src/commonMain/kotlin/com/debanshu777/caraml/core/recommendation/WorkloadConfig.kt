@@ -63,6 +63,7 @@ data class PlanningSettings private constructor(
     val supportsMaxVram: Boolean,
     val supportsLayerStreaming: Boolean,
     val maxVramBytes: Long?,
+    val prefetchHeadroomBytes: Long?,
 ) {
     constructor(
         engineMaxContextTokens: Int,
@@ -84,6 +85,7 @@ data class PlanningSettings private constructor(
         supportsMaxVram: Boolean = false,
         supportsLayerStreaming: Boolean = false,
         maxVramBytes: Long? = null,
+        prefetchHeadroomBytes: Long? = null,
     ) : this(
         engineMaxContextTokens = engineMaxContextTokens,
         engineMaxBatchSize = engineMaxBatchSize,
@@ -104,6 +106,7 @@ data class PlanningSettings private constructor(
         supportsMaxVram = supportsMaxVram,
         supportsLayerStreaming = supportsLayerStreaming,
         maxVramBytes = maxVramBytes,
+        prefetchHeadroomBytes = prefetchHeadroomBytes,
     )
 }
 

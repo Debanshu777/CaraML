@@ -200,7 +200,7 @@ class InferenceObservationPlanTest {
         keepClipOnCpu = keepClip,
         keepVaeOnCpu = keepVae,
         maxVramBytes = maxVramBytes,
-        layerStreaming = streaming,
+        segmentedCompute = streaming,
         requiresUserAcceptance = false,
         backend = BackendKind.METAL,
         memoryTopology = MemoryTopology.UNIFIED,

@@ -3,6 +3,7 @@ package com.debanshu777.caraml.core.recommendation
 import com.debanshu777.caraml.core.platform.BackendKind
 import com.debanshu777.diffusionrunner.DiffusionModelConfig
 import com.debanshu777.diffusionrunner.DiffusionRuntimeBackend
+import com.debanshu777.runner.LlamaLazyMode
 import com.debanshu777.runner.NativeRunnerConfig
 
 data class DiffusionExecutionConfig(
@@ -29,6 +30,7 @@ object NativeRunPlanAdapter {
             nGpuLayers = if (cpuOnly) 0 else plan.gpuLayerCount ?: -1,
             offloadKqv = !cpuOnly && base.offloadKqv,
             useMmap = plan.useMmap,
+            lazyMode = if (plan.useMmap) LlamaLazyMode.AUTO else LlamaLazyMode.OFF,
             autoFit = !cpuOnly && plan.gpuLayerCount == null,
         )
     }
@@ -39,6 +41,7 @@ object NativeRunPlanAdapter {
     ): DiffusionExecutionConfig {
         requireValid(plan)
         require(plan.batchSize == 1) { "Unsupported diffusion execution configuration" }
+        val nativeBudget = plan.maxVramBytes?.toNativeDiffusionBudget()
         return DiffusionExecutionConfig(
             model = base.copy(
                 runtimeBackend = plan.backend.toDiffusionRuntimeBackend(),
@@ -46,8 +49,9 @@ object NativeRunPlanAdapter {
                 keepClipOnCpu = plan.keepClipOnCpu,
                 keepVaeOnCpu = plan.keepVaeOnCpu,
                 vaeTiling = plan.vaeTiling,
-                maxVram = plan.maxVramBytes?.toDecimalGib().orEmpty(),
-                streamLayers = plan.layerStreaming,
+                maxVram = nativeBudget?.gibText.orEmpty(),
+                segmentedCompute = plan.segmentedCompute,
+                prefetch = plan.prefetch,
                 autoFit = false,
             ),
             mode = plan.mode,
@@ -56,7 +60,7 @@ object NativeRunPlanAdapter {
             frameCount = plan.frameCount,
             batchSize = plan.batchSize,
             steps = plan.steps,
-            maxVramBytes = plan.maxVramBytes,
+            maxVramBytes = nativeBudget?.bytes,
         )
     }
 
@@ -80,6 +84,22 @@ private val KvCacheType.nativeValue: Int
         KvCacheType.Q4_0 -> 2
     }
 
-private fun Long.toDecimalGib(): String = (toDouble() / GIB_BYTES.toDouble()).toString()
+internal data class NativeDiffusionBudget(
+    val gibText: String,
+    val bytes: Long,
+)
+
+internal fun Long.toNativeDiffusionBudget(): NativeDiffusionBudget {
+    require(this > 0L) { "Diffusion VRAM budget must be positive" }
+    var gib = (toDouble() / GIB_BYTES.toDouble()).toFloat()
+    require(gib.isFinite() && gib > 0f) { "Diffusion VRAM budget is not representable" }
+    var effectiveBytes = (gib.toDouble() * GIB_BYTES.toDouble()).toLong()
+    while (effectiveBytes > this) {
+        gib = Float.fromBits(gib.toRawBits() - 1)
+        effectiveBytes = (gib.toDouble() * GIB_BYTES.toDouble()).toLong()
+    }
+    require(effectiveBytes in 1..this) { "Diffusion VRAM budget is not representable" }
+    return NativeDiffusionBudget(gibText = gib.toString(), bytes = effectiveBytes)
+}
 
 private const val GIB_BYTES = 1_073_741_824L

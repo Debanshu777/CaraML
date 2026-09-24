@@ -132,7 +132,9 @@ class RunPlanGenerator {
             vaeTiling: Boolean = workload.vaeTiling,
             offloadToCpu: Boolean = effectiveOffloadToCpu,
             maxVramBytes: Long? = workload.maxVramBytes,
-            layerStreaming: Boolean = workload.layerStreaming,
+            segmentedCompute: Boolean = workload.layerStreaming,
+            prefetch: Boolean = segmentedCompute &&
+                (settings.prefetchHeadroomBytes ?: 0L) >= MIN_DIFFUSION_PREFETCH_HEADROOM_BYTES,
             requiresUserAcceptance: Boolean = false,
             compromises: Collection<DiffusionPlanCompromise> = emptyList(),
         ) {
@@ -149,7 +151,8 @@ class RunPlanGenerator {
                 keepClipOnCpu = effectiveKeepClipOnCpu,
                 keepVaeOnCpu = effectiveKeepVaeOnCpu,
                 maxVramBytes = maxVramBytes,
-                layerStreaming = layerStreaming,
+                segmentedCompute = segmentedCompute,
+                prefetch = prefetch,
                 requiresUserAcceptance = requiresUserAcceptance,
                 backend = settings.backend,
                 memoryTopology = settings.memoryTopology,
@@ -183,7 +186,7 @@ class RunPlanGenerator {
             var vaeTiling = workload.vaeTiling
             var offloadToCpu = effectiveOffloadToCpu
             var maxVramBytes = workload.maxVramBytes
-            var layerStreaming = workload.layerStreaming
+            var segmentedCompute = workload.layerStreaming
             val compromises = mutableListOf<DiffusionPlanCompromise>()
             optionalAxes.forEachIndexed { index, axis ->
                 if (mask and (1 shl index) == 0) return@forEachIndexed
@@ -197,7 +200,7 @@ class RunPlanGenerator {
                         compromises += DiffusionPlanCompromise.MAX_VRAM_LIMIT
                     }
                     DiffusionFallbackAxis.LAYER_STREAMING -> {
-                        layerStreaming = true
+                        segmentedCompute = true
                         if (!offloadToCpu) {
                             offloadToCpu = true
                             compromises += DiffusionPlanCompromise.CPU_OFFLOAD
@@ -210,7 +213,7 @@ class RunPlanGenerator {
                 vaeTiling = vaeTiling,
                 offloadToCpu = offloadToCpu,
                 maxVramBytes = maxVramBytes,
-                layerStreaming = layerStreaming,
+                segmentedCompute = segmentedCompute,
                 compromises = compromises,
             )
         }
@@ -269,7 +272,9 @@ class RunPlanGenerator {
             return false
         }
         if (workload.vaeTiling && !settings.supportsVaeTiling) return false
-        if (workload.layerStreaming && (!settings.supportsLayerStreaming || !workload.offloadToCpu)) return false
+        if (workload.layerStreaming &&
+            (!settings.supportsLayerStreaming || !workload.offloadToCpu || workload.maxVramBytes == null)
+        ) return false
         if (workload.maxVramBytes != null) {
             if (
                 !settings.supportsMaxVram ||
@@ -279,6 +284,9 @@ class RunPlanGenerator {
             if (settings.maxVramBytes != null && workload.maxVramBytes > settings.maxVramBytes) return false
         }
         if (settings.maxVramBytes?.let { it !in 1..DescriptorLimits.MAX_BUNDLE_BYTES } == true) {
+            return false
+        }
+        if (settings.prefetchHeadroomBytes?.let { it !in 0..DescriptorLimits.MAX_BUNDLE_BYTES } == true) {
             return false
         }
         return true
@@ -416,6 +424,8 @@ private enum class DiffusionFallbackAxis {
     MAX_VRAM,
     LAYER_STREAMING,
 }
+
+internal const val MIN_DIFFUSION_PREFETCH_HEADROOM_BYTES = 256L * 1_048_576L
 
 private data class CandidateIndex(
     val contextIndex: Int,

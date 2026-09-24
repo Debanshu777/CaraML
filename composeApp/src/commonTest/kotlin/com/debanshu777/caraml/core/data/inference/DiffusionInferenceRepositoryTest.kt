@@ -5,6 +5,7 @@ import com.debanshu777.caraml.core.platform.MemoryTopology
 import com.debanshu777.caraml.core.recommendation.DiffusionMode
 import com.debanshu777.caraml.core.recommendation.DiffusionRunPlan
 import com.debanshu777.caraml.core.recommendation.NativeLoadPreflight
+import com.debanshu777.caraml.core.recommendation.NativeRunPlanAdapter
 import com.debanshu777.diffusionrunner.DiffusionArchitecture
 import com.debanshu777.diffusionrunner.DiffusionBackendDeviceType
 import com.debanshu777.diffusionrunner.DiffusionBackendKind
@@ -144,12 +145,87 @@ class DiffusionInferenceRepositoryTest {
                 ),
             ),
             backends = listOf(backend(DiffusionBackendKind.CPU, ordinal = 0)),
-            streamLayers = true,
+            segmentedCompute = true,
         )
 
         assertEquals(
             NativeLoadPreflight.Invalid,
             exactDiffusionNativePreflight(cpuPlan(), bundledConfig(), report),
+        )
+    }
+
+    @Test
+    fun nativeBudgetAndAutoFitMustMatchTheAdmittedPlan() {
+        val budget = 1_073_741_824L
+        val plan = plan(
+            backend = BackendKind.VULKAN,
+            keepClipOnCpu = false,
+            keepVaeOnCpu = false,
+            offloadToCpu = false,
+            maxVramBytes = budget,
+        )
+        val config = bundledConfig().copy(
+            runtimeBackend = com.debanshu777.diffusionrunner.DiffusionRuntimeBackend.VULKAN,
+            maxVram = "1.0",
+        )
+        val matching = fit(
+            components = listOf(
+                component(
+                    role = DiffusionComponentRole.DIFFUSION_MODEL,
+                    sourceRole = DiffusionComponentRole.MODEL_BUNDLE,
+                    runtime = DiffusionRuntimePlacement.GPU,
+                    backendMask = 1L,
+                    params = DiffusionParameterPlacement.DEFAULT,
+                ),
+            ),
+            backends = listOf(backend(DiffusionBackendKind.VULKAN, 0, budget)),
+        )
+
+        assertEquals(NativeLoadPreflight.Fit, exactDiffusionNativePreflight(plan, config, matching))
+        assertEquals(
+            NativeLoadPreflight.Invalid,
+            exactDiffusionNativePreflight(
+                plan,
+                config,
+                matching.copy(report = matching.report.copy(
+                    backends = listOf(backend(DiffusionBackendKind.VULKAN, 0, budget - 1)),
+                )),
+            ),
+        )
+        assertEquals(
+            NativeLoadPreflight.Invalid,
+            exactDiffusionNativePreflight(
+                plan,
+                config,
+                matching.copy(report = matching.report.copy(autoFit = true)),
+            ),
+        )
+
+        val unalignedPlan = plan(
+            backend = BackendKind.VULKAN,
+            keepClipOnCpu = false,
+            keepVaeOnCpu = false,
+            offloadToCpu = false,
+            maxVramBytes = 3_435_973_837L,
+        )
+        val normalized = NativeRunPlanAdapter.toDiffusionExecutionConfig(
+            unalignedPlan,
+            bundledConfig(),
+        )
+        val normalizedReport = matching.copy(
+            report = matching.report.copy(
+                backends = listOf(
+                    backend(
+                        DiffusionBackendKind.VULKAN,
+                        0,
+                        requireNotNull(normalized.maxVramBytes),
+                    ),
+                ),
+            ),
+        )
+        assertEquals(
+            NativeLoadPreflight.Fit,
+            exactDiffusionNativePreflight(unalignedPlan, normalized.model, normalizedReport),
         )
     }
 
@@ -438,6 +514,7 @@ class DiffusionInferenceRepositoryTest {
         keepClipOnCpu: Boolean,
         keepVaeOnCpu: Boolean,
         offloadToCpu: Boolean = true,
+        maxVramBytes: Long? = null,
     ) = DiffusionRunPlan(
         mode = DiffusionMode.IMAGE,
         width = 512,
@@ -449,8 +526,8 @@ class DiffusionInferenceRepositoryTest {
         offloadToCpu = offloadToCpu,
         keepClipOnCpu = keepClipOnCpu,
         keepVaeOnCpu = keepVaeOnCpu,
-        maxVramBytes = null,
-        layerStreaming = false,
+        maxVramBytes = maxVramBytes,
+        segmentedCompute = false,
         requiresUserAcceptance = false,
         backend = backend,
         memoryTopology = if (backend == BackendKind.CPU) MemoryTopology.UNKNOWN else MemoryTopology.DISCRETE,
@@ -552,13 +629,17 @@ class DiffusionInferenceRepositoryTest {
     private fun fit(
         components: List<DiffusionPreflightComponent>,
         backends: List<DiffusionPreflightBackend>,
-        streamLayers: Boolean = false,
+        segmentedCompute: Boolean = false,
+        prefetch: Boolean = false,
+        autoFit: Boolean = false,
     ) = DiffusionPreflightResult.Fit(
         DiffusionFitReport(
             architecture = DiffusionArchitecture.SDXL,
             quantization = DiffusionQuantization.Q4_K,
             memoryConfidence = DiffusionMemoryConfidence.MEDIUM,
-            streamLayers = streamLayers,
+            segmentedCompute = segmentedCompute,
+            prefetch = prefetch,
+            autoFit = autoFit,
             components = components,
             backends = backends,
         ),
@@ -586,6 +667,7 @@ class DiffusionInferenceRepositoryTest {
     private fun backend(
         kind: DiffusionBackendKind,
         ordinal: Int,
+        budgetBytes: Long = 0L,
     ) = DiffusionPreflightBackend(
         kind = kind,
         deviceType = if (kind == DiffusionBackendKind.CPU) {
@@ -594,7 +676,7 @@ class DiffusionInferenceRepositoryTest {
             DiffusionBackendDeviceType.DISCRETE_GPU
         },
         ordinal = ordinal,
-        budgetBytes = 0L,
+        budgetBytes = budgetBytes,
         freeBytes = 8_000L,
         totalBytes = 16_000L,
     )

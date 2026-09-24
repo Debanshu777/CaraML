@@ -34,7 +34,8 @@ class DiffusionRunPlanGeneratorTest {
         assertEquals(1, first.first().frameCount)
         assertFalse(first.first().vaeTiling)
         assertEquals(null, first.first().maxVramBytes)
-        assertFalse(first.first().layerStreaming)
+        assertFalse(first.first().segmentedCompute)
+        assertFalse(first.first().prefetch)
         assertFalse(first.first().requiresUserAcceptance)
         assertTrue(first.first().compromises.isEmpty())
     }
@@ -128,7 +129,7 @@ class DiffusionRunPlanGeneratorTest {
         assertTrue(plans.isNotEmpty())
         assertTrue(plans.none { it.vaeTiling })
         assertTrue(plans.none { it.maxVramBytes != null })
-        assertTrue(plans.none { it.layerStreaming })
+        assertTrue(plans.none { it.segmentedCompute || it.prefetch })
     }
 
     @Test
@@ -148,11 +149,38 @@ class DiffusionRunPlanGeneratorTest {
         assertTrue(plans.any { it.maxVramBytes == 2L * GIB && DiffusionPlanCompromise.MAX_VRAM_LIMIT in it.compromises })
         assertTrue(
             plans.any {
-                it.layerStreaming && it.offloadToCpu &&
+                it.segmentedCompute && !it.prefetch && it.offloadToCpu &&
                     DiffusionPlanCompromise.LAYER_STREAMING in it.compromises &&
                     DiffusionPlanCompromise.CPU_OFFLOAD in it.compromises
             },
         )
+    }
+
+    @Test
+    fun prefetchRequiresSegmentedComputeAndTrustedRemainingHeadroom() {
+        val withoutHeadroom = generator.diffusionCandidates(
+            descriptor(),
+            workload(),
+            settings(
+                supportsMaxVram = true,
+                supportsLayerStreaming = true,
+                maxVramBytes = 2L * GIB,
+            ),
+        )
+        val withHeadroom = generator.diffusionCandidates(
+            descriptor(),
+            workload(),
+            settings(
+                supportsMaxVram = true,
+                supportsLayerStreaming = true,
+                maxVramBytes = 2L * GIB,
+                prefetchHeadroomBytes = 512L * MIB,
+            ),
+        )
+
+        assertTrue(withoutHeadroom.none { it.prefetch })
+        assertTrue(withHeadroom.any { it.segmentedCompute && it.prefetch })
+        assertTrue(withHeadroom.none { it.prefetch && !it.segmentedCompute })
     }
 
     @Test
@@ -248,8 +276,8 @@ class DiffusionRunPlanGeneratorTest {
         assertTrue(requestedFalse.all { it.offloadToCpu })
         assertTrue(requestedTrue.all { it.offloadToCpu })
         assertEquals(requestedTrue.first().stableKey, requestedFalse.first().stableKey)
-        assertTrue(requestedFalse.none { it.maxVramBytes != null || it.layerStreaming })
-        assertTrue(requestedTrue.none { it.maxVramBytes != null || it.layerStreaming })
+        assertTrue(requestedFalse.none { it.maxVramBytes != null || it.segmentedCompute })
+        assertTrue(requestedTrue.none { it.maxVramBytes != null || it.segmentedCompute })
     }
 
     @Test
@@ -297,7 +325,7 @@ class DiffusionRunPlanGeneratorTest {
             keepClipOnCpu = true,
             keepVaeOnCpu = true,
             maxVramBytes = 2L * GIB,
-            layerStreaming = true,
+            segmentedCompute = true,
             requiresUserAcceptance = true,
             backend = BackendKind.CUDA,
             memoryTopology = MemoryTopology.DISCRETE,
@@ -353,6 +381,7 @@ class DiffusionRunPlanGeneratorTest {
         supportsMaxVram: Boolean = false,
         supportsLayerStreaming: Boolean = false,
         maxVramBytes: Long? = null,
+        prefetchHeadroomBytes: Long? = null,
         backend: BackendKind = BackendKind.CUDA,
         topology: MemoryTopology = MemoryTopology.DISCRETE,
         engineMaxBatchSize: Int = 1_024,
@@ -376,6 +405,7 @@ class DiffusionRunPlanGeneratorTest {
         supportsMaxVram = supportsMaxVram,
         supportsLayerStreaming = supportsLayerStreaming,
         maxVramBytes = maxVramBytes,
+        prefetchHeadroomBytes = prefetchHeadroomBytes,
     )
 
     private fun descriptor(

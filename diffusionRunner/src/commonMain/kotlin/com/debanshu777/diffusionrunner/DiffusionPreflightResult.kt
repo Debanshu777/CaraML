@@ -4,7 +4,7 @@ import kotlinx.coroutines.CancellationException
 
 internal const val DIFFUSION_PREFLIGHT_MAX_COMPONENTS = 10
 internal const val DIFFUSION_PREFLIGHT_MAX_BACKENDS = 16
-internal const val DIFFUSION_PREFLIGHT_HEADER_FIELDS = 10
+internal const val DIFFUSION_PREFLIGHT_HEADER_FIELDS = 11
 internal const val DIFFUSION_PREFLIGHT_COMPONENT_FIELDS = 8
 internal const val DIFFUSION_PREFLIGHT_BACKEND_FIELDS = 6
 
@@ -107,6 +107,7 @@ data class DiffusionFitReport(
     val memoryConfidence: DiffusionMemoryConfidence,
     val segmentedCompute: Boolean,
     val prefetch: Boolean,
+    val autoFit: Boolean,
     val components: List<DiffusionPreflightComponent>,
     val backends: List<DiffusionPreflightBackend>,
 )
@@ -145,9 +146,9 @@ internal fun decodeDiffusionPreflight(payload: LongArray?): DiffusionPreflightRe
     }
 
     val status = payload[0]
-    val sourceCountLong = payload[7]
-    val componentCountLong = payload[8]
-    val backendCountLong = payload[9]
+    val sourceCountLong = payload[8]
+    val componentCountLong = payload[9]
+    val backendCountLong = payload[10]
     if (sourceCountLong !in 0L..DIFFUSION_PREFLIGHT_MAX_COMPONENTS.toLong() ||
         componentCountLong !in 0L..DIFFUSION_PREFLIGHT_MAX_COMPONENTS.toLong() ||
         backendCountLong !in 0L..DIFFUSION_PREFLIGHT_MAX_BACKENDS.toLong()
@@ -192,7 +193,12 @@ internal fun decodeDiffusionPreflight(payload: LongArray?): DiffusionPreflightRe
         else -> return malformedDiffusionPreflight()
     }
     if (prefetch && !segmentedCompute) return malformedDiffusionPreflight()
-    val declaredSourceMask = payload[6]
+    val autoFit = when (payload[6]) {
+        0L -> false
+        1L -> true
+        else -> return malformedDiffusionPreflight()
+    }
+    val declaredSourceMask = payload[7]
     val allowedComponentMask = (1L shl DiffusionComponentRole.entries.size) - 1L
     if (declaredSourceMask == 0L ||
         declaredSourceMask and allowedComponentMask.inv() != 0L ||
@@ -284,6 +290,7 @@ internal fun decodeDiffusionPreflight(payload: LongArray?): DiffusionPreflightRe
             memoryConfidence = confidence,
             segmentedCompute = segmentedCompute,
             prefetch = prefetch,
+            autoFit = autoFit,
             components = components.toList(),
             backends = backends.toList(),
         ),

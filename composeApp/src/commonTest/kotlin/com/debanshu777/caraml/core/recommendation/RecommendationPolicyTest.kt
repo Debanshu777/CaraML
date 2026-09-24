@@ -1261,12 +1261,14 @@ internal fun task6Hardware(
 internal fun task6Backend(
     kind: BackendKind,
     status: BackendStatus = BackendStatus.AVAILABLE,
+    additionalAllocatableBytes: Long? = null,
+    headroomConfidence: Confidence? = null,
 ) = BackendCapability(
     kind = kind,
     status = status,
-    additionalAllocatableBytes = null,
+    additionalAllocatableBytes = additionalAllocatableBytes,
     availabilityConfidence = Confidence.HIGH,
-    headroomConfidence = null,
+    headroomConfidence = headroomConfidence,
     evidence = listOf(
         Evidence(
             if (status == BackendStatus.AVAILABLE) {
@@ -1467,7 +1469,7 @@ internal fun task6DiffusionPlan(
     keepClipOnCpu = false,
     keepVaeOnCpu = false,
     maxVramBytes = null,
-    layerStreaming = false,
+    segmentedCompute = false,
     requiresUserAcceptance = false,
     backend = BackendKind.METAL,
     memoryTopology = MemoryTopology.UNIFIED,

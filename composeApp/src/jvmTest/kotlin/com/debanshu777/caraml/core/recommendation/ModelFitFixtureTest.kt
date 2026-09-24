@@ -351,7 +351,7 @@ class ModelFitFixtureTest {
         keepClipOnCpu = keepClipOnCpu,
         keepVaeOnCpu = keepVaeOnCpu,
         maxVramBytes = maxVramBytes,
-        layerStreaming = layerStreaming,
+        segmentedCompute = layerStreaming,
         requiresUserAcceptance = false,
         backend = backend,
         memoryTopology = topology,

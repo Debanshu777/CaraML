@@ -19,9 +19,11 @@ import com.debanshu777.caraml.core.recommendation.LoadSessionCoordinator
 import com.debanshu777.caraml.core.recommendation.LocalArtifactIdentityResolver
 import com.debanshu777.caraml.core.recommendation.NativeLoadPreflight
 import com.debanshu777.caraml.core.recommendation.NativeLoadOutcome
+import com.debanshu777.caraml.core.recommendation.NATIVE_LOAD_ENGINE_VERSION
 import com.debanshu777.caraml.core.recommendation.NativeRunPlanAdapter
 import com.debanshu777.caraml.core.recommendation.PersonalizedRecommendation
 import com.debanshu777.caraml.core.recommendation.RecommendationCategory
+import com.debanshu777.caraml.core.recommendation.toNativeDiffusionBudget
 import com.debanshu777.caraml.core.recommendation.RecommendationPolicy
 import com.debanshu777.caraml.core.recommendation.StableLoadFailure
 import com.debanshu777.caraml.core.recommendation.SuitabilityEngine
@@ -72,7 +74,7 @@ class DiffusionInferenceRepository(
     private val loadRecoveryRepository: LoadRecoveryRepository? = null,
     private val artifactIdentityResolver: LocalArtifactIdentityResolver? = null,
     private val loadSessionCoordinator: LoadSessionCoordinator? = null,
-    private val engineVersion: String = "native-engine-v1",
+    private val engineVersion: String = NATIVE_LOAD_ENGINE_VERSION,
     private val observationRecorder: InferenceObservationRecorder? = null,
 ) {
     private val nativeSession = NativeSessionGate()
@@ -184,7 +186,7 @@ class DiffusionInferenceRepository(
                                     outcome = if (succeeded) {
                                         ObservationOutcome.SUCCESS
                                     } else {
-                                        ObservationOutcome.ALLOCATION_FAILURE
+                                        ObservationOutcome.UNKNOWN_FAILURE
                                     },
                                 )
                             }
@@ -192,7 +194,7 @@ class DiffusionInferenceRepository(
                         if (!loaded) {
                             return@execute NativeLoadOutcome.Failed(
                                 ModelLoadResult.Error("The model could not be loaded with this configuration."),
-                                StableLoadFailure.ALLOCATION,
+                                StableLoadFailure.UNKNOWN,
                             )
                         }
                         loadedWeightsBytes = artifact.components.fold(0L) { total, component ->
@@ -360,7 +362,7 @@ class DiffusionInferenceRepository(
                 }
                 if (r.isFailure) AppLogger.e(TAG, "generateVideo failed")
                 r.fold(
-                    onSuccess = { Result.success(it) },
+                    onSuccess = { Result.success(it.frames) },
                     onFailure = { Result.failure(Exception("Generation failed. Please try again.")) },
                 )
             } finally {
@@ -451,7 +453,10 @@ private fun DiffusionFitReport.matches(
     plan: DiffusionRunPlan,
     config: DiffusionModelConfig,
 ): Boolean {
-    if (streamLayers != plan.layerStreaming || components.isEmpty() || backends.isEmpty() ||
+    if (config.segmentedCompute != plan.segmentedCompute || config.prefetch != plan.prefetch ||
+        config.autoFit || autoFit || segmentedCompute != plan.segmentedCompute ||
+        prefetch != plan.prefetch ||
+        components.isEmpty() || backends.isEmpty() ||
         !components.matchConfiguredComponentBindings(config)
     ) {
         return false
@@ -465,6 +470,15 @@ private fun DiffusionFitReport.matches(
         if (requiresCpu) add(DiffusionBackendKind.CPU)
     }
     if (backends.size != expectedKinds.size || backends.map { it.kind }.toSet() != expectedKinds) {
+        return false
+    }
+    val expectedNativeBudget = plan.maxVramBytes?.toNativeDiffusionBudget()
+    if (config.maxVram != expectedNativeBudget?.gibText.orEmpty()) return false
+    val expectedBudget = expectedNativeBudget?.bytes ?: 0L
+    val runtimeBackend = backends.singleOrNull { it.kind == runtimeKind } ?: return false
+    if (runtimeBackend.budgetBytes != expectedBudget ||
+        backends.any { it.kind == DiffusionBackendKind.CPU && it.budgetBytes != 0L }
+    ) {
         return false
     }
     if (backends.any { backend ->

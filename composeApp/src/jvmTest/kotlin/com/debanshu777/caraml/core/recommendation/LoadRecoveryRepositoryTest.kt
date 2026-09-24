@@ -28,7 +28,10 @@ class LoadRecoveryRepositoryTest {
 
         assertEquals(LoadQuarantine.KNOWN_UNSTABLE, repository.quarantine(first.modelDigest, first.configDigest, ENGINE_VERSION))
         assertEquals(LoadQuarantine.NONE, repository.quarantine(first.modelDigest, "f".repeat(64), ENGINE_VERSION))
-        assertEquals(LoadQuarantine.NONE, repository.quarantine(first.modelDigest, first.configDigest, "engine-2"))
+        assertEquals(
+            LoadQuarantine.NONE,
+            repository.quarantine(first.modelDigest, first.configDigest, "native-engine-v1"),
+        )
     }
 
     @Test
@@ -137,7 +140,7 @@ class LoadRecoveryRepositoryTest {
     }
 
     private companion object {
-        const val ENGINE_VERSION = "engine-1"
+        const val ENGINE_VERSION = NATIVE_LOAD_ENGINE_VERSION
     }
 }
 

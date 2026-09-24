@@ -20,6 +20,7 @@ import com.debanshu777.caraml.core.recommendation.LlmRunPlan
 import com.debanshu777.caraml.core.recommendation.LocalArtifactIdentityResolver
 import com.debanshu777.caraml.core.recommendation.NativeLoadPreflight
 import com.debanshu777.caraml.core.recommendation.NativeLoadOutcome
+import com.debanshu777.caraml.core.recommendation.NATIVE_LOAD_ENGINE_VERSION
 import com.debanshu777.caraml.core.recommendation.NativeRunPlanAdapter
 import com.debanshu777.caraml.core.recommendation.PersonalizedRecommendation
 import com.debanshu777.caraml.core.recommendation.RecommendationCategory
@@ -60,7 +61,7 @@ class LlamaInferenceRepository(
     private val loadRecoveryRepository: LoadRecoveryRepository? = null,
     private val artifactIdentityResolver: LocalArtifactIdentityResolver? = null,
     private val loadSessionCoordinator: LoadSessionCoordinator? = null,
-    private val engineVersion: String = "native-engine-v1",
+    private val engineVersion: String = NATIVE_LOAD_ENGINE_VERSION,
     private val observationRecorder: InferenceObservationRecorder? = null,
 ) : InferenceRepository {
 

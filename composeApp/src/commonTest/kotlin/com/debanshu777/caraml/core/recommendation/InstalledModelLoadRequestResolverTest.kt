@@ -925,7 +925,7 @@ private fun installedDiffusionPlan(backend: BackendKind) = DiffusionRunPlan(
     keepClipOnCpu = backend == BackendKind.CPU,
     keepVaeOnCpu = backend == BackendKind.CPU,
     maxVramBytes = null,
-    layerStreaming = false,
+    segmentedCompute = false,
     requiresUserAcceptance = false,
     backend = backend,
     memoryTopology = MemoryTopology.UNIFIED,

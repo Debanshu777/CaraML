@@ -21,6 +21,7 @@ enum class MemoryPool(val stableName: String) {
 enum class ObservationOutcome {
     SUCCESS,
     ALLOCATION_FAILURE,
+    UNKNOWN_FAILURE,
     SUSPECTED_LOAD_CRASH,
 }
 

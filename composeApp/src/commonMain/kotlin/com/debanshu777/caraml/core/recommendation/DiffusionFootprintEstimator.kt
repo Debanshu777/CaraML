@@ -378,7 +378,7 @@ class DiffusionFootprintEstimator {
 
         var lowConfidence = false
         val primaryAllocation = when {
-            plan.layerStreaming -> {
+            plan.segmentedCompute -> {
                 lowConfidence = true
                 evidence += Evidence(
                     AssessmentReason.GPU_ALLOCATION_UNKNOWN,
@@ -415,7 +415,7 @@ class DiffusionFootprintEstimator {
             val safePrimaryLikely = minOf(gpuPrimary.likelyBytes, safePrimaryHigh)
             val safePrimaryLow = minOf(gpuPrimary.lowBytes, safePrimaryLikely)
             gpuPrimary = diffusionValidRange(safePrimaryLow, safePrimaryLikely, safePrimaryHigh)
-            hostPrimary = if (plan.offloadToCpu || plan.layerStreaming) {
+            hostPrimary = if (plan.offloadToCpu || plan.segmentedCompute) {
                 diffusionExactRange(weights.primary)
             } else {
                 diffusionValidRange(

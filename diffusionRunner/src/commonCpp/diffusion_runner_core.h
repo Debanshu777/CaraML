@@ -247,6 +247,7 @@ struct DiffusionPreflightResultNative {
     int memory_confidence = 0;
     bool segmented_compute = false;
     bool prefetch = false;
+    bool auto_fit = false;
     int64_t declared_source_mask = 0;
     int source_count = 0;
     int component_count = 0;

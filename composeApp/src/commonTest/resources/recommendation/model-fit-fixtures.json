@@ -187,11 +187,11 @@
         "requirements": [{ "role": "VAE", "path": "vae-Q4_K_M.safetensors" }, { "role": "CLIP_L", "path": "clip-l-Q4_K_M.safetensors" }, { "role": "T5XXL", "path": "t5xxl-Q4_K_M.safetensors" }],
         "nativeWidth": 1024, "nativeHeight": 1024
       },
-      "device": { "topology": "UNIFIED", "baseHostBytes": null, "baseGpuBytes": null, "baseSharedBytes": 17179869184 },
-      "workload": { "width": 1024, "height": 1024, "steps": 28, "frames": 1, "batchSize": 1, "vaeTiling": false, "offloadToCpu": true, "keepClipOnCpu": false, "keepVaeOnCpu": false, "maxVramBytes": null, "layerStreaming": true },
+      "device": { "topology": "DISCRETE", "baseHostBytes": 17179869184, "baseGpuBytes": 12884901888, "baseSharedBytes": null },
+      "workload": { "width": 1024, "height": 1024, "steps": 28, "frames": 1, "batchSize": 1, "vaeTiling": false, "offloadToCpu": true, "keepClipOnCpu": false, "keepVaeOnCpu": false, "maxVramBytes": 8589934592, "layerStreaming": true },
       "profile": { "risk": "BALANCED", "priority": "BALANCED" },
-      "predicted": { "lowBytes": 13103979774, "likelyBytes": 13439524095, "highBytes": 13842177278 },
-      "expected": { "category": "RECOMMENDED", "reasons": ["MEMORY_FIT_COMFORTABLE", "SPEED_NOT_VERIFIED"] },
+      "predicted": { "lowBytes": 3803979774, "likelyBytes": 4779524095, "highBytes": 6142177278 },
+      "expected": { "category": "RISKY", "reasons": ["MEMORY_FIT_LIKELY", "SAFETY_EVIDENCE_LIMITED", "SPEED_NOT_VERIFIED"] },
       "observed": null
     },
     {

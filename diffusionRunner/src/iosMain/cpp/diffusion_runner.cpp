@@ -179,7 +179,7 @@ int diffusion_runner_ios_preflight(
         long long *output,
         int capacity) {
     return ffi_guard<int>("preflight", 0, [&]() {
-        constexpr int header_fields = 10;
+        constexpr int header_fields = 11;
         constexpr int component_fields = 8;
         constexpr int backend_fields = 6;
         if (!output || capacity < header_fields) return 0;
@@ -201,6 +201,7 @@ int diffusion_runner_ios_preflight(
         output[cursor++] = native.memory_confidence;
         output[cursor++] = native.segmented_compute ? 1 : 0;
         output[cursor++] = native.prefetch ? 1 : 0;
+        output[cursor++] = native.auto_fit ? 1 : 0;
         output[cursor++] = native.declared_source_mask;
         output[cursor++] = native.source_count;
         output[cursor++] = native.component_count;

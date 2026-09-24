@@ -35,10 +35,11 @@ private fun validateRunPlan(
                 plan.steps in 1..WorkloadLimits.MAX_DIFFUSION_STEPS &&
                 (plan.mode != DiffusionMode.IMAGE || plan.frameCount == 1) &&
                 plan.maxVramBytes?.let { it in 1..DescriptorLimits.MAX_BUNDLE_BYTES } != false &&
-                (plan.backend != BackendKind.CPU || plan.maxVramBytes == null && !plan.layerStreaming) &&
+                (plan.backend != BackendKind.CPU || plan.maxVramBytes == null && !plan.segmentedCompute) &&
                 (plan.backend == BackendKind.CPU || plan.memoryTopology != MemoryTopology.UNKNOWN) &&
                 (plan.maxVramBytes == null || plan.memoryTopology == MemoryTopology.DISCRETE) &&
-                (!plan.layerStreaming || plan.offloadToCpu)
+                (!plan.segmentedCompute || plan.offloadToCpu && plan.maxVramBytes != null) &&
+                (!plan.prefetch || plan.segmentedCompute)
     }
     if (!fieldsAreValid) return AssessmentReason.INVALID_WORKLOAD
     return if (plan.stableKey == canonicalRunPlanStableKey(plan)) null else AssessmentReason.INVALID_WORKLOAD
@@ -72,7 +73,8 @@ internal fun canonicalRunPlanStableKey(plan: RunPlan): String = when (plan) {
         append(plan.keepClipOnCpu).append(':')
         append(plan.keepVaeOnCpu).append(':')
         append(plan.maxVramBytes?.toString() ?: "none").append(':')
-        append(plan.layerStreaming).append(':')
+        append(plan.segmentedCompute).append(':')
+        append(plan.prefetch).append(':')
         append(plan.backend.name).append(':')
         append(plan.memoryTopology.name)
     }

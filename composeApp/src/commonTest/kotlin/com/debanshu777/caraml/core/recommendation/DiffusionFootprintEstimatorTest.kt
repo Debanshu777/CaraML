@@ -297,7 +297,8 @@ class DiffusionFootprintEstimatorTest {
                 backend = BackendKind.CUDA,
                 topology = MemoryTopology.DISCRETE,
                 offloadToCpu = true,
-                layerStreaming = true,
+                maxVramBytes = 8L * GIB,
+                segmentedCompute = true,
             ),
             MemoryCalibration.None,
         )
@@ -404,7 +405,7 @@ class DiffusionFootprintEstimatorTest {
         keepClipOnCpu: Boolean = false,
         keepVaeOnCpu: Boolean = false,
         maxVramBytes: Long? = null,
-        layerStreaming: Boolean = false,
+        segmentedCompute: Boolean = false,
         backend: BackendKind = BackendKind.CUDA,
         topology: MemoryTopology = if (backend == BackendKind.CPU) MemoryTopology.UNKNOWN else MemoryTopology.DISCRETE,
     ) = DiffusionRunPlan(
@@ -419,7 +420,7 @@ class DiffusionFootprintEstimatorTest {
         keepClipOnCpu = keepClipOnCpu,
         keepVaeOnCpu = keepVaeOnCpu,
         maxVramBytes = maxVramBytes,
-        layerStreaming = layerStreaming,
+        segmentedCompute = segmentedCompute,
         requiresUserAcceptance = false,
         backend = backend,
         memoryTopology = topology,

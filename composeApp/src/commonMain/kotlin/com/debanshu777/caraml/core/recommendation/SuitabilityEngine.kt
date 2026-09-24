@@ -195,11 +195,12 @@ class SuitabilityEngine(
         hardware: HardwareProfile,
         workload: WorkloadConfig,
     ): PlanningSettings? {
-        val backend = hardware.backends.firstOrNull {
+        val backendCapability = hardware.backends.firstOrNull {
             it.status == BackendStatus.AVAILABLE && it.kind != BackendKind.CPU
-        }?.kind ?: hardware.backends.firstOrNull {
+        } ?: hardware.backends.firstOrNull {
             it.status == BackendStatus.AVAILABLE && it.kind == BackendKind.CPU
-        }?.kind ?: return null
+        } ?: return null
+        val backend = backendCapability.kind
         return when {
             descriptor is LlmModelDescriptor && workload is LlmWorkloadConfig -> PlanningSettings(
                 engineMaxContextTokens = maxOf(workload.contextTokens, descriptor.contextLimit ?: workload.contextTokens),
@@ -214,27 +215,45 @@ class SuitabilityEngine(
                 memoryTopology = hardware.memoryTopology,
                 gpuLayerCount = if (backend == BackendKind.CPU) 0 else null,
             )
-            descriptor is DiffusionModelDescriptor && workload is DiffusionWorkloadConfig -> PlanningSettings(
-                engineMaxContextTokens = DescriptorLimits.MAX_CONTEXT_TOKENS,
-                engineMaxBatchSize = workload.batchSize,
-                engineMaxMicroBatchSize = workload.batchSize,
-                engineMaxSequenceCount = 1,
-                allowContextFallback = false,
-                allowBatchFallback = false,
-                allowKvCacheFallback = false,
-                allowedKvCacheTypes = emptyList(),
-                backend = backend,
-                memoryTopology = hardware.memoryTopology,
-                gpuLayerCount = null,
-                engineImageDimensionMultiple = WorkloadLimits.DEFAULT_IMAGE_DIMENSION_MULTIPLE,
-                engineMaxImageDimension = maxOf(workload.width, workload.height),
-                engineMaxDiffusionFrames = workload.frameCount,
-                engineMaxDiffusionSteps = workload.steps,
-                supportsVaeTiling = workload.vaeTiling,
-                supportsMaxVram = workload.maxVramBytes != null,
-                supportsLayerStreaming = workload.layerStreaming,
-                maxVramBytes = workload.maxVramBytes,
-            )
+            descriptor is DiffusionModelDescriptor && workload is DiffusionWorkloadConfig -> {
+                val trustworthyHeadroom = backendCapability.additionalAllocatableBytes?.takeIf {
+                    backendCapability.headroomConfidence == Confidence.HIGH && it > 0L
+                }
+                val constrainedAccelerator = backend != BackendKind.CPU &&
+                    hardware.memoryTopology == MemoryTopology.DISCRETE &&
+                    trustworthyHeadroom != null
+                val maxVramBytes = if (constrainedAccelerator) {
+                    workload.maxVramBytes
+                        ?.coerceAtMost(trustworthyHeadroom)
+                        ?: (trustworthyHeadroom - trustworthyHeadroom / 5L)
+                } else {
+                    workload.maxVramBytes
+                }
+                PlanningSettings(
+                    engineMaxContextTokens = DescriptorLimits.MAX_CONTEXT_TOKENS,
+                    engineMaxBatchSize = workload.batchSize,
+                    engineMaxMicroBatchSize = workload.batchSize,
+                    engineMaxSequenceCount = 1,
+                    allowContextFallback = false,
+                    allowBatchFallback = false,
+                    allowKvCacheFallback = false,
+                    allowedKvCacheTypes = emptyList(),
+                    backend = backend,
+                    memoryTopology = hardware.memoryTopology,
+                    gpuLayerCount = null,
+                    engineImageDimensionMultiple = WorkloadLimits.DEFAULT_IMAGE_DIMENSION_MULTIPLE,
+                    engineMaxImageDimension = maxOf(workload.width, workload.height),
+                    engineMaxDiffusionFrames = workload.frameCount,
+                    engineMaxDiffusionSteps = workload.steps,
+                    supportsVaeTiling = true,
+                    supportsMaxVram = constrainedAccelerator,
+                    supportsLayerStreaming = constrainedAccelerator,
+                    maxVramBytes = maxVramBytes,
+                    prefetchHeadroomBytes = trustworthyHeadroom?.let { headroom ->
+                        (headroom - (maxVramBytes ?: headroom)).coerceAtLeast(0L)
+                    },
+                )
+            }
             else -> null
         }
     }

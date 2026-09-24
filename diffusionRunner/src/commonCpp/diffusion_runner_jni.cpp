@@ -289,6 +289,7 @@ Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativePreflightModel(
             native.memory_confidence,
             native.segmented_compute ? 1 : 0,
             native.prefetch ? 1 : 0,
+            native.auto_fit ? 1 : 0,
             native.declared_source_mask,
             native.source_count,
             native.component_count,
@@ -299,7 +300,7 @@ Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativePreflightModel(
             native.backend_count < 0 || native.backend_count > DIFFUSION_PREFLIGHT_MAX_BACKENDS) {
             return nullptr;
         }
-        payload.reserve(10 + native.component_count * 8 + native.backend_count * 6);
+        payload.reserve(11 + native.component_count * 8 + native.backend_count * 6);
         for (int index = 0; index < native.component_count; ++index) {
             const DiffusionPreflightComponentNative &component = native.components[index];
             payload.insert(payload.end(), {

@@ -1410,7 +1410,7 @@ private fun retryDiffusionRequest(model: LocalModelEntity): LoadRequest {
         keepClipOnCpu = true,
         keepVaeOnCpu = true,
         maxVramBytes = null,
-        layerStreaming = false,
+        segmentedCompute = false,
         requiresUserAcceptance = false,
         backend = BackendKind.CPU,
         memoryTopology = MemoryTopology.UNIFIED,

@@ -31,7 +31,8 @@ class CalibrationRepositoryTest {
         repository.initialize()
         repeat(5) { repository.record(sample(observedRatio = 1.25)) }
 
-        assertNull(repository.correctionFor(memoryKey().copy(engineVersion = "engine-2")))
+        assertEquals("caraml-native-20260923-f46bc30-c92d73c", repository.engineVersion())
+        assertNull(repository.correctionFor(memoryKey().copy(engineVersion = "native-engine-v1")))
         assertNull(repository.correctionFor(memoryKey().copy(estimatorVersion = 2)))
         assertNull(repository.correctionFor(memoryKey().copy(memoryPool = MemoryPool.SHARED.stableName)))
         assertNull(repository.correctionFor(memoryKey().copy(metricKind = MetricKind.PERFORMANCE, memoryPool = null)))
@@ -244,7 +245,7 @@ class CalibrationRepositoryTest {
     }
 
     private companion object {
-        const val ENGINE = "native-engine-v1"
+        const val ENGINE = NATIVE_LOAD_ENGINE_VERSION
         const val NOW = 10_000_000_000L
         const val DAY = 86_400_000L
     }

@@ -4,11 +4,13 @@ import com.debanshu777.caraml.core.platform.BackendKind
 import com.debanshu777.caraml.core.platform.MemoryTopology
 import com.debanshu777.diffusionrunner.DiffusionModelConfig
 import com.debanshu777.diffusionrunner.DiffusionRuntimeBackend
+import com.debanshu777.runner.LlamaLazyMode
 import com.debanshu777.runner.NativeRunnerConfig
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class NativeRunPlanAdapterTest {
@@ -53,6 +55,7 @@ class NativeRunPlanAdapterTest {
         assertEquals(8, mapped.typeV)
         assertEquals(17, mapped.nGpuLayers)
         assertFalse(mapped.useMmap)
+        assertEquals(LlamaLazyMode.OFF, mapped.lazyMode)
         assertFalse(mapped.autoFit)
         assertEquals(7, mapped.nThreads)
         assertEquals(5, mapped.nThreadsBatch)
@@ -65,6 +68,10 @@ class NativeRunPlanAdapterTest {
         val cpu = llmPlan(gpuLayers = 0, backend = BackendKind.CPU)
 
         assertTrue(NativeRunPlanAdapter.toLlamaConfig(automatic, NativeRunnerConfig()).autoFit)
+        assertEquals(
+            LlamaLazyMode.AUTO,
+            NativeRunPlanAdapter.toLlamaConfig(automatic, NativeRunnerConfig()).lazyMode,
+        )
         assertEquals(-1, NativeRunPlanAdapter.toLlamaConfig(automatic, NativeRunnerConfig()).nGpuLayers)
         assertFalse(NativeRunPlanAdapter.toLlamaConfig(cpu, NativeRunnerConfig()).autoFit)
         assertEquals(0, NativeRunPlanAdapter.toLlamaConfig(cpu, NativeRunnerConfig()).nGpuLayers)
@@ -129,8 +136,9 @@ class NativeRunPlanAdapterTest {
             offloadToCpu = true,
             keepClipOnCpu = true,
             keepVaeOnCpu = false,
-            maxVramBytes = 3_221_225_472L,
-            layerStreaming = true,
+            maxVramBytes = 3_435_973_837L,
+            segmentedCompute = true,
+            prefetch = true,
             requiresUserAcceptance = true,
             backend = BackendKind.VULKAN,
             memoryTopology = MemoryTopology.DISCRETE,
@@ -154,9 +162,12 @@ class NativeRunPlanAdapterTest {
         assertTrue(mapped.model.keepClipOnCpu)
         assertFalse(mapped.model.keepVaeOnCpu)
         assertTrue(mapped.model.vaeTiling)
-        assertTrue(mapped.model.streamLayers)
+        assertTrue(mapped.model.segmentedCompute)
+        assertTrue(mapped.model.prefetch)
         assertFalse(mapped.model.autoFit)
-        assertEquals(plan.maxVramBytes, mapped.maxVramBytes)
+        assertEquals("3.1999998", mapped.model.maxVram)
+        assertEquals(3_435_973_632L, mapped.maxVramBytes)
+        assertTrue(assertNotNull(mapped.maxVramBytes) <= assertNotNull(plan.maxVramBytes))
         assertEquals(768, mapped.width)
         assertEquals(448, mapped.height)
         assertEquals(24, mapped.frameCount)
@@ -233,7 +244,7 @@ class NativeRunPlanAdapterTest {
         keepClipOnCpu = backend == BackendKind.CPU,
         keepVaeOnCpu = backend == BackendKind.CPU,
         maxVramBytes = null,
-        layerStreaming = false,
+        segmentedCompute = false,
         requiresUserAcceptance = false,
         backend = backend,
         memoryTopology = if (backend == BackendKind.CPU) MemoryTopology.UNKNOWN else MemoryTopology.DISCRETE,

@@ -17,6 +17,7 @@ import com.debanshu777.caraml.core.recommendation.LoadSessionCoordinator
 import com.debanshu777.caraml.core.recommendation.LocalArtifactIdentityResolver
 import com.debanshu777.caraml.core.recommendation.ModelAssessmentRepository
 import com.debanshu777.caraml.core.recommendation.ModelDescriptorFactory
+import com.debanshu777.caraml.core.recommendation.NATIVE_LOAD_ENGINE_VERSION
 import com.debanshu777.caraml.core.recommendation.InferenceObservationRecorder
 import com.debanshu777.caraml.core.recommendation.InstalledDescriptorMetadataSource
 import com.debanshu777.caraml.core.recommendation.InstalledModelEvidenceRepairer
@@ -341,8 +342,6 @@ val appModule = module {
         )
     }
 }
-
-private const val NATIVE_LOAD_ENGINE_VERSION = "native-engine-v1"
 
 internal fun installedModelManifestSource(
     validatedBundle: suspend (String) -> ArtifactManifest?,

@@ -1362,6 +1362,7 @@ DiffusionPreflightResultNative diffusion_runner_core_preflight(const DiffusionMo
         result.memory_confidence = 1;
         result.segmented_compute = config.segmented_compute;
         result.prefetch = config.prefetch;
+        result.auto_fit = false;
         result.declared_source_mask = declared_source_mask;
         result.source_count = static_cast<int>(components.size());
         result.component_count = result_component_count;
