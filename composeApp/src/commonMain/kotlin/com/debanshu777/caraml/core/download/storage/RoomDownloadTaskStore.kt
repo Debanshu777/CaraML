@@ -163,6 +163,16 @@ class RoomDownloadTaskStore(
         return changed
     }
 
+    override suspend fun requeueMissingCompletedArtifact(
+        artifactId: String,
+        nowEpochMs: Long,
+    ): Boolean {
+        val current = dao.artifact(artifactId) ?: return false
+        val changed = dao.requeueMissingCompletedArtifact(artifactId, nowEpochMs) == 1
+        if (changed) refreshBatch(current.batchId, nowEpochMs)
+        return changed
+    }
+
     override suspend fun setUserIntent(
         batchId: String,
         intent: DownloadUserIntent,

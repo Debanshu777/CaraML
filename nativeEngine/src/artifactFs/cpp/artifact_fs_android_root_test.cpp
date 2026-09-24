@@ -1,9 +1,13 @@
 #define ARTIFACT_FS_ANDROID_DIRECT_OPEN_TEST 1
 #include "artifact_fs_jni.cpp"
 
+#include <cerrno>
 #include <cstdlib>
+#include <cstring>
+#include <filesystem>
 #include <iostream>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -14,10 +18,19 @@ bool make_directory(const std::string& path, mode_t mode) {
 }  // namespace
 
 int main() {
-    char temporary[] = "/private/tmp/caraml-artifact-fs-XXXXXX";
-    const char* root_value = mkdtemp(temporary);
+    std::error_code temporary_error;
+    const std::filesystem::path temporary_root = std::filesystem::temp_directory_path(temporary_error);
+    if (temporary_error || temporary_root.empty()) {
+        std::cerr << "failed to resolve test temporary directory: " << temporary_error.message() << "\n";
+        return 1;
+    }
+    const std::string temporary_pattern =
+        (temporary_root / "caraml-artifact-fs-XXXXXX").string();
+    std::vector<char> temporary(temporary_pattern.begin(), temporary_pattern.end());
+    temporary.push_back('\0');
+    const char* root_value = mkdtemp(temporary.data());
     if (root_value == nullptr) {
-        std::cerr << "failed to create test root\n";
+        std::cerr << "failed to create test root: " << std::strerror(errno) << "\n";
         return 1;
     }
 

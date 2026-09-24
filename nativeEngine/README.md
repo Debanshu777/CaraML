@@ -135,6 +135,7 @@ Create a **separate** Gradle module + CMake project. Do not add here unless it m
 
 <!-- Updated at end of each Claude Code session -->
 
+- Desktop static dependencies now build as position-independent code for Linux shared-library linking, the Android-root fixture uses the host temporary directory, and Windows directory creation uses best-effort metadata flushing when supported while preserving pinned no-reparse checks
 - Native builds pin llama.cpp `f46bc30` and stable-diffusion.cpp `c92d73c`, compile both runners against one patched llama GGML tree, and verify the exact public gitlinks before project checks
 - Android's Vulkan build gates Intel Xe cooperative-matrix shaders on `glslc` capability; arm64-v8a/x86_64 APK packaging and iOS device/simulator one-GGML archive merges pass locally
 - Secure artifact storage now supports root-pinned append-only reopening for resumable transfers, with native regression coverage for concatenation and symlink/root replacement rejection

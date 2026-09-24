@@ -2,6 +2,10 @@ package com.debanshu777.caraml.core.media
 
 import kotlinx.coroutines.test.runTest
 import java.nio.file.Files
+import java.nio.file.attribute.FileTime
+import kotlin.io.path.createDirectories
+import kotlin.io.path.createSymbolicLinkPointingTo
+import kotlin.io.path.exists
 import kotlin.io.path.writeBytes
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -98,6 +102,170 @@ class GeneratedMediaStoreTest {
         assertFalse(Files.exists(base.resolve("generated-media-session/video")))
 
         store.clear()
+        Files.deleteIfExists(base)
+    }
+
+    @Test
+    fun startupPrunesExpiredAbandonedSessionsButProtectsTheActiveSession() = runTest {
+        val base = Files.createTempDirectory("caraml-media-startup-prune")
+        val abandoned = base.resolve("generated-media-abandoned").createDirectories()
+        abandoned.resolve("old.png").writeBytes(byteArrayOf(1, 2, 3))
+        Files.setLastModifiedTime(abandoned, FileTime.fromMillis(1_000L))
+        val active = base.resolve("generated-media-active").createDirectories()
+        active.resolve("current.png").writeBytes(byteArrayOf(4))
+        Files.setLastModifiedTime(active, FileTime.fromMillis(1_000L))
+        val store = GeneratedMediaStore(
+            baseDirectory = base.toString(),
+            sessionId = "active",
+            maxFileBytes = 16L,
+            maxSessionBytes = 16L,
+            maxGlobalBytes = 32L,
+            maxAbandonedAgeMillis = 1_000L,
+            clock = { 3_000L },
+        )
+
+        store.prepare()
+
+        assertFalse(abandoned.exists())
+        assertTrue(active.resolve("current.png").exists())
+        store.clear()
+        Files.deleteIfExists(base)
+    }
+
+    @Test
+    fun startupEvictsLeastRecentlyUsedSessionsToKeepGlobalCapacityBounded() = runTest {
+        val base = Files.createTempDirectory("caraml-media-global-limit")
+        val oldest = base.resolve("generated-media-oldest").createDirectories()
+        oldest.resolve("old.png").writeBytes(byteArrayOf(1, 2, 3, 4))
+        Files.setLastModifiedTime(oldest, FileTime.fromMillis(1_000L))
+        val newest = base.resolve("generated-media-newest").createDirectories()
+        newest.resolve("new.png").writeBytes(byteArrayOf(5, 6, 7, 8))
+        Files.setLastModifiedTime(newest, FileTime.fromMillis(2_000L))
+        val store = GeneratedMediaStore(
+            baseDirectory = base.toString(),
+            sessionId = "active",
+            maxFileBytes = 4L,
+            maxSessionBytes = 4L,
+            maxGlobalBytes = 8L,
+            maxAbandonedAgeMillis = Long.MAX_VALUE,
+            clock = { 3_000L },
+        )
+
+        store.prepare()
+
+        assertFalse(oldest.exists())
+        assertTrue(newest.resolve("new.png").exists())
+        store.clear()
+        newest.toFile().deleteRecursively()
+        Files.deleteIfExists(base)
+    }
+
+    @Test
+    fun cleanupProtectsSessionsOwnedByOtherActiveStores() = runTest {
+        val base = Files.createTempDirectory("caraml-media-multi-store-protection")
+        val firstStore = GeneratedMediaStore(
+            baseDirectory = base.toString(),
+            sessionId = "first",
+            maxFileBytes = 4L,
+            maxSessionBytes = 4L,
+            maxGlobalBytes = 8L,
+            maxAbandonedAgeMillis = Long.MAX_VALUE,
+        )
+        val secondStore = GeneratedMediaStore(
+            baseDirectory = base.toString(),
+            sessionId = "second",
+            maxFileBytes = 4L,
+            maxSessionBytes = 4L,
+            maxGlobalBytes = 8L,
+            maxAbandonedAgeMillis = Long.MAX_VALUE,
+        )
+
+        try {
+            val firstImage = firstStore.saveImage("first-image", byteArrayOf(1, 2, 3, 4))
+            val firstSession = base.resolve("generated-media-first")
+            Files.setLastModifiedTime(firstSession, FileTime.fromMillis(1_000L))
+            val abandoned = base.resolve("generated-media-abandoned").createDirectories()
+            abandoned.resolve("old.png").writeBytes(byteArrayOf(5, 6, 7, 8))
+            Files.setLastModifiedTime(abandoned, FileTime.fromMillis(2_000L))
+
+            secondStore.prepare()
+            secondStore.saveImage("second-image", byteArrayOf(9))
+
+            assertContentEquals(byteArrayOf(1, 2, 3, 4), firstStore.read(firstImage))
+            assertFalse(abandoned.exists())
+        } finally {
+            firstStore.clear()
+            secondStore.clear()
+            base.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun activeStoresShareOneAggregateCapacityLimit() = runTest {
+        val base = Files.createTempDirectory("caraml-media-multi-store-limit")
+        val firstStore = GeneratedMediaStore(
+            baseDirectory = base.toString(),
+            sessionId = "first",
+            maxFileBytes = 6L,
+            maxSessionBytes = 6L,
+            maxGlobalBytes = 8L,
+            maxAbandonedAgeMillis = Long.MAX_VALUE,
+        )
+        val secondStore = GeneratedMediaStore(
+            baseDirectory = base.toString(),
+            sessionId = "second",
+            maxFileBytes = 6L,
+            maxSessionBytes = 6L,
+            maxGlobalBytes = 8L,
+            maxAbandonedAgeMillis = Long.MAX_VALUE,
+        )
+
+        try {
+            firstStore.prepare()
+            secondStore.prepare()
+            firstStore.saveImage("first-image", ByteArray(6) { 1 })
+
+            assertFailsWith<IllegalArgumentException> {
+                secondStore.saveImage("second-image", ByteArray(3) { 2 })
+            }
+            assertFalse(base.resolve("generated-media-second/second-image.png").exists())
+        } finally {
+            firstStore.clear()
+            secondStore.clear()
+            base.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun startupCleanupNeverTraversesARecognizedSessionSymlink() = runTest {
+        val base = Files.createTempDirectory("caraml-media-symlink-root")
+        val outside = Files.createTempDirectory("caraml-media-symlink-outside")
+        val outsideFile = outside.resolve("keep.png")
+        outsideFile.writeBytes(byteArrayOf(9))
+        val link = base.resolve("generated-media-abandoned")
+        runCatching { link.createSymbolicLinkPointingTo(outside) }.getOrElse {
+            Files.deleteIfExists(outsideFile)
+            Files.deleteIfExists(outside)
+            Files.deleteIfExists(base)
+            return@runTest
+        }
+        val store = GeneratedMediaStore(
+            baseDirectory = base.toString(),
+            sessionId = "active",
+            maxFileBytes = 4L,
+            maxSessionBytes = 4L,
+            maxGlobalBytes = 8L,
+            maxAbandonedAgeMillis = 0L,
+            clock = { 3_000L },
+        )
+
+        store.prepare()
+
+        assertTrue(outsideFile.exists())
+        store.clear()
+        Files.deleteIfExists(link)
+        Files.deleteIfExists(outsideFile)
+        Files.deleteIfExists(outside)
         Files.deleteIfExists(base)
     }
 }

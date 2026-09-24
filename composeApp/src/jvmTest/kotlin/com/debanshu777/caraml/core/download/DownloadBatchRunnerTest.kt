@@ -128,6 +128,89 @@ class DownloadBatchRunnerTest {
     }
 
     @Test
+    fun completedArtifactMissingFromImmutablePublicationIsDownloadedAgain() = runTest {
+        val store = RunnerStore(initialArtifactState = DownloadArtifactState.COMPLETED)
+        val transfer = RecordingTransfer(published = false)
+        var finalized = false
+        val runner = DownloadBatchRunner(
+            store = store,
+            transfer = transfer,
+            finalizer = BatchFinalizer { finalized = true },
+            clock = { 10L },
+            leaseOwner = { "reinstall-owner" },
+        )
+
+        assertEquals(DownloadRunResult.Completed, runner.run("batch") {})
+
+        assertEquals(1, store.requeueCalls)
+        assertEquals(1, transfer.downloadCalls)
+        assertEquals(null, transfer.resume)
+        assertTrue(finalized)
+        assertEquals(
+            listOf(
+                DownloadArtifactState.RUNNING,
+                DownloadArtifactState.VERIFYING,
+                DownloadArtifactState.COMPLETED,
+            ),
+            store.transitions,
+        )
+    }
+
+    @Test
+    fun completedArtifactPublicationCheckFailureDoesNotDiscardDurableCompletion() = runTest {
+        val store = RunnerStore(initialArtifactState = DownloadArtifactState.COMPLETED)
+        var finalizerCalls = 0
+        val transfer = object : ArtifactTransfer {
+            override suspend fun isPublished(metadata: DownloadMetadataDTO): Boolean =
+                error("publication unavailable")
+
+            override fun download(
+                metadata: DownloadMetadataDTO,
+                resumeMetadata: DownloadResumeMetadata?,
+            ): Flow<DownloadProgressDTO> = error("must not download")
+        }
+        val runner = DownloadBatchRunner(
+            store = store,
+            transfer = transfer,
+            finalizer = BatchFinalizer { finalizerCalls += 1 },
+            clock = { 10L },
+            leaseOwner = { "verification-error-owner" },
+        )
+
+        assertEquals(
+            DownloadRunResult.Retry(DownloadFailureCode.PLATFORM),
+            runner.run("batch") {},
+        )
+        assertEquals(0, store.requeueCalls)
+        assertEquals(0, store.claimCalls)
+        assertEquals(0, finalizerCalls)
+    }
+
+    @Test
+    fun requeuedMissingArtifactWaitsWhenAnotherRunnerOwnsItsClaim() = runTest {
+        val store = RunnerStore(
+            initialArtifactState = DownloadArtifactState.COMPLETED,
+            claimResult = false,
+        )
+        var finalizerCalls = 0
+        val runner = DownloadBatchRunner(
+            store = store,
+            transfer = RecordingTransfer(published = false),
+            finalizer = BatchFinalizer { finalizerCalls += 1 },
+            clock = { 10L },
+            leaseOwner = { "losing-owner" },
+        )
+
+        assertEquals(
+            DownloadRunResult.Retry(DownloadFailureCode.PLATFORM),
+            runner.run("batch") {},
+        )
+        assertEquals(1, store.requeueCalls)
+        assertEquals(1, store.claimCalls)
+        assertEquals(0, finalizerCalls)
+    }
+
+    @Test
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     fun cancellationWhileFinalizerWaitsForOwnerLockNeverMarksArtifactFailed() = runTest {
         val store = RunnerStore(initialArtifactState = DownloadArtifactState.VERIFYING)
@@ -322,6 +405,7 @@ private class RunnerStore(
     initialArtifactState: DownloadArtifactState = DownloadArtifactState.QUEUED,
     private val batchAvailable: Boolean = true,
     private val failCancellationCheckpoint: Boolean = false,
+    private val claimResult: Boolean = true,
 ) : DownloadTaskStore {
     private val identity = requireNotNull(
         DownloadArtifactIdentity.create("owner/model", "a".repeat(40), "model.gguf", "b".repeat(64), 10L),
@@ -339,6 +423,7 @@ private class RunnerStore(
         displayName = "Model",
         state = when (initialArtifactState) {
             DownloadArtifactState.VERIFYING -> DownloadBatchState.VERIFYING
+            DownloadArtifactState.COMPLETED -> DownloadBatchState.COMPLETED
             else -> DownloadBatchState.QUEUED
         },
         userIntent = DownloadUserIntent.RUN,
@@ -361,6 +446,7 @@ private class RunnerStore(
     var claimCalls = 0
     var progressUpdateCalls = 0
     var releaseCalls = 0
+    var requeueCalls = 0
 
     override suspend fun create(request: DownloadBatchRequest, nowEpochMs: Long) = "batch"
     override fun observeForModel(modelId: String) = flowOf(listOf(batch))
@@ -368,6 +454,7 @@ private class RunnerStore(
     override suspend fun recoverableBatches() = listOfNotNull(batch.takeIf { batchAvailable })
     override suspend fun claim(artifactId: String, owner: String, nowEpochMs: Long, expiresAtEpochMs: Long): Boolean {
         claimCalls += 1
+        if (!claimResult) return false
         transitions += DownloadArtifactState.RUNNING
         batch = batch.withArtifactState(DownloadArtifactState.RUNNING)
         return true
@@ -379,6 +466,22 @@ private class RunnerStore(
     override suspend fun transitionArtifact(artifactId: String, state: DownloadArtifactState, failureCode: DownloadFailureCode?, nowEpochMs: Long): Boolean {
         transitions += state
         batch = batch.withArtifactState(state)
+        return true
+    }
+    override suspend fun requeueMissingCompletedArtifact(artifactId: String, nowEpochMs: Long): Boolean {
+        requeueCalls += 1
+        if (batch.artifacts.single().state != DownloadArtifactState.COMPLETED) return false
+        batch = batch.copy(
+            state = DownloadBatchState.QUEUED,
+            artifacts = batch.artifacts.map {
+                it.copy(
+                    state = DownloadArtifactState.QUEUED,
+                    bytesReceived = 0L,
+                    entityTag = null,
+                    lastModified = null,
+                )
+            },
+        )
         return true
     }
     override suspend fun setUserIntent(batchId: String, intent: DownloadUserIntent, nowEpochMs: Long) = true

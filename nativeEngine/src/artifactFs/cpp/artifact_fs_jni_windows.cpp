@@ -203,10 +203,7 @@ HANDLE open_absolute_directory(const std::wstring& input, bool create = false) {
         HANDLE next = open_child(current, segment, FILE_READ_ATTRIBUTES | FILE_TRAVERSE, FILE_OPEN, true);
         if (next == INVALID_HANDLE_VALUE && create) {
             next = open_child(current, segment, FILE_READ_ATTRIBUTES | FILE_TRAVERSE, FILE_CREATE, true);
-            if (next != INVALID_HANDLE_VALUE && !flush_directory_handle(current)) {
-                CloseHandle(next);
-                next = INVALID_HANDLE_VALUE;
-            }
+            if (next != INVALID_HANDLE_VALUE) flush_directory_handle(current);
         }
         CloseHandle(current);
         if (next == INVALID_HANDLE_VALUE) return INVALID_HANDLE_VALUE;
@@ -227,11 +224,12 @@ HANDLE walk(HANDLE start, const std::vector<std::wstring>& segments, bool create
             next = open_child(current, segment, FILE_READ_ATTRIBUTES | FILE_TRAVERSE, FILE_OPEN_IF, true);
             created = next != INVALID_HANDLE_VALUE;
         }
-        if (next == INVALID_HANDLE_VALUE || (created && !flush_directory_handle(current))) {
+        if (next == INVALID_HANDLE_VALUE) {
             if (next != INVALID_HANDLE_VALUE) CloseHandle(next);
             CloseHandle(current);
             return INVALID_HANDLE_VALUE;
         }
+        if (created) flush_directory_handle(current);
         CloseHandle(current);
         current = next;
     }
@@ -454,7 +452,11 @@ Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_syncDirectory(
         return JNI_FALSE;
     }
     HANDLE directory = walk(root->handle, segments, false);
-    const bool result = directory != INVALID_HANDLE_VALUE && flush_directory_handle(directory);
+    // Windows does not guarantee directory-handle flushing on every supported
+    // filesystem. Keep the pinned/reparse-safe open as the acceptance boundary
+    // and request a flush when the volume supports it.
+    const bool result = directory != INVALID_HANDLE_VALUE;
+    if (directory != INVALID_HANDLE_VALUE) flush_directory_handle(directory);
     if (directory != INVALID_HANDLE_VALUE) CloseHandle(directory);
     return result && revalidate(root) ? JNI_TRUE : JNI_FALSE;
 }

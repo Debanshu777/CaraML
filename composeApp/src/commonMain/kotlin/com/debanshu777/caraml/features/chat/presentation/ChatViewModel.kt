@@ -238,6 +238,16 @@ class ChatViewModel(
     private val teardownScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     init {
+        viewModelScope.launch {
+            try {
+                generatedMediaStore.prepare()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // The first media operation retries preparation and reports a bounded generic failure.
+            }
+        }
+
         combine(_topModels, _generationMode) { models, mode -> models to mode }
             .onEach { (models, mode) -> ensureSelectionForInventory(models, mode) }
             .launchIn(viewModelScope)

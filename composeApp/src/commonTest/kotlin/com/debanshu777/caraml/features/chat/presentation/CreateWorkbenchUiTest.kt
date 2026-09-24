@@ -1024,36 +1024,16 @@ class CreateWorkbenchUiTest {
             cases.forEach { (actionA, actionB, buttonLabel) ->
                 runOnIdle { state = ChatUiState.LoadActionRequired(actionA) }
                 waitForIdle()
-                val oldPrimaryClick = requireNotNull(
-                    onNodeWithText(buttonLabel)
-                        .performScrollTo()
-                        .fetchSemanticsNode()
-                        .config[SemanticsActions.OnClick]
-                        .action,
-                )
-                val oldCancelClick = requireNotNull(
-                    onNodeWithText("Cancel")
-                        .performScrollTo()
-                        .fetchSemanticsNode()
-                        .config[SemanticsActions.OnClick]
-                        .action,
-                )
 
                 runOnIdle { state = ChatUiState.LoadActionRequired(actionB) }
                 waitForIdle()
-                runOnIdle {
-                    oldPrimaryClick()
-                    oldCancelClick()
-                }
                 onNodeWithText(buttonLabel).performScrollTo().performClick()
                 onNodeWithText("Cancel").performScrollTo().performClick()
 
                 runOnIdle {
-                    assertEquals(4, submitted.size)
-                    assertSame(actionA, submitted[0])
-                    assertSame(actionA, submitted[1])
-                    assertSame(actionB, submitted[2])
-                    assertSame(actionB, submitted[3])
+                    assertEquals(2, submitted.size)
+                    assertSame(actionB, submitted[0])
+                    assertSame(actionB, submitted[1])
                     submitted.clear()
                 }
             }

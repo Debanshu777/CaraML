@@ -166,6 +166,23 @@ interface DownloadTaskDao {
     ): Int
 
     @Query(
+        """
+        UPDATE download_artifact
+        SET state = 'QUEUED', failure_code = NULL, platform_task_id = NULL,
+            bytes_received = 0, entity_tag = NULL, last_modified = NULL,
+            lease_owner = NULL, lease_expires_at_epoch_ms = NULL, updated_at_epoch_ms = :nowEpochMs
+        WHERE artifact_id = :artifactId
+          AND state = 'COMPLETED'
+          AND EXISTS (
+              SELECT 1 FROM download_batch
+              WHERE download_batch.batch_id = download_artifact.batch_id
+                AND download_batch.user_intent = 'RUN'
+          )
+        """,
+    )
+    suspend fun requeueMissingCompletedArtifact(artifactId: String, nowEpochMs: Long): Int
+
+    @Query(
         "UPDATE download_batch SET user_intent = :intent, updated_at_epoch_ms = :nowEpochMs WHERE batch_id = :batchId",
     )
     suspend fun setUserIntent(batchId: String, intent: String, nowEpochMs: Long): Int

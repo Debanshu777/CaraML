@@ -89,61 +89,81 @@ class DownloadBatchRunner(
 
         val verifyingArtifacts = mutableListOf<String>()
         for (initialArtifact in initial.artifacts) {
-            if (initialArtifact.state == DownloadArtifactState.COMPLETED) continue
-            if (initialArtifact.state == DownloadArtifactState.VERIFYING) {
-                verifyingArtifacts += initialArtifact.artifactId
+            var artifact = initialArtifact
+            var publicationKnownMissing = false
+            if (artifact.state == DownloadArtifactState.COMPLETED) {
+                val stillPublished = try {
+                    transfer.isPublished(artifact.request.metadata)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    return DownloadRunResult.Retry(DownloadFailureCode.PLATFORM)
+                }
+                if (stillPublished) continue
+                if (!store.requeueMissingCompletedArtifact(artifact.artifactId, clock())) {
+                    return DownloadRunResult.Retry(DownloadFailureCode.PLATFORM)
+                }
+                artifact = artifact.copy(
+                    state = DownloadArtifactState.QUEUED,
+                    bytesReceived = 0L,
+                    entityTag = null,
+                    lastModified = null,
+                    platformTaskId = null,
+                    failureCode = null,
+                )
+                publicationKnownMissing = true
+            }
+            if (artifact.state == DownloadArtifactState.VERIFYING) {
+                verifyingArtifacts += artifact.artifactId
                 continue
             }
-            val isPublished = try {
-                transfer.isPublished(initialArtifact.request.metadata)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                false
-            }
+            val isPublished = !publicationKnownMissing && publishedOrFalse(artifact.request.metadata)
             if (isPublished) {
                 val owner = leaseOwner().take(128)
                 try {
-                    if (store.claim(initialArtifact.artifactId, owner, clock(), clock() + LEASE_DURATION_MS)) {
+                    if (store.claim(artifact.artifactId, owner, clock(), clock() + LEASE_DURATION_MS)) {
                         store.updateProgress(
-                            initialArtifact.artifactId,
-                            initialArtifact.expectedBytes,
-                            initialArtifact.entityTag,
-                            initialArtifact.lastModified,
+                            artifact.artifactId,
+                            artifact.expectedBytes,
+                            artifact.entityTag,
+                            artifact.lastModified,
                             clock(),
                         )
                         store.transitionArtifact(
-                            initialArtifact.artifactId,
+                            artifact.artifactId,
                             DownloadArtifactState.VERIFYING,
                             null,
                             clock(),
                         )
-                        verifyingArtifacts += initialArtifact.artifactId
+                        verifyingArtifacts += artifact.artifactId
                     }
                 } catch (cancelled: CancellationException) {
-                    checkpointCancellation(batchId, initialArtifact.artifactId, owner)
+                    checkpointCancellation(batchId, artifact.artifactId, owner)
                     throw cancelled
                 } finally {
-                    releaseLease(initialArtifact.artifactId, owner)
+                    releaseLease(artifact.artifactId, owner)
                 }
                 continue
             }
             val owner = leaseOwner().take(128)
             try {
-                if (!store.claim(initialArtifact.artifactId, owner, clock(), clock() + LEASE_DURATION_MS)) continue
-                val result = runArtifact(batchId, initialArtifact, progressSink)
+                if (!store.claim(artifact.artifactId, owner, clock(), clock() + LEASE_DURATION_MS)) {
+                    if (publicationKnownMissing) return DownloadRunResult.Retry(DownloadFailureCode.PLATFORM)
+                    continue
+                }
+                val result = runArtifact(batchId, artifact, progressSink)
                 if (result != null) return result
-                verifyingArtifacts += initialArtifact.artifactId
+                verifyingArtifacts += artifact.artifactId
             } catch (cancelled: CancellationException) {
-                checkpointCancellation(batchId, initialArtifact.artifactId, owner)
+                checkpointCancellation(batchId, artifact.artifactId, owner)
                 throw cancelled
             } catch (stop: StopForIntent) {
-                checkpointCancellation(batchId, initialArtifact.artifactId, owner)
+                checkpointCancellation(batchId, artifact.artifactId, owner)
                 return stop.result
             } catch (error: Exception) {
-                return fail(initialArtifact.artifactId, error)
+                return fail(artifact.artifactId, error)
             } finally {
-                releaseLease(initialArtifact.artifactId, owner)
+                releaseLease(artifact.artifactId, owner)
             }
         }
 
@@ -169,6 +189,14 @@ class DownloadBatchRunner(
             }
             if (terminal) DownloadRunResult.Failed(code) else DownloadRunResult.Retry(code)
         }
+    }
+
+    private suspend fun publishedOrFalse(metadata: DownloadMetadataDTO): Boolean = try {
+        transfer.isPublished(metadata)
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        false
     }
 
     private suspend fun runArtifact(

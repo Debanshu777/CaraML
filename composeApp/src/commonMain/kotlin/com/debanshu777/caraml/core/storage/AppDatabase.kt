@@ -21,7 +21,7 @@ import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
         ModelComponentLinkEntity::class,
         InstalledModelEvidenceEntity::class,
     ],
-    version = 5,
+    version = 1,
     exportSchema = false,
 )
 @ConstructedBy(AppDatabaseConstructor::class)

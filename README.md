@@ -219,6 +219,8 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 
 <!-- This section is updated at the end of each AI-assisted development session -->
 
+- Completed download records now reconcile their immutable publication before reuse, so removed models can be installed again without redownloading still-published shared components
+- Generated-media stores now coordinate active sessions and writes process-wide, evict expired/LRU abandoned sessions, and enforce one aggregate 1 GiB cap; CI also assembles the Android app
 - Native engines now use the exact 23 September pair (`llama.cpp` `f46bc30`, stable-diffusion.cpp `c92d73c`) with one shared patched GGML, exact admitted/effective plan checks, and version-namespaced persistence
 - Android packages both runners for arm64-v8a/x86_64, while iOS device and simulator archives merge both engines with exactly one GGML implementation
 - Expanded the documented [CaraML Prism design system](docs/caraml-design-system.md) with app-wide information hierarchy, progressive-disclosure, rounded-surface, compact reflow, and data-heavy toolbar guidance
@@ -233,7 +235,7 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 - iOS background completions now validate the actual HTTPS response before capture, persist a bounded exact-task provenance envelope for crash recovery, and coalesce callback/startup import and finalization behind URLSession restoration
 - Android download startup now has one reconciliation barrier shared by UIDT and WorkManager, collapses duplicate owners in favor of the exact UIDT, persists generation-bound Task Manager stops as resumable pauses, and checkpoints cancelled artifact leases atomically
 - Exact model loads now recover and compare the authoritative current owner bundle while holding every expected and candidate repository root on the download subsystem's shared lock, then retain that lifetime through byte revalidation, recovery-marker cleanup, and native open/load; exact Git, LFS, and Xet object IDs are preserved
-- Installed artifacts now live only in validated immutable bundle generations; stale Room schemas are destructively recreated, corrupt current rows and journals fail closed, Model Details controls bind to the exact current batch/task identity, iOS background payloads require the same exact persisted binding, and reference-aware deletion preserves every still-linked owner
+- Installed artifacts now live only in validated immutable bundle generations; the unused application database starts at schema version 1, corrupt current rows and journals fail closed, Model Details controls bind to the exact current batch/task identity, iOS background payloads require the same exact persisted binding, and reference-aware deletion preserves every still-linked owner
 - Rebuilt CaraML as a sidebar-first Prism workbench: compact windows use a stationary-content modal panel, tablets use a compact rail, and wider workspaces use a labeled sidebar with contextual generation modes
 - Reframed Create around one focused command composer and explicit activity states; generation modes remain local state while the Create destination stays selected
 - Reworked Model Hub as a compact registry and made Details artifact-first with reachable metadata, exact artifact actions, and durable pause/resume/cancel/retry state

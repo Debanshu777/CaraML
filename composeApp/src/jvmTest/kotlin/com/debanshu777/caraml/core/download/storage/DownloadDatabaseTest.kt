@@ -379,6 +379,35 @@ class DownloadDatabaseTest {
     }
 
     @Test
+    fun missingCompletedArtifactCanBeAtomicallyRequeuedForReinstall() = runTest {
+        val database = openDatabase("completed-reinstall")
+        val store = RoomDownloadTaskStore(database.downloadTaskDao())
+        try {
+            val batchId = store.create(request(), nowEpochMs = 1L)
+            val artifactId = store.getBatch(batchId)!!.artifacts.single().artifactId
+            assertTrue(store.claim(artifactId, owner = "worker", nowEpochMs = 2L, expiresAtEpochMs = 100L))
+            assertTrue(store.updateProgress(artifactId, 1_024L, "etag", "modified", 3L))
+            assertTrue(store.transitionArtifact(artifactId, DownloadArtifactState.VERIFYING, null, 4L))
+            assertTrue(store.transitionArtifact(artifactId, DownloadArtifactState.COMPLETED, null, 5L))
+
+            assertTrue(store.requeueMissingCompletedArtifact(artifactId, nowEpochMs = 6L))
+            assertFalse(store.requeueMissingCompletedArtifact(artifactId, nowEpochMs = 7L))
+
+            val restored = assertNotNull(store.getBatch(batchId))
+            assertEquals(DownloadBatchState.QUEUED, restored.state)
+            with(restored.artifacts.single()) {
+                assertEquals(DownloadArtifactState.QUEUED, state)
+                assertEquals(0L, bytesReceived)
+                assertNull(entityTag)
+                assertNull(lastModified)
+                assertNull(platformTaskId)
+            }
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun cancellationCheckpointAtomicallyTransitionsClaimAndReleasesExactLease() = runTest {
         val database = openDatabase("cancellation-checkpoint")
         val store = RoomDownloadTaskStore(database.downloadTaskDao())

@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(llama_runner_desktop VERSION 1.0.0 LANGUAGES C CXX)
 
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 include(CTest)
 
 add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../../artifactFs/cpp" artifact-fs-build)
