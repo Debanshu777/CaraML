@@ -55,3 +55,9 @@ If `preparePatchedLlamaSource` fails after a bump, the upstream change touched t
 **What:** Makes llama.cpp memory-fit probes restore the global logger and release transient model/context handles through RAII on every return and exception path.
 
 **Why:** CaraML invokes fit probing as part of bounded preflight, so probe failure must not leak native state or leave process-global logging redirected.
+
+### `0004-vulkan-gate-xe-flash-attention-shaders.patch`
+
+**What:** Builds and references the Intel Xe cooperative-matrix flash-attention decode shaders only when the selected `glslc` supports `GL_KHR_cooperative_matrix`.
+
+**Why:** Android NDK shader toolchains can legitimately omit that extension. The pinned upstream generator detected the missing capability but still compiled the two extension-only shaders, which prevented Vulkan Android packaging instead of retaining the scalar flash-attention path.

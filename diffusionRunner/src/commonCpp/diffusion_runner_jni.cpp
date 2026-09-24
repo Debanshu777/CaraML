@@ -428,13 +428,8 @@ Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeTxt2Img(JNIEnv *env, 
         jlong seed,
         jint sampleMethod,
         jobjectArray loraPaths,
-        jfloatArray loraStrengths,
-        jintArray effectiveFpsOut) {
+        jfloatArray loraStrengths) {
     try {
-
-    if (!effectiveFpsOut || env->GetArrayLength(effectiveFpsOut) < 1 || env->ExceptionCheck()) {
-        return nullptr;
-    }
     // Set up ImageGenConfig
     std::string prompt_str = jstring_to_string(env, prompt);
     std::string negative_str = jstring_to_string(env, negative);
@@ -526,9 +521,13 @@ Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeVideoGen(JNIEnv *env,
         jlong seed,
         jint sampleMethod,
         jobjectArray loraPaths,
-        jfloatArray loraStrengths) {
+        jfloatArray loraStrengths,
+        jintArray effectiveFpsOut) {
     try {
 
+    if (!effectiveFpsOut || env->GetArrayLength(effectiveFpsOut) < 1 || env->ExceptionCheck()) {
+        return nullptr;
+    }
     // Set up VideoGenConfig
     std::string prompt_str = jstring_to_string(env, prompt);
     std::string negative_str = jstring_to_string(env, negative);
