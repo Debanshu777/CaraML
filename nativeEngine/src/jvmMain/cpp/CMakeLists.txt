@@ -139,7 +139,7 @@ foreach(_diffusion_test IN ITEMS
     target_include_directories(${_diffusion_test} PRIVATE
         ${DIFFUSION_RUNNER_INCLUDE_DIRS}
         "${SD_SRC}/src"
-        "${SD_SRC}/ggml/include"
+        "${LLAMA_SRC}/ggml/include"
     )
     add_test(NAME ${_diffusion_test} COMMAND ${_diffusion_test})
 endforeach()
@@ -155,7 +155,7 @@ add_executable(
 target_include_directories(diffusion_max_vram_test PRIVATE
     ${DIFFUSION_RUNNER_INCLUDE_DIRS}
     "${SD_SRC}/src"
-    "${SD_SRC}/ggml/include"
+    "${LLAMA_SRC}/ggml/include"
 )
 target_link_libraries(diffusion_max_vram_test PRIVATE stable-diffusion Threads::Threads)
 add_test(NAME diffusion_max_vram_test COMMAND diffusion_max_vram_test)

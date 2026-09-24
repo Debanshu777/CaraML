@@ -10,7 +10,7 @@ endif()
 get_filename_component(LLAMA_SRC "${LLAMA_SRC}" ABSOLUTE)
 
 if(NOT EXISTS "${LLAMA_SRC}/CMakeLists.txt")
-    message(FATAL_ERROR "llama.cpp not found at ${LLAMA_SRC}. Please run 'git submodule update --init --recursive'")
+    message(FATAL_ERROR "llama.cpp not found at ${LLAMA_SRC}. Please run 'git submodule update --init'")
 endif()
 
 set(LLAMA_RUNNER_CORE_SOURCES

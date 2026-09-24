@@ -10,7 +10,7 @@ set(SD_SRC "${DIFFUSION_RUNNER_COMMON_DIR}/../../../libraries/stable-diffusion.c
 if(NOT EXISTS "${SD_SRC}/CMakeLists.txt")
     message(FATAL_ERROR
         "stable-diffusion.cpp not found at ${SD_SRC}. "
-        "Run 'git submodule update --init --recursive'")
+        "Run 'git submodule update --init'")
 endif()
 
 set(DIFFUSION_RUNNER_CORE_SOURCES

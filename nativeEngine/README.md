@@ -6,7 +6,7 @@ Central native build orchestration module for CaraML. One CMake graph per platfo
 
 ## What This Module Does
 
-1. **Applies patches** to vendored submodules before compilation (`applyNativePatches`)
+1. **Prepares a patched copy** of llama.cpp without mutating the pinned submodule (`preparePatchedLlamaSource`)
 2. **Invokes CMake** per platform with the right toolchain and flags
 3. **Merges static libs** for iOS (single `libllama_runner_merged.a` per arch)
 4. **Exports layout constants** (`CaramlNativeLayout`) so `:composeApp` and `:runner` know where to find the built libraries
@@ -91,8 +91,7 @@ This prevents duplicate symbol errors from linking two independent GGML builds.
 
 | Task | Description |
 |------|-------------|
-| `applyNativePatches` | Apply `.patch` files from `libraries/patches/<submodule>/` (idempotent via git am) |
-| `revertNativePatches` | Revert all patches (run before bumping submodule SHA) |
+| `preparePatchedLlamaSource` | Recreate a build-owned llama.cpp source tree and apply numbered patches |
 | `compileLlamaRunnerDesktop` | Build desktop shared libs via CMake |
 | `verifyNativePreflightFixtures` | Strictly acquire/generate digest-addressed native fixtures under fixed HTTPS hosts and decoded-size caps |
 | `mergeLlamaRunnerStaticIosArm64` | Merge iOS arm64 `.a` files via `libtool -static` |
@@ -104,18 +103,17 @@ Android native build is triggered automatically by AGP `externalNativeBuild` dur
 
 ## Patch System
 
-Patches live under `libraries/patches/<submodule>/` as numbered `.patch` files:
+Active llama.cpp patches live under `libraries/patches/llama.cpp/` as numbered `.patch` files:
 
 ```
 libraries/patches/
-├── llama.cpp/
-│   ├── 0001-fix-chat-template.patch
-│   └── 0002-metal-compat.patch
-└── stable-diffusion.cpp/
-    └── 0001-ggml-max-name.patch
+└── llama.cpp/
+    ├── 0001-metal-pin-shading-language-version.patch
+    ├── 0002-vulkan-norm-require-f32.patch
+    └── 0003-fit-memory-probe-raii.patch
 ```
 
-Patches are applied via `git am` inside each submodule directory. `applyNativePatches` is idempotent — already-applied patches are skipped. Always run `revertNativePatches` before updating submodule SHAs to avoid conflicts.
+`preparePatchedLlamaSource` recreates `nativeEngine/build/patched-native-sources/llama.cpp` from the pinned upstream tree, then applies each patch with `git apply`. Submodule worktrees stay immutable, so a submodule bump requires only checking that this task still succeeds.
 
 ---
 
@@ -137,6 +135,7 @@ Create a **separate** Gradle module + CMake project. Do not add here unless it m
 
 <!-- Updated at end of each Claude Code session -->
 
+- Native dependency checkout now stops at public top-level engine pins; stable-diffusion and its native regression targets reuse llama.cpp's GGML headers with optional WebP/WebM integrations disabled, while llama fixes are applied to the isolated build-owned source tree
 - Secure artifact storage now supports root-pinned append-only reopening for resumable transfers, with native regression coverage for concatenation and symlink/root replacement rejection
 - Android `artifact_fs` now opens the trusted app-owned models root directly instead of traversing `/`; a host regression covers search-only ancestors and final-root symlink rejection
 - Added a strict versioned native-fixture manifest, fixed-host HTTPS acquisition with redirect/size/digest enforcement, generated corrupt fixtures, and isolated opt-in runner parity CI; normal JVM verification performs no fixture download

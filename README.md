@@ -63,7 +63,7 @@ See each module's own README for details.
 ### 1. Initialize submodules
 
 ```bash
-git submodule update --init --recursive
+git submodule update --init
 ```
 
 ### 2. Build native libraries
@@ -207,7 +207,7 @@ Single CMake script builds GGML once from `libraries/llama.cpp`, then both `llam
 
 ### Patch System
 
-Patches under `libraries/patches/<submodule>/` are applied before native compilation (`applyNativePatches` Gradle task) and reverted cleanly before submodule bumps (`revertNativePatches`).
+Numbered llama.cpp patches under `libraries/patches/llama.cpp/` are applied to a Gradle-owned source copy by `:nativeEngine:preparePatchedLlamaSource`; the pinned upstream submodule remains immutable.
 
 ### iOS Static Lib Merge
 
@@ -219,6 +219,7 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 
 <!-- This section is updated at the end of each AI-assisted development session -->
 
+- CI now uses publicly fetchable top-level native-engine pins, skips unused historical nested stable-diffusion submodules, and applies llama.cpp fixes only to an isolated build-owned source copy
 - Expanded the documented [CaraML Prism design system](docs/caraml-design-system.md) with app-wide information hierarchy, progressive-disclosure, rounded-surface, compact reflow, and data-heavy toolbar guidance
 - Compact Models now collapses device diagnostics into one remembered summary, uses rounded wrapping result panes and compact metrics, and prioritizes the command and first useful result over secondary facts
 - Artifact now presents identity and the download decision before collapsed technical metadata, with rounded focal/file surfaces and production-component previews at 360–412dp including 200% text

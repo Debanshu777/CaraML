@@ -16,7 +16,7 @@ add_compile_definitions(GGML_MAX_NAME=128)
 
 # --- llama.cpp (brings in ggml + llama + common targets) ---
 if(NOT EXISTS "${LLAMA_SRC}/CMakeLists.txt")
-    message(FATAL_ERROR "llama.cpp not found at ${LLAMA_SRC}. Run 'git submodule update --init --recursive'")
+    message(FATAL_ERROR "llama.cpp not found at ${LLAMA_SRC}. Run 'git submodule update --init'")
 endif()
 
 set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -28,13 +28,18 @@ add_subdirectory("${LLAMA_SRC}" "${CMAKE_BINARY_DIR}/llama-build")
 
 # --- stable-diffusion.cpp (reuses ggml target from llama.cpp) ---
 if(NOT EXISTS "${SD_SRC}/CMakeLists.txt")
-    message(FATAL_ERROR "stable-diffusion.cpp not found at ${SD_SRC}. Run 'git submodule update --init --recursive'")
+    message(FATAL_ERROR "stable-diffusion.cpp not found at ${SD_SRC}. Run 'git submodule update --init'")
 endif()
 
 set(SD_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(SD_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(SD_BUILD_SHARED_GGML_LIB OFF CACHE BOOL "" FORCE)
 set(SD_USE_SYSTEM_GGML ON CACHE BOOL "" FORCE)
+# CaraML writes generated media through its own bounded stores. Keep optional
+# stable-diffusion WebP/WebM submodules out of the native graph so a top-level
+# submodule checkout is sufficient and local builds match CI.
+set(SD_WEBP OFF CACHE BOOL "" FORCE)
+set(SD_WEBM OFF CACHE BOOL "" FORCE)
 set(SD_CUDA OFF CACHE BOOL "" FORCE)
 set(SD_OPENCL OFF CACHE BOOL "" FORCE)
 set(SD_SYCL OFF CACHE BOOL "" FORCE)
@@ -44,6 +49,16 @@ set(SD_MUSA OFF CACHE BOOL "" FORCE)
 # SD_METAL and SD_VULKAN are set per-platform below in nativeEngine CMakeLists.txt files
 
 add_subdirectory("${SD_SRC}" "${CMAKE_BINARY_DIR}/sd-build")
+
+# stable-diffusion includes a small set of private GGML headers using paths such
+# as `ggml/src/ggml-impl.h`. When SD_USE_SYSTEM_GGML is enabled, resolve those
+# paths against the same build-owned llama.cpp source that provides the linked
+# GGML targets instead of requiring stable-diffusion's nested GGML checkout.
+foreach(_sd_target stable-diffusion sd)
+    if(TARGET ${_sd_target})
+        target_include_directories(${_sd_target} PRIVATE "${LLAMA_SRC}")
+    endif()
+endforeach()
 
 # Phase 07: When GGML_BACKEND_DL=ON, ggml-cpu is built as a MODULE (dlopen-only)
 # and cannot be linked directly. Remove it from stable-diffusion's link deps.
