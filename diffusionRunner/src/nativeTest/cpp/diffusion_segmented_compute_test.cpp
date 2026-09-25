@@ -15,7 +15,7 @@ int main() {
     config.model_path = "/models/model.gguf";
     config.runtime_backend = DIFFUSION_RUNTIME_BACKEND_METAL;
     config.offload_to_cpu = true;
-    config.max_vram = "metal=2";
+    config.max_vram = "*=2";
     config.segmented_compute = true;
     config.prefetch = false;
 
@@ -25,7 +25,7 @@ int main() {
     expect(captured.backend == "metal", "runtime backend changed after admission");
     expect(captured.params_backend == "*=cpu,diffusion=cpu,te=cpu,vae=cpu",
            "parameter backend changed after admission");
-    expect(captured.max_vram == "metal=2", "max VRAM changed after admission");
+    expect(captured.max_vram == "*=2", "max VRAM changed after admission");
     expect(captured.segmented_compute, "segmented compute was not preserved");
     expect(!captured.prefetch, "prefetch was enabled without admission");
     expect(!captured.auto_fit, "context construction recomputed the admitted plan");

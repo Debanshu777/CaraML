@@ -274,10 +274,7 @@ class ArtifactBundleManifestStore(
     }
 
     private fun relative(path: Path): String {
-        val root = ownerRoot.normalized().toString().trimEnd('/')
-        val normalized = path.normalized().toString()
-        if (!normalized.startsWith("$root/")) throw ArtifactFileAccessException()
-        return normalized.removePrefix("$root/")
+        return path.relativeToRoot(ownerRoot)?.takeUnless { it == "." } ?: throw ArtifactFileAccessException()
     }
 }
 

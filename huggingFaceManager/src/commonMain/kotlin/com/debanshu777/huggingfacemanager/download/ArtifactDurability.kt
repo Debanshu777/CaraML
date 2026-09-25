@@ -35,3 +35,10 @@ internal fun artifactDurability(
 
 internal fun Path.resolveValidated(relativePath: String): Path =
     if (relativePath == ".") this else this / relativePath
+
+internal fun Path.relativeToRoot(root: Path): String? {
+    val relative = runCatching { normalized().relativeTo(root.normalized()) }.getOrNull() ?: return null
+    if (relative.toString() == ".") return "."
+    if (relative.segments.any { it == "." || it == ".." }) return null
+    return relative.segments.joinToString("/")
+}

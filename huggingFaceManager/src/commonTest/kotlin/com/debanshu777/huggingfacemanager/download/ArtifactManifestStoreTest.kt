@@ -19,6 +19,18 @@ import kotlin.test.assertTrue
 
 class ArtifactManifestStoreTest {
     @Test
+    fun windowsStyleRootCommitsAndValidatesManifest() {
+        val fs = FakeFileSystem()
+        val root = "C:\\models\\org\\model".toPath()
+        fs.createDirectories(root)
+        val store = ArtifactManifestStore(root, fs)
+
+        stageAndCommit(fs, store, root, "windows-artifact".encodeToByteArray(), "a".repeat(40))
+
+        assertNotNull(store.readValidated())
+    }
+
+    @Test
     fun fullSixtyFourEntryRevisionCanBeReplacedAndPrunedRepeatedly() = withStore { fs, root, store ->
         fun installRevision(revision: Char, bundle: Char): List<ArtifactManifestEntry> = (0 until 64).map { index ->
             val bytes = byteArrayOf(revision.code.toByte(), index.toByte())

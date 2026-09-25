@@ -135,7 +135,7 @@ Create a **separate** Gradle module + CMake project. Do not add here unless it m
 
 <!-- Updated at end of each Claude Code session -->
 
-- Android CI installs pinned CMake 3.31.1 before native configuration, and Windows artifact opens include metadata-read access so the no-reparse check accepts writable/delete handles
+- Android CI installs pinned CMake 3.31.1 before native configuration; Windows artifact opens retain metadata-read access, and same-directory publication omits `RootDirectory` as required by the native rename contract
 - Desktop static dependencies now build as position-independent code for Linux shared-library linking, the Android-root fixture uses the host temporary directory, and Windows directory creation uses best-effort metadata flushing when supported while preserving pinned no-reparse checks
 - Native builds pin llama.cpp `f46bc30` and stable-diffusion.cpp `c92d73c`, compile both runners against one patched llama GGML tree, and verify the exact public gitlinks before project checks
 - Android's Vulkan build gates Intel Xe cooperative-matrix shaders on `glslc` capability; arm64-v8a/x86_64 APK packaging and iOS device/simulator one-GGML archive merges pass locally

@@ -219,7 +219,7 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 
 <!-- This section is updated at the end of each AI-assisted development session -->
 
-- CI now installs the Android CMake version pinned by the native module; Windows artifact handles retain metadata-read access for no-reparse validation, and diffusion preflight avoids a GCC 13 aggregate-assignment compiler crash
+- CI now installs the Android CMake version pinned by the native module; Windows artifact paths use segment-aware containment, same-directory publication follows the Win32 rename contract, and diffusion verification uses host-neutral max-VRAM fixtures while avoiding a GCC 13 aggregate-assignment compiler crash
 - Completed download records now reconcile their immutable publication before reuse, so removed models can be installed again without redownloading still-published shared components
 - Generated-media stores now coordinate active sessions and writes process-wide, evict expired/LRU abandoned sessions, and enforce one aggregate 1 GiB cap; CI also assembles the Android app
 - Native engines now use the exact 23 September pair (`llama.cpp` `f46bc30`, stable-diffusion.cpp `c92d73c`) with one shared patched GGML, exact admitted/effective plan checks, and version-namespaced persistence

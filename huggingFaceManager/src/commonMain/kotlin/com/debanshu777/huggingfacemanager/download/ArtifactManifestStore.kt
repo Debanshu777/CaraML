@@ -953,11 +953,7 @@ class ArtifactManifestStore(
         secureRoot?.existsRegularFile(relativeToRoot(path)) ?: fileSystem.exists(path)
 
     private fun relativeToRoot(path: Path): String {
-        val root = modelRoot.normalized().toString().trimEnd('/')
-        val normalized = path.normalized().toString()
-        if (normalized == root) return "."
-        if (!normalized.startsWith("$root/")) throw ArtifactDurabilityException()
-        return normalized.removePrefix("$root/")
+        return path.relativeToRoot(modelRoot) ?: throw ArtifactDurabilityException()
     }
 
     private fun validatedTarget(relativePath: String): Path? {
@@ -965,8 +961,7 @@ class ArtifactManifestStore(
             ?: return null
         if (validated != relativePath) return null
         val target = (modelRoot / validated).normalized()
-        val root = modelRoot.normalized()
-        return target.takeIf { it != root && it.toString().startsWith("$root/") }
+        return target.takeIf { target.relativeToRoot(modelRoot)?.takeUnless { it == "." } != null }
     }
 }
 

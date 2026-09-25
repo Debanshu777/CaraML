@@ -401,14 +401,19 @@ Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_move(
         return JNI_FALSE;
     }
     HANDLE source_file = open_child(source_parent, source_name, DELETE, FILE_OPEN, false);
+    FileIdentity source_parent_identity;
+    FileIdentity target_parent_identity;
+    const bool parent_identity_available =
+        identity_of(source_parent, &source_parent_identity) &&
+        identity_of(target_parent, &target_parent_identity);
     const std::size_t bytes = target_name.size() * sizeof(wchar_t);
     std::vector<unsigned char> storage(sizeof(FILE_RENAME_INFO) + bytes);
     auto* info = reinterpret_cast<FILE_RENAME_INFO*>(storage.data());
     info->ReplaceIfExists = TRUE;
-    info->RootDirectory = target_parent;
+    info->RootDirectory = source_parent_identity == target_parent_identity ? nullptr : target_parent;
     info->FileNameLength = static_cast<DWORD>(bytes);
     std::copy(target_name.begin(), target_name.end(), info->FileName);
-    const bool result = source_file != INVALID_HANDLE_VALUE &&
+    const bool result = parent_identity_available && source_file != INVALID_HANDLE_VALUE &&
         SetFileInformationByHandle(source_file, FileRenameInfo, info, static_cast<DWORD>(storage.size()));
     if (source_file != INVALID_HANDLE_VALUE) CloseHandle(source_file);
     CloseHandle(source_parent);
