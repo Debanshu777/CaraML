@@ -152,6 +152,7 @@ The merged iOS `.a` includes both `llama_runner` and `diffusion_runner` objects.
 
 <!-- Updated at end of each Claude Code session -->
 
+- Preflight exception paths return fresh bounded results without assigning a large aggregate, avoiding the GCC 13 `gimple_add_tmp_var` compiler crash seen on Ubuntu CI
 - The runner now targets stable-diffusion.cpp `c92d73c` against llama.cpp's single shared GGML, with segmented execution and prefetch represented and validated independently
 - JNI and iOS now expose bounded engine/model identity and effective video FPS; native load applies the exact admitted placement and max-VRAM plan with upstream auto-fit disabled
 - Opt-in native parity verifies bounded corrupt safetensors rejection and repeat-cleanup via `CARAML_NATIVE_PARITY=true ./gradlew :diffusionRunner:jvmTest`; successful diffusion load remains a physical-device gate because no small redistribution-safe fixture is pinned

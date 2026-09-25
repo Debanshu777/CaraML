@@ -1368,11 +1368,13 @@ DiffusionPreflightResultNative diffusion_runner_core_preflight(const DiffusionMo
         result.component_count = result_component_count;
         result.backend_count = static_cast<int>(selected_backends.backends.size());
     } catch (const std::bad_alloc &) {
-        result = DiffusionPreflightResultNative{};
-        result.status = DIFFUSION_PREFLIGHT_UNAVAILABLE;
+        DiffusionPreflightResultNative failure;
+        failure.status = DIFFUSION_PREFLIGHT_UNAVAILABLE;
+        return failure;
     } catch (...) {
-        result = DiffusionPreflightResultNative{};
-        result.status = DIFFUSION_PREFLIGHT_INVALID;
+        DiffusionPreflightResultNative failure;
+        failure.status = DIFFUSION_PREFLIGHT_INVALID;
+        return failure;
     }
     return result;
 }

@@ -142,7 +142,7 @@ HANDLE open_child(
         (directory ? FILE_DIRECTORY_FILE : FILE_NON_DIRECTORY_FILE);
     const NTSTATUS status = create_file(
         &result,
-        access | SYNCHRONIZE,
+        access | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
         &attributes,
         &status_block,
         nullptr,
