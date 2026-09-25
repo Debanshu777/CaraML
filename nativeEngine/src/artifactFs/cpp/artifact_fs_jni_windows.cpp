@@ -21,6 +21,10 @@ using NtCreateFileFunction = NTSTATUS(NTAPI*)(
     PHANDLE, ACCESS_MASK, POBJECT_ATTRIBUTES, PIO_STATUS_BLOCK, PLARGE_INTEGER,
     ULONG, ULONG, ULONG, ULONG, PVOID, ULONG);
 using NtFlushBuffersFileFunction = NTSTATUS(NTAPI*)(HANDLE, PIO_STATUS_BLOCK);
+using NtSetInformationFileFunction = NTSTATUS(NTAPI*)(
+    HANDLE, PIO_STATUS_BLOCK, PVOID, ULONG, ULONG);
+
+constexpr ULONG kFileRenameInformation = 10;
 
 NtCreateFileFunction nt_create_file() {
     static const auto function = reinterpret_cast<NtCreateFileFunction>(
@@ -31,6 +35,12 @@ NtCreateFileFunction nt_create_file() {
 NtFlushBuffersFileFunction nt_flush_buffers_file() {
     static const auto function = reinterpret_cast<NtFlushBuffersFileFunction>(
         GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtFlushBuffersFile"));
+    return function;
+}
+
+NtSetInformationFileFunction nt_set_information_file() {
+    static const auto function = reinterpret_cast<NtSetInformationFileFunction>(
+        GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtSetInformationFile"));
     return function;
 }
 
@@ -401,20 +411,24 @@ Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_move(
         return JNI_FALSE;
     }
     HANDLE source_file = open_child(source_parent, source_name, DELETE, FILE_OPEN, false);
-    FileIdentity source_parent_identity;
-    FileIdentity target_parent_identity;
-    const bool parent_identity_available =
-        identity_of(source_parent, &source_parent_identity) &&
-        identity_of(target_parent, &target_parent_identity);
+    auto set_information = nt_set_information_file();
     const std::size_t bytes = target_name.size() * sizeof(wchar_t);
     std::vector<unsigned char> storage(sizeof(FILE_RENAME_INFO) + bytes);
     auto* info = reinterpret_cast<FILE_RENAME_INFO*>(storage.data());
     info->ReplaceIfExists = TRUE;
-    info->RootDirectory = source_parent_identity == target_parent_identity ? nullptr : target_parent;
+    info->RootDirectory = target_parent;
     info->FileNameLength = static_cast<DWORD>(bytes);
     std::copy(target_name.begin(), target_name.end(), info->FileName);
-    const bool result = parent_identity_available && source_file != INVALID_HANDLE_VALUE &&
-        SetFileInformationByHandle(source_file, FileRenameInfo, info, static_cast<DWORD>(storage.size()));
+    IO_STATUS_BLOCK status {};
+    // Keep destination resolution anchored to the already validated directory
+    // handle. The Win32 wrapper does not reliably accept this relative form.
+    const bool result = set_information != nullptr && source_file != INVALID_HANDLE_VALUE &&
+        success(set_information(
+            source_file,
+            &status,
+            info,
+            static_cast<ULONG>(storage.size()),
+            kFileRenameInformation));
     if (source_file != INVALID_HANDLE_VALUE) CloseHandle(source_file);
     CloseHandle(source_parent);
     CloseHandle(target_parent);

@@ -204,7 +204,7 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 
 <!-- Updated at end of each AI-assisted development session -->
 
-- Completed durable artifacts are revalidated against immutable publication before reuse, allowing remove-then-reinstall while retaining still-published shared components
+- Desktop large-text empty-state verification now mirrors the production scrollable viewport so titles and actions remain reachable across platform font metrics
 - Generated-media stores coordinate per cache root across the process, protect every active session, evict expired/LRU abandoned sessions, and enforce one aggregate 1 GiB write limit
 - Native admission now carries exact placement, memory budget, segmentation, prefetch, and disabled upstream auto-fit through load; persisted assessment, calibration, and quarantine state is isolated under `caraml-native-20260923-f46bc30-c92d73c`
 - Low-risk September engine policy enables bounded llama lazy loading and trusted discrete-GPU diffusion segmentation/prefetch, while unknown native failures fail closed without an untyped OOM retry

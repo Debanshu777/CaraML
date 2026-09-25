@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
@@ -38,6 +40,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -245,11 +248,16 @@ class AuroraComponentsUiTest {
     }
 
     @Test
-    fun emptyStateTitleAndActionRemainVisibleAtTwoHundredPercentFontScale() = runComposeUiTest {
+    fun emptyStateTitleAndActionRemainReachableAtTwoHundredPercentFontScale() = runComposeUiTest {
         setContent {
             AtTwoHundredPercentFontScale {
                 MaterialTheme {
-                    Box(Modifier.width(320.dp).height(360.dp)) {
+                    Box(
+                        Modifier
+                            .width(320.dp)
+                            .height(360.dp)
+                            .verticalScroll(rememberScrollState()),
+                    ) {
                         CaraMLEmptyState(
                             icon = Icons.Default.AutoAwesome,
                             title = "Think locally. Stay private.",
@@ -263,7 +271,9 @@ class AuroraComponentsUiTest {
         }
 
         onNodeWithText("Think locally. Stay private.").assertIsDisplayed()
-        onNodeWithText("Browse models").assertIsDisplayed()
+        onNodeWithText("Browse models")
+            .performScrollTo()
+            .assertIsDisplayed()
     }
 
     @Test
