@@ -6,38 +6,40 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 
-enum class CustomDrawerState {
-    Opened,
-    Closed,
-}
-
-fun CustomDrawerState.isOpened(): Boolean = this == CustomDrawerState.Opened
-
-fun CustomDrawerState.opposite(): CustomDrawerState =
-    if (isOpened()) CustomDrawerState.Closed else CustomDrawerState.Opened
-
 @Stable
-class DrawerController(initialState: CustomDrawerState = CustomDrawerState.Closed) {
-    var drawerState by mutableStateOf(initialState)
+class DrawerController(initiallyOpen: Boolean = false) {
+    var isOpen by mutableStateOf(initiallyOpen)
         private set
 
     fun open() {
-        drawerState = CustomDrawerState.Opened
+        isOpen = true
     }
 
     fun close() {
-        drawerState = CustomDrawerState.Closed
+        isOpen = false
     }
 
     fun toggle() {
-        drawerState = drawerState.opposite()
-    }
-
-    fun setState(state: CustomDrawerState) {
-        drawerState = state
+        isOpen = !isOpen
     }
 }
 
 val LocalDrawerController = staticCompositionLocalOf<DrawerController> {
     throw IllegalStateException("No DrawerController provided")
 }
+
+/** Present only when the current primary destination owns a compact modal-sidebar trigger. */
+val LocalNavigationMenuAction = staticCompositionLocalOf<(() -> Unit)?> { null }
+
+/** Lets a destination temporarily replace persistent navigation with an on-demand modal panel. */
+@Stable
+class FocusModeController {
+    var isActive by mutableStateOf(false)
+        private set
+
+    fun update(active: Boolean) {
+        isActive = active
+    }
+}
+
+val LocalFocusModeController = staticCompositionLocalOf<FocusModeController?> { null }

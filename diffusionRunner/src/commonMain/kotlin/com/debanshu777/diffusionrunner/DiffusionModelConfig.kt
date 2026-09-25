@@ -1,5 +1,12 @@
 package com.debanshu777.diffusionrunner
 
+enum class DiffusionRuntimeBackend(val nativeValue: Int) {
+    CPU(0),
+    METAL(1),
+    VULKAN(2),
+    CUDA(3),
+}
+
 data class DiffusionModelConfig(
     val modelPath: String,
     val vaePath: String = "",
@@ -7,6 +14,8 @@ data class DiffusionModelConfig(
     val clipLPath: String = "",
     val clipGPath: String = "",
     val t5xxlPath: String = "",
+    /** Runtime graph placement. Parameter residency is controlled separately by [offloadToCpu]. */
+    val runtimeBackend: DiffusionRuntimeBackend = DiffusionRuntimeBackend.CPU,
     val offloadToCpu: Boolean = false,
     val keepClipOnCpu: Boolean = false,
     val keepVaeOnCpu: Boolean = false,
@@ -24,4 +33,15 @@ data class DiffusionModelConfig(
     val taesdPath: String = "",
     /** Enable VAE tiling for large images (>512×512) to avoid OOM during decode. */
     val vaeTiling: Boolean = false,
+    /**
+     * stable-diffusion.cpp graph-cut budget: `-1`, decimal GiB, or comma-separated
+     * backend assignments such as `cuda0=6,vulkan0=2`.
+     */
+    val maxVram: String = "",
+    /** Allow the native engine to split the graph within [maxVram]. */
+    val segmentedCompute: Boolean = false,
+    /** Prefetch the next segment while the current segment executes. */
+    val prefetch: Boolean = false,
+    /** Ask the pinned native engine to derive component backend placement from model metadata. */
+    val autoFit: Boolean = false,
 )

@@ -1,21 +1,33 @@
 #include "llama_runner_core.h"
 
 #include <atomic>
+#include <algorithm>
 #include <chrono>
+#include <cctype>
+#include <cmath>
 #include <cstdarg>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <exception>
+#include <limits>
+#include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
 
+#include "build-info.h"
 #include "chat.h"
 #include "common.h"
 #include "fit.h"
 #include "ggml.h"
 #include "ggml-backend.h"
+#include "ggml-cpp.h"
 #include "llama.h"
+#include "llama-arch.h"
+#include "llama-model.h"
+#include "llama_operation_gate.h"
 #include "sampling.h"
 
 namespace {
@@ -33,8 +45,56 @@ LlamaLogFn g_logger = nullptr;
 float g_active_temperature = -1.0f;
 std::string g_active_grammar;
 int g_actual_gpu_layers = 0;
+LlamaOperationGate g_operation_gate;
+bool g_backend_initialized = false;
+std::string g_backend_path;
+
+class ScopedSessionEnd {
+public:
+    explicit ScopedSessionEnd(LlamaOperationGate &gate) : gate_(gate) {}
+    ~ScopedSessionEnd() { if (armed_) gate_.end_session(); }
+
+    ScopedSessionEnd(const ScopedSessionEnd &) = delete;
+    ScopedSessionEnd &operator=(const ScopedSessionEnd &) = delete;
+
+    void keep_session() { armed_ = false; }
+
+private:
+    LlamaOperationGate &gate_;
+    bool armed_ = true;
+};
 
 std::atomic<bool> g_cancel_flag{false};
+// 0 is idle, a positive token owns the probe, and its negation is the same
+// active probe with cancellation requested. A queued/non-owner token cannot mutate it.
+std::atomic<int64_t> g_calibration_state{0};
+// A timed-out native probe cannot be killed safely in-process. Quarantine all
+// later blocking model operations instead of allowing them to wait behind it.
+std::atomic<bool> g_native_operations_poisoned{false};
+
+static bool native_operations_poisoned() {
+    return g_native_operations_poisoned.load(std::memory_order_acquire);
+}
+
+class ScopedCalibrationProbe {
+public:
+    explicit ScopedCalibrationProbe(int64_t token) : token_(token) {}
+    ~ScopedCalibrationProbe() {
+        int64_t expected = token_;
+        if (!g_calibration_state.compare_exchange_strong(
+                expected, 0, std::memory_order_acq_rel, std::memory_order_acquire)) {
+            expected = -token_;
+            g_calibration_state.compare_exchange_strong(
+                expected, 0, std::memory_order_acq_rel, std::memory_order_acquire);
+        }
+    }
+
+    ScopedCalibrationProbe(const ScopedCalibrationProbe &) = delete;
+    ScopedCalibrationProbe &operator=(const ScopedCalibrationProbe &) = delete;
+
+private:
+    int64_t token_;
+};
 int g_max_tokens_remaining = 0;
 std::vector<llama_token> g_streaming_tokens;
 size_t g_streaming_n_generated = 0;
@@ -97,6 +157,303 @@ static void reset_delta_offsets() {
 static bool g_supports_thinking = false;
 
 static void log_line(LlamaLogLevel level, const char *fmt, ...);
+
+static void sanitized_upstream_log(
+    ggml_log_level level,
+    const char * /*text*/,
+    void * /*user_data*/) {
+    if (!g_logger || level < GGML_LOG_LEVEL_WARN) {
+        return;
+    }
+    g_logger(
+        level >= GGML_LOG_LEVEL_ERROR ? LLAMA_LOG_ERROR : LLAMA_LOG_WARN,
+        "native engine diagnostic suppressed");
+}
+
+static void discard_upstream_log(
+    ggml_log_level /*level*/,
+    const char * /*text*/,
+    void * /*user_data*/) {}
+
+class ScopedLlamaLoggerOverride {
+public:
+    explicit ScopedLlamaLoggerOverride(ggml_log_callback replacement) {
+        llama_log_get(&original_callback_, &original_user_data_);
+        llama_log_set(replacement, nullptr);
+    }
+
+    ~ScopedLlamaLoggerOverride() {
+        llama_log_set(original_callback_, original_user_data_);
+    }
+
+    ScopedLlamaLoggerOverride(const ScopedLlamaLoggerOverride &) = delete;
+    ScopedLlamaLoggerOverride &operator=(const ScopedLlamaLoggerOverride &) = delete;
+
+private:
+    ggml_log_callback original_callback_ = nullptr;
+    void *original_user_data_ = nullptr;
+};
+
+static bool is_bounded_c_string(const char *value, size_t max_bytes) {
+    if (!value) {
+        return false;
+    }
+    size_t length = 0;
+    while (length <= max_bytes && value[length] != '\0') {
+        length++;
+    }
+    return length > 0 && length <= max_bytes;
+}
+
+static bool is_bounded_engine_version(const char *value) {
+    if (!is_bounded_c_string(value, 72)) return false;
+    for (size_t index = 0; value[index] != '\0'; index++) {
+        const unsigned char byte = static_cast<unsigned char>(value[index]);
+        const bool accepted = (byte >= 'A' && byte <= 'Z') ||
+            (byte >= 'a' && byte <= 'z') || (byte >= '0' && byte <= '9') ||
+            byte == '.' || byte == '_' || byte == '+' || byte == '-';
+        if (!accepted) return false;
+    }
+    return true;
+}
+
+static bool is_valid_config(const LlamaRunnerConfig &config) {
+    return config.n_ctx >= 0 && config.n_ctx <= 16777216 &&
+        config.n_ctx_min >= 1 && config.n_ctx_min <= 16777216 &&
+        config.n_threads >= 1 && config.n_threads <= 1024 &&
+        config.n_threads_batch >= 0 && config.n_threads_batch <= 1024 &&
+        config.n_batch >= 1 && config.n_batch <= 1048576 &&
+        config.n_ubatch >= 1 && config.n_ubatch <= config.n_batch &&
+        config.n_outputs_max_per_seq >= 0 && config.n_outputs_max_per_seq <= config.n_batch &&
+        config.flash_attn >= -1 && config.flash_attn <= 1 &&
+        config.type_k >= 0 && config.type_k < GGML_TYPE_COUNT &&
+        config.type_v >= 0 && config.type_v < GGML_TYPE_COUNT &&
+        config.n_gpu_layers >= -1 && config.n_gpu_layers <= 65536 &&
+        config.lazy_mode >= LLAMA_LAZY_MODE_OFF && config.lazy_mode <= LLAMA_LAZY_MODE_ON &&
+        !(config.lazy_mode == LLAMA_LAZY_MODE_ON && !config.use_mmap) &&
+        std::isfinite(config.temperature) &&
+        config.temperature >= 0.0f && config.temperature <= 10.0f;
+}
+
+struct FitPlan {
+    llama_model_params model_params = llama_model_default_params();
+    llama_context_params context_params = llama_context_default_params();
+    std::vector<float> tensor_split = std::vector<float>(llama_max_devices(), 0.0f);
+    std::vector<llama_model_tensor_buft_override> buffer_overrides =
+        std::vector<llama_model_tensor_buft_override>(llama_max_tensor_buft_overrides() + 1);
+    std::vector<size_t> margins = std::vector<size_t>(llama_max_devices(), 0);
+    common_params_fit_status status = COMMON_PARAMS_FIT_STATUS_ERROR;
+
+    FitPlan() {
+        buffer_overrides.back() = {nullptr, nullptr};
+    }
+
+    FitPlan(const FitPlan &) = delete;
+    FitPlan &operator=(const FitPlan &) = delete;
+    FitPlan(FitPlan &&) = default;
+    FitPlan &operator=(FitPlan &&) = default;
+
+    void bind_owned_buffers() {
+        model_params.tensor_split = tensor_split.data();
+        if (model_params.tensor_buft_overrides != nullptr) {
+            model_params.tensor_buft_overrides = buffer_overrides.data();
+        }
+    }
+};
+
+static FitPlan resolve_fit_plan(const char *model_path, const LlamaRunnerConfig &config) {
+    FitPlan plan;
+    if (!is_bounded_c_string(model_path, 4096) || !is_valid_config(config)) {
+        return plan;
+    }
+
+    plan.context_params.n_threads = config.n_threads;
+    plan.context_params.n_threads_batch = config.n_threads_batch > 0
+        ? config.n_threads_batch : config.n_threads;
+    plan.context_params.n_batch = config.n_batch;
+    plan.context_params.n_ubatch = config.n_ubatch;
+    plan.context_params.n_outputs_max_per_seq = static_cast<uint32_t>(config.n_outputs_max_per_seq);
+    plan.context_params.flash_attn_type = static_cast<llama_flash_attn_type>(config.flash_attn);
+    plan.context_params.offload_kqv = config.offload_kqv;
+    plan.context_params.type_k = static_cast<ggml_type>(config.type_k);
+    plan.context_params.type_v = static_cast<ggml_type>(config.type_v);
+    plan.model_params.load_mode = config.use_mlock
+        ? (config.use_mmap ? LLAMA_LOAD_MODE_MMAP_MLOCK : LLAMA_LOAD_MODE_MLOCK)
+        : (config.use_mmap ? LLAMA_LOAD_MODE_MMAP : LLAMA_LOAD_MODE_NONE);
+    plan.model_params.lazy_mode = static_cast<llama_lazy_mode>(config.lazy_mode);
+
+    if (config.auto_fit) {
+        if (config.n_gpu_layers == 0) {
+            plan.model_params.n_gpu_layers = 0;
+        }
+        plan.context_params.n_ctx = 0;
+        plan.status = common_fit_params(
+            model_path,
+            &plan.model_params,
+            &plan.context_params,
+            plan.tensor_split.data(),
+            plan.buffer_overrides.data(),
+            plan.margins.data(),
+            static_cast<uint32_t>(config.n_ctx_min),
+            nullptr,
+            GGML_LOG_LEVEL_ERROR);
+        if (plan.status != COMMON_PARAMS_FIT_STATUS_SUCCESS) {
+            return plan;
+        }
+        if (plan.context_params.n_ctx == 0) {
+            plan.context_params.n_ctx = static_cast<uint32_t>(
+                config.n_ctx > 0 ? config.n_ctx : 4096);
+        }
+        if (config.n_ctx > 0 &&
+            static_cast<uint32_t>(config.n_ctx) < plan.context_params.n_ctx) {
+            plan.context_params.n_ctx = static_cast<uint32_t>(config.n_ctx);
+        }
+        if (plan.model_params.n_gpu_layers == 0 && config.n_gpu_layers != 0) {
+            plan.context_params.n_threads = std::max(
+                plan.context_params.n_threads,
+                plan.context_params.n_threads_batch);
+        }
+    } else {
+        plan.model_params.n_gpu_layers = config.n_gpu_layers;
+        plan.context_params.n_ctx = static_cast<uint32_t>(config.n_ctx > 0 ? config.n_ctx : 2048);
+        plan.status = COMMON_PARAMS_FIT_STATUS_SUCCESS;
+    }
+
+    if (plan.context_params.n_ctx == 0 ||
+        plan.context_params.n_ctx > static_cast<uint32_t>(std::numeric_limits<int>::max()) ||
+        plan.model_params.n_gpu_layers < 0) {
+        plan.status = COMMON_PARAMS_FIT_STATUS_ERROR;
+        return plan;
+    }
+    plan.bind_owned_buffers();
+    return plan;
+}
+
+static int preflight_pool_kind(ggml_backend_dev_t device) {
+    if (!device) {
+        return LLAMA_POOL_OTHER;
+    }
+    switch (ggml_backend_dev_type(device)) {
+        case GGML_BACKEND_DEVICE_TYPE_CPU: return LLAMA_POOL_HOST;
+        case GGML_BACKEND_DEVICE_TYPE_GPU: return LLAMA_POOL_DISCRETE_GPU;
+        case GGML_BACKEND_DEVICE_TYPE_IGPU: return LLAMA_POOL_INTEGRATED_GPU;
+        case GGML_BACKEND_DEVICE_TYPE_ACCEL: return LLAMA_POOL_ACCELERATOR;
+        case GGML_BACKEND_DEVICE_TYPE_META: return LLAMA_POOL_META;
+    }
+    return LLAMA_POOL_OTHER;
+}
+
+static bool checked_size_to_i64(size_t value, int64_t &result) {
+    if (value > static_cast<size_t>(std::numeric_limits<int64_t>::max())) {
+        return false;
+    }
+    result = static_cast<int64_t>(value);
+    return true;
+}
+
+static std::string lower_ascii(const char *value) {
+    std::string result = value ? value : "";
+    std::transform(result.begin(), result.end(), result.begin(), [](unsigned char byte) {
+        return byte >= 'A' && byte <= 'Z' ? static_cast<char>(byte - 'A' + 'a') : static_cast<char>(byte);
+    });
+    return result;
+}
+
+static int backend_kind(ggml_backend_dev_t device) {
+    const ggml_backend_reg_t registry = device ? ggml_backend_dev_backend_reg(device) : nullptr;
+    const std::string name = lower_ascii(registry ? ggml_backend_reg_name(registry) : nullptr);
+    if (name.find("cpu") != std::string::npos) return LLAMA_BACKEND_CPU;
+    if (name.find("cuda") != std::string::npos || name.find("hip") != std::string::npos) return LLAMA_BACKEND_CUDA;
+    if (name.find("metal") != std::string::npos) return LLAMA_BACKEND_METAL;
+    if (name.find("vulkan") != std::string::npos) return LLAMA_BACKEND_VULKAN;
+    if (name.find("opencl") != std::string::npos) return LLAMA_BACKEND_OPENCL;
+    if (name.find("sycl") != std::string::npos) return LLAMA_BACKEND_SYCL;
+    return LLAMA_BACKEND_OTHER;
+}
+
+static int backend_device_type(ggml_backend_dev_t device) {
+    switch (ggml_backend_dev_type(device)) {
+        case GGML_BACKEND_DEVICE_TYPE_CPU: return LLAMA_BACKEND_DEVICE_CPU;
+        case GGML_BACKEND_DEVICE_TYPE_GPU: return LLAMA_BACKEND_DEVICE_DISCRETE_GPU;
+        case GGML_BACKEND_DEVICE_TYPE_IGPU: return LLAMA_BACKEND_DEVICE_INTEGRATED_GPU;
+        case GGML_BACKEND_DEVICE_TYPE_ACCEL: return LLAMA_BACKEND_DEVICE_ACCELERATOR;
+        case GGML_BACKEND_DEVICE_TYPE_META: return LLAMA_BACKEND_DEVICE_META;
+    }
+    return LLAMA_BACKEND_DEVICE_META;
+}
+
+static bool encode_device_identity(
+        ggml_backend_dev_t device,
+        int &length,
+        int64_t (&words)[8]) {
+    const char *raw = device ? ggml_backend_dev_name(device) : nullptr;
+    if (!raw) return false;
+    const size_t raw_length = ::strnlen(raw, 65);
+    if (raw_length == 0 || raw_length > 64) return false;
+    size_t first = 0;
+    size_t last = raw_length;
+    while (first < last && std::isspace(static_cast<unsigned char>(raw[first]))) ++first;
+    while (last > first && std::isspace(static_cast<unsigned char>(raw[last - 1]))) --last;
+    const size_t canonical_length = last - first;
+    if (canonical_length == 0 || canonical_length > 64) return false;
+    for (int64_t &word : words) word = 0;
+    for (size_t index = 0; index < canonical_length; ++index) {
+        const unsigned char byte = static_cast<unsigned char>(raw[first + index]);
+        if (byte < 0x20 || byte > 0x7e) return false;
+        const unsigned char canonical = byte >= 'A' && byte <= 'Z'
+            ? static_cast<unsigned char>(byte - 'A' + 'a') : byte;
+        const uint64_t shifted = static_cast<uint64_t>(canonical) << ((index % 8) * 8);
+        words[index / 8] = static_cast<int64_t>(
+            static_cast<uint64_t>(words[index / 8]) | shifted);
+    }
+    length = static_cast<int>(canonical_length);
+    return true;
+}
+
+static bool is_safe_feature_label(const char *value, size_t max_bytes) {
+    if (!is_bounded_c_string(value, max_bytes)) {
+        return false;
+    }
+    for (size_t i = 0; value[i] != '\0'; i++) {
+        const unsigned char byte = static_cast<unsigned char>(value[i]);
+        if (byte < 0x20 || byte > 0x7e) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static ggml_type quantization_type(const std::string &label) {
+    if (label == "F32") return GGML_TYPE_F32;
+    if (label == "F16") return GGML_TYPE_F16;
+    if (label == "BF16") return GGML_TYPE_BF16;
+    if (label == "Q4_0") return GGML_TYPE_Q4_0;
+    if (label == "Q4_1") return GGML_TYPE_Q4_1;
+    if (label == "Q5_0") return GGML_TYPE_Q5_0;
+    if (label == "Q5_1") return GGML_TYPE_Q5_1;
+    if (label == "Q8_0") return GGML_TYPE_Q8_0;
+    if (label == "Q2_K") return GGML_TYPE_Q2_K;
+    if (label == "Q3_K" || label == "Q3_K_S" || label == "Q3_K_M" || label == "Q3_K_L") return GGML_TYPE_Q3_K;
+    if (label == "Q4_K" || label == "Q4_K_S" || label == "Q4_K_M") return GGML_TYPE_Q4_K;
+    if (label == "Q5_K" || label == "Q5_K_S" || label == "Q5_K_M") return GGML_TYPE_Q5_K;
+    if (label == "Q6_K") return GGML_TYPE_Q6_K;
+    if (label == "IQ2_XXS") return GGML_TYPE_IQ2_XXS;
+    if (label == "IQ2_XS") return GGML_TYPE_IQ2_XS;
+    if (label == "IQ2_S" || label == "IQ2_M") return GGML_TYPE_IQ2_S;
+    if (label == "IQ3_XXS") return GGML_TYPE_IQ3_XXS;
+    if (label == "IQ3_XS" || label == "IQ3_S" || label == "IQ3_M") return GGML_TYPE_IQ3_S;
+    if (label == "IQ1_S") return GGML_TYPE_IQ1_S;
+    if (label == "IQ1_M") return GGML_TYPE_IQ1_M;
+    if (label == "IQ4_NL") return GGML_TYPE_IQ4_NL;
+    if (label == "IQ4_XS") return GGML_TYPE_IQ4_XS;
+    if (label == "TQ1_0") return GGML_TYPE_TQ1_0;
+    if (label == "TQ2_0") return GGML_TYPE_TQ2_0;
+    if (label == "MXFP4") return GGML_TYPE_MXFP4;
+    if (label == "NVFP4") return GGML_TYPE_NVFP4;
+    if (label == "Q1_0") return GGML_TYPE_Q1_0;
+    if (label == "Q2_0") return GGML_TYPE_Q2_0;
+    return GGML_TYPE_COUNT;
+}
 
 // Lazily resolve ggml_threadpool_new/free via the backend registry.
 // When GGML_BACKEND_DL=ON the CPU backend is a MODULE (dlopen-only),
@@ -229,13 +586,6 @@ static bool is_valid_utf8(const char *string) {
     return true;
 }
 
-std::string truncate_for_log(const std::string &s, size_t max_len = 80) {
-    if (s.size() <= max_len) {
-        return s;
-    }
-    return s.substr(0, max_len) + "...";
-}
-
 void log_line(LlamaLogLevel level, const char *fmt, ...) {
     char buffer[1024];
     va_list args;
@@ -276,8 +626,8 @@ void recreate_sampler(float temperature, const std::string &grammar) {
     g_active_grammar = grammar;
 
     log_line(LLAMA_LOG_INFO,
-        "recreate_sampler: temp=%.3f grammar_len=%zu grammar_preview=\"%s\"",
-        sparams.temp, grammar.size(), truncate_for_log(grammar).c_str());
+        "recreate_sampler: temp=%.3f grammar_len=%zu",
+        sparams.temp, grammar.size());
 }
 
 void reset_sampler_state() {
@@ -381,169 +731,586 @@ static void reparse_assistant_buffer(bool is_partial) {
     }
 }
 
+static void unload_model_state() {
+    log_line(LLAMA_LOG_INFO, "unload: Releasing model and context");
+
+    g_chat_templates.reset();
+    g_chat_msgs.clear();
+    g_pending_chat_decode = false;
+
+    if (g_sampler) {
+        common_sampler_free(g_sampler);
+        g_sampler = nullptr;
+    }
+
+    if (g_batch.token) {
+        llama_batch_free(g_batch);
+        g_batch = llama_batch_init(0, 0, 0);
+    }
+
+    if (g_context) {
+        if (g_tp_gen)   { if (g_tp_free_fn) g_tp_free_fn(g_tp_gen);   g_tp_gen   = nullptr; }
+        if (g_tp_batch) { if (g_tp_free_fn) g_tp_free_fn(g_tp_batch); g_tp_batch = nullptr; }
+        llama_free(g_context);
+        g_context = nullptr;
+    }
+
+    if (g_model) {
+        llama_model_free(g_model);
+        g_model = nullptr;
+    }
+
+    g_active_temperature = -1.0f;
+    g_active_grammar.clear();
+    g_actual_gpu_layers = 0;
+    g_kv_token_history.clear();
+    reset_delta_offsets();
+    log_line(LLAMA_LOG_INFO, "unload: Model unloaded");
+}
+
 } // namespace
 
 void llama_runner_core_set_logger(LlamaLogFn fn) {
+    auto operation = g_operation_gate.lock_interruptible(native_operations_poisoned);
+    if (!operation) return;
     g_logger = fn;
 }
 
 void llama_runner_core_init(const char *backend_path) {
+    auto operation = g_operation_gate.lock_interruptible(native_operations_poisoned);
+    if (!operation) return;
+    if (backend_path && !is_bounded_c_string(backend_path, 4096)) {
+        log_line(LLAMA_LOG_ERROR, "init: Invalid backend directory");
+        return;
+    }
+    if (g_backend_initialized) {
+        const std::string requested_path = backend_path ? backend_path : "";
+        if (requested_path != g_backend_path) {
+            log_line(LLAMA_LOG_WARN, "init: Backend directory change rejected");
+        }
+        return;
+    }
     if (backend_path && std::strlen(backend_path) > 0) {
-        log_line(LLAMA_LOG_INFO, "init: Loading backends from %s", backend_path);
+        log_line(LLAMA_LOG_INFO, "init: Loading backends from configured directory");
         ggml_backend_load_all_from_path(backend_path);
     } else {
         log_line(LLAMA_LOG_INFO, "init: No backend path provided, skipping backend path load");
     }
     llama_backend_init();
+    llama_log_set(sanitized_upstream_log, nullptr);
+    g_backend_path = backend_path ? backend_path : "";
+    g_backend_initialized = true;
     log_line(LLAMA_LOG_INFO, "init: Backend initialized");
 }
 
+std::string llama_runner_core_engine_version() {
+    const char *version = llama_version();
+    return is_bounded_engine_version(version) ? std::string(version) : std::string();
+}
+
+LlamaPreflightResultNative llama_runner_core_preflight(
+    const char *model_path,
+    const LlamaRunnerConfig &config) {
+    LlamaPreflightResultNative result;
+    auto operation = g_operation_gate.lock_interruptible(native_operations_poisoned);
+    if (!operation) {
+        result.status = LLAMA_PREFLIGHT_UNAVAILABLE;
+        return result;
+    }
+    if (!is_bounded_c_string(model_path, 4096) || !is_valid_config(config)) {
+        result.status = LLAMA_PREFLIGHT_INVALID;
+        return result;
+    }
+
+    if (!g_backend_initialized) {
+        result.status = LLAMA_PREFLIGHT_UNAVAILABLE;
+        return result;
+    }
+    ScopedLlamaLoggerOverride suppress(discard_upstream_log);
+    try {
+        FitPlan plan = resolve_fit_plan(model_path, config);
+        if (plan.status == COMMON_PARAMS_FIT_STATUS_FAILURE) {
+            result.status = LLAMA_PREFLIGHT_NO_FIT;
+            return result;
+        }
+        if (plan.status != COMMON_PARAMS_FIT_STATUS_SUCCESS) {
+            result.status = LLAMA_PREFLIGHT_INVALID;
+            return result;
+        }
+        plan.bind_owned_buffers();
+
+        std::vector<ggml_backend_dev_t> devices;
+        uint32_t model_layers = 0;
+        uint32_t training_context = 0;
+        uint32_t expert_count = 0;
+        const common_device_memory_data_vec memory = common_get_device_memory_data(
+            model_path,
+            &plan.model_params,
+            &plan.context_params,
+            devices,
+            model_layers,
+            training_context,
+            expert_count,
+            GGML_LOG_LEVEL_ERROR);
+        if (memory.empty() || memory.size() != devices.size() + 1 ||
+            memory.size() > static_cast<size_t>(LLAMA_PREFLIGHT_MAX_POOLS)) {
+            result.status = LLAMA_PREFLIGHT_UNAVAILABLE;
+            return result;
+        }
+
+        for (size_t index = 0; index < memory.size(); index++) {
+            const common_device_memory_data &source = memory[index];
+            LlamaPreflightMemoryPool &destination = result.pools[index];
+            destination.kind = index < devices.size()
+                ? preflight_pool_kind(devices[index]) : LLAMA_POOL_HOST;
+            destination.ordinal = static_cast<int>(index);
+            if (source.free < 0 || source.total < 0 ||
+                !checked_size_to_i64(source.model, destination.model_bytes) ||
+                !checked_size_to_i64(source.context, destination.context_bytes) ||
+                !checked_size_to_i64(source.compute, destination.compute_bytes)) {
+                result = LlamaPreflightResultNative{};
+                result.status = LLAMA_PREFLIGHT_INVALID;
+                return result;
+            }
+            destination.free_bytes = source.free;
+            destination.total_bytes = source.total;
+        }
+
+        result.status = LLAMA_PREFLIGHT_FIT;
+        result.n_ctx = static_cast<int>(plan.context_params.n_ctx);
+        result.n_gpu_layers = plan.model_params.n_gpu_layers;
+        result.pool_count = static_cast<int>(memory.size());
+        return result;
+    } catch (const std::invalid_argument &) {
+        result.status = LLAMA_PREFLIGHT_INVALID;
+    } catch (const std::runtime_error &) {
+        result.status = LLAMA_PREFLIGHT_UNAVAILABLE;
+    } catch (...) {
+        result.status = LLAMA_PREFLIGHT_UNAVAILABLE;
+    }
+    return result;
+}
+
+LlamaBackendCapabilitiesNative llama_runner_core_backend_capabilities() {
+    LlamaBackendCapabilitiesNative result;
+    auto operation = g_operation_gate.lock_interruptible(native_operations_poisoned);
+    if (!operation) return result;
+    if (!g_backend_initialized) {
+        return result;
+    }
+    ScopedLlamaLoggerOverride suppress(discard_upstream_log);
+    try {
+        const size_t count = ggml_backend_dev_count();
+        if (count == 0 || count > static_cast<size_t>(LLAMA_BACKEND_MAX_DEVICES)) {
+            return result;
+        }
+        for (size_t index = 0; index < count; index++) {
+            ggml_backend_dev_t device = ggml_backend_dev_get(index);
+            if (!device) {
+                return LlamaBackendCapabilitiesNative{};
+            }
+            ggml_backend_dev_props properties{};
+            ggml_backend_dev_get_props(device, &properties);
+            LlamaBackendCapabilityNative &destination = result.devices[index];
+            destination.kind = backend_kind(device);
+            destination.device_type = backend_device_type(device);
+            if (!encode_device_identity(
+                    device,
+                    destination.device_identity_length,
+                    destination.device_identity_words)) {
+                return LlamaBackendCapabilitiesNative{};
+            }
+            if (properties.memory_total > 0) {
+                if (!checked_size_to_i64(properties.memory_free, destination.free_bytes) ||
+                    !checked_size_to_i64(properties.memory_total, destination.total_bytes) ||
+                    destination.free_bytes > destination.total_bytes) {
+                    return LlamaBackendCapabilitiesNative{};
+                }
+            }
+        }
+        result.count = static_cast<int>(count);
+    } catch (...) {
+        result.count = -1;
+    }
+    return result;
+}
+
+LlamaCalibrationResultNative llama_runner_core_calibrate_backend(
+    int64_t probe_token,
+    int requested_backend,
+    int duration_millis,
+    int64_t buffer_bytes) {
+    LlamaCalibrationResultNative result;
+    result.backend = requested_backend;
+    constexpr int64_t min_buffer = 4LL * 1024LL * 1024LL;
+    constexpr int64_t max_buffer = 64LL * 1024LL * 1024LL;
+    if (probe_token <= 0 ||
+        requested_backend < LLAMA_BACKEND_CPU || requested_backend > LLAMA_BACKEND_OTHER ||
+        duration_millis < 500 || duration_millis > 3000 ||
+        buffer_bytes < min_buffer || buffer_bytes > max_buffer) {
+        result.status = LLAMA_CALIBRATION_INVALID;
+        return result;
+    }
+
+    int64_t state = g_calibration_state.load(std::memory_order_acquire);
+    if (native_operations_poisoned() && state != -probe_token) {
+        result.status = LLAMA_CALIBRATION_QUARANTINED;
+        return result;
+    }
+    if (state == 0) {
+        int64_t expected_idle = 0;
+        if (g_calibration_state.compare_exchange_strong(
+                expected_idle,
+                probe_token,
+                std::memory_order_acq_rel,
+                std::memory_order_acquire)) {
+            state = probe_token;
+        } else {
+            state = expected_idle;
+        }
+    }
+    if (state != probe_token && state != -probe_token) {
+        result.status = LLAMA_CALIBRATION_DEFERRED;
+        return result;
+    }
+    const ScopedCalibrationProbe release_probe(probe_token);
+
+    const auto cancelled = [probe_token]() {
+        return g_calibration_state.load(std::memory_order_acquire) == -probe_token;
+    };
+    if (cancelled()) {
+        result.status = LLAMA_CALIBRATION_CANCELLED;
+        return result;
+    }
+    const auto admission_deadline = std::chrono::steady_clock::now() +
+        std::chrono::milliseconds(std::min(250, std::max(50, duration_millis / 10)));
+    auto operation = g_operation_gate.lock_until(admission_deadline, cancelled);
+    if (!operation) {
+        result.status = cancelled() ? LLAMA_CALIBRATION_CANCELLED : LLAMA_CALIBRATION_DEFERRED;
+        return result;
+    }
+    if (!g_backend_initialized) {
+        result.status = LLAMA_CALIBRATION_UNAVAILABLE;
+        return result;
+    }
+    ScopedLlamaLoggerOverride suppress(discard_upstream_log);
+    try {
+        ggml_backend_dev_t selected_device = nullptr;
+        const size_t device_count = ggml_backend_dev_count();
+        if (device_count == 0 || device_count > static_cast<size_t>(LLAMA_BACKEND_MAX_DEVICES)) {
+            return result;
+        }
+        for (size_t index = 0; index < device_count; ++index) {
+            ggml_backend_dev_t candidate = ggml_backend_dev_get(index);
+            if (candidate && backend_kind(candidate) == requested_backend &&
+                ggml_backend_dev_type(candidate) != GGML_BACKEND_DEVICE_TYPE_META) {
+                selected_device = candidate;
+                break;
+            }
+        }
+        if (!selected_device) return result;
+
+        ggml_backend_ptr backend(ggml_backend_dev_init(selected_device, nullptr));
+        if (!backend) return result;
+
+        constexpr size_t graph_nodes = 16;
+        constexpr int windows_per_metric = 5;
+        const auto target_per_window = std::chrono::milliseconds(
+            std::max(1, duration_millis / (windows_per_metric * 2)));
+        const auto run_windows = [&](ggml_cgraph *graph, int metric, int64_t units_per_iteration,
+                                     int start_window) -> bool {
+            if (!graph || units_per_iteration <= 0) return false;
+            if (ggml_backend_graph_compute(backend.get(), graph) != GGML_STATUS_SUCCESS) return false;
+            for (int offset = 0; offset < windows_per_metric; ++offset) {
+                const auto start = std::chrono::steady_clock::now();
+                int64_t iterations = 0;
+                do {
+                    if (cancelled()) return false;
+                    if (ggml_backend_graph_compute(backend.get(), graph) != GGML_STATUS_SUCCESS) return false;
+                    ++iterations;
+                } while (std::chrono::steady_clock::now() - start < target_per_window);
+                const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    std::chrono::steady_clock::now() - start).count();
+                if (iterations <= 0 || elapsed <= 0 ||
+                    iterations > std::numeric_limits<int64_t>::max() / units_per_iteration) {
+                    return false;
+                }
+                result.windows[start_window + offset] = LlamaCalibrationWindowNative{
+                    metric,
+                    units_per_iteration * iterations,
+                    elapsed,
+                };
+            }
+            return true;
+        };
+
+        {
+            const int64_t memory_elements = buffer_bytes /
+                (2LL * static_cast<int64_t>(sizeof(float)));
+            if (memory_elements <= 0) {
+                result.status = LLAMA_CALIBRATION_INVALID;
+                return result;
+            }
+            ggml_init_params params{
+                ggml_tensor_overhead() * 6 + ggml_graph_overhead_custom(graph_nodes, false),
+                nullptr,
+                true,
+            };
+            ggml_context_ptr context(ggml_init(params));
+            if (!context) return result;
+            ggml_tensor *source = ggml_new_tensor_1d(context.get(), GGML_TYPE_F32, memory_elements);
+            ggml_tensor *destination = ggml_new_tensor_1d(context.get(), GGML_TYPE_F32, memory_elements);
+            ggml_tensor *copy = source && destination ? ggml_cpy(context.get(), source, destination) : nullptr;
+            if (!copy || !ggml_backend_supports_op(backend.get(), copy)) {
+                result.status = LLAMA_CALIBRATION_DEFERRED;
+                return result;
+            }
+            const size_t source_bytes = ggml_nbytes(source);
+            const size_t destination_bytes = ggml_nbytes(destination);
+            if (source_bytes > static_cast<size_t>(buffer_bytes) ||
+                destination_bytes > static_cast<size_t>(buffer_bytes) - source_bytes) {
+                result.status = LLAMA_CALIBRATION_DEFERRED;
+                return result;
+            }
+            ggml_backend_buffer_ptr allocation(ggml_backend_alloc_ctx_tensors(context.get(), backend.get()));
+            if (!allocation) {
+                result.status = LLAMA_CALIBRATION_DEFERRED;
+                return result;
+            }
+            std::vector<float> synthetic(static_cast<size_t>(memory_elements), 0.03125f);
+            ggml_backend_tensor_set(source, synthetic.data(), 0, source_bytes);
+            ggml_cgraph *graph = ggml_new_graph_custom(context.get(), graph_nodes, false);
+            if (!graph) return result;
+            ggml_build_forward_expand(graph, copy);
+            const size_t bytes_per_iteration_size = source_bytes + destination_bytes;
+            if (bytes_per_iteration_size > static_cast<size_t>(std::numeric_limits<int64_t>::max()) ||
+                !run_windows(
+                    graph,
+                    LLAMA_CALIBRATION_MEMORY_BANDWIDTH,
+                    static_cast<int64_t>(bytes_per_iteration_size),
+                    0)) {
+                result.status = cancelled() ? LLAMA_CALIBRATION_CANCELLED : LLAMA_CALIBRATION_FAILED;
+                result.window_count = 0;
+                return result;
+            }
+        }
+
+        {
+            const long double element_budget = static_cast<long double>(buffer_bytes) /
+                (3.0L * static_cast<long double>(sizeof(float)));
+            const int64_t dimension = std::max<int64_t>(64, std::min<int64_t>(512,
+                static_cast<int64_t>(std::sqrt(element_budget))));
+            ggml_init_params params{
+                ggml_tensor_overhead() * 8 + ggml_graph_overhead_custom(graph_nodes, false),
+                nullptr,
+                true,
+            };
+            ggml_context_ptr context(ggml_init(params));
+            if (!context) return result;
+            ggml_tensor *left = ggml_new_tensor_2d(context.get(), GGML_TYPE_F32, dimension, dimension);
+            ggml_tensor *right = ggml_new_tensor_2d(context.get(), GGML_TYPE_F32, dimension, dimension);
+            ggml_tensor *output = left && right ? ggml_mul_mat(context.get(), left, right) : nullptr;
+            if (!output || !ggml_backend_supports_op(backend.get(), output)) {
+                result.status = LLAMA_CALIBRATION_DEFERRED;
+                return result;
+            }
+            const size_t left_bytes = ggml_nbytes(left);
+            const size_t right_bytes = ggml_nbytes(right);
+            const size_t output_bytes = ggml_nbytes(output);
+            if (left_bytes > static_cast<size_t>(buffer_bytes) ||
+                right_bytes > static_cast<size_t>(buffer_bytes) - left_bytes ||
+                output_bytes > static_cast<size_t>(buffer_bytes) - left_bytes - right_bytes) {
+                result.status = LLAMA_CALIBRATION_DEFERRED;
+                return result;
+            }
+            ggml_backend_buffer_ptr allocation(ggml_backend_alloc_ctx_tensors(context.get(), backend.get()));
+            if (!allocation) {
+                result.status = LLAMA_CALIBRATION_DEFERRED;
+                return result;
+            }
+            const size_t element_count = static_cast<size_t>(dimension) * static_cast<size_t>(dimension);
+            std::vector<float> synthetic(element_count, 0.03125f);
+            ggml_backend_tensor_set(left, synthetic.data(), 0, left_bytes);
+            ggml_backend_tensor_set(right, synthetic.data(), 0, right_bytes);
+            ggml_cgraph *graph = ggml_new_graph_custom(context.get(), graph_nodes, false);
+            if (!graph) return result;
+            ggml_build_forward_expand(graph, output);
+            const long double operations_value = 2.0L * dimension * dimension * dimension;
+            if (operations_value <= 0.0L ||
+                operations_value > static_cast<long double>(std::numeric_limits<int64_t>::max()) ||
+                !run_windows(
+                    graph,
+                    LLAMA_CALIBRATION_COMPUTE,
+                    static_cast<int64_t>(operations_value),
+                    windows_per_metric)) {
+                result.status = cancelled() ? LLAMA_CALIBRATION_CANCELLED : LLAMA_CALIBRATION_FAILED;
+                result.window_count = 0;
+                return result;
+            }
+        }
+        result.status = LLAMA_CALIBRATION_COMPLETE;
+        result.window_count = windows_per_metric * 2;
+        return result;
+    } catch (...) {
+        result.status = LLAMA_CALIBRATION_FAILED;
+        result.window_count = 0;
+        return result;
+    }
+}
+
+int llama_runner_core_reserve_calibration(int64_t probe_token) {
+    if (probe_token <= 0) return LLAMA_CALIBRATION_RESERVATION_INVALID;
+    if (native_operations_poisoned()) return LLAMA_CALIBRATION_RESERVATION_QUARANTINED;
+    int64_t expected_idle = 0;
+    if (!g_calibration_state.compare_exchange_strong(
+        expected_idle,
+        probe_token,
+        std::memory_order_acq_rel,
+        std::memory_order_acquire)) {
+        return LLAMA_CALIBRATION_RESERVATION_BUSY;
+    }
+    if (native_operations_poisoned()) {
+        int64_t expected_token = probe_token;
+        g_calibration_state.compare_exchange_strong(
+            expected_token,
+            0,
+            std::memory_order_acq_rel,
+            std::memory_order_acquire);
+        return LLAMA_CALIBRATION_RESERVATION_QUARANTINED;
+    }
+    return LLAMA_CALIBRATION_RESERVATION_ACCEPTED;
+}
+
+void llama_runner_core_cancel_calibration(int64_t probe_token) {
+    if (probe_token <= 0) return;
+    int64_t expected = probe_token;
+    if (g_calibration_state.compare_exchange_strong(
+            expected,
+            -probe_token,
+            std::memory_order_acq_rel,
+            std::memory_order_acquire)) {
+        g_operation_gate.notify_waiters();
+    }
+}
+
+int llama_runner_core_abandon_calibration(int64_t probe_token) {
+    if (probe_token <= 0) return LLAMA_CALIBRATION_ABANDONMENT_INVALID;
+    int64_t state = g_calibration_state.load(std::memory_order_acquire);
+    while (state == probe_token || state == -probe_token) {
+        // The self-CAS for -probe_token is deliberate: it linearizes this
+        // decision against ScopedCalibrationProbe clearing a completed probe.
+        if (g_calibration_state.compare_exchange_weak(
+                state,
+                -probe_token,
+                std::memory_order_acq_rel,
+                std::memory_order_acquire)) {
+            g_operation_gate.interrupt_waiters([] {
+                g_native_operations_poisoned.store(true, std::memory_order_release);
+            });
+            return LLAMA_CALIBRATION_ABANDONMENT_QUARANTINED;
+        }
+    }
+    return LLAMA_CALIBRATION_ABANDONMENT_NOT_ACTIVE;
+}
+
+LlamaModelFeatureSupportNative llama_runner_core_probe_model_features(
+    const char *architecture,
+    const char *quantization) {
+    LlamaModelFeatureSupportNative result;
+    auto operation = g_operation_gate.lock_interruptible(native_operations_poisoned);
+    if (!operation) return result;
+    result.engine_build = std::max(0, llama_build_number());
+    if (!is_safe_feature_label(architecture, 64) ||
+        (quantization != nullptr && !is_safe_feature_label(quantization, 32))) {
+        return result;
+    }
+
+    if (!g_backend_initialized) {
+        return result;
+    }
+    ScopedLlamaLoggerOverride suppress(discard_upstream_log);
+    try {
+        const llm_arch arch = llm_arch_from_string(architecture);
+        if (arch == LLM_ARCH_UNKNOWN) {
+            result.architecture = LLAMA_FEATURE_UNSUPPORTED;
+        } else {
+            std::unique_ptr<llama_model, decltype(&llama_model_free)> model(
+                llama_model_create(arch, llama_model_default_params()),
+                llama_model_free);
+            result.architecture = model ? LLAMA_FEATURE_SUPPORTED : LLAMA_FEATURE_UNSUPPORTED;
+        }
+    } catch (const std::runtime_error &) {
+        result.architecture = LLAMA_FEATURE_UNSUPPORTED;
+    } catch (...) {
+        result.architecture = LLAMA_FEATURE_UNKNOWN;
+    }
+
+    if (quantization == nullptr) {
+        result.quantization = LLAMA_FEATURE_UNKNOWN;
+    } else {
+        const ggml_type type = quantization_type(quantization);
+        if (type == GGML_TYPE_COUNT) {
+            result.quantization = LLAMA_FEATURE_UNKNOWN;
+        } else {
+            result.quantization = type >= 0 && type < GGML_TYPE_COUNT && ggml_type_name(type) != nullptr
+                ? LLAMA_FEATURE_SUPPORTED : LLAMA_FEATURE_UNSUPPORTED;
+        }
+    }
+    return result;
+}
+
 bool llama_runner_core_load_model(const char *model_path, const LlamaRunnerConfig &config) {
-    log_line(LLAMA_LOG_INFO, "load: path=%s", model_path ? model_path : "(null)");
-    if (!model_path || std::strlen(model_path) == 0) {
-        log_line(LLAMA_LOG_ERROR, "load: model_path is null or empty");
+    auto operation = g_operation_gate.lock_interruptible(native_operations_poisoned);
+    if (!operation) return false;
+    log_line(LLAMA_LOG_INFO, "load: model path supplied=%d", model_path ? 1 : 0);
+    if (!g_backend_initialized ||
+        !is_bounded_c_string(model_path, 4096) || !is_valid_config(config)) {
+        log_line(LLAMA_LOG_ERROR, "load: invalid model path or configuration");
         return false;
     }
 
-    llama_runner_core_unload();
+    unload_model_state();
     g_config = config;
-
-    llama_log_set(
-        [](ggml_log_level level, const char *text, void * /*user_data*/) {
-            const LlamaLogLevel mapped_level =
-                (level == GGML_LOG_LEVEL_CONT)
-                    ? LLAMA_LOG_INFO
-                    : (level >= GGML_LOG_LEVEL_ERROR)
-                    ? LLAMA_LOG_ERROR
-                    : (level >= GGML_LOG_LEVEL_WARN) ? LLAMA_LOG_WARN : LLAMA_LOG_INFO;
-            if (g_logger) {
-                g_logger(mapped_level, text ? text : "");
-            }
-        },
-        nullptr);
+    llama_log_set(sanitized_upstream_log, nullptr);
 
     auto t0 = std::chrono::steady_clock::now();
-
-    llama_model_params model_params = llama_model_default_params();
-    llama_context_params ctx_params = llama_context_default_params();
-
-    // Set params that are OURS to decide (not auto-fitted)
-    ctx_params.n_threads       = g_config.n_threads;
-    ctx_params.n_threads_batch = g_config.n_threads_batch > 0
-                                   ? g_config.n_threads_batch : g_config.n_threads;
-    ctx_params.n_batch         = g_config.n_batch;
-    ctx_params.n_ubatch        = g_config.n_ubatch;
-    ctx_params.flash_attn_type = static_cast<llama_flash_attn_type>(g_config.flash_attn);
-    ctx_params.offload_kqv     = g_config.offload_kqv;
-    ctx_params.type_k          = static_cast<ggml_type>(g_config.type_k);
-    ctx_params.type_v          = static_cast<ggml_type>(g_config.type_v);
-    model_params.load_mode     = g_config.use_mlock
-                                    ? (g_config.use_mmap ? LLAMA_LOAD_MODE_MMAP_MLOCK : LLAMA_LOAD_MODE_MLOCK)
-                                    : (g_config.use_mmap ? LLAMA_LOAD_MODE_MMAP : LLAMA_LOAD_MODE_NONE);
-
-    if (g_config.auto_fit) {
-        log_line(LLAMA_LOG_INFO, "load: Using llama_params_fit() for automatic memory optimization");
-        
-        // If user explicitly set n_gpu_layers to 0, force CPU-only
-        if (g_config.n_gpu_layers == 0) {
-            model_params.n_gpu_layers = 0;
-            log_line(LLAMA_LOG_INFO, "load: Forcing CPU-only (n_gpu_layers=0)");
+    {
+        ScopedLlamaLoggerOverride suppress(discard_upstream_log);
+        FitPlan plan = resolve_fit_plan(model_path, g_config);
+        if (plan.status != COMMON_PARAMS_FIT_STATUS_SUCCESS) {
+            log_line(LLAMA_LOG_ERROR, "load: no valid fitted allocation plan");
+            return false;
         }
-        
-        // Leave n_gpu_layers at default (-1) so params_fit auto-determines it
-        // Set n_ctx = 0 so params_fit finds the largest context that fits
-        ctx_params.n_ctx = 0;
+        plan.bind_owned_buffers();
+        g_actual_gpu_layers = plan.model_params.n_gpu_layers;
 
-        std::vector<float> tensor_split(llama_max_devices(), 0.0f);
-        std::vector<llama_model_tensor_buft_override> buft_overrides(
-            llama_max_tensor_buft_overrides() + 1);
-        buft_overrides.back() = {nullptr, nullptr};
-        std::vector<size_t> margins(llama_max_devices(), 0);
+        log_line(
+            LLAMA_LOG_INFO,
+            "load: Final params - n_ctx=%u, n_threads=%d, n_threads_batch=%d, n_batch=%d, n_gpu_layers=%d",
+            plan.context_params.n_ctx,
+            plan.context_params.n_threads,
+            plan.context_params.n_threads_batch,
+            plan.context_params.n_batch,
+            plan.model_params.n_gpu_layers);
 
-        auto status = common_fit_params(
-            model_path, &model_params, &ctx_params,
-            tensor_split.data(), buft_overrides.data(), margins.data(),
-            g_config.n_ctx_min, GGML_LOG_LEVEL_INFO);
-
-        if (status == COMMON_PARAMS_FIT_STATUS_SUCCESS) {
-            model_params.tensor_split = tensor_split.data();
-            log_line(LLAMA_LOG_INFO, "load: params_fit succeeded - n_gpu_layers=%d, n_ctx=%u",
-                model_params.n_gpu_layers, ctx_params.n_ctx);
-            
-            // Safety net: if params_fit left n_ctx at 0, apply a sensible default
-            if (ctx_params.n_ctx == 0) {
-                ctx_params.n_ctx = g_config.n_ctx > 0 ? g_config.n_ctx : 4096;
-                log_line(LLAMA_LOG_INFO, "load: n_ctx was 0 after params_fit, defaulting to %u", ctx_params.n_ctx);
-            }
-            
-            // Cap n_ctx to user's preference if they specified one
-            if (g_config.n_ctx > 0 && static_cast<uint32_t>(g_config.n_ctx) < ctx_params.n_ctx) {
-                ctx_params.n_ctx = g_config.n_ctx;
-                log_line(LLAMA_LOG_INFO, "load: Capping n_ctx to user preference: %u", ctx_params.n_ctx);
-            }
-
-            // If Kotlin assumed GPU would be active but params_fit resolved to
-            // CPU-only, the configured thread count is too low. Bump generation
-            // threads to at least the batch thread count so CPU inference isn't
-            // starved of parallelism.
-            if (model_params.n_gpu_layers == 0 && g_config.n_gpu_layers != 0) {
-                const int adjusted = std::max(ctx_params.n_threads, ctx_params.n_threads_batch);
-                log_line(LLAMA_LOG_WARN,
-                    "load: GPU offload requested but params_fit resolved to 0 layers; "
-                    "raising n_threads %d -> %d",
-                    ctx_params.n_threads, adjusted);
-                ctx_params.n_threads = adjusted;
-            }
-        } else {
-            log_line(LLAMA_LOG_WARN, "load: params_fit failed, falling back to CPU-only mode");
-            // Fallback: force CPU-only, minimal context
-            model_params.n_gpu_layers = 0;
-            ctx_params.n_ctx = g_config.n_ctx > 0 ? g_config.n_ctx : g_config.n_ctx_min;
-
-            // Same thread adjustment — caller assumed GPU offload
-            if (g_config.n_gpu_layers != 0) {
-                const int adjusted = std::max(ctx_params.n_threads, ctx_params.n_threads_batch);
-                log_line(LLAMA_LOG_WARN,
-                    "load: raising n_threads %d -> %d for CPU-only fallback",
-                    ctx_params.n_threads, adjusted);
-                ctx_params.n_threads = adjusted;
-            }
+        g_model = llama_model_load_from_file(model_path, plan.model_params);
+        if (!g_model) {
+            log_line(LLAMA_LOG_ERROR, "load: model allocation failed");
+            return false;
         }
-    } else {
-        // Manual mode
-        log_line(LLAMA_LOG_INFO, "load: Using manual configuration (auto_fit disabled)");
-        model_params.n_gpu_layers = g_config.n_gpu_layers;
-        ctx_params.n_ctx = g_config.n_ctx > 0 ? g_config.n_ctx : 2048;
+
+        g_context = llama_init_from_model(g_model, plan.context_params);
+        if (!g_context) {
+            log_line(LLAMA_LOG_ERROR, "load: context allocation failed");
+            llama_model_free(g_model);
+            g_model = nullptr;
+            return false;
+        }
     }
-
-    g_actual_gpu_layers = model_params.n_gpu_layers;
-
-    log_line(
-        LLAMA_LOG_INFO,
-        "load: Final params - n_ctx=%u, n_threads=%d, n_threads_batch=%d, n_batch=%d, n_gpu_layers=%d",
-        ctx_params.n_ctx,
-        ctx_params.n_threads,
-        ctx_params.n_threads_batch,
-        ctx_params.n_batch,
-        model_params.n_gpu_layers);
-
-    g_model = llama_model_load_from_file(model_path, model_params);
 
     auto t1 = std::chrono::steady_clock::now();
     const auto load_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
-    if (!g_model) {
-        log_line(LLAMA_LOG_ERROR, "load: Failed (took %lld ms)", static_cast<long long>(load_ms));
-        return false;
-    }
     log_line(LLAMA_LOG_INFO, "load: Model loaded in %lld ms", static_cast<long long>(load_ms));
-
-    g_context = llama_init_from_model(g_model, ctx_params);
-    if (!g_context) {
-        log_line(LLAMA_LOG_ERROR, "load: Failed to create context");
-        llama_model_free(g_model);
-        g_model = nullptr;
-        return false;
-    }
     log_line(LLAMA_LOG_INFO, "load: Context ready, n_ctx=%u", llama_n_ctx(g_context));
 
     // CPU pinning: create dedicated threadpools for gen and batch if mask is set
@@ -565,7 +1332,7 @@ bool llama_runner_core_load_model(const char *model_path, const LlamaRunnerConfi
             }
             if (g_tp_gen || g_tp_batch) {
                 llama_attach_threadpool(g_context, g_tp_gen, g_tp_batch);
-                log_line(LLAMA_LOG_INFO, "llama_runner_core: threadpool attached, mask=%s", g_config.cpu_mask.c_str());
+                log_line(LLAMA_LOG_INFO, "llama_runner_core: threadpool attached with configured mask");
             }
         } else {
             log_line(LLAMA_LOG_WARN, "llama_runner_core: threadpool unavailable (GGML_BACKEND_DL?), CPU pinning skipped");
@@ -576,7 +1343,7 @@ bool llama_runner_core_load_model(const char *model_path, const LlamaRunnerConfi
     recreate_sampler(g_config.temperature, std::string());
     if (!g_sampler) {
         log_line(LLAMA_LOG_ERROR, "load: Failed to initialize sampler");
-        llama_runner_core_unload();
+        unload_model_state();
         return false;
     }
 
@@ -599,16 +1366,21 @@ std::string llama_runner_core_generate(const char *prompt, int max_tokens, float
     if (!llama_runner_core_start_generate(prompt, max_tokens, temperature, nullptr)) {
         return "";
     }
+    ScopedSessionEnd session(g_operation_gate);
     std::string result;
     while (const char *tok = llama_runner_core_next_token()) {
         result.append(tok);
     }
-    log_line(LLAMA_LOG_INFO, "generate: done output_len=%zu preview=\"%s\"",
-        result.size(), truncate_for_log(result).c_str());
+    llama_runner_core_finalize_generation();
+    session.keep_session();
+    log_line(LLAMA_LOG_INFO, "generate: done output_len=%zu", result.size());
     return result;
 }
 
 bool llama_runner_core_start_generate(const char *prompt, int max_tokens, float temperature, const char *grammar) {
+    auto operation = g_operation_gate.begin_session_interruptible(native_operations_poisoned);
+    if (!operation) return false;
+    ScopedSessionEnd session(g_operation_gate);
     log_line(LLAMA_LOG_INFO, "start_generate: entry max_tokens=%d grammar=%s",
         max_tokens, grammar ? "yes" : "no");
 
@@ -641,8 +1413,7 @@ bool llama_runner_core_start_generate(const char *prompt, int max_tokens, float 
     llama_memory_seq_rm(llama_get_memory(g_context), 0, -1, -1);
 
     std::string prompt_copy(prompt);
-    log_line(LLAMA_LOG_INFO, "start_generate: input prompt_len=%zu preview=\"%s\"",
-        prompt_copy.size(), truncate_for_log(prompt_copy).c_str());
+    log_line(LLAMA_LOG_INFO, "start_generate: input prompt_len=%zu", prompt_copy.size());
 
     const llama_vocab *vocab = llama_model_get_vocab(g_model);
     g_streaming_tokens = common_tokenize(vocab, prompt_copy, true, true);
@@ -677,10 +1448,15 @@ bool llama_runner_core_start_generate(const char *prompt, int max_tokens, float 
 
     g_current_position = static_cast<llama_pos>(g_streaming_tokens.size());
     g_max_tokens_remaining = max_tokens;
+    session.keep_session();
     return true;
 }
 
 const char *llama_runner_core_next_token() {
+    auto operation = g_operation_gate.lock_session_interruptible(native_operations_poisoned);
+    if (!operation.has_value()) {
+        return nullptr;
+    }
     if (g_cancel_flag) {
         log_line(LLAMA_LOG_INFO, "next_token: cancelled");
         g_stop_reason = STOP_CANCELLED;
@@ -826,6 +1602,11 @@ void llama_runner_core_cancel_generate() {
 }
 
 void llama_runner_core_finalize_generation() {
+    auto operation = g_operation_gate.lock_session_interruptible(native_operations_poisoned);
+    if (!operation.has_value()) {
+        return;
+    }
+    ScopedSessionEnd session(g_operation_gate);
     // Persist assistant content into templated chat history when generation
     // is ended by caller rather than EOG/cancel/max-token boundary.
     reparse_assistant_buffer(/*is_partial*/ false);
@@ -834,6 +1615,8 @@ void llama_runner_core_finalize_generation() {
 }
 
 int llama_runner_core_process_system_prompt(const char *system_prompt) {
+    auto operation = g_operation_gate.lock_interruptible(native_operations_poisoned);
+    if (!operation) return 1;
     if (!g_model || !g_context || !g_sampler) {
         log_line(LLAMA_LOG_ERROR, "process_system_prompt: Model not loaded");
         return 1;
@@ -900,6 +1683,9 @@ int llama_runner_core_process_system_prompt(const char *system_prompt) {
 }
 
 int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_length) {
+    auto operation = g_operation_gate.begin_session_interruptible(native_operations_poisoned);
+    if (!operation) return 1;
+    ScopedSessionEnd session(g_operation_gate);
     if (!g_model || !g_context || !g_sampler) {
         log_line(LLAMA_LOG_ERROR, "process_user_prompt: Model not loaded");
         return 1;
@@ -931,7 +1717,6 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
 
     if (!has_template) {
         formatted = std::string("\nUser: ") + user_prompt + "\nAssistant:";
-        g_chat_msgs.push_back(user_msg);
     } else if (g_pending_chat_decode) {
         std::vector<common_chat_msg> full = g_chat_msgs;
         full.push_back(user_msg);
@@ -942,19 +1727,12 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
             return 3;
         }
         formatted = *rendered;
-        g_chat_msgs.push_back(user_msg);
-        g_pending_chat_decode = false;
-        llama_memory_seq_rm(llama_get_memory(g_context), 0, -1, -1);
         decode_start_pos = 0;
-        g_current_position = 0;
-        g_system_prompt_position = 0;
-        g_kv_token_history.clear();
         reset_kv = true;
     } else {
         auto diff = try_chat_format_single(ROLE_USER, user_prompt);
         if (diff.has_value()) {
             formatted = *diff;
-            g_chat_msgs.push_back(user_msg);
         } else {
             // Incremental diff failed. Instead of clearing the entire KV and
             // re-decoding from position 0, use prefix matching: tokenize the
@@ -969,16 +1747,9 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
                 log_line(LLAMA_LOG_WARN,
                     "process_user_prompt: full re-render failed, falling back to plain-text format");
                 formatted = std::string("\nUser: ") + user_prompt + "\nAssistant:";
-                g_chat_msgs.push_back(user_msg);
-                llama_memory_seq_rm(llama_get_memory(g_context), 0, -1, -1);
                 decode_start_pos = 0;
-                g_current_position = 0;
-                g_system_prompt_position = 0;
-                g_kv_token_history.clear();
                 reset_kv = true;
             } else {
-                g_chat_msgs.push_back(user_msg);
-
                 std::vector<llama_token> full_tokens = common_tokenize(
                     g_context, *rendered,
                     /*add_special*/ true, /*parse_special*/ true);
@@ -996,9 +1767,6 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
                 if (prefix_len > 0 && prefix_len >= g_kv_token_history.size() / 2) {
                     // Significant prefix match — reuse cached KV up to the
                     // divergence point and only decode the new suffix.
-                    llama_memory_seq_rm(llama_get_memory(g_context), 0,
-                        static_cast<llama_pos>(prefix_len), -1);
-
                     std::vector<llama_token> suffix(
                         full_tokens.begin() + prefix_len, full_tokens.end());
 
@@ -1009,19 +1777,28 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
                         prefix_len);
 
                     const uint32_t n_ctx = llama_n_ctx(g_context);
-                    const int max_ctx = static_cast<int>(n_ctx) - 4;
+                    const int reserved_generation = std::max(4, predict_length);
+                    const int max_ctx = static_cast<int>(n_ctx) - reserved_generation;
                     decode_start_pos = static_cast<llama_pos>(prefix_len);
 
-                    if (decode_start_pos + static_cast<int>(suffix.size()) > max_ctx) {
-                        const int to_skip = decode_start_pos +
-                            static_cast<int>(suffix.size()) - max_ctx;
-                        if (suffix.size() > static_cast<size_t>(to_skip)) {
-                            suffix.resize(suffix.size() - to_skip);
-                        }
+                    if (max_ctx < 0 ||
+                        decode_start_pos + static_cast<int>(suffix.size()) > max_ctx) {
+                        log_line(LLAMA_LOG_WARN,
+                            "process_user_prompt: prompt does not fit with generation reserve");
+                        g_stop_reason = STOP_CONTEXT_FULL;
+                        return 4;
                     }
+
+                    llama_memory_seq_rm(llama_get_memory(g_context), 0,
+                        static_cast<llama_pos>(prefix_len), -1);
 
                     if (decode_tokens_in_batches(g_context, g_batch, suffix,
                             decode_start_pos, true) != 0) {
+                        llama_memory_seq_rm(llama_get_memory(g_context), 0, -1, -1);
+                        g_current_position = 0;
+                        g_system_prompt_position = 0;
+                        g_kv_token_history.clear();
+                        g_pending_chat_decode = has_template;
                         return 2;
                     }
 
@@ -1032,7 +1809,10 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
                         static_cast<llama_pos>(suffix.size());
                     g_max_tokens_remaining = predict_length;
                     g_streaming_tokens.clear();
+                    g_chat_msgs.push_back(user_msg);
+                    g_pending_chat_decode = false;
                     capture_parser_params();
+                    session.keep_session();
                     return 0;
                 }
 
@@ -1042,11 +1822,7 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
                     "full re-decode",
                     prefix_len, g_kv_token_history.size());
                 formatted = *rendered;
-                llama_memory_seq_rm(llama_get_memory(g_context), 0, -1, -1);
                 decode_start_pos = 0;
-                g_current_position = 0;
-                g_system_prompt_position = 0;
-                g_kv_token_history.clear();
                 reset_kv = true;
             }
         }
@@ -1057,15 +1833,28 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
         /*add_special*/ has_template && reset_kv,
         /*parse_special*/ has_template);
     const uint32_t n_ctx = llama_n_ctx(g_context);
-    const int max_ctx = static_cast<int>(n_ctx) - 4;
-    if (decode_start_pos + static_cast<int>(tokens.size()) > max_ctx) {
-        const int to_skip = decode_start_pos + static_cast<int>(tokens.size()) - max_ctx;
-        if (tokens.size() > static_cast<size_t>(to_skip)) {
-            tokens.resize(tokens.size() - to_skip);
-        }
+    const int reserved_generation = std::max(4, predict_length);
+    const int max_ctx = static_cast<int>(n_ctx) - reserved_generation;
+    if (max_ctx < 0 || decode_start_pos + static_cast<int>(tokens.size()) > max_ctx) {
+        log_line(LLAMA_LOG_WARN,
+            "process_user_prompt: prompt does not fit with generation reserve");
+        g_stop_reason = STOP_CONTEXT_FULL;
+        return 4;
+    }
+
+    if (reset_kv) {
+        llama_memory_seq_rm(llama_get_memory(g_context), 0, -1, -1);
+        g_current_position = 0;
+        g_system_prompt_position = 0;
+        g_kv_token_history.clear();
     }
 
     if (decode_tokens_in_batches(g_context, g_batch, tokens, decode_start_pos, true) != 0) {
+        llama_memory_seq_rm(llama_get_memory(g_context), 0, -1, -1);
+        g_current_position = 0;
+        g_system_prompt_position = 0;
+        g_kv_token_history.clear();
+        g_pending_chat_decode = has_template;
         return 2;
     }
 
@@ -1073,53 +1862,34 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
     g_current_position = decode_start_pos + static_cast<llama_pos>(tokens.size());
     g_max_tokens_remaining = predict_length;
     g_streaming_tokens.clear();
+    g_chat_msgs.push_back(user_msg);
+    g_pending_chat_decode = false;
     capture_parser_params();
+    session.keep_session();
     return 0;
 }
 
 void llama_runner_core_unload() {
-    log_line(LLAMA_LOG_INFO, "unload: Releasing model and context");
-
-    g_chat_templates.reset();
-    g_chat_msgs.clear();
-    g_pending_chat_decode = false;
-
-    if (g_sampler) {
-        common_sampler_free(g_sampler);
-        g_sampler = nullptr;
-    }
-
-    if (g_batch.token) {
-        llama_batch_free(g_batch);
-        g_batch = llama_batch_init(0, 0, 0);
-    }
-
-    if (g_context) {
-        if (g_tp_gen)   { if (g_tp_free_fn) g_tp_free_fn(g_tp_gen);   g_tp_gen   = nullptr; }
-        if (g_tp_batch) { if (g_tp_free_fn) g_tp_free_fn(g_tp_batch); g_tp_batch = nullptr; }
-        llama_free(g_context);
-        g_context = nullptr;
-    }
-
-    if (g_model) {
-        llama_model_free(g_model);
-        g_model = nullptr;
-    }
-
-    g_active_temperature = -1.0f;
-    g_active_grammar.clear();
-    g_actual_gpu_layers = 0;
-    g_kv_token_history.clear();
-    reset_delta_offsets();
-    log_line(LLAMA_LOG_INFO, "unload: Model unloaded");
+    auto operation = g_operation_gate.lock_interruptible(native_operations_poisoned);
+    if (!operation) return;
+    unload_model_state();
 }
 
 void llama_runner_core_shutdown() {
+    auto operation = g_operation_gate.lock_interruptible(native_operations_poisoned);
+    if (!operation) return;
+    if (!g_backend_initialized) {
+        return;
+    }
     log_line(LLAMA_LOG_INFO, "shutdown: Freeing backend");
     llama_backend_free();
+    g_backend_path.clear();
+    g_backend_initialized = false;
 }
 
 int llama_runner_core_get_context_used() {
+    auto operation = g_operation_gate.lock_session_compatible_interruptible(native_operations_poisoned);
+    if (!operation) return 0;
     if (!g_context) {
         return 0;
     }
@@ -1127,6 +1897,8 @@ int llama_runner_core_get_context_used() {
 }
 
 int llama_runner_core_get_context_limit() {
+    auto operation = g_operation_gate.lock_session_compatible_interruptible(native_operations_poisoned);
+    if (!operation) return 0;
     if (!g_context) {
         return 0;
     }
@@ -1134,14 +1906,20 @@ int llama_runner_core_get_context_limit() {
 }
 
 int llama_runner_core_get_stop_reason() {
+    auto operation = g_operation_gate.lock_session_compatible_interruptible(native_operations_poisoned);
+    if (!operation) return STOP_ERROR;
     return g_stop_reason;
 }
 
 int llama_runner_core_get_gpu_layers() {
+    auto operation = g_operation_gate.lock_session_compatible_interruptible(native_operations_poisoned);
+    if (!operation) return 0;
     return g_actual_gpu_layers;
 }
 
 const char* llama_runner_core_get_model_architecture() {
+    auto operation = g_operation_gate.lock_session_compatible_interruptible(native_operations_poisoned);
+    if (!operation) return "";
     if (!g_model) return "";
     static char buf[64];
     buf[0] = '\0';
@@ -1150,10 +1928,14 @@ const char* llama_runner_core_get_model_architecture() {
 }
 
 const char *llama_runner_core_get_reasoning() {
+    auto operation = g_operation_gate.lock_session_compatible_interruptible(native_operations_poisoned);
+    if (!operation) return "";
     return g_reasoning_accum.c_str();
 }
 
 const char *llama_runner_core_get_content() {
+    auto operation = g_operation_gate.lock_session_compatible_interruptible(native_operations_poisoned);
+    if (!operation) return "";
     return g_content_accum.c_str();
 }
 
@@ -1162,6 +1944,8 @@ const char *llama_runner_core_get_content() {
 // FULL accumulator prefixed with a 0x01 sentinel so the caller knows to
 // replace, not append. Empty string means no new bytes.
 const char *llama_runner_core_get_reasoning_delta() {
+    auto operation = g_operation_gate.lock_session_compatible_interruptible(native_operations_poisoned);
+    if (!operation) return "";
     const std::string &acc = g_reasoning_accum;
     if (acc.size() < g_reasoning_emitted) {
         g_reasoning_delta_buf = std::string(1, '\x01') + acc;
@@ -1174,6 +1958,8 @@ const char *llama_runner_core_get_reasoning_delta() {
 }
 
 const char *llama_runner_core_get_content_delta() {
+    auto operation = g_operation_gate.lock_session_compatible_interruptible(native_operations_poisoned);
+    if (!operation) return "";
     const std::string &acc = g_content_accum;
     if (acc.size() < g_content_emitted) {
         g_content_delta_buf = std::string(1, '\x01') + acc;
@@ -1186,10 +1972,14 @@ const char *llama_runner_core_get_content_delta() {
 }
 
 int llama_runner_core_supports_thinking() {
+    auto operation = g_operation_gate.lock_session_compatible_interruptible(native_operations_poisoned);
+    if (!operation) return 0;
     return g_supports_thinking ? 1 : 0;
 }
 
 void llama_runner_core_clear_context() {
+    auto operation = g_operation_gate.lock_interruptible(native_operations_poisoned);
+    if (!operation) return;
     if (!g_context) {
         log_line(LLAMA_LOG_WARN, "clear_context: No context to clear");
         return;

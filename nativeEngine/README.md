@@ -6,7 +6,7 @@ Central native build orchestration module for CaraML. One CMake graph per platfo
 
 ## What This Module Does
 
-1. **Applies patches** to vendored submodules before compilation (`applyNativePatches`)
+1. **Prepares a patched copy** of llama.cpp without mutating the pinned submodule (`preparePatchedLlamaSource`)
 2. **Invokes CMake** per platform with the right toolchain and flags
 3. **Merges static libs** for iOS (single `libllama_runner_merged.a` per arch)
 4. **Exports layout constants** (`CaramlNativeLayout`) so `:composeApp` and `:runner` know where to find the built libraries
@@ -26,7 +26,7 @@ nativeEngine/build/
     ├── macos/                       libllama_runner.dylib, libdiffusion_runner.dylib
     └── linux/                       libllama_runner.so, libdiffusion_runner.so
 
-# Android: output via AGP externalNativeBuild → composeApp APK
+# Android: output via AGP externalNativeBuild → androidApp APK
 composeApp/src/androidMain/jniLibs/arm64-v8a/
     llama_runner.so
     diffusion_runner.so
@@ -91,9 +91,9 @@ This prevents duplicate symbol errors from linking two independent GGML builds.
 
 | Task | Description |
 |------|-------------|
-| `applyNativePatches` | Apply `.patch` files from `libraries/patches/<submodule>/` (idempotent via git am) |
-| `revertNativePatches` | Revert all patches (run before bumping submodule SHA) |
+| `preparePatchedLlamaSource` | Recreate a build-owned llama.cpp source tree and apply numbered patches |
 | `compileLlamaRunnerDesktop` | Build desktop shared libs via CMake |
+| `verifyNativePreflightFixtures` | Strictly acquire/generate digest-addressed native fixtures under fixed HTTPS hosts and decoded-size caps |
 | `mergeLlamaRunnerStaticIosArm64` | Merge iOS arm64 `.a` files via `libtool -static` |
 | `mergeLlamaRunnerStaticIosSimulatorArm64` | Merge iOS simulator arm64 `.a` files |
 
@@ -103,18 +103,17 @@ Android native build is triggered automatically by AGP `externalNativeBuild` dur
 
 ## Patch System
 
-Patches live under `libraries/patches/<submodule>/` as numbered `.patch` files:
+Active llama.cpp patches live under `libraries/patches/llama.cpp/` as numbered `.patch` files:
 
 ```
 libraries/patches/
-├── llama.cpp/
-│   ├── 0001-fix-chat-template.patch
-│   └── 0002-metal-compat.patch
-└── stable-diffusion.cpp/
-    └── 0001-ggml-max-name.patch
+└── llama.cpp/
+    ├── 0001-metal-pin-shading-language-version.patch
+    ├── 0002-vulkan-norm-require-f32.patch
+    └── 0003-fit-memory-probe-raii.patch
 ```
 
-Patches are applied via `git am` inside each submodule directory. `applyNativePatches` is idempotent — already-applied patches are skipped. Always run `revertNativePatches` before updating submodule SHAs to avoid conflicts.
+`preparePatchedLlamaSource` recreates `nativeEngine/build/patched-native-sources/llama.cpp` from the pinned upstream tree, then applies each patch with `git apply`. Submodule worktrees stay immutable, so a submodule bump requires only checking that this task still succeeds.
 
 ---
 
@@ -136,11 +135,25 @@ Create a **separate** Gradle module + CMake project. Do not add here unless it m
 
 <!-- Updated at end of each Claude Code session -->
 
-- Fix: SD Vulkan SIGABRT on Android — `SD_VULKAN` decoupled from `GGML_VULKAN` in Android `CMakeLists.txt`; `SD_VULKAN=OFF` means diffusion_runner is compiled without `SD_USE_VULKAN` so ggml-vulkan is not linked into it; `GGML_VULKAN=ON` is preserved for llama_runner (LLM inference); the `if(SD_VULKAN …)` guard on lines 156-170 now correctly prevents `SD_USE_VULKAN` from being defined when Vulkan is disabled for diffusion
-- Fix: Vulkan-Android image-gen crash — diffusion runner now pins CLIP + VAE to the CPU backend when a Vulkan device is present (works around missing F16 softmax/norm pipelines in ggml-vulkan on Adreno/Mali); diffusion UNet still runs on Vulkan
+- Android CI installs pinned CMake 3.31.1 before native configuration; Windows artifact opens retain metadata-read access, and publication uses `NtSetInformationFile` with the pinned target-directory handle for root-contained atomic rename
+- Desktop static dependencies now build as position-independent code for Linux shared-library linking, the Android-root fixture uses the host temporary directory, and Windows directory creation uses best-effort metadata flushing when supported while preserving pinned no-reparse checks
+- Native builds pin llama.cpp `f46bc30` and stable-diffusion.cpp `c92d73c`, compile both runners against one patched llama GGML tree, and verify the exact public gitlinks before project checks
+- Android's Vulkan build gates Intel Xe cooperative-matrix shaders on `glslc` capability; arm64-v8a/x86_64 APK packaging and iOS device/simulator one-GGML archive merges pass locally
+- Secure artifact storage now supports root-pinned append-only reopening for resumable transfers, with native regression coverage for concatenation and symlink/root replacement rejection
+- Android `artifact_fs` now opens the trusted app-owned models root directly instead of traversing `/`; a host regression covers search-only ancestors and final-root symlink rejection
+- Added a strict versioned native-fixture manifest, fixed-host HTTPS acquisition with redirect/size/digest enforcement, generated corrupt fixtures, and isolated opt-in runner parity CI; normal JVM verification performs no fixture download
+- Desktop native hardening now verifies bounded typed calibration inputs, token-owned lock-free cancellation, and timed operation admission; iOS builds export the same calibrated backend bridge
+- `verifyProject` now builds and executes all five stable-diffusion native preflight regressions through CTest, including the production `sd_ctx_params_t.backend` assignment path, source-bound bundle subdivisions, external TAESD placement, and component-selected Vulkan safety
+- Stable-diffusion native builds now expose bounded metadata-only preflight and use the same pinned backend-fit resolver for preflight and actual context creation
+- Desktop native tests cover bundled-role placement, pinned max-VRAM assignment, effective streaming constraints, and failure-atomic context publication
+- Desktop native verification now covers stream-scoped unload exclusion, cross-thread token calls, lock-free cancellation, exact quantization labels, and transient-handle cleanup
+- Desktop builds now find CMake through validated explicit/PATH executables and place and assert `artifact_fs` at one configuration-independent path before packaging and installed-image smoke tests
+- The bounded `artifact_fs` JNI target supplies strict UTF-8 POSIX `openat` and Windows no-reparse operations, creates fixed roots durably from a pinned platform parent, and is packaged into Desktop application images and Android APKs
+- Native bridge verification now covers Android arm64/x86_64 and iOS simulator builds; app-owned JNI/iOS exports contain C++ exceptions before they cross language boundaries
+- Stable-diffusion native config now carries stable CPU/Metal/Vulkan/CUDA integers across desktop JNI and iOS FFI; production resolution assigns that exact runtime to `sd_ctx_params_t.backend`
 - Fix: ggml-vulkan `supports_op` for `GROUP_NORM`/`NORM` now requires F32 type, preventing `GGML_ABORT` crash when SD2 models load with F16 weights on Vulkan
 - `GgmlUnified.cmake` now builds both llama.cpp and stable-diffusion.cpp from single GGML
 - Vulkan autodetect via NDK glslc (Android arm64)
 - GPU acceleration enabled: Vulkan (Android), Metal (iOS/macOS)
-- Patch system: `applyNativePatches` / `revertNativePatches` tasks
+- Numbered llama.cpp patches are applied only to a shared build-owned source copy used by Desktop, Android, and iOS builds
 - `GGML_MAX_NAME` compatibility fix patch for stable-diffusion.cpp

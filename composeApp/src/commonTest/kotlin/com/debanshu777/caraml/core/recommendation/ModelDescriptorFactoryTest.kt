@@ -1,0 +1,474 @@
+package com.debanshu777.caraml.core.recommendation
+
+import com.debanshu777.caraml.core.rating.SdArchitecture
+import com.debanshu777.huggingfacemanager.model.ListModelsResponse
+import com.debanshu777.huggingfacemanager.model.ModelDetailResponse
+import com.debanshu777.huggingfacemanager.model.ModelFileTreeResponse
+import com.debanshu777.huggingfacemanager.model.TransformerConfigResponse
+import com.debanshu777.huggingfacemanager.sdcpp.ComponentRole
+import com.debanshu777.huggingfacemanager.sdcpp.SdCppComponent
+import com.debanshu777.huggingfacemanager.sdcpp.SdCppModelSetup
+import com.debanshu777.huggingfacemanager.sdcpp.SdCppRecommendedParams
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+class ModelDescriptorFactoryTest {
+    private val factory = ModelDescriptorFactory()
+
+    @Test
+    fun rejectsOverflowAndDoesNotAssumeAQuantization() {
+        val invalid = factory.buildLlm(
+            detail(totalParameters = Long.MAX_VALUE),
+            file(size = -1L),
+            null,
+        )
+        assertIs<DescriptorBuildResult.Invalid>(invalid)
+
+        val missingVariant = factory.buildProvisional(listModel(numParameters = 7_000_000_000L))
+        assertIs<DescriptorBuildResult.NeedsVariant>(missingVariant)
+        assertNull(missingVariant.assumedQuantization)
+    }
+
+    @Test
+    fun quantizationParserUsesTokenBoundariesAndIgnoresCase() {
+        assertEquals(
+            QuantizationEvidence.Known("Q4_K_M"),
+            QuantizationParser.parseFilename("weights-q4_k_m.GGUF"),
+        )
+        assertEquals(
+            QuantizationEvidence.Unknown,
+            QuantizationParser.parseFilename("acmeq4_k_mish.gguf"),
+        )
+        assertIs<QuantizationEvidence.Mixed>(
+            QuantizationParser.parseFilename("weights-Q4_K_M-Q8_0.gguf"),
+        )
+    }
+
+    @Test
+    fun preservesImmutableIdentityAndPrefersLfsSize() {
+        val result = assertIs<DescriptorBuildResult.Ready>(
+            factory.buildLlm(
+                detail(),
+                file(
+                    size = 12L,
+                    lfsSize = 34L,
+                    lfsOid = "sha256:lfs",
+                    oid = "git-oid",
+                    xetHash = "xet-hash",
+                ),
+                null,
+            ),
+        )
+        val descriptor = assertIs<LlmModelDescriptor>(result.descriptor)
+        assertEquals(REVISION, descriptor.revision)
+        assertEquals(34L, descriptor.file.sizeBytes)
+        assertEquals("sha256:lfs", descriptor.file.lfsOid)
+        assertEquals("git-oid", descriptor.file.gitOid)
+        assertEquals("xet-hash", descriptor.file.xetHash)
+        assertTrue(descriptor.file.evidence.any { it.detail == "size:lfs" })
+    }
+
+    @Test
+    fun rejectsInvalidSecondarySizeEvenWhenLfsSizeWouldOtherwiseWin() {
+        assertIs<DescriptorBuildResult.Invalid>(
+            factory.buildLlm(
+                detail(),
+                file(size = -1L, lfsSize = 34L),
+                null,
+            ),
+        )
+    }
+
+    @Test
+    fun derivesHeadDimensionOnlyForAnExactDivision() {
+        val divisible = assertIs<DescriptorBuildResult.Ready>(
+            factory.buildLlm(
+                detail(),
+                file(),
+                TransformerConfigResponse(
+                    numHiddenLayers = 32,
+                    numKeyValueHeads = 8,
+                    numAttentionHeads = 32,
+                    hiddenSize = 4_096,
+                    maxPositionEmbeddings = 8_192,
+                ),
+            ),
+        )
+        assertEquals(128, assertIs<LlmModelDescriptor>(divisible.descriptor).transformerShape?.headDim)
+
+        val nonDivisible = assertIs<DescriptorBuildResult.Ready>(
+            factory.buildLlm(
+                detail(),
+                file(),
+                TransformerConfigResponse(numAttentionHeads = 3, hiddenSize = 4_096),
+            ),
+        )
+        assertNull(assertIs<LlmModelDescriptor>(nonDivisible.descriptor).transformerShape?.headDim)
+    }
+
+    @Test
+    fun enforcesFileBundleParameterContextAndPathCeilings() {
+        assertIs<DescriptorBuildResult.Invalid>(
+            factory.buildLlm(detail(), file(size = DescriptorLimits.MAX_FILE_BYTES + 1L), null),
+        )
+        assertIs<DescriptorBuildResult.Invalid>(
+            factory.buildLlm(detail(totalParameters = DescriptorLimits.MAX_PARAMETERS + 1L), file(), null),
+        )
+        assertIs<DescriptorBuildResult.Invalid>(
+            factory.buildLlm(
+                detail(contextLength = DescriptorLimits.MAX_CONTEXT_TOKENS + 1),
+                file(),
+                null,
+            ),
+        )
+        assertIs<DescriptorBuildResult.Invalid>(factory.buildLlm(detail(), file(path = "../model.gguf"), null))
+        assertIs<DescriptorBuildResult.Invalid>(
+            factory.buildLlm(detail(), file(path = "a".repeat(1_025) + ".gguf"), null),
+        )
+
+        val setup = SdCppModelSetup("family", "description", emptyList(), selfContained = true)
+        val tooLargeBundle = listOf(
+            file(path = "a.safetensors", size = DescriptorLimits.MAX_FILE_BYTES),
+            file(path = "b.safetensors", size = DescriptorLimits.MAX_FILE_BYTES),
+            file(path = "c.safetensors", size = 1L),
+        )
+        assertIs<DescriptorBuildResult.Invalid>(
+            factory.buildDiffusion(detail(), tooLargeBundle, setup, DiffusionMode.IMAGE),
+        )
+    }
+
+    @Test
+    fun rejectsDuplicateEmptyExcessAndMissingDiffusionComponents() {
+        val setup = SdCppModelSetup(
+            familyLabel = "family",
+            description = "description",
+            components = listOf(
+                SdCppComponent(ComponentRole.VAE, "owner/model", "vae.safetensors"),
+            ),
+        )
+        assertIs<DescriptorBuildResult.Invalid>(
+            factory.buildDiffusion(
+                detail(),
+                listOf(file(path = "main.safetensors"), file(path = "main.safetensors")),
+                setup,
+                DiffusionMode.IMAGE,
+            ),
+        )
+        assertIs<DescriptorBuildResult.Invalid>(
+            factory.buildDiffusion(detail(), listOf(file(path = "")), setup, DiffusionMode.IMAGE),
+        )
+        assertIs<DescriptorBuildResult.Invalid>(
+            factory.buildDiffusion(detail(), listOf(file(path = "main.safetensors")), setup, DiffusionMode.IMAGE),
+        )
+        assertIs<DescriptorBuildResult.Invalid>(
+            factory.buildDiffusion(
+                detail(),
+                (0..DescriptorLimits.MAX_COMPONENTS).map { file(path = "component-$it.safetensors") },
+                SdCppModelSetup("family", "description", emptyList(), selfContained = true),
+                DiffusionMode.IMAGE,
+            ),
+        )
+    }
+
+    @Test
+    fun rejectsMultipleDerivedPrimaryRepresentations() {
+        val result = factory.buildDiffusion(
+            detail(repositoryId = "stabilityai/stable-diffusion-3-medium"),
+            listOf(
+                file(path = "primary-a.safetensors"),
+                file(path = "primary-b.safetensors"),
+            ),
+            SdCppModelSetup("Stable Diffusion 3 Medium", "description", emptyList(), selfContained = true),
+            DiffusionMode.IMAGE,
+        )
+
+        assertIs<DescriptorBuildResult.Invalid>(result)
+    }
+
+    @Test
+    fun preservesMixedQuantizationDistributionForACompleteDiffusionGraph() {
+        val setup = SdCppModelSetup(
+            familyLabel = "family",
+            description = "description",
+            components = listOf(
+                SdCppComponent(ComponentRole.VAE, "owner/model", "vae-F16.safetensors"),
+            ),
+        )
+        val result = assertIs<DescriptorBuildResult.Ready>(
+            factory.buildDiffusion(
+                detail(),
+                listOf(
+                    file(path = "main-Q4_K_M.gguf"),
+                    file(path = "vae-F16.safetensors"),
+                ),
+                setup,
+                DiffusionMode.IMAGE,
+            ),
+        )
+        val descriptor = assertIs<DiffusionModelDescriptor>(result.descriptor)
+        assertEquals(setOf("Q4_K_M", "F16"), descriptor.quantizationDistribution)
+        assertEquals(ComponentRole.VAE, descriptor.components.single { !it.isPrimary }.role)
+    }
+
+    @Test
+    fun crossRepositoryDiffusionComponentNeedsAnIndependentSnapshot() {
+        val setup = SdCppModelSetup(
+            familyLabel = "family",
+            description = "description",
+            components = listOf(
+                SdCppComponent(ComponentRole.VAE, "other/model", "vae.safetensors"),
+            ),
+        )
+
+        val result = factory.buildDiffusion(
+            detail(),
+            listOf(file(path = "main.safetensors"), file(path = "vae.safetensors")),
+            setup,
+            DiffusionMode.IMAGE,
+        )
+
+        val needsVariant = assertIs<DescriptorBuildResult.NeedsVariant>(result)
+        assertTrue(AssessmentReason.MISSING_REQUIRED_COMPONENT in needsVariant.reasons)
+        assertNull(needsVariant.assumedQuantization)
+    }
+
+    @Test
+    fun rejectsDiffusionDimensionsOutsideTheParserCeiling() {
+        val setup = SdCppModelSetup(
+            familyLabel = "family",
+            description = "description",
+            components = emptyList(),
+            recommendedParams = SdCppRecommendedParams(
+                width = DescriptorLimits.MAX_IMAGE_DIMENSION + 1,
+                height = 512,
+            ),
+            selfContained = true,
+        )
+
+        assertIs<DescriptorBuildResult.Invalid>(
+            factory.buildDiffusion(
+                detail(),
+                listOf(file(path = "main.safetensors")),
+                setup,
+                DiffusionMode.IMAGE,
+            ),
+        )
+    }
+
+    @Test
+    fun recordsEvidenceForEveryNormalizedLlmAndDiffusionFact() {
+        val llm = assertIs<LlmModelDescriptor>(
+            assertIs<DescriptorBuildResult.Ready>(
+                factory.buildLlm(
+                    detail().copy(tags = listOf("gguf-v3")),
+                    file(),
+                    null,
+                ),
+            ).descriptor,
+        )
+        assertTrue(llm.evidence.any { it.detail == "context:hub-metadata" })
+        assertTrue(llm.evidence.any { it.detail == "quantization:filename" })
+        assertTrue(llm.evidence.any { it.detail == "gguf-version:tag" })
+
+        val setup = SdCppModelSetup(
+            familyLabel = "family",
+            description = "description",
+            components = listOf(
+                SdCppComponent(ComponentRole.VAE, "owner/model", "vae-F16.safetensors"),
+            ),
+            recommendedParams = SdCppRecommendedParams(width = 1_024, height = 768),
+        )
+        val diffusion = assertIs<DiffusionModelDescriptor>(
+            assertIs<DescriptorBuildResult.Ready>(
+                factory.buildDiffusion(
+                    detail(),
+                    listOf(file(path = "main.safetensors"), file(path = "vae-F16.safetensors")),
+                    setup,
+                    DiffusionMode.IMAGE,
+                ),
+            ).descriptor,
+        )
+        val details = diffusion.evidence.mapNotNullTo(mutableSetOf()) { it.detail }
+        assertEquals(1_024, diffusion.width)
+        assertEquals(768, diffusion.height)
+        assertTrue("mode:caller" in details)
+        assertTrue("family:setup" in details)
+        assertTrue("width:setup" in details)
+        assertTrue("height:setup" in details)
+        assertTrue("component-role:setup" in details)
+    }
+
+    @Test
+    fun derivesDiffusionArchitectureOnlyFromExactAllowlistedRepositories() {
+        val cases = listOf(
+            "CompVis/stable-diffusion-v-1-4-original" to SdArchitecture.SD1,
+            "runwayml/stable-diffusion-v1-5" to SdArchitecture.SD1,
+            "stabilityai/stable-diffusion-2-1" to SdArchitecture.SD1,
+            "stabilityai/sd-turbo" to SdArchitecture.SD1,
+            "stabilityai/stable-diffusion-xl-base-1.0" to SdArchitecture.SDXL,
+            "segmind/SSD-1B" to SdArchitecture.SDXL,
+            "stabilityai/stable-diffusion-3-medium" to SdArchitecture.SD3,
+            "stabilityai/stable-diffusion-3.5-large" to SdArchitecture.SD3,
+            "Comfy-Org/stable-diffusion-3.5-fp8" to SdArchitecture.SD3,
+            "black-forest-labs/FLUX.1-dev" to SdArchitecture.FLUX,
+            "leejet/FLUX.1-schnell-gguf" to SdArchitecture.FLUX,
+            "black-forest-labs/FLUX.2-dev" to SdArchitecture.FLUX,
+            "leejet/FLUX.2-klein-4B-GGUF" to SdArchitecture.FLUX,
+            "QuantStack/FLUX.1-Kontext-dev-GGUF" to SdArchitecture.FLUX,
+            "city96/Wan2.1-T2V-14B-gguf" to SdArchitecture.WAN_LARGE,
+            "city96/Wan2.1-I2V-14B-480P-gguf" to SdArchitecture.WAN_LARGE,
+            "calcuis/wan-1.3b-gguf" to SdArchitecture.WAN_SMALL,
+            "QuantStack/Wan2.2-TI2V-5B-GGUF" to SdArchitecture.WAN_SMALL,
+            "QuantStack/Wan2.2-T2V-A14B-GGUF" to SdArchitecture.WAN_LARGE,
+            "QuantStack/Wan2.2-I2V-A14B-GGUF" to SdArchitecture.WAN_LARGE,
+        )
+        val setup = SdCppModelSetup("misleading-FLUX-prefix", "description", emptyList(), selfContained = true)
+
+        cases.forEach { (repositoryId, expected) ->
+            val descriptor = assertIs<DiffusionModelDescriptor>(
+                assertIs<DescriptorBuildResult.Ready>(
+                    factory.buildDiffusion(
+                        detail(repositoryId = repositoryId),
+                        listOf(file()),
+                        setup,
+                        DiffusionMode.IMAGE,
+                    ),
+                ).descriptor,
+            )
+
+            assertEquals(expected, descriptor.architecture, repositoryId)
+            assertNotNull(descriptor.evidence.singleOrNull { it.detail == "architecture:registry-repository" })
+        }
+    }
+
+    @Test
+    fun ambiguousWanRepositoriesRequireValidatedPrimarySizeEvidence() {
+        val setup = SdCppModelSetup("Wan2.2", "description", emptyList(), selfContained = true)
+        fun architecture(size: Long): DiffusionModelDescriptor = assertIs(
+            assertIs<DescriptorBuildResult.Ready>(
+                factory.buildDiffusion(
+                    detail(repositoryId = "Comfy-Org/Wan_2.2_ComfyUI_Repackaged"),
+                    listOf(file(size = size)),
+                    setup,
+                    DiffusionMode.VIDEO,
+                ),
+            ).descriptor,
+        )
+
+        val small = architecture(8L * GIB)
+        val large = architecture(13L * GIB)
+
+        assertEquals(SdArchitecture.WAN_SMALL, small.architecture)
+        assertEquals(SdArchitecture.WAN_LARGE, large.architecture)
+        assertTrue(small.evidence.any { it.detail == "architecture:registry-primary-size" })
+        assertTrue(large.evidence.any { it.detail == "architecture:registry-primary-size" })
+    }
+
+    @Test
+    fun unrecognizedRepositoryDoesNotPromoteAFamilyPrefixToArchitecture() {
+        val descriptor = assertIs<DiffusionModelDescriptor>(
+            assertIs<DescriptorBuildResult.Ready>(
+                factory.buildDiffusion(
+                    detail(repositoryId = "owner/FLUX-like-model"),
+                    listOf(file()),
+                    SdCppModelSetup("FLUX.1", "description", emptyList(), selfContained = true),
+                    DiffusionMode.IMAGE,
+                ),
+            ).descriptor,
+        )
+
+        assertNull(descriptor.architecture)
+        assertTrue(descriptor.evidence.any { it.detail == "architecture:registry-unrecognized" })
+    }
+
+    @Test
+    fun rejectsOverlongAndOversizedRemoteCollections() {
+        val overlongDetail = detail().copy(
+            gguf = detail().gguf?.copy(architecture = "a".repeat(65)),
+        )
+        assertIs<DescriptorBuildResult.Invalid>(factory.buildLlm(overlongDetail, file(), null))
+
+        val oversizedTags = detail().copy(tags = List(257) { "tag-$it" })
+        assertIs<DescriptorBuildResult.Invalid>(factory.buildLlm(oversizedTags, file(), null))
+    }
+
+    @Test
+    fun descriptorSnapshotsCallerOwnedCollections() {
+        val evidence = mutableListOf(Evidence(AssessmentReason.INVALID_METADATA, Confidence.HIGH))
+        val features = mutableSetOf("feature-a")
+        val descriptor = LlmModelDescriptor(
+            repositoryId = "owner/model",
+            revision = REVISION,
+            file = ModelFileIdentity(
+                repositoryId = "owner/model",
+                revision = REVISION,
+                path = "model.gguf",
+                sizeBytes = 1L,
+                gitOid = null,
+                lfsOid = null,
+                xetHash = null,
+                evidence = evidence,
+            ),
+            architecture = "llama",
+            quantization = QuantizationEvidence.Unknown,
+            parameterCount = null,
+            contextLimit = null,
+            transformerShape = null,
+            ggufVersion = null,
+            requiredEngineFeatures = features,
+            evidence = evidence,
+        )
+
+        evidence.clear()
+        features.clear()
+
+        assertEquals(1, descriptor.evidence.size)
+        assertEquals(1, descriptor.file.evidence.size)
+        assertEquals(setOf("feature-a"), descriptor.requiredEngineFeatures)
+    }
+
+    private fun detail(
+        totalParameters: Long? = 7_000_000_000L,
+        contextLength: Int? = 8_192,
+        repositoryId: String = "owner/model",
+    ) = ModelDetailResponse(
+        id = repositoryId,
+        modelId = repositoryId,
+        sha = REVISION,
+        gguf = ModelDetailResponse.Gguf(
+            architecture = "llama",
+            contextLength = contextLength,
+            total = totalParameters,
+        ),
+    )
+
+    private fun file(
+        path: String = "model-Q4_K_M.gguf",
+        size: Long? = 4_000_000_000L,
+        lfsSize: Long? = null,
+        lfsOid: String? = null,
+        oid: String? = null,
+        xetHash: String? = null,
+    ) = ModelFileTreeResponse(
+        path = path,
+        size = size,
+        type = "file",
+        oid = oid,
+        xetHash = xetHash,
+        lfs = lfsSize?.let { ModelFileTreeResponse.Lfs(oid = lfsOid, size = it) },
+    )
+
+    private fun listModel(numParameters: Long?) = ListModelsResponse.Model(
+        id = "owner/model",
+        numParameters = numParameters,
+    )
+
+    private companion object {
+        const val REVISION = "0123456789abcdef0123456789abcdef01234567"
+        const val GIB = 1_073_741_824L
+    }
+}

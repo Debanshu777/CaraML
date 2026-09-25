@@ -3,9 +3,18 @@ package com.debanshu777.caraml.features.chat.presentation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.debanshu777.caraml.core.data.inference.DiffusionInferenceRepository
+import com.debanshu777.caraml.core.data.inference.DiffusionMemoryException
 import com.debanshu777.caraml.core.data.inference.InferenceRepository
 import com.debanshu777.caraml.core.data.inference.ModelLoadResult
+import com.debanshu777.caraml.core.data.inference.PromptContextFullException
+import com.debanshu777.caraml.core.media.GeneratedMediaStore
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
+import com.debanshu777.caraml.core.recommendation.InstalledModelLoadResolver
+import com.debanshu777.caraml.core.recommendation.LoadAdmission
+import com.debanshu777.caraml.core.recommendation.LoadAdmissionReason
+import com.debanshu777.caraml.core.recommendation.LoadRequest
+import com.debanshu777.caraml.core.recommendation.RiskAcknowledgement
+import com.debanshu777.caraml.core.recommendation.RunPlan
 import com.debanshu777.caraml.features.chat.data.ChatMessage
 import com.debanshu777.caraml.features.chat.data.LiveGenerationStats
 import com.debanshu777.caraml.features.chat.data.MessageRole
@@ -15,6 +24,7 @@ import com.debanshu777.caraml.features.chat.domain.matchesGenerationMode
 import com.debanshu777.caraml.features.chat.domain.usecase.GenerateResponseUseCase
 import com.debanshu777.caraml.features.chat.domain.usecase.GenerationResult
 import com.debanshu777.caraml.features.chat.domain.usecase.GetAvailableModelsUseCase
+import com.debanshu777.caraml.features.chat.domain.usecase.ContextResetResult
 import com.debanshu777.caraml.features.chat.domain.usecase.ManageContextUseCase
 import com.debanshu777.caraml.features.chat.domain.usecase.TrackModelUsageUseCase
 import com.debanshu777.caraml.core.rating.DiffusionStepPolicy
@@ -26,13 +36,11 @@ import com.debanshu777.diffusionrunner.SampleMethod
 import com.debanshu777.diffusionrunner.VideoGenParams
 import com.debanshu777.runner.StopReason
 import com.debanshu777.huggingfacemanager.sdcpp.SdCppRecommendedParams
-import com.debanshu777.huggingfacemanager.sdcpp.getModelSetup
-import com.debanshu777.huggingfacemanager.sdcpp.SdCppComponentChecker
-import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -49,6 +57,13 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlin.concurrent.atomics.AtomicLong
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.time.Clock
 
 private sealed class InternalChatState {
@@ -62,6 +77,7 @@ private sealed class InternalChatState {
 
     data class ModelError(
         val message: String,
+        val canRetryCurrentModel: Boolean = false,
     ) : InternalChatState()
 
     data class MissingComponents(
@@ -70,12 +86,66 @@ private sealed class InternalChatState {
         val modelId: String,
     ) : InternalChatState()
 
+    data class LoadActionRequired(val action: PendingLoadAction) : InternalChatState()
+
     data class ReadyCore(
         val contextLimit: Int,
         val isGenerating: Boolean,
     ) : InternalChatState()
 }
 
+@ConsistentCopyVisibility
+data class PendingLoadBinding internal constructor(
+    val generation: Long,
+    val model: LocalModelEntity,
+    val mode: GenerationMode,
+)
+
+sealed interface PendingLoadAction {
+    val binding: PendingLoadBinding
+
+    data class ConfirmRisk(
+        val request: LoadRequest,
+        override val binding: PendingLoadBinding,
+    ) : PendingLoadAction
+    data class AcceptAlternative(
+        val original: LoadRequest,
+        val saferPlan: RunPlan,
+        override val binding: PendingLoadBinding,
+        val saferRequest: LoadRequest = original.copy(
+            plan = saferPlan,
+            riskAcknowledgement = null,
+            backendAlternative = null,
+        ),
+    ) : PendingLoadAction
+    data class AcceptSafeAlternative(
+        val saferRequest: LoadRequest,
+        override val binding: PendingLoadBinding,
+    ) : PendingLoadAction
+    data class RetryQuarantined(
+        val request: LoadRequest,
+        override val binding: PendingLoadBinding,
+    ) : PendingLoadAction
+}
+
+private data class ModelLoadAttempt(
+    val model: LocalModelEntity,
+    val mode: GenerationMode,
+    val generation: Long,
+)
+
+private data class RunnerTeardownAttempt(
+    val generation: Long,
+)
+
+private sealed interface RunnerTeardownKey {
+    data object NoModels : RunnerTeardownKey
+    data class NoModelsForMode(val mode: GenerationMode) : RunnerTeardownKey
+    data object UnsupportedVideo : RunnerTeardownKey
+    data object Cleared : RunnerTeardownKey
+}
+
+@OptIn(ExperimentalAtomicApi::class)
 class ChatViewModel(
     getAvailableModels: GetAvailableModelsUseCase,
     private val generateResponse: GenerateResponseUseCase,
@@ -83,10 +153,12 @@ class ChatViewModel(
     private val trackModelUsage: TrackModelUsageUseCase,
     private val inferenceRepository: InferenceRepository,
     private val diffusionRepository: DiffusionInferenceRepository,
-    private val storagePathProvider: StoragePathProvider,
+    private val generatedMediaStore: GeneratedMediaStore,
+    private val installedModelLoadRequestResolver: InstalledModelLoadResolver,
+    private val modelLoadDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val releaseDiffusionModel: suspend () -> Unit = diffusionRepository::release,
+    private val loadDiffusionModel: suspend (LoadRequest) -> ModelLoadResult = diffusionRepository::loadModel,
 ) : ViewModel() {
-
-    private val componentChecker = SdCppComponentChecker(storagePathProvider)
 
     private val _topModels: StateFlow<ImmutableList<LocalModelEntity>> =
         getAvailableModels()
@@ -121,12 +193,16 @@ class ChatViewModel(
             is InternalChatState.NoModelsForMode ->
                 ChatUiState.NoModelsForMode(mode = mode)
             is InternalChatState.ModelLoading -> ChatUiState.ModelLoading
-            is InternalChatState.ModelError -> ChatUiState.ModelError(internal.message)
+            is InternalChatState.ModelError -> ChatUiState.ModelError(
+                message = internal.message,
+                canRetryCurrentModel = internal.canRetryCurrentModel,
+            )
             is InternalChatState.MissingComponents -> ChatUiState.MissingComponents(
                 missingComponentLabels = internal.missingComponentLabels,
                 modelName = internal.modelName,
                 modelId = internal.modelId,
             )
+            is InternalChatState.LoadActionRequired -> ChatUiState.LoadActionRequired(internal.action)
             is InternalChatState.ReadyCore -> ChatUiState.Ready(
                 messages = messages,
                 contextLimit = internal.contextLimit,
@@ -150,24 +226,36 @@ class ChatViewModel(
     val currentDiffusionParams: StateFlow<SdCppRecommendedParams?> = _currentDiffusionParams.asStateFlow()
 
     private var modelLoadJob: Job? = null
+    private val modelLoadGeneration = AtomicLong(0L)
+    private val modelLoadOwnership = Mutex()
+    private var modelLoadOwnerGeneration = 0L
+    private var runnersRequireTeardown = true
+    private var lastRunnerTeardownKey: RunnerTeardownKey? = null
+    private var lastRunnerTeardownJob: Job? = null
     private var generationJob: Job? = null
+    private val pendingLoadActionGate = PendingLoadActionGate()
 
     private val teardownScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    private suspend fun releaseAllRunners() {
-        inferenceRepository.unloadModel()
-        diffusionRepository.release()
-    }
-
     init {
+        viewModelScope.launch {
+            try {
+                generatedMediaStore.prepare()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // The first media operation retries preparation and reports a bounded generic failure.
+            }
+        }
+
         combine(_topModels, _generationMode) { models, mode -> models to mode }
             .onEach { (models, mode) -> ensureSelectionForInventory(models, mode) }
             .launchIn(viewModelScope)
 
         _selectedModel
+            .distinctUntilChanged { old, new -> old?.id == new?.id }
             .filterNotNull()
-            .distinctUntilChanged { old, new -> old.id == new.id }
-            .onEach { model -> loadModel(model) }
+            .onEach { model -> loadSelectedModel(model) }
             .launchIn(viewModelScope)
 
         // Forward native denoising-step progress into StreamingState so the UI can show "3/20"
@@ -192,23 +280,35 @@ class ChatViewModel(
         models: ImmutableList<LocalModelEntity>,
         mode: GenerationMode,
     ) {
+        if (mode == GenerationMode.Video && !diffusionRepository.supportsVideoGeneration()) {
+            transitionWithoutModel(
+                state = InternalChatState.ModelError(
+                    "Video generation is not available on this platform yet."
+                ),
+                teardownKey = RunnerTeardownKey.UnsupportedVideo,
+            ).join()
+            return
+        }
         if (models.isEmpty()) {
-            releaseAllRunners()
-            _internal.value = InternalChatState.NoModels
-            _selectedModel.value = null
+            transitionWithoutModel(
+                state = InternalChatState.NoModels,
+                teardownKey = RunnerTeardownKey.NoModels,
+            ).join()
             return
         }
         val picker = models.filterForMode(mode)
         if (picker.isEmpty()) {
-            releaseAllRunners()
-            _internal.value = InternalChatState.NoModelsForMode(mode)
-            _selectedModel.value = null
+            transitionWithoutModel(
+                state = InternalChatState.NoModelsForMode(mode),
+                teardownKey = RunnerTeardownKey.NoModelsForMode(mode),
+            ).join()
             return
         }
         val sel = _selectedModel.value
         if (sel == null || !sel.matchesGenerationMode(mode)) {
             val next = pickRememberedModel(picker, mode) ?: picker.first()
             if (sel?.id != next.id) {
+                invalidatePendingLoadAction()
                 _internal.value = InternalChatState.ModelLoading
                 _selectedModel.value = next
             }
@@ -216,7 +316,7 @@ class ChatViewModel(
             _internal.value is InternalChatState.NoModels ||
             _internal.value is InternalChatState.NoModelsForMode
         ) {
-            loadModel(sel)
+            loadSelectedModel(sel)
         }
     }
 
@@ -235,34 +335,47 @@ class ChatViewModel(
 
     override fun onCleared() {
         super.onCleared()
-        teardownScope.launch {
-            inferenceRepository.unloadModel()
-            diffusionRepository.release()
-        }
+        signalGenerationCancellation()
+        startRunnerTeardown(
+            key = RunnerTeardownKey.Cleared,
+            scope = teardownScope,
+            clearGeneratedMedia = true,
+        )
     }
 
     fun setGenerationMode(mode: GenerationMode) {
         if (_generationMode.value == mode) return
+        invalidatePendingLoadAction()
         modelLoadJob?.cancel()
+        signalGenerationCancellation()
         generationJob?.cancel()
-        if (_generationMode.value == GenerationMode.Text) {
-            inferenceRepository.cancelGeneration()
-        }
         _streamingState.value = StreamingState()
         _generationMode.value = mode
+
+        if (mode == GenerationMode.Video && !diffusionRepository.supportsVideoGeneration()) {
+            transitionWithoutModel(
+                state = InternalChatState.ModelError(
+                    "Video generation is not available on this platform yet."
+                ),
+                teardownKey = RunnerTeardownKey.UnsupportedVideo,
+            )
+            return
+        }
 
         val models = _topModels.value
         val picker = models.filterForMode(mode)
         if (models.isEmpty()) {
-            _internal.value = InternalChatState.NoModels
-            _selectedModel.value = null
-            viewModelScope.launch(Dispatchers.Default) { releaseAllRunners() }
+            transitionWithoutModel(
+                state = InternalChatState.NoModels,
+                teardownKey = RunnerTeardownKey.NoModels,
+            )
             return
         }
         if (picker.isEmpty()) {
-            _internal.value = InternalChatState.NoModelsForMode(mode)
-            _selectedModel.value = null
-            viewModelScope.launch(Dispatchers.Default) { releaseAllRunners() }
+            transitionWithoutModel(
+                state = InternalChatState.NoModelsForMode(mode),
+                teardownKey = RunnerTeardownKey.NoModelsForMode(mode),
+            )
             return
         }
         val previous = _selectedModel.value
@@ -270,12 +383,17 @@ class ChatViewModel(
         _internal.value = InternalChatState.ModelLoading
         _selectedModel.value = next
         if (previous?.id == next.id) {
-            loadModel(next)
+            loadSelectedModel(next)
         }
     }
 
     fun selectModel(model: LocalModelEntity) {
+        if (!model.matchesGenerationMode(_generationMode.value)) return
+
+        invalidatePendingLoadAction()
+        val selectionUnchanged = _selectedModel.value?.id == model.id
         _selectedModel.value = model
+        if (selectionUnchanged) loadSelectedModel(model)
         when (_generationMode.value) {
             GenerationMode.Text -> lastTextModelId = model.id
             GenerationMode.Image,
@@ -285,68 +403,416 @@ class ChatViewModel(
         viewModelScope.launch { trackModelUsage(model) }
     }
 
-    private fun loadModel(model: LocalModelEntity) {
+    private fun loadSelectedModel(model: LocalModelEntity) {
+        startModelLoad(model) { attempt ->
+            loadInstalledModel(
+                model = model,
+                mode = attempt.mode,
+                prepare = installedModelLoadRequestResolver::prepare,
+                releaseRunners = { releaseRunnersForAssessment(attempt) },
+                assess = { preparation ->
+                    withCurrentModelLoad(attempt) {
+                        installedModelLoadRequestResolver.resolve(preparation)
+                    }
+                },
+                loadText = { request ->
+                    loadTextRunner(attempt, request)
+                },
+                loadDiffusion = { request ->
+                    loadDiffusionRunner(attempt, request)
+                },
+            )
+        }
+    }
+
+    private fun startModelLoad(
+        model: LocalModelEntity,
+        load: suspend (ModelLoadAttempt) -> ModelLoadResult,
+    ) {
+        val mode = _generationMode.value
+        if (!model.matchesGenerationMode(mode) || _selectedModel.value != model) return
+
+        invalidatePendingLoadAction()
         val previousJob = modelLoadJob
         modelLoadJob?.cancel()
+        signalGenerationCancellation()
         generationJob?.cancel()
         _streamingState.value = StreamingState()
 
-        val mode = _generationMode.value
-        if (!model.matchesGenerationMode(mode)) {
-            return
-        }
+        val loadGeneration = modelLoadGeneration.fetchAndAdd(1L) + 1L
+        val attempt = ModelLoadAttempt(model, mode, loadGeneration)
+        lastRunnerTeardownKey = null
+        lastRunnerTeardownJob = null
 
-        _internal.value = InternalChatState.ModelLoading
-
-        modelLoadJob = viewModelScope.launch(Dispatchers.Default) {
+        modelLoadJob = viewModelScope.launch(modelLoadDispatcher) {
+            // Claim first, then release the ownership lock before joining. A successor is therefore
+            // current while it waits for its predecessor, without deadlocking that predecessor's exit.
+            claimModelLoad(attempt)
             // Wait for the previous job to fully complete (including any in-progress JNI call)
             // before we start new native operations. Without this, a cancelled job that is still
             // inside a blocking JNI call races with our unloadModel() → double-free crash.
-            previousJob?.join()
+            awaitPreviousModelLoad(previousJob)
 
-            val result: ModelLoadResult = when (mode) {
-                GenerationMode.Text -> {
-                    diffusionRepository.release()
-                    inferenceRepository.loadModel(model)
-                }
-                GenerationMode.Image,
-                GenerationMode.Video,
-                -> {
-                    inferenceRepository.unloadModel()
-                    
-                    // Pre-inference validation for diffusion models
-                    val modelSetup = getModelSetup(model.modelId)
-                    if (modelSetup != null && !modelSetup.selfContained) {
-                        val missingComponents = componentChecker.getMissingComponents(modelSetup)
-                        if (missingComponents.isNotEmpty()) {
-                            val missingLabels = missingComponents.map { it.role.displayLabel }
-                            val modelName = modelSetup.familyLabel
-                            _internal.value = InternalChatState.MissingComponents(
-                                missingComponentLabels = missingLabels,
-                                modelName = modelName,
-                                modelId = model.modelId,
+            val result = load(attempt)
+            withContext(Dispatchers.Main.immediate) {
+                withCurrentModelLoad(attempt) {
+                    when (result) {
+                        is ModelLoadResult.Success -> {
+                            if (mode == GenerationMode.Image || mode == GenerationMode.Video) {
+                                _currentDiffusionParams.value = diffusionRepository.getRecommendedParams(model)
+                            }
+                            _internal.value = InternalChatState.ReadyCore(
+                                contextLimit = result.contextSize,
+                                isGenerating = false,
                             )
-                            return@launch
                         }
+                        is ModelLoadResult.Error -> {
+                            _internal.value = InternalChatState.ModelError(result.message)
+                        }
+                        is ModelLoadResult.AdmissionRequired -> handleAdmission(attempt, result.admission)
                     }
-                    
-                    diffusionRepository.loadModel(model)
                 }
             }
-            when (result) {
-                is ModelLoadResult.Success -> {
-                    if (mode == GenerationMode.Image || mode == GenerationMode.Video) {
-                        _currentDiffusionParams.value = diffusionRepository.getRecommendedParams(model)
-                    }
-                    _internal.value = InternalChatState.ReadyCore(
-                        contextLimit = result.contextSize,
-                        isGenerating = false,
-                    )
+        }
+    }
+
+    private suspend fun claimModelLoad(attempt: ModelLoadAttempt) {
+        withContext(Dispatchers.Main.immediate) {
+            modelLoadOwnership.withLock {
+                currentCoroutineContext().ensureActive()
+                if (!isCurrentModelLoadRequest(attempt)) {
+                    throw CancellationException("Stale model load attempt")
                 }
-                is ModelLoadResult.Error -> {
-                    _internal.value = InternalChatState.ModelError(result.message)
+                modelLoadOwnerGeneration = attempt.generation
+                _internal.value = InternalChatState.ModelLoading
+            }
+        }
+    }
+
+    private fun transitionWithoutModel(
+        state: InternalChatState,
+        teardownKey: RunnerTeardownKey,
+    ): Job {
+        invalidatePendingLoadAction()
+        val teardownJob = startRunnerTeardown(teardownKey)
+        _internal.value = state
+        _selectedModel.value = null
+        return teardownJob
+    }
+
+    private fun startRunnerTeardown(
+        key: RunnerTeardownKey,
+        scope: CoroutineScope = viewModelScope,
+        clearGeneratedMedia: Boolean = false,
+    ): Job {
+        if (lastRunnerTeardownKey == key) {
+            lastRunnerTeardownJob?.takeUnless { it.isCancelled }?.let { return it }
+        }
+
+        val previousJob = modelLoadJob
+        previousJob?.cancel()
+        val generation = modelLoadGeneration.fetchAndAdd(1L) + 1L
+        val attempt = RunnerTeardownAttempt(generation)
+        val teardownJob = scope.launch(modelLoadDispatcher) {
+            try {
+                claimRunnerTeardown(attempt)
+                awaitPreviousModelLoad(previousJob)
+                teardownRunners(attempt)
+            } finally {
+                if (clearGeneratedMedia) {
+                    withContext(kotlinx.coroutines.NonCancellable) {
+                        generatedMediaStore.clear()
+                    }
                 }
             }
+        }
+        modelLoadJob = teardownJob
+        lastRunnerTeardownKey = key
+        lastRunnerTeardownJob = teardownJob
+        return teardownJob
+    }
+
+    private suspend fun claimRunnerTeardown(attempt: RunnerTeardownAttempt) {
+        modelLoadOwnership.withLock {
+            currentCoroutineContext().ensureActive()
+            if (modelLoadGeneration.load() != attempt.generation) {
+                throw CancellationException("Stale runner teardown attempt")
+            }
+            modelLoadOwnerGeneration = attempt.generation
+        }
+    }
+
+    private suspend fun <T> withCurrentModelLoad(
+        attempt: ModelLoadAttempt,
+        action: suspend () -> T,
+    ): T {
+        // The current-owner check and the protected action share one critical section. A newer
+        // attempt cannot claim ownership between validation and JNI entry or a terminal state write.
+        modelLoadOwnership.lock()
+        try {
+            currentCoroutineContext().ensureActive()
+            if (modelLoadOwnerGeneration != attempt.generation ||
+                !isCurrentModelLoadRequest(attempt)
+            ) {
+                throw CancellationException("Stale model load attempt")
+            }
+            return action()
+        } finally {
+            modelLoadOwnership.unlock()
+        }
+    }
+
+    private suspend fun teardownRunners(attempt: RunnerTeardownAttempt) {
+        modelLoadOwnership.lock()
+        try {
+            currentCoroutineContext().ensureActive()
+            if (modelLoadOwnerGeneration != attempt.generation ||
+                modelLoadGeneration.load() != attempt.generation
+            ) {
+                throw CancellationException("Stale runner teardown attempt")
+            }
+            releaseAllRunnersLocked()
+        } finally {
+            modelLoadOwnership.unlock()
+        }
+    }
+
+    private suspend fun releaseRunnersForAssessment(attempt: ModelLoadAttempt) {
+        modelLoadOwnership.lock()
+        try {
+            currentCoroutineContext().ensureActive()
+            if (modelLoadOwnerGeneration != attempt.generation || !isCurrentModelLoadRequest(attempt)) {
+                throw CancellationException("Stale model load attempt")
+            }
+            releaseAllRunnersLocked()
+            currentCoroutineContext().ensureActive()
+            if (modelLoadOwnerGeneration != attempt.generation || !isCurrentModelLoadRequest(attempt)) {
+                throw CancellationException("Stale model load attempt")
+            }
+        } finally {
+            modelLoadOwnership.unlock()
+        }
+    }
+
+    private suspend fun releaseAllRunnersLocked() {
+        if (!runnersRequireTeardown) return
+        withContext(kotlinx.coroutines.NonCancellable) {
+            try {
+                inferenceRepository.unloadModel()
+            } finally {
+                releaseDiffusionModel()
+            }
+            runnersRequireTeardown = false
+        }
+    }
+
+    private suspend fun loadTextRunner(
+        attempt: ModelLoadAttempt,
+        request: LoadRequest,
+    ): ModelLoadResult = withCurrentModelLoad(attempt) {
+        runnersRequireTeardown = true
+        inferenceRepository.loadModel(request)
+    }
+
+    private suspend fun loadDiffusionRunner(
+        attempt: ModelLoadAttempt,
+        request: LoadRequest,
+    ): ModelLoadResult = withCurrentModelLoad(attempt) {
+        runnersRequireTeardown = true
+        loadDiffusionModel(request)
+    }
+
+    private fun isCurrentModelLoadRequest(attempt: ModelLoadAttempt): Boolean =
+        modelLoadGeneration.load() == attempt.generation &&
+            _selectedModel.value == attempt.model &&
+            _generationMode.value == attempt.mode
+
+    private fun ModelLoadAttempt.toPendingLoadBinding() = PendingLoadBinding(
+        generation = generation,
+        model = model,
+        mode = mode,
+    )
+
+    private fun currentPendingLoadAction(): PendingLoadAction? =
+        (_internal.value as? InternalChatState.LoadActionRequired)?.action
+
+    private fun invalidatePendingLoadAction() {
+        pendingLoadActionGate.close()
+        if (_internal.value is InternalChatState.LoadActionRequired) {
+            _internal.value = InternalChatState.ModelLoading
+        }
+    }
+
+    private fun tryConsumePendingLoadAction(expected: PendingLoadAction): Boolean {
+        val binding = expected.binding
+        if (currentPendingLoadAction() != expected ||
+            modelLoadGeneration.load() != binding.generation ||
+            _selectedModel.value != binding.model ||
+            _generationMode.value != binding.mode ||
+            !expected.requestsMatch(binding.model)
+        ) {
+            return false
+        }
+        return pendingLoadActionGate.tryConsume()
+    }
+
+    private fun PendingLoadAction.requestsMatch(model: LocalModelEntity): Boolean = when (this) {
+        is PendingLoadAction.ConfirmRisk -> request.model == model
+        is PendingLoadAction.AcceptAlternative ->
+            original.model == model && saferRequest.model == model
+        is PendingLoadAction.AcceptSafeAlternative -> saferRequest.model == model
+        is PendingLoadAction.RetryQuarantined -> request.model == model
+    }
+
+    private suspend fun loadExactModelForAttempt(
+        attempt: ModelLoadAttempt,
+        mode: GenerationMode,
+        request: LoadRequest,
+    ): ModelLoadResult {
+        releaseRunnersForAssessment(attempt)
+        return loadExactModelForMode(
+            mode = mode,
+            request = request,
+            loadText = { exact -> loadTextRunner(attempt, exact) },
+            loadDiffusion = { exact -> loadDiffusionRunner(attempt, exact) },
+        )
+    }
+
+    private fun handleAdmission(attempt: ModelLoadAttempt, admission: LoadAdmission) {
+        pendingLoadActionGate.close()
+        val binding = attempt.toPendingLoadBinding()
+        when (admission) {
+            is LoadAdmission.ConfirmationRequired -> {
+                val action = if (admission.explicitRetryRequired) {
+                    PendingLoadAction.RetryQuarantined(admission.request, binding)
+                } else {
+                    PendingLoadAction.ConfirmRisk(admission.request, binding)
+                }
+                pendingLoadActionGate.open()
+                _internal.value = InternalChatState.LoadActionRequired(action)
+            }
+            is LoadAdmission.AlternativeAvailable -> {
+                pendingLoadActionGate.open()
+                _internal.value = InternalChatState.LoadActionRequired(
+                    PendingLoadAction.AcceptAlternative(
+                        admission.original,
+                        admission.saferPlan,
+                        binding,
+                        admission.saferRequest,
+                    ),
+                )
+            }
+            is LoadAdmission.SafeAlternativeAvailable -> {
+                pendingLoadActionGate.open()
+                _internal.value = InternalChatState.LoadActionRequired(
+                    PendingLoadAction.AcceptSafeAlternative(admission.saferRequest, binding),
+                )
+            }
+            is LoadAdmission.TemporarilyUnavailable -> {
+                _internal.value = InternalChatState.ModelError(
+                    "The device is under memory or thermal pressure. Try again after it recovers.",
+                )
+            }
+            is LoadAdmission.Blocked -> {
+                _internal.value = InternalChatState.ModelError(
+                    admission.reason.safeBlockedLoadMessage(),
+                    canRetryCurrentModel =
+                        admission.reason == LoadAdmissionReason.NATIVE_PREFLIGHT_INVALID,
+                )
+            }
+            is LoadAdmission.Ready -> resumeExactLoad(admission.request)
+        }
+    }
+
+    fun confirmPendingLoad() {
+        val action = currentPendingLoadAction() as? PendingLoadAction.ConfirmRisk ?: return
+        confirmPendingLoad(action)
+    }
+
+    fun confirmPendingLoad(action: PendingLoadAction.ConfirmRisk) {
+        if (!tryConsumePendingLoadAction(action)) return
+        val now = Clock.System.now().toEpochMilliseconds()
+        resumeExactLoad(
+            action.request.copy(
+                riskAcknowledgement = RiskAcknowledgement(
+                    action.request.assessmentKey,
+                    action.request.plan.stableKey,
+                    now,
+                ),
+            ),
+        )
+    }
+
+    fun acceptSaferPlan() {
+        val action = currentPendingLoadAction() ?: return
+        acceptSaferPlan(action)
+    }
+
+    fun acceptSaferPlan(action: PendingLoadAction) {
+        val request = when (action) {
+            is PendingLoadAction.AcceptAlternative -> action.saferRequest
+            is PendingLoadAction.AcceptSafeAlternative -> action.saferRequest
+            else -> return
+        }
+        if (!tryConsumePendingLoadAction(action)) return
+        resumeExactLoad(request.copy(riskAcknowledgement = null, backendAlternative = null))
+    }
+
+    fun retryPendingLoad() {
+        val action = currentPendingLoadAction() as? PendingLoadAction.RetryQuarantined ?: return
+        retryPendingLoad(action)
+    }
+
+    fun retryPendingLoad(action: PendingLoadAction.RetryQuarantined) {
+        if (!tryConsumePendingLoadAction(action)) return
+        startModelLoad(action.request.model) { attempt ->
+            retryQuarantinedLoad(action.request, attempt)
+        }
+    }
+
+    private suspend fun retryQuarantinedLoad(
+        request: LoadRequest,
+        attempt: ModelLoadAttempt,
+    ): ModelLoadResult {
+        try {
+            when (request.plan) {
+                is com.debanshu777.caraml.core.recommendation.LlmRunPlan ->
+                    inferenceRepository.allowExplicitRetry(request)
+                is com.debanshu777.caraml.core.recommendation.DiffusionRunPlan ->
+                    diffusionRepository.allowExplicitRetry(request)
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Throwable) {
+            return ModelLoadResult.Error("The model cannot be retried right now.")
+        }
+        return loadExactModelForAttempt(
+            attempt = attempt,
+            mode = attempt.mode,
+            request = request.copy(riskAcknowledgement = null),
+        )
+    }
+
+    fun cancelPendingLoad() {
+        val action = currentPendingLoadAction() ?: return
+        cancelPendingLoad(action)
+    }
+
+    fun cancelPendingLoad(action: PendingLoadAction) {
+        if (!tryConsumePendingLoadAction(action)) return
+        _internal.value = InternalChatState.ModelError("Model loading was cancelled.")
+    }
+
+    fun retryCurrentModel() {
+        val failure = _internal.value as? InternalChatState.ModelError ?: return
+        if (!failure.canRetryCurrentModel) return
+        val model = _selectedModel.value ?: return
+        loadSelectedModel(model)
+    }
+
+    private fun resumeExactLoad(request: LoadRequest) {
+        startModelLoad(request.model) { attempt ->
+            loadExactModelForAttempt(attempt, attempt.mode, request)
         }
     }
 
@@ -383,6 +849,8 @@ class ChatViewModel(
                     handleContextReset(m)
                 }
             } catch (_: CancellationException) {
+            } catch (error: PromptContextFullException) {
+                finalizeWithError(assistantMessage.id, error.message.orEmpty())
             } catch (_: Exception) {
                 finalizeWithError(assistantMessage.id)
             }
@@ -411,19 +879,16 @@ class ChatViewModel(
                     sampleMethod = sampler,
                 )
                 val result = diffusionRepository.generateImage(params)
-                result.fold(
-                    onSuccess = { bytes ->
-                        if (bytes.isEmpty()) {
-                            finalizeWithError(assistantMessage.id)
-                        } else {
-                            finalizeMediaMessage(assistantMessage.id, imageBytes = bytes)
-                        }
-                    },
-                    onFailure = {
-                        finalizeWithError(assistantMessage.id)
-                    },
-                )
+                val bytes = result.getOrElse { throw it }
+                if (bytes.isEmpty()) {
+                    finalizeWithError(assistantMessage.id)
+                } else {
+                    val imagePath = generatedMediaStore.saveImage(assistantMessage.id, bytes)
+                    finalizeMediaMessage(assistantMessage.id, imagePath = imagePath)
+                }
             } catch (_: CancellationException) {
+            } catch (error: DiffusionMemoryException) {
+                finalizeWithError(assistantMessage.id, error.message.orEmpty())
             } catch (_: Exception) {
                 finalizeWithError(assistantMessage.id)
             }
@@ -453,19 +918,16 @@ class ChatViewModel(
                     sampleMethod = sampler,
                 )
                 val result = diffusionRepository.generateVideo(params)
-                result.fold(
-                    onSuccess = { frames ->
-                        if (frames.isEmpty()) {
-                            finalizeWithError(assistantMessage.id)
-                        } else {
-                            finalizeMediaMessage(assistantMessage.id, videoFrames = frames)
-                        }
-                    },
-                    onFailure = {
-                        finalizeWithError(assistantMessage.id)
-                    },
-                )
+                val frames = result.getOrElse { throw it }
+                if (frames.isEmpty()) {
+                    finalizeWithError(assistantMessage.id)
+                } else {
+                    val framePaths = generatedMediaStore.saveVideo(assistantMessage.id, frames)
+                    finalizeMediaMessage(assistantMessage.id, videoFramePaths = framePaths)
+                }
             } catch (_: CancellationException) {
+            } catch (error: DiffusionMemoryException) {
+                finalizeWithError(assistantMessage.id, error.message.orEmpty())
             } catch (_: Exception) {
                 finalizeWithError(assistantMessage.id)
             }
@@ -551,21 +1013,17 @@ class ChatViewModel(
 
     private fun finalizeMediaMessage(
         assistantMessageId: String,
-        imageBytes: ByteArray? = null,
-        videoFrames: List<ByteArray>? = null,
+        imagePath: String? = null,
+        videoFramePaths: List<String>? = null,
     ) {
         _messages.update { list ->
             val messages = list.toMutableList()
             val idx = messages.indexOfLast { it.id == assistantMessageId }
             if (idx >= 0) {
-                val meta = buildMap {
-                    put("prompt", messages.getOrNull(idx - 1)?.text ?: "")
-                }
                 messages[idx] = messages[idx].copy(
                     text = "",
-                    imageBytes = imageBytes,
-                    videoFrames = videoFrames,
-                    metadata = meta,
+                    imagePath = imagePath,
+                    videoFramePaths = videoFramePaths,
                 )
             }
             messages.toImmutableList()
@@ -574,13 +1032,16 @@ class ChatViewModel(
         _streamingState.value = StreamingState()
     }
 
-    private fun finalizeWithError(assistantMessageId: String) {
+    private fun finalizeWithError(
+        assistantMessageId: String,
+        message: String = "Something went wrong. Please try again.",
+    ) {
         _messages.update { list ->
             val messages = list.toMutableList()
             val idx = messages.indexOfLast { it.id == assistantMessageId }
             if (idx >= 0) {
                 messages[idx] = messages[idx].copy(
-                    text = "Something went wrong. Please try again.",
+                    text = message,
                 )
             }
             messages.toImmutableList()
@@ -591,8 +1052,11 @@ class ChatViewModel(
 
     private suspend fun handleContextReset(messages: List<ChatMessage>) {
         val progressMessageId = addProgressMessage("Chat summarization in progress")
-        manageContext.resetContext(messages)
-        updateProgressMessage(progressMessageId, "Chat summarized")
+        val status = when (manageContext.resetContext(messages)) {
+            ContextResetResult.Success -> "Chat summarized"
+            ContextResetResult.Failure -> "Could not reset chat context"
+        }
+        updateProgressMessage(progressMessageId, status)
     }
 
     private fun addProgressMessage(text: String): String {
@@ -620,9 +1084,18 @@ class ChatViewModel(
     fun cancelGeneration() {
         updateReadyCore { it.copy(isGenerating = false) }
         _streamingState.value = StreamingState()
-        if (_generationMode.value == GenerationMode.Text) {
-            inferenceRepository.cancelGeneration()
-        }
+        signalGenerationCancellation()
         generationJob?.cancel()
+    }
+
+    suspend fun loadGeneratedMedia(path: String): ByteArray? = generatedMediaStore.read(path)
+
+    private fun signalGenerationCancellation() {
+        when (_generationMode.value) {
+            GenerationMode.Text -> inferenceRepository.cancelGeneration()
+            GenerationMode.Image,
+            GenerationMode.Video,
+            -> diffusionRepository.cancelGeneration()
+        }
     }
 }

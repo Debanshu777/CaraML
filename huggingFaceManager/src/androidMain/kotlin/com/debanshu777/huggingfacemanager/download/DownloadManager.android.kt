@@ -2,15 +2,11 @@ package com.debanshu777.huggingfacemanager.download
 
 import com.debanshu777.huggingfacemanager.createPlatformHttpClient
 import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.request.prepareGet
-import io.ktor.client.statement.bodyAsChannel
-import io.ktor.utils.io.readAvailable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flowOn
+import okio.Path.Companion.toOkioPath
 import java.io.File
-import java.io.FileOutputStream
 
 actual class DownloadManager actual constructor(
     private val pathProvider: StoragePathProvider,
@@ -27,59 +23,53 @@ actual class DownloadManager actual constructor(
     actual fun download(
         modelId: String,
         path: String,
-        metadata: DownloadMetadataDTO
-    ): Flow<DownloadProgressDTO> = channelFlow {
-        val relativePath = path.trim().replace('\\', '/').trimStart('/')
-        val dirPath = pathProvider.getModelsStorageDirectory(modelId)
-        val file = File(dirPath, relativePath)
-        file.parentFile?.mkdirs()
-
-        val requiredBytes = metadata.sizeBytes
-        if (requiredBytes != null && requiredBytes > 0L) {
-            val availableBytes = pathProvider.getAvailableStorageBytes()
-            if (availableBytes < requiredBytes) {
-                throw InsufficientStorageException(requiredBytes, availableBytes)
-            }
-        }
-
-        val url = "$baseUrl/$modelId/resolve/main/$path?download=true"
-
-        try {
-            httpClient.prepareGet(url).execute { response ->
-                val contentLength = response.headers["Content-Length"]?.toLongOrNull()
-                val channel = response.bodyAsChannel()
-                val buffer = ByteArray(8192)
-                var bytesReceived = 0L
-
-                FileOutputStream(file).use { output ->
-                    while (true) {
-                        val n = channel.readAvailable(buffer)
-                        if (n <= 0) break
-                        output.write(buffer, 0, n)
-                        bytesReceived += n
-                        val pct = if (contentLength != null && contentLength > 0)
-                            (bytesReceived.toFloat() / contentLength * 100f).coerceIn(0f, 100f)
-                        else -1f
-                        send(DownloadProgressDTO(bytesReceived, contentLength, pct))
-                    }
-                }
-                if (contentLength != null && bytesReceived != contentLength) {
-                    throw IncompleteDownloadException(bytesReceived, contentLength)
-                }
-                // Emit final progress with localPath set
-                send(
-                    DownloadProgressDTO(
-                        bytesReceived = bytesReceived,
-                        contentLength = contentLength,
-                        percentage = 100f,
-                        localPath = file.absolutePath
-                    )
-                )
-            }
-        } catch (e: Exception) {
-            file.delete()
-            throw e
-        }
+        metadata: DownloadMetadataDTO,
+        resumeMetadata: DownloadResumeMetadata?,
+    ): Flow<DownloadProgressDTO> {
+        requireImmutableArtifactWriteMetadata(metadata)
+        val request = validateDownloadArguments(modelId, path, metadata)
+        val dirPath = pathProvider.getModelsStorageDirectory(request.modelId)
+        val root = File(dirPath).toPath().toAbsolutePath().normalize()
+        val file = root.resolve(metadata.destinationRelativePath).normalize()
+        require(file != root && file.startsWith(root)) { "Invalid model file path" }
+        return downloadArtifact(
+            httpClient,
+            pathProvider,
+            baseUrl,
+            modelId,
+            path,
+            metadata,
+            root.toOkioPath(),
+            file.toOkioPath(),
+            file.toString(),
+            resumeMetadata,
+        ).flowOn(Dispatchers.IO)
     }
-        .flowOn(Dispatchers.IO)
+
+    actual suspend fun publishBundle(ownerModelId: String, artifacts: List<DownloadMetadataDTO>): Boolean =
+        publishArtifactBundle(pathProvider, ownerModelId, artifacts)
+
+    actual suspend fun validateBundle(ownerModelId: String, artifacts: List<DownloadMetadataDTO>): Boolean =
+        validateArtifactBundle(pathProvider, ownerModelId, artifacts)
+
+    actual suspend fun validatedBundle(ownerModelId: String): ArtifactManifest? =
+        readValidatedArtifactBundle(pathProvider, ownerModelId)
+
+    actual suspend fun validatedArtifacts(modelId: String): ArtifactManifest? =
+        readValidatedArtifactManifest(pathProvider, modelId)
+
+    actual suspend fun discardCheckpoint(metadata: DownloadMetadataDTO) =
+        discardArtifactCheckpoint(pathProvider, metadata)
+
+    actual suspend fun isPublished(metadata: DownloadMetadataDTO): Boolean =
+        isArtifactPublished(pathProvider, metadata)
+
+    actual suspend fun inspectStorage(artifacts: List<DownloadMetadataDTO>): List<DownloadArtifactStorageSnapshot>? =
+        inspectArtifactStorage(pathProvider, artifacts)
+
+    actual suspend fun pendingBundleReplacement(ownerModelId: String, artifacts: List<DownloadMetadataDTO>) =
+        pendingArtifactBundleReplacement(pathProvider, ownerModelId, artifacts)
+
+    actual suspend fun acknowledgeBundleReplacement(ownerModelId: String, artifacts: List<DownloadMetadataDTO>) =
+        acknowledgeArtifactBundleReplacement(pathProvider, ownerModelId, artifacts)
 }

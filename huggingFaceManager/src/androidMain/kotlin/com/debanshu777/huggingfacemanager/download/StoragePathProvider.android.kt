@@ -4,20 +4,30 @@ import android.content.Context
 import android.os.Environment
 import android.os.StatFs
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.attribute.BasicFileAttributes
 import kotlin.io.deleteRecursively
 
 class AndroidStoragePathProvider(private val context: Context) : StoragePathProvider {
     override fun getModelsStorageDirectory(modelId: String): String {
+        return File(modelsRoot(), validateModelId(modelId)).absolutePath
+    }
+
+    private fun modelsRoot(): File {
         val base = when {
             Environment.getExternalStorageState() == Environment.MEDIA_MOUNTED ->
                 context.getExternalFilesDir(null)
             else -> null
         } ?: context.filesDir
-        return File(base, "models/$modelId").apply { mkdirs() }.absolutePath
+        return File(base, "models")
     }
     
     override fun getDatabasePath(): String =
         File(context.filesDir, "databases").apply { mkdirs() }.absolutePath + "/caraml.db"
+
+    override fun getRecommendationDatabasePath(): String =
+        File(context.filesDir, "databases").apply { mkdirs() }.absolutePath + "/recommendation_cache.db"
     
     override fun fileExists(path: String): Boolean = File(path).exists()
 
@@ -38,6 +48,39 @@ class AndroidStoragePathProvider(private val context: Context) : StoragePathProv
         } ?: context.filesDir
         return StatFs(base.absolutePath).totalBytes
     }
+
+    override fun inspectDownloadedArtifact(modelId: String, localPath: String): StoredArtifactSnapshot? =
+        try {
+            if (localPath.isBlank() || '\u0000' in localPath) return null
+            val trustedParentRaw = modelsRoot().toPath().toAbsolutePath().normalize()
+            val root = File(getModelsStorageDirectory(modelId)).toPath().toAbsolutePath().normalize()
+            val raw = File(localPath).toPath().toAbsolutePath().normalize()
+            if (root == trustedParentRaw || !root.startsWith(trustedParentRaw)) return null
+            if (raw != root && !raw.startsWith(root)) return null
+            if (Files.isSymbolicLink(trustedParentRaw) || Files.isSymbolicLink(root) || Files.isSymbolicLink(raw)) return null
+            val realTrustedParent = trustedParentRaw.toRealPath()
+            val realRoot = root.toRealPath()
+            val realTarget = raw.toRealPath()
+            if (realRoot == realTrustedParent || !realRoot.startsWith(realTrustedParent)) return null
+            if (realTarget != realRoot && !realTarget.startsWith(realRoot)) return null
+            val attributes = Files.readAttributes(
+                realTarget,
+                BasicFileAttributes::class.java,
+                LinkOption.NOFOLLOW_LINKS,
+            )
+            val kind = when {
+                attributes.isRegularFile -> StoredArtifactKind.REGULAR_FILE
+                attributes.isDirectory -> StoredArtifactKind.DIRECTORY
+                else -> return null
+            }
+            StoredArtifactSnapshot(
+                kind = kind,
+                byteCount = if (attributes.isRegularFile) attributes.size() else 0L,
+                changeStamp = "${attributes.lastModifiedTime().toMillis()}:${attributes.size()}",
+            )
+        } catch (_: Exception) {
+            null
+        }
 
     override fun isModelFileReadable(path: String): Boolean {
         val file = File(path)

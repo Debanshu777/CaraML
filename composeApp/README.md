@@ -127,7 +127,7 @@ App preferences: theme mode (light/dark/system), color palette style, other infe
 
 ### Navigation (Navigation3)
 
-Sealed class `AppScreen` defines all routes. `AppNavigation.kt` builds the `NavHost`. Animated drawer (`AnimatedDrawerScaffold`) provides side-panel navigation on all platforms.
+Sealed class `AppScreen` defines all routes. `AppNavigation.kt` builds the `NavHost`. `AppDrawerShell` keeps navigation sidebar-first on every platform: a modal left panel below 600dp, a compact rail from 600–839dp, and a persistent labeled sidebar from 840dp.
 
 ### Database (Room)
 
@@ -165,31 +165,105 @@ Full Material You implementation via materialKolor:
 ```
 commonTest/
 ├── benchmark/BenchmarkUtilsTest.kt
+├── core/rating/
+│   ├── DiffusionStepPolicyTest.kt
+│   ├── ModelSuitabilityCalculatorTest.kt
+│   ├── SdArchitectureClassifierTest.kt
+│   └── SdArchitectureTest.kt
 └── features/chat/domain/
-    ├── LocalModelGenerationClassifierTest.kt
-    └── ReasoningModelClassifierTest.kt
+    └── LocalModelGenerationClassifierTest.kt
 ```
 
 Run: `./gradlew :composeApp:jvmTest`
 
 ---
 
+## Device-Aware Recommendation Rollout
+
+The release build remains in `LEGACY` mode. V2 assessment is available for shadow verification, but it is not yet the sole displayed category source because the required measured Android/iOS/Desktop device matrix and pinned benchmark-runner result have not been recorded. Do not remove the legacy calculator or rollout bridge until those gates are reviewed.
+
+Profiles change plan selection without changing objective compatibility evidence. Risk tolerance reserves 25% (`CONSERVATIVE`), 15% (`BALANCED`, the default), or 5% (`EXPERIMENTAL`) of reliable memory. Optimization priority favors speed/efficiency, a balanced mix, or quality/context. Categories mean: `RECOMMENDED` has comfortable supported headroom; `USABLE` is expected to fit with less margin or a compromise; `RISKY` needs explicit acknowledgement; `NOT_SUITABLE` has no acceptable resource plan; `INCOMPATIBLE` is a hard engine/format mismatch; and `NEEDS_INFORMATION` means bounded trustworthy evidence is missing.
+
+All repository IDs, revisions, relative paths, component counts, byte sizes, model shapes, workload dimensions, evidence, and native records are bounded before use. Unknown, inconsistent, duplicate, overflowing, or stale metadata fails closed instead of being guessed. Selection carries the exact assessed descriptor, recommendation, run plan, and verified local bytes into just-in-time native preflight; it never reconstructs identity from a database filename.
+
+Calibration is local-only and numeric. It is stored in the disposable sibling `recommendation_cache.db`, never uploads prompts, paths, repository IDs, or user content, and cannot delete or migrate `caraml.db`. A schema mismatch or corrupt recommendation cache may reset that cache and rebuild conservative estimates; model/download records remain intact. Profile-only reranking stays cached and performs no metadata, filesystem, calibration, or native work on the Compose main thread.
+
+Verification commands:
+
+```bash
+./gradlew :composeApp:jvmTest --tests '*Recommendation*' --tests '*ModelFitFixture*'
+./gradlew :composeApp:jvmTest --tests '*RecommendationPerformanceTest*'
+CARAML_NATIVE_PARITY=true ./gradlew :runner:jvmTest :diffusionRunner:jvmTest
+```
+
+The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATION_PERF=true` and the documented bounded `CARAML_BENCHMARK_RUNNER_ID` are supplied on the pinned runner. Ordinary JVM runs report timing but are not release evidence.
+
+---
+
 ## Recent Changes
 
-<!-- Updated at end of each Claude Code session -->
+<!-- Updated at end of each AI-assisted development session -->
 
+- Desktop large-text empty-state verification now mirrors the production scrollable viewport so titles and actions remain reachable across platform font metrics
+- Generated-media stores coordinate per cache root across the process, protect every active session, evict expired/LRU abandoned sessions, and enforce one aggregate 1 GiB write limit
+- Native admission now carries exact placement, memory budget, segmentation, prefetch, and disabled upstream auto-fit through load; persisted assessment, calibration, and quarantine state is isolated under `caraml-native-20260923-f46bc30-c92d73c`
+- Low-risk September engine policy enables bounded llama lazy loading and trusted discrete-GPU diffusion segmentation/prefetch, while unknown native failures fail closed without an untyped OOM retry
+- Expanded the documented [CaraML Prism design system](../docs/caraml-design-system.md) with information hierarchy, progressive disclosure, consistent rounded surfaces, compact reflow, and data-heavy toolbar guidance
+- Compact Models now collapses device diagnostics into one remembered summary, uses rounded wrapping result panes and compact metrics, and prioritizes its command and first useful result
+- Artifact now puts device-fit and download decisions ahead of collapsed technical metadata, with rounded focal/file surfaces and 360–412dp production previews including 200% text
+- Active conversations now enter Focus Mode: persistent navigation and Create chrome disappear, the thread reclaims the canvas, and one accessible action opens the existing sidebar without replacing the production composer
+- Rebuilt the shared UI as a calm sidebar-first local AI workbench: compact windows reveal a modal left panel without moving content, tablets use a compact rail, and wider workspaces use a labeled contextual sidebar
+- Create now owns the full canvas with the baseline yellow/violet/green grain-backed atmosphere, a connected Text/Image/Video control, the production composer, truthful no-model action, and explicit generation states
+- Model Hub now uses one flat compact registry hierarchy, while Details integrates model identity into the route canvas and preserves exact durable artifact controls without sacrificing compact or large-text reachability
+- Android uses UIDT/foreground WorkManager notifications, iOS reconnects to a stable background URLSession, and Desktop recovers persisted download checkpoints at startup
+- LLM and diffusion admission now reuse one final exact artifact request set for storage checks, evidence, and enqueue; successful same-owner revision replacement publishes the new Ready catalog before retryable cleanup and preserves externally referenced components
+- iOS registers its background URLSession handoff before startup reconciliation, treats an exact validated captured completion as active, and single-flights callback/relaunch import plus batch finalization
+- Android UIDT and WorkManager workers now await one startup-reconciliation barrier, prefer and preserve the exact UIDT when duplicate owners exist, and use generation-bound completion and Task Manager stop markers; user-stopped or orphaned UIDT transfers become resumable pauses while cancellation checkpoints atomically release exact leases
+- Exact native loading now acquires every expected plus current-candidate repository root on the download subsystem's shared lock, recovery-validates and exactly compares the authoritative owner bundle, then retains the lifetime through byte validation, marker cleanup, and native open/load; Git, LFS, and Xet bindings fail closed
+- Ready catalogs now require exact revision, object, bundle, digest, local generation, and complete current request-set bindings; the unused app database starts at schema version 1, malformed current rows are isolated without terminating observers, Model Details controls carry exact revalidated batch/task IDs, and transactional removal prunes a generation only after its final owner is gone
+- Rebuilt the shared UI as a sidebar-first Prism workbench: compact windows reveal a modal left panel without moving content, tablets use a compact rail, and wider workspaces use a labeled sidebar with contextual generation modes
+- Create now centers one focused command composer, keeps Text, Image, and Video as local modes, and exposes explicit empty, preparation, generation, completion, and failure states
+- Model Hub now uses one compact registry hierarchy, while Details prioritizes exact artifacts and renders durable pause/resume/cancel/retry state without sacrificing compact or large-text reachability
+- Android uses UIDT/foreground WorkManager notifications, iOS restores each background task's exact response bound and terminal rejection reason across relaunch while stopped tasks relinquish ownership before replacement scheduling, and Desktop recovers persisted download checkpoints at startup
+- Durable download batches retain strict versioned exact descriptor evidence and bind its digest into idempotent identity; persisted payloads use capped allocation-free UTF-8 preflight before hashing or parsing, while uncertain descriptors remain enrichment-only
+- Existing Ready models repair missing descriptor metadata once from revision-qualified owner/component metadata pinned to each installed repository commit, exact path, size, and canonical object identity, then reuse the persisted complete evidence offline without legacy file inference
+- Exact repair retries only transport/auth/rate/server/timeout failures; missing required detail/tree and malformed, oversized, or invalid-redirect metadata reject deterministically, while an absent optional config remains non-blocking
+- Manifest and transactional Ready catalog/evidence publication are serialized by a bounded owner coordinator; repair snapshots and hashes current durable state under that owner lock, performs remote lookup outside it, then baseline-checks and Room-CAS publishes without overwriting newer evidence
+- Repair single-flight uses exact validated owner identity while normalized hashes only select bounded stripes; root cancellation permits one shared successor, successor cancellation publishes one typed terminal exhaustion, and each caller's own cancellation remains local
+- Native inference now accepts only a freshly assessed exact `LoadRequest` rebuilt from the authoritative complete download bundle, including external-repository artifacts, plus current resource/settings snapshots, bounded workloads, and an exact assessment-plan binding
+- Chat now prepares immutable installed evidence, serially releases resident LLM and diffusion runners, and only then captures resources and assesses the exact request; typed UI callbacks preserve the exact rendered pending decision and its generation/model/mode binding, and a separately assessed CPU request is offered only for an explicitly non-CPU failed candidate
+- Installed artifact identity now resolves only from the authoritative immutable Hub manifest; the local-content sidecar path and resolving request overload no longer exist
+- Chat exposes `Retry current model` only for typed native-preflight failures; the retry reruns exact installed-model resolution and preserves the existing serialized native-load and safer-plan confirmation flow
+- Quarantined retry, model switching, no-model transitions, and ViewModel teardown now share one atomic runner owner and predecessor barrier, so admitted native work finishes before one full teardown or the next exact load
+- Settings now uses a dense list hierarchy with exclusive selections and disclosure rows; rich grain-backed gradients are limited to the Details overview and appearance preview, while the shared backdrop stays faint and interaction surfaces stay matte
+- Final verification covers the repository JVM/native gate, Android assembly, iOS simulator compilation, and a Pixel 9 background download through Ready, safer-plan native load, and local generation
+- Added a strict 16-case recommendation corpus, analytical timing coverage, exact assessed-artifact selection handoff, and explicit release gating; unmeasured outcomes remain null and production remains `LEGACY`
+- Recommendations now learn only from byte-bound descriptors, phase-specific raw memory evidence, full run-plan fingerprints, and trustworthy process-memory counters; stale identities and unresponsive native probes fail closed
+- Exact model selections now derive directory targets only from verified storage roots, bind every native-consumed component path, keep multi-sequence planning analytical, and reject it at native admission
+- Diffusion admission now maps the assessed backend to an exact native runtime assignment and rejects missing, extra, duplicate, swapped, or differently placed configured sources; bundle tensor subdivisions remain tied to their bundle and cannot satisfy a distinct external TAESD source
+- Legacy or duplicate native device identities now remain low-confidence Unknown evidence unless exact llama/diffusion device-and-type intersection is provable
+- Native capability evidence now routes by model kind and advertises GPU offload only when exact named compute backends are available to both llama.cpp and stable-diffusion.cpp
+- Model Hub now loads and repairs diffusion installs from deterministic exact bundle identities, fails unknown image/video readiness closed, and ignores stale directory leftovers outside the aggregate manifest
+- Model Hub now incrementally ranks bounded immutable variants for this device, preserves server order on demand, and reranks cached assessments for profile changes
+- Recommendation profiles now persist atomically, default safely to Balanced, and appear through accessible Material 3 controls only in SHADOW/V2 rollout modes
+- Model assessment now reuses bounded profile-neutral plan estimates with cancellation-safe single-flight coordination, fresh snapshot assembly, and privacy-safe staged rollout comparison
+- Model compatibility and backend availability now initialize the pinned llama.cpp engine from the trusted platform library directory, exclude non-GPU devices from offload evidence, and fail closed to Unknown
+- Diffusion load/generation now uses current conservative memory budgets, serialized native sessions, actionable safe failures, and a 512 MiB session media cache decoded off the Compose thread
+- Chat now signals native diffusion cancellation before coroutine teardown, rejects unsupported iOS video early, and reports oversized llama prompts without corrupting prior conversation state
+- `LlamaInferenceRepository` now serializes all native-session access, snapshots synchronous stats safely, retries stale cached fits, and preserves cancellation through load/reset paths
+- Text streaming now accumulates lossless deltas and publishes at most every 50 ms; Compose collects streaming state once and renders Markdown only after completion
+- Context reset, model download, and bulk-delete flows now report partial failure, prevent duplicate starts, clean up state in `finally`, and never swallow cancellation
+- Diffusion preflight uses overflow-safe dimension math, sanitized diagnostics, and defensive progress-array reads
 - `SuitabilityResult` now carries `warnings: List<String>`; `ModelSuitabilityCalculator.rateLlm` emits runnability warnings for IQ-quant CPU-only and hybrid-SSM models; `SuitabilityInfoSheet` renders a "Runnability" section with warning icon when present
 - `LlamaInferenceRepository`: hybrid-SSM arch Vulkan denylist (`DENYLIST_HYBRID_SSM_VULKAN=true`) skips doomed GPU attempt on first load; combines with runtime `gpuIncompatible` self-learning set
 - `generateResponse` emits `InferenceChunk`; removed `ReasoningModelClassifier` and structured-output prompt suffixes
-- `DiffusionInferenceRepository.buildDiffusionModelConfig()` reverted: removed `diffusionConvDirect=true` from both selfContained and component branches (was a failed Vulkan workaround); selfContained branch also had spurious `offloadToCpu` propagation removed
-- `DiffusionInferenceRepository.buildDiffusionModelConfig()` selfContained branch now propagates `offloadToCpu` from `recommendedParams` (was missing, so registry `offloadToCpu=true` had no effect)
 - `DiffusionInferenceRepository.buildDiffusionModelConfig()` now always passes `diffusionConvDirect=true`; bypasses IM2COL path in ggml-vulkan that aborts when conv kernel type is not F32/F16
 - `DiffusionInferenceRepository.buildDiffusionModelConfig()` now propagates `flowShift`, `freeParamsImmediately` (auto-enabled when weights ≥ 65% of memory budget), `taesdPath` (auto-resolves `madebyollin/taesd` when downloaded), and `vaeTiling` (auto-enabled when width × height > 512²)
 - `ChatViewModel` image/video send paths now honor registry-pinned `sampleMethod` (via `SampleMethod.fromName`) and `seed` (falls back to current millis when unset)
 - New `core/rating/` package: `ModelSuitabilityCalculator` (canonical llama.cpp BPW table, KV cache math with per-architecture shape lookup, HF Accelerate +20% overhead, GPU/CPU modifiers) + `SuitabilityChip`, `SuitabilityDot`, `SuitabilityInfoSheet` UI primitives
 - Search list rows now show a color-coded fit chip (Poor/Average/Good/Best); variant picker shows per-variant dots using accurate on-disk size; tap chip opens shared bottom-sheet explainer with footprint breakdown, ratio vs RAM budget, device snapshot, legend, and caveats
 - Added `SdArchitecture` enum (SD1/SDXL/SD3/FLUX/WAN_SMALL/WAN_LARGE with Q4 RAM profiles) and `SdArchitectureClassifier` (maps HF tags + model ID segments to architecture, priority: FLUX > SD3 > WAN_LARGE > WAN_SMALL > SDXL > SD1)
-- New `ModelSuitabilityCalculator.rateDiffusion(hints, architecture, ...)` overload: weight resolution from totalComponentBytes > arch baseline × BPW ratio > UNKNOWN; VAE offload −400 MB, flash attention −600 MB; GPU bumps DiT archs up, low perf-core count penalizes video archs
+- New `ModelSuitabilityCalculator.rateDiffusion(hints, architecture, ...)` overload: weight resolution from totalComponentBytes > arch baseline × BPW ratio > generic 3.5 GB fallback; VAE offload −400 MB, flash attention −600 MB; GPU bumps DiT archs up, low perf-core count penalizes video archs
 - `ModelListItem` now branches on `pipelineTag` — diffusion models use `SdArchitectureClassifier` + `rateDiffusion()` instead of `rateLlm()`
 - `ModelDetailContent` overallResult uses diffusion branch for text-to-image/video: sums required component `sizeHint` values from `installBundleState` for accurate byte estimate
 - Details screen now shows overall model chip and per-GGUF-file rating dots; chip taps open the shared info sheet (hoisted at screen scope, matches search pattern)

@@ -6,6 +6,16 @@ import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.MotionDurationScale
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
+import com.debanshu777.caraml.core.ui.motion.auroraMotionPolicy
 import com.materialkolor.DynamicMaterialTheme
 
 /**
@@ -28,6 +38,7 @@ import com.materialkolor.DynamicMaterialTheme
 @Composable
 fun CaraMLTheme(
     preferences: ThemePreferences,
+    onEffectiveDarkThemeChanged: (Boolean) -> Unit = {},
     content: @Composable () -> Unit,
 ) {
     val isDark = when (preferences.themeMode) {
@@ -35,19 +46,45 @@ fun CaraMLTheme(
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
     }
+    val currentOnEffectiveDarkThemeChanged by rememberUpdatedState(onEffectiveDarkThemeChanged)
+    LaunchedEffect(isDark) {
+        currentOnEffectiveDarkThemeChanged(isDark)
+    }
     DynamicMaterialTheme(
         seedColor = preferences.seedColor,
         isDark = isDark,
         style = preferences.paletteStyle.toMaterialKolor(),
         animate = true,
     ) {
+        val generatedScheme = MaterialTheme.colorScheme
+        val appPrimary = preferences.seedColor
+        val appOnPrimary = if (appPrimary.luminance() > 0.179f) Color.Black else Color.White
+        val appColorScheme = remember(generatedScheme, appPrimary, appOnPrimary) {
+            generatedScheme.copy(
+                primary = appPrimary,
+                onPrimary = appOnPrimary,
+            )
+        }
         MaterialExpressiveTheme(
-            colorScheme = MaterialTheme.colorScheme,
+            colorScheme = appColorScheme,
             shapes = AppShapes,
             typography = AppTypography,
             motionScheme = AppMotionScheme,
         ) {
-            CompositionLocalProvider(LocalSpacing provides Spacing()) {
+            val scheme = MaterialTheme.colorScheme
+            val auroraColors = remember(scheme, isDark, preferences.seedColor) {
+                scheme.toAuroraColors(
+                    isDark = isDark,
+                    focalSeed = preferences.seedColor,
+                )
+            }
+            val durationScale = rememberCoroutineScope().coroutineContext[MotionDurationScale]?.scaleFactor ?: 1f
+            val motionPolicy = auroraMotionPolicy(durationScale)
+            CompositionLocalProvider(
+                LocalSpacing provides Spacing(),
+                LocalAuroraColors provides auroraColors,
+                LocalAuroraMotionPolicy provides motionPolicy,
+            ) {
                 content()
             }
         }

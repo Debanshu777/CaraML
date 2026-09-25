@@ -1,8 +1,40 @@
+import org.gradle.api.tasks.testing.Test
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.androidMultiplatformLibrary)
+}
+
+val nativeParityEnabled = providers.environmentVariable("CARAML_NATIVE_PARITY")
+    .map { it.equals("true", ignoreCase = true) }
+    .orElse(false)
+val nativeParityPlatform = when {
+    System.getProperty("os.name").contains("mac", ignoreCase = true) -> "macos"
+    System.getProperty("os.name").contains("linux", ignoreCase = true) -> "linux"
+    System.getProperty("os.name").contains("win", ignoreCase = true) -> "windows"
+    else -> "unsupported"
+}
+val nativeParityLibraryDir = project(":nativeEngine").layout.buildDirectory
+    .dir("llama-runner-desktop/$nativeParityPlatform")
+val nativeParityFixtureDir = project(":nativeEngine").layout.buildDirectory
+    .dir("native-preflight-fixtures")
+
+tasks.matching { it.name == "jvmTest" }.configureEach {
+    if (nativeParityEnabled.get()) {
+        require(nativeParityPlatform != "unsupported") {
+            "CARAML_NATIVE_PARITY is unsupported on this desktop platform"
+        }
+        dependsOn(
+            ":nativeEngine:verifyNativePreflightFixtures",
+            ":nativeEngine:compileLlamaRunnerDesktop",
+        )
+        (this as Test).apply {
+            systemProperty("java.library.path", nativeParityLibraryDir.get().asFile.absolutePath)
+            systemProperty("caraml.native.lib.dir", nativeParityLibraryDir.get().asFile.absolutePath)
+            systemProperty("caraml.native.fixture.dir", nativeParityFixtureDir.get().asFile.absolutePath)
+        }
+    }
 }
 
 val minIos = "17.2"
@@ -109,14 +141,14 @@ kotlin {
         commonMain {
             dependencies {
                 implementation(libs.kotlin.stdlib)
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+                implementation(libs.kotlinx.coroutinesCore)
             }
         }
 
         commonTest {
             dependencies {
                 implementation(kotlin("test"))
-                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
+                implementation(libs.kotlinx.coroutinesTest)
             }
         }
 
@@ -126,4 +158,8 @@ kotlin {
             }
         }
     }
+}
+
+tasks.matching { it.name.startsWith("cinteropLlamaRunner") }.configureEach {
+    inputs.file(layout.projectDirectory.file("src/iosMain/cpp/llama_runner.h"))
 }

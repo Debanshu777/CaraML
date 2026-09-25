@@ -11,6 +11,7 @@ struct DiffusionModelConfigFFI {
     const char *clip_l_path;
     const char *clip_g_path;
     const char *t5xxl_path;
+    int runtime_backend;
     int offload_to_cpu;
     int keep_clip_on_cpu;
     int keep_vae_on_cpu;
@@ -28,6 +29,10 @@ struct DiffusionModelConfigFFI {
     const char *taesd_path;
     /** Enable VAE tiling (1=on, 0=off). Library auto-picks tile sizes when on. */
     int vae_tiling;
+    const char *max_vram;
+    int segmented_compute;
+    int prefetch;
+    int auto_fit;
 };
 
 struct ImageGenConfigFFI {
@@ -57,6 +62,7 @@ struct PngResultFFI *diffusion_runner_ios_txt2img(
 );
 void diffusion_runner_ios_free_png(unsigned char *data);
 void diffusion_runner_ios_free_result(struct PngResultFFI *result);
+int diffusion_runner_ios_cancel_generation(long long handle);
 void diffusion_runner_ios_release(long long handle);
 
 struct DiffusionMetadataResultFFI {
@@ -67,6 +73,23 @@ struct DiffusionMetadataResultFFI {
 };
 
 struct DiffusionMetadataResultFFI diffusion_runner_ios_get_metadata(const char* model_path);
+
+/** Writes the fixed, bounded numeric preflight payload and returns its element count. */
+int diffusion_runner_ios_preflight(
+    struct DiffusionModelConfigFFI config,
+    long long *output,
+    int capacity);
+int diffusion_runner_ios_backend_capabilities(long long *output, int capacity);
+int diffusion_runner_ios_probe_model_features(
+    const char *architecture,
+    const char *quantization,
+    int mode,
+    long long *output,
+    int capacity);
+/** Process-lifetime, bounded engine version string; null when unavailable. */
+const char *diffusion_runner_ios_engine_version(void);
+/** Bounded model version copied while the handle is loaded; null when unavailable. */
+const char *diffusion_runner_ios_model_version(long long handle);
 
 #ifdef __cplusplus
 }

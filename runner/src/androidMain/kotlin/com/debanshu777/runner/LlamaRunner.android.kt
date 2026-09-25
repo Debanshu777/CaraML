@@ -1,71 +1,200 @@
 package com.debanshu777.runner
 
-actual class LlamaRunner {
+import kotlinx.coroutines.CancellationException
 
-    init {
+actual class LlamaRunner {
+    private val nativeAvailable: Boolean = try {
         System.loadLibrary("llama_runner")
+        true
+    } catch (_: LinkageError) {
+        false
+    } catch (_: SecurityException) {
+        false
+    }
+
+    private fun requireNativeRuntime() {
+        if (!nativeAvailable) throw NativeRuntimeUnavailableException()
     }
 
     actual fun initialize(nativeLibDir: String) {
+        requireNativeRuntime()
         nativeInit(nativeLibDir)
+    }
+
+    actual fun engineVersion(): String? = if (nativeAvailable) {
+        try {
+            parseBoundedLlamaEngineVersion(nativeEngineVersion())
+        } catch (_: Throwable) {
+            null
+        }
+    } else {
+        null
     }
 
     actual fun loadModel(
         modelPath: String,
         config: NativeRunnerConfig,
     ): Boolean {
-        validateLoadModelArgs(modelPath)
+        requireNativeRuntime()
+        validateLoadModelArgs(modelPath, config)
         return nativeLoadModel(modelPath, config)
     }
 
-    actual fun nextToken(): String? = nativeNextToken()
+    actual fun preflightModel(
+        modelPath: String,
+        config: NativeRunnerConfig,
+    ): LlamaPreflightResult = runLlamaPreflight(modelPath, config) { validatedPath, validatedConfig ->
+        requireNativeRuntime()
+        nativePreflightModel(validatedPath, validatedConfig)
+    }
 
-    actual fun cancelGenerate() = nativeCancelGenerate()
+    actual fun backendCapabilities(): List<NativeBackendCapability> = if (nativeAvailable) {
+        try {
+            decodeNativeBackendCapabilities(nativeBackendCapabilities())
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            emptyList()
+        }
+    } else {
+        emptyList()
+    }
 
-    actual fun finalizeGeneration() = nativeFinalizeGeneration()
+    actual fun calibrateBackend(
+        probeToken: Long,
+        backend: NativeBackendKind,
+        durationMillis: Int,
+        bufferBytes: Long,
+    ): BackendCalibrationResult {
+        if (!isValidBackendCalibrationRequest(probeToken, durationMillis, bufferBytes)) {
+            return BackendCalibrationResult.Invalid
+        }
+        if (!nativeAvailable) return BackendCalibrationResult.Unavailable
+        return try {
+            decodeBackendCalibrationResult(
+                nativeCalibrateBackend(probeToken, backend.ordinal, durationMillis, bufferBytes),
+            )
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+            BackendCalibrationResult.Unavailable
+        }
+    }
+
+    actual fun cancelBackendCalibration(probeToken: Long) {
+        if (nativeAvailable && probeToken > 0L) nativeCancelBackendCalibration(probeToken)
+    }
+
+    actual fun reserveBackendCalibration(probeToken: Long): BackendCalibrationReservation = when {
+        !nativeAvailable -> BackendCalibrationReservation.UNAVAILABLE
+        probeToken <= 0L -> BackendCalibrationReservation.INVALID
+        else -> decodeBackendCalibrationReservation(nativeReserveBackendCalibration(probeToken))
+    }
+
+    actual fun abandonBackendCalibration(probeToken: Long): BackendCalibrationAbandonment = when {
+        !nativeAvailable -> BackendCalibrationAbandonment.UNAVAILABLE
+        probeToken <= 0L -> BackendCalibrationAbandonment.INVALID
+        else -> try {
+            decodeBackendCalibrationAbandonment(nativeAbandonBackendCalibration(probeToken))
+        } catch (_: Throwable) {
+            BackendCalibrationAbandonment.UNAVAILABLE
+        }
+    }
+
+    actual fun probeModelFeatures(
+        architecture: String,
+        quantization: String?,
+    ): NativeModelFeatureSupport = probeNativeModelFeatures(architecture, quantization) { validatedArchitecture, validatedQuantization ->
+        requireNativeRuntime()
+        nativeProbeModelFeatures(validatedArchitecture, validatedQuantization)
+    }
+
+    actual fun nextToken(): String? {
+        requireNativeRuntime()
+        return nativeNextToken()
+    }
+
+    actual fun cancelGenerate() {
+        if (nativeAvailable) nativeCancelGenerate()
+    }
+
+    actual fun finalizeGeneration() {
+        if (nativeAvailable) nativeFinalizeGeneration()
+    }
 
     actual fun processSystemPrompt(systemPrompt: String): Int {
+        requireNativeRuntime()
         require(systemPrompt.isNotBlank()) { "systemPrompt must not be blank" }
         return nativeProcessSystemPrompt(systemPrompt)
     }
 
     actual fun processUserPrompt(userPrompt: String, predictLength: Int): Int {
+        requireNativeRuntime()
         require(userPrompt.isNotBlank()) { "userPrompt must not be blank" }
         require(predictLength > 0) { "predictLength must be > 0" }
         return nativeProcessUserPrompt(userPrompt, predictLength)
     }
 
-    actual fun getReasoning(): String = nativeGetReasoning()
-    actual fun getContent(): String = nativeGetContent()
-    actual fun supportsThinking(): Boolean = nativeSupportsThinking() != 0
-    actual fun getReasoningDelta(): String = nativeGetReasoningDelta()
-    actual fun getContentDelta(): String = nativeGetContentDelta()
+    actual fun getReasoning(): String = if (nativeAvailable) nativeGetReasoning() else ""
+    actual fun getContent(): String = if (nativeAvailable) nativeGetContent() else ""
+    actual fun supportsThinking(): Boolean = nativeAvailable && nativeSupportsThinking() != 0
+    actual fun getReasoningDelta(): String = if (nativeAvailable) nativeGetReasoningDelta() else ""
+    actual fun getContentDelta(): String = if (nativeAvailable) nativeGetContentDelta() else ""
 
     actual fun unloadModel() {
-        nativeUnloadModel()
+        if (nativeAvailable) nativeUnloadModel()
     }
 
     actual fun shutdown() {
-        nativeShutdown()
+        if (nativeAvailable) nativeShutdown()
     }
 
-    actual fun getContextUsed(): Int = nativeGetContextUsed()
+    actual fun getContextUsed(): Int = if (nativeAvailable) nativeGetContextUsed() else 0
 
-    actual fun getContextLimit(): Int = nativeGetContextLimit()
+    actual fun getContextLimit(): Int = if (nativeAvailable) nativeGetContextLimit() else 0
 
-    actual fun getStopReason(): Int = nativeGetStopReason()
+    actual fun getStopReason(): Int = if (nativeAvailable) nativeGetStopReason() else StopReason.ERROR
 
-    actual fun getGpuLayers(): Int = nativeGetGpuLayers()
+    actual fun getGpuLayers(): Int = if (nativeAvailable) nativeGetGpuLayers() else 0
 
-    actual fun clearContext() = nativeClearContext()
+    actual fun clearContext() {
+        if (nativeAvailable) nativeClearContext()
+    }
 
-    actual fun getModelArchitecture(): String? = nativeGetModelArchitecture()
+    actual fun getModelArchitecture(): String? =
+        if (nativeAvailable) nativeGetModelArchitecture() else null
 
     private external fun nativeInit(libDir: String)
+    private external fun nativeEngineVersion(): String?
     private external fun nativeLoadModel(
         modelPath: String,
         config: NativeRunnerConfig,
     ): Boolean
+
+    private external fun nativePreflightModel(
+        modelPath: String,
+        config: NativeRunnerConfig,
+    ): LongArray?
+
+    private external fun nativeBackendCapabilities(): LongArray?
+
+    private external fun nativeCalibrateBackend(
+        probeToken: Long,
+        backend: Int,
+        durationMillis: Int,
+        bufferBytes: Long,
+    ): LongArray?
+
+    private external fun nativeCancelBackendCalibration(probeToken: Long)
+
+    private external fun nativeReserveBackendCalibration(probeToken: Long): Int
+
+    private external fun nativeAbandonBackendCalibration(probeToken: Long): Int
+
+    private external fun nativeProbeModelFeatures(
+        architecture: String,
+        quantization: String?,
+    ): LongArray?
 
     private external fun nativeNextToken(): String?
 

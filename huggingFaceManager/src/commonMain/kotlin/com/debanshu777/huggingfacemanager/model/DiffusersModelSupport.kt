@@ -17,6 +17,9 @@ private val FP16_RENAME_PAIRS: List<Pair<String, String>> = listOf(
     "text_encoder_2/model.fp16.safetensors" to "text_encoder_2/model.safetensors",
 )
 
+fun normalizedDiffusersRelativePath(relativePath: String): String =
+    FP16_RENAME_PAIRS.firstOrNull { it.first == relativePath }?.second ?: relativePath
+
 /**
  * Returns true if [rootDir] contains the minimal diffusers layout expected by stable-diffusion.cpp
  * (UNet + text encoder weights; VAE may be optional in the native loader).

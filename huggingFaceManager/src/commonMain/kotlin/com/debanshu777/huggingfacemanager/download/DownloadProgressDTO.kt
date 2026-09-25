@@ -4,7 +4,10 @@ data class DownloadProgressDTO(
     val bytesReceived: Long,
     val contentLength: Long?,
     val percentage: Float,
-    val localPath: String? = null
+    val localPath: String? = null,
+    val contentSha256: String? = null,
+    val entityTag: String? = null,
+    val lastModified: String? = null,
 ) {
     val bytesRemaining: Long? get() = contentLength?.let { (it - bytesReceived).coerceAtLeast(0) }
 }

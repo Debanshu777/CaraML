@@ -1,24 +1,55 @@
 package com.debanshu777.caraml.core.data.inference
 
 import com.debanshu777.caraml.core.platform.AppLogger
+import com.debanshu777.caraml.core.platform.BackendKind
 import com.debanshu777.caraml.core.platform.DeviceCapabilities
+import com.debanshu777.caraml.core.recommendation.DeviceSnapshotProvider
+import com.debanshu777.caraml.core.recommendation.DiffusionRunPlan
+import com.debanshu777.caraml.core.recommendation.InferenceObservationPhase
+import com.debanshu777.caraml.core.recommendation.InferenceObservationPlan
+import com.debanshu777.caraml.core.recommendation.InferenceObservationRecorder
+import com.debanshu777.caraml.core.recommendation.diffusionObservationUnits
+import com.debanshu777.caraml.core.recommendation.MeasuredResult
+import com.debanshu777.caraml.core.recommendation.ObservationOutcome
+import com.debanshu777.caraml.core.recommendation.CoordinatedLoadResult
+import com.debanshu777.caraml.core.recommendation.LoadAdmissionController
+import com.debanshu777.caraml.core.recommendation.LoadRecoveryRepository
+import com.debanshu777.caraml.core.recommendation.LoadRequest
+import com.debanshu777.caraml.core.recommendation.LoadSessionCoordinator
+import com.debanshu777.caraml.core.recommendation.LocalArtifactIdentityResolver
+import com.debanshu777.caraml.core.recommendation.NativeLoadPreflight
+import com.debanshu777.caraml.core.recommendation.NativeLoadOutcome
+import com.debanshu777.caraml.core.recommendation.NATIVE_LOAD_ENGINE_VERSION
+import com.debanshu777.caraml.core.recommendation.NativeRunPlanAdapter
+import com.debanshu777.caraml.core.recommendation.PersonalizedRecommendation
+import com.debanshu777.caraml.core.recommendation.RecommendationCategory
+import com.debanshu777.caraml.core.recommendation.toNativeDiffusionBudget
+import com.debanshu777.caraml.core.recommendation.RecommendationPolicy
+import com.debanshu777.caraml.core.recommendation.StableLoadFailure
+import com.debanshu777.caraml.core.recommendation.SuitabilityEngine
+import com.debanshu777.caraml.core.recommendation.VerifiedArtifactLoadTarget
+import com.debanshu777.caraml.core.recommendation.toInferenceObservationPlan
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.diffusionrunner.DiffusionModelConfig
+import com.debanshu777.diffusionrunner.DiffusionBackendDeviceType
+import com.debanshu777.diffusionrunner.DiffusionBackendKind
+import com.debanshu777.diffusionrunner.DiffusionComponentRole
+import com.debanshu777.diffusionrunner.DiffusionFitReport
+import com.debanshu777.diffusionrunner.DiffusionParameterPlacement
+import com.debanshu777.diffusionrunner.DiffusionPreflightComponent
+import com.debanshu777.diffusionrunner.DiffusionPreflightResult
 import com.debanshu777.diffusionrunner.DiffusionRunner
+import com.debanshu777.diffusionrunner.DiffusionRuntimePlacement
 import com.debanshu777.diffusionrunner.ImageGenParams
 import com.debanshu777.diffusionrunner.VideoGenParams
 import com.debanshu777.diffusionrunner.generateImage
 import com.debanshu777.diffusionrunner.generateVideo
 import com.debanshu777.caraml.core.platform.PlatformPaths
 import com.debanshu777.caraml.core.data.settings.SettingsRepository
-import com.debanshu777.huggingfacemanager.download.StoragePathProvider
-import com.debanshu777.huggingfacemanager.model.DIFFUSERS_BUNDLE_DB_FILENAME
-import com.debanshu777.huggingfacemanager.model.isDiffusersModelDirectory
 import com.debanshu777.huggingfacemanager.sdcpp.SdCppRecommendedParams
 import com.debanshu777.huggingfacemanager.sdcpp.getModelSetup
-import com.debanshu777.huggingfacemanager.sdcpp.SdCppComponentChecker
-import com.debanshu777.huggingfacemanager.sdcpp.ComponentRole
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,19 +58,30 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.concurrent.Volatile
 
 /**
  * Loads stable-diffusion.cpp models via [DiffusionRunner], resolving all auxiliary components 
  * (VAE, CLIP, T5, LLM) based on model setup requirements.
  */
 class DiffusionInferenceRepository(
-    private val storagePathProvider: StoragePathProvider,
     private val runner: DiffusionRunner,
     private val deviceCapabilities: DeviceCapabilities,
     private val settingsRepository: SettingsRepository,
+    private val snapshotProvider: DeviceSnapshotProvider? = null,
+    private val suitabilityEngine: SuitabilityEngine? = null,
+    private val recommendationPolicy: RecommendationPolicy? = null,
+    private val loadRecoveryRepository: LoadRecoveryRepository? = null,
+    private val artifactIdentityResolver: LocalArtifactIdentityResolver? = null,
+    private val loadSessionCoordinator: LoadSessionCoordinator? = null,
+    private val engineVersion: String = NATIVE_LOAD_ENGINE_VERSION,
+    private val observationRecorder: InferenceObservationRecorder? = null,
 ) {
-    private val componentChecker = SdCppComponentChecker(storagePathProvider)
+    private val nativeSession = NativeSessionGate()
     private var lastLoadedArchStr: String? = null
+    private var loadedWeightsBytes: Long = 0L
+    private val exactExecutionState = AdmittedDiffusionExecutionState()
+    @Volatile private var generationObservation: InferenceObservationPlan? = null
 
     /**
      * Live diffusion progress.
@@ -61,133 +103,218 @@ class DiffusionInferenceRepository(
         private const val TAG = "DiffusionInference"
     }
 
-    suspend fun loadModel(model: LocalModelEntity): ModelLoadResult = withContext(Dispatchers.Default) {
-        try {
-            val modelPath = resolveModelPath(model)
-            if (modelPath.isBlank()) {
-                return@withContext ModelLoadResult.Error("Model path is invalid")
+    suspend fun loadModel(request: LoadRequest): ModelLoadResult = nativeSession.exclusive {
+        withContext(Dispatchers.Default) {
+            val artifact = request.artifact
+                ?: return@withContext ModelLoadResult.Error("The installed model could not be verified.")
+            if (artifact.identity != request.identity) {
+                return@withContext ModelLoadResult.Error("The installed model identity is invalid.")
             }
-            if (!canLoadDiffusionModelAt(modelPath)) {
-                return@withContext ModelLoadResult.Error(
-                    "Model file not found or not readable. It may have been moved or deleted.",
-                )
-            }
+            val plan = request.plan as? DiffusionRunPlan
+                ?: return@withContext ModelLoadResult.Error("The selected model configuration is invalid.")
+            val resolver = artifactIdentityResolver
+                ?: return@withContext ModelLoadResult.Error("Load admission is unavailable.")
+            val coordinator = loadSessionCoordinator
+                ?: return@withContext ModelLoadResult.Error("Load recovery is unavailable.")
+            val loadTarget = artifact.loadTarget
+            val modelPath = loadTarget.path
             val nativeLibDir = PlatformPaths.getNativeLibDir()
             if (nativeLibDir.isBlank()) {
-                return@withContext ModelLoadResult.Error(
-                    "Failed to initialize. Please restart the app.",
-                )
+                return@withContext ModelLoadResult.Error("Failed to initialize. Please restart the app.")
             }
-
-            // Component presence check: verify all required auxiliary files are on disk before
-            // attempting to load. Missing components (e.g. text_encoder_2 for SDXL) cause
-            // stable-diffusion.cpp to misidentify the architecture and crash with SIGABRT.
-            val setup = getModelSetup(model.modelId)
-            if (setup != null && !setup.selfContained) {
-                val missing = componentChecker.getMissingComponents(setup)
-                if (missing.isNotEmpty()) {
-                    val labels = missing.joinToString(", ") { it.role.displayLabel }
-                    return@withContext ModelLoadResult.Error(
-                        "Missing required components: $labels. " +
-                        "Open the model page to download them."
-                    )
+            val baseConfig = exactBaseConfig(request.model.modelId, artifact, loadTarget)
+            val execution = runCatching { NativeRunPlanAdapter.toDiffusionExecutionConfig(plan, baseConfig) }
+                .getOrElse { return@withContext ModelLoadResult.Error("The selected model configuration is invalid.") }
+            val loadObservation = request.toInferenceObservationPlan(engineVersion, InferenceObservationPhase.LOAD)
+            val nextGenerationObservation =
+                request.toInferenceObservationPlan(engineVersion, InferenceObservationPhase.GENERATION)
+            try {
+                runner.release()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                return@withContext ModelLoadResult.Error("The previous model could not be released safely.")
+            }
+            lastLoadedArchStr = null
+            loadedWeightsBytes = 0L
+            exactExecutionState.clear()
+            generationObservation = null
+            try {
+                runner.initialize(nativeLibDir)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                return@withContext ModelLoadResult.Error("Failed to initialize. Please restart the app.")
+            }
+            val controller = admissionController { candidate ->
+                val candidatePlan = candidate.plan as? DiffusionRunPlan
+                    ?: return@admissionController NativeLoadPreflight.Invalid
+                val candidateArtifact = candidate.artifact
+                    ?: return@admissionController NativeLoadPreflight.Invalid
+                val candidateTarget = candidateArtifact.loadTarget
+                val candidateBase = exactBaseConfig(candidate.model.modelId, candidateArtifact, candidateTarget)
+                val candidateExecution = runCatching {
+                    NativeRunPlanAdapter.toDiffusionExecutionConfig(candidatePlan, candidateBase)
+                }.getOrElse { return@admissionController NativeLoadPreflight.Invalid }
+                exactDiffusionNativePreflight(
+                    candidatePlan,
+                    candidateExecution.model,
+                    runner.preflightModel(candidateExecution.model),
+                )
+            } ?: return@withContext ModelLoadResult.Error("Load admission is unavailable.")
+            try {
+                when (val result = coordinator.execute(
+                    request = request,
+                    evaluateAdmission = { controller.evaluate(request, request.riskAcknowledgement) },
+                    artifactValidator = { candidate ->
+                        candidate.artifact?.let { resolver.revalidate(it) } == true
+                    },
+                    releasePartialState = {
+                        runner.release()
+                        lastLoadedArchStr = null
+                        loadedWeightsBytes = 0L
+                        exactExecutionState.clear()
+                        generationObservation = null
+                    },
+                    nativeLoad = {
+                        val loaded = loadObservation?.let { observation ->
+                            observationRecorder?.measureLoad(observation.key, observation.prediction) {
+                                val succeeded = runner.loadModel(execution.model)
+                                MeasuredResult(
+                                    value = succeeded,
+                                    completedUnits = 1,
+                                    outcome = if (succeeded) {
+                                        ObservationOutcome.SUCCESS
+                                    } else {
+                                        ObservationOutcome.UNKNOWN_FAILURE
+                                    },
+                                )
+                            }
+                        } ?: runner.loadModel(execution.model)
+                        if (!loaded) {
+                            return@execute NativeLoadOutcome.Failed(
+                                ModelLoadResult.Error("The model could not be loaded with this configuration."),
+                                StableLoadFailure.UNKNOWN,
+                            )
+                        }
+                        loadedWeightsBytes = artifact.components.fold(0L) { total, component ->
+                            if (total > Long.MAX_VALUE - component.byteCount) Long.MAX_VALUE else total + component.byteCount
+                        }
+                        lastLoadedArchStr = runner.getDiffusionModelMetadata(modelPath)?.architecture
+                        exactExecutionState.publish(execution)
+                        generationObservation = nextGenerationObservation
+                        NativeLoadOutcome.Succeeded(ModelLoadResult.Success(contextSize = 0))
+                    },
+                )) {
+                    is CoordinatedLoadResult.AdmissionRequired ->
+                        ModelLoadResult.AdmissionRequired(result.admission)
+                    is CoordinatedLoadResult.ArtifactChanged ->
+                        ModelLoadResult.Error("The installed model changed and could not be verified.")
+                    is CoordinatedLoadResult.Completed -> result.value
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                runCatching { runner.release() }
+                lastLoadedArchStr = null
+                loadedWeightsBytes = 0L
+                exactExecutionState.clear()
+                generationObservation = null
+                ModelLoadResult.Error("An error occurred while loading the model.")
             }
-
-            // Pre-flight memory check: sum of main model + all components vs device RAM.
-            // Native loader will OOM-kill the process silently if weights don't fit, so we
-            // refuse upfront with a clear error rather than crashing.
-            preflightMemoryCheck(model, modelPath)?.let { error ->
-                return@withContext error
-            }
-
-            runner.release()
-            runner.initialize(nativeLibDir)
-
-            // Build full config with resolved component paths
-            val config = buildDiffusionModelConfig(model, modelPath)
-            val loaded = runner.loadModel(config)
-            if (!loaded) {
-                return@withContext ModelLoadResult.Error(
-                    "Failed to load model. The file may be corrupted or unsupported.",
-                )
-            }
-            // Cache the native architecture string for step-count policy lookups.
-            lastLoadedArchStr = runner.getDiffusionModelMetadata(modelPath)?.architecture
-            AppLogger.i(TAG) { "loadModel: success" }
-            ModelLoadResult.Success(contextSize = 0)
-        } catch (e: Exception) {
-            AppLogger.e(TAG, "loadModel: failed", e)
-            ModelLoadResult.Error("An error occurred while loading the model.")
         }
     }
 
-    /**
-     * Returns a [ModelLoadResult.Error] if the model + components clearly exceed the device
-     * memory budget. Returns null when the model has a reasonable chance of loading.
-     *
-     * This guards against silent OOM kills (the Android low-memory killer terminates the
-     * process without throwing a Kotlin exception).
-     */
-    private fun preflightMemoryCheck(
-        model: LocalModelEntity,
-        modelPath: String,
-    ): ModelLoadResult.Error? {
-        val mainSize = storagePathProvider.getFileSize(modelPath)
-        val componentSize = getModelSetup(model.modelId)?.let { setup ->
-            if (setup.selfContained) 0L
-            else componentChecker.resolveComponentsByRole(setup).values
-                .sumOf { storagePathProvider.getFileSize(it) }
-        } ?: 0L
-        val totalBytes = mainSize + componentSize
-        if (totalBytes <= 0L) return null
+    suspend fun allowExplicitRetry(request: LoadRequest) {
+        loadSessionCoordinator?.allowExplicitRetry(request, engineVersion)
+    }
 
-        val budgetBytes = deviceCapabilities.getDeviceHints().memoryBudgetMB * 1024L * 1024L
-        if (budgetBytes <= 0L) return null
-
-        // Weights typically need ~1.1x their on-disk size in RAM (decompression + activations
-        // + KV cache headroom). Anything above the device's safe budget is rejected.
-        val requiredBytes = (totalBytes * 1.1).toLong()
-        AppLogger.i(TAG) {
-            "preflight: weights=${formatGB(totalBytes)}, required~${formatGB(requiredBytes)}, " +
-                "device budget=${formatGB(budgetBytes)}"
-        }
-        if (requiredBytes <= budgetBytes) return null
-
-        return ModelLoadResult.Error(
-            "This model needs about ${formatGB(requiredBytes)} of RAM but your device has " +
-                "only ${formatGB(budgetBytes)} available for inference. Try a smaller " +
-                "quantization (e.g. Q4_K_S or smaller) or a smaller model variant."
+    private suspend fun exactBaseConfig(
+        modelId: String,
+        artifact: com.debanshu777.caraml.core.recommendation.ResolvedLocalArtifact,
+        loadTarget: VerifiedArtifactLoadTarget,
+    ): DiffusionModelConfig {
+        val paths = artifact.components.associate { it.logicalRole.lowercase() to it.localPath }
+        val setup = getModelSetup(modelId)
+        val params = setup?.recommendedParams
+        val settings = settingsRepository.getSettings().first()
+        val hints = deviceCapabilities.getDeviceHints()
+        val gpuEnabled = settings.useGpu && hints.gpuBackendAvailable
+        return DiffusionModelConfig(
+            modelPath = loadTarget.path,
+            vaePath = paths["vae"].orEmpty(),
+            llmPath = paths["llm"].orEmpty(),
+            clipLPath = paths["clip_l"].orEmpty(),
+            clipGPath = paths["clip_g"].orEmpty(),
+            t5xxlPath = paths["t5xxl"] ?: paths["umt5xxl"].orEmpty(),
+            diffusionFlashAttn = gpuEnabled,
+            freeParamsImmediately = false,
+            flowShift = params?.flowShift ?: Float.POSITIVE_INFINITY,
+            prediction = params?.prediction ?: -1,
         )
     }
 
-    private fun formatGB(bytes: Long): String {
-        if (bytes <= 0L) return "0 GB"
-        val gb = bytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
-        return if (gb >= 10) "${gb.toInt()} GB" else "${(kotlin.math.round(gb * 10) / 10)} GB"
+    private fun admissionController(
+        nativePreflight: suspend (LoadRequest) -> NativeLoadPreflight,
+    ): LoadAdmissionController? {
+        val snapshots = snapshotProvider ?: return null
+        val engine = suitabilityEngine ?: return null
+        val policy = recommendationPolicy ?: return null
+        val recovery = loadRecoveryRepository ?: return null
+        return LoadAdmissionController(
+            snapshotSource = snapshots::capture,
+            recommendationSource = { candidate, snapshot ->
+                candidate.assessedPlans?.let { plans ->
+                    policy.recommend(engine.assemble(plans, snapshot), snapshot, candidate.profile)
+                } ?: PersonalizedRecommendation(
+                    assessmentKey = candidate.assessmentKey,
+                    category = RecommendationCategory.NEEDS_INFORMATION,
+                    selectedPlan = null,
+                    reasons = emptyList(),
+                    profile = candidate.profile,
+                )
+            },
+            artifactValidator = { candidate ->
+                candidate.artifact?.let { artifactIdentityResolver?.revalidate(it) } == true
+            },
+            nativePreflight = nativePreflight,
+            recoveryState = recovery,
+            engineVersion = engineVersion,
+            clock = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
+        )
     }
 
     suspend fun generateImage(params: ImageGenParams): Result<ByteArray> =
-        withContext(Dispatchers.Default) {
+        nativeSession.exclusive {
+            withContext(Dispatchers.Default) {
+                val executionParams = exactExecutionState.applyTo(params)
+                if (executionParams == null) {
+                    return@withContext Result.failure(Exception("The selected model configuration does not support images."))
+                }
+                generationMemoryError(executionParams.width, executionParams.height, frames = 1)?.let {
+                    return@withContext Result.failure(it)
+                }
             val startMs = kotlin.time.TimeSource.Monotonic.markNow()
             _imageGenProgress.value = DiffusionProgress(
-                step = 0, totalSteps = 0, requestedSteps = params.steps, elapsedSeconds = 0,
+                step = 0, totalSteps = 0, requestedSteps = executionParams.steps, elapsedSeconds = 0,
             )
             val pollJob = launch {
                 while (isActive) {
                     delay(250)
                     val raw = runner.getStepProgress()
                     _imageGenProgress.value = DiffusionProgress(
-                        step = raw[0],
-                        totalSteps = raw[1],
-                        requestedSteps = params.steps,
+                        step = raw.getOrElse(0) { 0 },
+                        totalSteps = raw.getOrElse(1) { 0 },
+                        requestedSteps = executionParams.steps,
                         elapsedSeconds = startMs.elapsedNow().inWholeSeconds.toInt(),
                     )
                 }
             }
             try {
-                val r = runner.generateImage(params)
-                r.exceptionOrNull()?.let { AppLogger.e(TAG, "generateImage failed", it) }
+                val r = observeGeneration(executionParams.steps) {
+                    runner.generateImage(executionParams)
+                }
+                if (r.isFailure) AppLogger.e(TAG, "generateImage failed")
                 r.fold(
                     onSuccess = { Result.success(it) },
                     onFailure = { Result.failure(Exception("Generation failed. Please try again.")) },
@@ -197,30 +324,45 @@ class DiffusionInferenceRepository(
                 _imageGenProgress.value = null
             }
         }
+    }
 
     suspend fun generateVideo(params: VideoGenParams): Result<List<ByteArray>> =
-        withContext(Dispatchers.Default) {
+        nativeSession.exclusive {
+            withContext(Dispatchers.Default) {
+                val executionParams = exactExecutionState.applyTo(params)
+                if (executionParams == null) {
+                    return@withContext Result.failure(Exception("The selected model configuration does not support video."))
+                }
+                generationMemoryError(executionParams.width, executionParams.height, executionParams.videoFrames)?.let {
+                    return@withContext Result.failure(it)
+                }
             val startMs = kotlin.time.TimeSource.Monotonic.markNow()
             _imageGenProgress.value = DiffusionProgress(
-                step = 0, totalSteps = 0, requestedSteps = params.steps, elapsedSeconds = 0,
+                step = 0, totalSteps = 0, requestedSteps = executionParams.steps, elapsedSeconds = 0,
             )
             val pollJob = launch {
                 while (isActive) {
                     delay(250)
                     val raw = runner.getStepProgress()
                     _imageGenProgress.value = DiffusionProgress(
-                        step = raw[0],
-                        totalSteps = raw[1],
-                        requestedSteps = params.steps,
+                        step = raw.getOrElse(0) { 0 },
+                        totalSteps = raw.getOrElse(1) { 0 },
+                        requestedSteps = executionParams.steps,
                         elapsedSeconds = startMs.elapsedNow().inWholeSeconds.toInt(),
                     )
                 }
             }
             try {
-                val r = runner.generateVideo(params)
-                r.exceptionOrNull()?.let { AppLogger.e(TAG, "generateVideo failed", it) }
+                val completedUnits = diffusionObservationUnits(
+                    executionParams.steps,
+                    executionParams.videoFrames,
+                ) ?: return@withContext Result.failure(Exception("The selected video workload is invalid."))
+                val r = observeGeneration(completedUnits) {
+                    runner.generateVideo(executionParams)
+                }
+                if (r.isFailure) AppLogger.e(TAG, "generateVideo failed")
                 r.fold(
-                    onSuccess = { Result.success(it) },
+                    onSuccess = { Result.success(it.frames) },
                     onFailure = { Result.failure(Exception("Generation failed. Please try again.")) },
                 )
             } finally {
@@ -228,10 +370,59 @@ class DiffusionInferenceRepository(
                 _imageGenProgress.value = null
             }
         }
+    }
 
-    fun release() {
-        runner.release()
-        lastLoadedArchStr = null
+    suspend fun release() = nativeSession.exclusive {
+        withContext(Dispatchers.Default) {
+            runner.release()
+            lastLoadedArchStr = null
+            loadedWeightsBytes = 0L
+            exactExecutionState.clear()
+            generationObservation = null
+        }
+    }
+
+    fun cancelGeneration(): Boolean = runner.cancelGeneration()
+
+    private suspend fun <T> observeGeneration(
+        completedUnits: Int,
+        block: suspend () -> Result<T>,
+    ): Result<T> {
+        val observation = generationObservation
+        val recorder = observationRecorder
+        if (observation == null || recorder == null) return block()
+        return recorder.measureGeneration(observation.key, observation.prediction) {
+            val result = block()
+            MeasuredResult(
+                value = result,
+                completedUnits = if (result.isSuccess) completedUnits else 0,
+                outcome = ObservationOutcome.SUCCESS,
+            )
+        }
+    }
+
+    fun supportsVideoGeneration(): Boolean = runner.supportsVideoGeneration()
+
+    private fun generationMemoryError(width: Int, height: Int, frames: Int): Exception? {
+        val outputBytes = estimateMediaOutputBytes(width, height, frames)
+        val budgetBytes = currentMemoryBudgetBytes()
+        val additionalBytes = requiredDiffusionAdditionalMemoryBytes(
+            loadedWeightsBytes = loadedWeightsBytes,
+            outputBytes = outputBytes,
+        )
+        if (loadedWeightsBytes > 0L && additionalBytes <= budgetBytes) {
+            return null
+        }
+        AppLogger.w(TAG, "Generation rejected by the current memory budget")
+        return DiffusionMemoryException()
+    }
+
+    private fun currentMemoryBudgetBytes(): Long {
+        val budgetMb = deviceCapabilities.getDeviceHints().memoryBudgetMB
+        if (budgetMb <= 0L) return 0L
+        val bytesPerMb = 1024L * 1024L
+        return if (budgetMb > Long.MAX_VALUE / bytesPerMb) Long.MAX_VALUE
+        else budgetMb * bytesPerMb
     }
 
     /** Architecture string reported by the native layer for the currently loaded model. */
@@ -241,146 +432,179 @@ class DiffusionInferenceRepository(
     fun getRecommendedParams(model: LocalModelEntity): SdCppRecommendedParams? =
         getModelSetup(model.modelId)?.recommendedParams
 
-    private fun resolveModelPath(model: LocalModelEntity): String {
-        val dir = storagePathProvider.getModelsStorageDirectory(model.modelId)
-        val relative = model.filename.trim().replace('\\', '/').trimStart('/')
+}
 
-        val candidates = buildList {
-            if (model.localPath.isNotBlank()) add(model.localPath)
-            if (model.filename == DIFFUSERS_BUNDLE_DB_FILENAME) {
-                add(dir)
-            }
-            if (relative.isNotBlank()) add("$dir/$relative")
-        }
+internal fun exactDiffusionNativePreflight(
+    plan: DiffusionRunPlan,
+    config: DiffusionModelConfig,
+    result: DiffusionPreflightResult,
+): NativeLoadPreflight = when (result) {
+    is DiffusionPreflightResult.Fit -> if (result.report.matches(plan, config)) {
+        NativeLoadPreflight.Fit
+    } else {
+        NativeLoadPreflight.Invalid
+    }
+    is DiffusionPreflightResult.NoFit -> NativeLoadPreflight.NoFit
+    is DiffusionPreflightResult.InvalidModel -> NativeLoadPreflight.Invalid
+    is DiffusionPreflightResult.Unavailable -> NativeLoadPreflight.Unavailable
+}
 
-        for (path in candidates.distinct()) {
-            if (!storagePathProvider.fileExists(path)) continue
-            if (isDiffusersModelDirectory(path, storagePathProvider::fileExists) &&
-                storagePathProvider.isDirectoryReadable(path)
-            ) {
-                return path
-            }
-            if (storagePathProvider.isModelFileReadable(path)) {
-                return path
-            }
-        }
-        return candidates.firstOrNull { it.isNotBlank() } ?: ""
+private fun DiffusionFitReport.matches(
+    plan: DiffusionRunPlan,
+    config: DiffusionModelConfig,
+): Boolean {
+    if (config.segmentedCompute != plan.segmentedCompute || config.prefetch != plan.prefetch ||
+        config.autoFit || autoFit || segmentedCompute != plan.segmentedCompute ||
+        prefetch != plan.prefetch ||
+        components.isEmpty() || backends.isEmpty() ||
+        !components.matchConfiguredComponentBindings(config)
+    ) {
+        return false
     }
 
-    private fun canLoadDiffusionModelAt(path: String): Boolean {
-        if (!storagePathProvider.fileExists(path)) return false
-        if (isDiffusersModelDirectory(path, storagePathProvider::fileExists)) {
-            return storagePathProvider.isDirectoryReadable(path)
-        }
-        return storagePathProvider.isModelFileReadable(path)
+    val runtimeKind = plan.backend.toDiffusionBackendKind() ?: return false
+    val requiresCpu = plan.backend == BackendKind.CPU || plan.offloadToCpu ||
+        plan.keepClipOnCpu || plan.keepVaeOnCpu
+    val expectedKinds = buildSet {
+        add(runtimeKind)
+        if (requiresCpu) add(DiffusionBackendKind.CPU)
     }
-
-    private suspend fun buildDiffusionModelConfig(model: LocalModelEntity, modelPath: String): DiffusionModelConfig {
-        val modelSetup = getModelSetup(model.modelId)
-        val tightMemory = shouldFreeParamsImmediately(model, modelPath)
-        val taesdPath = resolveOptionalTaesdPath()
-        val hints = deviceCapabilities.getDeviceHints()
-        val settings = settingsRepository.getSettings().first()
-        val gpuEnabled = settings.useGpu && hints.gpuBackendAvailable
-
-        if (modelSetup == null || modelSetup.selfContained) {
-            // Fallback to legacy single-path behavior for unknown or self-contained models
-            return DiffusionModelConfig(
-                modelPath = modelPath,
-                offloadToCpu = !gpuEnabled,
-                prediction = modelSetup?.recommendedParams?.prediction ?: -1,
-                flowShift = modelSetup?.recommendedParams?.flowShift ?: Float.POSITIVE_INFINITY,
-                freeParamsImmediately = tightMemory,
-                diffusionFlashAttn = gpuEnabled,
-                taesdPath = taesdPath,
-                vaeTiling = shouldEnableVaeTiling(modelSetup?.recommendedParams),
-            )
-        }
-
-        // Resolve all component paths by role
-        val componentPaths = componentChecker.resolveComponentsByRole(modelSetup)
-        val params = modelSetup.recommendedParams
-
-        return DiffusionModelConfig(
-            modelPath = modelPath,
-            vaePath = componentPaths[ComponentRole.VAE] ?: "",
-            llmPath = componentPaths[ComponentRole.LLM] ?: "",
-            clipLPath = componentPaths[ComponentRole.CLIP_L] ?: "",
-            clipGPath = componentPaths[ComponentRole.CLIP_G] ?: "",
-            t5xxlPath = componentPaths[ComponentRole.T5XXL] ?: componentPaths[ComponentRole.UMT5XXL] ?: "",
-            offloadToCpu = !gpuEnabled || (params?.offloadToCpu ?: false),
-            keepClipOnCpu = params?.clipOnCpu ?: false,
-            keepVaeOnCpu = params?.keepVaeOnCpu ?: false,
-            diffusionFlashAttn = params?.diffusionFlashAttn ?: false,
-            freeParamsImmediately = tightMemory,
-            flowShift = params?.flowShift ?: Float.POSITIVE_INFINITY,
-            prediction = params?.prediction ?: -1,
-            taesdPath = taesdPath,
-            vaeTiling = shouldEnableVaeTiling(params),
-        ).also { config ->
-            AppLogger.d(TAG) {
-                "Built DiffusionModelConfig for ${model.modelId}:\n" +
-                "  modelPath: $modelPath\n" +
-                "  vaePath: ${config.vaePath}\n" +
-                "  llmPath: ${config.llmPath}\n" +
-                "  clipLPath: ${config.clipLPath}\n" +
-                "  clipGPath: ${config.clipGPath}\n" +
-                "  t5xxlPath: ${config.t5xxlPath}\n" +
-                "  offloadToCpu: ${config.offloadToCpu}\n" +
-                "  keepClipOnCpu: ${config.keepClipOnCpu}\n" +
-                "  keepVaeOnCpu: ${config.keepVaeOnCpu}\n" +
-                "  diffusionFlashAttn: ${config.diffusionFlashAttn}\n" +
-                "  freeParamsImmediately: ${config.freeParamsImmediately}\n" +
-                "  flowShift: ${config.flowShift}\n" +
-                "  prediction: ${config.prediction}\n" +
-                "  taesdPath: ${config.taesdPath}\n" +
-                "  vaeTiling: ${config.vaeTiling}"
+    if (backends.size != expectedKinds.size || backends.map { it.kind }.toSet() != expectedKinds) {
+        return false
+    }
+    val expectedNativeBudget = plan.maxVramBytes?.toNativeDiffusionBudget()
+    if (config.maxVram != expectedNativeBudget?.gibText.orEmpty()) return false
+    val expectedBudget = expectedNativeBudget?.bytes ?: 0L
+    val runtimeBackend = backends.singleOrNull { it.kind == runtimeKind } ?: return false
+    if (runtimeBackend.budgetBytes != expectedBudget ||
+        backends.any { it.kind == DiffusionBackendKind.CPU && it.budgetBytes != 0L }
+    ) {
+        return false
+    }
+    if (backends.any { backend ->
+            when (backend.kind) {
+                DiffusionBackendKind.CPU -> backend.deviceType != DiffusionBackendDeviceType.CPU
+                DiffusionBackendKind.CUDA,
+                DiffusionBackendKind.METAL,
+                DiffusionBackendKind.VULKAN,
+                -> backend.deviceType != DiffusionBackendDeviceType.DISCRETE_GPU &&
+                    backend.deviceType != DiffusionBackendDeviceType.INTEGRATED_GPU
+                DiffusionBackendKind.OPENCL,
+                DiffusionBackendKind.SYCL,
+                DiffusionBackendKind.OTHER,
+                -> true
             }
         }
+    ) {
+        return false
     }
 
-    /**
-     * Auto-resolves a TAESD (tiny autoencoder) path if the "madebyollin/taesd" model has been
-     * downloaded. Returns empty string when not available — the field is optional in the runner.
-     */
-    private fun resolveOptionalTaesdPath(): String {
-        val taesdSetup = getModelSetup("madebyollin/taesd") ?: return ""
-        // TAESD is self-contained: its model file sits directly under its storage dir.
-        // The main model file has no fixed filename in the registry, so probe the dir for
-        // any .safetensors file (TAESD is typically a single small safetensors file).
-        val dir = storagePathProvider.getModelsStorageDirectory("madebyollin/taesd")
-        val candidates = listOf(
-            "$dir/taesd_decoder.safetensors",
-            "$dir/diffusion_pytorch_model.safetensors",
+    val expectedParameterPlacement = if (plan.offloadToCpu) {
+        DiffusionParameterPlacement.CPU
+    } else {
+        DiffusionParameterPlacement.DEFAULT
+    }
+    return components.all { component ->
+        component.parameterPlacement == expectedParameterPlacement &&
+            component.matchesRuntimePlacement(plan, runtimeKind, backends)
+    }
+}
+
+private data class ConfiguredDiffusionComponent(
+    val role: DiffusionComponentRole,
+    val path: String,
+)
+
+private fun DiffusionModelConfig.configuredComponentBindings(): List<ConfiguredDiffusionComponent> {
+    val split = vaePath.isNotEmpty() || llmPath.isNotEmpty() || clipLPath.isNotEmpty() ||
+        clipGPath.isNotEmpty() || t5xxlPath.isNotEmpty()
+    return buildList {
+        add(
+            ConfiguredDiffusionComponent(
+                role = if (split) {
+                    DiffusionComponentRole.DIFFUSION_MODEL
+                } else {
+                    DiffusionComponentRole.MODEL_BUNDLE
+                },
+                path = modelPath,
+            ),
         )
-        return candidates.firstOrNull { storagePathProvider.fileExists(it) } ?: ""
+        if (vaePath.isNotEmpty()) add(ConfiguredDiffusionComponent(DiffusionComponentRole.VAE, vaePath))
+        if (llmPath.isNotEmpty()) add(ConfiguredDiffusionComponent(DiffusionComponentRole.LLM, llmPath))
+        if (clipLPath.isNotEmpty()) add(ConfiguredDiffusionComponent(DiffusionComponentRole.CLIP_L, clipLPath))
+        if (clipGPath.isNotEmpty()) add(ConfiguredDiffusionComponent(DiffusionComponentRole.CLIP_G, clipGPath))
+        if (t5xxlPath.isNotEmpty()) add(ConfiguredDiffusionComponent(DiffusionComponentRole.T5XXL, t5xxlPath))
+        if (taesdPath.isNotEmpty()) add(ConfiguredDiffusionComponent(DiffusionComponentRole.TAESD, taesdPath))
     }
+}
 
-    /**
-     * Returns true when the recommended (or default) output dimensions exceed 512×512.
-     * In that case VAE tiling is needed to avoid OOM during the decode step.
-     */
-    private fun shouldEnableVaeTiling(params: SdCppRecommendedParams?): Boolean {
-        val w = params?.width ?: 512
-        val h = params?.height ?: 512
-        return w * h > 512 * 512
+private fun List<DiffusionPreflightComponent>
+    .matchConfiguredComponentBindings(config: DiffusionModelConfig): Boolean {
+    val reportedOrdinals = map { it.ordinal }
+    if (reportedOrdinals.toSet() != indices.toSet()) return false
+
+    val configured = config.configuredComponentBindings()
+    if (configured.isEmpty() || configured.any { it.path.isEmpty() }) return false
+    val bySourceOrdinal = groupBy { it.sourceOrdinal }
+    if (bySourceOrdinal.keys != configured.indices.toSet()) return false
+
+    return configured.withIndex().all { (sourceOrdinal, expected) ->
+        val evidence = bySourceOrdinal.getValue(sourceOrdinal)
+        if (evidence.any { it.sourceRole != expected.role }) return@all false
+        val subdivisions = evidence.map { it.subdivisionRole }
+        when (expected.role) {
+            DiffusionComponentRole.MODEL_BUNDLE -> {
+                val allowed = setOf(
+                    DiffusionComponentRole.DIFFUSION_MODEL,
+                    DiffusionComponentRole.VAE,
+                    DiffusionComponentRole.TEXT_ENCODER,
+                    DiffusionComponentRole.OTHER,
+                )
+                subdivisions.toSet().size == subdivisions.size &&
+                    DiffusionComponentRole.DIFFUSION_MODEL in subdivisions &&
+                    subdivisions.all { it in allowed }
+            }
+            DiffusionComponentRole.TAESD -> evidence.size == 1 &&
+                subdivisions.single() == DiffusionComponentRole.VAE
+            else -> evidence.size == 1 && subdivisions.single() == expected.role
+        }
     }
+}
 
-    /**
-     * Frees weights after each generation when device memory is tight (weights >= 65% of
-     * budget). Cuts steady-state RAM in half at the cost of re-loading on the next gen.
-     */
-    private fun shouldFreeParamsImmediately(model: LocalModelEntity, modelPath: String): Boolean {
-        val mainSize = storagePathProvider.getFileSize(modelPath)
-        val componentSize = getModelSetup(model.modelId)?.let { setup ->
-            if (setup.selfContained) 0L
-            else componentChecker.resolveComponentsByRole(setup).values
-                .sumOf { storagePathProvider.getFileSize(it) }
-        } ?: 0L
-        val totalBytes = mainSize + componentSize
-        val budgetBytes = deviceCapabilities.getDeviceHints().memoryBudgetMB * 1024L * 1024L
-        if (totalBytes <= 0L || budgetBytes <= 0L) return false
-        return totalBytes.toDouble() / budgetBytes.toDouble() >= 0.65
+private fun com.debanshu777.diffusionrunner.DiffusionPreflightComponent.matchesRuntimePlacement(
+    plan: DiffusionRunPlan,
+    runtimeKind: DiffusionBackendKind,
+    backends: List<com.debanshu777.diffusionrunner.DiffusionPreflightBackend>,
+): Boolean {
+    val cpuRuntime = when (subdivisionRole) {
+        DiffusionComponentRole.LLM,
+        DiffusionComponentRole.CLIP_L,
+        DiffusionComponentRole.CLIP_G,
+        DiffusionComponentRole.T5XXL,
+        DiffusionComponentRole.TEXT_ENCODER,
+        -> plan.backend == BackendKind.CPU || plan.keepClipOnCpu
+        DiffusionComponentRole.VAE,
+        DiffusionComponentRole.TAESD,
+        -> plan.backend == BackendKind.CPU || plan.keepVaeOnCpu
+        DiffusionComponentRole.MODEL_BUNDLE,
+        DiffusionComponentRole.DIFFUSION_MODEL,
+        DiffusionComponentRole.OTHER,
+        -> plan.backend == BackendKind.CPU
     }
+    if (cpuRuntime) {
+        return runtimePlacement == DiffusionRuntimePlacement.CPU && runtimeBackendMask == 0L
+    }
+    if (runtimePlacement != DiffusionRuntimePlacement.GPU || runtimeBackendMask.countOneBits() != 1) {
+        return false
+    }
+    val backendIndex = runtimeBackendMask.countTrailingZeroBits()
+    return backends.getOrNull(backendIndex)?.kind == runtimeKind
+}
 
+private fun BackendKind.toDiffusionBackendKind(): DiffusionBackendKind? = when (this) {
+    BackendKind.CPU -> DiffusionBackendKind.CPU
+    BackendKind.METAL -> DiffusionBackendKind.METAL
+    BackendKind.VULKAN -> DiffusionBackendKind.VULKAN
+    BackendKind.CUDA -> DiffusionBackendKind.CUDA
+    BackendKind.OTHER -> null
 }

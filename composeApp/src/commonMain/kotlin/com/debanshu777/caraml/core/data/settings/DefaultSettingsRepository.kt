@@ -6,6 +6,9 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.debanshu777.caraml.core.recommendation.OptimizationPriority
+import com.debanshu777.caraml.core.recommendation.RecommendationProfile
+import com.debanshu777.caraml.core.recommendation.RiskTolerance
 import com.debanshu777.caraml.core.settings.AppSettings
 import com.debanshu777.caraml.core.settings.KvQuantPreset
 import kotlinx.coroutines.flow.Flow
@@ -19,6 +22,12 @@ class DefaultSettingsRepository(
     private val temperatureKey = floatPreferencesKey("temperature")
     private val kvQuantPresetKey = stringPreferencesKey("kv_quant_preset")
     private val useGpuKey = booleanPreferencesKey("use_gpu")
+    private val riskToleranceKey = stringPreferencesKey("model_risk_tolerance")
+    private val optimizationPriorityKey = stringPreferencesKey("model_optimization_priority")
+    private val modelProfileOnboardingCompleteKey =
+        booleanPreferencesKey("model_profile_onboarding_complete")
+    private val recommendationCalibrationOfferCompleteKey =
+        booleanPreferencesKey("recommendation_calibration_offer_complete")
 
     override fun getSettings(): Flow<AppSettings> =
         dataStore.data.map { prefs ->
@@ -30,6 +39,16 @@ class DefaultSettingsRepository(
                     ?.let { name -> runCatching { KvQuantPreset.valueOf(name) }.getOrNull() }
                     ?: KvQuantPreset.AUTO,
                 useGpu = prefs[useGpuKey] ?: true,
+                riskTolerance = prefs[riskToleranceKey]
+                    ?.let { name -> RiskTolerance.entries.firstOrNull { it.name == name } }
+                    ?: RiskTolerance.BALANCED,
+                optimizationPriority = prefs[optimizationPriorityKey]
+                    ?.let { name -> OptimizationPriority.entries.firstOrNull { it.name == name } }
+                    ?: OptimizationPriority.BALANCED,
+                modelProfileOnboardingComplete =
+                    prefs[modelProfileOnboardingCompleteKey] ?: false,
+                recommendationCalibrationOfferComplete =
+                    prefs[recommendationCalibrationOfferCompleteKey] ?: false,
             )
         }
 
@@ -41,5 +60,25 @@ class DefaultSettingsRepository(
             prefs[useGpuKey] = settings.useGpu
         }
     }
-}
 
+    override suspend fun updateRecommendationProfile(profile: RecommendationProfile) {
+        dataStore.edit { prefs ->
+            prefs[riskToleranceKey] = profile.riskTolerance.name
+            prefs[optimizationPriorityKey] = profile.optimizationPriority.name
+        }
+    }
+
+    override suspend fun completeModelProfileOnboarding(profile: RecommendationProfile) {
+        dataStore.edit { prefs ->
+            prefs[riskToleranceKey] = profile.riskTolerance.name
+            prefs[optimizationPriorityKey] = profile.optimizationPriority.name
+            prefs[modelProfileOnboardingCompleteKey] = true
+        }
+    }
+
+    override suspend fun completeRecommendationCalibrationOffer() {
+        dataStore.edit { prefs ->
+            prefs[recommendationCalibrationOfferCompleteKey] = true
+        }
+    }
+}

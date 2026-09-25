@@ -1,3 +1,6 @@
+import org.gradle.api.tasks.JavaExec
+import org.gradle.api.tasks.Sync
+import org.gradle.api.tasks.testing.Test
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
@@ -57,6 +60,8 @@ kotlin {
                 "Accelerate",
                 "-framework",
                 "Foundation",
+                "-framework",
+                "UserNotifications",
                 "-Wl,-no_implicit_dylibs",
             )
         }
@@ -69,6 +74,8 @@ kotlin {
             implementation(libs.compose.uiToolingPreview)
             implementation(project.dependencies.platform(libs.koin.bom))
             implementation(libs.koin.core)
+            implementation(libs.androidx.core.ktx)
+            implementation(libs.androidx.work.runtime.ktx)
         }
         commonMain.dependencies {
             implementation(project.dependencies.platform(libs.koin.bom))
@@ -94,11 +101,20 @@ kotlin {
             implementation(libs.navigation3.compose.ui)
             implementation(libs.navigation3.viewmodel)
             implementation(libs.kotlinx.collections.immutable)
+            implementation(libs.kotlinx.serialization.json)
             implementation(libs.materialkolor)
+            implementation(libs.okio)
             implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.27.0")
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
+            implementation(libs.kotlinx.coroutinesTest)
+            implementation(libs.compose.ui.test)
+        }
+        jvmTest.dependencies {
+            implementation(project.dependencies.platform(libs.ktor))
+            implementation("io.ktor:ktor-client-mock")
+            implementation(libs.ktor.serialization.kotlinx.json)
         }
         jvmMain.dependencies {
             implementation(compose.desktop.currentOs)
@@ -117,6 +133,18 @@ val desktopPlatform = when {
 // Desktop JNI output: keep in sync with CaramlNativeLayout.DESKTOP_SUBDIR in nativeEngine/build.gradle.kts
 val nativeDir =
     project(":nativeEngine").layout.buildDirectory.dir("llama-runner-desktop/$desktopPlatform").get().asFile.absolutePath
+val artifactFsLibraryName = when (desktopPlatform) {
+    "macos" -> "libartifact_fs.dylib"
+    "linux" -> "libartifact_fs.so"
+    "windows" -> "artifact_fs.dll"
+    else -> throw GradleException("Unsupported desktop platform for secure artifact storage")
+}
+val artifactFsAppResourcesRoot = layout.buildDirectory.dir("generated/artifactFsAppResources")
+val stageArtifactFsAppResources by tasks.registering(Sync::class) {
+    dependsOn(":nativeEngine:verifyArtifactFsDesktopLibrary")
+    from(project(":nativeEngine").layout.buildDirectory.file("llama-runner-desktop/$desktopPlatform/$artifactFsLibraryName"))
+    into(artifactFsAppResourcesRoot.map { it.dir("common") })
+}
 
 compose.desktop {
     application {
@@ -127,10 +155,10 @@ compose.desktop {
         // must be injected via the Compose DSL here to actually take effect.
         jvmArgs += listOf(
             "-Djava.library.path=$nativeDir",
-            "-Dcaraml.native.lib.dir=$nativeDir",
         )
 
         nativeDistributions {
+            appResourcesRootDir.set(artifactFsAppResourcesRoot)
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "com.debanshu777.caraml"
             packageVersion = "1.0.0"
@@ -138,8 +166,39 @@ compose.desktop {
     }
 }
 
+tasks.matching { it.name == "prepareAppResources" }.configureEach {
+    dependsOn(stageArtifactFsAppResources)
+}
+
+tasks.matching { it.name == "jvmTest" }.configureEach {
+    dependsOn(":nativeEngine:verifyArtifactFsDesktopLibrary")
+    (this as Test).systemProperty("caraml.native.lib.dir", nativeDir)
+}
+
+tasks.register<JavaExec>("artifactFsInstalledImageSmoke") {
+    group = "verification"
+    description = "Loads and exercises artifact_fs from the generated desktop application image"
+    dependsOn("createDistributable")
+    mainClass.set("com.debanshu777.huggingfacemanager.download.ArtifactFsInstalledImageSmoke")
+    doFirst {
+        val imageRoot = layout.buildDirectory.dir("compose/binaries/main/app").get().asFile
+        val resources = imageRoot.walkTopDown().singleOrNull { directory ->
+            directory.isDirectory && directory.name == "resources" &&
+                directory.resolve(artifactFsLibraryName).isFile
+        } ?: throw GradleException("artifact_fs is missing from the desktop application image")
+        val appDirectory = resources.parentFile
+            ?: throw GradleException("Invalid desktop application image")
+        classpath = files(fileTree(appDirectory) { include("*.jar") })
+        systemProperty("compose.application.resources.dir", resources.absolutePath)
+    }
+}
+
 tasks.matching { it.name == "run" || it.name.endsWith("Run") }.configureEach {
     dependsOn(":nativeEngine:compileLlamaRunnerDesktop")
+}
+
+tasks.withType<JavaExec>().matching { it.name == "run" }.configureEach {
+    systemProperty("caraml.recommendation.debugBuild", "true")
 }
 
 dependencies {

@@ -1,22 +1,14 @@
 package com.debanshu777.caraml.features.modelhub.presentation.details
 
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -26,13 +18,33 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import com.debanshu777.caraml.core.rating.SuitabilityResult
-import com.debanshu777.caraml.core.rating.ui.SuitabilityInfoSheet
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.rating.ui.RecommendationDetailsSheet
+import com.debanshu777.caraml.core.rating.ui.recommendationPresentation
+import com.debanshu777.caraml.core.ui.components.CaraMLTopBar
+import com.debanshu777.caraml.core.ui.components.TopBarNavigation
+import com.debanshu777.caraml.core.ui.layout.AppContentKind
+import com.debanshu777.caraml.core.ui.layout.ResponsiveContentPane
 import com.debanshu777.caraml.features.modelhub.presentation.details.components.ModelDetailContent
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
+internal enum class ModelDetailLayout {
+    Compact,
+    SupportingPane,
+}
+
+internal fun modelDetailLayout(width: Dp): ModelDetailLayout = if (width >= 840.dp) {
+    ModelDetailLayout.SupportingPane
+} else {
+    ModelDetailLayout.Compact
+}
+
+internal fun modelDetailsUseSupportingPane(width: Dp): Boolean =
+    modelDetailLayout(width) == ModelDetailLayout.SupportingPane
+
 @Composable
 fun DetailsScreen(
     viewModel: ModelViewModel,
@@ -46,12 +58,14 @@ fun DetailsScreen(
     val detailError by viewModel.detailError.collectAsState()
     val ggufFiles by viewModel.ggufFiles.collectAsState()
     val isDownloading by viewModel.isDownloading.collectAsState()
+    val activeDownloadArtifact by viewModel.activeDownloadArtifact.collectAsState()
     val downloadError by viewModel.downloadError.collectAsState()
+    val showDownloadForLaterConfirmation by viewModel.showDownloadForLaterConfirmation.collectAsState()
     val installBundleState by viewModel.installBundleState.collectAsState()
-    val storageInfo by viewModel.storageInfo.collectAsState()
+    val recommendations by viewModel.recommendedModels.collectAsState()
+    val recommendationState = recommendations.firstOrNull { it.repositoryId == modelId }
     val snackbarHostState = remember { SnackbarHostState() }
-    var ratingSheetModelId by remember { mutableStateOf<String?>(null) }
-    var ratingSheetResult by remember { mutableStateOf<SuitabilityResult?>(null) }
+    var recommendationSheetVisible by remember { mutableStateOf(false) }
 
     val isDiffusion = hubBrowseMode == ModelHubBrowseMode.DiffusionImage ||
         hubBrowseMode == ModelHubBrowseMode.DiffusionVideo
@@ -74,87 +88,94 @@ fun DetailsScreen(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        containerColor = Color.Transparent,
         topBar = {
-            TopAppBar(
-                title = { },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back"
-                        )
-                    }
-                }
+            CaraMLTopBar(
+                title = "Artifact",
+                navigation = TopBarNavigation.Back,
+                onNavigationClick = onBack,
+                contentKind = AppContentKind.Details,
             )
         },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
     ) { innerPadding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(innerPadding),
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                contentAlignment = Alignment.Center
+            ResponsiveContentPane(
+                kind = AppContentKind.Details,
+                modifier = Modifier.fillMaxSize(),
             ) {
-                val detail = modelDetail
-                when {
-                    isDetailLoading -> CircularProgressIndicator()
-                    detailError != null -> Text(
-                        text = detailError ?: "Could not load model details. Please try again.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                    detail != null -> {
-                        val (weightHeading, weightEmpty) = when (hubBrowseMode) {
-                            ModelHubBrowseMode.LanguageModels ->
-                                "GGUF files" to "No GGUF files found"
-                            ModelHubBrowseMode.DiffusionImage,
-                            ModelHubBrowseMode.DiffusionVideo ->
-                                "Weight files" to
-                                    "No weight files found (.gguf, .safetensors, .ckpt, .pth)"
-                        }
-                        val ratingCallback: ((String, SuitabilityResult) -> Unit)? = { id, result ->
-                            ratingSheetModelId = id
-                            ratingSheetResult = result
-                        }
-                        ModelDetailContent(
-                            model = detail,
-                            ggufFiles = ggufFiles,
-                            isDownloading = isDownloading,
-                            onDownloadClick = { id, path, metadata ->
-                                viewModel.startDownload(id, path, metadata)
-                            },
-                            weightFilesHeading = weightHeading,
-                            weightFilesEmptyLabel = weightEmpty,
-                            installBundleState = installBundleState,
-                            onVariantSelected = { path -> viewModel.selectVariant(path) },
-                            onSmartInstall = { viewModel.smartInstall(modelId) },
-                            showInstallBundle = isDiffusion,
-                            deviceHints = storageInfo.deviceHints,
-                            onRatingInfoClick = ratingCallback,
-                            modifier = Modifier.fillMaxSize()
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    val detail = modelDetail
+                    when {
+                        isDetailLoading -> CircularProgressIndicator()
+                        detailError != null -> Text(
+                            text = detailError ?: "Could not load model details. Please try again.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error,
                         )
+                        detail != null -> {
+                            val (weightHeading, weightEmpty) = when (hubBrowseMode) {
+                                ModelHubBrowseMode.LanguageModels ->
+                                    "GGUF files" to "No GGUF files found"
+                                ModelHubBrowseMode.DiffusionImage,
+                                ModelHubBrowseMode.DiffusionVideo ->
+                                    "Weight files" to
+                                        "No weight files found (.gguf, .safetensors, .ckpt, .pth)"
+                            }
+                            ModelDetailContent(
+                                model = detail,
+                                ggufFiles = ggufFiles,
+                                isDownloading = isDownloading,
+                                activeDownloadArtifact = activeDownloadArtifact,
+                                onDownloadClick = { id, path, metadata ->
+                                    viewModel.startDownload(id, path, metadata)
+                                },
+                                weightFilesHeading = weightHeading,
+                                weightFilesEmptyLabel = weightEmpty,
+                                installBundleState = installBundleState,
+                                onVariantSelected = { path -> viewModel.selectVariant(path) },
+                                onSmartInstall = { viewModel.smartInstall(modelId) },
+                                showInstallBundle = isDiffusion,
+                                recommendationState = recommendationState,
+                                onRecommendationInfoClick = { recommendationSheetVisible = true },
+                                modifier = Modifier.fillMaxSize(),
+                                onPauseDownload = viewModel::pauseDownload,
+                                onResumeDownload = viewModel::resumeDownload,
+                                onCancelDownload = viewModel::cancelDownload,
+                                onRetryDownload = viewModel::retryDownload,
+                            )
+                        }
                     }
                 }
             }
         }
     }
 
-    val sheetResult = ratingSheetResult
-    val sheetModelId = ratingSheetModelId
-    if (sheetResult != null && sheetModelId != null) {
-        SuitabilityInfoSheet(
-            modelId = sheetModelId,
-            result = sheetResult,
-            deviceHints = storageInfo.deviceHints,
-            onDismiss = {
-                ratingSheetResult = null
-                ratingSheetModelId = null
-            },
+    val personalized = recommendationState?.personalizedResult
+    if (recommendationSheetVisible && personalized != null) {
+        RecommendationDetailsSheet(
+            modelId = modelId,
+            recommendation = personalized,
+            presentation = recommendationPresentation(
+                personalized,
+                recommendationState.selectedVariantName,
+                recommendationState.workload,
+            ),
+            onDismiss = { recommendationSheetVisible = false },
+        )
+    }
+
+    if (showDownloadForLaterConfirmation) {
+        DownloadForLaterConfirmationDialog(
+            onConfirm = viewModel::confirmDownloadForLater,
+            onDismiss = viewModel::dismissDownloadForLater,
         )
     }
 }

@@ -1,28 +1,31 @@
 [versions]
 agp = "9.2.1"
 koin = "4.2.2"
-android-compileSdk = "36"
+android-compileSdk = "37"
 android-minSdk = "28"
 android-targetSdk = "36"
 androidx-activity = "1.13.0"
-androidx-lifecycle = "2.10.0"
+androidx-lifecycle = "2.11.0"
 datastore = "1.2.1"
-kotlinxCollectionsImmutable = "0.5.0"
-navigation = "1.1.1"
-composeHotReload = "1.1.1"
-composeMultiplatform = "1.11.1"
-kotlin = "2.4.0"
+kotlinxCollectionsImmutable = "0.5.2"
+navigation = "1.1.2"
+composeHotReload = "1.2.0"
+composeMultiplatform = "1.12.1"
+kotlin = "2.4.20"
 kotlinx-coroutines = "1.11.0"
+kotlinx-serialization = "1.11.0"
 material3 = "1.10.0-alpha05"
-ktor-bom = "3.5.0"
+ktor-bom = "3.6.0"
 compose-icon = "1.7.3"
-room = "2.8.4"
-sqlite = "2.6.2"
-ksp = "2.3.9"
+room = "2.8.5"
+sqlite = "2.7.1"
+ksp = "2.3.10"
 kotlinStdlib = "2.4.0"
 junit = "1.3.0"
-coreKtx = "1.19.0"
-materialKolor = "4.1.1"
+coreKtx = "1.19.1"
+materialKolor = "5.0.1"
+okio = "3.18.2"
+work = "2.12.0"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -34,12 +37,15 @@ compose-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.re
 compose-foundation = { module = "org.jetbrains.compose.foundation:foundation", version.ref = "composeMultiplatform" }
 compose-material3 = { module = "org.jetbrains.compose.material3:material3", version.ref = "material3" }
 compose-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "composeMultiplatform" }
+compose-ui-test = { module = "org.jetbrains.compose.ui:ui-test", version.ref = "composeMultiplatform" }
 compose-components-resources = { module = "org.jetbrains.compose.components:components-resources", version.ref = "composeMultiplatform" }
 compose-uiToolingPreview = { module = "org.jetbrains.compose.ui:ui-tooling-preview", version.ref = "composeMultiplatform" }
 androidx-datastore = { module = "androidx.datastore:datastore", version.ref = "datastore" }
 androidx-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastore" }
 kotlinx-collections-immutable = { module = "org.jetbrains.kotlinx:kotlinx-collections-immutable", version.ref = "kotlinxCollectionsImmutable" }
 kotlinx-coroutinesSwing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }
+kotlinx-coroutinesCore = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
+kotlinx-coroutinesTest = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
 icons-extended = { group = "org.jetbrains.compose.material", name = "material-icons-extended", version.ref = "compose-icon" }
 
 #koin
@@ -65,6 +71,7 @@ androidx-sqlite-bundled = { module = "androidx.sqlite:sqlite-bundled", version.r
 kotlin-stdlib = { group = "org.jetbrains.kotlin", name = "kotlin-stdlib", version.ref = "kotlinStdlib" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junit" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "work" }
 
 #navigation3
 navigation3-compose-ui = { module = "org.jetbrains.androidx.navigation3:navigation3-ui", version.ref = "navigation" }
@@ -72,6 +79,9 @@ navigation3-viewmodel = { module = "org.jetbrains.androidx.lifecycle:lifecycle-v
 
 #materialkolor
 materialkolor = { module = "com.materialkolor:material-kolor", version.ref = "materialKolor" }
+okio = { module = "com.squareup.okio:okio", version.ref = "okio" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
+okio-fakefilesystem = { module = "com.squareup.okio:okio-fakefilesystem", version.ref = "okio" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }
@@ -83,4 +93,3 @@ composeCompiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "k
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlinSerialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
-

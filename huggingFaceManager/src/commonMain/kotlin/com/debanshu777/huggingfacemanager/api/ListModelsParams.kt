@@ -30,10 +30,26 @@ data class ListModelsParams(
         require(page >= 0) {
             "page must be non-negative"
         }
+        require(page <= MAX_PAGE) {
+            "page is too large"
+        }
+        require(library.size <= MAX_FILTERS && library.all(::isSafeFilter)) {
+            "library filters are invalid"
+        }
+        require(apps.size <= MAX_FILTERS && apps.all(::isSafeFilter)) {
+            "app filters are invalid"
+        }
     }
 
     companion object {
         private val DEFAULT_LIBRARY = listOf("gguf")
         private val DEFAULT_APP = listOf("llama.cpp")
+        private const val MAX_PAGE = 10_000
+        private const val MAX_FILTERS = 16
+
+        private fun isSafeFilter(value: String): Boolean =
+            value.isNotEmpty() && value.length <= 64 && value.all { char ->
+                char.isLetterOrDigit() || char == '_' || char == '-' || char == '.'
+            }
     }
 }

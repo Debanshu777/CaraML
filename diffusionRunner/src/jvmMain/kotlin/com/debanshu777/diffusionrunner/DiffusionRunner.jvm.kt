@@ -1,25 +1,69 @@
 package com.debanshu777.diffusionrunner
 
 actual class DiffusionRunner {
+    @Volatile
     private var handle: Long = 0L
+    private val nativeAvailable: Boolean = try {
+        System.loadLibrary("diffusion_runner")
+        true
+    } catch (_: LinkageError) {
+        System.err.println("[DiffusionRunner] ERROR: Native diffusion runtime is unavailable")
+        false
+    } catch (_: SecurityException) {
+        false
+    }
 
-    init {
-        try {
-            System.loadLibrary("diffusion_runner")
-        } catch (e: UnsatisfiedLinkError) {
-            System.err.println("[DiffusionRunner] ERROR: Failed to load diffusion_runner: ${e.message}")
-        }
+    private fun requireNativeRuntime() {
+        if (!nativeAvailable) throw NativeRuntimeUnavailableException()
     }
 
     actual fun initialize(nativeLibDir: String) {
+        requireNativeRuntime()
         nativeInit(nativeLibDir)
     }
 
     actual fun loadModel(config: DiffusionModelConfig): Boolean {
+        requireNativeRuntime()
         validateModelConfig(config)
         handle = nativeLoadModel(config)
         return handle != 0L
     }
+
+    actual fun modelVersion(): String? =
+        if (handle == 0L || !nativeAvailable) null else nativeModelVersion(handle)
+
+    actual fun preflightModel(config: DiffusionModelConfig): DiffusionPreflightResult =
+        runDiffusionPreflight(config) {
+            requireNativeRuntime()
+            nativePreflightModel(it)
+        }
+
+    actual fun backendCapabilities(): List<DiffusionBackendCapability> {
+        if (!nativeAvailable) return emptyList()
+        return try {
+            decodeDiffusionBackendCapabilities(nativeBackendCapabilities())
+        } catch (_: Throwable) {
+            emptyList()
+        }
+    }
+
+    actual fun probeModelFeatures(
+        architecture: String,
+        quantization: String?,
+        mode: DiffusionGenerationMode,
+    ): DiffusionModelFeatureSupport = probeDiffusionModelFeatures(
+        architecture = architecture,
+        quantization = quantization,
+        mode = mode,
+        nativeProbe = { arch, quant, nativeMode ->
+            requireNativeRuntime()
+            nativeProbeModelFeatures(arch, quant, nativeMode)
+        },
+        nativeVersion = {
+            requireNativeRuntime()
+            nativeEngineVersion()
+        },
+    )
 
     actual fun txt2Img(params: ImageGenParams): ByteArray? {
         if (handle == 0L) return null
@@ -33,18 +77,25 @@ actual class DiffusionRunner {
         )
     }
 
-    actual fun videoGen(params: VideoGenParams): List<ByteArray>? {
+    actual fun videoGen(params: VideoGenParams): VideoGenResult? {
         if (handle == 0L) return null
+        validateVideoGenParams(params)
+        val effectiveFps = IntArray(1)
         val frames = nativeVideoGen(
             handle, params.prompt, params.negativePrompt,
             params.width, params.height, params.videoFrames,
             params.steps, params.cfgScale, params.seed,
             params.sampleMethod.value,
             params.loraPaths.toTypedArray(),
-            params.loraStrengths.toFloatArray()
+            params.loraStrengths.toFloatArray(), effectiveFps,
         ) ?: return null
-        return frames.toList()
+        return VideoGenResult(frames.toList(), effectiveFps[0])
     }
+
+    actual fun cancelGeneration(): Boolean =
+        handle != 0L && nativeAvailable && nativeCancelGeneration(handle)
+
+    actual fun supportsVideoGeneration(): Boolean = true
 
     actual fun release() {
         if (handle != 0L) {
@@ -53,18 +104,29 @@ actual class DiffusionRunner {
         }
     }
 
-    actual fun getStepProgress(): IntArray = nativeGetStepProgress()
+    actual fun getStepProgress(): IntArray =
+        if (nativeAvailable) nativeGetStepProgress() else intArrayOf(0, 0)
 
     actual fun getDiffusionModelMetadata(modelPath: String): DiffusionModelMetadata? {
+        if (!nativeAvailable) return null
         return try {
             nativeGetDiffusionModelMetadata(modelPath)
-        } catch (e: UnsatisfiedLinkError) {
+        } catch (_: LinkageError) {
             null
         }
     }
 
     private external fun nativeInit(libDir: String)
     private external fun nativeLoadModel(config: DiffusionModelConfig): Long
+    private external fun nativePreflightModel(config: DiffusionModelConfig): LongArray?
+    private external fun nativeBackendCapabilities(): LongArray?
+    private external fun nativeProbeModelFeatures(
+        architecture: String,
+        quantization: String?,
+        mode: Int,
+    ): LongArray?
+    private external fun nativeEngineVersion(): String?
+    private external fun nativeModelVersion(handle: Long): String?
     private external fun nativeTxt2Img(
         handle: Long, prompt: String, negative: String,
         width: Int, height: Int, steps: Int,
@@ -77,10 +139,12 @@ actual class DiffusionRunner {
         width: Int, height: Int, videoFrames: Int,
         steps: Int, cfg: Float, seed: Long,
         sampleMethod: Int,
-        loraPaths: Array<String>?, loraStrengths: FloatArray?
+        loraPaths: Array<String>?, loraStrengths: FloatArray?,
+        effectiveFpsOut: IntArray,
     ): Array<ByteArray>?
 
     private external fun nativeRelease(handle: Long)
+    private external fun nativeCancelGeneration(handle: Long): Boolean
     private external fun nativeGetStepProgress(): IntArray
     private external fun nativeGetDiffusionModelMetadata(modelPath: String): DiffusionModelMetadata?
 }

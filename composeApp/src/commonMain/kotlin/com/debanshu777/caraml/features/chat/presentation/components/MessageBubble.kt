@@ -11,7 +11,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -27,7 +26,6 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -35,24 +33,36 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.LocalSpacing
+import com.debanshu777.caraml.core.theme.prismShapes
+import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
+import com.debanshu777.caraml.core.ui.components.CaraMLPane
 import com.debanshu777.caraml.core.ui.graphics.decodePngToImageBitmap
+import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.features.chat.data.ChatMessage
 import com.debanshu777.caraml.features.chat.data.MessageRole
 import com.debanshu777.caraml.features.chat.presentation.components.providers.ChatMessagePreviewProvider
 import com.mikepenz.markdown.m3.Markdown
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Preview
 @Composable
@@ -76,20 +86,12 @@ fun MessageBubble(
     imageGenTotalSteps: Int = 0,
     imageGenRequestedSteps: Int = 0,
     imageGenElapsedSeconds: Int = 0,
+    loadMedia: suspend (String) -> ByteArray? = { null },
     modifier: Modifier = Modifier
 ) {
     val isUser = message.role == MessageRole.User
     val alignment = if (isUser) Alignment.End else Alignment.Start
-    val backgroundColor = if (isUser) {
-        MaterialTheme.colorScheme.primaryContainer
-    } else {
-        Color.Transparent
-    }
-    val textColor = if (isUser) {
-        MaterialTheme.colorScheme.onPrimaryContainer
-    } else {
-        MaterialTheme.colorScheme.onSecondaryContainer
-    }
+    val textColor = MaterialTheme.colorScheme.onSurface
 
     // For assistant messages: prefer the live streamingThinking (only set on the
     // streaming bubble); otherwise fall back to the persisted value. Output is
@@ -109,37 +111,45 @@ fun MessageBubble(
             .padding(vertical = LocalSpacing.current.m),
         horizontalAlignment = alignment
     ) {
-        if (!isUser && (thinkingText.isNotEmpty() || isStreaming)) {
+        if (!isUser && (thinkingText.isNotEmpty() || (isStreaming && !showMediaPending))) {
             ThoughtsDisclosure(
                 thinking = thinkingText,
-                isStreaming = isStreaming,
+                isStreaming = isStreaming && !showMediaPending,
                 outputIsEmpty = output.isEmpty(),
             )
         }
 
         if (isUser) {
             if (message.text.isNotEmpty()) {
-                Text(
-                    modifier = Modifier
-                        .clip(MaterialTheme.shapes.medium)
-                        .background(backgroundColor)
-                        .padding(LocalSpacing.current.m),
-                    text = message.text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = textColor,
-                )
+                CaraMLPane(
+                    level = AuroraSurfaceLevel.Pane,
+                    shape = MaterialTheme.prismShapes.pane,
+                ) {
+                    Text(
+                        modifier = Modifier.padding(LocalSpacing.current.m),
+                        text = message.text,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = textColor,
+                    )
+                }
             }
         } else if (output.isNotEmpty()) {
-            // Render assistant answer as markdown — always, even mid-stream.
-            Markdown(
-                content = output,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(MaterialTheme.shapes.medium)
-                    .background(backgroundColor)
-                    .padding(if (backgroundColor == Color.Transparent) 0.dp else LocalSpacing.current.m),
-                typography = chatMarkdownTypography(),
-            )
+            val outputModifier = Modifier
+                .fillMaxWidth()
+            if (isStreaming) {
+                Text(
+                    text = output,
+                    modifier = outputModifier,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = textColor,
+                )
+            } else {
+                Markdown(
+                    content = output,
+                    modifier = outputModifier,
+                    typography = chatMarkdownTypography(),
+                )
+            }
         }
 
         if (!isUser && showMediaPending) {
@@ -152,49 +162,41 @@ fun MessageBubble(
             val elapsed = imageGenElapsedSeconds
 
             val statusText = when {
-                isFinalizing -> "Finalizing image…  (${elapsed}s)"
-                isSampling   -> "Step $imageGenStep / $imageGenTotalSteps  ·  ${elapsed}s"
+                isFinalizing -> "Finalizing local output · ${elapsed}s"
+                isSampling   -> "Step $imageGenStep / $imageGenTotalSteps · ${elapsed}s"
                 else         -> if (imageGenRequestedSteps > 0)
-                                    "Preparing model…  ($imageGenRequestedSteps steps queued, ${elapsed}s)"
-                                else "Preparing model…  (${elapsed}s)"
+                                    "Preparing local generation · " +
+                                        "$imageGenRequestedSteps planned steps · ${elapsed}s"
+                                else "Preparing local generation · ${elapsed}s"
             }
 
-            Column(
+            val phase = when {
+                isFinalizing -> GenerationActivityPhase.Finalizing
+                isSampling -> GenerationActivityPhase.Generating
+                else -> GenerationActivityPhase.Preparing
+            }
+
+            GenerationActivity(
+                label = statusText,
+                progress = if (isSampling) {
+                    imageGenStep.toFloat() / imageGenTotalSteps
+                } else {
+                    null
+                },
+                phase = phase,
                 modifier = Modifier
                     .padding(top = LocalSpacing.current.s)
-                    .clip(MaterialTheme.shapes.medium)
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-                    .padding(horizontal = LocalSpacing.current.l, vertical = LocalSpacing.current.m),
-                verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.s)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.m)
-                ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp
-                    )
-                    Text(
-                        text = statusText,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = textColor
-                    )
-                }
-                if (isSampling) {
-                    LinearProgressIndicator(
-                        progress = { imageGenStep.toFloat() / imageGenTotalSteps },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            }
+                    .fillMaxWidth(),
+            )
         }
 
-        val imageBytes = message.imageBytes
-        if (!isUser && imageBytes != null && imageBytes.isNotEmpty()) {
-            val bitmap = remember(message.id, imageBytes.size) {
-                decodePngToImageBitmap(imageBytes)
-            }
+        if (!isUser && (message.imagePath != null || message.imageBytes?.isNotEmpty() == true)) {
+            val bitmap = rememberDecodedMediaBitmap(
+                key = message.id,
+                path = message.imagePath,
+                inlineBytes = message.imageBytes,
+                loadMedia = loadMedia,
+            )
             if (bitmap != null) {
                 Image(
                     bitmap = bitmap,
@@ -202,31 +204,43 @@ fun MessageBubble(
                     modifier = Modifier
                         .padding(top = LocalSpacing.current.s)
                         .heightIn(max = 320.dp)
-                        .clip(MaterialTheme.shapes.medium),
+                        .clip(MaterialTheme.prismShapes.pane),
                     contentScale = ContentScale.Fit
                 )
             }
         }
 
-        val frames = message.videoFrames
-        if (!isUser && !frames.isNullOrEmpty()) {
+        val frameSources = remember(message.videoFramePaths, message.videoFrames) {
+            when {
+                !message.videoFramePaths.isNullOrEmpty() ->
+                    message.videoFramePaths.map { path -> path to null }
+                !message.videoFrames.isNullOrEmpty() ->
+                    message.videoFrames.map { bytes -> null to bytes }
+                else -> emptyList()
+            }
+        }
+        if (!isUser && frameSources.isNotEmpty()) {
             LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = LocalSpacing.current.s),
                 horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.s)
             ) {
-                itemsIndexed(frames, key = { index, _ -> "${message.id}_$index" }) { index, frameBytes ->
-                    val frameBitmap = remember(message.id, index, frameBytes.size) {
-                        decodePngToImageBitmap(frameBytes)
-                    }
+                itemsIndexed(frameSources, key = { index, _ -> "${message.id}_$index" }) {
+                        index, (framePath, frameBytes) ->
+                    val frameBitmap = rememberDecodedMediaBitmap(
+                        key = "${message.id}_$index",
+                        path = framePath,
+                        inlineBytes = frameBytes,
+                        loadMedia = loadMedia,
+                    )
                     if (frameBitmap != null) {
                         Image(
                             bitmap = frameBitmap,
                             contentDescription = "Generated video frame ${index + 1}",
                             modifier = Modifier
                                 .size(120.dp)
-                                .clip(MaterialTheme.shapes.small),
+                                .clip(MaterialTheme.prismShapes.control),
                             contentScale = ContentScale.Crop
                         )
                     }
@@ -235,6 +249,7 @@ fun MessageBubble(
         }
 
         if (!isUser && message.inferenceMetrics != null) {
+            val inferenceStatsColor = MaterialTheme.colorScheme.onSurfaceVariant
             Row(
                 modifier = Modifier.padding(top = LocalSpacing.current.s),
                 horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.s)
@@ -242,7 +257,7 @@ fun MessageBubble(
                 Text(
                     text = "Statistics:",
                     style = MaterialTheme.typography.labelSmall,
-                    color = textColor.copy(alpha = 0.5f)
+                    color = inferenceStatsColor,
                 )
 
                 val tokensPerSec =
@@ -250,24 +265,49 @@ fun MessageBubble(
                 StatItem(
                     icon = Icons.Default.Speed,
                     text = "$tokensPerSec tokens/s",
-                    textColor = textColor
+                    textColor = inferenceStatsColor,
                 )
 
                 StatItem(
                     icon = Icons.Default.DataUsage,
                     text = "${message.inferenceMetrics.tokenCount} tokens",
-                    textColor = textColor
+                    textColor = inferenceStatsColor,
                 )
 
                 val timeSec = ((message.inferenceMetrics.generationTimeMs / 10.0).toInt() / 100.0)
                 StatItem(
                     icon = Icons.Default.AccessTime,
                     text = "${timeSec}s",
-                    textColor = textColor
+                    textColor = inferenceStatsColor,
                 )
             }
         }
     }
+}
+
+@Composable
+private fun rememberDecodedMediaBitmap(
+    key: String,
+    path: String?,
+    inlineBytes: ByteArray?,
+    loadMedia: suspend (String) -> ByteArray?,
+): ImageBitmap? {
+    val bitmap by produceState<ImageBitmap?>(
+        initialValue = null,
+        key1 = key,
+        key2 = path,
+        key3 = inlineBytes,
+    ) {
+        val encoded = when {
+            path != null -> loadMedia(path)
+            inlineBytes?.isNotEmpty() == true -> inlineBytes
+            else -> null
+        }
+        value = encoded?.let { bytes ->
+            withContext(Dispatchers.Default) { decodePngToImageBitmap(bytes) }
+        }
+    }
+    return bitmap
 }
 
 /**
@@ -284,7 +324,8 @@ private fun ThoughtsDisclosure(
     outputIsEmpty: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    var override by remember { mutableStateOf<Boolean?>(null) }
+    val motion = LocalAuroraMotionPolicy.current
+    var override by rememberSaveable { mutableStateOf<Boolean?>(null) }
     val autoExpanded = isStreaming || outputIsEmpty
     val expanded = override ?: autoExpanded
     val showSpinner = isStreaming && outputIsEmpty
@@ -297,8 +338,16 @@ private fun ThoughtsDisclosure(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(MaterialTheme.shapes.small)
-                .clickable { override = !expanded }
+                .heightIn(min = 48.dp)
+                .clip(MaterialTheme.prismShapes.control)
+                .clickable(
+                    onClickLabel = if (expanded) "Collapse thoughts" else "Expand thoughts",
+                    role = Role.Button,
+                    onClick = { override = !expanded },
+                )
+                .semantics {
+                    stateDescription = if (expanded) "Expanded" else "Collapsed"
+                }
                 .padding(horizontal = LocalSpacing.current.s, vertical = LocalSpacing.current.xs),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.s),
@@ -325,7 +374,7 @@ private fun ThoughtsDisclosure(
             )
             Icon(
                 imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                contentDescription = if (expanded) "Collapse thoughts" else "Expand thoughts",
+                contentDescription = null,
                 modifier = Modifier.size(16.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -333,8 +382,18 @@ private fun ThoughtsDisclosure(
 
         AnimatedVisibility(
             visible = expanded && thinking.isNotEmpty(),
-            enter = expandVertically(animationSpec = tween(180)) + fadeIn(animationSpec = tween(180)),
-            exit = shrinkVertically(animationSpec = tween(140)) + fadeOut(animationSpec = tween(140)),
+            enter = if (motion.spatialTransitionsEnabled) {
+                expandVertically(animationSpec = tween(motion.peerTransitionMillis)) +
+                    fadeIn(animationSpec = tween(motion.opacityDurationMillis))
+            } else {
+                fadeIn(animationSpec = tween(motion.opacityDurationMillis))
+            },
+            exit = if (motion.spatialTransitionsEnabled) {
+                shrinkVertically(animationSpec = tween(motion.exitMillis)) +
+                    fadeOut(animationSpec = tween(motion.exitMillis))
+            } else {
+                fadeOut(animationSpec = tween(motion.opacityDurationMillis))
+            },
         ) {
             Text(
                 text = thinking,
@@ -343,7 +402,7 @@ private fun ThoughtsDisclosure(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = LocalSpacing.current.xs)
-                    .clip(MaterialTheme.shapes.small)
+                    .clip(MaterialTheme.prismShapes.pane)
                     .background(MaterialTheme.colorScheme.surfaceContainerLow)
                     .padding(LocalSpacing.current.m),
             )
@@ -366,13 +425,13 @@ private fun StatItem(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = textColor.copy(alpha = 0.5f),
+            tint = textColor,
             modifier = Modifier.size(12.dp)
         )
         Text(
             text = text,
             style = MaterialTheme.typography.labelSmall,
-            color = textColor.copy(alpha = 0.5f)
+            color = textColor,
         )
     }
 }

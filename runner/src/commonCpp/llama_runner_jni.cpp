@@ -1,6 +1,9 @@
 #include <jni.h>
 
 #include <cstdio>
+#include <array>
+#include <exception>
+#include <new>
 #include <string>
 
 #ifdef __ANDROID__
@@ -33,14 +36,163 @@ void platform_log(LlamaLogLevel level, const char *msg) {
 #endif
 }
 
+class ScopedUtfChars {
+public:
+    ScopedUtfChars(JNIEnv *env, jstring value)
+        : env_(env), value_(value), chars_(value ? env->GetStringUTFChars(value, nullptr) : nullptr) {}
+
+    ~ScopedUtfChars() {
+        if (chars_) env_->ReleaseStringUTFChars(value_, chars_);
+    }
+
+    ScopedUtfChars(const ScopedUtfChars &) = delete;
+    ScopedUtfChars &operator=(const ScopedUtfChars &) = delete;
+
+    const char *get() const { return chars_; }
+
+private:
+    JNIEnv *env_;
+    jstring value_;
+    const char *chars_;
+};
+
+class ScopedLocalRef {
+public:
+    ScopedLocalRef(JNIEnv *env, jobject value) : env_(env), value_(value) {}
+    ~ScopedLocalRef() {
+        if (value_) env_->DeleteLocalRef(value_);
+    }
+    ScopedLocalRef(const ScopedLocalRef &) = delete;
+    ScopedLocalRef &operator=(const ScopedLocalRef &) = delete;
+    jobject get() const { return value_; }
+
+private:
+    JNIEnv *env_;
+    jobject value_;
+};
+
+bool read_runner_config(JNIEnv *env, jobject config_obj, LlamaRunnerConfig &config) {
+    if (!config_obj || env->ExceptionCheck()) return false;
+    ScopedLocalRef cls_ref(env, env->GetObjectClass(config_obj));
+    jclass cls = reinterpret_cast<jclass>(cls_ref.get());
+    if (!cls || env->ExceptionCheck()) return false;
+
+    auto field = [&](const char *name, const char *signature) -> jfieldID {
+        const jfieldID id = env->GetFieldID(cls, name, signature);
+        return env->ExceptionCheck() ? nullptr : id;
+    };
+    const jfieldID n_ctx = field("nCtx", "I");
+    const jfieldID n_ctx_min = field("nCtxMin", "I");
+    const jfieldID n_threads = field("nThreads", "I");
+    const jfieldID n_threads_batch = field("nThreadsBatch", "I");
+    const jfieldID n_batch = field("nBatch", "I");
+    const jfieldID n_ubatch = field("nUbatch", "I");
+    const jfieldID n_outputs_max_per_seq = field("nOutputsMaxPerSequence", "I");
+    const jfieldID flash_attn = field("flashAttn", "I");
+    const jfieldID offload_kqv = field("offloadKqv", "Z");
+    const jfieldID type_k = field("typeK", "I");
+    const jfieldID type_v = field("typeV", "I");
+    const jfieldID n_gpu_layers = field("nGpuLayers", "I");
+    const jfieldID use_mmap = field("useMmap", "Z");
+    const jfieldID use_mlock = field("useMlock", "Z");
+    const jfieldID lazy_mode = field("lazyMode", "Lcom/debanshu777/runner/LlamaLazyMode;");
+    const jfieldID temperature = field("temperature", "F");
+    const jfieldID auto_fit = field("autoFit", "Z");
+    const jfieldID cpu_mask = field("cpuMask", "Ljava/lang/String;");
+    const jfieldID cpu_mask_batch = field("cpuMaskBatch", "Ljava/lang/String;");
+    if (!n_ctx || !n_ctx_min || !n_threads || !n_threads_batch || !n_batch ||
+        !n_ubatch || !n_outputs_max_per_seq || !flash_attn || !offload_kqv || !type_k || !type_v ||
+        !n_gpu_layers || !use_mmap || !use_mlock || !lazy_mode || !temperature || !auto_fit ||
+        !cpu_mask || !cpu_mask_batch) {
+        return false;
+    }
+
+    config.n_ctx = env->GetIntField(config_obj, n_ctx);
+    config.n_ctx_min = env->GetIntField(config_obj, n_ctx_min);
+    config.n_threads = env->GetIntField(config_obj, n_threads);
+    config.n_threads_batch = env->GetIntField(config_obj, n_threads_batch);
+    config.n_batch = env->GetIntField(config_obj, n_batch);
+    config.n_ubatch = env->GetIntField(config_obj, n_ubatch);
+    config.n_outputs_max_per_seq = env->GetIntField(config_obj, n_outputs_max_per_seq);
+    config.flash_attn = env->GetIntField(config_obj, flash_attn);
+    config.offload_kqv = env->GetBooleanField(config_obj, offload_kqv) != JNI_FALSE;
+    config.type_k = env->GetIntField(config_obj, type_k);
+    config.type_v = env->GetIntField(config_obj, type_v);
+    config.n_gpu_layers = env->GetIntField(config_obj, n_gpu_layers);
+    config.use_mmap = env->GetBooleanField(config_obj, use_mmap) != JNI_FALSE;
+    config.use_mlock = env->GetBooleanField(config_obj, use_mlock) != JNI_FALSE;
+    config.temperature = env->GetFloatField(config_obj, temperature);
+    config.auto_fit = env->GetBooleanField(config_obj, auto_fit) != JNI_FALSE;
+    if (env->ExceptionCheck()) return false;
+
+    ScopedLocalRef lazy_mode_ref(env, env->GetObjectField(config_obj, lazy_mode));
+    if (!lazy_mode_ref.get() || env->ExceptionCheck()) return false;
+    ScopedLocalRef lazy_mode_class_ref(env, env->GetObjectClass(lazy_mode_ref.get()));
+    jclass lazy_mode_class = reinterpret_cast<jclass>(lazy_mode_class_ref.get());
+    if (!lazy_mode_class || env->ExceptionCheck()) return false;
+    const jfieldID lazy_mode_value = env->GetFieldID(lazy_mode_class, "nativeValue", "I");
+    if (!lazy_mode_value || env->ExceptionCheck()) return false;
+    config.lazy_mode = env->GetIntField(lazy_mode_ref.get(), lazy_mode_value);
+    if (env->ExceptionCheck()) return false;
+
+    ScopedLocalRef mask_ref(env, env->GetObjectField(config_obj, cpu_mask));
+    ScopedLocalRef batch_mask_ref(env, env->GetObjectField(config_obj, cpu_mask_batch));
+    if (env->ExceptionCheck()) return false;
+    jstring mask_string = reinterpret_cast<jstring>(mask_ref.get());
+    jstring batch_mask_string = reinterpret_cast<jstring>(batch_mask_ref.get());
+    if (mask_string) {
+        ScopedUtfChars mask(env, mask_string);
+        if (!mask.get() || env->ExceptionCheck()) return false;
+        config.cpu_mask = mask.get();
+    }
+    if (batch_mask_string) {
+        ScopedUtfChars mask(env, batch_mask_string);
+        if (!mask.get() || env->ExceptionCheck()) return false;
+        config.cpu_mask_batch = mask.get();
+    }
+    return !env->ExceptionCheck();
+}
+
+template <typename Result, typename Action>
+Result jni_guard(const char *operation, Result fallback, Action &&action) noexcept {
+    try {
+        return action();
+    } catch (const std::bad_alloc &) {
+        platform_log(LLAMA_LOG_ERROR, "JNI allocation failed");
+    } catch (const std::exception &) {
+        platform_log(LLAMA_LOG_ERROR, operation);
+    } catch (...) {
+        platform_log(LLAMA_LOG_ERROR, "Unknown JNI native failure");
+    }
+    return fallback;
+}
+
+template <typename Action>
+void jni_guard_void(const char *operation, Action &&action) noexcept {
+    (void)jni_guard<int>(operation, 0, [&action]() {
+        action();
+        return 1;
+    });
+}
+
 } // namespace
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeInit(JNIEnv *env, jobject, jstring libDir) {
-    const char *path = env->GetStringUTFChars(libDir, 0);
-    llama_runner_core_set_logger(platform_log);
-    llama_runner_core_init(path);
-    env->ReleaseStringUTFChars(libDir, path);
+    jni_guard_void("nativeInit failed", [&]() {
+        ScopedUtfChars path(env, libDir);
+        if (!path.get()) return;
+        llama_runner_core_set_logger(platform_log);
+        llama_runner_core_init(path.get());
+    });
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_debanshu777_runner_LlamaRunner_nativeEngineVersion(JNIEnv *env, jobject) {
+    return jni_guard<jstring>("nativeEngineVersion failed", nullptr, [&]() {
+        const std::string version = llama_runner_core_engine_version();
+        return version.empty() ? nullptr : env->NewStringUTF(version.c_str());
+    });
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
@@ -49,43 +201,181 @@ Java_com_debanshu777_runner_LlamaRunner_nativeLoadModel(
     jobject,
     jstring modelPath,
     jobject configObj) {
-    const char *path = env->GetStringUTFChars(modelPath, 0);
+    return jni_guard<jboolean>(
+        "nativeLoadModel failed",
+        static_cast<jboolean>(JNI_FALSE),
+        [&]() {
+            ScopedUtfChars path(env, modelPath);
+            if (!path.get() || !configObj) return static_cast<jboolean>(JNI_FALSE);
+            LlamaRunnerConfig config;
+            if (!read_runner_config(env, configObj, config)) return static_cast<jboolean>(JNI_FALSE);
 
-    jclass cls = env->GetObjectClass(configObj);
-    
-    LlamaRunnerConfig config;
-    config.n_ctx           = env->GetIntField(configObj, env->GetFieldID(cls, "nCtx", "I"));
-    config.n_ctx_min       = env->GetIntField(configObj, env->GetFieldID(cls, "nCtxMin", "I"));
-    config.n_threads       = env->GetIntField(configObj, env->GetFieldID(cls, "nThreads", "I"));
-    config.n_threads_batch = env->GetIntField(configObj, env->GetFieldID(cls, "nThreadsBatch", "I"));
-    config.n_batch         = env->GetIntField(configObj, env->GetFieldID(cls, "nBatch", "I"));
-    config.n_ubatch        = env->GetIntField(configObj, env->GetFieldID(cls, "nUbatch", "I"));
-    config.flash_attn      = env->GetIntField(configObj, env->GetFieldID(cls, "flashAttn", "I"));
-    config.offload_kqv     = env->GetBooleanField(configObj, env->GetFieldID(cls, "offloadKqv", "Z"));
-    config.type_k          = env->GetIntField(configObj, env->GetFieldID(cls, "typeK", "I"));
-    config.type_v          = env->GetIntField(configObj, env->GetFieldID(cls, "typeV", "I"));
-    config.n_gpu_layers    = env->GetIntField(configObj, env->GetFieldID(cls, "nGpuLayers", "I"));
-    config.use_mmap        = env->GetBooleanField(configObj, env->GetFieldID(cls, "useMmap", "Z"));
-    config.use_mlock       = env->GetBooleanField(configObj, env->GetFieldID(cls, "useMlock", "Z"));
-    config.temperature     = env->GetFloatField(configObj, env->GetFieldID(cls, "temperature", "F"));
-    config.auto_fit        = env->GetBooleanField(configObj, env->GetFieldID(cls, "autoFit", "Z"));
+            const bool ok = llama_runner_core_load_model(path.get(), config);
+            return static_cast<jboolean>(ok ? JNI_TRUE : JNI_FALSE);
+        });
+}
 
-    jstring jCpuMask = (jstring) env->GetObjectField(configObj, env->GetFieldID(cls, "cpuMask", "Ljava/lang/String;"));
-    jstring jCpuMaskBatch = (jstring) env->GetObjectField(configObj, env->GetFieldID(cls, "cpuMaskBatch", "Ljava/lang/String;"));
-    if (jCpuMask) {
-        const char* mask = env->GetStringUTFChars(jCpuMask, nullptr);
-        config.cpu_mask = mask;
-        env->ReleaseStringUTFChars(jCpuMask, mask);
-    }
-    if (jCpuMaskBatch) {
-        const char* batchMask = env->GetStringUTFChars(jCpuMaskBatch, nullptr);
-        config.cpu_mask_batch = batchMask;
-        env->ReleaseStringUTFChars(jCpuMaskBatch, batchMask);
-    }
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_com_debanshu777_runner_LlamaRunner_nativePreflightModel(
+    JNIEnv *env,
+    jobject,
+    jstring modelPath,
+    jobject configObj) {
+    return jni_guard<jlongArray>("nativePreflightModel failed", nullptr, [&]() {
+        ScopedUtfChars path(env, modelPath);
+        LlamaRunnerConfig config;
+        if (!path.get() || env->ExceptionCheck() || !read_runner_config(env, configObj, config)) {
+            return static_cast<jlongArray>(nullptr);
+        }
+        const LlamaPreflightResultNative native = llama_runner_core_preflight(path.get(), config);
+        if (native.pool_count < 0 || native.pool_count > LLAMA_PREFLIGHT_MAX_POOLS) {
+            return static_cast<jlongArray>(nullptr);
+        }
+        constexpr size_t header_fields = 4;
+        constexpr size_t pool_fields = 7;
+        const size_t field_count = header_fields + static_cast<size_t>(native.pool_count) * pool_fields;
+        std::array<jlong, header_fields + LLAMA_PREFLIGHT_MAX_POOLS * pool_fields> values{};
+        values[0] = static_cast<jlong>(native.status);
+        values[1] = static_cast<jlong>(native.n_ctx);
+        values[2] = static_cast<jlong>(native.n_gpu_layers);
+        values[3] = static_cast<jlong>(native.pool_count);
+        for (int index = 0; index < native.pool_count; index++) {
+            const size_t offset = header_fields + static_cast<size_t>(index) * pool_fields;
+            const LlamaPreflightMemoryPool &pool = native.pools[index];
+            values[offset] = static_cast<jlong>(pool.kind);
+            values[offset + 1] = static_cast<jlong>(pool.ordinal);
+            values[offset + 2] = static_cast<jlong>(pool.model_bytes);
+            values[offset + 3] = static_cast<jlong>(pool.context_bytes);
+            values[offset + 4] = static_cast<jlong>(pool.compute_bytes);
+            values[offset + 5] = static_cast<jlong>(pool.free_bytes);
+            values[offset + 6] = static_cast<jlong>(pool.total_bytes);
+        }
+        jlongArray result = env->NewLongArray(static_cast<jsize>(field_count));
+        if (!result || env->ExceptionCheck()) return static_cast<jlongArray>(nullptr);
+        env->SetLongArrayRegion(result, 0, static_cast<jsize>(field_count), values.data());
+        return env->ExceptionCheck() ? static_cast<jlongArray>(nullptr) : result;
+    });
+}
 
-    const bool ok = llama_runner_core_load_model(path, config);
-    env->ReleaseStringUTFChars(modelPath, path);
-    return ok ? JNI_TRUE : JNI_FALSE;
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_com_debanshu777_runner_LlamaRunner_nativeBackendCapabilities(JNIEnv *env, jobject) {
+    return jni_guard<jlongArray>("nativeBackendCapabilities failed", nullptr, [&]() {
+        const LlamaBackendCapabilitiesNative native = llama_runner_core_backend_capabilities();
+        if (native.count <= 0 || native.count > LLAMA_BACKEND_MAX_DEVICES) {
+            return static_cast<jlongArray>(nullptr);
+        }
+        constexpr size_t header_fields = 1;
+        constexpr size_t record_fields = 13;
+        const size_t field_count = header_fields + static_cast<size_t>(native.count) * record_fields;
+        std::array<jlong, header_fields + LLAMA_BACKEND_MAX_DEVICES * record_fields> values{};
+        values[0] = static_cast<jlong>(native.count);
+        for (int index = 0; index < native.count; index++) {
+            const size_t offset = header_fields + static_cast<size_t>(index) * record_fields;
+            const LlamaBackendCapabilityNative &device = native.devices[index];
+            values[offset] = static_cast<jlong>(device.kind);
+            values[offset + 1] = static_cast<jlong>(device.device_type);
+            values[offset + 2] = static_cast<jlong>(device.free_bytes);
+            values[offset + 3] = static_cast<jlong>(device.total_bytes);
+            values[offset + 4] = static_cast<jlong>(device.device_identity_length);
+            for (size_t word = 0; word < 8; ++word) {
+                values[offset + 5 + word] = static_cast<jlong>(device.device_identity_words[word]);
+            }
+        }
+        jlongArray result = env->NewLongArray(static_cast<jsize>(field_count));
+        if (!result || env->ExceptionCheck()) return static_cast<jlongArray>(nullptr);
+        env->SetLongArrayRegion(result, 0, static_cast<jsize>(field_count), values.data());
+        return env->ExceptionCheck() ? static_cast<jlongArray>(nullptr) : result;
+    });
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_com_debanshu777_runner_LlamaRunner_nativeCalibrateBackend(
+    JNIEnv *env,
+    jobject,
+    jlong probeToken,
+    jint backend,
+    jint durationMillis,
+    jlong bufferBytes) {
+    return jni_guard<jlongArray>("nativeCalibrateBackend failed", nullptr, [&]() {
+        const LlamaCalibrationResultNative native = llama_runner_core_calibrate_backend(
+            static_cast<int64_t>(probeToken),
+            static_cast<int>(backend),
+            static_cast<int>(durationMillis),
+            static_cast<int64_t>(bufferBytes));
+        if (native.window_count < 0 || native.window_count > LLAMA_CALIBRATION_MAX_WINDOWS) {
+            return static_cast<jlongArray>(nullptr);
+        }
+        constexpr size_t header_fields = 3;
+        constexpr size_t window_fields = 3;
+        const size_t field_count = header_fields +
+            static_cast<size_t>(native.window_count) * window_fields;
+        std::array<jlong, header_fields + LLAMA_CALIBRATION_MAX_WINDOWS * window_fields> values{};
+        values[0] = static_cast<jlong>(native.status);
+        values[1] = static_cast<jlong>(native.backend);
+        values[2] = static_cast<jlong>(native.window_count);
+        for (int index = 0; index < native.window_count; ++index) {
+            const size_t offset = header_fields + static_cast<size_t>(index) * window_fields;
+            values[offset] = static_cast<jlong>(native.windows[index].metric);
+            values[offset + 1] = static_cast<jlong>(native.windows[index].completed_units);
+            values[offset + 2] = static_cast<jlong>(native.windows[index].elapsed_nanoseconds);
+        }
+        jlongArray result = env->NewLongArray(static_cast<jsize>(field_count));
+        if (!result || env->ExceptionCheck()) return static_cast<jlongArray>(nullptr);
+        env->SetLongArrayRegion(result, 0, static_cast<jsize>(field_count), values.data());
+        return env->ExceptionCheck() ? static_cast<jlongArray>(nullptr) : result;
+    });
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_debanshu777_runner_LlamaRunner_nativeCancelBackendCalibration(
+    JNIEnv *, jobject, jlong probeToken) {
+    jni_guard_void("nativeCancelBackendCalibration failed", [probeToken]() {
+        llama_runner_core_cancel_calibration(static_cast<int64_t>(probeToken));
+    });
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_debanshu777_runner_LlamaRunner_nativeReserveBackendCalibration(
+    JNIEnv *, jobject, jlong probeToken) {
+    return jni_guard<jint>("nativeReserveBackendCalibration failed", -1, [probeToken]() {
+        return static_cast<jint>(
+            llama_runner_core_reserve_calibration(static_cast<int64_t>(probeToken)));
+    });
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_debanshu777_runner_LlamaRunner_nativeAbandonBackendCalibration(
+    JNIEnv *, jobject, jlong probeToken) {
+    return jni_guard<jint>("nativeAbandonBackendCalibration failed", -1, [probeToken]() {
+        return static_cast<jint>(
+            llama_runner_core_abandon_calibration(static_cast<int64_t>(probeToken)));
+    });
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_com_debanshu777_runner_LlamaRunner_nativeProbeModelFeatures(
+    JNIEnv *env,
+    jobject,
+    jstring architecture,
+    jstring quantization) {
+    return jni_guard<jlongArray>("nativeProbeModelFeatures failed", nullptr, [&]() {
+        ScopedUtfChars architecture_chars(env, architecture);
+        ScopedUtfChars quantization_chars(env, quantization);
+        if (!architecture_chars.get() || env->ExceptionCheck()) {
+            return static_cast<jlongArray>(nullptr);
+        }
+        const LlamaModelFeatureSupportNative native = llama_runner_core_probe_model_features(
+            architecture_chars.get(), quantization_chars.get());
+        const jlong values[] = {
+            static_cast<jlong>(native.architecture),
+            static_cast<jlong>(native.quantization),
+            static_cast<jlong>(native.engine_build),
+        };
+        jlongArray result = env->NewLongArray(3);
+        if (!result || env->ExceptionCheck()) return static_cast<jlongArray>(nullptr);
+        env->SetLongArrayRegion(result, 0, 3, values);
+        return env->ExceptionCheck() ? static_cast<jlongArray>(nullptr) : result;
+    });
 }
 
 extern "C" JNIEXPORT jstring JNICALL
@@ -95,131 +385,163 @@ Java_com_debanshu777_runner_LlamaRunner_nativeGenerateText(
     jstring prompt,
     jint maxTokens,
     jfloat temperature) {
-    const char *prompt_str = env->GetStringUTFChars(prompt, 0);
-    const std::string result = llama_runner_core_generate(
-        prompt_str,
-        static_cast<int>(maxTokens),
-        static_cast<float>(temperature));
-    env->ReleaseStringUTFChars(prompt, prompt_str);
-    return env->NewStringUTF(result.c_str());
+    return jni_guard<jstring>("nativeGenerateText failed", nullptr, [&]() {
+        ScopedUtfChars promptChars(env, prompt);
+        if (!promptChars.get()) return static_cast<jstring>(nullptr);
+        const std::string result = llama_runner_core_generate(
+            promptChars.get(),
+            static_cast<int>(maxTokens),
+            static_cast<float>(temperature));
+        return env->NewStringUTF(result.c_str());
+    });
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeStartGenerate(
     JNIEnv *env, jobject, jstring prompt, jint maxTokens, jfloat temperature, jstring grammar) {
-    const char *p = env->GetStringUTFChars(prompt, nullptr);
-    const char *g = grammar ? env->GetStringUTFChars(grammar, nullptr) : nullptr;
-    const bool ok = llama_runner_core_start_generate(p, static_cast<int>(maxTokens),
-        static_cast<float>(temperature), g);
-    env->ReleaseStringUTFChars(prompt, p);
-    if (g) {
-        env->ReleaseStringUTFChars(grammar, g);
-    }
-    return ok ? JNI_TRUE : JNI_FALSE;
+    return jni_guard<jboolean>(
+        "nativeStartGenerate failed",
+        static_cast<jboolean>(JNI_FALSE),
+        [&]() {
+            ScopedUtfChars promptChars(env, prompt);
+            ScopedUtfChars grammarChars(env, grammar);
+            if (!promptChars.get()) return static_cast<jboolean>(JNI_FALSE);
+            const bool ok = llama_runner_core_start_generate(
+                promptChars.get(), static_cast<int>(maxTokens),
+                static_cast<float>(temperature), grammarChars.get());
+            return static_cast<jboolean>(ok ? JNI_TRUE : JNI_FALSE);
+        });
 }
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeNextToken(JNIEnv *env, jobject) {
-    const char *tok = llama_runner_core_next_token();
-    if (tok == nullptr) {
-        return nullptr;
-    }
-    return env->NewStringUTF(tok);
+    return jni_guard<jstring>("nativeNextToken failed", nullptr, [&]() {
+        const char *tok = llama_runner_core_next_token();
+        return tok ? env->NewStringUTF(tok) : nullptr;
+    });
 }
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeGetReasoning(JNIEnv *env, jobject) {
-    const char *s = llama_runner_core_get_reasoning();
-    return env->NewStringUTF(s ? s : "");
+    return jni_guard<jstring>("nativeGetReasoning failed", nullptr, [&]() {
+        const char *s = llama_runner_core_get_reasoning();
+        return env->NewStringUTF(s ? s : "");
+    });
 }
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeGetContent(JNIEnv *env, jobject) {
-    const char *s = llama_runner_core_get_content();
-    return env->NewStringUTF(s ? s : "");
+    return jni_guard<jstring>("nativeGetContent failed", nullptr, [&]() {
+        const char *s = llama_runner_core_get_content();
+        return env->NewStringUTF(s ? s : "");
+    });
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeSupportsThinking(JNIEnv *, jobject) {
-    return static_cast<jint>(llama_runner_core_supports_thinking());
+    return jni_guard<jint>("nativeSupportsThinking failed", 0, []() {
+        return static_cast<jint>(llama_runner_core_supports_thinking());
+    });
 }
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeGetReasoningDelta(JNIEnv *env, jobject) {
-    const char *s = llama_runner_core_get_reasoning_delta();
-    return env->NewStringUTF(s ? s : "");
+    return jni_guard<jstring>("nativeGetReasoningDelta failed", nullptr, [&]() {
+        const char *s = llama_runner_core_get_reasoning_delta();
+        return env->NewStringUTF(s ? s : "");
+    });
 }
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeGetContentDelta(JNIEnv *env, jobject) {
-    const char *s = llama_runner_core_get_content_delta();
-    return env->NewStringUTF(s ? s : "");
+    return jni_guard<jstring>("nativeGetContentDelta failed", nullptr, [&]() {
+        const char *s = llama_runner_core_get_content_delta();
+        return env->NewStringUTF(s ? s : "");
+    });
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeCancelGenerate(JNIEnv *, jobject) {
-    llama_runner_core_cancel_generate();
+    jni_guard_void("nativeCancelGenerate failed", []() {
+        llama_runner_core_cancel_generate();
+    });
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeFinalizeGeneration(JNIEnv *, jobject) {
-    llama_runner_core_finalize_generation();
+    jni_guard_void("nativeFinalizeGeneration failed", []() {
+        llama_runner_core_finalize_generation();
+    });
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeProcessSystemPrompt(JNIEnv *env, jobject, jstring prompt) {
-    const char *p = env->GetStringUTFChars(prompt, nullptr);
-    const int ret = llama_runner_core_process_system_prompt(p);
-    env->ReleaseStringUTFChars(prompt, p);
-    return static_cast<jint>(ret);
+    return jni_guard<jint>("nativeProcessSystemPrompt failed", -1, [&]() {
+        ScopedUtfChars promptChars(env, prompt);
+        if (!promptChars.get()) return static_cast<jint>(-1);
+        return static_cast<jint>(llama_runner_core_process_system_prompt(promptChars.get()));
+    });
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeProcessUserPrompt(
     JNIEnv *env, jobject, jstring prompt, jint predictLength) {
-    const char *p = env->GetStringUTFChars(prompt, nullptr);
-    const int ret = llama_runner_core_process_user_prompt(p, static_cast<int>(predictLength));
-    env->ReleaseStringUTFChars(prompt, p);
-    return static_cast<jint>(ret);
+    return jni_guard<jint>("nativeProcessUserPrompt failed", -1, [&]() {
+        ScopedUtfChars promptChars(env, prompt);
+        if (!promptChars.get()) return static_cast<jint>(-1);
+        return static_cast<jint>(
+            llama_runner_core_process_user_prompt(
+                promptChars.get(), static_cast<int>(predictLength)));
+    });
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeUnloadModel(JNIEnv *, jobject) {
-    llama_runner_core_unload();
+    jni_guard_void("nativeUnloadModel failed", []() { llama_runner_core_unload(); });
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeShutdown(JNIEnv *, jobject) {
-    llama_runner_core_shutdown();
+    jni_guard_void("nativeShutdown failed", []() { llama_runner_core_shutdown(); });
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeGetContextUsed(JNIEnv *, jobject) {
-    return static_cast<jint>(llama_runner_core_get_context_used());
+    return jni_guard<jint>("nativeGetContextUsed failed", 0, []() {
+        return static_cast<jint>(llama_runner_core_get_context_used());
+    });
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeGetContextLimit(JNIEnv *, jobject) {
-    return static_cast<jint>(llama_runner_core_get_context_limit());
+    return jni_guard<jint>("nativeGetContextLimit failed", 0, []() {
+        return static_cast<jint>(llama_runner_core_get_context_limit());
+    });
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeGetStopReason(JNIEnv *, jobject) {
-    return static_cast<jint>(llama_runner_core_get_stop_reason());
+    return jni_guard<jint>("nativeGetStopReason failed", 5, []() {
+        return static_cast<jint>(llama_runner_core_get_stop_reason());
+    });
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeGetGpuLayers(JNIEnv *, jobject) {
-    return static_cast<jint>(llama_runner_core_get_gpu_layers());
+    return jni_guard<jint>("nativeGetGpuLayers failed", 0, []() {
+        return static_cast<jint>(llama_runner_core_get_gpu_layers());
+    });
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeClearContext(JNIEnv *, jobject) {
-    llama_runner_core_clear_context();
+    jni_guard_void("nativeClearContext failed", []() { llama_runner_core_clear_context(); });
 }
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_debanshu777_runner_LlamaRunner_nativeGetModelArchitecture(JNIEnv *env, jobject) {
-    const char* arch = llama_runner_core_get_model_architecture();
-    return env->NewStringUTF(arch ? arch : "");
+    return jni_guard<jstring>("nativeGetModelArchitecture failed", nullptr, [&]() {
+        const char* arch = llama_runner_core_get_model_architecture();
+        return env->NewStringUTF(arch ? arch : "");
+    });
 }

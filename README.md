@@ -63,7 +63,7 @@ See each module's own README for details.
 ### 1. Initialize submodules
 
 ```bash
-git submodule update --init --recursive
+git submodule update --init
 ```
 
 ### 2. Build native libraries
@@ -81,7 +81,7 @@ git submodule update --init --recursive
 
 ```bash
 # Android (debug APK)
-./gradlew :composeApp:assembleDebug
+./gradlew :androidApp:assembleDebug
 
 # Desktop — build and run directly
 ./gradlew :composeApp:run
@@ -92,7 +92,7 @@ git submodule update --init --recursive
 ### Android with Vulkan GPU (experimental)
 
 ```bash
-./gradlew :composeApp:assembleDebug -PENABLE_VULKAN_ANDROID=true
+./gradlew :androidApp:assembleDebug -PENABLE_VULKAN_ANDROID=true
 ```
 
 Requires Vulkan SDK and `glslc` in PATH. Expected 5–8× token-per-second improvement on compatible GPUs (Mali, Adreno). See [`docs/vulkan-android-build-strategy.md`](./docs/vulkan-android-build-strategy.md).
@@ -164,19 +164,19 @@ Three features: **chat**, **modelhub**, **settings**.
 
 | Layer | Library / Version |
 |-------|-------------------|
-| Language | Kotlin 2.3.10 |
-| UI | Compose Multiplatform 1.10.1 |
-| DI | Koin 4.2.0-RC1 |
-| HTTP | Ktor 3.4.1 |
+| Language | Kotlin 2.4.0 |
+| UI | Compose Multiplatform 1.11.1 |
+| DI | Koin 4.2.2 |
+| HTTP | Ktor 3.5.0 |
 | Database | Room 2.8.4 |
-| Preferences | DataStore 1.1.7 |
-| Navigation | Navigation3 1.0.0-alpha06 |
+| Preferences | DataStore 1.2.1 |
+| Navigation | Navigation3 1.1.1 |
 | Theming | Material3 1.10.0-alpha05 + materialKolor 4.1.1 |
-| Coroutines | kotlinx-coroutines 1.10.2 |
-| Build | AGP 8.13.2, KSP 2.3.5 |
+| Coroutines | kotlinx-coroutines 1.11.0 |
+| Build | JDK 21+, AGP 9.2.1, KSP 2.3.9 |
 | Android SDK | minSdk 28, compileSdk 36 |
 | iOS | min 17.2 |
-| JVM target | 21 |
+| Android bytecode | 21 (`composeApp`), 17 (supporting KMP libraries) |
 | Inference | llama.cpp (latest), stable-diffusion.cpp (latest) |
 
 ---
@@ -184,11 +184,14 @@ Three features: **chat**, **modelhub**, **settings**.
 ## Tests
 
 ```bash
+./gradlew verifyProject          # Preferred local/CI JVM gate
 ./gradlew :composeApp:allTests    # All platform tests
 ./gradlew :composeApp:jvmTest     # JVM tests only
 ```
 
-Test coverage includes: `BenchmarkUtils`, `LocalModelGenerationClassifier`, `ReasoningModelClassifier`.
+GitHub Actions runs `verifyProject` for pull requests and pushes to `main`.
+
+Test coverage includes benchmark helpers, model-generation classification, suitability ratings, architecture detection, and diffusion step policy.
 
 ---
 
@@ -204,7 +207,7 @@ Single CMake script builds GGML once from `libraries/llama.cpp`, then both `llam
 
 ### Patch System
 
-Patches under `libraries/patches/<submodule>/` are applied before native compilation (`applyNativePatches` Gradle task) and reverted cleanly before submodule bumps (`revertNativePatches`).
+Numbered llama.cpp patches under `libraries/patches/llama.cpp/` are applied to a Gradle-owned source copy by `:nativeEngine:preparePatchedLlamaSource`; the pinned upstream submodule remains immutable.
 
 ### iOS Static Lib Merge
 
@@ -214,16 +217,69 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 
 ## Recent Changes
 
-<!-- This section is updated at the end of each Claude Code session -->
+<!-- This section is updated at the end of each AI-assisted development session -->
 
-- Inference perf: O(n²) → O(n) JNI emission via native delta accessors (`getReasoningDelta`/`getContentDelta`) with resync-sentinel support; reduces GC churn and dropped frames on long replies
+- CI now installs the Android CMake version pinned by the native module; Windows publication uses pinned-directory native renames, large-text empty states remain scroll-reachable across desktop fonts, and diffusion verification uses host-neutral max-VRAM fixtures while avoiding a GCC 13 aggregate-assignment compiler crash
+- Completed download records now reconcile their immutable publication before reuse, so removed models can be installed again without redownloading still-published shared components
+- Generated-media stores now coordinate active sessions and writes process-wide, evict expired/LRU abandoned sessions, and enforce one aggregate 1 GiB cap; CI also assembles the Android app
+- Native engines now use the exact 23 September pair (`llama.cpp` `f46bc30`, stable-diffusion.cpp `c92d73c`) with one shared patched GGML, exact admitted/effective plan checks, and version-namespaced persistence
+- Android packages both runners for arm64-v8a/x86_64, while iOS device and simulator archives merge both engines with exactly one GGML implementation
+- Expanded the documented [CaraML Prism design system](docs/caraml-design-system.md) with app-wide information hierarchy, progressive-disclosure, rounded-surface, compact reflow, and data-heavy toolbar guidance
+- Compact Models now collapses device diagnostics into one remembered summary, uses rounded wrapping result panes and compact metrics, and prioritizes the command and first useful result over secondary facts
+- Artifact now presents identity and the download decision before collapsed technical metadata, with rounded focal/file surfaces and production-component previews at 360–412dp including 200% text
+- Added conversation Focus Mode: after the first message, Create removes persistent navigation and page chrome, expands the thread across the canvas, and keeps one accessible sidebar trigger beside the existing composer
+- Rebuilt CaraML as a calm sidebar-first local AI workbench: compact windows use a stationary-content modal panel, tablets use a compact rail, and wider workspaces use a labeled contextual sidebar
+- Reframed Create as a full-canvas workspace with the baseline yellow/violet/green grain-backed atmosphere, connected Text/Image/Video control, the production composer, truthful no-model action, and distraction-free Focus Mode once a conversation begins
+- Flattened Model Hub into a compact registry and integrated Details into the route canvas while preserving exact artifact actions and durable pause/resume/cancel/retry state
+- Model downloads now use a persistent resumable queue with exact-artifact verification; Android uses UIDT/foreground notifications, iOS reconnects to a background URLSession, and Desktop resumes on relaunch
+- Download admission now evaluates the final immutable request set against canonical published targets and real manifest checkpoints; revision replacement has bounded headroom plus durable, reference-aware, retryable cleanup so repeated installs do not leak superseded generations
+- iOS background completions now validate the actual HTTPS response before capture, persist a bounded exact-task provenance envelope for crash recovery, and coalesce callback/startup import and finalization behind URLSession restoration
+- Android download startup now has one reconciliation barrier shared by UIDT and WorkManager, collapses duplicate owners in favor of the exact UIDT, persists generation-bound Task Manager stops as resumable pauses, and checkpoints cancelled artifact leases atomically
+- Exact model loads now recover and compare the authoritative current owner bundle while holding every expected and candidate repository root on the download subsystem's shared lock, then retain that lifetime through byte revalidation, recovery-marker cleanup, and native open/load; exact Git, LFS, and Xet object IDs are preserved
+- Installed artifacts now live only in validated immutable bundle generations; the unused application database starts at schema version 1, corrupt current rows and journals fail closed, Model Details controls bind to the exact current batch/task identity, iOS background payloads require the same exact persisted binding, and reference-aware deletion preserves every still-linked owner
+- Rebuilt CaraML as a sidebar-first Prism workbench: compact windows use a stationary-content modal panel, tablets use a compact rail, and wider workspaces use a labeled sidebar with contextual generation modes
+- Reframed Create around one focused command composer and explicit activity states; generation modes remain local state while the Create destination stays selected
+- Reworked Model Hub as a compact registry and made Details artifact-first with reachable metadata, exact artifact actions, and durable pause/resume/cancel/retry state
+- Model downloads now use a persistent resumable queue with exact-artifact verification; Android uses UIDT/foreground notifications, iOS restores exact response bounds plus terminal cancellation reasons across relaunch while stopped tasks relinquish ownership before replacement scheduling, and Desktop resumes on relaunch
+- Durable downloads retain exact descriptor evidence and bind its digest into batch identity; persisted payloads use capped allocation-free UTF-8 preflight before hashing or parsing, while uncertain descriptors remain enrichment-only
+- Existing Ready installs repair missing descriptor metadata once through revision-qualified owner/component lookups pinned to each installed commit, persist the complete evidence for offline reuse, and reject ambiguous identities without touching model files
+- Exact repair follows only the Hub's one validated same-repository/same-commit config redirect and rejects deterministic detail/tree/config failures instead of retrying them
+- Installed manifest, Ready catalog, and evidence publication now share bounded owner-scoped coordination; repair performs network lookup outside the owner lock, then rechecks the exact durable baseline and uses Room compare-and-set so stale work cannot overwrite a newer installation
+- Case-distinct owner repairs never coalesce; a cancelled repair generation permits at most one shared successor, a second leader cancellation terminates that generation for every follower, and Model Hub has no direct Ready-publication fallback
+- Inference loading now accepts only a freshly assessed exact `LoadRequest` rebuilt from the complete published bundle, including external-repository artifacts, plus current device/settings state and a newly personalized plan; explicit KV presets and GPU opt-out remain authoritative
+- Installed-model switching now releases resident LLM and diffusion runners before the final resource snapshot and assessment; every confirmation/retry/alternative is bound end-to-end to the exact rendered action, load generation, model, and mode, while CPU alternatives require explicit non-CPU candidate provenance and separate assessment
+- Installed artifact resolution now requires the authoritative immutable Hub manifest; local-content sidecar identities and the resolving request overload have been removed
+- Restored-model native-preflight failures now offer an explicit same-model retry that captures fresh device/settings evidence, revalidates the exact artifact, and requires approval before using a safer CPU plan
+- Quarantined retry, model switching, no-model transitions, and ViewModel teardown now share one atomic runner owner and predecessor barrier, so admitted native work finishes before one full teardown or the next exact load
+- Reorganized Settings as a dense, accessible list with exclusive selections, disclosure rows, and the app's single contextual appearance preview
+- Added a restrained static ambient field and two deliberate grain-backed focal gradients—Details overview and the Settings appearance preview—while keeping navigation, lists, filters, cards, and the composer matte
+- Verified the merged design and durable-download behavior with the repository JVM/native gate, Android assembly, iOS simulator compilation, and a Pixel 9 background download through Ready, safer-plan native load, and local generation
+- Added versioned recommendation/native fixture gates, opt-in real-runner parity, pinned CI jobs, and exact artifact-bound model selection; production remains on the legacy display path until measured physical-device and pinned-runner release evidence exists
+- Added opt-in device calibration with byte-bound descriptor identity, phase-specific raw memory baselines, full run-plan fingerprints, real process-memory provenance, and fail-closed quarantine after unresponsive native probes
+- Model loads now derive typed directory targets only from verified storage roots, bind every native-consumed path to revalidated bytes, and keep multi-sequence plans analytical until strict native admission
+- Assessed diffusion backends now use stable CPU/Metal/Vulkan/CUDA ABI values across JNI and iOS; native preflight losslessly binds each configured source role/path ordinal separately from bundle-internal tensor subdivisions, keeps external TAESD evidence distinct, and verifies planned placement exactly
+- Added bounded, side-effect-free stable-diffusion.cpp preflight with typed component/backend evidence and one shared auto-fit plan for inspection and load
+- Diffusion installs now use deterministic manifest-proven checkpoint/directory identities, recover interrupted bundles independently of tree order, and verify portable multi-config Desktop filesystem runtimes before packaging
+- Added bounded, device-aware model recommendations with immutable Hugging Face metadata, incremental assessment, and profile-local reranking
+- Added persisted Balanced-by-default recommendation profiles with atomic onboarding, rollout-gated Material 3 controls, and rapid-update-safe settings state
+- Added bounded profile-neutral model assessment caching, fresh device-snapshot assembly, and privacy-safe debug shadow comparison with release-safe legacy rollout
+- Hardened side-effect-free llama.cpp preflight with a thread-independent stream session lease, exact pinned quantization labels, trusted capability evidence, exception-safe transient cleanup, and build-owned patched sources that keep the pinned submodule immutable
+- Contained P0/P1 inference failures with live memory admission, cancellable race-safe diffusion handles, failure-atomic llama prompts, bounded disk-backed generated media, and explicit iOS video capability gating
+- Hardened inference and downloads against crashes: serialized native LLM access, contained C++ exceptions at JNI/iOS boundaries, handled missing native libraries, validated generation inputs, and preserved coroutine cancellation
+- Downloads are now path-contained and transactional across Android, iOS, and Desktop: HTTP status/length checks, `.part` staging, atomic commit where supported, cleanup on interruption, and coalesced progress updates
+- Reduced streaming overhead with native deltas, 20 Hz immutable UI snapshots, a single streaming-state collector, and deferred Markdown rendering until generation completes
+- Added stale `params_fit` cache invalidation, bounded Hugging Face request inputs, safe context-reset failure reporting, and resilient bulk deletion
+- Expanded regression coverage for download integrity/traversal, native-session exclusion, streaming resync/throttling, diffusion bounds, cancellation, and API path construction
+- Added a least-privilege GitHub Actions JVM test gate and weekly Dependabot updates; actions are pinned to immutable release commits
+- Removed the obsolete Obsidian MCP config and persisted Graphify's `libraries/` exclusion
+- Consolidated shared Claude Code and Codex project guidance into `AGENTS.md`; `CLAUDE.md` is now a thin import wrapper containing only Claude-specific model policy
+- Added a Graphify knowledge graph for app-owned modules, with interactive HTML, GraphRAG JSON, labeled communities, and an audit report; vendored `libraries/` sources are excluded
+- Inference perf: native delta accessors plus bounded UI snapshots avoid per-token cumulative copying and repeated Markdown parsing
 - Inference perf: hybrid-SSM arch Vulkan denylist (qwen35, jamba, mamba, etc.) skips doomed first-load GPU attempt; suitability sheet now shows runnability warnings for IQ-quant + CPU-only and hybrid-SSM models
 - Reasoning/content split now uses llama.cpp native `common_chat_parse` (per-model chat template), replacing the custom GBNF grammar and name-based classifier
-- Fix: SD Vulkan SIGABRT on Mali-G715/Adreno — `SD_VULKAN` decoupled from `GGML_VULKAN` in Android CMakeLists; `SD_VULKAN=OFF` compiles stable-diffusion.cpp without `SD_USE_VULKAN`, preventing `GGMLRunner` from initializing Vulkan for image generation; `GGML_VULKAN` stays ON for LLM inference; root cause was `ggml_extend.hpp:1967` unconditionally offloading UNet params to Vulkan at inference time regardless of config flags
 - Fix: bk-sdm-tiny model registry now sets `prediction=0` (EPS) explicitly, preventing `is_using_v_parameterization_for_sd2()` probe
 - Fix: `DiffusionInferenceRepository` selfContained branch now propagates `offloadToCpu` from `recommendedParams`
 - Fix: Vulkan SIGABRT during UNet compute — `diffusion_conv_direct=true` now forced for all models (bypasses IM2COL path)
-- Fix: Vulkan crash during image generation — CLIP + VAE now auto-pinned to CPU backend on Vulkan-Android
 - Diffusion optimization pass: SD-Turbo / SDXL-Turbo / LCM-LoRA registry entries now ship correct distilled defaults (4–6 steps, cfg=1.0–1.5, euler_a / lcm sampler), registry-pinned sampler/seed honored in ChatViewModel, flow_shift + free_params_immediately + VAE tiling + optional TAESD path wired through DiffusionModelConfig → JNI/iOS FFI → stable-diffusion.cpp
 - Fix: Vulkan crash on SD2 models — ggml-vulkan GROUP_NORM `supports_op` now requires F32, preventing SIGABRT when loading F16-weight models
 - Model suitability rating (Poor/Average/Good/Best) with color-coded chips, per-variant dots, and bottom-sheet algorithm explainer

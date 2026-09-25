@@ -2,28 +2,24 @@ package com.debanshu777.caraml.features.settings.presentation
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material3.Card
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -32,111 +28,193 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.theme.ThemeDefaults
 import com.debanshu777.caraml.core.theme.ThemeMode
 import com.debanshu777.caraml.core.theme.ThemePaletteStyle
 import com.debanshu777.caraml.core.theme.ThemeViewModel
+import com.debanshu777.caraml.core.theme.prismShapes
+import com.debanshu777.caraml.core.ui.components.AuroraFocalSurface
 
-/**
- * Appearance preferences hosted in [SettingsScreen].
- *
- * Owns its own [ThemeViewModel] (separate from [SettingsViewModel]) so that
- * inference settings and theme settings stay decoupled — the App composition
- * root collects from the same singleton VM, ensuring edits here propagate
- * globally.
- */
-@OptIn(ExperimentalMaterial3Api::class)
+/** Appearance preferences hosted in [SettingsScreen]. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AppearanceSection(
     viewModel: ThemeViewModel,
     modifier: Modifier = Modifier,
 ) {
     val preferences by viewModel.preferences.collectAsState()
+    val spacing = LocalSpacing.current
+    val selectedSeedIndex = ThemeDefaults.PRESET_SEEDS.indexOfFirst { color ->
+        color.argbInt() == preferences.seedColor.argbInt()
+    }
 
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("settings-section-appearance"),
     ) {
-        Column(
-            modifier = Modifier.padding(LocalSpacing.current.l),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
+        SettingsSectionHeader(
+            title = "Appearance",
+            supportingText = "Shape the workspace atmosphere without changing how it works.",
+        )
+
+        AuroraThemePreview(
+            modifier = Modifier.padding(top = spacing.l, bottom = spacing.l),
+        )
+        SettingsRowDivider(tag = "settings-divider-appearance-preview")
+
+        SettingsChoiceBlock(
+            title = "Theme",
+            selectedValue = preferences.themeMode.displayName(),
+        ) {
+            ThemeMode.entries.forEach { mode ->
+                val selected = preferences.themeMode == mode
+                SettingFilterChip(
+                    selected = selected,
+                    onClick = { viewModel.updateThemeMode(mode) },
+                    label = mode.displayName(),
+                    selectedIndicatorTestTag =
+                        "Selected theme ${mode.displayName()}",
+                    modifier = Modifier.semantics {
+                        contentDescription = "Theme ${mode.displayName()}, " +
+                            if (selected) "selected" else "not selected"
+                        stateDescription = if (selected) "Selected" else "Not selected"
+                    },
+                )
+            }
+        }
+        SettingsRowDivider(tag = "settings-divider-appearance-theme")
+
+        SettingsChoiceBlock(
+            title = "Seed color",
+            selectedValue = if (selectedSeedIndex >= 0) {
+                "Color ${selectedSeedIndex + 1}"
+            } else {
+                "Custom color"
+            },
+        ) {
+            ThemeDefaults.PRESET_SEEDS.forEachIndexed { index, color ->
+                SeedSwatch(
+                    color = color,
+                    selected = color.argbInt() == preferences.seedColor.argbInt(),
+                    label = "Seed color ${index + 1}",
+                    selectedIndicatorTestTag = "Selected seed color ${index + 1}",
+                    onClick = { viewModel.updateSeedColor(color) },
+                )
+            }
+        }
+        SettingsRowDivider(tag = "settings-divider-appearance-seed")
+
+        SettingsChoiceBlock(
+            title = "Palette style",
+            selectedValue = preferences.paletteStyle.displayName(),
+            supportingText = preferences.paletteStyle.description(),
+        ) {
+            ThemePaletteStyle.entries.forEach { style ->
+                val selected = preferences.paletteStyle == style
+                SettingFilterChip(
+                    selected = selected,
+                    onClick = { viewModel.updatePaletteStyle(style) },
+                    label = style.displayName(),
+                    selectedIndicatorTestTag =
+                        "Selected palette ${style.displayName()}",
+                    modifier = Modifier.semantics {
+                        contentDescription = "Palette ${style.displayName()}, " +
+                            if (selected) "selected" else "not selected"
+                        stateDescription = if (selected) "Selected" else "Not selected"
+                    },
+                )
+            }
+        }
+        SettingsRowDivider(tag = "settings-divider-appearance")
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SettingsChoiceBlock(
+    title: String,
+    selectedValue: String,
+    supportingText: String? = null,
+    content: @Composable () -> Unit,
+) {
+    val spacing = LocalSpacing.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = spacing.l),
+        verticalArrangement = Arrangement.spacedBy(spacing.s),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(spacing.m),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "Appearance",
+                text = title,
                 style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
             )
+            Text(
+                text = selectedValue,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+        FlowRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .selectableGroup(),
+            horizontalArrangement = Arrangement.spacedBy(spacing.s),
+            verticalArrangement = Arrangement.spacedBy(spacing.s),
+        ) {
+            content()
+        }
+        supportingText?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
 
-            // Theme mode --------------------------------------------------
-            Column(verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.s)) {
-                Text(
-                    text = "Theme",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    ThemeMode.entries.forEachIndexed { index, mode ->
-                        SegmentedButton(
-                            selected = preferences.themeMode == mode,
-                            onClick = { viewModel.updateThemeMode(mode) },
-                            shape = SegmentedButtonDefaults.itemShape(
-                                index = index,
-                                count = ThemeMode.entries.size,
-                            ),
-                            label = { Text(mode.displayName()) },
-                        )
-                    }
-                }
-            }
-
-            // Seed color --------------------------------------------------
-            Column(verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.s)) {
-                Text(
-                    text = "Seed color",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.m),
-                    contentPadding = PaddingValues(vertical = LocalSpacing.current.xs),
-                ) {
-                    items(ThemeDefaults.PRESET_SEEDS) { color ->
-                        SeedSwatch(
-                            color = color,
-                            selected = color.argbInt() == preferences.seedColor.argbInt(),
-                            onClick = { viewModel.updateSeedColor(color) },
-                        )
-                    }
-                }
-            }
-
-            // Palette style -----------------------------------------------
-            Column(verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.s)) {
-                Text(
-                    text = "Palette style",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.s),
-                    contentPadding = PaddingValues(vertical = LocalSpacing.current.xs),
-                ) {
-                    items(ThemePaletteStyle.entries) { style ->
-                        FilterChip(
-                            selected = preferences.paletteStyle == style,
-                            onClick = { viewModel.updatePaletteStyle(style) },
-                            label = { Text(style.displayName()) },
-                            colors = FilterChipDefaults.filterChipColors(),
-                        )
-                    }
-                }
-                Text(
-                    text = preferences.paletteStyle.description(),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+@Composable
+internal fun AuroraThemePreview(modifier: Modifier = Modifier) {
+    AuroraFocalSurface(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 104.dp)
+            .semantics(mergeDescendants = true) {
+                contentDescription = "Current Aurora theme preview"
+            },
+        shape = MaterialTheme.prismShapes.focal,
+    ) {
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = "CaraML workspace",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = "Seed color, atmosphere, and grain",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -145,31 +223,51 @@ fun AppearanceSection(
 private fun SeedSwatch(
     color: Color,
     selected: Boolean,
+    label: String,
+    selectedIndicatorTestTag: String,
     onClick: () -> Unit,
 ) {
-    val borderColor =
-        if (selected) MaterialTheme.colorScheme.primary
-        else MaterialTheme.colorScheme.outlineVariant
+    val borderColor = if (selected) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.outlineVariant
+    }
     val borderWidth = if (selected) 3.dp else 1.dp
-    // 48dp meets the WCAG 2.5.8 / Material accessibility minimum touch target.
-    Box(
-        modifier = Modifier
-            .size(48.dp)
-            .clip(CircleShape)
-            .background(color)
-            .border(borderWidth, borderColor, CircleShape)
-            .clickable(
-                onClickLabel = if (selected) "Selected seed color" else "Use this seed color",
-                onClick = onClick,
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
+    Box(modifier = Modifier.size(48.dp)) {
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .clip(CircleShape)
+                .background(color)
+                .border(borderWidth, borderColor, CircleShape)
+                .semantics {
+                    contentDescription = label
+                    stateDescription = if (selected) "Selected" else "Not selected"
+                }
+                .selectable(
+                    selected = selected,
+                    role = Role.RadioButton,
+                    onClick = onClick,
+                ),
+        )
         if (selected) {
-            Icon(
-                imageVector = Icons.Default.Check,
-                contentDescription = null,
-                tint = Color.White,
-            )
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .size(20.dp)
+                    .testTag(selectedIndicatorTestTag),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                    )
+                }
+            }
         }
     }
 }
@@ -192,11 +290,6 @@ private fun ThemePaletteStyle.displayName(): String = when (this) {
     ThemePaletteStyle.FRUIT_SALAD -> "Fruit Salad"
 }
 
-/**
- * One-line trade-off explainer shown under the chip row. Surfaces the fact that
- * some styles (Expressive, Rainbow, Fruit Salad) deliberately diverge hues from
- * the seed — which can look "inconsistent" to users expecting one dominant color.
- */
 private fun ThemePaletteStyle.description(): String = when (this) {
     ThemePaletteStyle.TONAL_SPOT -> "Balanced Material 3 default — secondary hues stay near the seed."
     ThemePaletteStyle.NEUTRAL -> "Muted, low-chroma palette — closest to grayscale."

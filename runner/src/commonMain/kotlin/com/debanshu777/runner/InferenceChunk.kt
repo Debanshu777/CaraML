@@ -1,7 +1,11 @@
 package com.debanshu777.runner
 
-/** Cumulative parsed model output for the current turn. */
+/** Lossless parser deltas for one native token event. */
 data class InferenceChunk(
-    val reasoning: String,
-    val content: String,
+    val reasoningDelta: String,
+    val contentDelta: String,
+    val reasoningResync: Boolean = false,
+    val contentResync: Boolean = false,
+    val isTokenEvent: Boolean = true,
+    val nativeDecodeNanoseconds: Long = 0L,
 )

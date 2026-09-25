@@ -1,25 +1,11 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search.components
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-import com.debanshu777.caraml.core.platform.DeviceHints
-import com.debanshu777.caraml.core.rating.ModelSuitabilityCalculator
-import com.debanshu777.caraml.core.rating.SdArchitectureClassifier
-import com.debanshu777.caraml.core.rating.SuitabilityResult
-import com.debanshu777.caraml.core.rating.ui.SuitabilityChip
+import com.debanshu777.caraml.core.recommendation.RecommendationCategory
+import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
+import com.debanshu777.caraml.features.modelhub.domain.RecommendedModelUiState
 import com.debanshu777.huggingfacemanager.model.ListModelsResponse
 
 @Composable
@@ -27,78 +13,38 @@ fun ModelListItem(
     model: ListModelsResponse.Model?,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    deviceHints: DeviceHints? = null,
-    onRatingInfoClick: ((modelId: String, result: SuitabilityResult) -> Unit)? = null,
+    recommendationState: RecommendedModelUiState? = null,
+    onRecommendationInfoClick: (() -> Unit)? = null,
 ) {
     if (model == null) return
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            Text(
-                text = model.id ?: "Unknown",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = buildString {
-                    model.author?.let { append("by $it") }
-                    model.pipelineTag?.let { if (isNotEmpty()) append(" • ") else Unit; append(it) }
-                    append(" • ")
-                    append("${model.downloads ?: 0} downloads")
-                    append(" • ")
-                    append("${model.likes ?: 0} likes")
-                    model.numParameters?.let { append(" • ${formatParams(it)} params") }
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-
-            // Suitability rating chip — assumes Q4_K_M when no variant is known
-            // (search list doesn't expose per-variant file sizes). Tap opens the
-            // explainer sheet hoisted in SearchScreen.
-            if (deviceHints != null) {
-                Spacer(modifier = Modifier.height(8.dp))
-                val isDiffusion = model.pipelineTag?.let { tag ->
-                    tag.contains("text-to-image", ignoreCase = true) ||
-                    tag.contains("text-to-video", ignoreCase = true) ||
-                    tag.contains("image-to-image", ignoreCase = true)
-                } == true
-                val result = if (isDiffusion) {
-                    val arch = SdArchitectureClassifier.classify(
-                        tags = emptyList(),
-                        modelId = model.id ?: "",
-                    )
-                    ModelSuitabilityCalculator.rateDiffusion(
-                        hints = deviceHints,
-                        architecture = arch,
-                    )
-                } else {
-                    ModelSuitabilityCalculator.rateLlm(
-                        hints = deviceHints,
-                        numParameters = model.numParameters,
-                        pipelineTag = model.pipelineTag,
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SuitabilityChip(
-                        rating = result.rating,
-                        onInfoClick = onRatingInfoClick?.let { cb ->
-                            { cb(model.id ?: "Unknown", result) }
-                        },
-                    )
-                }
+    val trailingContent: (@Composable RowScope.() -> Unit)? =
+        recommendationState?.selectedVariantName?.let { selectedVariantName ->
+            {
+                SelectedVariantLabel(selectedVariantName)
             }
         }
-    }
-    HorizontalDivider()
+    ModelResultCard(
+        title = model.id ?: "Unknown",
+        author = model.author?.let { "by $it" },
+        metadata = buildString {
+            model.pipelineTag?.let(::append)
+            if (isNotEmpty()) append(" • ")
+            append("${formatCompactMetric((model.downloads ?: 0).toLong())} downloads")
+            model.numParameters?.let { append(" • ${formatParams(it)} params") }
+        },
+        status = {
+            ModelRecommendationStatus(
+                state = recommendationState?.descriptorState ?: DescriptorState.NEEDS_INFORMATION,
+                recommendation = recommendationState?.personalizedResult,
+                onInfoClick = onRecommendationInfoClick,
+            )
+        },
+        onClick = onClick,
+        modifier = modifier,
+        highlighted = recommendationState?.personalizedResult?.category ==
+            RecommendationCategory.RECOMMENDED,
+        trailing = trailingContent,
+    )
 }
 
 private fun formatParams(params: Long): String {

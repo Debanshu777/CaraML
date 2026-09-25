@@ -5,6 +5,7 @@ import com.debanshu777.caraml.core.platform.AppLogger
 import com.debanshu777.caraml.features.chat.data.ChatMessage
 import com.debanshu777.caraml.features.chat.data.MessageRole
 import com.debanshu777.caraml.features.chat.domain.ChatConfig
+import kotlinx.coroutines.CancellationException
 
 sealed interface ContextResetResult {
     data object Success : ContextResetResult
@@ -28,8 +29,11 @@ class ManageContextUseCase(
         return try {
             val nonSystemMessages = messages.filter { it.role != MessageRole.System }
             if (nonSystemMessages.isEmpty()) {
-                inferenceRepository.resetContextWithSummary("", "")
-                return ContextResetResult.Success
+                return if (inferenceRepository.resetContextWithSummary("", "")) {
+                    ContextResetResult.Success
+                } else {
+                    ContextResetResult.Failure
+                }
             }
 
             val lastExchange = nonSystemMessages
@@ -40,17 +44,22 @@ class ManageContextUseCase(
             val summary = buildSummary(olderMessages)
 
             val resetOk = inferenceRepository.resetContextWithSummary(summary, lastExchange)
-            if (!resetOk) {
-                inferenceRepository.resetContextWithSummary("", lastExchange)
+            when {
+                resetOk -> ContextResetResult.Success
+                inferenceRepository.resetContextWithSummary("", lastExchange) -> ContextResetResult.Success
+                else -> ContextResetResult.Failure
             }
-            ContextResetResult.Success
-        } catch (e: Exception) {
-            try {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            val cleared = try {
                 inferenceRepository.resetContextWithSummary("", "")
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
-                // Give up silently
+                false
             }
-            ContextResetResult.Success
+            if (cleared) ContextResetResult.Success else ContextResetResult.Failure
         }
     }
 
@@ -60,7 +69,9 @@ class ManageContextUseCase(
         val sb = StringBuilder()
         try {
             inferenceRepository.summarizeConversation(transcript).collect { sb.append(it) }
-        } catch (e: Exception) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
             val fallback = messages
                 .takeLast(config.fallbackSummaryMessageCount)
                 .joinToString("\n") { "${it.role}: ${it.text.take(config.fallbackSummaryCharLimit)}" }

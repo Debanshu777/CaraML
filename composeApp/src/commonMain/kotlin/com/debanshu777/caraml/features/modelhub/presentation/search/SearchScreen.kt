@@ -1,73 +1,103 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.background
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyItemScope
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.PrimaryTabRow
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.debanshu777.caraml.core.drawer.LocalDrawerController
-import com.debanshu777.caraml.core.platform.DeviceHints
-import com.debanshu777.caraml.core.rating.SuitabilityRating
-import com.debanshu777.caraml.core.rating.SuitabilityResult
-import com.debanshu777.caraml.core.rating.ui.SuitabilityChip
-import com.debanshu777.caraml.core.rating.ui.SuitabilityInfoSheet
+import com.debanshu777.caraml.core.drawer.LocalAppWindowWidth
+import com.debanshu777.caraml.core.recommendation.RecommendationProfile
+import com.debanshu777.caraml.core.recommendation.RecommendationRolloutModeSource
+import com.debanshu777.caraml.core.recommendation.RiskTolerance
+import com.debanshu777.caraml.core.recommendation.OptimizationPriority
+import com.debanshu777.caraml.core.rating.ui.RecommendationDetailsSheet
+import com.debanshu777.caraml.core.rating.ui.recommendationPresentation
+import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
 import com.debanshu777.caraml.core.theme.LocalSpacing
+import com.debanshu777.caraml.core.theme.auroraColors
+import com.debanshu777.caraml.core.theme.prismShapes
+import com.debanshu777.caraml.core.ui.components.CaraMLPrimaryTopBar
+import com.debanshu777.caraml.core.ui.layout.AppContentKind
+import com.debanshu777.caraml.core.ui.layout.ResponsiveContentPane
+import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
+import com.debanshu777.caraml.core.ui.motion.AuroraMotionPolicy
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.DownloadedModelsViewModel
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.ReadinessFilter
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.components.LocalModelListItem
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelListItem
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubContextStrip
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubHeader
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubStateKind
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubStateView
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubToolbar
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.RecommendationProfileDialog
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.QuickCalibrationDialog
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchBar
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchModelListItem
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.SortFilterChips
+import com.debanshu777.caraml.features.modelhub.domain.RecommendedModelUiState
+import com.debanshu777.caraml.features.settings.presentation.RecommendationProfileSection
+import com.debanshu777.caraml.features.settings.presentation.SettingsViewModel
 import kotlinx.coroutines.launch
+import org.koin.compose.koinInject
+import org.koin.compose.viewmodel.koinViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,92 +106,277 @@ fun SearchScreen(
     downloadedModelsViewModel: DownloadedModelsViewModel,
     onNavigateToDetails: (modelId: String, hubBrowseMode: ModelHubBrowseMode) -> Unit,
     onSelectModelAndGoBack: (LocalModelEntity) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    settingsViewModel: SettingsViewModel = koinViewModel(),
+    rolloutModeSource: RecommendationRolloutModeSource = koinInject(),
 ) {
     var selectedTabIndex by remember { mutableStateOf(0) }
-    val tabs = listOf("Search", "Downloaded")
 
     val storageInfo by modelViewModel.storageInfo.collectAsState()
+    val settings by settingsViewModel.settings.collectAsState()
+    val settingsLoaded by settingsViewModel.settingsLoaded.collectAsState()
+    val effectiveProfile by settingsViewModel.effectiveRecommendationProfile.collectAsState()
+    val profileSaving by settingsViewModel.isRecommendationProfileSaving.collectAsState()
+    val profileError by settingsViewModel.recommendationProfileError.collectAsState()
+    val quickCalibration by modelViewModel.quickCalibration.collectAsState()
+    val persistedProfileState = profileUiState(
+        settings = settings,
+        rolloutMode = rolloutModeSource.current(),
+        settingsLoaded = settingsLoaded,
+    )
+    val recommendationProfileState = persistedProfileState.copy(profile = effectiveProfile)
+    var profileEditorVisible by remember { mutableStateOf(false) }
 
-    // Shared bottom sheet — opened from any rating chip in the list.
-    var ratingSheetModelId by remember { mutableStateOf<String?>(null) }
-    var ratingSheetResult by remember { mutableStateOf<SuitabilityResult?>(null) }
+    var recommendationSheetState by remember { mutableStateOf<RecommendedModelUiState?>(null) }
 
-    val drawerController = LocalDrawerController.current
     val snackbarHostState = remember { SnackbarHostState() }
 
-    Scaffold(
+    ModelHubScreenLayout(
+        selectedTabIndex = selectedTabIndex,
+        onTabSelected = { selectedTabIndex = it },
         modifier = modifier,
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        topBar = {
-            TopAppBar(
-                title = { Text("Models") },
-                navigationIcon = {
-                    IconButton(onClick = { drawerController.toggle() }) {
-                        Icon(Icons.Default.Menu, contentDescription = "Open menu")
-                    }
-                }
+        snackbarHostState = snackbarHostState,
+        discoverContent = {
+            SearchTabContent(
+                viewModel = modelViewModel,
+                storageInfo = storageInfo,
+                onNavigateToDetails = onNavigateToDetails,
+                onRecommendationInfoClick = { recommendationSheetState = it },
+                recommendationProfileState = recommendationProfileState,
+                onOpenProfileEditor = { profileEditorVisible = true },
+                modifier = Modifier.fillMaxSize(),
             )
-        }
-    ) { paddingValues ->
-        Column(modifier = Modifier.padding(paddingValues)) {
-            StorageInfoBar(storageInfo = storageInfo)
-            DeviceInfoSection(deviceHints = storageInfo.deviceHints)
-            PrimaryTabRow(selectedTabIndex = selectedTabIndex) {
-                tabs.forEachIndexed { index, title ->
-                    Tab(
-                        selected = selectedTabIndex == index,
-                        onClick = { selectedTabIndex = index },
-                        text = { Text(title) }
-                    )
-                }
-            }
+        },
+        libraryContent = {
+            DownloadedTabContent(
+                viewModel = downloadedModelsViewModel,
+                storageInfo = storageInfo,
+                onSelectModelAndGoBack = onSelectModelAndGoBack,
+                onNavigateToDetails = onNavigateToDetails,
+                snackbarHostState = snackbarHostState,
+                modifier = Modifier.fillMaxSize(),
+            )
+        },
+    )
 
-            when (selectedTabIndex) {
-                0 -> SearchTabContent(
-                    viewModel = modelViewModel,
-                    onNavigateToDetails = onNavigateToDetails,
-                    deviceHints = storageInfo.deviceHints,
-                    onRatingInfoClick = { id, result ->
-                        ratingSheetModelId = id
-                        ratingSheetResult = result
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
-
-                1 -> DownloadedTabContent(
-                    viewModel = downloadedModelsViewModel,
-                    onSelectModelAndGoBack = onSelectModelAndGoBack,
-                    onNavigateToDetails = onNavigateToDetails,
-                    snackbarHostState = snackbarHostState,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-        }
+    val sheetState = recommendationSheetState
+    val sheetRecommendation = sheetState?.personalizedResult
+    if (sheetState != null && sheetRecommendation != null) {
+        RecommendationDetailsSheet(
+            modelId = sheetState.repositoryId ?: sheetState.stableModelId,
+            recommendation = sheetRecommendation,
+            presentation = recommendationPresentation(
+                sheetRecommendation,
+                sheetState.selectedVariantName,
+                sheetState.workload,
+            ),
+            onDismiss = { recommendationSheetState = null },
+        )
     }
 
-    val sheetResult = ratingSheetResult
-    val sheetModelId = ratingSheetModelId
-    if (sheetResult != null && sheetModelId != null) {
-        SuitabilityInfoSheet(
-            modelId = sheetModelId,
-            result = sheetResult,
-            deviceHints = storageInfo.deviceHints,
-            onDismiss = {
-                ratingSheetResult = null
-                ratingSheetModelId = null
+    if (profileEditorVisible && recommendationProfileState.isAvailable) {
+        RecommendationProfileEditorSheet(
+            profile = recommendationProfileState.profile,
+            saving = profileSaving,
+            errorMessage = profileError,
+            onDismiss = { profileEditorVisible = false },
+            onRiskToleranceChange = settingsViewModel::updateRiskTolerance,
+            onOptimizationPriorityChange = settingsViewModel::updateOptimizationPriority,
+        )
+    }
+
+    if (recommendationProfileState.showDialog) {
+        RecommendationProfileDialog(
+            initial = recommendationProfileState.profile,
+            onContinue = settingsViewModel::completeModelProfileOnboarding,
+            onDismissWithBalanced = {
+                settingsViewModel.completeModelProfileOnboarding(RecommendationProfile())
             },
+            submitting = profileSaving,
+            errorMessage = profileError,
+        )
+    }
+
+    if (recommendationProfileState.isAvailable &&
+        settings.modelProfileOnboardingComplete &&
+        !settings.recommendationCalibrationOfferComplete
+    ) {
+        QuickCalibrationDialog(
+            state = quickCalibration,
+            onRun = { modelViewModel.runQuickCalibration() },
+            onRunWithUnknownPower = { modelViewModel.runQuickCalibration(allowUnknownPower = true) },
+            onCancel = modelViewModel::cancelQuickCalibration,
+            onSkip = modelViewModel::skipQuickCalibration,
         )
     }
 }
 
 @Composable
-private fun SearchTabContent(
+internal fun ModelHubScreenLayout(
+    selectedTabIndex: Int,
+    onTabSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    snackbarHostState: SnackbarHostState? = null,
+    discoverContent: @Composable () -> Unit,
+    libraryContent: @Composable () -> Unit,
+) {
+    val tabs = listOf("Discover", "Library")
+    Scaffold(
+        modifier = modifier,
+        containerColor = Color.Transparent,
+        snackbarHost = {
+            if (snackbarHostState != null) SnackbarHost(snackbarHostState)
+        },
+        topBar = {
+            CaraMLPrimaryTopBar(
+                title = "Models",
+                contentKind = AppContentKind.ModelHub,
+            )
+        },
+    ) { paddingValues ->
+        ResponsiveContentPane(
+            kind = AppContentKind.ModelHub,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues),
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                ModelHubTabRow(
+                    tabs = tabs,
+                    selectedTabIndex = selectedTabIndex,
+                    onTabSelected = onTabSelected,
+                )
+                Box(modifier = Modifier.weight(1f)) {
+                    when (selectedTabIndex) {
+                        0 -> discoverContent()
+                        1 -> libraryContent()
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModelHubTabRow(
+    tabs: List<String>,
+    selectedTabIndex: Int,
+    onTabSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("model-tabs"),
+    ) {
+        tabs.forEachIndexed { index, title ->
+            val selected = selectedTabIndex == index
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 48.dp)
+                    .selectable(
+                        selected = selected,
+                        onClick = { onTabSelected(index) },
+                        role = Role.Tab,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (selected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .heightIn(min = 2.dp, max = 2.dp)
+                        .background(
+                            if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                        ),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun ModelHubTabLayout(
+    context: @Composable () -> Unit,
+    toolbar: @Composable () -> Unit,
+    summary: @Composable () -> Unit,
+    results: LazyListScope.() -> Unit,
+    modifier: Modifier = Modifier,
+    windowWidth: Dp? = null,
+    command: (@Composable () -> Unit)? = null,
+) {
+    BoxWithConstraints(modifier = modifier) {
+        val supportingWidth = 296.dp
+        val paneGap = 16.dp
+        val effectiveWindowWidth = windowWidth ?: maxWidth
+        val useSupportingContext = effectiveWindowWidth >= 840.dp &&
+            maxWidth - supportingWidth - paneGap >= 480.dp
+
+        val primaryContent: @Composable (Modifier, Boolean) -> Unit =
+            { primaryModifier, includeContext ->
+                LazyColumn(
+                    modifier = primaryModifier.testTag("model-primary-results"),
+                    contentPadding = PaddingValues(bottom = LocalSpacing.current.xxl),
+                ) {
+                    command?.let { commandContent ->
+                        item(key = "model-command") {
+                            Box(Modifier.padding(bottom = 8.dp)) { commandContent() }
+                        }
+                    }
+                    if (includeContext) {
+                        item(key = "model-context") {
+                            Box(Modifier.padding(bottom = 8.dp)) { context() }
+                        }
+                    }
+                    item(key = "model-toolbar") {
+                        Box(Modifier.padding(bottom = 4.dp)) { toolbar() }
+                    }
+                    item(key = "model-summary") {
+                        summary()
+                    }
+                    results()
+                }
+            }
+
+        if (useSupportingContext) {
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.spacedBy(paneGap),
+            ) {
+                primaryContent(Modifier.weight(1f), false)
+                Column(
+                    modifier = Modifier
+                        .width(supportingWidth)
+                        .testTag("model-supporting-context"),
+                ) {
+                    context()
+                }
+            }
+        } else {
+            primaryContent(Modifier.fillMaxSize(), true)
+        }
+    }
+}
+
+@Composable
+internal fun SearchTabContent(
     viewModel: ModelViewModel,
+    storageInfo: StorageInfoUiState,
     onNavigateToDetails: (modelId: String, hubBrowseMode: ModelHubBrowseMode) -> Unit,
-    deviceHints: DeviceHints?,
-    onRatingInfoClick: (modelId: String, result: SuitabilityResult) -> Unit,
-    modifier: Modifier = Modifier
+    onRecommendationInfoClick: (RecommendedModelUiState) -> Unit,
+    recommendationProfileState: RecommendationProfileUiState,
+    onOpenProfileEditor: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val browseMode by viewModel.browseMode.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
@@ -173,423 +388,447 @@ private fun SearchTabContent(
     val listResponse by viewModel.listResponse.collectAsState()
     val isListLoading by viewModel.isListLoading.collectAsState()
     val listError by viewModel.listError.collectAsState()
+    val modelOrdering by viewModel.modelOrdering.collectAsState()
+    val recommendedModels by viewModel.recommendedModels.collectAsState()
+
+    var imageQuery by rememberSaveable { mutableStateOf("") }
+    var videoQuery by rememberSaveable { mutableStateOf("") }
 
     val isLlmHub = browseMode == ModelHubBrowseMode.LanguageModels
     val isSearchMode = isLlmHub && (searchQuery.isNotEmpty() || searchResponse != null)
 
-    Column(modifier = modifier) {
-        val chipScroll = rememberScrollState()
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(chipScroll)
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            FilterChip(
-                selected = browseMode == ModelHubBrowseMode.LanguageModels,
-                onClick = { viewModel.setBrowseMode(ModelHubBrowseMode.LanguageModels) },
-                label = { Text("LLM") }
-            )
-            FilterChip(
-                selected = browseMode == ModelHubBrowseMode.DiffusionImage,
-                onClick = { viewModel.setBrowseMode(ModelHubBrowseMode.DiffusionImage) },
-                label = { Text("Image") }
-            )
-            FilterChip(
-                selected = browseMode == ModelHubBrowseMode.DiffusionVideo,
-                onClick = { viewModel.setBrowseMode(ModelHubBrowseMode.DiffusionVideo) },
-                label = { Text("Video") }
-            )
+    val motion = LocalAuroraMotionPolicy.current
+    val browseModels = if (modelOrdering is ModelOrdering.Personalized) {
+        recommendedModels.map { it.sourceModel }
+    } else {
+        listResponse?.models?.filterNotNull() ?: emptyList()
+    }
+    val curatedQuery = when (browseMode) {
+        ModelHubBrowseMode.LanguageModels -> ""
+        ModelHubBrowseMode.DiffusionImage -> imageQuery
+        ModelHubBrowseMode.DiffusionVideo -> videoQuery
+    }
+    val normalizedCuratedQuery = curatedQuery.trim()
+    val visibleBrowseModels = if (isLlmHub || normalizedCuratedQuery.isEmpty()) {
+        browseModels
+    } else {
+        browseModels.filter { model ->
+            model.id.orEmpty().contains(normalizedCuratedQuery, ignoreCase = true)
         }
+    }
+    val activeFilterCount = listOf(
+        listParams.sort != com.debanshu777.huggingfacemanager.model.ModelSort.TRENDING,
+        listParams.minParams != com.debanshu777.huggingfacemanager.model.ParameterRange.ZERO,
+        listParams.maxParams != com.debanshu777.huggingfacemanager.model.ParameterRange.SIX_B,
+    ).count { it }
+    val visibleActiveFilterCount = if (isLlmHub && !isSearchMode) activeFilterCount else 0
+    val visibleResultCount = if (isSearchMode) {
+        searchResponse?.modelsCount ?: searchResponse?.models?.filterNotNull()?.size ?: 0
+    } else if (!isLlmHub) {
+        visibleBrowseModels.size
+    } else if (modelOrdering is ModelOrdering.Personalized) {
+        visibleBrowseModels.size
+    } else {
+        listResponse?.numTotalItems ?: visibleBrowseModels.size
+    }
+    val resetFilters = {
+        viewModel.updateParams(
+            sort = com.debanshu777.huggingfacemanager.model.ModelSort.TRENDING,
+            minParams = com.debanshu777.huggingfacemanager.model.ParameterRange.ZERO,
+            maxParams = com.debanshu777.huggingfacemanager.model.ParameterRange.SIX_B,
+        )
+        viewModel.setModelOrdering(
+            ModelOrdering.Server(com.debanshu777.huggingfacemanager.model.ModelSort.TRENDING),
+        )
+        viewModel.loadModels()
+    }
 
-        if (!isLlmHub) {
-            Text(
-                text = "Curated Hugging Face repos from stable-diffusion.cpp docs (no search).",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-            )
-        }
-
-        if (isLlmHub) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                SearchBar(
+    ModelHubTabLayout(
+        modifier = modifier,
+        windowWidth = LocalAppWindowWidth.current,
+        command = {
+            when (browseMode) {
+                ModelHubBrowseMode.LanguageModels -> SearchBar(
                     query = searchQuery,
-                    onQueryChange = { viewModel.updateSearchQuery(it) },
+                    onQueryChange = viewModel::updateSearchQuery,
                     onSearch = {
-                        if (searchQuery.isNotEmpty()) {
-                            viewModel.performSearch()
-                        } else {
-                            viewModel.loadModels()
+                        when {
+                            searchQuery.isNotEmpty() -> viewModel.performSearch()
+                            searchResponse != null || searchError != null -> viewModel.clearSearch()
+                            else -> viewModel.loadModels()
                         }
                     },
-                    modifier = Modifier.fillMaxWidth()
+                    onClear = viewModel::clearSearch,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                ModelHubBrowseMode.DiffusionImage -> SearchBar(
+                    query = imageQuery,
+                    onQueryChange = { imageQuery = it.take(MAX_LOCAL_MODEL_QUERY_LENGTH) },
+                    onSearch = {},
+                    onClear = { imageQuery = "" },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                ModelHubBrowseMode.DiffusionVideo -> SearchBar(
+                    query = videoQuery,
+                    onQueryChange = { videoQuery = it.take(MAX_LOCAL_MODEL_QUERY_LENGTH) },
+                    onSearch = {},
+                    onClear = { videoQuery = "" },
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
-        }
-
-        if (isSearchMode) {
-            if (searchResponse != null || searchError != null) {
-                Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                    Text(
-                        text = "Results for \"$searchQuery\" (${searchResponse?.modelsCount ?: 0} models)",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(vertical = 8.dp)
-                    )
-                    TextButton(
-                        onClick = {
-                            viewModel.clearSearch()
-                        }
-                    ) {
-                        Text("← Back to Browse")
-                    }
-                }
-            }
-        } else if (isLlmHub) {
-            SortFilterChips(
+        },
+        context = {
+            ModelHubContextStrip(
+                storageInfo = storageInfo,
+                profile = if (recommendationProfileState.isAvailable) {
+                    recommendationProfileState.profile
+                } else {
+                    null
+                },
+                onOpenProfile = if (recommendationProfileState.isAvailable) {
+                    onOpenProfileEditor
+                } else {
+                    null
+                },
+            )
+        },
+        toolbar = {
+            ModelHubToolbar(
+                browseMode = browseMode,
+                onBrowseModeChange = viewModel::setBrowseMode,
+                showSortFilters = isLlmHub && !(
+                    isSearchMode && (searchResponse != null || searchError != null)
+                ),
+                ordering = modelOrdering,
                 sort = listParams.sort,
                 minParams = listParams.minParams,
                 maxParams = listParams.maxParams,
-                onSortChange = { viewModel.updateParams(sort = it) },
+                onSortChange = {
+                    viewModel.updateParams(sort = it)
+                    viewModel.setModelOrdering(ModelOrdering.Server(it))
+                },
+                onOrderingChange = viewModel::setModelOrdering,
                 onMinParamsChange = { viewModel.updateParams(minParams = it) },
-                onMaxParamsChange = { viewModel.updateParams(maxParams = it) }
+                onMaxParamsChange = { viewModel.updateParams(maxParams = it) },
+                onFiltersApplied = viewModel::loadModels,
+            )
+        },
+        summary = {
+            ModelHubResultSummary(
+                resultCount = visibleResultCount,
+                resultNoun = if (isSearchMode) "results" else "models",
+                query = if (isSearchMode) {
+                    searchQuery
+                } else {
+                    curatedQuery.takeIf(String::isNotBlank)
+                },
+                activeFilterCount = visibleActiveFilterCount,
+                onClearQuery = when (browseMode) {
+                    ModelHubBrowseMode.LanguageModels -> viewModel::clearSearch
+                    ModelHubBrowseMode.DiffusionImage -> ({ imageQuery = "" })
+                    ModelHubBrowseMode.DiffusionVideo -> ({ videoQuery = "" })
+                },
+                onResetFilters = if (visibleActiveFilterCount > 0) resetFilters else null,
+            )
+        },
+        results = {
+            if (isSearchMode) {
+                modelHubResultItems(
+                    isLoading = isSearchLoading,
+                    hasResponse = searchResponse != null,
+                    errorMessage = searchError,
+                    models = searchResponse?.models?.filterNotNull() ?: emptyList(),
+                    itemKey = { "search-${it.id ?: it.hashCode()}" },
+                    blockingLoadingKey = "search-loading",
+                    refreshLoadingKey = "search-refreshing",
+                    errorKey = "search-error",
+                    emptyKey = "search-empty",
+                    blockingLoadingDescription = "Loading search results",
+                    refreshLoadingDescription = "Refreshing search results",
+                    emptyMessage = "No models match “$searchQuery”.",
+                    errorActionLabel = "Retry",
+                    onErrorAction = viewModel::performSearch,
+                    motion = motion,
+                ) { model, itemModifier ->
+                    val recommendationState = recommendedModels.firstOrNull {
+                        it.repositoryId == model.id
+                    }
+                    SearchModelListItem(
+                        model = model,
+                        modifier = itemModifier,
+                        recommendationState = recommendationState,
+                        onRecommendationInfoClick = recommendationState
+                            ?.takeIf { it.personalizedResult != null }
+                            ?.let { state -> { onRecommendationInfoClick(state) } },
+                        onClick = {
+                            model.id?.let { id -> onNavigateToDetails(id, browseMode) }
+                        },
+                    )
+                }
+            } else {
+                modelHubResultItems(
+                    isLoading = isListLoading,
+                    hasResponse = listResponse != null,
+                    errorMessage = listError,
+                    models = visibleBrowseModels,
+                    itemKey = { "browse-${it.id ?: it.hashCode()}" },
+                    blockingLoadingKey = "list-loading",
+                    refreshLoadingKey = "list-refreshing",
+                    errorKey = "list-error",
+                    emptyKey = "list-empty",
+                    blockingLoadingDescription = "Loading models",
+                    refreshLoadingDescription = "Refreshing models",
+                    emptyMessage = if (!isLlmHub && normalizedCuratedQuery.isNotEmpty()) {
+                        "No curated models match “$curatedQuery”."
+                    } else if (visibleActiveFilterCount > 0) {
+                        "No models match the active filters."
+                    } else if (isLlmHub) {
+                        "No models are available yet."
+                    } else {
+                        "No curated models are available."
+                    },
+                    errorActionLabel = "Retry",
+                    onErrorAction = {
+                        if (isLlmHub) viewModel.loadModels() else viewModel.setBrowseMode(browseMode)
+                    },
+                    motion = motion,
+                ) { model, itemModifier ->
+                    val recommendationState = recommendedModels.firstOrNull {
+                        it.repositoryId == model.id
+                    }
+                    ModelListItem(
+                        model = model,
+                        modifier = itemModifier,
+                        onClick = {
+                            model.id?.let { id -> onNavigateToDetails(id, browseMode) }
+                        },
+                        recommendationState = recommendationState,
+                        onRecommendationInfoClick = recommendationState
+                            ?.takeIf { it.personalizedResult != null }
+                            ?.let { state -> { onRecommendationInfoClick(state) } },
+                    )
+                }
+            }
+        },
+    )
+}
+
+@Composable
+internal fun ModelHubResultSummary(
+    resultCount: Int,
+    resultNoun: String = "models",
+    query: String? = null,
+    activeFilterCount: Int = 0,
+    onClearQuery: (() -> Unit)? = null,
+    onResetFilters: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
+    val noun = if (resultCount == 1) resultNoun.removeSuffix("s") else resultNoun
+    val summary = buildList {
+        query?.takeIf(String::isNotBlank)?.let { add("Query: “$it”") }
+        if (activeFilterCount > 0) {
+            add("$activeFilterCount ${if (activeFilterCount == 1) "filter" else "filters"} active")
+        }
+    }.joinToString(" · ").ifBlank { null }
+    val actionLabel: String?
+    val action: (() -> Unit)?
+    if (activeFilterCount > 0 && onResetFilters != null) {
+        actionLabel = "Reset filters"
+        action = onResetFilters
+    } else if (!query.isNullOrBlank() && onClearQuery != null) {
+        actionLabel = "Clear query"
+        action = onClearQuery
+    } else {
+        actionLabel = null
+        action = null
+    }
+    ModelHubHeader(
+        title = "$resultCount $noun",
+        summary = summary,
+        actionLabel = actionLabel,
+        onAction = action,
+        modifier = modifier,
+    )
+}
+
+@Composable
+internal fun SearchResultsSummary(
+    query: String,
+    resultCount: Int,
+    onClear: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "Results for “$query” · $resultCount",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onClear) {
+            Text("Clear")
+        }
+    }
+}
+
+internal fun <T> LazyListScope.modelHubResultItems(
+    isLoading: Boolean,
+    hasResponse: Boolean,
+    errorMessage: String?,
+    models: List<T>,
+    itemKey: (T) -> Any,
+    blockingLoadingKey: String,
+    refreshLoadingKey: String,
+    errorKey: String,
+    emptyKey: String,
+    blockingLoadingDescription: String,
+    refreshLoadingDescription: String,
+    emptyMessage: String,
+    errorActionLabel: String? = null,
+    onErrorAction: (() -> Unit)? = null,
+    emptyActionLabel: String? = null,
+    onEmptyAction: (() -> Unit)? = null,
+    motion: AuroraMotionPolicy,
+    itemContent: @Composable LazyItemScope.(T, Modifier) -> Unit,
+) {
+    if (isLoading && !hasResponse) {
+        item(key = blockingLoadingKey) {
+            ModelHubStateView(
+                kind = ModelHubStateKind.Loading,
+                message = blockingLoadingDescription,
+                modifier = Modifier.semantics {
+                    contentDescription = blockingLoadingDescription
+                },
             )
         }
+        return
+    }
 
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            contentAlignment = Alignment.Center
-        ) {
-            when {
-                isSearchMode -> {
-                    when {
-                        isSearchLoading -> CircularProgressIndicator()
-                        searchError != null -> Text(
-                            text = searchError ?: "Something went wrong. Please try again.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.error
-                        )
+    if (errorMessage != null) {
+        item(key = errorKey) {
+            ModelHubStateView(
+                kind = ModelHubStateKind.Error,
+                message = errorMessage,
+                actionLabel = errorActionLabel,
+                onAction = onErrorAction,
+            )
+        }
+        return
+    }
 
-                        searchResponse?.models.isNullOrEmpty() -> Text(
-                            text = "No models found for \"$searchQuery\".",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+    if (models.isEmpty()) {
+        item(key = emptyKey) {
+            ModelHubStateView(
+                kind = ModelHubStateKind.Empty,
+                message = emptyMessage,
+                actionLabel = emptyActionLabel,
+                onAction = onEmptyAction,
+            )
+        }
+    } else {
+        itemsIndexed(
+            items = models,
+            key = { _, model -> itemKey(model) },
+        ) { index, model ->
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = LocalSpacing.current.m)
+                    .animateItem(
+                        fadeInSpec = null,
+                        placementSpec = if (motion.spatialTransitionsEnabled) {
+                            tween(motion.peerTransitionMillis)
+                        } else {
+                            null
+                        },
+                        fadeOutSpec = null,
+                    )
+                    .then(
+                        if (index == 0) {
+                            Modifier
+                                .testTag("model-results")
+                                .semantics { stateDescription = "Model results loaded" }
+                        } else {
+                            Modifier
+                        },
+                    ),
+            ) {
+                itemContent(model, Modifier.fillMaxWidth())
+            }
+        }
+    }
 
-                        else -> LazyColumn(
-                            modifier = Modifier.fillMaxSize()
-                        ) {
-                            items(
-                                items = searchResponse?.models?.filterNotNull() ?: emptyList(),
-                                key = { it.id ?: it.hashCode().toString() }
-                            ) { model ->
-                                SearchModelListItem(
-                                    model = model,
-                                    onClick = {
-                                        model.id?.let { id ->
-                                            onNavigateToDetails(id, browseMode)
-                                        }
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
-
-                else -> {
-                    when {
-                        isListLoading -> CircularProgressIndicator()
-                        listError != null -> Text(
-                            text = listError ?: "Something went wrong. Please try again.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.error
-                        )
-
-                        listResponse?.models.isNullOrEmpty() -> Text(
-                            text = if (isLlmHub) {
-                                "No models found. Tap Search to try."
-                            } else {
-                                "No curated models in this list."
-                            },
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
-                        else -> LazyColumn(
-                            modifier = Modifier.fillMaxSize()
-                        ) {
-                            items(
-                                items = listResponse?.models?.filterNotNull() ?: emptyList(),
-                                key = { it.id ?: it.hashCode().toString() }
-                            ) { model ->
-                                ModelListItem(
-                                    model = model,
-                                    onClick = {
-                                        model.id?.let { id ->
-                                            onNavigateToDetails(id, browseMode)
-                                        }
-                                    },
-                                    deviceHints = deviceHints,
-                                    onRatingInfoClick = onRatingInfoClick,
-                                )
-                            }
-                        }
-                    }
-                }
+    if (isLoading) {
+        item(key = refreshLoadingKey) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .padding(horizontal = 24.dp, vertical = 8.dp)
+                    .semantics { contentDescription = refreshLoadingDescription },
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp))
             }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DeviceInfoSection(
-    deviceHints: DeviceHints?,
-    modifier: Modifier = Modifier
+private fun RecommendationProfileEditorSheet(
+    profile: RecommendationProfile,
+    saving: Boolean,
+    errorMessage: String?,
+    onDismiss: () -> Unit,
+    onRiskToleranceChange: (RiskTolerance) -> Unit,
+    onOptimizationPriorityChange: (OptimizationPriority) -> Unit,
 ) {
-    if (deviceHints == null) return
-
-    var expanded by remember { mutableStateOf(false) }
     val spacing = LocalSpacing.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    val ramBudgetBytes = deviceHints.memoryBudgetMB * 1024 * 1024
-    val gpuText = if (deviceHints.gpuBackendAvailable) "Available" else "Unavailable"
-    val summary = "${deviceHints.performanceCoreCount}P/${deviceHints.totalCoreCount} cores · " +
-        "${formatStorageBytes(ramBudgetBytes)} RAM · GPU $gpuText"
-
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = spacing.l, vertical = spacing.s),
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        tonalElevation = 1.dp
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        shape = MaterialTheme.prismShapes.modal,
+        containerColor = AuroraSurfaceLevel.Floating.containerColor(MaterialTheme.colorScheme),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { expanded = !expanded }
-                .padding(spacing.m)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = spacing.l)
+                .padding(bottom = spacing.xxl),
+            verticalArrangement = Arrangement.spacedBy(spacing.s),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Device",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Icon(
-                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = if (expanded) "Collapse" else "Expand",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            if (!expanded) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = summary,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            AnimatedVisibility(visible = expanded) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    DeviceInfoRow(
-                        label = "Performance cores",
-                        value = "${deviceHints.performanceCoreCount} of ${deviceHints.totalCoreCount}"
-                    )
-                    if (deviceHints.perfCoreMask.isNotBlank()) {
-                        DeviceInfoRow(
-                            label = "Perf core mask",
-                            value = deviceHints.perfCoreMask
-                        )
-                    }
-                    DeviceInfoRow(
-                        label = "Total cores",
-                        value = "${deviceHints.totalCoreCount}"
-                    )
-                    DeviceInfoRow(
-                        label = "RAM budget",
-                        value = formatStorageBytes(ramBudgetBytes)
-                    )
-                    DeviceInfoRow(
-                        label = "GPU backend",
-                        value = gpuText,
-                        valueColor = if (deviceHints.gpuBackendAvailable) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        }
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = "Model fit rating",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        SuitabilityChip(rating = SuitabilityRating.BEST)
-                        SuitabilityChip(rating = SuitabilityRating.GOOD)
-                        SuitabilityChip(rating = SuitabilityRating.AVERAGE)
-                        SuitabilityChip(rating = SuitabilityRating.POOR)
-                    }
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "Estimated as weights + KV cache + ~20% overhead vs RAM budget. " +
-                            "Tap any chip in the list for details.",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DeviceInfoRow(
-    label: String,
-    value: String,
-    valueColor: Color = MaterialTheme.colorScheme.onSurface,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 2.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.labelSmall,
-            color = valueColor
-        )
-    }
-}
-
-@Composable
-private fun StorageInfoBar(
-    storageInfo: StorageInfoUiState,
-    modifier: Modifier = Modifier
-) {
-    if (storageInfo.totalDeviceBytes <= 0L) return
-
-    val usedFraction = if (storageInfo.totalDeviceBytes > 0L) {
-        (storageInfo.usedByModelsBytes.toFloat() / storageInfo.totalDeviceBytes).coerceIn(0f, 1f)
-    } else 0f
-
-    val animatedProgress by animateFloatAsState(
-        targetValue = usedFraction,
-        animationSpec = tween(durationMillis = 600)
-    )
-
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = LocalSpacing.current.l, vertical = LocalSpacing.current.s),
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        tonalElevation = 1.dp
-    ) {
-        Column(modifier = Modifier.padding(LocalSpacing.current.m)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Device Storage",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = "${formatStorageBytes(storageInfo.availableDeviceBytes)} free of ${
-                        formatStorageBytes(
-                            storageInfo.totalDeviceBytes
-                        )
-                    }",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            LinearProgressIndicator(
-                progress = { animatedProgress },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(8.dp)
-                    .clip(MaterialTheme.shapes.extraSmall),
-                color = if (usedFraction > 0.85f) {
-                    MaterialTheme.colorScheme.error
-                } else {
-                    MaterialTheme.colorScheme.primary
-                },
-                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+            RecommendationProfileSection(
+                profile = profile,
+                onRiskToleranceChange = onRiskToleranceChange,
+                onOptimizationPriorityChange = onOptimizationPriorityChange,
+                enabled = !saving,
             )
-
-            Spacer(modifier = Modifier.height(6.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
+            if (errorMessage != null) {
                 Text(
-                    text = "Models: ${formatStorageBytes(storageInfo.usedByModelsBytes)}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary
+                    text = errorMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
                 )
             }
         }
     }
 }
 
-private fun formatStorageBytes(bytes: Long): String {
-    if (bytes <= 0L) return "0 B"
-    val units = listOf("B", "KB", "MB", "GB", "TB")
-    var value = bytes.toDouble()
-    var unitIndex = 0
-    while (value >= 1024.0 && unitIndex < units.lastIndex) {
-        value /= 1024.0
-        unitIndex++
-    }
-    val display = if (value >= 100 || unitIndex == 0) {
-        value.toInt().toString()
-    } else {
-        val rounded = kotlin.math.round(value * 10.0) / 10.0
-        if (rounded % 1.0 == 0.0) rounded.toInt().toString() else rounded.toString()
-    }
-    return "$display ${units[unitIndex]}"
-}
-
 @Composable
-private fun DownloadedTabContent(
+internal fun DownloadedTabContent(
     viewModel: DownloadedModelsViewModel,
+    storageInfo: StorageInfoUiState,
     onSelectModelAndGoBack: (LocalModelEntity) -> Unit,
     onNavigateToDetails: (modelId: String, hubBrowseMode: ModelHubBrowseMode) -> Unit,
     snackbarHostState: SnackbarHostState,
@@ -603,7 +842,9 @@ private fun DownloadedTabContent(
     val readinessFilter by viewModel.readinessFilter.collectAsState()
 
     val scope = rememberCoroutineScope()
+    val motion = LocalAuroraMotionPolicy.current
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var libraryQuery by rememberSaveable { mutableStateOf("") }
 
     LaunchedEffect(deleteResultMessage) {
         val message = deleteResultMessage ?: return@LaunchedEffect
@@ -611,86 +852,123 @@ private fun DownloadedTabContent(
         viewModel.acknowledgeDeleteResult()
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
-        if (selectionMode && downloadedModels.isNotEmpty()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(
-                    onClick = { viewModel.clearSelection() },
-                    enabled = !isDeleting
-                ) {
-                    Text("Cancel")
-                }
-                FilledTonalButton(
-                    onClick = { showDeleteConfirm = true },
-                    enabled = selectedIds.isNotEmpty() && !isDeleting
-                ) {
-                    Text("Delete (${selectedIds.size})")
-                }
-            }
+    val readinessFilterCount = if (readinessFilter == ReadinessFilter.ALL) 0 else 1
+    val normalizedLibraryQuery = libraryQuery.trim()
+    val visibleDownloadedModels = if (normalizedLibraryQuery.isEmpty()) {
+        downloadedModels
+    } else {
+        downloadedModels.filter { model ->
+            model.id in selectedIds ||
+                model.modelId.contains(normalizedLibraryQuery, ignoreCase = true) ||
+                model.filename.contains(normalizedLibraryQuery, ignoreCase = true) ||
+                model.author?.contains(normalizedLibraryQuery, ignoreCase = true) == true
         }
-
-        // Readiness filter chips (hidden during selection mode)
-        if (!selectionMode) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                ReadinessFilter.entries.forEach { filter ->
-                    FilterChip(
-                        selected = readinessFilter == filter,
-                        onClick = { viewModel.setReadinessFilter(filter) },
-                        label = {
-                            Text(
-                                when (filter) {
-                                    ReadinessFilter.ALL -> "All"
-                                    ReadinessFilter.READY -> "Ready"
-                                    ReadinessFilter.PARTIAL -> "Needs setup"
-                                }
-                            )
+    }
+    ModelHubTabLayout(
+        modifier = modifier,
+        windowWidth = LocalAppWindowWidth.current,
+        command = {
+            SearchBar(
+                query = libraryQuery,
+                onQueryChange = { libraryQuery = it.take(MAX_LOCAL_MODEL_QUERY_LENGTH) },
+                onSearch = {},
+                onClear = { libraryQuery = "" },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        context = {
+            ModelHubContextStrip(
+                storageInfo = storageInfo,
+                profile = null,
+                onOpenProfile = null,
+            )
+        },
+        toolbar = {
+            if (selectionMode && downloadedModels.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("model-toolbar"),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(
+                        onClick = viewModel::clearSelection,
+                        enabled = !isDeleting,
+                    ) {
+                        Text("Cancel")
+                    }
+                    FilledTonalButton(
+                        onClick = { showDeleteConfirm = true },
+                        enabled = selectedIds.isNotEmpty() && !isDeleting,
+                    ) {
+                        Text("Delete (${selectedIds.size})")
+                    }
+                }
+            } else {
+                LibraryReadinessToolbar(
+                    selected = readinessFilter,
+                    onSelected = viewModel::setReadinessFilter,
+                )
+            }
+        },
+        summary = {
+            ModelHubResultSummary(
+                resultCount = visibleDownloadedModels.size,
+                resultNoun = "downloaded models",
+                query = libraryQuery.takeIf(String::isNotBlank),
+                activeFilterCount = readinessFilterCount,
+                onClearQuery = { libraryQuery = "" },
+                onResetFilters = { viewModel.setReadinessFilter(ReadinessFilter.ALL) },
+            )
+        },
+        results = {
+            if (visibleDownloadedModels.isEmpty()) {
+                item(key = "downloaded-empty") {
+                    ModelHubStateView(
+                        kind = ModelHubStateKind.Empty,
+                        message = if (normalizedLibraryQuery.isNotEmpty()) {
+                            "No downloaded models match “$libraryQuery”."
+                        } else if (readinessFilterCount > 0) {
+                            "No downloaded models match the active filter."
+                        } else {
+                            "No downloaded models yet. Browse and download models to see them here."
                         },
                     )
                 }
-            }
-        }
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            contentAlignment = if (downloadedModels.isEmpty()) Alignment.Center else Alignment.TopStart
-        ) {
-            if (downloadedModels.isEmpty()) {
-                Text(
-                    text = "No downloaded models yet.\nBrowse and download models to see them here.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(16.dp)
-                )
             } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    items(
-                        items = downloadedModels,
-                        key = { it.id }
-                    ) { model ->
+                itemsIndexed(
+                    items = visibleDownloadedModels,
+                    key = { _, model -> model.id },
+                ) { index, model ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .animateItem(
+                                fadeInSpec = null,
+                                placementSpec = if (motion.spatialTransitionsEnabled) {
+                                    tween(motion.peerTransitionMillis)
+                                } else {
+                                    null
+                                },
+                                fadeOutSpec = null,
+                            )
+                            .then(
+                                if (index == 0) {
+                                    Modifier
+                                        .testTag("model-results")
+                                        .semantics { stateDescription = "Model results loaded" }
+                                } else {
+                                    Modifier
+                                },
+                            ),
+                    ) {
                         LocalModelListItem(
                             model = model,
                             selectionMode = selectionMode,
                             isSelected = model.id in selectedIds,
                             onOpenModel = {
-                                scope.launch {
-                                    viewModel.trackModelUsage(model)
-                                }
+                                scope.launch { viewModel.trackModelUsage(model) }
                                 onSelectModelAndGoBack(model)
                             },
                             onToggleSelect = { viewModel.toggleSelection(model) },
@@ -701,26 +979,35 @@ private fun DownloadedTabContent(
                                     viewModel.beginSelection(model)
                                 }
                             },
-                            onFixComponents = if (model.componentStatus == com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity.STATUS_PARTIAL) {
+                            onFixComponents = if (
+                                model.componentStatus ==
+                                com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity.STATUS_PARTIAL
+                            ) {
                                 {
                                     val mode = when (model.modelType) {
-                                        com.debanshu777.caraml.core.storage.localmodel.ModelType.VIDEO -> ModelHubBrowseMode.DiffusionVideo
-                                        com.debanshu777.caraml.core.storage.localmodel.ModelType.IMAGE -> ModelHubBrowseMode.DiffusionImage
+                                        com.debanshu777.caraml.core.storage.localmodel.ModelType.VIDEO ->
+                                            ModelHubBrowseMode.DiffusionVideo
+                                        com.debanshu777.caraml.core.storage.localmodel.ModelType.IMAGE ->
+                                            ModelHubBrowseMode.DiffusionImage
                                         else -> ModelHubBrowseMode.DiffusionImage
                                     }
                                     onNavigateToDetails(model.modelId, mode)
                                 }
-                            } else null,
+                            } else {
+                                null
+                            },
                         )
                     }
                 }
             }
-        }
-    }
+        },
+    )
 
     if (showDeleteConfirm) {
         AlertDialog(
             onDismissRequest = { if (!isDeleting) showDeleteConfirm = false },
+            shape = MaterialTheme.prismShapes.modal,
+            containerColor = AuroraSurfaceLevel.Floating.containerColor(MaterialTheme.colorScheme),
             title = { Text("Remove downloads?") },
             text = { Text("Remove selected downloads from this device?") },
             confirmButton = {
@@ -745,3 +1032,60 @@ private fun DownloadedTabContent(
         )
     }
 }
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun LibraryReadinessToolbar(
+    selected: ReadinessFilter,
+    onSelected: (ReadinessFilter) -> Unit,
+) {
+    val colors = MaterialTheme.auroraColors
+    FlowRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .selectableGroup()
+            .testTag("model-toolbar"),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        ReadinessFilter.entries.forEach { filter ->
+            val label = when (filter) {
+                ReadinessFilter.ALL -> "All"
+                ReadinessFilter.READY -> "Ready"
+                ReadinessFilter.PARTIAL -> "Needs setup"
+            }
+            FilterChip(
+                selected = selected == filter,
+                onClick = { onSelected(filter) },
+                label = { Text(label) },
+                leadingIcon = if (selected == filter) {
+                    {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .size(18.dp)
+                                .testTag("Selected library readiness $label"),
+                        )
+                    }
+                } else {
+                    null
+                },
+                modifier = Modifier
+                    .heightIn(min = 48.dp)
+                    .semantics {
+                        this.selected = selected == filter
+                        role = Role.RadioButton
+                    },
+                shape = MaterialTheme.prismShapes.control,
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = colors.focusPrimary,
+                    selectedLabelColor = colors.onFocusPrimary,
+                    selectedLeadingIconColor = colors.onFocusPrimary,
+                ),
+            )
+        }
+    }
+}
+
+private const val MAX_LOCAL_MODEL_QUERY_LENGTH = 200

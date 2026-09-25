@@ -33,6 +33,8 @@ import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.platform.DeviceHints
 import com.debanshu777.caraml.core.rating.SuitabilityRating
 import com.debanshu777.caraml.core.rating.SuitabilityResult
+import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
+import com.debanshu777.caraml.core.theme.prismShapes
 
 /**
  * Modal bottom sheet that explains the suitability rating to the user.
@@ -63,6 +65,8 @@ fun SuitabilityInfoSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         modifier = modifier,
+        shape = MaterialTheme.prismShapes.modal,
+        containerColor = AuroraSurfaceLevel.Floating.containerColor(MaterialTheme.colorScheme),
     ) {
         Column(
             modifier = Modifier
@@ -160,7 +164,7 @@ private fun FootprintSection(result: SuitabilityResult) {
     val ratio = (estimated.toDouble() / result.budgetBytes.toDouble())
         .coerceIn(0.0, 1.5)
 
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
             text = "Memory footprint",
             style = MaterialTheme.typography.titleSmall,
@@ -277,12 +281,12 @@ private fun StackedFootprintBar(
 @Composable
 private fun FootprintLegendItem(label: String, value: String, color: androidx.compose.ui.graphics.Color) {
     Row(
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             modifier = Modifier
-                .size(10.dp)
+                .size(8.dp)
                 .clip(CircleShape)
                 .background(color),
         )
@@ -302,7 +306,7 @@ private fun FootprintLegendItem(label: String, value: String, color: androidx.co
 
 @Composable
 private fun DeviceSnapshotSection(hints: DeviceHints?) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             text = "This device",
             style = MaterialTheme.typography.titleSmall,
@@ -365,10 +369,10 @@ private fun LegendSection() {
 private fun LegendRow(rating: SuitabilityRating, description: String) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         SuitabilityChip(rating = rating)
-        Spacer(modifier = Modifier.width(2.dp))
+        Spacer(modifier = Modifier.width(4.dp))
         Text(
             text = description,
             style = MaterialTheme.typography.bodySmall,
@@ -379,7 +383,7 @@ private fun LegendRow(rating: SuitabilityRating, description: String) {
 
 @Composable
 private fun AlgorithmSummarySection(result: SuitabilityResult) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             text = "How we computed this",
             style = MaterialTheme.typography.titleSmall,

@@ -11,4 +11,6 @@ data class DeviceHints(
 
 expect class DeviceCapabilities() {
     fun getDeviceHints(): DeviceHints
+    fun getHardwareProfile(): HardwareProfile
+    fun getResourceSnapshot(): ResourceSnapshot
 }

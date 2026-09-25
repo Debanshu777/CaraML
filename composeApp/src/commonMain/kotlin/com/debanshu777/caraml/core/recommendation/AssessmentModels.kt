@@ -1,0 +1,388 @@
+package com.debanshu777.caraml.core.recommendation
+
+import com.debanshu777.caraml.core.platform.MemoryTopology
+
+enum class Confidence {
+    LOW,
+    MEDIUM,
+    HIGH,
+}
+
+data class AssessmentConfidence(
+    val compatibility: Confidence,
+    val memory: Confidence,
+    val storage: Confidence,
+    val performance: Confidence,
+)
+
+enum class AssessmentReason {
+    INVALID_METADATA,
+    METADATA_VALIDATED,
+    ARITHMETIC_OVERFLOW,
+    INVALID_ESTIMATE_RANGE,
+    SELECT_VARIANT,
+    INVALID_MODEL_ID,
+    INVALID_REVISION,
+    INVALID_FILE_PATH,
+    FILE_SIZE_LIMIT_EXCEEDED,
+    BUNDLE_SIZE_LIMIT_EXCEEDED,
+    COMPONENT_LIMIT_EXCEEDED,
+    PARAMETER_LIMIT_EXCEEDED,
+    CONTEXT_LIMIT_EXCEEDED,
+    MISSING_REQUIRED_COMPONENT,
+    MIXED_QUANTIZATION,
+    UNSUPPORTED_FORMAT,
+    UNSUPPORTED_GGUF_VERSION,
+    UNSUPPORTED_ARCHITECTURE,
+    UNSUPPORTED_QUANTIZATION,
+    UNSUPPORTED_ENGINE_FEATURE,
+    REQUIRED_BACKEND_UNAVAILABLE,
+    GGUF_VERSION_UNKNOWN,
+    ENGINE_SUPPORT_UNKNOWN,
+    INVALID_CORE_COUNT,
+    INVALID_OS_MEMORY_READING,
+    INVALID_STORAGE_READING,
+    RESOURCE_READING_UNAVAILABLE,
+    RESOURCE_SNAPSHOT_STALE,
+    LOW_MEMORY_PRESSURE,
+    BACKEND_CAPABILITY_UNKNOWN,
+    RESOURCE_READING_VALIDATED,
+    BACKEND_CAPABILITY_VERIFIED,
+    INVALID_WORKLOAD,
+    WORKLOAD_CLAMPED,
+    MISSING_MODEL_SHAPE,
+    RECURRENT_STATE_ESTIMATED,
+    GPU_LAYER_SPLIT_UNKNOWN,
+    UNKNOWN_ARCHITECTURE,
+    COMPONENT_ROLE_UNKNOWN,
+    GPU_ALLOCATION_UNKNOWN,
+    INVALID_PERFORMANCE_EVIDENCE,
+    PERFORMANCE_ESTIMATED,
+    PERFORMANCE_CALIBRATED,
+    SPEED_NOT_VERIFIED,
+    PERFORMANCE_TARGET_MISSED,
+    PERFORMANCE_UNCERTAIN,
+    MEMORY_BOUNDS_UNKNOWN,
+    STORAGE_BOUNDS_UNKNOWN,
+    MEMORY_FIT_COMFORTABLE,
+    MEMORY_FIT_LIKELY,
+    MEMORY_FIT_BORDERLINE,
+    MEMORY_NO_FIT,
+    STORAGE_NO_FIT,
+    TIGHT_MEMORY_FIT,
+    FALLBACK_PLAN_REQUIRED,
+    SAFETY_EVIDENCE_LIMITED,
+    ENERGY_NOT_VERIFIED,
+    QUALITY_PROXY_USED,
+    QUALITY_NOT_VERIFIED,
+    ASSESSMENT_GRAPH_INVALID,
+    DEVICE_CAPABILITIES_CHANGED,
+    COLLECTION_LIMIT_EXCEEDED,
+    INSUFFICIENT_STORAGE,
+    DOWNLOAD_FOR_LATER,
+    NO_RUN_PLAN,
+    INCOMPATIBLE_MODEL,
+    RECOMMENDATION_EVIDENCE_INCOMPLETE,
+}
+
+data class Evidence(
+    val reason: AssessmentReason,
+    val confidence: Confidence,
+    val detail: String? = null,
+)
+
+sealed interface Compatibility {
+    data object Compatible : Compatibility
+
+    @ConsistentCopyVisibility
+    data class Incompatible private constructor(
+        val reasons: List<AssessmentReason>,
+        val evidence: List<Evidence>,
+        internal val collectionLimitExceeded: Boolean,
+    ) : Compatibility {
+        constructor(
+            reasons: Collection<AssessmentReason>,
+            evidence: Collection<Evidence> = emptyList(),
+        ) : this(
+            boundedCollectionSnapshot(reasons, RecommendationPolicyV1.MAX_ASSESSMENT_REASONS),
+            boundedCollectionSnapshot(evidence, RecommendationPolicyV1.MAX_EVIDENCE_ENTRIES),
+        )
+
+        private constructor(
+            reasons: BoundedCollectionSnapshot<AssessmentReason>,
+            evidence: BoundedCollectionSnapshot<Evidence>,
+        ) : this(
+            reasons = reasons.values,
+            evidence = evidence.values,
+            collectionLimitExceeded = reasons.limitExceeded || evidence.limitExceeded,
+        )
+    }
+
+    @ConsistentCopyVisibility
+    data class Unknown private constructor(
+        val reasons: List<AssessmentReason>,
+        val evidence: List<Evidence>,
+        internal val collectionLimitExceeded: Boolean,
+    ) : Compatibility {
+        constructor(
+            reasons: Collection<AssessmentReason>,
+            evidence: Collection<Evidence> = emptyList(),
+        ) : this(
+            boundedCollectionSnapshot(reasons, RecommendationPolicyV1.MAX_ASSESSMENT_REASONS),
+            boundedCollectionSnapshot(evidence, RecommendationPolicyV1.MAX_EVIDENCE_ENTRIES),
+        )
+
+        private constructor(
+            reasons: BoundedCollectionSnapshot<AssessmentReason>,
+            evidence: BoundedCollectionSnapshot<Evidence>,
+        ) : this(
+            reasons = reasons.values,
+            evidence = evidence.values,
+            collectionLimitExceeded = reasons.limitExceeded || evidence.limitExceeded,
+        )
+    }
+}
+
+enum class FitBand {
+    COMFORTABLE,
+    LIKELY,
+    BORDERLINE,
+    NO_FIT,
+}
+
+/** A stable identity implemented by executable plans introduced by the planning layer. */
+interface PlanReference {
+    val stableKey: String
+}
+
+/** Uncalibrated estimator output aligned with process-RSS observation phases and memory pools. */
+data class MemoryPoolEstimates(
+    val hostMemoryBytes: EstimateRange? = null,
+    val gpuMemoryBytes: EstimateRange? = null,
+    val sharedMemoryBytes: EstimateRange? = null,
+)
+
+data class MemoryPhaseEstimates(
+    val load: MemoryPoolEstimates = MemoryPoolEstimates(),
+    val generation: MemoryPoolEstimates = MemoryPoolEstimates(),
+)
+
+@ConsistentCopyVisibility
+data class PlanAssessment private constructor(
+    val plan: PlanReference,
+    val hostMemoryBytes: EstimateRange?,
+    val gpuMemoryBytes: EstimateRange?,
+    val sharedMemoryBytes: EstimateRange?,
+    val storageBytes: EstimateRange?,
+    val confidence: AssessmentConfidence,
+    val evidence: List<Evidence>,
+    val performance: PerformanceEstimate,
+    val utilityMetrics: PlanUtilityMetrics,
+    val rawMemoryByPhase: MemoryPhaseEstimates,
+    internal val collectionLimitExceeded: Boolean,
+) {
+    constructor(
+        plan: PlanReference,
+        hostMemoryBytes: EstimateRange?,
+        gpuMemoryBytes: EstimateRange?,
+        sharedMemoryBytes: EstimateRange?,
+        storageBytes: EstimateRange?,
+        confidence: AssessmentConfidence,
+        evidence: Collection<Evidence>,
+        performance: PerformanceEstimate = PerformanceEstimate.Unknown(AssessmentReason.SPEED_NOT_VERIFIED),
+        utilityMetrics: PlanUtilityMetrics = PlanUtilityMetrics(),
+        rawMemoryByPhase: MemoryPhaseEstimates = MemoryPhaseEstimates(),
+    ) : this(
+        plan = plan,
+        hostMemoryBytes = hostMemoryBytes,
+        gpuMemoryBytes = gpuMemoryBytes,
+        sharedMemoryBytes = sharedMemoryBytes,
+        storageBytes = storageBytes,
+        confidence = confidence,
+        evidence = boundedCollectionSnapshot(evidence, RecommendationPolicyV1.MAX_EVIDENCE_ENTRIES),
+        performance = performance,
+        utilityMetrics = utilityMetrics,
+        rawMemoryByPhase = rawMemoryByPhase,
+    )
+
+    private constructor(
+        plan: PlanReference,
+        hostMemoryBytes: EstimateRange?,
+        gpuMemoryBytes: EstimateRange?,
+        sharedMemoryBytes: EstimateRange?,
+        storageBytes: EstimateRange?,
+        confidence: AssessmentConfidence,
+        evidence: BoundedCollectionSnapshot<Evidence>,
+        performance: PerformanceEstimate,
+        utilityMetrics: PlanUtilityMetrics,
+        rawMemoryByPhase: MemoryPhaseEstimates,
+    ) : this(
+        plan = plan,
+        hostMemoryBytes = hostMemoryBytes,
+        gpuMemoryBytes = gpuMemoryBytes,
+        sharedMemoryBytes = sharedMemoryBytes,
+        storageBytes = storageBytes,
+        confidence = confidence,
+        evidence = evidence.values,
+        performance = performance,
+        utilityMetrics = utilityMetrics,
+        rawMemoryByPhase = rawMemoryByPhase,
+        collectionLimitExceeded = evidence.limitExceeded,
+    )
+}
+
+@ConsistentCopyVisibility
+data class AssessedPlans private constructor(
+    val values: List<PlanAssessment>,
+    val assessmentKey: String,
+    val compatibility: Compatibility,
+    val memoryTopology: MemoryTopology,
+    val reasons: List<AssessmentReason>,
+    val evidence: List<Evidence>,
+    internal val collectionLimitExceeded: Boolean,
+) {
+    constructor(
+        values: Collection<PlanAssessment>,
+        assessmentKey: String = "",
+        compatibility: Compatibility = Compatibility.Compatible,
+        memoryTopology: MemoryTopology = MemoryTopology.UNKNOWN,
+        reasons: Collection<AssessmentReason> = emptyList(),
+        evidence: Collection<Evidence> = emptyList(),
+    ) : this(
+        values = boundedPlanAssessmentSnapshot(values),
+        assessmentKey = assessmentKey,
+        compatibility = compatibility,
+        memoryTopology = memoryTopology,
+        reasons = boundedCollectionSnapshot(reasons, RecommendationPolicyV1.MAX_ASSESSMENT_REASONS),
+        evidence = boundedCollectionSnapshot(evidence, RecommendationPolicyV1.MAX_EVIDENCE_ENTRIES),
+    )
+
+    private constructor(
+        values: BoundedCollectionSnapshot<PlanAssessment>,
+        assessmentKey: String,
+        compatibility: Compatibility,
+        memoryTopology: MemoryTopology,
+        reasons: BoundedCollectionSnapshot<AssessmentReason>,
+        evidence: BoundedCollectionSnapshot<Evidence>,
+    ) : this(
+        values = values.values,
+        assessmentKey = assessmentKey,
+        compatibility = compatibility,
+        memoryTopology = memoryTopology,
+        reasons = reasons.values,
+        evidence = evidence.values,
+        collectionLimitExceeded = values.limitExceeded || reasons.limitExceeded || evidence.limitExceeded,
+    )
+}
+
+private fun boundedPlanAssessmentSnapshot(
+    values: Iterable<PlanAssessment>,
+): BoundedCollectionSnapshot<PlanAssessment> {
+    val snapshot = boundedCollectionSnapshot(values, RecommendationPolicyV1.MAX_LLM_CANDIDATES)
+    val limit = when (snapshot.values.firstOrNull()?.plan) {
+        is DiffusionRunPlan -> RecommendationPolicyV1.MAX_DIFFUSION_CANDIDATES
+        else -> RecommendationPolicyV1.MAX_LLM_CANDIDATES
+    }
+    return if (snapshot.values.size > limit) {
+        BoundedCollectionSnapshot(snapshot.values.take(limit), limitExceeded = true)
+    } else {
+        snapshot
+    }
+}
+
+@ConsistentCopyVisibility
+data class ModelAssessment private constructor(
+    val assessmentKey: String,
+    val compatibility: Compatibility,
+    val planAssessments: AssessedPlans,
+    val baseHostBudgetBytes: Long?,
+    val baseGpuBudgetBytes: Long?,
+    val baseSharedBudgetBytes: Long?,
+    val baseStorageBudgetBytes: Long?,
+    val confidence: AssessmentConfidence,
+    val evidence: List<Evidence>,
+    internal val collectionLimitExceeded: Boolean,
+) {
+    constructor(
+        assessmentKey: String,
+        compatibility: Compatibility,
+        planAssessments: AssessedPlans,
+        baseHostBudgetBytes: Long?,
+        baseGpuBudgetBytes: Long?,
+        baseSharedBudgetBytes: Long?,
+        baseStorageBudgetBytes: Long?,
+        confidence: AssessmentConfidence,
+        evidence: Collection<Evidence>,
+    ) : this(
+        assessmentKey = assessmentKey,
+        compatibility = compatibility,
+        planAssessments = planAssessments,
+        baseHostBudgetBytes = baseHostBudgetBytes,
+        baseGpuBudgetBytes = baseGpuBudgetBytes,
+        baseSharedBudgetBytes = baseSharedBudgetBytes,
+        baseStorageBudgetBytes = baseStorageBudgetBytes,
+        confidence = confidence,
+        evidence = boundedCollectionSnapshot(evidence, RecommendationPolicyV1.MAX_EVIDENCE_ENTRIES),
+    )
+
+    private constructor(
+        assessmentKey: String,
+        compatibility: Compatibility,
+        planAssessments: AssessedPlans,
+        baseHostBudgetBytes: Long?,
+        baseGpuBudgetBytes: Long?,
+        baseSharedBudgetBytes: Long?,
+        baseStorageBudgetBytes: Long?,
+        confidence: AssessmentConfidence,
+        evidence: BoundedCollectionSnapshot<Evidence>,
+    ) : this(
+        assessmentKey = assessmentKey,
+        compatibility = compatibility,
+        planAssessments = planAssessments,
+        baseHostBudgetBytes = baseHostBudgetBytes,
+        baseGpuBudgetBytes = baseGpuBudgetBytes,
+        baseSharedBudgetBytes = baseSharedBudgetBytes,
+        baseStorageBudgetBytes = baseStorageBudgetBytes,
+        confidence = confidence,
+        evidence = evidence.values,
+        collectionLimitExceeded = evidence.limitExceeded,
+    )
+}
+
+@ConsistentCopyVisibility
+data class PersonalizedRecommendation private constructor(
+    val assessmentKey: String,
+    val category: RecommendationCategory,
+    val selectedPlan: PlanReference?,
+    val reasons: List<AssessmentReason>,
+    val profile: RecommendationProfile,
+    val confidence: AssessmentConfidence?,
+    val memoryFit: FitBand?,
+    val storageFit: FitBand?,
+    val selectedPlanAssessment: PlanAssessment?,
+    val fallbackPlan: PlanReference?,
+) {
+    constructor(
+        assessmentKey: String,
+        category: RecommendationCategory,
+        selectedPlan: PlanReference?,
+        reasons: Collection<AssessmentReason>,
+        profile: RecommendationProfile,
+        confidence: AssessmentConfidence? = null,
+        memoryFit: FitBand? = null,
+        storageFit: FitBand? = null,
+        selectedPlanAssessment: PlanAssessment? = null,
+        fallbackPlan: PlanReference? = null,
+    ) : this(
+        assessmentKey = assessmentKey,
+        category = category,
+        selectedPlan = selectedPlan,
+        reasons = reasons.toList(),
+        profile = profile,
+        confidence = confidence,
+        memoryFit = memoryFit,
+        storageFit = storageFit,
+        selectedPlanAssessment = selectedPlanAssessment,
+        fallbackPlan = fallbackPlan,
+    )
+}

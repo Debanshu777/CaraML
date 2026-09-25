@@ -3,10 +3,37 @@ package com.debanshu777.runner
 expect class LlamaRunner() {
     fun initialize(nativeLibDir: String)
 
+    fun engineVersion(): String?
+
     fun loadModel(
         modelPath: String,
         config: NativeRunnerConfig,
     ): Boolean
+
+    fun preflightModel(
+        modelPath: String,
+        config: NativeRunnerConfig,
+    ): LlamaPreflightResult
+
+    fun backendCapabilities(): List<NativeBackendCapability>
+
+    fun calibrateBackend(
+        probeToken: Long,
+        backend: NativeBackendKind,
+        durationMillis: Int,
+        bufferBytes: Long,
+    ): BackendCalibrationResult
+
+    fun reserveBackendCalibration(probeToken: Long): BackendCalibrationReservation
+
+    fun cancelBackendCalibration(probeToken: Long)
+
+    fun abandonBackendCalibration(probeToken: Long): BackendCalibrationAbandonment
+
+    fun probeModelFeatures(
+        architecture: String,
+        quantization: String?,
+    ): NativeModelFeatureSupport
 
     fun nextToken(): String?
 

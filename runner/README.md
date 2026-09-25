@@ -134,9 +134,19 @@ The native `.so`/`.a`/`.dylib` is built by `:nativeEngine`, not this module. Thi
 
 <!-- Updated at end of each Claude Code session -->
 
+- The runner now targets llama.cpp `f46bc30`, supports bounded lazy tensor loading and automatic integrated-GPU load mode, and exposes a sanitized bounded engine version across JNI and iOS
+- Preflight and load use the same exact admitted budget and placement; rebased ownership, bounds, logger, and Vulkan shader-capability patches are applied only to the build-owned source copy
+- Opt-in native parity verifies a digest-pinned tiny GGUF can preflight successfully and a bounded corrupt GGUF fails safely; run `CARAML_NATIVE_PARITY=true ./gradlew :runner:jvmTest`, while ordinary JVM tests remain fixture- and native-build-free
+- Calibration now uses typed memory-copy/GEMM windows, pre-reserved exact-token cancellation, bounded caller timeouts, and permanent fail-closed operation quarantine if an in-process native probe becomes unresponsive; LLM chunks expose native decode-only timing
+- Bounded llama.cpp preflight now shares a thread-independent stream session lease across prompt, token, and finalization calls, keeps cancellation lock-free, recognizes only exact pinned quantization labels, and releases transient native state on every exit
+- Backend capability records now carry bounded canonical device identity and type so cross-engine aggregation cannot combine different devices merely because their backend kinds match
+- User prompts are admitted before KV/history mutation, reserve response capacity without tail truncation, and return a dedicated context-full result with failure cleanup
+- Native operations now fail through controlled fallbacks when the shared library is unavailable; JNI and iOS C boundaries catch allocation/native exceptions instead of allowing C++ unwinding to terminate the process
+- Structured streaming emits token deltas plus explicit resync flags and distinguishes parser-finalization events from generated tokens for accurate metrics
+- Coroutines use the shared 1.11.0 dependency catalog version across modules
 - Added native delta accessors `getReasoningDelta`/`getContentDelta` (with `\x01` resync sentinel); `structuredChunkFlow` now accumulates O(n) deltas in Kotlin instead of copying full native accumulators per token
 - Added native reasoning/content accessors + `supportsThinking`; new `InferenceChunk` + `generateStructuredChunks`; removed `StructuredOutputGrammar`/`StructuredOutputParser`; `processUserPrompt` no longer takes a grammar
 - GPU layer offloading via `NativeRunnerConfig.gpuLayers`
 - KV cache quantization support (`kvCacheType`)
 - Improved chat template handling in core.cpp
-- Patch system integration (applied pre-build by `:nativeEngine`)
+- Numbered llama.cpp patches are applied to a build-owned source copy by `:nativeEngine`; the pinned submodule remains immutable

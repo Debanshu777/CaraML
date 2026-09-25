@@ -5,6 +5,27 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.graphics.Color
 import com.debanshu777.caraml.core.rating.SuitabilityRating
+import com.debanshu777.caraml.core.recommendation.RecommendationCategory
+
+@Composable
+@ReadOnlyComposable
+fun RecommendationCategory.containerColor(): Color = when (this) {
+    RecommendationCategory.RECOMMENDED -> MaterialTheme.colorScheme.primaryContainer
+    RecommendationCategory.USABLE -> MaterialTheme.colorScheme.tertiaryContainer
+    RecommendationCategory.RISKY -> MaterialTheme.colorScheme.secondaryContainer
+    RecommendationCategory.NOT_SUITABLE, RecommendationCategory.INCOMPATIBLE -> MaterialTheme.colorScheme.errorContainer
+    RecommendationCategory.NEEDS_INFORMATION -> MaterialTheme.colorScheme.surfaceVariant
+}
+
+@Composable
+@ReadOnlyComposable
+fun RecommendationCategory.onContainerColor(): Color = when (this) {
+    RecommendationCategory.RECOMMENDED -> MaterialTheme.colorScheme.onPrimaryContainer
+    RecommendationCategory.USABLE -> MaterialTheme.colorScheme.onTertiaryContainer
+    RecommendationCategory.RISKY -> MaterialTheme.colorScheme.onSecondaryContainer
+    RecommendationCategory.NOT_SUITABLE, RecommendationCategory.INCOMPATIBLE -> MaterialTheme.colorScheme.onErrorContainer
+    RecommendationCategory.NEEDS_INFORMATION -> MaterialTheme.colorScheme.onSurfaceVariant
+}
 
 /**
  * Theme-driven color mapping for [SuitabilityRating].

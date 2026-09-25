@@ -4,20 +4,30 @@ import com.debanshu777.diffusionrunner.cpp.DiffusionMetadataResultFFI
 import com.debanshu777.diffusionrunner.cpp.DiffusionModelConfigFFI
 import com.debanshu777.diffusionrunner.cpp.ImageGenConfigFFI
 import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_free_png
+import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_cancel_generation
 import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_get_metadata
+import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_backend_capabilities
+import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_engine_version
 import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_init
 import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_load_model
+import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_model_version
+import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_preflight
+import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_probe_model_features
 import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_release
 import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_txt2img
 import com.debanshu777.diffusionrunner.cpp.diffusion_runner_ios_free_result
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.CPointerVar
+import kotlinx.cinterop.CValue
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.FloatVar
+import kotlinx.cinterop.LongVar
+import kotlinx.cinterop.MemScope
 import kotlinx.cinterop.allocArray
 import kotlinx.cinterop.cValue
 import kotlinx.cinterop.cstr
+import kotlinx.cinterop.get
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.pointed
 import kotlinx.cinterop.readBytes
@@ -36,14 +46,15 @@ actual class DiffusionRunner {
     actual fun loadModel(config: DiffusionModelConfig): Boolean {
         validateModelConfig(config)
 
-        val ffiConfig = memScoped {
-            cValue<DiffusionModelConfigFFI> {
+        handle = memScoped {
+            val ffiConfig = cValue<DiffusionModelConfigFFI> {
                 model_path = config.modelPath.cstr.ptr
                 vae_path = config.vaePath.cstr.ptr
                 llm_path = config.llmPath.cstr.ptr
                 clip_l_path = config.clipLPath.cstr.ptr
                 clip_g_path = config.clipGPath.cstr.ptr
                 t5xxl_path = config.t5xxlPath.cstr.ptr
+                runtime_backend = config.runtimeBackend.nativeValue
                 offload_to_cpu = if (config.offloadToCpu) 1 else 0
                 keep_clip_on_cpu = if (config.keepClipOnCpu) 1 else 0
                 keep_vae_on_cpu = if (config.keepVaeOnCpu) 1 else 0
@@ -58,11 +69,75 @@ actual class DiffusionRunner {
                 prediction = config.prediction
                 taesd_path = config.taesdPath.cstr.ptr
                 vae_tiling = if (config.vaeTiling) 1 else 0
+                max_vram = config.maxVram.cstr.ptr
+                segmented_compute = if (config.segmentedCompute) 1 else 0
+                prefetch = if (config.prefetch) 1 else 0
+                auto_fit = if (config.autoFit) 1 else 0
+            }
+            diffusion_runner_ios_load_model(ffiConfig)
+        }
+        return handle != 0L
+    }
+
+    actual fun modelVersion(): String? =
+        if (handle == 0L) null else diffusion_runner_ios_model_version(handle)?.toKString()
+
+    actual fun preflightModel(config: DiffusionModelConfig): DiffusionPreflightResult =
+        runDiffusionPreflight(config) { safeConfig ->
+            memScoped {
+                val capacity = DIFFUSION_PREFLIGHT_HEADER_FIELDS +
+                    DIFFUSION_PREFLIGHT_MAX_COMPONENTS * DIFFUSION_PREFLIGHT_COMPONENT_FIELDS +
+                    DIFFUSION_PREFLIGHT_MAX_BACKENDS * DIFFUSION_PREFLIGHT_BACKEND_FIELDS
+                val output = allocArray<LongVar>(capacity)
+                val ffiConfig = toFfiConfig(safeConfig)
+                val count = diffusion_runner_ios_preflight(ffiConfig, output, capacity)
+                if (count !in DIFFUSION_PREFLIGHT_HEADER_FIELDS..capacity) null
+                else LongArray(count) { output[it] }
             }
         }
 
-        handle = diffusion_runner_ios_load_model(ffiConfig)
-        return handle != 0L
+    actual fun backendCapabilities(): List<DiffusionBackendCapability> = memScoped {
+        val capacity = DIFFUSION_BACKEND_HEADER_FIELDS +
+            DIFFUSION_BACKEND_MAX_DEVICES * DIFFUSION_BACKEND_DEVICE_FIELDS
+        val output = allocArray<LongVar>(capacity)
+        val count = diffusion_runner_ios_backend_capabilities(output, capacity)
+        decodeDiffusionBackendCapabilities(
+            if (count in DIFFUSION_BACKEND_HEADER_FIELDS..capacity) LongArray(count) { output[it] }
+            else null,
+        )
+    }
+
+    actual fun probeModelFeatures(
+        architecture: String,
+        quantization: String?,
+        mode: DiffusionGenerationMode,
+    ): DiffusionModelFeatureSupport {
+        val support = probeDiffusionModelFeatures(
+            architecture = architecture,
+            quantization = quantization,
+            mode = mode,
+            nativeProbe = { nativeArchitecture, nativeQuantization, nativeMode ->
+                memScoped {
+                    val output = allocArray<LongVar>(3)
+                    val count = diffusion_runner_ios_probe_model_features(
+                        nativeArchitecture,
+                        nativeQuantization,
+                        nativeMode,
+                        output,
+                        3,
+                    )
+                    if (count == 3) LongArray(3) { output[it] } else null
+                }
+            },
+            nativeVersion = { diffusion_runner_ios_engine_version()?.toKString() },
+        )
+        return if (mode == DiffusionGenerationMode.VIDEO &&
+            support.mode == DiffusionFeatureState.SUPPORTED
+        ) {
+            support.copy(mode = DiffusionFeatureState.UNSUPPORTED)
+        } else {
+            support
+        }
     }
 
     actual fun txt2Img(params: ImageGenParams): ByteArray? {
@@ -106,47 +181,27 @@ actual class DiffusionRunner {
                     diffusion_runner_ios_free_result(result)
                     null
                 } else {
-                    val bytes = resultStruct.data!!.readBytes(resultStruct.size)
-                    diffusion_runner_ios_free_png(resultStruct.data)
-                    diffusion_runner_ios_free_result(result)
-                    bytes
+                    try {
+                        resultStruct.data!!.readBytes(resultStruct.size)
+                    } finally {
+                        diffusion_runner_ios_free_png(resultStruct.data)
+                        diffusion_runner_ios_free_result(result)
+                    }
                 }
             }
         }
     }
 
-    actual fun videoGen(params: VideoGenParams): List<ByteArray>? {
+    actual fun videoGen(params: VideoGenParams): VideoGenResult? {
         if (handle == 0L) return null
-
-        // For now, implement video generation as multiple image generations
-        // This is a simplified implementation - full video generation would require
-        // additional FFI functions similar to the JNI implementation
-
-        val frames = mutableListOf<ByteArray>()
-        for (frame in 0 until params.videoFrames) {
-            val imageParams = ImageGenParams(
-                prompt = params.prompt,
-                negativePrompt = params.negativePrompt,
-                width = params.width,
-                height = params.height,
-                steps = params.steps,
-                cfgScale = params.cfgScale,
-                seed = if (params.seed == -1L) -1L else params.seed + frame,
-                sampleMethod = params.sampleMethod,
-                loraPaths = params.loraPaths,
-                loraStrengths = params.loraStrengths
-            )
-
-            val frameData = txt2Img(imageParams)
-            if (frameData != null) {
-                frames.add(frameData)
-            } else {
-                return null // Failed to generate a frame
-            }
-        }
-
-        return frames
+        validateVideoGenParams(params)
+        return null
     }
+
+    actual fun cancelGeneration(): Boolean =
+        handle != 0L && diffusion_runner_ios_cancel_generation(handle) != 0
+
+    actual fun supportsVideoGeneration(): Boolean = false
 
     actual fun release() {
         if (handle != 0L) {
@@ -172,4 +227,33 @@ actual class DiffusionRunner {
             )
         }
     }
+
+    private fun MemScope.toFfiConfig(config: DiffusionModelConfig): CValue<DiffusionModelConfigFFI> =
+        cValue {
+            model_path = config.modelPath.cstr.ptr
+            vae_path = config.vaePath.cstr.ptr
+            llm_path = config.llmPath.cstr.ptr
+            clip_l_path = config.clipLPath.cstr.ptr
+            clip_g_path = config.clipGPath.cstr.ptr
+            t5xxl_path = config.t5xxlPath.cstr.ptr
+            runtime_backend = config.runtimeBackend.nativeValue
+            offload_to_cpu = if (config.offloadToCpu) 1 else 0
+            keep_clip_on_cpu = if (config.keepClipOnCpu) 1 else 0
+            keep_vae_on_cpu = if (config.keepVaeOnCpu) 1 else 0
+            diffusion_flash_attn = if (config.diffusionFlashAttn) 1 else 0
+            enable_mmap = if (config.enableMmap) 1 else 0
+            diffusion_conv_direct = if (config.diffusionConvDirect) 1 else 0
+            free_params_immediately = if (config.freeParamsImmediately) 1 else 0
+            wtype = config.wtype
+            flow_shift = config.flowShift
+            flow_shift_is_set = if (config.flowShift.isFinite()) 1 else 0
+            n_threads = config.nThreads
+            prediction = config.prediction
+            taesd_path = config.taesdPath.cstr.ptr
+            vae_tiling = if (config.vaeTiling) 1 else 0
+            max_vram = config.maxVram.cstr.ptr
+            segmented_compute = if (config.segmentedCompute) 1 else 0
+            prefetch = if (config.prefetch) 1 else 0
+            auto_fit = if (config.autoFit) 1 else 0
+        }
 }

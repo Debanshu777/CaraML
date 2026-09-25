@@ -22,9 +22,12 @@ import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.prismShapes
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.storage.localmodel.displayFilename
+import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
 import com.debanshu777.caraml.features.chat.domain.filterForMode
 import kotlinx.collections.immutable.ImmutableList
@@ -44,7 +47,9 @@ fun ChatModelPickerSheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = sheetState
+        sheetState = sheetState,
+        shape = MaterialTheme.prismShapes.modal,
+        containerColor = AuroraSurfaceLevel.Floating.containerColor(MaterialTheme.colorScheme),
     ) {
         LazyColumn(
             modifier = Modifier
@@ -91,7 +96,7 @@ fun ChatModelPickerSheet(
                         onDismiss()
                     },
                     colors = ListItemDefaults.colors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                        containerColor = Color.Transparent,
                     )
                 )
             }
@@ -122,7 +127,7 @@ fun ChatModelPickerSheet(
                         onDownloadModelClick()
                     },
                     colors = ListItemDefaults.colors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                        containerColor = Color.Transparent,
                     )
                 )
             }

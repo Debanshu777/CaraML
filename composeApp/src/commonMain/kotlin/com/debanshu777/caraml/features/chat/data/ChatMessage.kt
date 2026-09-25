@@ -14,7 +14,11 @@ data class ChatMessage(
     val text: String,
     val thinking: String? = null,
     val inferenceMetrics: InferenceMetrics? = null,
+    val imagePath: String? = null,
+    val videoFramePaths: List<String>? = null,
+    /** Preview/test compatibility only; generated media is persisted to [imagePath]. */
     val imageBytes: ByteArray? = null,
+    /** Preview/test compatibility only; generated media is persisted to [videoFramePaths]. */
     val videoFrames: List<ByteArray>? = null,
     val metadata: Map<String, String>? = null,
 ) {
@@ -27,6 +31,8 @@ data class ChatMessage(
         if (text != other.text) return false
         if (thinking != other.thinking) return false
         if (inferenceMetrics != other.inferenceMetrics) return false
+        if (imagePath != other.imagePath) return false
+        if (videoFramePaths != other.videoFramePaths) return false
         if (!bytesEqual(imageBytes, other.imageBytes)) return false
         if (videoFrames?.size != other.videoFrames?.size) return false
         if (metadata != other.metadata) return false
@@ -39,6 +45,8 @@ data class ChatMessage(
         result = 31 * result + text.hashCode()
         result = 31 * result + (thinking?.hashCode() ?: 0)
         result = 31 * result + (inferenceMetrics?.hashCode() ?: 0)
+        result = 31 * result + (imagePath?.hashCode() ?: 0)
+        result = 31 * result + (videoFramePaths?.hashCode() ?: 0)
         result = 31 * result + (imageBytes?.size ?: 0)
         result = 31 * result + (videoFrames?.size ?: 0)
         result = 31 * result + (metadata?.hashCode() ?: 0)

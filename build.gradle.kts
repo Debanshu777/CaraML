@@ -7,3 +7,17 @@ plugins {
     alias(libs.plugins.kotlinMultiplatform) apply false
     alias(libs.plugins.androidMultiplatformLibrary) apply false
 }
+
+tasks.register("verifyProject") {
+    group = "verification"
+    description = "Run the JVM test suites used by local development and CI."
+    dependsOn(
+        ":composeApp:jvmTest",
+        ":huggingFaceManager:jvmTest",
+        ":runner:jvmTest",
+        ":diffusionRunner:jvmTest",
+        ":nativeEngine:verifyNativeSubmodulePins",
+        ":nativeEngine:testDiffusionRunnerNativeDesktop",
+        ":nativeEngine:testArtifactFsAndroidRootDesktop",
+    )
+}

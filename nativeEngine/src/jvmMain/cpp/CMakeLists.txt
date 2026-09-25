@@ -1,6 +1,12 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(llama_runner_desktop VERSION 1.0.0 LANGUAGES C CXX)
 
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+include(CTest)
+
+add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../../artifactFs/cpp" artifact-fs-build)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -32,6 +38,30 @@ endif()
 
 include("${CMAKE_CURRENT_LIST_DIR}/../../commonCpp/GgmlUnified.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/../../../../runner/src/commonCpp/LlamaRunnerCommon.cmake")
+
+function(caraml_assert_patched_source_contains source_path expected failure_message)
+    file(READ "${source_path}" _caraml_source)
+    string(FIND "${_caraml_source}" "${expected}" _caraml_match)
+    if(_caraml_match EQUAL -1)
+        message(FATAL_ERROR "${failure_message}")
+    endif()
+endfunction()
+
+caraml_assert_patched_source_contains(
+    "${LLAMA_SRC}/ggml/src/ggml-metal/ggml-metal-device.m"
+    "ggml_metal_compile_options_set_lang(options, props->has_tensor, props->has_bfloat)"
+    "CaraML Metal language safety patch is missing"
+)
+caraml_assert_patched_source_contains(
+    "${LLAMA_SRC}/ggml/src/ggml-vulkan/ggml-vulkan.cpp"
+    "op->src[0]->type == GGML_TYPE_F32 && op->type == GGML_TYPE_F32"
+    "CaraML Vulkan F32 admission patch is missing"
+)
+caraml_assert_patched_source_contains(
+    "${LLAMA_SRC}/common/fit.cpp"
+    "ScopedRestore<ggml_log_callback, void *>"
+    "CaraML fit-probe cleanup patch is missing"
+)
 
 set(JNI_INCLUDE_DIRS "")
 if(DEFINED ENV{JAVA_HOME})
@@ -80,6 +110,15 @@ if(CMAKE_BUILD_TYPE MATCHES Release)
     target_compile_options(llama_runner PRIVATE -O3)
 endif()
 
+find_package(Threads REQUIRED)
+add_executable(
+    llama_runner_hardening_test
+    ${LLAMA_RUNNER_CORE_SOURCES}
+    "${CMAKE_CURRENT_LIST_DIR}/../../../../runner/src/nativeTest/cpp/llama_runner_hardening_test.cpp"
+)
+target_include_directories(llama_runner_hardening_test PRIVATE ${LLAMA_RUNNER_INCLUDE_DIRS})
+target_link_libraries(llama_runner_hardening_test PRIVATE llama llama-common Threads::Threads)
+
 # --- diffusion_runner (stable-diffusion.cpp wrapper) ---
 include("${CMAKE_CURRENT_LIST_DIR}/../../../../diffusionRunner/src/commonCpp/DiffusionRunnerCommon.cmake")
 
@@ -113,3 +152,40 @@ set_target_properties(diffusion_runner PROPERTIES OUTPUT_NAME "diffusion_runner"
 if(CMAKE_BUILD_TYPE MATCHES Release)
     target_compile_options(diffusion_runner PRIVATE -O3)
 endif()
+
+foreach(_diffusion_test IN ITEMS
+        diffusion_bundled_components_test
+        diffusion_runtime_backend_test
+        diffusion_segmented_compute_test
+        diffusion_context_publication_test)
+    add_executable(
+        ${_diffusion_test}
+        "${CMAKE_CURRENT_LIST_DIR}/../../../../diffusionRunner/src/nativeTest/cpp/${_diffusion_test}.cpp"
+    )
+    target_include_directories(${_diffusion_test} PRIVATE
+        ${DIFFUSION_RUNNER_INCLUDE_DIRS}
+        "${SD_SRC}/src"
+        "${LLAMA_SRC}/ggml/include"
+    )
+    add_test(NAME ${_diffusion_test} COMMAND ${_diffusion_test})
+endforeach()
+
+target_sources(diffusion_runtime_backend_test PRIVATE ${DIFFUSION_RUNNER_CORE_SOURCES})
+target_compile_definitions(diffusion_runtime_backend_test PRIVATE CARAML_DIFFUSION_NATIVE_TESTING)
+target_link_libraries(diffusion_runtime_backend_test PRIVATE stable-diffusion Threads::Threads)
+
+target_sources(diffusion_segmented_compute_test PRIVATE ${DIFFUSION_RUNNER_CORE_SOURCES})
+target_compile_definitions(diffusion_segmented_compute_test PRIVATE CARAML_DIFFUSION_NATIVE_TESTING)
+target_link_libraries(diffusion_segmented_compute_test PRIVATE stable-diffusion Threads::Threads)
+
+add_executable(
+    diffusion_max_vram_test
+    "${CMAKE_CURRENT_LIST_DIR}/../../../../diffusionRunner/src/nativeTest/cpp/diffusion_max_vram_test.cpp"
+)
+target_include_directories(diffusion_max_vram_test PRIVATE
+    ${DIFFUSION_RUNNER_INCLUDE_DIRS}
+    "${SD_SRC}/src"
+    "${LLAMA_SRC}/ggml/include"
+)
+target_link_libraries(diffusion_max_vram_test PRIVATE stable-diffusion Threads::Threads)
+add_test(NAME diffusion_max_vram_test COMMAND diffusion_max_vram_test)

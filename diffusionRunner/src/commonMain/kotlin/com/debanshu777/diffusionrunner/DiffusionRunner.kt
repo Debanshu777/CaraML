@@ -3,8 +3,18 @@ package com.debanshu777.diffusionrunner
 expect class DiffusionRunner() {
     fun initialize(nativeLibDir: String)
     fun loadModel(config: DiffusionModelConfig): Boolean
+    fun modelVersion(): String?
+    fun preflightModel(config: DiffusionModelConfig): DiffusionPreflightResult
+    fun backendCapabilities(): List<DiffusionBackendCapability>
+    fun probeModelFeatures(
+        architecture: String,
+        quantization: String?,
+        mode: DiffusionGenerationMode,
+    ): DiffusionModelFeatureSupport
     fun txt2Img(params: ImageGenParams): ByteArray?
-    fun videoGen(params: VideoGenParams): List<ByteArray>?
+    fun videoGen(params: VideoGenParams): VideoGenResult?
+    fun cancelGeneration(): Boolean
+    fun supportsVideoGeneration(): Boolean
     fun release()
     /** Returns [currentStep, totalSteps] for the active generation. Both 0 when idle. */
     fun getStepProgress(): IntArray
