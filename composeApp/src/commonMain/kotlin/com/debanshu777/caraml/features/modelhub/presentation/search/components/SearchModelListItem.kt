@@ -31,12 +31,15 @@ fun SearchModelListItem(
             if (model.`private` == true) {
                 append(" • Private")
             }
+            browseEstimateLabel(recommendationState?.browseFit)?.let { append(" • $it") }
         },
         status = {
             ModelRecommendationStatus(
                 state = recommendationState?.descriptorState ?: DescriptorState.NEEDS_INFORMATION,
                 recommendation = recommendationState?.personalizedResult,
                 onInfoClick = onRecommendationInfoClick,
+                browseFit = recommendationState?.browseFit,
+                compact = true,
             )
         },
         onClick = onClick,

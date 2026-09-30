@@ -160,6 +160,8 @@ Network categories are `NoInternet`, `Unauthorized`, `RequestTimeout`, `RateLimi
 
 <!-- Updated at end of each Claude Code session -->
 
+- Android and Desktop secure artifact reads reuse a bounded per-source buffer during hashing and manifest reads, avoiding a new managed byte array for every chunk
+- Browse and search now share a bounded `/api/models` page API with query-bound opaque cursors, supported server sorts and parameter ranges, and optional GGUF/safetensors parameter metadata; malformed or foreign pagination links are rejected
 - Manifest-backed storage uses segment-aware relative paths on Unix and Windows while rejecting root escape; Windows publication retains the pinned target-directory handle through native atomic rename, and durable owner replacement keeps prior entries cleanup-retryable until acknowledgement
 - Native iOS completion import accepts only a typed, allowlisted HTTPS response provenance captured from the real platform response; persisted recovery metadata is bounded and cannot synthesize URL or status defaults
 - A narrow shared artifact-root lifetime discovers and locks expected roots plus repositories from every bounded main/staged/previous owner-bundle recovery candidate, then recovery-validates without recursively locking and holds the same canonical locks used by download commit, iOS import, validation, and cleanup

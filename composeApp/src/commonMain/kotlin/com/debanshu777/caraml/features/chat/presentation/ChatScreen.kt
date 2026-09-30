@@ -33,6 +33,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -280,6 +281,21 @@ fun ChatScreenContent(
                     fillMaxHeight = false,
                 ) {
                     Column(modifier = Modifier.fillMaxWidth()) {
+                        if (streamingState.isCompacting) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(12.dp)
+                                    .testTag("chat-context-maintenance"),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                Text(
+                                    text = "Making room for your next reply…",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
                         if (uiState.generationMode == GenerationMode.Text &&
                             uiState.isGenerating &&
                             streamingState.liveStats != null

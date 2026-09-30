@@ -61,11 +61,9 @@ fun LocalModelListItem(
     }
     val rowDescription = if (selectionMode) selectDescription else openDescription
     val metadata = buildList {
-        model.author?.let { add("by $it") }
-        model.pipelineTag?.let(::add)
         model.sizeBytes?.let { add(formatSize(it)) }
-        model.libraryName?.let(::add)
-    }.joinToString(" • ").ifBlank { null }
+        model.pipelineTag?.takeUnless { it == "text-generation" }?.let(::add)
+    }.joinToString(" · ").ifBlank { null }
     val statusContent: (@Composable () -> Unit)? = if (isPartial || isReady || !isSupported) {
         {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -112,7 +110,7 @@ fun LocalModelListItem(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "Download missing components",
+                        text = "Finish setup",
                         style = MaterialTheme.typography.labelSmall,
                     )
                 }

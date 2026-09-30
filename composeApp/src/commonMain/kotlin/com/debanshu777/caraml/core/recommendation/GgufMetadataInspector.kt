@@ -3,6 +3,7 @@ package com.debanshu777.caraml.core.recommendation
 import okio.BufferedSource
 import okio.FileSystem
 import okio.Path.Companion.toPath
+import okio.SYSTEM
 import okio.buffer
 import okio.use
 
@@ -178,7 +179,9 @@ class GgufMetadataInspector(
         const val MAX_ARCHITECTURE_BYTES = 64
         const val MAX_TRANSFORMER_FIELD = 1_048_576L
         const val MAX_KEY_BYTES = 256
-        const val MAX_HEADER_SCAN_BYTES = 4L * 1024L * 1024L
+        // Valid tokenizer token/merge arrays can push the metadata block past 4 MiB
+        // (MiniCPM5 Q4_K_M ends at 5,122,873 bytes). Keep the full scan bounded.
+        const val MAX_HEADER_SCAN_BYTES = 8L * 1024L * 1024L
         const val MAX_METADATA_ENTRIES = 16_384L
         const val MAX_TENSOR_COUNT = 1_000_000L
         const val CONTEXT_LENGTH_SUFFIX = ".context_length"
@@ -199,7 +202,7 @@ class GgufMetadataInspector(
     }
 }
 
-private fun LlmModelDescriptor.hasCompleteLocalCompatibilityMetadata(): Boolean =
+internal fun LlmModelDescriptor.hasCompleteLocalCompatibilityMetadata(): Boolean =
     architecture != null && ggufVersion != null && contextLimit != null && transformerShape?.let {
         it.layerCount != null && it.kvHeadCount != null && it.attentionHeadCount != null &&
             it.hiddenSize != null && it.headDim != null

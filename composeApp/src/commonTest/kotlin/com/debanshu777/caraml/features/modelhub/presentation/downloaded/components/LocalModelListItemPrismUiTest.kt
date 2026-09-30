@@ -195,7 +195,7 @@ class LocalModelListItemPrismUiTest {
             ),
             useUnmergedTree = true,
         ).assertIsDisplayed()
-        val action = onNodeWithText("Download missing components")
+        val action = onNodeWithText("Finish setup")
             .assertIsDisplayed()
             .assertHeightIsAtLeast(48.dp)
         val hostBounds = onNodeWithTag("partial-row-host").fetchSemanticsNode().boundsInRoot

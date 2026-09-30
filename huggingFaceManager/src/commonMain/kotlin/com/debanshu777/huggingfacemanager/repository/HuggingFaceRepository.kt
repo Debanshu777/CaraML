@@ -2,6 +2,8 @@ package com.debanshu777.huggingfacemanager.repository
 
 import com.debanshu777.huggingfacemanager.api.RemoteHuggingFaceApiService
 import com.debanshu777.huggingfacemanager.api.ListModelsParams
+import com.debanshu777.huggingfacemanager.api.ModelPage
+import com.debanshu777.huggingfacemanager.api.ModelPageRequest
 import com.debanshu777.huggingfacemanager.api.SearchModelsParams
 import com.debanshu777.huggingfacemanager.api.error.DataError
 import com.debanshu777.huggingfacemanager.api.error.Result
@@ -14,6 +16,8 @@ import com.debanshu777.huggingfacemanager.model.TransformerConfigResponse
 class HuggingFaceRepository(
     private val api: RemoteHuggingFaceApiService
 ) {
+    suspend fun getModelPage(params: ModelPageRequest): Result<ModelPage, DataError.Network> =
+        api.getModelPage(params)
     suspend fun listModels(params: ListModelsParams): Result<ListModelsResponse, DataError.Network> =
         api.listModels(params)
 

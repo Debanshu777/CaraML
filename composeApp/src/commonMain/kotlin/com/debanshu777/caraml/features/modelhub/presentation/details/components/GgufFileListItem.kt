@@ -24,13 +24,18 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.download.DownloadArtifactState
 import com.debanshu777.caraml.core.theme.AppTechnicalLabel
@@ -92,6 +97,8 @@ internal fun GgufFileTechnicalRow(
     onCancel: () -> Unit = {},
     onRetry: () -> Unit = {},
     showDownloadAction: Boolean = true,
+    supportingLabel: String? = null,
+    downloadActionDescription: String? = null,
     containerColor: Color = MaterialTheme.colorScheme.surfaceContainerLow,
 ) {
     val hasDirectory = filename.contains('/')
@@ -132,7 +139,7 @@ internal fun GgufFileTechnicalRow(
         modifier = modifier
             .fillMaxWidth()
             .then(downloadStateSemantics),
-        shape = MaterialTheme.prismShapes.pane,
+        shape = MaterialTheme.prismShapes.control,
         color = containerColor,
         contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
@@ -141,14 +148,18 @@ internal fun GgufFileTechnicalRow(
             val spacing = LocalSpacing.current
             if (compact) {
                 Column(
-                    modifier = Modifier.padding(spacing.l),
-                    verticalArrangement = Arrangement.spacedBy(spacing.s),
+                    modifier = Modifier.padding(horizontal = spacing.m, vertical = spacing.s),
+                    verticalArrangement = Arrangement.spacedBy(spacing.xs),
                 ) {
                     ArtifactIdentity(
                         directory = directory,
                         displayName = displayName,
                         maxNameLines = 2,
                     )
+                    supportingLabel?.let { label ->
+                        Text(label, style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.tertiary)
+                    }
                     if (reportedProgress != null) {
                         ArtifactProgress(reportedProgress, displayedProgress)
                     }
@@ -177,6 +188,7 @@ internal fun GgufFileTechnicalRow(
                             onCancel = onCancel,
                             onRetry = onRetry,
                             showAction = showDownloadAction,
+                            actionDescription = downloadActionDescription,
                         )
                     }
                 }
@@ -193,6 +205,10 @@ internal fun GgufFileTechnicalRow(
                         verticalArrangement = Arrangement.spacedBy(spacing.xs),
                     ) {
                         ArtifactIdentity(directory = directory, displayName = displayName)
+                        supportingLabel?.let { label ->
+                            Text(label, style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.tertiary)
+                        }
                         if (reportedProgress != null) {
                             ArtifactProgress(reportedProgress, displayedProgress)
                         }
@@ -217,6 +233,7 @@ internal fun GgufFileTechnicalRow(
                         onCancel = onCancel,
                         onRetry = onRetry,
                         showAction = showDownloadAction,
+                        actionDescription = downloadActionDescription,
                     )
                 }
             }
@@ -230,21 +247,33 @@ private fun ArtifactIdentity(
     displayName: String,
     maxNameLines: Int = 2,
 ) {
+    var expanded by rememberSaveable(directory, displayName) { mutableStateOf(false) }
+    var directoryOverflows by rememberSaveable(directory, displayName) { mutableStateOf(false) }
+    var nameOverflows by rememberSaveable(directory, displayName) { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.xs)) {
         if (directory != null) {
             Text(
                 text = directory,
                 style = AppTechnicalLabel,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
+                maxLines = if (expanded) Int.MAX_VALUE else 1,
+                overflow = TextOverflow.Ellipsis,
+                onTextLayout = { if (!expanded) directoryOverflows = it.hasVisualOverflow },
             )
         }
         Text(
             text = displayName,
             style = AppTechnicalLabel,
             color = MaterialTheme.colorScheme.onSurface,
-            maxLines = maxNameLines,
+            maxLines = if (expanded) Int.MAX_VALUE else maxNameLines,
+            overflow = TextOverflow.Ellipsis,
+            onTextLayout = { if (!expanded) nameOverflows = it.hasVisualOverflow },
         )
+        if (expanded || directoryOverflows || nameOverflows) {
+            TextButton(onClick = { expanded = !expanded }) {
+                Text(if (expanded) "Show less" else "Show full filename")
+            }
+        }
     }
 }
 
@@ -275,6 +304,7 @@ internal fun GgufFileAction(
     onCancel: () -> Unit,
     onRetry: () -> Unit,
     showAction: Boolean = true,
+    actionDescription: String? = null,
 ) {
     when {
         isDownloaded || durableState == DownloadArtifactState.COMPLETED -> Icon(
@@ -341,7 +371,7 @@ internal fun GgufFileAction(
         ) {
             Icon(
                 Icons.Default.Download,
-                contentDescription = "Download $filename",
+                contentDescription = actionDescription ?: "Download $filename",
                 tint = MaterialTheme.colorScheme.onSurface,
             )
         }

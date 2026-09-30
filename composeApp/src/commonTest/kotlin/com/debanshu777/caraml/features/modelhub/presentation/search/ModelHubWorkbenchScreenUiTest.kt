@@ -4,6 +4,8 @@ package com.debanshu777.caraml.features.modelhub.presentation.search
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -25,6 +27,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -44,6 +47,37 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class ModelHubWorkbenchScreenUiTest {
+
+    @Test
+    fun scrollingIntoLastFiveModelRowsRequestsOneAppend() = runComposeUiTest {
+        var appends = 0
+        setContent {
+            MaterialTheme {
+                Box(Modifier.requiredSize(360.dp, 420.dp)) {
+                    ModelHubTabLayout(
+                        context = {}, toolbar = {}, summary = {},
+                        results = {
+                            repeat(12) { index ->
+                                item(key = "model-$index") {
+                                    Box(Modifier.fillMaxWidth().height(88.dp)) { Text("Model $index") }
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                        autoLoadKeys = (7..11).map { "model-$it" }.toSet(),
+                        autoLoadEnabled = true,
+                        onNearEnd = { appends++ },
+                    )
+                }
+            }
+        }
+
+        runOnIdle { assertEquals(0, appends) }
+        onNodeWithTag("model-primary-results").performScrollToIndex(10)
+        runOnIdle { assertEquals(1, appends) }
+        onNodeWithTag("model-primary-results").performScrollToIndex(11)
+        runOnIdle { assertEquals(1, appends) }
+    }
 
     @Test
     fun compactModelsPlacesCommandBeforeContextAndResultsInFirstViewport() = runComposeUiTest {
@@ -205,7 +239,7 @@ class ModelHubWorkbenchScreenUiTest {
     }
 
     @Test
-    fun width840UsesSupportingContextWithoutShrinkingResultsBelow480Dp() = runComposeUiTest {
+    fun width840KeepsFullWidthResultsWithSharedContextAboveTabs() = runComposeUiTest {
         setContent {
             CompositionLocalProvider(LocalDensity provides Density(density = 1f, fontScale = 1f)) {
                 MaterialTheme {
@@ -219,14 +253,10 @@ class ModelHubWorkbenchScreenUiTest {
             }
         }
 
-        val supporting = onNodeWithTag("model-supporting-context")
-            .fetchSemanticsNode().boundsInRoot
         val results = onNodeWithTag("model-primary-results")
             .fetchSemanticsNode().boundsInRoot
 
-        assertTrue(supporting.width in 280f..320f, "Supporting width was ${supporting.width}dp")
-        assertTrue(results.width >= 480f, "Results width was ${results.width}dp")
-        assertTrue(supporting.left > results.left)
+        assertTrue(results.width >= 800f, "Results width was ${results.width}dp")
     }
 
     @Test

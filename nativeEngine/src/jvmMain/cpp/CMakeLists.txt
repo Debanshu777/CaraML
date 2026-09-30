@@ -119,6 +119,23 @@ add_executable(
 target_include_directories(llama_runner_hardening_test PRIVATE ${LLAMA_RUNNER_INCLUDE_DIRS})
 target_link_libraries(llama_runner_hardening_test PRIVATE llama llama-common Threads::Threads)
 
+add_executable(llama_chat_history_test
+    "${CMAKE_CURRENT_LIST_DIR}/../../../../runner/src/nativeTest/cpp/llama_chat_history_test.cpp")
+target_include_directories(llama_chat_history_test PRIVATE ${LLAMA_RUNNER_INCLUDE_DIRS})
+add_executable(llama_stream_finalization_test
+    "${CMAKE_CURRENT_LIST_DIR}/../../../../runner/src/nativeTest/cpp/llama_stream_finalization_test.cpp")
+target_include_directories(llama_stream_finalization_test PRIVATE ${LLAMA_RUNNER_INCLUDE_DIRS})
+target_link_libraries(llama_stream_finalization_test PRIVATE llama llama-common Threads::Threads)
+add_executable(llama_fit_memory_test
+    "${CMAKE_CURRENT_LIST_DIR}/../../../../runner/src/nativeTest/cpp/llama_fit_memory_test.cpp")
+target_include_directories(llama_fit_memory_test PRIVATE ${LLAMA_RUNNER_INCLUDE_DIRS})
+target_link_libraries(llama_fit_memory_test PRIVATE ggml-base)
+enable_testing()
+add_test(NAME llama_runner_hardening_test COMMAND llama_runner_hardening_test)
+add_test(NAME llama_chat_history_test COMMAND llama_chat_history_test)
+add_test(NAME llama_stream_finalization_test COMMAND llama_stream_finalization_test)
+add_test(NAME llama_fit_memory_test COMMAND llama_fit_memory_test)
+
 # --- diffusion_runner (stable-diffusion.cpp wrapper) ---
 include("${CMAKE_CURRENT_LIST_DIR}/../../../../diffusionRunner/src/commonCpp/DiffusionRunnerCommon.cmake")
 

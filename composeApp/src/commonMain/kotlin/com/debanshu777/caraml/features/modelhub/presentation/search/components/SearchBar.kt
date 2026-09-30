@@ -3,6 +3,7 @@ package com.debanshu777.caraml.features.modelhub.presentation.search.components
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -28,6 +29,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.ui.components.CommandSurface
@@ -39,16 +43,20 @@ fun SearchBar(
     onSearch: () -> Unit,
     onClear: () -> Unit = { onQueryChange("") },
     modifier: Modifier = Modifier,
+    errorMessage: String? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
 
+    Column(modifier = modifier.fillMaxWidth()) {
     CommandSurface(
         focused = focused,
         active = query.isNotBlank(),
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
             .testTag("model-command"),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+        idleContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        idleBorderColor = MaterialTheme.colorScheme.outlineVariant,
     ) {
         Row(
             modifier = Modifier
@@ -58,7 +66,7 @@ fun SearchBar(
         ) {
             Icon(
                 imageVector = Icons.Default.Search,
-                contentDescription = "Search models",
+                contentDescription = null,
                 modifier = Modifier.size(24.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -90,7 +98,7 @@ fun SearchBar(
                 },
             )
             if (query.isNotEmpty()) {
-                IconButton(onClick = onClear) {
+                IconButton(onClick = onClear, modifier = Modifier.size(48.dp)) {
                     Icon(
                         imageVector = Icons.Default.Clear,
                         contentDescription = "Clear model search",
@@ -98,5 +106,14 @@ fun SearchBar(
                 }
             }
         }
+    }
+    if (errorMessage != null) {
+        Text(
+            text = errorMessage,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        )
+    }
     }
 }

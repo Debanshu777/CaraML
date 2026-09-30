@@ -30,6 +30,7 @@ import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -44,12 +45,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.debanshu777.caraml.core.rating.SdArchitecture
 import com.debanshu777.caraml.core.recommendation.DiffusionComponentDescriptor
+import com.debanshu777.caraml.core.recommendation.AssessmentReason
+import com.debanshu777.caraml.core.recommendation.BrowseFitEstimate
+import com.debanshu777.caraml.core.recommendation.BrowseResourceFit
+import com.debanshu777.caraml.core.recommendation.Compatibility
 import com.debanshu777.caraml.core.recommendation.DiffusionMode
 import com.debanshu777.caraml.core.recommendation.DiffusionModelDescriptor
 import com.debanshu777.caraml.core.recommendation.LlmModelDescriptor
 import com.debanshu777.caraml.core.recommendation.ModelFileIdentity
+import com.debanshu777.caraml.core.recommendation.PerformanceEstimate
 import com.debanshu777.caraml.core.recommendation.QuantizationEvidence
 import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
+import com.debanshu777.caraml.features.modelhub.domain.BrowseVariantUiState
 import com.debanshu777.caraml.features.modelhub.domain.RecommendedModelUiState
 import com.debanshu777.caraml.features.modelhub.presentation.details.components.ModelDetailContent
 import com.debanshu777.caraml.features.modelhub.presentation.details.components.GgufFileListItem
@@ -128,7 +135,14 @@ class ModelDetailsWorkbenchUiTest {
         val result = results.single()
         assertTrue(result.lineCount > 1, "Large detail titles should wrap")
         assertTrue(!result.didOverflowWidth, "Wrapped detail title must not overflow width")
-        assertTrue(!result.didOverflowHeight, "Wrapped detail title must not be clipped")
+        assertTrue(result.lineCount <= 2, "Collapsed detail title must use at most two lines")
+        onNodeWithText("Show full name").performClick()
+        results.clear()
+        onNodeWithText(repositoryId.substringAfter('/'), useUnmergedTree = true)
+            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action ->
+                assertTrue(action(results))
+            }
+        assertTrue(!results.single().didOverflowHeight, "Expanded title must remain fully readable")
     }
 
     @Test
@@ -290,6 +304,7 @@ class ModelDetailsWorkbenchUiTest {
             assertTrue(action(layouts))
         }
         assertTrue(!layouts.single().hasVisualOverflow, "GGUF filename must remain readable")
+        onAllNodesWithText("Show full filename").assertCountEquals(0)
         val filenameBounds = filenameNode.fetchSemanticsNode().boundsInRoot
         val sizeBounds = onNodeWithText("861 MB", useUnmergedTree = true)
             .fetchSemanticsNode().boundsInRoot
@@ -301,6 +316,36 @@ class ModelDetailsWorkbenchUiTest {
             pixels[pixels.width / 2, 1].colorDistance(pageColor) >= 0.05f,
             "File row must own a rounded tonal surface",
         )
+    }
+
+    @Test
+    fun truncatedGgufFilenameCanBeExpandedInDetails() = runComposeUiTest {
+        val filename = "an-extremely-long-quantized-model-filename-with-exact-version-and-shard-00001-of-00002.gguf"
+        setContent {
+            CompositionLocalProvider(LocalDensity provides Density(1f, fontScale = 2f)) {
+                MaterialTheme {
+                    Box(Modifier.width(360.dp)) {
+                        GgufFileListItem(
+                            filename = filename,
+                            sizeBytes = 902_823_936L,
+                            isDownloaded = false,
+                            progress = null,
+                            isDownloading = false,
+                            onDownloadClick = {},
+                        )
+                    }
+                }
+            }
+        }
+
+        onNodeWithText("Show full filename").performClick()
+        val layouts = mutableListOf<TextLayoutResult>()
+        onNodeWithText(filename, useUnmergedTree = true)
+            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action ->
+                assertTrue(action(layouts))
+            }
+        assertTrue(!layouts.single().hasVisualOverflow, "Expanded exact filename must remain readable")
+        onNodeWithText("Show less").assertIsDisplayed()
     }
 
     @Test
@@ -452,17 +497,17 @@ class ModelDetailsWorkbenchUiTest {
         onNodeWithTag("detail-files").performScrollTo().assertIsDisplayed()
         onAllNodes(
             SemanticsMatcher.expectValue(SemanticsProperties.Selected, true),
-        ).assertCountEquals(1)
+        ).assertCountEquals(0)
         onAllNodes(
             SemanticsMatcher.expectValue(
                 SemanticsProperties.StateDescription,
-                "Recommended artifact",
+                "Evaluated variant",
             ),
         ).assertCountEquals(1)
 
         val selectedRow = onNodeWithTag("detail-artifact:${fixture.primaryArtifact.relativePath}")
             .assert(
-                SemanticsMatcher.expectValue(SemanticsProperties.Selected, true),
+                SemanticsMatcher.expectValue(SemanticsProperties.Selected, false),
             )
         val pixels = selectedRow.captureToImage().toPixelMap()
         val middleY = pixels.height / 2
@@ -471,7 +516,7 @@ class ModelDetailsWorkbenchUiTest {
         assertTrue(colorsNear(pixels[2, middleY], scheme.primary))
         assertTrue(
             !colorsNear(pixels[3, middleY], scheme.primary),
-            "Selected artifact must use one 3dp signal rail",
+            "Evaluated artifact must use one 3dp signal rail",
         )
 
         onNodeWithContentDescription("Download ${fixture.secondaryArtifact.relativePath}")
@@ -553,12 +598,13 @@ class ModelDetailsWorkbenchUiTest {
             onAllNodes(
                 SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange),
             ).assertCountEquals(1)
-            onNodeWithTag("detail-action").assertIsDisplayed()
+            onNodeWithTag("detail-action").assertDoesNotExist()
             onAllNodes(
                 hasContentDescription("Download ${fixture.primaryArtifact.relativePath}") and
                     hasClickAction(),
             ).assertCountEquals(1)
             onNodeWithContentDescription("Download ${fixture.primaryArtifact.relativePath}")
+                .performScrollTo()
                 .assertIsDisplayed()
                 .assertIsEnabled()
                 .performClick()
@@ -587,6 +633,56 @@ class ModelDetailsWorkbenchUiTest {
             onNodeWithContentDescription("Download ${fixture.secondaryArtifact.relativePath}")
                 .assertIsNotEnabled()
         }
+
+    @Test
+    fun groupedShardIconSubmitsEveryExactArtifactWithoutFooter() = runComposeUiTest {
+        val fixture = workbenchGgufFixture()
+        val descriptor = fixture.recommendation.selectedDescriptor as LlmModelDescriptor
+        val variant = BrowseVariantUiState(
+            stableIdentity = "exact-shards",
+            displayName = "Q4 two parts",
+            filePaths = descriptor.files.map { it.path },
+            fileIdentities = descriptor.files,
+            estimate = BrowseFitEstimate(
+                compatibility = Compatibility.Unknown(emptyList()),
+                memoryFit = BrowseResourceFit.UNKNOWN,
+                storageFit = BrowseResourceFit.UNKNOWN,
+                memory = null,
+                storageBytes = null,
+                downloadBytes = descriptor.files.sumOf { it.sizeBytes },
+                performance = PerformanceEstimate.Unknown(AssessmentReason.SPEED_NOT_VERIFIED),
+                resourceSnapshotFresh = false,
+                resourceTimestampEpochMs = 0L,
+                reasons = emptyList(),
+                evidence = emptyList(),
+            ),
+        )
+        var submitted: List<DownloadMetadataDTO>? = null
+        setContent {
+            MaterialTheme {
+                Box(Modifier.width(420.dp).height(800.dp)) {
+                    ModelDetailContent(
+                        model = ModelDetailResponse(modelId = fixture.repositoryId),
+                        ggufFiles = fixture.files,
+                        isDownloading = false,
+                        onDownloadClick = { _, _, _ -> error("Shard icon must submit the exact group") },
+                        onDownloadGroupClick = { _, metadata -> submitted = metadata },
+                        recommendationState = fixture.recommendation.copy(browseVariants = listOf(variant)),
+                    )
+                }
+            }
+        }
+        onNodeWithTag("detail-action").assertDoesNotExist()
+        onNodeWithText("Selected artifact").assertDoesNotExist()
+        onAllNodes(hasContentDescription("Download all 2 parts")).assertCountEquals(2)
+        onAllNodes(hasContentDescription("Download all 2 parts"))[0].performScrollTo().performClick()
+        runOnIdle {
+            assertEquals(
+                listOf(fixture.primaryArtifact, fixture.secondaryArtifact),
+                submitted?.map { it.artifact },
+            )
+        }
+    }
 
     @Test
     fun expandedDetailsHasOneScrollOwnerAndA320To360DpSupportPane() = runComposeUiTest {

@@ -2,6 +2,9 @@ package com.debanshu777.caraml.features.modelhub.domain
 
 import com.debanshu777.caraml.core.platform.DeviceSnapshot
 import com.debanshu777.caraml.core.recommendation.AssessmentReason
+import com.debanshu777.caraml.core.recommendation.BrowseFitEstimate
+import com.debanshu777.caraml.core.recommendation.BrowseFitEstimator
+import com.debanshu777.caraml.core.recommendation.Compatibility
 import com.debanshu777.caraml.core.recommendation.DescriptorLimits
 import com.debanshu777.caraml.core.recommendation.DeviceSnapshotProvider
 import com.debanshu777.caraml.core.recommendation.DiffusionModelDescriptor
@@ -74,6 +77,12 @@ internal interface RecommendationVariantEvaluator {
         snapshot: DeviceSnapshot,
         profile: RecommendationProfile,
     ): RecommendationSortKey
+
+    fun browseFit(
+        descriptor: LlmModelDescriptor,
+        snapshot: DeviceSnapshot,
+        workload: WorkloadConfig,
+    ): BrowseFitEstimate? = null
 }
 
 private class CachedRecommendationVariantEvaluator(
@@ -110,6 +119,12 @@ private class CachedRecommendationVariantEvaluator(
         snapshot: DeviceSnapshot,
         profile: RecommendationProfile,
     ): RecommendationSortKey = policy.sortKey(assessment, snapshot, profile)
+
+    override fun browseFit(
+        descriptor: LlmModelDescriptor,
+        snapshot: DeviceSnapshot,
+        workload: WorkloadConfig,
+    ): BrowseFitEstimate = BrowseFitEstimator(suitabilityEngine).estimate(descriptor, snapshot, workload)
 }
 
 @OptIn(ExperimentalAtomicApi::class)
@@ -175,7 +190,7 @@ class ModelRecommendationService internal constructor(
         }
         val session = RecommendationQuerySession(
             queryId = queryId.take(MAX_QUERY_ID_LENGTH).ifBlank { "invalid-query" },
-            candidates = candidates,
+            initialCandidates = candidates,
             workload = workload,
             initialStates = initialStates,
         )
@@ -187,6 +202,26 @@ class ModelRecommendationService internal constructor(
             }
         }
     }
+
+    /** Adds only new, validated repository IDs; existing assessments and source indices stay intact. */
+    suspend fun appendCandidates(
+        session: RecommendationQuerySession,
+        models: Collection<ListModelsResponse.Model>,
+    ): Int = session.runEvaluation {
+        if (activeSession.load() !== session || models.isEmpty()) return@runEvaluation 0
+        val seen = session.candidates.mapNotNullTo(mutableSetOf()) { it.repositoryId }
+        val remaining = MAX_QUERY_MODELS - session.candidates.size
+        val appended = models.asSequence()
+            .filter { model -> model.id?.let { isValidRepositoryId(it) && seen.add(it) } == true }
+            .take(remaining.coerceAtLeast(0))
+            .mapIndexed { offset, model ->
+                sanitizeCandidate(model, session.candidates.size + offset, mutableSetOf(), validWorkload(session.workload))
+            }
+            .toList()
+        session.appendCandidates(appended)
+    }
+
+    fun validRepositoryId(value: String): Boolean = isValidRepositoryId(value)
 
     suspend fun evaluateInitial(session: RecommendationQuerySession, profile: RecommendationProfile) {
         enrichAndEmit(session, minOf(INITIAL_WINDOW, session.candidates.size), profile)
@@ -351,10 +386,14 @@ class ModelRecommendationService internal constructor(
                     } else {
                         val assessed = ArrayList<AssessedVariant>(validated.size)
                         for ((variant, stableIdentity) in validated) {
+                            val assessment = variantEvaluator.assess(variant.descriptor, snapshot, session.workload)
                             assessed += AssessedVariant(
                                 variant = variant,
                                 stableIdentity = stableIdentity,
-                                assessment = variantEvaluator.assess(variant.descriptor, snapshot, session.workload),
+                                assessment = assessment,
+                                browseFit = (variant.descriptor as? LlmModelDescriptor)?.let {
+                                    variantEvaluator.browseFit(it, snapshot, session.workload)
+                                },
                             )
                         }
                         val evaluation = RepositoryEvaluation(assessed)
@@ -380,6 +419,36 @@ class ModelRecommendationService internal constructor(
         profile: RecommendationProfile,
         workload: WorkloadConfig,
     ): RecommendedModelUiState {
+        val browseVariants = evaluation.variants
+            .filter { it.browseFit != null }
+            .mapNotNull { assessed ->
+                val descriptor = assessed.variant.descriptor as? LlmModelDescriptor ?: return@mapNotNull null
+                val estimate = assessed.browseFit ?: return@mapNotNull null
+                BrowseVariantUiState(
+                    stableIdentity = assessed.stableIdentity,
+                    displayName = assessed.variant.displayName,
+                    filePaths = descriptor.files.map { it.path },
+                    fileIdentities = descriptor.files,
+                    estimate = estimate,
+                )
+            }
+            .sortedWith(
+            compareBy<BrowseVariantUiState> { it.estimate.downloadBytes ?: Long.MAX_VALUE }
+                .thenBy { it.stableIdentity },
+        )
+        val provisional = browseVariants.filter { it.estimate.compatibility is Compatibility.Unknown }
+        val hasKnownCompatibleVariant = evaluation.variants.any {
+            it.assessment.compatibility is Compatibility.Compatible
+        }
+        if (provisional.isNotEmpty() && !hasKnownCompatibleVariant) {
+            val displayCandidate = provisional.firstOrNull { it.filePaths.size == 1 } ?: provisional.first()
+            return needsInformationState(candidate).copy(
+                stableModelId = displayCandidate.stableIdentity,
+                browseFit = displayCandidate.estimate,
+                provisionalVariantName = displayCandidate.displayName,
+                browseVariants = browseVariants,
+            )
+        }
         val selected = evaluation.variants.minWithOrNull(
             Comparator { left, right ->
                 val leftKey = variantEvaluator.sortKey(
@@ -421,6 +490,7 @@ class ModelRecommendationService internal constructor(
             sourceIndex = candidate.sourceIndex,
             sortKey = sortKey,
             selectedDescriptor = selected.variant.descriptor,
+            browseVariants = browseVariants,
             workload = workload,
         )
     }

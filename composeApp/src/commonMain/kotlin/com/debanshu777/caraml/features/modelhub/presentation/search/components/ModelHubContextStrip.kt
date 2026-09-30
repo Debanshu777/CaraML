@@ -95,7 +95,7 @@ fun ModelHubContextStrip(
                     ContextItem(
                         icon = Icons.Outlined.Storage,
                         label = "Storage",
-                        value = "${formatStorageBytes(storageInfo.availableDeviceBytes)} free · " +
+                        value = "${formatStorageBytes(storageInfo.availableDeviceBytes)} storage free · " +
                             "Models: ${formatStorageBytes(storageInfo.usedByModelsBytes)}",
                         modifier = Modifier.weight(1f),
                     )
@@ -132,7 +132,7 @@ private fun CompactDeviceProfile(
     val risk = profile?.riskTolerance?.label()
     val summary = listOfNotNull(
         storageInfo.availableDeviceBytes.takeIf { it > 0L }
-            ?.let { "${formatStorageBytes(it)} free" },
+            ?.let { "${formatStorageBytes(it)} storage free" },
         risk,
     ).joinToString(" · ")
     val duration = motion.opacityDurationMillis
@@ -202,7 +202,7 @@ private fun CompactDeviceProfile(
                     ContextItem(
                         icon = Icons.Outlined.Storage,
                         label = "Storage",
-                        value = "${formatStorageBytes(storageInfo.availableDeviceBytes)} free · " +
+                        value = "${formatStorageBytes(storageInfo.availableDeviceBytes)} storage free · " +
                             "Models: ${formatStorageBytes(storageInfo.usedByModelsBytes)}",
                         modifier = Modifier.fillMaxWidth(),
                     )

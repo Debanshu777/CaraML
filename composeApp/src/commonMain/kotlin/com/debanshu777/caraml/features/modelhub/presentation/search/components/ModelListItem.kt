@@ -1,6 +1,5 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search.components
 
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.debanshu777.caraml.core.recommendation.RecommendationCategory
@@ -17,34 +16,38 @@ fun ModelListItem(
     onRecommendationInfoClick: (() -> Unit)? = null,
 ) {
     if (model == null) return
-    val trailingContent: (@Composable RowScope.() -> Unit)? =
-        recommendationState?.selectedVariantName?.let { selectedVariantName ->
-            {
-                SelectedVariantLabel(selectedVariantName)
-            }
-        }
     ModelResultCard(
         title = model.id ?: "Unknown",
         author = model.author?.let { "by $it" },
-        metadata = buildString {
-            model.pipelineTag?.let(::append)
-            if (isNotEmpty()) append(" • ")
-            append("${formatCompactMetric((model.downloads ?: 0).toLong())} downloads")
-            model.numParameters?.let { append(" • ${formatParams(it)} params") }
-        },
+        metadata = listOfNotNull(
+            model.numParameters?.let { "${formatParams(it)} parameters" },
+            model.downloads?.let { "${formatCompactMetric(it.toLong())} downloads" },
+        ).joinToString(" · "),
+        taskTag = model.pipelineTag?.takeUnless { it.equals("text-generation", ignoreCase = true) }
+            ?.let(::humanReadableTask),
         status = {
             ModelRecommendationStatus(
                 state = recommendationState?.descriptorState ?: DescriptorState.NEEDS_INFORMATION,
                 recommendation = recommendationState?.personalizedResult,
                 onInfoClick = onRecommendationInfoClick,
+                browseFit = recommendationState?.browseFit,
+                compact = true,
             )
         },
         onClick = onClick,
         modifier = modifier,
         highlighted = recommendationState?.personalizedResult?.category ==
             RecommendationCategory.RECOMMENDED,
-        trailing = trailingContent,
     )
+}
+
+private fun humanReadableTask(tag: String): String = when (tag.lowercase()) {
+    "image-text-to-text" -> "Image + text"
+    "text-to-image" -> "Text → image"
+    "image-to-image" -> "Image → image"
+    "text-to-video" -> "Text → video"
+    "image-to-video" -> "Image → video"
+    else -> tag.replace('-', ' ').replace('_', ' ').replaceFirstChar { it.uppercase() }
 }
 
 private fun formatParams(params: Long): String {

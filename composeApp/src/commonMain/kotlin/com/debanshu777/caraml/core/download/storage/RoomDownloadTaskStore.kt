@@ -92,6 +92,17 @@ class RoomDownloadTaskStore(
             emit(snapshots)
         }.distinctUntilChanged()
 
+    override fun observeQueue(): Flow<List<DownloadBatchSnapshot>> =
+        dao.observeQueue().transform { batches ->
+            val snapshots = mutableListOf<DownloadBatchSnapshot>()
+            batches.forEach { persisted ->
+                val snapshot = persisted.toReadSafeSnapshotOrNull()
+                if (snapshot != null) snapshots += snapshot
+                else if (persisted.requiresQuarantine()) dao.quarantineMutableBatch(persisted.batch.batchId)
+            }
+            emit(snapshots)
+        }.distinctUntilChanged()
+
     override suspend fun getBatch(batchId: String): DownloadBatchSnapshot? {
         val persisted = dao.batch(batchId) ?: return null
         persisted.toReadSafeSnapshotOrNull()?.let { return it }

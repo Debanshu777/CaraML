@@ -68,6 +68,7 @@ fun ModelHubToolbar(
     onMaxParamsChange: (ParameterRange) -> Unit,
     modifier: Modifier = Modifier,
     onFiltersApplied: () -> Unit = {},
+    onParameterFiltersApplied: ((ParameterRange, ParameterRange) -> Unit)? = null,
 ) {
     val spacing = LocalSpacing.current
     BoxWithConstraints(
@@ -99,6 +100,7 @@ fun ModelHubToolbar(
                             onMinParamsChange = onMinParamsChange,
                             onMaxParamsChange = onMaxParamsChange,
                             onFiltersApplied = onFiltersApplied,
+                            onParameterFiltersApplied = onParameterFiltersApplied,
                             expand = true,
                         )
                     }
@@ -125,6 +127,7 @@ fun ModelHubToolbar(
                         onMinParamsChange = onMinParamsChange,
                         onMaxParamsChange = onMaxParamsChange,
                         onFiltersApplied = onFiltersApplied,
+                        onParameterFiltersApplied = onParameterFiltersApplied,
                     )
                 }
             }
@@ -199,11 +202,11 @@ internal fun RowScope.ModelSortAndFilterControls(
     onMaxParamsChange: (ParameterRange) -> Unit,
     onFiltersApplied: () -> Unit = {},
     expand: Boolean = false,
+    onParameterFiltersApplied: ((ParameterRange, ParameterRange) -> Unit)? = null,
 ) {
     var orderingExpanded by remember { mutableStateOf(false) }
     var filtersExpanded by remember { mutableStateOf(false) }
     val activeFilterCount = listOf(
-        sort != ModelSort.TRENDING,
         minParams != ParameterRange.ZERO,
         maxParams != ParameterRange.SIX_B,
     ).count { it }
@@ -257,19 +260,23 @@ internal fun RowScope.ModelSortAndFilterControls(
         OrderingSheet(
             sort = sort,
             selected = ordering,
-            onSelect = onOrderingChange,
+            onSelect = { selectedOrdering ->
+                if (selectedOrdering is ModelOrdering.Server) {
+                    onSortChange(selectedOrdering.value)
+                }
+                onOrderingChange(selectedOrdering)
+            },
             onDismiss = { orderingExpanded = false },
         )
     }
     if (filtersExpanded) {
         ModelFilterSheet(
-            sort = sort,
             minParams = minParams,
             maxParams = maxParams,
-            onSortChange = onSortChange,
             onMinParamsChange = onMinParamsChange,
             onMaxParamsChange = onMaxParamsChange,
             onFiltersApplied = onFiltersApplied,
+            onParameterFiltersApplied = onParameterFiltersApplied,
             onDismiss = { filtersExpanded = false },
         )
     }
@@ -299,21 +306,24 @@ private fun OrderingSheet(
         ) {
             Text("Sort models", style = MaterialTheme.typography.titleLarge)
             SelectionRow(
-                label = "Recommended for me",
+                label = "Best fit among loaded models",
                 selected = selected is ModelOrdering.Personalized,
                 onClick = {
                     onSelect(ModelOrdering.Personalized)
                     onDismiss()
                 },
             )
-            SelectionRow(
-                label = "Server: ${sort.displayName}",
-                selected = selected is ModelOrdering.Server,
-                onClick = {
-                    onSelect(ModelOrdering.Server(sort))
-                    onDismiss()
-                },
-            )
+            Text("Hugging Face order", style = MaterialTheme.typography.titleMedium)
+            HUB_SORT_OPTIONS.forEach { option ->
+                SelectionRow(
+                    label = option.displayName,
+                    selected = selected is ModelOrdering.Server && sort == option,
+                    onClick = {
+                        onSelect(ModelOrdering.Server(option))
+                        onDismiss()
+                    },
+                )
+            }
         }
     }
 }
@@ -321,17 +331,15 @@ private fun OrderingSheet(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ModelFilterSheet(
-    sort: ModelSort,
     minParams: ParameterRange,
     maxParams: ParameterRange,
-    onSortChange: (ModelSort) -> Unit,
     onMinParamsChange: (ParameterRange) -> Unit,
     onMaxParamsChange: (ParameterRange) -> Unit,
     onFiltersApplied: () -> Unit,
+    onParameterFiltersApplied: ((ParameterRange, ParameterRange) -> Unit)?,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var pendingSort by remember(sort) { mutableStateOf(sort) }
     var pendingMinParams by remember(minParams) { mutableStateOf(minParams) }
     var pendingMaxParams by remember(maxParams) { mutableStateOf(maxParams) }
     ModalBottomSheet(
@@ -350,13 +358,6 @@ private fun ModelFilterSheet(
         ) {
             Text("Filters", style = MaterialTheme.typography.titleLarge)
             FilterSelectionGroup(
-                title = "Sort by",
-                options = ModelSort.entries.filter { it != ModelSort.SIMILAR },
-                selected = pendingSort,
-                label = { it.displayName },
-                onSelect = { pendingSort = it },
-            )
-            FilterSelectionGroup(
                 title = "Minimum parameters",
                 options = ParameterRange.entries,
                 selected = pendingMinParams,
@@ -372,10 +373,13 @@ private fun ModelFilterSheet(
             )
             TextButton(
                 onClick = {
-                    onSortChange(pendingSort)
-                    onMinParamsChange(pendingMinParams)
-                    onMaxParamsChange(pendingMaxParams)
-                    onFiltersApplied()
+                    if (onParameterFiltersApplied != null) {
+                        onParameterFiltersApplied(pendingMinParams, pendingMaxParams)
+                    } else {
+                        onMinParamsChange(pendingMinParams)
+                        onMaxParamsChange(pendingMaxParams)
+                        onFiltersApplied()
+                    }
                     onDismiss()
                 },
                 modifier = Modifier.align(Alignment.End),
@@ -447,6 +451,14 @@ private val ModelSort.displayName: String
         ModelSort.LEAST_PARAMS -> "Least params"
         ModelSort.SIMILAR -> "Similar"
     }
+
+private val HUB_SORT_OPTIONS = listOf(
+    ModelSort.TRENDING,
+    ModelSort.DOWNLOADS,
+    ModelSort.LIKES,
+    ModelSort.MODIFIED,
+    ModelSort.CREATED,
+)
 
 private val ParameterRange.displayName: String
     get() = when (this) {

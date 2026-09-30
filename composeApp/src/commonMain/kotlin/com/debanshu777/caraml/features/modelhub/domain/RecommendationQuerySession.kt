@@ -2,11 +2,16 @@ package com.debanshu777.caraml.features.modelhub.domain
 
 import com.debanshu777.caraml.core.platform.DeviceSnapshot
 import com.debanshu777.caraml.core.recommendation.ModelAssessment
+import com.debanshu777.caraml.core.recommendation.BrowseFitEstimate
+import com.debanshu777.caraml.core.recommendation.BrowseResourceFit
 import com.debanshu777.caraml.core.recommendation.PersonalizedRecommendation
 import com.debanshu777.caraml.core.recommendation.RecommendationSortKey
+import com.debanshu777.caraml.core.recommendation.Compatibility
+import com.debanshu777.caraml.core.recommendation.ModelFileIdentity
 import com.debanshu777.caraml.core.recommendation.WorkloadConfig
 import com.debanshu777.caraml.core.recommendation.ModelDescriptor
 import com.debanshu777.huggingfacemanager.model.ListModelsResponse
+import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -42,9 +47,67 @@ data class RecommendedModelUiState(
     val stableModelId: String,
     val sourceIndex: Int,
     val selectedDescriptor: ModelDescriptor? = null,
+    /** Presentation-only estimate for a provisional browse candidate; never a load permit. */
+    val browseFit: BrowseFitEstimate? = null,
+    val provisionalVariantName: String? = null,
+    val browseVariants: List<BrowseVariantUiState> = emptyList(),
     val workload: WorkloadConfig? = null,
     internal val sortKey: RecommendationSortKey? = null,
 )
+
+data class BrowseVariantUiState(
+    val stableIdentity: String,
+    val displayName: String,
+    val filePaths: List<String>,
+    val fileIdentities: List<ModelFileIdentity>,
+    val estimate: BrowseFitEstimate,
+)
+
+data class BrowseSelectionProjection(
+    val stableIdentity: String,
+    val filePaths: List<String>,
+    val displayName: String,
+    val estimate: BrowseFitEstimate,
+)
+
+/** Projects fit and action identity together so a detail view cannot mix variants. */
+internal fun projectBrowseSelection(
+    variants: List<BrowseVariantUiState>,
+    selectedPath: String?,
+): BrowseSelectionProjection? {
+    val selected = if (selectedPath != null) {
+        variants.singleOrNull { selectedPath in it.filePaths && it.estimate.compatibility !is Compatibility.Incompatible }
+            ?: return null
+    } else {
+        variants.firstOrNull { it.filePaths.size == 1 && it.estimate.compatibility !is Compatibility.Incompatible }
+            ?: variants.firstOrNull { it.estimate.compatibility !is Compatibility.Incompatible }
+    } ?: return null
+    return BrowseSelectionProjection(
+        stableIdentity = selected.stableIdentity,
+        filePaths = selected.filePaths,
+        displayName = selected.displayName,
+        estimate = selected.estimate,
+    )
+}
+
+internal fun matchesExactBrowseGroup(
+    variant: BrowseVariantUiState,
+    artifacts: List<DownloadArtifactIdentity>,
+): Boolean {
+    if (artifacts.isEmpty() || artifacts.size != variant.fileIdentities.size ||
+        artifacts.map { it.relativePath }.toSet().size != artifacts.size
+    ) return false
+    return variant.fileIdentities.all { expected ->
+        artifacts.singleOrNull { artifact ->
+            val expectedObjectId = expected.lfsOid?.let { "sha256:$it" } ?: expected.xetHash ?: expected.gitOid
+            expected.repositoryId == artifact.repositoryId &&
+                expected.revision.equals(artifact.immutableRevision, ignoreCase = true) &&
+                expected.path == artifact.relativePath &&
+                expected.sizeBytes == artifact.expectedBytes &&
+                expectedObjectId?.equals(artifact.remoteObjectId, ignoreCase = true) == true
+        } != null
+    }
+}
 
 internal data class RecommendationCandidate(
     val model: ListModelsResponse.Model,
@@ -56,6 +119,7 @@ internal data class AssessedVariant(
     val variant: RepositoryVariant,
     val stableIdentity: String,
     val assessment: ModelAssessment,
+    val browseFit: BrowseFitEstimate? = null,
 )
 
 internal data class RepositoryEvaluation(
@@ -64,10 +128,12 @@ internal data class RepositoryEvaluation(
 
 class RecommendationQuerySession internal constructor(
     val queryId: String,
-    internal val candidates: List<RecommendationCandidate>,
+    initialCandidates: List<RecommendationCandidate>,
     val workload: WorkloadConfig,
     initialStates: List<RecommendedModelUiState>,
 ) {
+    internal var candidates: List<RecommendationCandidate> = initialCandidates
+        private set
     private val lifecycle = SupervisorJob()
     private val evaluationMutex = Mutex()
     private val mutex = Mutex()
@@ -100,6 +166,27 @@ class RecommendationQuerySession internal constructor(
             }
         }
         start until boundedTarget
+    }
+
+    internal suspend fun appendCandidates(newCandidates: List<RecommendationCandidate>): Int = mutex.withLock {
+        lifecycle.ensureActive()
+        if (newCandidates.isEmpty()) return@withLock 0
+        require(newCandidates.first().sourceIndex == candidates.size)
+        require(newCandidates.map { it.sourceIndex } == (candidates.size until candidates.size + newCandidates.size).toList())
+        candidates = candidates + newCandidates
+        _state.value = ordered(_state.value + newCandidates.map { candidate ->
+            RecommendedModelUiState(
+                sourceModel = candidate.model,
+                repositoryId = candidate.repositoryId,
+                descriptorState = if (candidate.repositoryId == null) DescriptorState.NEEDS_INFORMATION else DescriptorState.PENDING,
+                objectiveAssessment = null,
+                personalizedResult = null,
+                selectedVariantName = null,
+                stableModelId = candidate.repositoryId ?: "invalid-model-${candidate.sourceIndex}",
+                sourceIndex = candidate.sourceIndex,
+            )
+        }, ordering)
+        newCandidates.size
     }
 
     internal suspend fun snapshotOrCapture(capture: suspend () -> DeviceSnapshot): DeviceSnapshot = mutex.withLock {
@@ -204,10 +291,25 @@ class RecommendationQuerySession internal constructor(
                 } else if (leftKey != null || rightKey != null) {
                     return@Comparator if (leftKey != null) -1 else 1
                 }
-                val stable = left.stableModelId.compareTo(right.stableModelId)
-                if (stable != 0) stable else left.sourceIndex.compareTo(right.sourceIndex)
+                val provisional = provisionalRank(left).compareTo(provisionalRank(right))
+                if (provisional != 0) provisional else left.sourceIndex.compareTo(right.sourceIndex)
             },
         )
+    }
+}
+
+private fun provisionalRank(value: RecommendedModelUiState): Int {
+    val fit = value.browseFit ?: return 6
+    if (fit.compatibility is Compatibility.Incompatible) return 5
+    return when (fit.memoryFit) {
+        BrowseResourceFit.LIKELY_FIT -> when (fit.storageFit) {
+            BrowseResourceFit.LIKELY_FIT -> 0
+            BrowseResourceFit.TIGHT_FIT, BrowseResourceFit.UNKNOWN -> 1
+            BrowseResourceFit.TOO_LARGE -> 4
+        }
+        BrowseResourceFit.TIGHT_FIT -> if (fit.storageFit == BrowseResourceFit.TOO_LARGE) 4 else 2
+        BrowseResourceFit.UNKNOWN -> if (fit.storageFit == BrowseResourceFit.TOO_LARGE) 4 else 3
+        BrowseResourceFit.TOO_LARGE -> 4
     }
 }
 

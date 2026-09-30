@@ -13,7 +13,7 @@ class LlamaPreflightResultTest {
         val config = NativeRunnerConfig()
 
         assertEquals(LlamaLazyMode.AUTO, config.lazyMode)
-        assertEquals(0, config.nOutputsMaxPerSequence)
+        assertEquals(1, config.nOutputsMaxPerSequence)
     }
 
     @Test

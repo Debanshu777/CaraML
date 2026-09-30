@@ -1,10 +1,13 @@
 package com.debanshu777.caraml.core.download
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 
 interface DownloadTaskStore {
     suspend fun create(request: DownloadBatchRequest, nowEpochMs: Long): String
     fun observeForModel(modelId: String): Flow<List<DownloadBatchSnapshot>>
+    /** Recent actionable and failed work across models, bounded by the store. */
+    fun observeQueue(): Flow<List<DownloadBatchSnapshot>> = flowOf(emptyList())
     suspend fun getBatch(batchId: String): DownloadBatchSnapshot?
     suspend fun recoverableBatches(): List<DownloadBatchSnapshot>
     suspend fun claim(artifactId: String, owner: String, nowEpochMs: Long, expiresAtEpochMs: Long): Boolean

@@ -146,20 +146,20 @@ using LlamaLogFn = std::function<void(LlamaLogLevel level, const char *msg)>;
 
 struct LlamaRunnerConfig {
     // Context params
-    int n_ctx          = 0;       // 0 = auto-fit by llama_params_fit()
+    int n_ctx          = 0;       // 0 = automatic context when fitting
     int n_ctx_min      = 512;     // floor for auto-fit
     int n_threads      = 4;       // generation threads (= perf core count)
     int n_threads_batch = 0;      // prompt processing threads (0 = same as n_threads)
     int n_batch        = 512;
     int n_ubatch       = 512;
-    int n_outputs_max_per_seq = 0;
+    int n_outputs_max_per_seq = 1; // single-sequence runner requests one output
     int flash_attn     = -1;      // -1=auto, 0=off, 1=on (maps to llama_flash_attn_type)
     bool offload_kqv   = true;
     int type_k         = 1;       // ggml_type for KV cache keys (1=F16, 8=Q8_0)
     int type_v         = 1;       // ggml_type for KV cache values
 
     // Model params
-    int n_gpu_layers   = -1;      // -1 = auto-fit (all layers), 0 = CPU only
+    int n_gpu_layers   = -1;      // -1 = all layers; 0 = no weight offload
     bool use_mmap      = true;
     bool use_mlock     = false;
     int lazy_mode      = 1;       // 0=off, 1=auto, 2=on
@@ -168,7 +168,7 @@ struct LlamaRunnerConfig {
     float temperature  = 0.3f;
 
     // Fitting control
-    bool auto_fit      = true;    // use llama_params_fit() before loading
+    bool auto_fit      = true;    // use common_fit_params() before loading
 
     // CPU pinning
     std::string cpu_mask       = "";  // e.g. "4-7" or "4,5,6,7" or "" (no pinning)

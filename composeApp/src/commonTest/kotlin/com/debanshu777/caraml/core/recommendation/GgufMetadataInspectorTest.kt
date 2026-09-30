@@ -1,6 +1,7 @@
 package com.debanshu777.caraml.core.recommendation
 
 import okio.Buffer
+import okio.BufferedSink
 import okio.FileSystem
 import kotlin.random.Random
 import kotlin.test.Test
@@ -48,6 +49,43 @@ class GgufMetadataInspectorTest {
                     ),
                 )
             }
+
+            assertEquals(
+                GgufLocalMetadata(
+                    version = 3,
+                    architecture = "llama",
+                    contextLimit = 32_768,
+                    transformerShape = TransformerShape(
+                        layerCount = 40,
+                        kvHeadCount = 8,
+                        attentionHeadCount = 24,
+                        hiddenSize = 3_072,
+                        headDim = 128,
+                    ),
+                ),
+                GgufMetadataInspector(FileSystem.SYSTEM).inspect(path.toString()),
+            )
+        } finally {
+            FileSystem.SYSTEM.delete(path, mustExist = false)
+        }
+    }
+
+    @Test
+    fun readsCompleteShapeWhenTokenizerArraysPushHeaderPastFourMebibytes() {
+        val path = FileSystem.SYSTEM_TEMPORARY_DIRECTORY / "caraml-gguf-${Random.nextLong()}.gguf"
+        try {
+            FileSystem.SYSTEM.write(path) {
+                write(completeCoreMetadata(declaredExtraEntries = 2))
+                val token = "t".repeat(2_000)
+                listOf("tokenizer.ggml.tokens", "tokenizer.ggml.merges").forEach { key ->
+                    writeGgufString(key)
+                    writeIntLe(9) // GGUF array of strings
+                    writeIntLe(8)
+                    writeLongLe(1_300)
+                    repeat(1_300) { writeGgufString(token) }
+                }
+            }
+            assertEquals(true, FileSystem.SYSTEM.metadata(path).size!! > 4L * 1024L * 1024L)
 
             assertEquals(
                 GgufLocalMetadata(
@@ -302,7 +340,7 @@ private fun completeCoreMetadata(declaredExtraEntries: Int): ByteArray {
     }.readByteArray()
 }
 
-private fun Buffer.writeGgufString(value: String) {
+private fun BufferedSink.writeGgufString(value: String) {
     writeLongLe(value.encodeToByteArray().size.toLong())
     writeUtf8(value)
 }

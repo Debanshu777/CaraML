@@ -49,4 +49,6 @@ dependencies {
     implementation(libs.koin.android)
     implementation(libs.koin.core)
     debugImplementation(libs.compose.uiTooling)
+    debugImplementation(project(":runner"))
+    debugImplementation(libs.kotlinx.coroutinesCore)
 }

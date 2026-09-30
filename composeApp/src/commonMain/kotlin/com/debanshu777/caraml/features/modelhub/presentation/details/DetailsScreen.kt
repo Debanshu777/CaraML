@@ -137,6 +137,9 @@ fun DetailsScreen(
                                 onDownloadClick = { id, path, metadata ->
                                     viewModel.startDownload(id, path, metadata)
                                 },
+                                onDownloadGroupClick = { id, metadata ->
+                                    viewModel.startLanguageBundleDownload(id, metadata)
+                                },
                                 weightFilesHeading = weightHeading,
                                 weightFilesEmptyLabel = weightEmpty,
                                 installBundleState = installBundleState,

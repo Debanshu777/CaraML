@@ -26,6 +26,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -226,18 +227,18 @@ class ModelHubControlsUiTest {
 
     @Test
     fun filterSheetStagesSelectionUntilDone() = runComposeUiTest {
-        var selectedSort by mutableStateOf(ModelSort.TRENDING)
+        var selectedMin by mutableStateOf(ParameterRange.ZERO)
         var applyCalls = 0
         setContent {
             MaterialTheme(shapes = AppShapes) {
                 SortFilterChips(
-                    ordering = ModelOrdering.Server(selectedSort),
-                    sort = selectedSort,
-                    minParams = ParameterRange.ZERO,
+                    ordering = ModelOrdering.Server(ModelSort.TRENDING),
+                    sort = ModelSort.TRENDING,
+                    minParams = selectedMin,
                     maxParams = ParameterRange.SIX_B,
-                    onSortChange = { selectedSort = it },
+                    onSortChange = {},
                     onOrderingChange = {},
-                    onMinParamsChange = {},
+                    onMinParamsChange = { selectedMin = it },
                     onMaxParamsChange = {},
                     onFiltersApplied = { applyCalls += 1 },
                 )
@@ -245,26 +246,27 @@ class ModelHubControlsUiTest {
         }
 
         onNodeWithText("Filters").performClick()
-        onNode(hasText("Trending") and isSelectable())
+        onNodeWithText("Sort by").assertDoesNotExist()
+        onAllNodes(hasText("0") and isSelectable())[0]
             .assertIsSelected()
             .fetchSemanticsNode()
             .also { option ->
                 assertEquals(AppShapes.small, option.config[SemanticsProperties.Shape])
             }
-        onNodeWithText("Downloads").performClick()
+        onAllNodesWithText("3B")[0].performClick()
 
-        runOnIdle { assertEquals(ModelSort.TRENDING, selectedSort) }
-        onNode(hasText("Downloads") and isSelectable()).assertIsSelected()
+        runOnIdle { assertEquals(ParameterRange.ZERO, selectedMin) }
+        onAllNodes(hasText("3B") and isSelectable())[0].assertIsSelected()
         onNodeWithText("Done").performScrollTo().performClick()
         runOnIdle {
-            assertEquals(ModelSort.DOWNLOADS, selectedSort)
+            assertEquals(ParameterRange.THREE_B, selectedMin)
             assertEquals(1, applyCalls)
         }
         onNodeWithText("Filters (1)").assertIsDisplayed()
     }
 
     @Test
-    fun searchSubmissionUsesTheFieldImeActionWithoutADuplicateButton() = runComposeUiTest {
+    fun searchSubmissionUsesImeWithoutDuplicateTrailingButton() = runComposeUiTest {
         var submissions = 0
         setContent {
             MaterialTheme {
@@ -282,7 +284,7 @@ class ModelHubControlsUiTest {
     }
 
     @Test
-    fun emptySearchDoesNotShowADuplicateTrailingSearchAction() = runComposeUiTest {
+    fun searchClearActionAppearsOnlyForNonemptyDraft() = runComposeUiTest {
         var query by mutableStateOf("")
         setContent {
             MaterialTheme {
@@ -298,6 +300,21 @@ class ModelHubControlsUiTest {
         runOnIdle { query = "tinyllama" }
         onAllNodesWithContentDescription("Submit model search").assertCountEquals(0)
         onNodeWithContentDescription("Clear model search").assertIsDisplayed()
+    }
+
+    @Test
+    fun invalidSearchShowsAccessibleInputFeedback() = runComposeUiTest {
+        setContent {
+            MaterialTheme {
+                SearchBar(
+                    query = "invalid",
+                    onQueryChange = {},
+                    onSearch = {},
+                    errorMessage = "Search text is too long or contains invalid characters.",
+                )
+            }
+        }
+        onNodeWithText("Search text is too long or contains invalid characters.").assertIsDisplayed()
     }
 
     @Test
@@ -333,5 +350,73 @@ class ModelHubControlsUiTest {
 
         onNodeWithContentDescription("Clear model search").performClick()
         runOnIdle { assertEquals("", query) }
+    }
+
+    @Test
+    fun sortSheetOffersOnlyVerifiedHubOrderAndLoadedBestFit() = runComposeUiTest {
+        var selected by mutableStateOf<ModelOrdering>(ModelOrdering.Server(ModelSort.TRENDING))
+        setContent {
+            MaterialTheme(shapes = AppShapes) {
+                SortFilterChips(
+                    ordering = selected,
+                    sort = ModelSort.TRENDING,
+                    minParams = ParameterRange.ZERO,
+                    maxParams = ParameterRange.SIX_B,
+                    onSortChange = {},
+                    onOrderingChange = { selected = it },
+                    onMinParamsChange = {},
+                    onMaxParamsChange = {},
+                )
+            }
+        }
+        onNodeWithText("Sort").performClick()
+        onNodeWithText("Best fit among loaded models").assertIsDisplayed()
+        onNodeWithText("Most params").assertDoesNotExist()
+        onNodeWithText("Least params").assertDoesNotExist()
+        onNodeWithText("Similar").assertDoesNotExist()
+        onNodeWithText("Best fit among loaded models").performClick()
+        runOnIdle { assertEquals(ModelOrdering.Personalized, selected) }
+    }
+
+    @Test
+    fun pageErrorRetainsRetryAndLoadedCount() = runComposeUiTest {
+        var retries = 0
+        setContent {
+            MaterialTheme {
+                ModelPageFooter(
+                    loadedCount = 20,
+                    loading = false,
+                    error = "Connection lost",
+                    hasMore = true,
+                    sessionLimitReached = false,
+                    onLoadMore = { retries++ },
+                )
+            }
+        }
+        onNodeWithText("Connection lost").assertIsDisplayed()
+        onNodeWithText("Retry load more").performClick()
+        runOnIdle { assertEquals(1, retries) }
+    }
+
+    @Test
+    fun stoppedPaginationOffersStartOverInsteadOfDeadRetry() = runComposeUiTest {
+        var restarts = 0
+        setContent {
+            MaterialTheme {
+                ModelPageFooter(
+                    loadedCount = 40,
+                    loading = false,
+                    error = "Pagination stopped",
+                    hasMore = false,
+                    sessionLimitReached = false,
+                    onLoadMore = {},
+                    onStartOver = { restarts++ },
+                )
+            }
+        }
+        onNodeWithText("Refine your search above to explore more models.").assertIsDisplayed()
+        onNodeWithText("Retry load more").assertDoesNotExist()
+        onNodeWithText("Start over").performClick()
+        runOnIdle { assertEquals(1, restarts) }
     }
 }

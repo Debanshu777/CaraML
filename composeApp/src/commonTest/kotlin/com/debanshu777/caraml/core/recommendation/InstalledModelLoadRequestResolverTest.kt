@@ -36,6 +36,18 @@ class InstalledModelLoadRequestResolverTest {
     }
 
     @Test
+    fun completeLocalHeaderDescriptorWithoutRemoteParameterCountCanBeAdmitted() = runTest {
+        val fixture = Fixture().apply {
+            descriptor = task6LlmDescriptor(parameterCount = null)
+            evidenceResult = EvidenceRepairResult.Ready(descriptor)
+        }
+
+        val ready = assertIs<InstalledModelLoadResolution.Ready>(fixture.resolve())
+        assertSame(fixture.artifact, ready.request.artifact)
+        assertEquals(1, fixture.strictRequestCalls)
+    }
+
+    @Test
     fun eachResolutionCapturesCurrentResourcesAndProfile() = runTest {
         val fixture = Fixture()
         fixture.snapshots += listOf(

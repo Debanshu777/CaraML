@@ -26,6 +26,7 @@ coreKtx = "1.19.1"
 materialKolor = "5.0.1"
 okio = "3.18.2"
 work = "2.12.0"
+paging = "3.5.1"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -72,6 +73,7 @@ kotlin-stdlib = { group = "org.jetbrains.kotlin", name = "kotlin-stdlib", versio
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junit" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "work" }
+androidx-paging-common = { module = "androidx.paging:paging-common", version.ref = "paging" }
 
 #navigation3
 navigation3-compose-ui = { module = "org.jetbrains.androidx.navigation3:navigation3-ui", version.ref = "navigation" }

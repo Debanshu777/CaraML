@@ -65,6 +65,34 @@ import kotlin.test.assertTrue
 class ChatAuroraUiTest {
 
     @Test
+    fun compressionShowsOneStatusOutsideHistoryAndKeepsTheFullPromptVisible() = runComposeUiTest {
+        val prompt = "explain ADMX in more details"
+        setContent {
+            MaterialTheme {
+                ChatScreenContent(
+                    uiState = ChatUiState.Ready(
+                        messages = persistentListOf(
+                            ChatMessage(id = "user", role = MessageRole.User, text = prompt),
+                            ChatMessage(id = "reply", role = MessageRole.Assistant, text = ""),
+                        ),
+                        isGenerating = true,
+                    ),
+                    streamingState = StreamingState(isCompacting = true, streamingMessageId = "reply"),
+                    onSelectModel = {},
+                    onSendMessage = {},
+                    onCancelGeneration = {},
+                    onNavigateToSearch = {},
+                )
+            }
+        }
+        onNodeWithTag("chat-context-maintenance").assertIsDisplayed()
+        onNodeWithText("Making room for your next reply…").assertIsDisplayed()
+        onNodeWithText(prompt).assertIsDisplayed()
+        onNodeWithText("Thoughts").assertDoesNotExist()
+        onNodeWithContentDescription("Stop generation").assertIsDisplayed()
+    }
+
+    @Test
     fun wideChatAlignsConversationComposerAndGenerationStatsToOneReadableWidth() =
         assertChatSurfaceAlignment(viewportWidth = 1200.dp, expectedBodyWidth = 792f)
 

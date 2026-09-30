@@ -1,5 +1,7 @@
 #include "llama_operation_gate.h"
 #include "llama_runner_core.h"
+#include "llama_fit_policy.h"
+#include "llama_config_validation.h"
 #include "scoped-model-context.h"
 
 #include <atomic>
@@ -425,6 +427,27 @@ void abandoned_calibration_quarantines_later_model_operations() {
 } // namespace
 
 int main() {
+    expect(!llama_runner_supported_cache_type(4), "removed KV type accepted");
+    expect(!llama_runner_supported_cache_type(GGML_TYPE_I32), "integer KV type accepted");
+    expect(llama_runner_supported_cache_type(GGML_TYPE_Q8_0), "supported Q8 KV type rejected");
+    bool mask[GGML_MAX_N_THREADS]{};
+    expect(llama_runner_parse_cpu_mask("4-7", mask), "decimal CPU range rejected");
+    for (int cpu = 0; cpu < GGML_MAX_N_THREADS; ++cpu) {
+        expect(mask[cpu] == (cpu >= 4 && cpu <= 7), "CPU range parsed as hexadecimal mask");
+    }
+    expect(!llama_runner_parse_cpu_mask("0,512", mask), "out-of-bounds CPU accepted");
+    expect(mask[4] && !mask[0], "invalid mask partially overwrote affinity");
+    expect(llama_runner_parse_cpu_mask("7", mask), "single CPU index rejected");
+    expect(mask[7] && !mask[0] && !mask[1] && !mask[2], "single CPU index treated as bitmask");
+    expect(llama_runner_parse_cpu_mask("", mask) && !mask[7], "empty mask retained affinity");
+    expect(llama_runner_valid_fitted_dimensions(4096, -1),
+        "upstream all-layer sentinel rejected after successful auto-fit");
+    expect(!llama_runner_valid_fitted_dimensions(4096, -2), "invalid offload sentinel accepted");
+    expect(!llama_runner_valid_fitted_dimensions(0, -1), "empty fitted context accepted");
+    expect(llama_runner_resolved_gpu_layers(-1, 24, true) == 25, "full offload count lost output layer");
+    expect(llama_runner_resolved_gpu_layers(99, 24, true) == 25, "offload count exceeds model layers");
+    expect(llama_runner_resolved_gpu_layers(12, 24, true) == 12, "partial offload count changed");
+    expect(llama_runner_resolved_gpu_layers(-1, 24, false) == 0, "CPU-only device reports GPU layers");
     operation_gate_excludes_concurrent_owners();
     streamed_session_excludes_unload_between_tokens();
     exceptional_context_path_releases_both_handles();

@@ -419,26 +419,25 @@ val compileLlamaRunnerDesktop by tasks.registering(Exec::class) {
 
 val compileLlamaRunnerHardeningTestDesktop by tasks.registering(Exec::class) {
     group = "verification"
-    description = "Build deterministic native ownership and cleanup regressions"
+    description = "Build native parameter, memory, conversation, and ownership regressions"
     dependsOn(buildLlamaRunnerDesktop)
     commandLine(
         desktopCmakePath,
         "--build", desktopJniBuildDir.absolutePath,
-        "--target", "llama_runner_hardening_test",
+        "--target", "llama_runner_hardening_test", "llama_chat_history_test", "llama_stream_finalization_test", "llama_fit_memory_test",
         "--config", "Release",
     )
 }
 
-val nativeHardeningTestBinary = desktopJniBuildDir.resolve(
-    if (desktopPlatform == "windows") "Release/llama_runner_hardening_test.exe"
-    else "llama_runner_hardening_test",
-)
-
 val testLlamaRunnerNativeDesktop by tasks.registering(Exec::class) {
     group = "verification"
-    description = "Run deterministic native ownership and cleanup regressions"
+    description = "Run native parameter, memory, conversation, and ownership regressions"
     dependsOn(compileLlamaRunnerHardeningTestDesktop)
-    commandLine(nativeHardeningTestBinary.absolutePath)
+    commandLine(
+        findTool("ctest"), "--test-dir", desktopJniBuildDir.absolutePath,
+        "--build-config", "Release", "--output-on-failure",
+        "-R", "^llama_(runner_hardening|chat_history|stream_finalization|fit_memory)_test$",
+    )
 }
 
 val diffusionNativeTestTargets = listOf(

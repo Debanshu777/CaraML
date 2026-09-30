@@ -217,7 +217,16 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 
 ## Recent Changes
 
+- Chat compression reserves the active turn before suspension, keeps the submitted prompt visible, shows one compact progress status, and rebuilds interrupted summaries before the next reply.
+- Model Hub common-source previews now include the Compose debug tooling runtime in their owning module.
+
 <!-- This section is updated at the end of each AI-assisted development session -->
+
+- Audited llama.cpp parameter mappings, corrected CPU placement/affinity, cache validation and conversation finalization, and reduced single-output GPU scratch allocation; [audit and tuning evidence](docs/benchmarks/pixel9-minicpm5-2026-09-30/parameter-audit.md)
+- Automatic llama.cpp fitting now accepts full GPU offload and fits the requested context; Pixel 9 debug chat sustained 10.4 tok/s through 1,024 MiniCPM5 tokens. [Benchmark and reproduction](docs/benchmarks/pixel9-minicpm5-2026-09-30/README.md)
+- Installed GGUF inspection now accepts tokenizer metadata through a bounded 8 MiB header scan, allowing the existing MiniCPM5 Q4_K_M model to load on Pixel 9
+- Model Hub keeps a shared device profile and compact download status above Discover and Library, debounces search, applies a draft Size slider, auto-loads nearby Paging 3 results, and puts GGUF download controls directly in file rows; verified local GGUF headers can repair installed Text evidence offline
+- Model browsing now separates projector, adapter, primary, and unverified GGUF files, shows provisional resource guidance when GGUF compatibility metadata is missing, supports exact grouped downloads for selected shards, and keeps transfer separate from strict load admission
 
 - CI now installs the Android CMake version pinned by the native module; Windows publication uses pinned-directory native renames, large-text empty states remain scroll-reachable across desktop fonts, and diffusion verification uses host-neutral max-VRAM fixtures while avoiding a GCC 13 aggregate-assignment compiler crash
 - Completed download records now reconcile their immutable publication before reuse, so removed models can be installed again without redownloading still-published shared components

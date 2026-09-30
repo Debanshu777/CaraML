@@ -55,7 +55,7 @@ internal fun runLlamaPreflight(
     config: NativeRunnerConfig,
     nativePreflight: (String, NativeRunnerConfig) -> LongArray?,
 ): LlamaPreflightResult {
-    if (!isValidPreflightPath(modelPath) || !isValidPreflightConfig(config)) {
+    if (!isValidLlamaModelPath(modelPath) || !isValidPreflightConfig(config)) {
         return LlamaPreflightResult.InvalidModel(LlamaPreflightReason.INVALID_ARGUMENT)
     }
     return try {
@@ -137,9 +137,6 @@ internal fun decodeLlamaPreflight(payload: LongArray?): LlamaPreflightResult {
 
 private fun malformedPreflight() =
     LlamaPreflightResult.Unavailable(LlamaPreflightReason.MALFORMED_NATIVE_PAYLOAD)
-
-private fun isValidPreflightPath(modelPath: String): Boolean =
-    modelPath.isNotBlank() && '\u0000' !in modelPath && modelPath.encodeToByteArray().size <= 4_096
 
 private fun isValidPreflightConfig(config: NativeRunnerConfig): Boolean =
     isValidNativeRunnerConfig(config)

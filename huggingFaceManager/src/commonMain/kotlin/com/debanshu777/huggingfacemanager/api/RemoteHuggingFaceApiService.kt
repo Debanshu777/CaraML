@@ -20,6 +20,7 @@ private const val MAX_CURSOR_LENGTH = 2_048
 private const val MAX_LINK_HEADER_LENGTH = 4_096
 private const val MAX_CONFIG_REDIRECT_LENGTH = 4_096
 private const val CONFIG_RESPONSE_LIMIT_BYTES = 1L * 1024L * 1024L
+private const val MODEL_PAGE_RESPONSE_LIMIT_BYTES = 512L * 1024L
 
 internal const val RECOMMENDATION_METADATA_SCHEMA_VERSION = 1
 internal val IMMUTABLE_REVISION_PATTERN = Regex("^[0-9a-fA-F]{40,64}$")
@@ -54,6 +55,81 @@ class RemoteHuggingFaceApiService private constructor(
 
     suspend fun listModels(params: ListModelsParams): Result<ListModelsResponse, DataError.Network> {
         return clientWrapper.networkGetUsecase(endpoint = listModelsUrl(params).toString())
+    }
+
+    suspend fun getModelPage(params: ModelPageRequest): Result<ModelPage, DataError.Network> {
+        val baseUrl = modelPageUrl(params, cursor = null)
+        val queryKey = baseUrl.toString()
+        if (params.cursor != null && params.cursor.queryKey != queryKey) {
+            return Result.Error(DataError.Network.Serialization)
+        }
+        val pageUrl = modelPageUrl(params, params.cursor?.token)
+        return when (val response = clientWrapper.networkGetBounded(
+            endpoint = pageUrl.toString(),
+            maxResponseBytes = MODEL_PAGE_RESPONSE_LIMIT_BYTES,
+            decode = { body -> ModelPageProjection.decode(strictJson, body, params.limit) },
+        )) {
+            is Result.Error -> Result.Error(response.error)
+            is Result.Success -> {
+                val link = response.data.linkHeader
+                val next = if (link == null) null else {
+                    val token = extractTrustedPageCursor(link, baseUrl)
+                        ?: return Result.Error(DataError.Network.Serialization)
+                    if (token == params.cursor?.token) {
+                        return Result.Error(DataError.Network.Serialization)
+                    }
+                    ModelPageCursor(token, queryKey)
+                }
+                Result.Success(ModelPage(response.data.data, next))
+            }
+        }
+    }
+
+    private fun modelPageUrl(params: ModelPageRequest, cursor: String?): Url =
+        URLBuilder(trustedOrigin).apply {
+            appendPathSegments("api", "models")
+            parameters.apply {
+                params.search?.let { append("search", it) }
+                params.filter.forEach { append("filter", it) }
+                params.apps.forEach { append("apps", it) }
+                if (params.minParams != null || params.maxParams != null) {
+                    append("num_parameters", listOfNotNull(
+                        params.minParams?.let { "min:${it.apiValue}" },
+                        params.maxParams?.let { "max:${it.apiValue}" },
+                    ).joinToString(","))
+                }
+                append("sort", when (params.sort) {
+                    com.debanshu777.huggingfacemanager.model.ModelSort.TRENDING -> "trendingScore"
+                    com.debanshu777.huggingfacemanager.model.ModelSort.DOWNLOADS -> "downloads"
+                    com.debanshu777.huggingfacemanager.model.ModelSort.LIKES -> "likes"
+                    com.debanshu777.huggingfacemanager.model.ModelSort.CREATED -> "createdAt"
+                    com.debanshu777.huggingfacemanager.model.ModelSort.MODIFIED -> "lastModified"
+                    else -> error("Unsupported model sort")
+                })
+                append("direction", "-1")
+                append("limit", params.limit.toString())
+                MODEL_PAGE_EXPANSIONS.forEach { append("expand", it) }
+                cursor?.let { append("cursor", it) }
+            }
+        }.build()
+
+    private fun extractTrustedPageCursor(linkHeader: String, expected: Url): String? {
+        if (linkHeader.isEmpty() || linkHeader.length > MAX_LINK_HEADER_LENGTH ||
+            linkHeader.any { it.code < 32 || it.code == 127 }) return null
+        val target = NEXT_LINK.matchEntire(linkHeader.trim())?.groupValues?.get(1) ?: return null
+        val link = try { Url(target) } catch (_: IllegalArgumentException) { return null }
+        if (link.protocol != trustedOrigin.protocol ||
+            !link.host.equals(trustedOrigin.host, ignoreCase = true) ||
+            link.port != trustedOrigin.port || link.user != null || link.password != null ||
+            link.fragment.isNotEmpty() || link.encodedPath != expected.encodedPath) return null
+        val token = link.parameters.getAll("cursor")?.singleOrNull()?.takeIf { value ->
+            value.isNotEmpty() && value.length <= MAX_CURSOR_LENGTH &&
+                value.none { it.code < 32 || it.code == 127 }
+        } ?: return null
+        val actualNames = link.parameters.names() - "cursor"
+        if (actualNames != expected.parameters.names()) return null
+        if (actualNames.any { link.parameters.getAll(it) != expected.parameters.getAll(it) }) return null
+        return token
     }
 
     suspend fun listRecommendationModels(
@@ -362,6 +438,10 @@ class RemoteHuggingFaceApiService private constructor(
             segment.all { it.isLetterOrDigit() || it == '_' || it == '-' || it == '.' }
 
     private companion object {
+        val MODEL_PAGE_EXPANSIONS = listOf(
+            "author", "downloads", "likes", "lastModified", "createdAt",
+            "pipeline_tag", "library_name", "tags", "gguf", "safetensors",
+        )
         val RECOMMENDATION_DETAIL_EXPANSIONS = listOf("library_name", "pipeline_tag", "sha", "tags")
         val NEXT_LINK = Regex("^<([^<>]+)>;\\s*rel=\\\"?next\\\"?$", RegexOption.IGNORE_CASE)
         const val MAX_MODEL_ID_LENGTH = 193

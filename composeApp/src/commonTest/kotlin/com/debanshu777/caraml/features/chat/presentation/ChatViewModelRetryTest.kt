@@ -42,16 +42,20 @@ import com.debanshu777.caraml.features.chat.domain.usecase.ManageContextUseCase
 import com.debanshu777.caraml.features.chat.domain.usecase.TrackModelUsageUseCase
 import com.debanshu777.diffusionrunner.DiffusionRunner
 import com.debanshu777.runner.InferenceChunk
+import com.debanshu777.runner.StopReason
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -62,6 +66,80 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChatViewModelRetryTest {
+    @Test
+    fun compressionOwnsTheTurnBeforeSuspendingAndPreservesTheSubmittedPrompt() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val model = textModel()
+            val request = loadRequest(model, "fresh-cpu", BackendKind.CPU)
+            val inference = RecordingInferenceRepository(request).apply {
+                resetGate = CompletableDeferred()
+            }
+            val localModels = LocalModelRepository(StaticLocalModelDao(model))
+            val viewModel = ChatViewModel(
+                getAvailableModels = GetAvailableModelsUseCase(localModels, ChatConfig()),
+                generateResponse = GenerateResponseUseCase(inference),
+                manageContext = ManageContextUseCase(inference, ChatConfig()),
+                trackModelUsage = TrackModelUsageUseCase(localModels),
+                inferenceRepository = inference,
+                diffusionRepository = DiffusionInferenceRepository(
+                    runner = DiffusionRunner(),
+                    deviceCapabilities = DeviceCapabilities(),
+                    settingsRepository = StaticSettingsRepository(),
+                ),
+                generatedMediaStore = GeneratedMediaStore(baseDirectory = "/tmp", sessionId = "compression-admission"),
+                installedModelLoadRequestResolver = RecordingResolver(
+                    ArrayDeque(listOf(InstalledModelLoadResolution.Ready(request))),
+                ),
+                modelLoadDispatcher = dispatcher,
+                releaseDiffusionModel = {},
+            )
+            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.uiState.collect() }
+            advanceUntilIdle()
+            val prompt = "explain ADMX in more details"
+            viewModel.sendMessage(prompt)
+            runCurrent()
+            val busy = assertIs<ChatUiState.Ready>(viewModel.uiState.value)
+            assertTrue(busy.isGenerating, "Compression must reserve the turn before it suspends")
+            assertEquals(listOf(prompt), busy.messages.filter { it.role == com.debanshu777.caraml.features.chat.data.MessageRole.User }.map { it.text })
+            viewModel.sendMessage("e")
+            runCurrent()
+            assertEquals(1, inference.resetCalls)
+            inference.resetGate!!.complete(Unit)
+            val finished = assertIs<ChatUiState.Ready>(
+                viewModel.uiState.first { it is ChatUiState.Ready && !it.isGenerating },
+            )
+            assertEquals(listOf(prompt), inference.prompts)
+            assertEquals(false, finished.isGenerating)
+            assertEquals(2, finished.messages.size, "Compression status must not become chat history")
+
+            // The reservation must also cover compression after a context-full response.
+            inference.aboveThreshold = false
+            inference.responseStopReason = StopReason.CONTEXT_FULL
+            inference.resetGate = CompletableDeferred()
+            inference.resetStarted = CompletableDeferred()
+            viewModel.sendMessage("follow-up")
+            inference.resetStarted.await()
+            runCurrent()
+            assertTrue(assertIs<ChatUiState.Ready>(viewModel.uiState.value).isGenerating)
+            assertTrue(viewModel.streamingState.value.isCompacting)
+            viewModel.sendMessage("must not interleave")
+            inference.resetGate!!.complete(Unit)
+            viewModel.uiState.first { it is ChatUiState.Ready && !it.isGenerating }
+            assertEquals(listOf(prompt, "follow-up"), inference.prompts)
+            assertEquals(2, inference.resetCalls)
+
+            viewModel.sendMessage("cancel before the coroutine starts")
+            viewModel.cancelGeneration()
+            runCurrent()
+            assertEquals(false, assertIs<ChatUiState.Ready>(viewModel.uiState.value).isGenerating)
+            assertEquals(listOf(prompt, "follow-up"), inference.prompts)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
     @Test
     fun postAssessmentCpuAlternativeWaitsForExplicitUserAcceptance() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -241,6 +319,12 @@ private class RecordingInferenceRepository(
     private val saferRequest: LoadRequest,
 ) : InferenceRepository {
     val loadedAssessmentKeys = mutableListOf<String>()
+    var resetGate: CompletableDeferred<Unit>? = null
+    var resetCalls = 0
+    var aboveThreshold = true
+    var responseStopReason = 0
+    var resetStarted = CompletableDeferred<Unit>()
+    val prompts = mutableListOf<String>()
 
     override suspend fun loadModel(request: LoadRequest): ModelLoadResult {
         loadedAssessmentKeys += request.assessmentKey
@@ -263,14 +347,22 @@ private class RecordingInferenceRepository(
     }
 
     override suspend fun unloadModel() = Unit
-    override fun generateResponse(userPrompt: String): Flow<InferenceChunk> = emptyFlow()
+    override fun generateResponse(userPrompt: String): Flow<InferenceChunk> {
+        prompts += userPrompt
+        return emptyFlow()
+    }
     override fun cancelGeneration() = Unit
     override fun getContextUsed(): Int = 0
     override fun getContextLimit(): Int = 4_096
-    override fun getStopReason(): Int = 0
-    override fun isContextAboveThreshold(): Boolean = false
+    override fun getStopReason(): Int = responseStopReason
+    override fun isContextAboveThreshold(): Boolean = aboveThreshold && resetGate != null
     override fun summarizeConversation(transcript: String): Flow<String> = emptyFlow()
-    override suspend fun resetContextWithSummary(summary: String, lastExchange: String): Boolean = true
+    override suspend fun resetContextWithSummary(summary: String, lastExchange: String): Boolean {
+        resetCalls++
+        resetStarted.complete(Unit)
+        resetGate?.await()
+        return true
+    }
     override suspend fun resetContext() = Unit
     override fun getRuntimeConfigString(): String = ""
     override fun currentGenerationObservation(): InferenceObservationPlan? = null

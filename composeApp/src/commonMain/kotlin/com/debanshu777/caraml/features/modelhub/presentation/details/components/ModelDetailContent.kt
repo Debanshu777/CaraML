@@ -17,11 +17,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -29,6 +32,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -47,7 +51,9 @@ import com.debanshu777.caraml.core.recommendation.DiffusionModelDescriptor
 import com.debanshu777.caraml.core.recommendation.LlmModelDescriptor
 import com.debanshu777.caraml.core.recommendation.ModelDescriptor
 import com.debanshu777.caraml.core.recommendation.ModelFileIdentity
+import com.debanshu777.caraml.core.recommendation.RecommendationCategory
 import com.debanshu777.caraml.core.rating.ui.RecommendationStatusChip
+import com.debanshu777.caraml.core.rating.ui.formatBytesHuman
 import com.debanshu777.caraml.core.theme.AppTechnicalLabel
 import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.theme.auroraColors
@@ -62,9 +68,15 @@ import com.debanshu777.caraml.core.ui.components.StatusMark
 import com.debanshu777.caraml.features.modelhub.presentation.details.modelDetailsUseSupportingPane
 import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
 import com.debanshu777.caraml.features.modelhub.domain.RecommendedModelUiState
+import com.debanshu777.caraml.features.modelhub.domain.projectBrowseSelection
+import com.debanshu777.caraml.features.modelhub.domain.matchesExactBrowseGroup
+import com.debanshu777.caraml.features.modelhub.domain.ModelArtifactClassifier
+import com.debanshu777.caraml.features.modelhub.domain.ModelArtifactRole
 import com.debanshu777.caraml.features.modelhub.presentation.search.GgufFileUiState
 import com.debanshu777.caraml.features.modelhub.presentation.search.InstallBundleUiState
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.formatCompactMetric
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.browseEstimateLabel
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.browseVerdict
 import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
 import com.debanshu777.huggingfacemanager.model.ModelDetailResponse
@@ -84,6 +96,7 @@ fun ModelDetailContent(
     ggufFiles: List<GgufFileUiState>,
     isDownloading: Boolean,
     onDownloadClick: (String, String, DownloadMetadataDTO) -> Unit,
+    onDownloadGroupClick: (String, List<DownloadMetadataDTO>) -> Unit = { _, _ -> },
     activeDownloadArtifact: DownloadArtifactIdentity? = null,
     weightFilesHeading: String = "GGUF files",
     weightFilesEmptyLabel: String = "No GGUF files found",
@@ -109,15 +122,13 @@ fun ModelDetailContent(
         recommendationState?.selectedDescriptor,
         installBundleState.variants,
     )
+    val browseSelection = recommendationState?.browseVariants?.let {
+        projectBrowseSelection(it, installBundleState.selectedVariantPath)
+    }
     val installEnabled = recommendedVariant != null &&
         installBundleState.selectedVariantPath == recommendedVariant
-    val compactArtifactAction = if (showInstallBundle) {
-        null
-    } else {
-        primaryArtifactItem(recommendationState?.selectedDescriptor, ggufFiles)
-            ?.takeUnless { it.isDownloaded }
-    }
-    val compactArtifactTask = compactArtifactAction?.durableControl
+    // Submit every immutable member of the selected group. Filename-only local state can
+    // refer to an older revision; the download coordinator performs exact-object reuse.
     val durableControl = installBundleState.durableControl
     val spacing = LocalSpacing.current
 
@@ -148,9 +159,12 @@ fun ModelDetailContent(
                             isDownloading = isDownloading,
                             activeDownloadArtifact = activeDownloadArtifact,
                             onDownloadClick = onDownloadClick,
+                            onDownloadGroupClick = onDownloadGroupClick,
                             heading = weightFilesHeading,
                             emptyLabel = weightFilesEmptyLabel,
                             recommendationState = recommendationState,
+                            selectedVariantPath = installBundleState.selectedVariantPath,
+                            onVariantSelected = onVariantSelected,
                             onPauseDownload = onPauseDownload,
                             onResumeDownload = onResumeDownload,
                             onCancelDownload = onCancelDownload,
@@ -164,7 +178,12 @@ fun ModelDetailContent(
                         .testTag("detail-support"),
                     verticalArrangement = Arrangement.spacedBy(spacing.xl),
                 ) {
-                    ModelRecommendationSection(recommendationState, onRecommendationInfoClick)
+                    ModelRecommendationSection(
+                        recommendationState,
+                        onRecommendationInfoClick,
+                        browseSelection?.estimate,
+                        browseSelection?.displayName,
+                    )
                     if (showInstallBundle) {
                         InstallBundleCard(
                             modelId = modelId,
@@ -205,6 +224,8 @@ fun ModelDetailContent(
                     ModelRecommendationSection(
                         recommendationState = recommendationState,
                         onRecommendationInfoClick = onRecommendationInfoClick,
+                        browseFit = browseSelection?.estimate,
+                        browseVariantName = browseSelection?.displayName,
                         modifier = Modifier.testTag("detail-support"),
                     )
                     if (showInstallBundle) {
@@ -225,14 +246,16 @@ fun ModelDetailContent(
                             isDownloading = isDownloading,
                             activeDownloadArtifact = activeDownloadArtifact,
                             onDownloadClick = onDownloadClick,
+                            onDownloadGroupClick = onDownloadGroupClick,
                             heading = weightFilesHeading,
                             emptyLabel = weightFilesEmptyLabel,
                             recommendationState = recommendationState,
+                            selectedVariantPath = installBundleState.selectedVariantPath,
+                            onVariantSelected = onVariantSelected,
                             onPauseDownload = onPauseDownload,
                             onResumeDownload = onResumeDownload,
                             onCancelDownload = onCancelDownload,
                             onRetryDownload = onRetryDownload,
-                            footerOwnedArtifact = compactArtifactAction?.artifact,
                         )
                     }
                     ModelMetadataSection(model)
@@ -251,21 +274,6 @@ fun ModelDetailContent(
                         onCancel = { durableControl?.let { onCancelDownload(it.batchId, it.artifactId) } },
                         onRetry = { durableControl?.let { onRetryDownload(it.batchId, it.artifactId) } },
                     )
-                } else if (compactArtifactAction != null) {
-                    ArtifactDownloadActionFooter(
-                        model = model,
-                        item = compactArtifactAction,
-                        isDownloading = isDownloading,
-                        onDownloadClick = onDownloadClick,
-                        durableState = compactArtifactTask?.artifactState,
-                        onPause = { compactArtifactTask?.let { onPauseDownload(it.batchId, it.artifactId) } },
-                        onResume = { compactArtifactTask?.let { onResumeDownload(it.batchId, it.artifactId) } },
-                        onCancel = { compactArtifactTask?.let { onCancelDownload(it.batchId, it.artifactId) } },
-                        onRetry = { compactArtifactTask?.let { onRetryDownload(it.batchId, it.artifactId) } },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("detail-action"),
-                    )
                 }
             }
         }
@@ -281,6 +289,9 @@ private fun ModelOverviewSection(
     val spacing = LocalSpacing.current
     val heading = splitRepositoryId(model.modelId ?: model.id.orEmpty())
     val owner = heading.owner ?: model.author?.trim()?.takeIf { it.isNotEmpty() }
+    var descriptionExpanded by rememberSaveable(model.modelId, model.id) { mutableStateOf(false) }
+    var titleExpanded by rememberSaveable(model.modelId, model.id, "title") { mutableStateOf(false) }
+    var titleTruncated by remember(model.modelId, model.id) { mutableStateOf(false) }
     AuroraFocalSurface(
         modifier = Modifier
             .fillMaxWidth()
@@ -305,7 +316,15 @@ private fun ModelOverviewSection(
                     MaterialTheme.typography.prism.detailTitleCompact
                 },
                 color = MaterialTheme.colorScheme.onSurface,
+                maxLines = if (titleExpanded) Int.MAX_VALUE else 2,
+                overflow = TextOverflow.Ellipsis,
+                onTextLayout = { titleTruncated = it.hasVisualOverflow },
             )
+            if (titleExpanded || titleTruncated) {
+                TextButton(onClick = { titleExpanded = !titleExpanded }) {
+                    Text(if (titleExpanded) "Show less" else "Show full name")
+                }
+            }
             val technicalSummary = listOfNotNull(
                 model.pipelineTag?.takeIf { it.isNotBlank() },
                 model.libraryName?.takeIf { it.isNotBlank() },
@@ -314,7 +333,7 @@ private fun ModelOverviewSection(
                 Text(
                     text = technicalSummary.joinToString("  ·  "),
                     style = AppTechnicalLabel,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MaterialTheme.colorScheme.tertiary,
                 )
             }
             description?.takeIf { it.isNotBlank() }?.let {
@@ -322,9 +341,17 @@ private fun ModelOverviewSection(
                     text = it,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = if (descriptionExpanded) Int.MAX_VALUE else 3,
+                    overflow = TextOverflow.Ellipsis,
                 )
+                if (it.length > 180) {
+                    TextButton(onClick = { descriptionExpanded = !descriptionExpanded }) {
+                        Text(if (descriptionExpanded) "Show less" else "Read description")
+                    }
+                }
             }
             if (model.downloads != null || model.likes != null) {
+                HorizontalDivider(color = MaterialTheme.auroraColors.divider)
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(spacing.l),
                     verticalArrangement = Arrangement.spacedBy(spacing.xs),
@@ -523,6 +550,8 @@ private const val MAX_VISIBLE_DETAIL_TAGS = 4
 private fun ModelRecommendationSection(
     recommendationState: RecommendedModelUiState?,
     onRecommendationInfoClick: (() -> Unit)?,
+    browseFit: com.debanshu777.caraml.core.recommendation.BrowseFitEstimate? = null,
+    browseVariantName: String? = null,
     modifier: Modifier = Modifier,
 ) {
     val spacing = LocalSpacing.current
@@ -532,20 +561,41 @@ private fun ModelRecommendationSection(
     ) {
         CaraMLSectionHeader(
             title = "Device fit",
-            supportingText = "Recommendation evidence for this device",
         )
-        RecommendationStatusChip(
-            state = recommendationState?.descriptorState ?: DescriptorState.NEEDS_INFORMATION,
-            recommendation = recommendationState?.personalizedResult,
-            onInfoClick = onRecommendationInfoClick,
-        )
-        recommendationState?.selectedVariantName?.let { variant ->
+        val browse = browseFit?.let(::browseVerdict)
+        if (browse != null) {
             StatusMark(
-                label = variant,
-                contentDescription = "Selected variant: $variant",
-                tone = SignalTone.Accent,
-                icon = Icons.Default.CheckCircle,
+                label = browse.label,
+                contentDescription = browse.description,
+                tone = browse.tone,
+                icon = browse.icon,
             )
+        } else {
+            RecommendationStatusChip(
+                state = recommendationState?.descriptorState ?: DescriptorState.NEEDS_INFORMATION,
+                recommendation = recommendationState?.personalizedResult,
+                onInfoClick = onRecommendationInfoClick,
+            )
+        }
+        browseFit?.let { estimate ->
+            Text(
+                text = "${if (recommendationState?.descriptorState == DescriptorState.NEEDS_INFORMATION) "Provisional variant" else "Selected variant"}: ${browseVariantName ?: recommendationState?.provisionalVariantName ?: "model file"}",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            estimate.downloadBytes?.let { bytes ->
+                Text("Download ${formatBytesHuman(bytes)}", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary)
+            }
+            if (!estimate.resourceSnapshotFresh) {
+                Text(
+                    text = "Device resource snapshot is stale; fit is not current",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
@@ -557,14 +607,16 @@ private fun ModelFileVariantsSection(
     isDownloading: Boolean,
     activeDownloadArtifact: DownloadArtifactIdentity?,
     onDownloadClick: (String, String, DownloadMetadataDTO) -> Unit,
+    onDownloadGroupClick: (String, List<DownloadMetadataDTO>) -> Unit,
     heading: String,
     emptyLabel: String,
     recommendationState: RecommendedModelUiState?,
+    selectedVariantPath: String?,
+    onVariantSelected: (String) -> Unit,
     onPauseDownload: (String, String) -> Unit,
     onResumeDownload: (String, String) -> Unit,
     onCancelDownload: (String, String) -> Unit,
     onRetryDownload: (String, String) -> Unit,
-    footerOwnedArtifact: DownloadArtifactIdentity? = null,
 ) {
     val spacing = LocalSpacing.current
     val selectedDescriptor = recommendationState?.selectedDescriptor
@@ -577,7 +629,7 @@ private fun ModelFileVariantsSection(
     ) {
         CaraMLSectionHeader(
             title = heading,
-            supportingText = "Choose an assessed model weight to download",
+            supportingText = null,
         )
         if (ggufFiles.isEmpty()) {
             Text(
@@ -587,34 +639,62 @@ private fun ModelFileVariantsSection(
             )
         } else {
             ggufFiles.forEach { item ->
+                val role = ModelArtifactClassifier.classify(item.path).role
+                val matchingBrowseVariant = recommendationState?.browseVariants?.singleOrNull { item.path in it.filePaths }
+                val groupMembers = matchingBrowseVariant?.takeIf { it.filePaths.size > 1 }?.filePaths
+                    ?.mapNotNull { path -> ggufFiles.singleOrNull { it.path == path } }
+                    ?.takeIf { it.size == matchingBrowseVariant.filePaths.size }
+                val groupMetadata = groupMembers?.mapNotNull { exactArtifactMetadata(model, it) }
+                    ?.takeIf { metadata ->
+                        metadata.size == groupMembers.size && matchingBrowseVariant?.let { variant ->
+                            matchesExactBrowseGroup(variant, metadata.map { it.artifact })
+                        } == true
+                    }
+                val isPrimary = role == ModelArtifactRole.PRIMARY_MODEL
                 val durableTask = item.durableControl
                 val hasExactArtifact = item.artifact != null
-                val needsInformationOnly = recommendationState == null ||
-                    recommendationState.descriptorState == DescriptorState.NEEDS_INFORMATION
-                val matchesSelectedDescriptor = item.artifact?.let { artifact ->
-                    artifactMatches(selectedDescriptor, artifact)
-                } == true
-                val isRecommendedArtifact = item.artifact?.let { artifact ->
+                val isDescriptorChoice = item.artifact?.let { artifact ->
                     primaryDescriptorFile?.matches(artifact) == true
                 } == true
+                val isRecommendedArtifact = isDescriptorChoice &&
+                    recommendationState?.personalizedResult?.category == RecommendationCategory.RECOMMENDED
+                val isEvaluatedArtifact = isDescriptorChoice && !isRecommendedArtifact
+                val isProvisionalSuggestion = recommendationState?.descriptorState == DescriptorState.NEEDS_INFORMATION &&
+                    matchingBrowseVariant?.stableIdentity == recommendationState.stableModelId
                 val isActiveDownload = isDownloading &&
                     activeDownloadArtifact != null &&
                     item.artifact == activeDownloadArtifact
                 ArtifactFileRow(
                     item = item,
                     recommended = isRecommendedArtifact,
+                    evaluated = isEvaluatedArtifact,
+                    provisional = isProvisionalSuggestion,
+                    selected = isPrimary && matchingBrowseVariant != null && matchingBrowseVariant.stableIdentity ==
+                        selectedVariantPath?.let { selectedPath ->
+                            recommendationState?.browseVariants?.singleOrNull { selectedPath in it.filePaths }?.stableIdentity
+                        },
+                    roleLabel = matchingBrowseVariant?.takeIf { it.filePaths.size > 1 }
+                        ?.let { "Part ${it.filePaths.indexOf(item.path) + 1} of ${it.filePaths.size}" }
+                        ?: role.label().takeUnless { role == ModelArtifactRole.PRIMARY_MODEL },
+                    onSelect = if (isPrimary && matchingBrowseVariant != null) ({ onVariantSelected(item.path) }) else null,
                     isActiveDownload = isActiveDownload,
                     interactionLocked = isDownloading &&
                         durableTask?.artifactState !in durableArtifactControlStates,
-                    downloadEnabled = hasExactArtifact && (needsInformationOnly || matchesSelectedDescriptor),
+                    downloadEnabled = if (matchingBrowseVariant?.filePaths?.size?.let { it > 1 } == true) {
+                        groupMetadata != null
+                    } else hasExactArtifact,
+                    downloadActionDescription = groupMembers?.let { "Download all ${it.size} parts" },
                     durableState = durableTask?.artifactState,
                     onPause = { durableTask?.let { onPauseDownload(it.batchId, it.artifactId) } },
                     onResume = { durableTask?.let { onResumeDownload(it.batchId, it.artifactId) } },
                     onCancel = { durableTask?.let { onCancelDownload(it.batchId, it.artifactId) } },
                     onRetry = { durableTask?.let { onRetryDownload(it.batchId, it.artifactId) } },
-                    showDownloadAction = item.artifact != footerOwnedArtifact,
                     onDownloadClick = {
-                        dispatchExactArtifactDownload(model, item, onDownloadClick)
+                        if (groupMetadata != null) {
+                            onDownloadGroupClick(model.modelId ?: model.id ?: "", groupMetadata)
+                        } else if (matchingBrowseVariant?.filePaths?.size?.let { it > 1 } != true) {
+                            dispatchExactArtifactDownload(model, item, onDownloadClick)
+                        }
                     },
                 )
             }
@@ -626,161 +706,130 @@ private fun ModelFileVariantsSection(
 private fun ArtifactFileRow(
     item: GgufFileUiState,
     recommended: Boolean,
+    evaluated: Boolean,
+    provisional: Boolean,
+    selected: Boolean,
+    roleLabel: String?,
+    onSelect: (() -> Unit)?,
     isActiveDownload: Boolean,
     interactionLocked: Boolean,
     downloadEnabled: Boolean,
+    downloadActionDescription: String?,
     durableState: DownloadArtifactState?,
     onPause: () -> Unit,
     onResume: () -> Unit,
     onCancel: () -> Unit,
     onRetry: () -> Unit,
-    showDownloadAction: Boolean = true,
     onDownloadClick: () -> Unit,
 ) {
     val colors = MaterialTheme.auroraColors
-    Surface(
+    val spacing = LocalSpacing.current
+    val highlightLabel = when {
+        recommended -> "Recommended"
+        provisional -> "Suggested · fit unverified"
+        evaluated -> "Evaluated variant"
+        else -> null
+    }
+    Column(modifier = Modifier.fillMaxWidth()) {
+      Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.prismShapes.pane,
-        color = if (recommended) colors.selectedSurface else MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = MaterialTheme.prismShapes.control,
+        color = if (recommended || provisional || evaluated) colors.selectedSurface else MaterialTheme.colorScheme.surfaceContainerLow,
         contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
         Box(
             modifier = Modifier
             .fillMaxWidth()
             .semantics {
-                selected = recommended
-                if (recommended) stateDescription = "Recommended artifact"
+                this.selected = selected
+                stateDescription = when {
+                    recommended -> "Recommended variant${if (selected) ", selected" else ""}"
+                    provisional -> "Suggested variant, compatibility unverified${if (selected) ", selected" else ""}"
+                    evaluated -> "Evaluated variant${if (selected) ", selected" else ""}"
+                    selected -> "Selected variant"
+                    else -> "Available file"
+                }
             }
             .testTag("detail-artifact:${item.path}"),
         ) {
-            GgufFileTechnicalRow(
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (onSelect != null) {
+                    IconButton(onClick = onSelect, enabled = !selected, modifier = Modifier.size(48.dp)) {
+                        Icon(
+                            imageVector = if (selected) Icons.Default.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
+                            contentDescription = if (selected) "Selected variant ${item.filename}" else "Select variant ${item.filename}",
+                            tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                GgufFileTechnicalRow(
                 filename = item.path.ifEmpty { item.filename },
                 sizeBytes = item.sizeBytes,
                 isDownloaded = item.isDownloaded,
                 progress = item.progress,
                 isDownloading = isActiveDownload,
                 onDownloadClick = onDownloadClick,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.weight(1f),
                 downloadEnabled = downloadEnabled,
+                downloadActionDescription = downloadActionDescription,
                 interactionLocked = interactionLocked,
                 durableState = durableState,
                 onPause = onPause,
                 onResume = onResume,
                 onCancel = onCancel,
                 onRetry = onRetry,
-                showDownloadAction = showDownloadAction,
+                supportingLabel = listOfNotNull(highlightLabel, roleLabel).joinToString(" · ").ifBlank { null },
                 containerColor = androidx.compose.ui.graphics.Color.Transparent,
             )
-            if (recommended) {
+            }
+            if (recommended || provisional || evaluated) {
                 Box(Modifier.matchParentSize()) {
                     SignalRail(tone = SignalTone.Accent)
                 }
             }
         }
+      }
+      HorizontalDivider(modifier = Modifier.padding(horizontal = spacing.m), color = MaterialTheme.colorScheme.outlineVariant)
     }
 }
 
-@Composable
-private fun ArtifactDownloadActionFooter(
-    model: ModelDetailResponse,
-    item: GgufFileUiState,
-    isDownloading: Boolean,
-    onDownloadClick: (String, String, DownloadMetadataDTO) -> Unit,
-    durableState: DownloadArtifactState?,
-    onPause: () -> Unit,
-    onResume: () -> Unit,
-    onCancel: () -> Unit,
-    onRetry: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        modifier = modifier,
-        shape = MaterialTheme.prismShapes.command,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 2.dp,
-    ) {
-        Row(
-            modifier = Modifier.padding(LocalSpacing.current.m),
-            horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.s),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.xs),
-            ) {
-                Text(
-                    text = "Selected artifact",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    text = item.path.ifBlank { item.filename }.substringAfterLast('/'),
-                    style = AppTechnicalLabel,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            GgufFileAction(
-                filename = item.path.ifBlank { item.filename },
-                isDownloaded = item.isDownloaded,
-                isDownloading = isDownloading,
-                downloadEnabled = item.artifact != null,
-                interactionLocked = isDownloading && durableState == null,
-                durableState = durableState,
-                onDownloadClick = { dispatchExactArtifactDownload(model, item, onDownloadClick) },
-                onPause = onPause,
-                onResume = onResume,
-                onCancel = onCancel,
-                onRetry = onRetry,
-            )
-        }
-    }
+private fun ModelArtifactRole.label(): String = when (this) {
+    ModelArtifactRole.PRIMARY_MODEL -> "GGUF model"
+    ModelArtifactRole.PROJECTOR -> "Supporting projector file"
+    ModelArtifactRole.ADAPTER -> "Supporting adapter file"
+    ModelArtifactRole.UNVERIFIED -> "Role unverified"
 }
+
 
 private fun dispatchExactArtifactDownload(
     model: ModelDetailResponse,
     item: GgufFileUiState,
     onDownloadClick: (String, String, DownloadMetadataDTO) -> Unit,
 ) {
-    val artifact = item.artifact ?: return
-    onDownloadClick(
-        model.modelId ?: model.id ?: "",
-        item.path,
-        DownloadMetadataDTO(
-            artifact = artifact,
-            logicalRole = "model",
-            sizeBytes = artifact.expectedBytes,
-            author = model.author,
-            libraryName = model.libraryName,
-            pipelineTag = model.pipelineTag,
-            contextLength = model.gguf?.contextLength,
-        ),
-    )
+    val metadata = exactArtifactMetadata(model, item) ?: return
+    onDownloadClick(model.modelId ?: model.id ?: "", item.path, metadata)
 }
 
-private fun descriptorFiles(descriptor: ModelDescriptor?): List<ModelFileIdentity> = when (descriptor) {
-    is LlmModelDescriptor -> descriptor.files
-    is DiffusionModelDescriptor -> descriptor.components
-        .filter { it.required || it.isPrimary }
-        .map { it.file }
-    null -> emptyList()
+private fun exactArtifactMetadata(
+    model: ModelDetailResponse,
+    item: GgufFileUiState,
+): DownloadMetadataDTO? {
+    val artifact = item.artifact ?: return null
+    return DownloadMetadataDTO(
+        artifact = artifact,
+        logicalRole = "model",
+        sizeBytes = artifact.expectedBytes,
+        author = model.author,
+        libraryName = model.libraryName,
+        pipelineTag = model.pipelineTag,
+        contextLength = model.gguf?.contextLength,
+    )
 }
 
 private fun primaryDescriptorFile(descriptor: ModelDescriptor?): ModelFileIdentity? = when (descriptor) {
     is LlmModelDescriptor -> descriptor.file
     is DiffusionModelDescriptor -> descriptor.components.singleOrNull { it.isPrimary }?.file
     null -> null
-}
-
-private fun primaryArtifactItem(
-    descriptor: ModelDescriptor?,
-    files: List<GgufFileUiState>,
-): GgufFileUiState? {
-    val primaryFile = primaryDescriptorFile(descriptor) ?: return null
-    return files.singleOrNull { item ->
-        item.artifact?.let(primaryFile::matches) == true
-    }
 }
 
 private fun ModelFileIdentity.matches(artifact: DownloadArtifactIdentity): Boolean {
@@ -791,11 +840,6 @@ private fun ModelFileIdentity.matches(artifact: DownloadArtifactIdentity): Boole
         sizeBytes == artifact.expectedBytes &&
         remoteObjectId?.lowercase() == artifact.remoteObjectId
 }
-
-private fun artifactMatches(
-    descriptor: ModelDescriptor?,
-    artifact: DownloadArtifactIdentity,
-): Boolean = descriptorFiles(descriptor).singleOrNull { file -> file.matches(artifact) } != null
 
 private fun recommendedVariantPath(
     descriptor: ModelDescriptor?,

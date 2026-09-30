@@ -2,6 +2,10 @@ package com.debanshu777.caraml.features.modelhub.presentation.search
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.paging.LoadState
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.asItemSnapshotListFlow
 import com.debanshu777.caraml.core.data.settings.SettingsRepository
 import com.debanshu777.caraml.core.data.inference.NATIVE_DIFFUSERS_CONSUMED_PATHS
 import com.debanshu777.caraml.core.recommendation.InstalledModelWorkloadFactory
@@ -9,6 +13,7 @@ import com.debanshu777.caraml.core.recommendation.LlmModelDescriptor
 import com.debanshu777.caraml.core.recommendation.DiffusionModelDescriptor
 import com.debanshu777.caraml.core.recommendation.ModelDescriptor
 import com.debanshu777.caraml.core.recommendation.ModelFileIdentity
+import com.debanshu777.caraml.core.recommendation.DescriptorLimits
 import com.debanshu777.caraml.core.recommendation.canonicalDownloadRemoteObjectId
 import com.debanshu777.caraml.core.recommendation.CalibrationRunResult
 import com.debanshu777.caraml.core.recommendation.CalibrationSource
@@ -35,6 +40,7 @@ import com.debanshu777.caraml.features.modelhub.domain.ModelRecommendationServic
 import com.debanshu777.caraml.features.modelhub.domain.RecommendationOrdering
 import com.debanshu777.caraml.features.modelhub.domain.RecommendationQuerySession
 import com.debanshu777.caraml.features.modelhub.domain.RecommendedModelUiState
+import com.debanshu777.caraml.features.modelhub.domain.matchesExactBrowseGroup
 import com.debanshu777.caraml.features.modelhub.domain.QuerySupersededCancellationException
 import com.debanshu777.caraml.features.modelhub.domain.DownloadAdmission
 import com.debanshu777.caraml.features.modelhub.domain.DownloadAdmissionPolicy
@@ -51,7 +57,8 @@ import com.debanshu777.caraml.features.modelhub.domain.StorageRequirement
 import com.debanshu777.caraml.features.modelhub.domain.StorageVolume
 import com.debanshu777.huggingfacemanager.HuggingFaceApi
 import com.debanshu777.huggingfacemanager.api.ListModelsParams
-import com.debanshu777.huggingfacemanager.api.SearchModelsParams
+import com.debanshu777.huggingfacemanager.api.ModelPageRequest
+import com.debanshu777.huggingfacemanager.api.ModelPageCursor
 import com.debanshu777.huggingfacemanager.api.error.DataError
 import com.debanshu777.huggingfacemanager.api.error.Result
 import com.debanshu777.huggingfacemanager.download.DownloadManager
@@ -82,6 +89,7 @@ import com.debanshu777.huggingfacemanager.sdcpp.SdCppComponent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -98,6 +106,10 @@ import kotlin.concurrent.Volatile
 import kotlin.math.round
 
 private const val MODELS_VOLUME = "models"
+private const val MAX_LOADED_MODELS = 256
+private val SUPPORTED_REMOTE_SORTS = setOf(
+    ModelSort.TRENDING, ModelSort.DOWNLOADS, ModelSort.LIKES, ModelSort.CREATED, ModelSort.MODIFIED,
+)
 
 internal data class RelevantDownloadTask(
     val batch: DownloadBatchSnapshot,
@@ -465,6 +477,8 @@ private sealed interface PendingDownloadForLater {
     ) : PendingDownloadForLater
 
     data class Smart(val modelId: String, val variantPath: String) : PendingDownloadForLater
+
+    data class Group(val modelId: String, val metadata: List<DownloadMetadataDTO>) : PendingDownloadForLater
 }
 
 private val modelWorkloadFactory = InstalledModelWorkloadFactory()
@@ -503,6 +517,7 @@ class ModelViewModel(
 
     private var recommendationSession: RecommendationQuerySession? = null
     private var recommendationJob: Job? = null
+    private var recommendationAppendJob: Job? = null
     private var listRequestJob: Job? = null
     private var searchRequestJob: Job? = null
     private var calibrationJob: Job? = null
@@ -596,6 +611,16 @@ class ModelViewModel(
     private val _searchError = MutableStateFlow<String?>(null)
     val searchError: StateFlow<String?> = _searchError.asStateFlow()
 
+    private val _results = MutableStateFlow(ModelHubResultsState())
+    val results: StateFlow<ModelHubResultsState> = combine(
+        _results, _recommendedModels, _modelOrdering,
+    ) { page, recommendations, ordering ->
+        page.copy(recommendations = recommendations, modelOrdering = ordering)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, ModelHubResultsState())
+    private var modelPager: Pager<ModelPageCursor, ListModelsResponse.Model>? = null
+    private var searchDebounceJob: Job? = null
+    private var lastAutoRequestedCursor: ModelPageCursor? = null
+
     private val _modelDetail = MutableStateFlow<ModelDetailResponse?>(null)
     val modelDetail: StateFlow<ModelDetailResponse?> = _modelDetail.asStateFlow()
 
@@ -619,6 +644,8 @@ class ModelViewModel(
     private val _downloadError = MutableStateFlow<String?>(null)
     val downloadError: StateFlow<String?> = _downloadError.asStateFlow()
     private val _downloadBatches = MutableStateFlow<List<DownloadBatchSnapshot>>(emptyList())
+    val downloadQueue: StateFlow<List<DownloadBatchSnapshot>> = downloadCoordinator.observeQueue()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     private val _actionableDownloadControls =
         MutableStateFlow<Map<Pair<String, String>, DurableDownloadControlUiState>>(emptyMap())
     private var downloadObservationJob: Job? = null
@@ -727,6 +754,10 @@ class ModelViewModel(
                 _isListLoading.update { false }
                 val response = sdCppCatalog.image.toListModelsResponse()
                 _listResponse.update { response }
+                _results.value = ModelHubResultsState(
+                    key = ModelQueryKey(mode, null, _listParams.value.sort, _listParams.value.minParams, _listParams.value.maxParams),
+                    models = response.models.orEmpty().filterNotNull().take(MAX_LOADED_MODELS),
+                )
                 startRecommendations(response.models.orEmpty().filterNotNull(), defaultRecommendationWorkload(mode))
             }
 
@@ -736,62 +767,175 @@ class ModelViewModel(
                 _isListLoading.update { false }
                 val response = sdCppCatalog.video.toVideoListModelsResponse()
                 _listResponse.update { response }
+                _results.value = ModelHubResultsState(
+                    key = ModelQueryKey(mode, null, _listParams.value.sort, _listParams.value.minParams, _listParams.value.maxParams),
+                    models = response.models.orEmpty().filterNotNull().take(MAX_LOADED_MODELS),
+                )
                 startRecommendations(response.models.orEmpty().filterNotNull(), defaultRecommendationWorkload(mode))
             }
         }
     }
 
+    /** Starts the first Discover query when that surface first becomes visible. */
+    fun ensureDiscoverLoaded() {
+        if (_browseMode.value == ModelHubBrowseMode.LanguageModels && _results.value.key == null) {
+            startPageQuery(null)
+        }
+    }
+
     fun loadModels() {
         if (_browseMode.value != ModelHubBrowseMode.LanguageModels) return
+        startPageQuery(_results.value.key?.committedSearch)
+    }
+
+    fun restartCurrentQuery() = loadModels()
+
+    private fun startPageQuery(committedSearch: String?) {
         val params = _listParams.value
-        val owner = beginModelRequest()
-        listRequestJob = viewModelScope.launch {
-            _isListLoading.update { true }
-            _listError.update { null }
-            when (val result = api.listModels(params)) {
-                is Result.Success -> {
-                    if (!ownsModelRequest(owner) || _browseMode.value != ModelHubBrowseMode.LanguageModels) {
-                        return@launch
-                    }
-                    _listResponse.update { result.data }
-                    _listError.update { null }
-                    startRecommendations(
-                        result.data.models.orEmpty().filterNotNull(),
-                        defaultRecommendationWorkload(ModelHubBrowseMode.LanguageModels),
-                    )
-                }
-                is Result.Error -> {
-                    if (!ownsModelRequest(owner) || _browseMode.value != ModelHubBrowseMode.LanguageModels) {
-                        return@launch
-                    }
-                    _listError.update {
-                        when (result.error) {
-                            DataError.Network.NoInternet ->
-                                "No internet connection. Please check your network and try again."
-                            DataError.Network.Serialization ->
-                                "Failed to process server response. The data format may be invalid."
-                            DataError.Network.Unauthorized ->
-                                "Authentication failed. Please check your credentials."
-                            DataError.Network.NotFound ->
-                                "An unexpected error occurred. Please try again."
-                            DataError.Network.RequestTimeout ->
-                                "Request timed out. The server took too long to respond."
-                            DataError.Network.RateLimited ->
-                                "Too many requests. Please try again later."
-                            DataError.Network.Conflict ->
-                                "Request conflict. Please refresh and try again."
-                            DataError.Network.PayloadTooLarge ->
-                                "Request too large. Try adjusting your filters."
-                            DataError.Network.ServerError ->
-                                "Server error occurred. Please try again later."
-                            DataError.Network.Unknown ->
-                                "An unexpected error occurred. Please try again."
-                        }
-                    }
-                }
-            }
-            if (ownsModelRequest(owner)) _isListLoading.update { false }
+        val key = ModelQueryKey(
+            mode = ModelHubBrowseMode.LanguageModels,
+            committedSearch = committedSearch,
+            remoteSort = params.sort,
+            minParams = params.minParams,
+            maxParams = params.maxParams,
+        )
+        val request = try {
+            ModelPageRequest(
+                search = committedSearch,
+                sort = key.remoteSort,
+                minParams = key.minParams,
+                maxParams = key.maxParams,
+            )
+        } catch (_: IllegalArgumentException) {
+            _searchError.value = "Search or sort is unsupported. Refine your search and try again."
+            return
         }
+        val owner = beginModelRequest()
+        lastAutoRequestedCursor = null
+        _results.value = ModelHubResultsState(key = key, initialLoading = true)
+        _listResponse.value = null
+        _searchResponse.value = null
+        _listError.value = null
+        _searchError.value = null
+        _isListLoading.value = committedSearch == null
+        _isSearchLoading.value = committedSearch != null
+        val pager = Pager(
+            config = PagingConfig(pageSize = request.limit, initialLoadSize = request.limit,
+                prefetchDistance = 1, enablePlaceholders = false),
+            pagingSourceFactory = {
+                ModelHubPagingSource(
+                    request = request,
+                    fetch = { pageRequest -> api.getModelPage(pageRequest) },
+                    validId = recommendationService::validRepositoryId,
+                    onLoadStart = { append ->
+                        if (ownsModelRequest(owner) && _results.value.key == key) {
+                            _results.value = if (append) _results.value.copy(moreLoading = true, moreError = null)
+                                else _results.value.copy(initialLoading = true, initialError = null)
+                        }
+                    },
+                    onPage = { added, next, total, stalled ->
+                        if (ownsModelRequest(owner) && _results.value.key == key) {
+                            val prior = _results.value
+                            val all = prior.models + added
+                            val append = prior.models.isNotEmpty()
+                            _results.value = prior.copy(
+                                models = all,
+                                nextCursor = next,
+                                totalCount = total ?: prior.totalCount,
+                                initialLoading = false,
+                                moreLoading = false,
+                                initialError = null,
+                                moreError = if (stalled) "The model catalog did not advance. Refine your search to continue." else null,
+                                sessionLimitReached = all.size >= MAX_LOADED_MODELS,
+                            )
+                            _isListLoading.value = false
+                            _isSearchLoading.value = false
+                            _listResponse.value = ListModelsResponse(models = all, numTotalItems = total ?: prior.totalCount)
+                            if (committedSearch != null) {
+                                _searchResponse.value = SearchModelsResponse(
+                                    models = all.map { model -> SearchModelsResponse.Model(id = model.id, `private` = model.`private`) },
+                                    q = committedSearch,
+                                )
+                            }
+                            if (!append) {
+                                startRecommendations(all, defaultRecommendationWorkload(ModelHubBrowseMode.LanguageModels),
+                                    source = if (committedSearch == null) "browse" else "search")
+                            } else {
+                                val session = recommendationSession
+                                if (session != null && added.isNotEmpty()) {
+                                    recommendationAppendJob?.cancel()
+                                    recommendationAppendJob = viewModelScope.launch {
+                                        try {
+                                            recommendationService.appendCandidates(session, added)
+                                            while (ownsModelRequest(owner) && recommendationSession === session &&
+                                                session.evaluatedCount < minOf(session.candidates.size, 96)) {
+                                                recommendationService.evaluateMore(session, settings.value.recommendationProfile)
+                                            }
+                                        } catch (_: QuerySupersededCancellationException) {
+                                            // A newer query owns the recommendation session.
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                )
+            },
+        )
+        modelPager = pager
+        listRequestJob = viewModelScope.launch {
+            pager.flow.asItemSnapshotListFlow { loadStates ->
+                if (!ownsModelRequest(owner) || _results.value.key != key) return@asItemSnapshotListFlow
+                val refreshError = loadStates.refresh as? LoadState.Error
+                val appendError = loadStates.append as? LoadState.Error
+                val failure = refreshError ?: appendError
+                if (failure != null) {
+                    val message = (failure.error as? ModelHubPageException)?.let { networkErrorMessage(it.networkError) }
+                        ?: "Unable to load models. Please try again."
+                    if (refreshError != null && _results.value.models.isEmpty()) {
+                        _results.value = _results.value.copy(initialLoading = false, initialError = message)
+                        if (committedSearch == null) _listError.value = message else _searchError.value = message
+                    } else {
+                        _results.value = _results.value.copy(moreLoading = false, moreError = message)
+                    }
+                    _isListLoading.value = false
+                    _isSearchLoading.value = false
+                }
+            }.collect { /* Keep Paging's snapshot presenter active for explicit append/retry. */ }
+        }
+    }
+
+    fun loadNextPage() {
+        val current = _results.value
+        if (current.key?.mode != ModelHubBrowseMode.LanguageModels || current.initialLoading || current.moreLoading) return
+        val pager = modelPager ?: return
+        if (current.moreError != null && current.nextCursor != null) {
+            pager.retry()
+        } else if (current.hasMore) {
+            pager.append()
+        }
+    }
+
+    /** The viewport may report the same tail repeatedly while recommendations reorder. */
+    fun autoLoadNextPage() {
+        val current = _results.value
+        val cursor = current.nextCursor ?: return
+        if (!current.canLoadMore || current.moreError != null || cursor == lastAutoRequestedCursor) return
+        lastAutoRequestedCursor = cursor
+        loadNextPage()
+    }
+
+    private fun networkErrorMessage(error: DataError.Network): String = when (error) {
+        DataError.Network.NoInternet -> "No internet connection. Please check your network and try again."
+        DataError.Network.Serialization -> "The model catalog response could not be read."
+        DataError.Network.Unauthorized -> "The model catalog could not be accessed."
+        DataError.Network.NotFound -> "The model catalog is unavailable."
+        DataError.Network.RequestTimeout -> "The request timed out. Please try again."
+        DataError.Network.RateLimited -> "Too many requests. Please try again later."
+        DataError.Network.Conflict -> "The request could not be completed. Please try again."
+        DataError.Network.PayloadTooLarge -> "The response was too large. Refine your search."
+        DataError.Network.ServerError -> "The model catalog is temporarily unavailable."
+        DataError.Network.Unknown -> "Unable to load models. Please try again."
     }
 
     fun updateParams(
@@ -811,6 +955,36 @@ class ModelViewModel(
                 maxParams = adjustedMax
             )
         }
+    }
+
+    fun setParameterFilters(minParams: ParameterRange, maxParams: ParameterRange) {
+        if (_browseMode.value != ModelHubBrowseMode.LanguageModels) return
+        val before = _listParams.value
+        updateParams(minParams = minParams, maxParams = maxParams)
+        if (_listParams.value != before) loadModels()
+    }
+
+    fun applyDiscoverFilters(
+        mode: ModelHubBrowseMode,
+        ordering: ModelOrdering,
+        minParams: ParameterRange,
+        maxParams: ParameterRange,
+    ) {
+        val priorMode = _browseMode.value
+        val priorParams = _listParams.value
+        val safeOrdering = when (ordering) {
+            ModelOrdering.Personalized -> ordering
+            is ModelOrdering.Server -> if (ordering.value in SUPPORTED_REMOTE_SORTS) ordering else ModelOrdering.Server(ModelSort.TRENDING)
+        }
+        _listParams.value = priorParams.copy(
+            sort = (safeOrdering as? ModelOrdering.Server)?.value ?: priorParams.sort,
+            minParams = minParams,
+            maxParams = if (maxParams.ordinal < minParams.ordinal) minParams else maxParams,
+        )
+        _modelOrdering.value = safeOrdering
+        setRecommendationOrdering(if (safeOrdering is ModelOrdering.Personalized) RecommendationOrdering.PERSONALIZED else RecommendationOrdering.SERVER)
+        if (mode != priorMode) setBrowseMode(mode)
+        else if (mode == ModelHubBrowseMode.LanguageModels && _listParams.value != priorParams) loadModels()
     }
 
     fun loadDetail(
@@ -1080,6 +1254,77 @@ class ModelViewModel(
         startLanguageDownload(modelId, path, metadata, downloadForLaterConfirmed = false)
     }
 
+    /** Enqueues all exact files belonging to one selected language-model shard configuration. */
+    fun startLanguageBundleDownload(
+        modelId: String,
+        metadata: List<DownloadMetadataDTO>,
+        downloadForLaterConfirmed: Boolean = false,
+    ) {
+        if (_browseMode.value != ModelHubBrowseMode.LanguageModels ||
+            metadata.isEmpty() || metadata.size > DescriptorLimits.MAX_COMPONENTS ||
+            _isDownloading.value
+        ) return
+        val identities = metadata.map { it.artifact }
+        if (identities.map { it.relativePath }.toSet().size != identities.size ||
+            metadata.any { item ->
+                item.logicalRole != "model" || item.artifact.repositoryId != modelId ||
+                    !isExactCurrentDetailArtifact(modelId, item.artifact)
+            }
+        ) return
+        val matchingBrowseVariant = _recommendedModels.value
+            .singleOrNull { it.repositoryId == modelId }
+            ?.browseVariants
+            ?.singleOrNull { matchesExactBrowseGroup(it, identities) }
+            ?: return
+
+        _selectedVariantPath.value = identities.first().relativePath
+        _isDownloading.value = true
+        viewModelScope.launch {
+            _downloadError.update { null }
+            var enqueued = false
+            try {
+                val requests = metadata.map { DownloadArtifactRequest(it, primary = true) }
+                when (val admission = refreshDownloadAdmission(
+                    modelId,
+                    metadata.first(),
+                    requests,
+                    browseVariantIdentity = matchingBrowseVariant.stableIdentity,
+                )) {
+                    DownloadAdmission.Allowed -> Unit
+                    is DownloadAdmission.ConfirmationRequired -> {
+                        if (!downloadForLaterConfirmed) {
+                            requestDownloadForLaterConfirmation(PendingDownloadForLater.Group(modelId, metadata))
+                            return@launch
+                        }
+                    }
+                    is DownloadAdmission.Blocked -> {
+                        _downloadError.value = downloadAdmissionErrorMessage(admission)
+                        return@launch
+                    }
+                }
+                downloadCoordinator.enqueue(
+                    DownloadBatchRequest(
+                        ownerModelId = modelId,
+                        modelType = ModelType.TEXT,
+                        artifacts = requests,
+                        evidence = downloadEvidenceFactory.create(requests, selectedDescriptorFor(modelId)),
+                        downloadForLaterConfirmed = downloadForLaterConfirmed,
+                        displayName = "$modelId (${requests.size} parts)",
+                    ),
+                )
+                enqueued = true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: InsufficientStorageException) {
+                _downloadError.value = "Not enough storage space. Need ${formatBytes(e.requiredBytes)} but only ${formatBytes(e.availableBytes)} is available."
+            } catch (_: Exception) {
+                _downloadError.value = "Download failed. Please check your connection and try again."
+            } finally {
+                if (!enqueued) _isDownloading.update { false }
+            }
+        }
+    }
+
     private fun startLanguageDownload(
         modelId: String,
         path: String,
@@ -1168,14 +1413,14 @@ class ModelViewModel(
         artifactId: String,
         command: DownloadControlCommand,
     ) {
-        val control = _actionableDownloadControls.value[batchId to artifactId] ?: return
-        if (!command.accepts(control.batchState)) return
+        val batch = downloadQueue.value.singleOrNull { it.batchId == batchId } ?: return
+        if (batch.artifacts.none { it.artifactId == artifactId } || !command.accepts(batch.state)) return
         viewModelScope.launch {
             when (command) {
-                DownloadControlCommand.PAUSE -> downloadCoordinator.pause(control.batchId)
-                DownloadControlCommand.RESUME -> downloadCoordinator.resume(control.batchId)
-                DownloadControlCommand.CANCEL -> downloadCoordinator.cancel(control.batchId)
-                DownloadControlCommand.RETRY -> downloadCoordinator.retry(control.batchId)
+                DownloadControlCommand.PAUSE -> downloadCoordinator.pause(batch.batchId)
+                DownloadControlCommand.RESUME -> downloadCoordinator.resume(batch.batchId)
+                DownloadControlCommand.CANCEL -> downloadCoordinator.cancel(batch.batchId)
+                DownloadControlCommand.RETRY -> downloadCoordinator.retry(batch.batchId)
             }
         }
     }
@@ -1407,6 +1652,11 @@ class ModelViewModel(
                 requestedVariantPath = pending.variantPath,
                 downloadForLaterConfirmed = true,
             )
+            is PendingDownloadForLater.Group -> startLanguageBundleDownload(
+                pending.modelId,
+                pending.metadata,
+                downloadForLaterConfirmed = true,
+            )
         }
     }
 
@@ -1425,6 +1675,7 @@ class ModelViewModel(
         metadata: DownloadMetadataDTO,
         requests: List<DownloadArtifactRequest>,
         offerDownloadForLater: Boolean = true,
+        browseVariantIdentity: String? = null,
     ): DownloadAdmission {
         if (!isExactCurrentDetailArtifact(modelId, metadata.artifact)) {
             return DownloadAdmission.Blocked(
@@ -1432,6 +1683,15 @@ class ModelViewModel(
             )
         }
         val state = _recommendedModels.value.firstOrNull { it.repositoryId == modelId }
+        if (browseVariantIdentity != null && state?.browseVariants?.singleOrNull {
+                it.stableIdentity == browseVariantIdentity &&
+                    matchesExactBrowseGroup(it, requests.map { request -> request.metadata.artifact })
+            } == null
+        ) {
+            return DownloadAdmission.Blocked(
+                com.debanshu777.caraml.core.recommendation.AssessmentReason.INVALID_METADATA,
+            )
+        }
         if (state == null || state.descriptorState == DescriptorState.NEEDS_INFORMATION) {
             return DownloadAdmission.Allowed
         }
@@ -1449,6 +1709,15 @@ class ModelViewModel(
         ) ?: return DownloadAdmission.Blocked(com.debanshu777.caraml.core.recommendation.AssessmentReason.RESOURCE_READING_UNAVAILABLE)
         _recommendedModels.update { current ->
             current.map { if (it.sourceIndex == refreshed.sourceIndex) refreshed else it }
+        }
+        if (browseVariantIdentity != null && refreshed.browseVariants.singleOrNull {
+                it.stableIdentity == browseVariantIdentity &&
+                    matchesExactBrowseGroup(it, requests.map { request -> request.metadata.artifact })
+            } == null
+        ) {
+            return DownloadAdmission.Blocked(
+                com.debanshu777.caraml.core.recommendation.AssessmentReason.INVALID_METADATA,
+            )
         }
         val refreshedDescriptor = refreshed.selectedDescriptor
             ?: return DownloadAdmission.Allowed
@@ -1589,82 +1858,54 @@ class ModelViewModel(
 
     fun updateSearchQuery(query: String) {
         if (_browseMode.value != ModelHubBrowseMode.LanguageModels) return
+        if (_searchQuery.value == query) return
         _searchQuery.update { query }
+        if (_results.value.inputError != null) _results.value = _results.value.copy(inputError = null)
+        searchDebounceJob?.cancel()
+        if (query.isEmpty()) {
+            clearSearch()
+        } else {
+            searchDebounceJob = viewModelScope.launch {
+                delay(500)
+                commitSearch()
+            }
+        }
     }
 
     fun performSearch() {
         if (_browseMode.value != ModelHubBrowseMode.LanguageModels) return
-        val query = _searchQuery.value
-        if (query.isBlank()) {
-            _searchError.update { "Please enter a search query" }
-            return
-        }
-        val params = try {
-            SearchModelsParams(query = query)
-        } catch (_: IllegalArgumentException) {
-            _searchError.update { "Search text is too long or contains invalid characters." }
-            return
-        }
-        val owner = beginModelRequest()
-        searchRequestJob = viewModelScope.launch {
-            _isSearchLoading.update { true }
-            _searchError.update { null }
-            when (val result = api.searchModels(params)) {
-                is Result.Success -> {
-                    if (!ownsSearchRequest(owner, query)) return@launch
-                    _searchResponse.update { result.data }
-                    _searchError.update { null }
-                    startRecommendations(
-                        result.data.models.orEmpty().filterNotNull().map { model ->
-                            ListModelsResponse.Model(
-                                id = model.id,
-                                `private` = model.`private`,
-                            )
-                        },
-                        defaultRecommendationWorkload(ModelHubBrowseMode.LanguageModels),
-                        source = "search",
-                    )
-                }
-                is Result.Error -> {
-                    if (!ownsSearchRequest(owner, query)) return@launch
-                    _searchError.update {
-                        when (result.error) {
-                            DataError.Network.NoInternet ->
-                                "No internet connection. Please check your network and try again."
-                            DataError.Network.Serialization ->
-                                "Failed to process server response. The data format may be invalid."
-                            DataError.Network.Unauthorized ->
-                                "Authentication failed. Please check your credentials."
-                            DataError.Network.NotFound ->
-                                "An unexpected error occurred. Please try again."
-                            DataError.Network.RequestTimeout ->
-                                "Request timed out. The server took too long to respond."
-                            DataError.Network.RateLimited ->
-                                "Too many requests. Please try again later."
-                            DataError.Network.Conflict ->
-                                "Request conflict. Please refresh and try again."
-                            DataError.Network.PayloadTooLarge ->
-                                "Request too large. Try a shorter query."
-                            DataError.Network.ServerError ->
-                                "Server error occurred. Please try again later."
-                            DataError.Network.Unknown ->
-                                "An unexpected error occurred. Please try again."
-                        }
-                    }
-                }
-            }
-            if (ownsModelRequest(owner)) _isSearchLoading.update { false }
-        }
+        searchDebounceJob?.cancel()
+        commitSearch()
     }
 
-    fun clearSearch() {
-        invalidateModelRequests()
-        _searchQuery.update { "" }
-        _searchResponse.update { null }
-        _searchError.update { null }
-        _listResponse.value?.models.orEmpty().filterNotNull().let { models ->
-            startRecommendations(models, defaultRecommendationWorkload(_browseMode.value))
+    private fun commitSearch() {
+        if (_browseMode.value != ModelHubBrowseMode.LanguageModels) return
+        val committed = _searchQuery.value.trim()
+        if (committed.isEmpty()) {
+            if (_searchQuery.value.isEmpty()) clearSearch() else {
+                _searchError.value = "Please enter a search query"
+                _results.value = _results.value.copy(inputError = _searchError.value)
+            }
+            return
         }
+        if (committed.length > 128 || committed.any { it.code < 32 || it.code == 127 }) {
+            _searchError.value = "Search text is too long or contains invalid characters."
+            _results.value = _results.value.copy(inputError = _searchError.value)
+            return
+        }
+        if (_results.value.key?.committedSearch == committed && _results.value.initialError == null) return
+        startPageQuery(committed)
+    }
+
+    fun submitSearch() = performSearch()
+
+    fun clearSearch() {
+        if (_browseMode.value != ModelHubBrowseMode.LanguageModels) return
+        searchDebounceJob?.cancel()
+        _searchQuery.value = ""
+        if (_results.value.key?.committedSearch == null && _results.value.key != null &&
+            _results.value.initialError == null) return
+        startPageQuery(null)
     }
 
     fun setRecommendationOrdering(ordering: RecommendationOrdering) {
@@ -1675,18 +1916,25 @@ class ModelViewModel(
     }
 
     fun setModelOrdering(ordering: ModelOrdering) {
-        _modelOrdering.value = ordering
         when (ordering) {
-            ModelOrdering.Personalized -> setRecommendationOrdering(RecommendationOrdering.PERSONALIZED)
+            ModelOrdering.Personalized -> {
+                _modelOrdering.value = ordering
+                setRecommendationOrdering(RecommendationOrdering.PERSONALIZED)
+            }
             is ModelOrdering.Server -> {
+                if (ordering.value !in SUPPORTED_REMOTE_SORTS) return
+                val changed = _results.value.key?.remoteSort != ordering.value
+                _modelOrdering.value = ordering
                 updateParams(sort = ordering.value)
                 setRecommendationOrdering(RecommendationOrdering.SERVER)
+                if (changed) loadModels()
             }
         }
     }
 
     fun loadMoreRecommendations() {
         recommendationSession?.let { session ->
+            if (session.evaluatedCount >= 96 || session.evaluatedCount >= session.candidates.size) return
             viewModelScope.launch {
                 recommendationService.evaluateMore(session, settings.value.recommendationProfile)
             }
@@ -1717,6 +1965,8 @@ class ModelViewModel(
     }
 
     private fun clearRecommendations() {
+        recommendationAppendJob?.cancel()
+        recommendationAppendJob = null
         recommendationJob?.cancel()
         recommendationSession?.cancel()
         recommendationJob = null
@@ -1727,6 +1977,7 @@ class ModelViewModel(
     private fun beginModelRequest(): Any {
         val owner = Any()
         activeModelRequestOwner = owner
+        modelPager = null
         listRequestJob?.cancel()
         searchRequestJob?.cancel()
         listRequestJob = null
@@ -1738,7 +1989,10 @@ class ModelViewModel(
     }
 
     private fun invalidateModelRequests() {
+        searchDebounceJob?.cancel()
+        lastAutoRequestedCursor = null
         activeModelRequestOwner = Any()
+        modelPager = null
         listRequestJob?.cancel()
         searchRequestJob?.cancel()
         listRequestJob = null
@@ -1756,6 +2010,7 @@ class ModelViewModel(
             _searchQuery.value == query
 
     private fun resetSearchStateForCuratedHub() {
+        searchDebounceJob?.cancel()
         _searchQuery.update { "" }
         _searchResponse.update { null }
         _searchError.update { null }
@@ -1767,6 +2022,7 @@ class ModelViewModel(
         listRequestJob?.cancel()
         searchRequestJob?.cancel()
         recommendationJob?.cancel()
+        recommendationAppendJob?.cancel()
         calibrationJob?.cancel()
         recommendationSession?.cancel()
         listRequestJob = null

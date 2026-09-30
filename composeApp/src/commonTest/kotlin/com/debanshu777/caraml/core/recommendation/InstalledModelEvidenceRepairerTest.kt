@@ -432,6 +432,64 @@ class InstalledModelEvidenceRepairerTest {
     }
 
     @Test
+    fun completeVerifiedLocalGgufRepairsMissingEvidenceOffline() = runTest {
+        withFixture(bytes = completeLocalGguf(), fileName = "model-Q4_K_M.gguf") { fixture ->
+            val inspected = assertNotNull(GgufMetadataInspector().inspect(fixture.model.localPath))
+            assertEquals(4_096, inspected.contextLimit)
+            assertEquals(32, inspected.transformerShape?.layerCount)
+            assertEquals(8, inspected.transformerShape?.kvHeadCount)
+            assertEquals(32, inspected.transformerShape?.attentionHeadCount)
+            assertEquals(4_096, inspected.transformerShape?.hiddenSize)
+            assertEquals(128, inspected.transformerShape?.headDim)
+            var lookups = 0
+            val result = fixture.repairer { _, _, _ ->
+                lookups += 1
+                InstalledDescriptorLookup.RetryableUnavailable
+            }.requireComplete(fixture.model.modelId, GenerationMode.Text)
+
+            val ready = assertIs<EvidenceRepairResult.Ready>(result)
+            val descriptor = assertIs<LlmModelDescriptor>(ready.descriptor)
+            assertEquals(0, lookups)
+            assertEquals(fixture.identity, descriptor.file)
+            assertEquals("llama", descriptor.architecture)
+            assertEquals(4_096, descriptor.contextLimit)
+            assertEquals(32, descriptor.transformerShape?.layerCount)
+            assertEquals(InstalledEvidenceState.COMPLETE, fixture.repository.get(fixture.model.modelId)?.state)
+        }
+    }
+
+    @Test
+    fun malformedVerifiedLocalGgufCannotBecomeReadyThroughRemoteMetadata() = runTest {
+        withFixture(bytes = ByteArray(32)) { fixture ->
+            val result = fixture.repairer { _, _, _ ->
+                error("A malformed local GGUF must be rejected before remote lookup")
+            }.requireComplete(fixture.model.modelId, GenerationMode.Text)
+
+            assertEquals(
+                EvidenceRepairResult.Rejected(listOf(AssessmentReason.INVALID_METADATA)),
+                result,
+            )
+            assertEquals(0, fixture.dao.upsertCalls)
+        }
+    }
+
+    @Test
+    fun missingPublishedGgufCannotBeRepairedOffline() = runTest {
+        withFixture(bytes = completeLocalGguf(), fileName = "model-Q4_K_M.gguf") { fixture ->
+            FileSystem.SYSTEM.delete(fixture.model.localPath.toPath())
+            val result = fixture.repairer { _, _, _ ->
+                error("Missing published file must reject before metadata lookup")
+            }.requireComplete(fixture.model.modelId, GenerationMode.Text)
+
+            assertEquals(
+                EvidenceRepairResult.Rejected(listOf(AssessmentReason.INVALID_METADATA)),
+                result,
+            )
+            assertEquals(0, fixture.dao.upsertCalls)
+        }
+    }
+
+    @Test
     fun missingManifestRejectsWithoutCreatingLegacyIdentitySidecar() = runTest {
         withFixture(manifestAvailable = false) { fixture ->
             val result = fixture.repairer { _, _, _ ->
@@ -467,12 +525,13 @@ class InstalledModelEvidenceRepairerTest {
         manifestAvailable: Boolean = true,
         ownerModelId: String = "owner/model",
         coordinator: InstalledModelPublicationCoordinator = InstalledModelPublicationCoordinator(),
+        bytes: ByteArray = minimalGguf(version = 3, architecture = "llama"),
+        fileName: String = "model.gguf",
         block: suspend (Fixture) -> Unit,
     ) {
         val root = FileSystem.SYSTEM_TEMPORARY_DIRECTORY / "caraml-repair-${Random.nextLong()}"
         FileSystem.SYSTEM.createDirectories(root)
         try {
-            val bytes = minimalGguf(version = 3, architecture = "llama")
             val digest = Buffer().write(bytes).snapshot().sha256().hex()
             val revision = "a".repeat(40)
             val remoteObjectId = "sha256:$digest"
@@ -480,7 +539,7 @@ class InstalledModelEvidenceRepairerTest {
                 DownloadArtifactIdentity.create(
                     repositoryId = ownerModelId,
                     immutableRevision = revision,
-                    relativePath = "model.gguf",
+                    relativePath = fileName,
                     remoteObjectId = remoteObjectId,
                     expectedBytes = bytes.size.toLong(),
                 ),
@@ -510,7 +569,7 @@ class InstalledModelEvidenceRepairerTest {
             val identity = ModelFileIdentity(
                 repositoryId = ownerModelId,
                 revision = revision,
-                path = "model.gguf",
+                path = fileName,
                 sizeBytes = bytes.size.toLong(),
                 gitOid = null,
                 lfsOid = remoteObjectId,
@@ -520,7 +579,7 @@ class InstalledModelEvidenceRepairerTest {
             val descriptor = descriptor(identity)
             val model = LocalModelEntity(
                 modelId = ownerModelId,
-                filename = "model.gguf",
+                filename = fileName,
                 localPath = modelPath.toString(),
                 sizeBytes = bytes.size.toLong(),
                 downloadedAt = 1L,
@@ -860,6 +919,32 @@ class InstalledModelEvidenceRepairerTest {
         }
     }
 }
+
+private fun completeLocalGguf(): ByteArray = Buffer().apply {
+    fun writeString(value: String) {
+        writeLongLe(value.encodeToByteArray().size.toLong())
+        writeUtf8(value)
+    }
+    writeUtf8("GGUF")
+    writeIntLe(3)
+    writeLongLe(0)
+    writeLongLe(7)
+    writeString("general.architecture")
+    writeIntLe(8)
+    writeString("llama")
+    listOf(
+        "llama.context_length" to 4_096,
+        "llama.block_count" to 32,
+        "llama.attention.head_count" to 32,
+        "llama.attention.head_count_kv" to 8,
+        "llama.embedding_length" to 4_096,
+        "llama.attention.key_length" to 128,
+    ).forEach { (key, value) ->
+        writeString(key)
+        writeIntLe(4)
+        writeIntLe(value)
+    }
+}.readByteArray()
 
 private fun descriptor(
     identity: ModelFileIdentity,

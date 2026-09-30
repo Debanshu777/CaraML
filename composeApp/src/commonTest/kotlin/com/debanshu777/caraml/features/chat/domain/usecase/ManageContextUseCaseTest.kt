@@ -15,6 +15,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 class ManageContextUseCaseTest {
     @Test
@@ -49,6 +50,7 @@ class ManageContextUseCaseTest {
             )
         }
         assertEquals(0, repository.resetCalls)
+        assertTrue(useCase.needsReset(), "Cancelled summary must be rebuilt before the next turn")
     }
 }
 

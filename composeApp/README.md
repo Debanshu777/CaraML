@@ -202,11 +202,18 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 
 ## Recent Changes
 
+- Chat compression reserves the active turn before suspension, keeps the submitted prompt visible, shows one compact progress status, and rebuilds interrupted summaries before the next reply.
+- Common-source Compose previews have their tooling runtime on the `composeApp` debug classpath.
+
 <!-- Updated at end of each AI-assisted development session -->
 
+- Parameter/placement and fit-accounting fixes use persistence namespace `caraml-native-20260930-f46bc30-c92d73c-params1` so earlier compatibility failures and measurements are not reused
+- Installed Text GGUF scanning remains bounded at 8 MiB while accepting valid tokenizer arrays beyond 4 MiB; the existing MiniCPM5 Q4_K_M reached native ready on a Pixel 9
+- Discover uses Paging 3.5.1 for bounded cursor loading, auto-appends near the last five models, and debounces search by 500 ms; the shared download queue sits above tabs, GGUF rows own exact single/group download actions, and complete verified local GGUF headers can repair missing installed Text evidence offline
+- Model discovery and details now show provisional device-resource guidance for sparse GGUF metadata, label supporting or unverified files, group shard downloads by exact identity, and keep transfer separate from strict load admission
 - Desktop large-text empty-state verification now mirrors the production scrollable viewport so titles and actions remain reachable across platform font metrics
 - Generated-media stores coordinate per cache root across the process, protect every active session, evict expired/LRU abandoned sessions, and enforce one aggregate 1 GiB write limit
-- Native admission now carries exact placement, memory budget, segmentation, prefetch, and disabled upstream auto-fit through load; persisted assessment, calibration, and quarantine state is isolated under `caraml-native-20260923-f46bc30-c92d73c`
+- Native admission carries the selected plan through load; diffusion fitting is disabled, while LLM plans without an explicit GPU-layer count permit native fitting at the admitted context
 - Low-risk September engine policy enables bounded llama lazy loading and trusted discrete-GPU diffusion segmentation/prefetch, while unknown native failures fail closed without an untyped OOM retry
 - Expanded the documented [CaraML Prism design system](../docs/caraml-design-system.md) with information hierarchy, progressive disclosure, consistent rounded surfaces, compact reflow, and data-heavy toolbar guidance
 - Compact Models now collapses device diagnostics into one remembered summary, uses rounded wrapping result panes and compact metrics, and prioritizes its command and first useful result

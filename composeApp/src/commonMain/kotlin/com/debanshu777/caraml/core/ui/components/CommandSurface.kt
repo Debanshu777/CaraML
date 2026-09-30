@@ -10,6 +10,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.auroraColors
 import com.debanshu777.caraml.core.theme.prismShapes
@@ -20,6 +21,8 @@ fun CommandSurface(
     active: Boolean,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(16.dp),
+    idleContainerColor: Color? = null,
+    idleBorderColor: Color? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val colors = MaterialTheme.auroraColors
@@ -28,7 +31,7 @@ fun CommandSurface(
     val outerTreatment = if (emphasized) {
         Modifier.background(color = colors.focusPrimary.copy(alpha = 0.20f), shape = shape)
     } else {
-        Modifier.background(color = colors.commandSurface, shape = shape)
+        Modifier.background(color = idleContainerColor ?: colors.commandSurface, shape = shape)
     }
 
     Box(
@@ -39,9 +42,13 @@ fun CommandSurface(
     ) {
         Surface(
             shape = shape,
-            color = colors.commandSurface,
+            color = idleContainerColor ?: colors.commandSurface,
             contentColor = MaterialTheme.colorScheme.onSurface,
-            border = if (emphasized) BorderStroke(1.dp, colors.focusPrimary) else null,
+            border = when {
+                emphasized -> BorderStroke(1.dp, colors.focusPrimary)
+                idleBorderColor != null -> BorderStroke(1.dp, idleBorderColor)
+                else -> null
+            },
         ) {
             Box(
                 modifier = Modifier.padding(contentPadding),

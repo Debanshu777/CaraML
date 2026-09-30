@@ -99,6 +99,18 @@ class InstalledModelEvidenceRepairer internal constructor(
             return persistIfUnchanged(captured, mode, enriched)
         }
 
+        // The publication and every artifact identity were verified above. A complete
+        // local GGUF header can supply load-critical facts without a network lookup.
+        if (mode == ModelHubBrowseMode.LanguageModels) {
+            val target = captured.artifact.loadTarget as? VerifiedArtifactLoadTarget.File
+                ?: return fallbackUnlessBaselineChanged(captured, mode, invalidMetadata())
+            val localHeader = ggufMetadataInspector.inspect(target.path)
+                ?: return fallbackUnlessBaselineChanged(captured, mode, invalidMetadata())
+            localLlmDescriptor(captured, target, localHeader)?.let { local ->
+                return persistIfUnchanged(captured, mode, local)
+            }
+        }
+
         return when (val lookup = metadataSource.findExact(modelId, mode, captured.identities)) {
             InstalledDescriptorLookup.RetryableUnavailable ->
                 fallbackUnlessBaselineChanged(captured, mode, EvidenceRepairResult.NeedsNetwork)
@@ -115,6 +127,35 @@ class InstalledModelEvidenceRepairer internal constructor(
                 persistIfUnchanged(captured, mode, enriched)
             }
         }
+    }
+
+    private fun localLlmDescriptor(
+        captured: VerifiedRepairSnapshot,
+        target: VerifiedArtifactLoadTarget.File,
+        local: GgufLocalMetadata,
+    ): LlmModelDescriptor? {
+        val primary = captured.artifact.components.singleOrNull { it.localPath == target.path }
+            ?.identity ?: return null
+        val quantization = QuantizationParser.parseFilename(primary.path)
+            .takeIf { it is QuantizationEvidence.Known } ?: return null
+        val descriptor = LlmModelDescriptor(
+            repositoryId = captured.modelId,
+            revision = primary.revision,
+            files = listOf(primary) + captured.identities.filterNot { it == primary },
+            architecture = local.architecture,
+            quantization = quantization,
+            parameterCount = null,
+            contextLimit = local.contextLimit,
+            transformerShape = local.transformerShape,
+            ggufVersion = local.version,
+            requiredEngineFeatures = emptyList(),
+            evidence = listOf(Evidence(
+                AssessmentReason.METADATA_VALIDATED,
+                Confidence.HIGH,
+                "compatibility:local-gguf-header",
+            )),
+        )
+        return descriptor.takeIf { it.hasCompleteLocalCompatibilityMetadata() && it.isExactFor(captured, ModelHubBrowseMode.LanguageModels) }
     }
 
     private suspend fun captureVerified(modelId: String): VerifiedRepairSnapshot? {

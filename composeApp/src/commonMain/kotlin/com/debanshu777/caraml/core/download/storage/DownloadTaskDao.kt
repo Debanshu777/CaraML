@@ -68,6 +68,10 @@ interface DownloadTaskDao {
     fun observeForModel(modelId: String): Flow<List<DownloadBatchWithArtifacts>>
 
     @Transaction
+    @Query("SELECT * FROM download_batch WHERE state NOT IN ('COMPLETED', 'CANCELLED') ORDER BY updated_at_epoch_ms DESC LIMIT 64")
+    fun observeQueue(): Flow<List<DownloadBatchWithArtifacts>>
+
+    @Transaction
     @Query("SELECT * FROM download_batch WHERE state NOT IN ('COMPLETED', 'FAILED_TERMINAL', 'CANCELLED')")
     suspend fun recoverableBatches(): List<DownloadBatchWithArtifacts>
 

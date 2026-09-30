@@ -11,6 +11,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.prism
@@ -26,14 +27,8 @@ fun ModelHubHeader(
     require((actionLabel == null) == (onAction == null)) {
         "actionLabel and onAction must either both be provided or both be null"
     }
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .testTag("model-summary"),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
+    val heading: @Composable (Modifier) -> Unit = { headingModifier ->
+        Column(modifier = headingModifier) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.prism.sectionTitle,
@@ -47,6 +42,8 @@ fun ModelHubHeader(
                 )
             }
         }
+    }
+    val action: @Composable () -> Unit = {
         if (actionLabel != null && onAction != null) {
             TextButton(
                 onClick = onAction,
@@ -54,6 +51,22 @@ fun ModelHubHeader(
             ) {
                 Text(actionLabel)
             }
+        }
+    }
+    val containerModifier = modifier.fillMaxWidth().testTag("model-summary")
+    if (LocalDensity.current.fontScale >= 1.4f) {
+        Column(modifier = containerModifier) {
+            heading(Modifier.fillMaxWidth())
+            action()
+        }
+    } else {
+        Row(
+            modifier = containerModifier,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            heading(Modifier.weight(1f))
+            action()
         }
     }
 }

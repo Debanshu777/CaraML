@@ -26,15 +26,17 @@ fun StatusMark(
     tone: SignalTone,
     icon: ImageVector,
     modifier: Modifier = Modifier,
+    containerColorOverride: Color? = null,
+    contentColorOverride: Color? = null,
 ) {
-    val (containerColor, contentColor) = statusMarkColors(tone)
+    val (toneContainer, toneContent) = statusMarkColors(tone)
     Surface(
         modifier = modifier.semantics(mergeDescendants = true) {
             stateDescription = contentDescription
         },
         shape = MaterialTheme.prismShapes.status,
-        color = containerColor,
-        contentColor = contentColor,
+        color = containerColorOverride ?: toneContainer,
+        contentColor = contentColorOverride ?: toneContent,
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),

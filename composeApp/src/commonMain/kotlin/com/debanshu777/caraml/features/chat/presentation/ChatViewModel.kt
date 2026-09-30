@@ -821,6 +821,7 @@ class ChatViewModel(
         if (content.isEmpty()) return
         val core = _internal.value
         if (core !is InternalChatState.ReadyCore || core.isGenerating) return
+        if (!_internal.compareAndSet(core, core.copy(isGenerating = true))) return
 
         when (_generationMode.value) {
             GenerationMode.Text -> sendTextMessage(content)
@@ -833,13 +834,18 @@ class ChatViewModel(
         val userMessage = ChatMessage(role = MessageRole.User, text = content)
         val assistantMessage = ChatMessage(role = MessageRole.Assistant, text = "")
 
-        generationJob = viewModelScope.launch(Dispatchers.Default) {
+        // Reserve and display the accepted turn before compression can suspend.
+        val loadGeneration = modelLoadGeneration.load()
+        val currentMessages = _messages.value
+        appendMessages(userMessage, assistantMessage)
+        val job = viewModelScope.launch {
             try {
-                val currentMessages = _messages.value
-                if (manageContext.needsReset()) {
-                    handleContextReset(currentMessages)
+                if (manageContext.needsReset() &&
+                    handleContextReset(currentMessages) == ContextResetResult.Failure
+                ) {
+                    finalizeWithError(assistantMessage.id, "Could not prepare chat context. Please try again.")
+                    return@launch
                 }
-                appendMessages(userMessage, assistantMessage)
                 val result = generateResponse(userMessage.text) { thinking, output, stats ->
                     updateStreamingState(thinking, output, stats)
                 }
@@ -853,6 +859,14 @@ class ChatViewModel(
                 finalizeWithError(assistantMessage.id, error.message.orEmpty())
             } catch (_: Exception) {
                 finalizeWithError(assistantMessage.id)
+            }
+        }
+        generationJob = job
+        // Completion also runs when cancellation happens before the body starts.
+        job.invokeOnCompletion {
+            if (generationJob === job && modelLoadGeneration.load() == loadGeneration) {
+                updateReadyCore { it.copy(isGenerating = false) }
+                _streamingState.value = StreamingState()
             }
         }
     }
@@ -1007,7 +1021,6 @@ class ChatViewModel(
             }
             messages.toImmutableList()
         }
-        updateReadyCore { it.copy(isGenerating = false) }
         _streamingState.value = StreamingState()
     }
 
@@ -1050,42 +1063,23 @@ class ChatViewModel(
         _streamingState.value = StreamingState()
     }
 
-    private suspend fun handleContextReset(messages: List<ChatMessage>) {
-        val progressMessageId = addProgressMessage("Chat summarization in progress")
-        val status = when (manageContext.resetContext(messages)) {
-            ContextResetResult.Success -> "Chat summarized"
-            ContextResetResult.Failure -> "Could not reset chat context"
-        }
-        updateProgressMessage(progressMessageId, status)
-    }
-
-    private fun addProgressMessage(text: String): String {
-        val progressMessageId = "context_reset_${Clock.System.now()}"
-        val progressMessage = ChatMessage(
-            id = progressMessageId,
-            role = MessageRole.System,
-            text = text,
-        )
-        _messages.update { (it + progressMessage).toImmutableList() }
-        return progressMessageId
-    }
-
-    private fun updateProgressMessage(messageId: String, newText: String) {
-        _messages.update { list ->
-            val messages = list.toMutableList()
-            val idx = messages.indexOfFirst { it.id == messageId }
-            if (idx >= 0) {
-                messages[idx] = messages[idx].copy(text = newText)
-            }
-            messages.toImmutableList()
+    private suspend fun handleContextReset(messages: List<ChatMessage>): ContextResetResult {
+        _streamingState.update { it.copy(isCompacting = true) }
+        return try {
+            manageContext.resetContext(messages)
+        } finally {
+            _streamingState.update { it.copy(isCompacting = false) }
         }
     }
 
     fun cancelGeneration() {
-        updateReadyCore { it.copy(isGenerating = false) }
-        _streamingState.value = StreamingState()
         signalGenerationCancellation()
         generationJob?.cancel()
+        // Text releases its reservation only after its cancellation cleanup finishes.
+        if (_generationMode.value != GenerationMode.Text) {
+            updateReadyCore { it.copy(isGenerating = false) }
+            _streamingState.value = StreamingState()
+        }
     }
 
     suspend fun loadGeneratedMedia(path: String): ByteArray? = generatedMediaStore.read(path)

@@ -104,15 +104,14 @@ class ModelHubRegistryUiTest {
             useUnmergedTree = true,
         )
         val metadata = onNodeWithText(
-            "Text generation • 12.3K downloads • 7B params",
+            "7B parameters · 12.3K downloads",
             useUnmergedTree = true,
         )
         owner.assertIsDisplayed()
         title.assertIsDisplayed()
         metadata.assertIsDisplayed()
-        onNodeWithText("Recommended", useUnmergedTree = true).assertIsDisplayed()
-        onNodeWithText("Selected variant: model-Q4_K_M.gguf", useUnmergedTree = true)
-            .assertIsDisplayed()
+        onNodeWithText("Text generation", useUnmergedTree = true).assertIsDisplayed()
+        onNodeWithText("Best fit", useUnmergedTree = true).assertIsDisplayed()
 
         val titleWidth = title.fetchSemanticsNode().boundsInRoot.width
         val metadataWidth = metadata.fetchSemanticsNode().boundsInRoot.width
@@ -240,7 +239,7 @@ class ModelHubRegistryUiTest {
     }
 
     @Test
-    fun searchCommandHasOneSearchAffordanceAndConditionalClearAction() = runComposeUiTest {
+    fun searchCommandUsesImeAndConditionalClearAction() = runComposeUiTest {
         var query by mutableStateOf("")
         var searches = 0
         setContent {
@@ -254,14 +253,12 @@ class ModelHubRegistryUiTest {
         }
 
         onNodeWithTag("model-command").assertIsDisplayed()
-        onAllNodesWithContentDescription("Search models").assertCountEquals(1)
         onAllNodesWithContentDescription("Submit model search").assertCountEquals(0)
         onNodeWithContentDescription("Clear model search").assertDoesNotExist()
         onNode(hasImeAction(ImeAction.Search)).performImeAction()
         runOnIdle { assertEquals(1, searches) }
 
         runOnIdle { query = "tinyllama" }
-        onAllNodesWithContentDescription("Search models").assertCountEquals(1)
         onAllNodesWithContentDescription("Submit model search").assertCountEquals(0)
         onNodeWithContentDescription("Clear model search").assertIsDisplayed()
     }
@@ -444,7 +441,7 @@ class ModelHubRegistryUiTest {
             }
 
             onNodeWithText("Device profile").assertIsDisplayed()
-            onNodeWithText("197 GB free · Balanced").assertIsDisplayed()
+            onNodeWithText("197 GB storage free · Balanced").assertIsDisplayed()
             listOf("Storage", "Device", "Profile").forEach { label ->
                 onNodeWithText(label, useUnmergedTree = true).assertDoesNotExist()
             }
@@ -552,7 +549,7 @@ class ModelHubRegistryUiTest {
         val row = onNodeWithTag("model-row:org/compact-model")
         val title = onNodeWithText("compact-model", useUnmergedTree = true)
         val metadata = onNodeWithText("Trending weight: 42", useUnmergedTree = true)
-        val status = onNodeWithText("Needs information", useUnmergedTree = true)
+        val status = onNodeWithText("Needs info", useUnmergedTree = true)
         row.assertIsDisplayed()
         title.assertIsDisplayed()
         metadata.assertIsDisplayed()
@@ -563,10 +560,8 @@ class ModelHubRegistryUiTest {
         val metadataBounds = metadata.fetchSemanticsNode().boundsInRoot
         val statusBounds = status.fetchSemanticsNode().boundsInRoot
         assertTrue(rowBounds.height <= 172f, "Simple status row was ${rowBounds.height}dp tall")
-        assertTrue(
-            statusBounds.top >= metadataBounds.bottom,
-            "Compact status belongs below identity metadata; metadata=$metadataBounds status=$statusBounds",
-        )
+        assertTrue(statusBounds.bottom <= metadataBounds.top,
+            "Compact status belongs beside the model name; metadata=$metadataBounds status=$statusBounds")
     }
 
     @Test
@@ -579,7 +574,7 @@ class ModelHubRegistryUiTest {
                             title = "research-lab/a-very-long-model-name-that-needs-two-lines-on-phone",
                             author = "research-lab",
                             metadata = "GGUF · text generation · 12.4 GB",
-                            status = { Text("Needs information") },
+                            status = { Text("Info") },
                             onClick = {},
                         )
                     }
@@ -592,7 +587,7 @@ class ModelHubRegistryUiTest {
             "a-very-long-model-name-that-needs-two-lines-on-phone",
             useUnmergedTree = true,
         )
-        val status = onNodeWithText("Needs information", useUnmergedTree = true)
+        val status = onNodeWithText("Info", useUnmergedTree = true)
         val metadata = onNodeWithText("GGUF · text generation · 12.4 GB", useUnmergedTree = true)
         owner.assertIsDisplayed()
         title.assertIsDisplayed()
@@ -601,12 +596,12 @@ class ModelHubRegistryUiTest {
         val titleBounds = title.fetchSemanticsNode().boundsInRoot
         val statusBounds = status.fetchSemanticsNode().boundsInRoot
         assertTrue(
-            titleBounds.width >= 280f,
-            "Long names need the compact content width before status; width=${titleBounds.width}",
+            titleBounds.width >= 180f,
+            "Long names need at least half the row beside status; width=${titleBounds.width}",
         )
         assertTrue(
-            statusBounds.top >= metadata.fetchSemanticsNode().boundsInRoot.bottom,
-            "Long-name status must follow metadata without competing for title width",
+            statusBounds.bottom <= metadata.fetchSemanticsNode().boundsInRoot.top,
+            "Long-name status must sit beside the title above metadata",
         )
     }
 
@@ -671,7 +666,7 @@ class ModelHubRegistryUiTest {
             }
         }
 
-        onNodeWithText("Needs information").assertIsDisplayed()
+        onNodeWithText("Needs info").assertIsDisplayed()
         onNode(
             SemanticsMatcher.expectValue(
                 SemanticsProperties.StateDescription,

@@ -43,6 +43,8 @@ fun TechnicalListRow(
     leading: (@Composable () -> Unit)? = null,
     status: (@Composable () -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
+    titleStatus: (@Composable () -> Unit)? = null,
+    eyebrowTrailing: (@Composable () -> Unit)? = null,
 ) {
     TechnicalListRowImpl(
         title = title,
@@ -58,6 +60,8 @@ fun TechnicalListRow(
         leading = leading,
         status = status,
         trailing = trailing,
+        titleStatus = titleStatus,
+        eyebrowTrailing = eyebrowTrailing,
     )
 }
 
@@ -79,6 +83,8 @@ fun TechnicalListRow(
     leading: (@Composable () -> Unit)? = null,
     status: (@Composable () -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
+    titleStatus: (@Composable () -> Unit)? = null,
+    eyebrowTrailing: (@Composable () -> Unit)? = null,
 ) {
     TechnicalListRowImpl(
         title = title,
@@ -94,6 +100,8 @@ fun TechnicalListRow(
         leading = leading,
         status = status,
         trailing = trailing,
+        titleStatus = titleStatus,
+        eyebrowTrailing = eyebrowTrailing,
     )
 }
 
@@ -113,6 +121,8 @@ fun TechnicalListRow(
     leading: (@Composable () -> Unit)? = null,
     status: (@Composable () -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
+    titleStatus: (@Composable () -> Unit)? = null,
+    eyebrowTrailing: (@Composable () -> Unit)? = null,
 ) {
     TechnicalListRowImpl(
         title = title,
@@ -128,6 +138,8 @@ fun TechnicalListRow(
         leading = leading,
         status = status,
         trailing = trailing,
+        titleStatus = titleStatus,
+        eyebrowTrailing = eyebrowTrailing,
     )
 }
 
@@ -146,6 +158,8 @@ private fun TechnicalListRowImpl(
     leading: (@Composable () -> Unit)?,
     status: (@Composable () -> Unit)?,
     trailing: (@Composable () -> Unit)?,
+    titleStatus: (@Composable () -> Unit)?,
+    eyebrowTrailing: (@Composable () -> Unit)?,
 ) {
     val colors = MaterialTheme.auroraColors
     val spacing = LocalSpacing.current
@@ -197,22 +211,35 @@ private fun TechnicalListRowImpl(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(spacing.xs),
                     ) {
-                    eyebrow?.let {
-                        Text(
-                            text = it,
-                            style = MaterialTheme.typography.prism.technicalLabel,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                    if (eyebrow != null || eyebrowTrailing != null) {
+                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            eyebrow?.let {
+                                Text(
+                                    text = it,
+                                    style = MaterialTheme.typography.prism.technicalLabel,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                            eyebrowTrailing?.invoke()
+                        }
                     }
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.prism.modelTitle,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.prism.modelTitle,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        titleStatus?.let {
+                            Spacer(modifier = Modifier.width(spacing.s))
+                            it()
+                        }
+                    }
                     metadata?.let {
                         Text(
                             text = it,

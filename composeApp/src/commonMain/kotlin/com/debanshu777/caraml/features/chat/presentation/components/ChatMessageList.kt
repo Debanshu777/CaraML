@@ -171,6 +171,7 @@ private fun ChatMessageListItem(
     loadMedia: suspend (String) -> ByteArray?,
 ) {
     if (message.id == streamingMessageId && streamingState != null) {
+        if (streamingState.isCompacting) return
         StreamingMessageBubble(
             message = message,
             streamingState = streamingState,

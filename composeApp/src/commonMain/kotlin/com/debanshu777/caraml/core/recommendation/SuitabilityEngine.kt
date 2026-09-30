@@ -29,6 +29,22 @@ class SuitabilityEngine(
         return assessPlansWithCompatibility(descriptor, hardwareProfile, workload, compatibility)
     }
 
+    /** Builds browse-only resource estimates while retaining Unknown compatibility. */
+    fun assessBrowsePlans(
+        descriptor: ModelDescriptor,
+        hardwareProfile: HardwareProfile,
+        workload: WorkloadConfig,
+    ): AssessedPlans {
+        val compatibility = compatibilityChecker.check(descriptor, hardwareProfile)
+        return assessPlansWithCompatibility(
+            descriptor,
+            hardwareProfile,
+            workload,
+            compatibility,
+            allowUnknownForBrowse = true,
+        )
+    }
+
     fun reassessPlans(
         descriptor: ModelDescriptor,
         hardwareProfile: HardwareProfile,
@@ -67,9 +83,12 @@ class SuitabilityEngine(
         workload: WorkloadConfig,
         compatibility: Compatibility,
         cachedPlans: List<RunPlan>? = null,
+        allowUnknownForBrowse: Boolean = false,
     ): AssessedPlans {
         val key = assessmentKey(descriptor)
-        if (compatibility != Compatibility.Compatible) {
+        if (compatibility is Compatibility.Incompatible ||
+            compatibility is Compatibility.Unknown && !allowUnknownForBrowse
+        ) {
             return AssessedPlans(
                 values = emptyList(),
                 assessmentKey = key,
@@ -124,8 +143,8 @@ class SuitabilityEngine(
             assessmentKey = key,
             compatibility = compatibility,
             memoryTopology = hardwareProfile.memoryTopology,
-            reasons = emptyList(),
-            evidence = descriptor.evidence + hardwareProfile.evidence,
+            reasons = compatibilityReasons(compatibility),
+            evidence = descriptor.evidence + hardwareProfile.evidence + compatibilityEvidence(compatibility),
         )
     }
 

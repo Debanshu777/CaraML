@@ -1,0 +1,113 @@
+diff --git a/common/fit.cpp b/common/fit.cpp
+--- a/common/fit.cpp
++++ b/common/fit.cpp
+@@ -1,4 +1,5 @@
+ #include "fit.h"
++#include "fit-memory-pool.h"
+ 
+ #include "json.h"
+ #include "log.h"
+@@ -76,26 +77,19 @@
+ 
+     llama_memory_breakdown memory_breakdown = llama_get_memory_breakdown(ctx);
+ 
++    std::vector<ggml_backend_dev_t> memory_devices;
++    memory_devices.reserve(nd);
++    for (size_t i = 0; i < nd; ++i) {
++        memory_devices.push_back(llama_model_get_device(model, i));
++    }
+     for (const auto & [buft, mb] : memory_breakdown) {
+-        if (ggml_backend_buft_is_host(buft)) {
+-            ret.back().mb.model   += mb.model;
+-            ret.back().mb.context += mb.context;
+-            ret.back().mb.compute += mb.compute;
+-            continue;
+-        }
+-
+-        ggml_backend_dev_t dev = ggml_backend_buft_get_device(buft);
+-        if (!dev) {
+-            continue;
+-        }
+-        for (size_t i = 0; i < nd; i++) {
+-            if (dev == llama_model_get_device(model, i)) {
+-                ret[i].mb.model   += mb.model;
+-                ret[i].mb.context += mb.context;
+-                ret[i].mb.compute += mb.compute;
+-                break;
+-            }
+-        }
++        const int pool = common_fit_memory_pool_index(buft, memory_devices);
++        if (pool < 0) {
++            throw std::runtime_error("unaccounted memory buffer in fit probe");
++        }
++        ret[pool].mb.model   += mb.model;
++        ret[pool].mb.context += mb.context;
++        ret[pool].mb.compute += mb.compute;
+     }
+ 
+     {
+@@ -939,29 +933,13 @@
+     for (const auto & buft_mb : memory_breakdown) {
+         ggml_backend_buffer_type_t          buft = buft_mb.first;
+         const llama_memory_breakdown_data & mb   = buft_mb.second;
+-        if (ggml_backend_buft_is_host(buft)) {
+-            mb_host.model   += mb.model;
+-            mb_host.context += mb.context;
+-            mb_host.compute += mb.compute;
++        const int pool = common_fit_memory_pool_index(buft, devices);
++        if (pool >= 0) {
++            auto & destination = static_cast<size_t>(pool) == devices.size() ? mb_host : mb_dev[pool];
++            destination.model   += mb.model;
++            destination.context += mb.context;
++            destination.compute += mb.compute;
+             seen_buffer_types.insert(buft);
+-            continue;
+-        }
+-        ggml_backend_dev_t dev = ggml_backend_buft_get_device(buft);
+-        if (dev) {
+-            int i_dev = -1;
+-            for (size_t i = 0; i < devices.size(); i++) {
+-                if (devices[i] == dev) {
+-                    i_dev = i;
+-                    break;
+-                }
+-            }
+-            if (i_dev != -1) {
+-                mb_dev[i_dev].model   += mb.model;
+-                mb_dev[i_dev].context += mb.context;
+-                mb_dev[i_dev].compute += mb.compute;
+-                seen_buffer_types.insert(buft);
+-                continue;
+-            }
+         }
+     }
+ 
+diff --git a/common/fit-memory-pool.h b/common/fit-memory-pool.h
+new file mode 100644
+--- /dev/null
++++ b/common/fit-memory-pool.h
+@@ -0,0 +1,24 @@
++#pragma once
++
++#include "ggml-backend.h"
++
++#include <vector>
++
++// is_host also requires standard tensor layout. CPU_REPACK uses host memory
++// with a different layout, so its CPU device must determine memory ownership.
++// Return the host slot (devices.size()), a device slot, or -1 if unaccountable.
++inline int common_fit_memory_pool_index(
++        ggml_backend_buffer_type_t buft,
++        const std::vector<ggml_backend_dev_t> & devices) {
++    if (!buft) return -1;
++    const ggml_backend_dev_t dev = ggml_backend_buft_get_device(buft);
++    if (ggml_backend_buft_is_host(buft) ||
++        (dev && ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_CPU)) {
++        return static_cast<int>(devices.size());
++    }
++    if (!dev) return -1;
++    for (size_t i = 0; i < devices.size(); ++i) {
++        if (dev == devices[i]) return static_cast<int>(i);
++    }
++    return -1;
++}

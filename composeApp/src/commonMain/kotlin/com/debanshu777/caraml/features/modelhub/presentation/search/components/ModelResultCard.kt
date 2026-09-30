@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.AutoAwesome
@@ -19,10 +20,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -36,6 +39,9 @@ import com.debanshu777.caraml.core.ui.components.StatusMark
 import com.debanshu777.caraml.core.ui.components.TechnicalListRow
 import com.debanshu777.caraml.core.theme.prismShapes
 import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
+import com.debanshu777.caraml.core.recommendation.BrowseFitEstimate
+import com.debanshu777.caraml.core.recommendation.BrowseResourceFit
+import com.debanshu777.caraml.core.rating.ui.formatBytesHuman
 
 @Composable
 fun ModelResultCard(
@@ -47,6 +53,7 @@ fun ModelResultCard(
     modifier: Modifier = Modifier,
     highlighted: Boolean = false,
     trailing: (@Composable RowScope.() -> Unit)? = null,
+    taskTag: String? = null,
 ) {
     val identity = remember(title, author) { repositoryIdentity(title, author) }
     val trailingContent: (@Composable () -> Unit)? = trailing?.let { content ->
@@ -67,10 +74,52 @@ fun ModelResultCard(
             signalTone = if (highlighted) SignalTone.Accent else null,
             onClick = onClick,
             modifier = Modifier.testTag("model-row:$title"),
-            status = status,
+            titleStatus = status,
+            eyebrowTrailing = taskTag?.let { label ->
+                {
+                    Surface(
+                        shape = MaterialTheme.prismShapes.status,
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    ) {
+                        Text(label, style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
+                    }
+                }
+            },
             trailing = trailingContent,
         )
     }
+}
+
+internal fun browseEstimateLabel(estimate: BrowseFitEstimate?): String? = estimate?.let {
+    buildList {
+        add("Compatibility unverified")
+        it.downloadBytes?.let { bytes -> add("Download ${formatBytesHuman(bytes)}") }
+        add(
+            when (it.memoryFit) {
+                BrowseResourceFit.LIKELY_FIT -> "Memory may fit"
+                BrowseResourceFit.TIGHT_FIT -> "Memory may be tight"
+                BrowseResourceFit.TOO_LARGE -> "Estimated memory exceeds current budget"
+                BrowseResourceFit.UNKNOWN -> "Memory fit unknown"
+            },
+        )
+        if (!it.resourceSnapshotFresh) add("resource snapshot stale")
+    }.joinToString(" · ")
+}
+
+internal data class BrowseVerdictPresentation(
+    val label: String,
+    val description: String,
+    val tone: SignalTone,
+    val icon: ImageVector,
+)
+
+internal fun browseVerdict(estimate: BrowseFitEstimate): BrowseVerdictPresentation = when (estimate.memoryFit) {
+    BrowseResourceFit.LIKELY_FIT -> BrowseVerdictPresentation("Likely fits", "Estimated memory may fit", SignalTone.Positive, Icons.Outlined.CheckCircle)
+    BrowseResourceFit.TIGHT_FIT -> BrowseVerdictPresentation("Tight fit", "Estimated memory fit is tight", SignalTone.Warning, Icons.Outlined.WarningAmber)
+    BrowseResourceFit.TOO_LARGE -> BrowseVerdictPresentation("Too large", "Estimated memory exceeds current budget", SignalTone.Error, Icons.Outlined.Block)
+    BrowseResourceFit.UNKNOWN -> BrowseVerdictPresentation("Resource fit unknown", "There is not enough current resource evidence", SignalTone.Neutral, Icons.Outlined.Info)
 }
 
 @Composable
@@ -79,8 +128,11 @@ internal fun ModelRecommendationStatus(
     recommendation: PersonalizedRecommendation?,
     onInfoClick: (() -> Unit)?,
     modifier: Modifier = Modifier,
+    browseFit: BrowseFitEstimate? = null,
+    compact: Boolean = false,
 ) {
     val presentation = recommendationStatusPresentation(state, recommendation)
+    val largeText = LocalDensity.current.fontScale >= 1.5f
     val interactionModifier = if (onInfoClick != null) {
         Modifier
             .heightIn(min = 48.dp)
@@ -93,11 +145,35 @@ internal fun ModelRecommendationStatus(
         modifier = modifier.then(interactionModifier),
         contentAlignment = Alignment.Center,
     ) {
+        val browse = browseFit?.let(::browseVerdict)
+        val needsCautionColors = browseFit?.memoryFit == BrowseResourceFit.TIGHT_FIT
         StatusMark(
-            label = presentation.label,
-            contentDescription = presentation.stateDescription,
-            tone = presentation.tone,
-            icon = presentation.icon,
+            label = (browse?.label ?: presentation.label).let { label ->
+                when {
+                    !compact -> label
+                    largeText -> when (label) {
+                        "Needs information" -> "Info"
+                        "Resource fit unknown" -> "Unknown"
+                        "Too large" -> "Large"
+                        "Tight fit" -> "Tight"
+                        "Recommended" -> "Best"
+                        "Select variant" -> "Select"
+                        else -> label
+                    }
+                    else -> when (label) {
+                        "Needs information" -> "Needs info"
+                        "Resource fit unknown" -> "Unknown fit"
+                        "Select variant" -> "Select"
+                        "Recommended" -> "Best fit"
+                        else -> label
+                    }
+                }
+            },
+            contentDescription = browse?.description ?: presentation.stateDescription,
+            tone = browse?.tone ?: presentation.tone,
+            icon = browse?.icon ?: presentation.icon,
+            containerColorOverride = if (needsCautionColors) MaterialTheme.colorScheme.primaryContainer else null,
+            contentColorOverride = if (needsCautionColors) MaterialTheme.colorScheme.onPrimaryContainer else null,
         )
     }
 }

@@ -66,6 +66,7 @@ import com.debanshu777.huggingfacemanager.repository.HuggingFaceRepository
 import com.debanshu777.huggingfacemanager.usecase.GetModelConfigUseCase
 import com.debanshu777.huggingfacemanager.usecase.GetModelDetailUseCase
 import com.debanshu777.huggingfacemanager.usecase.GetModelFileTreeUseCase
+import com.debanshu777.huggingfacemanager.usecase.GetModelPageUseCase
 import com.debanshu777.huggingfacemanager.usecase.GetRecommendationModelDetailUseCase
 import com.debanshu777.huggingfacemanager.usecase.ListModelsUseCase
 import com.debanshu777.huggingfacemanager.usecase.ListRecommendationModelsUseCase
@@ -236,6 +237,7 @@ private fun detailsHuggingFaceApi(client: HttpClient): HuggingFaceApi {
     )
     return object : HuggingFaceApi {
         override val listModels = ListModelsUseCase(repository)
+        override val getModelPage = GetModelPageUseCase(repository)
         override val listRecommendationModels = ListRecommendationModelsUseCase(repository)
         override val searchModels = SearchModelsUseCase(repository)
         override val getModelDetail = GetModelDetailUseCase(repository)

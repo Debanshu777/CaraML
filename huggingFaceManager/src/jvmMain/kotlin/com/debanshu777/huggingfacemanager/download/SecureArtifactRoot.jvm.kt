@@ -190,14 +190,17 @@ private class NativeDescriptorSource(
     private val rootHandle: Long,
     private var descriptor: Long,
 ) : Source {
+    private var bytes: ByteArray? = null
+
     override fun read(sink: Buffer, byteCount: Long): Long {
         require(byteCount >= 0L)
         if (byteCount == 0L) return 0L
-        val bytes = ByteArray(minOf(64L * 1024L, byteCount).toInt())
-        val count = NativeArtifactFs.read(descriptor, bytes, 0, bytes.size)
+        val requested = minOf(64L * 1024L, byteCount).toInt()
+        val scratch = bytes?.takeIf { it.size >= requested } ?: ByteArray(requested).also { bytes = it }
+        val count = NativeArtifactFs.read(descriptor, scratch, 0, requested)
         if (count < 0) throw ArtifactFileAccessException()
         if (count == 0) return -1L
-        sink.write(bytes, 0, count)
+        sink.write(scratch, 0, count)
         return count.toLong()
     }
 
@@ -205,6 +208,7 @@ private class NativeDescriptorSource(
     override fun close() {
         val current = descriptor
         descriptor = -1L
+        bytes = null
         if (current >= 0L && (!NativeArtifactFs.closeFile(current) || !NativeArtifactFs.revalidate(rootHandle))) {
             throw ArtifactFileAccessException()
         }
