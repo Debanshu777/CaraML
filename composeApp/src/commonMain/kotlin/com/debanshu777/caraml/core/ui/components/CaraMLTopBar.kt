@@ -26,9 +26,9 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.ui.layout.AppContentKind
 import com.debanshu777.caraml.core.ui.layout.ResponsiveContentPane
-import com.debanshu777.caraml.core.theme.prism
 import com.debanshu777.caraml.core.drawer.LocalNavigationMenuAction
 
 enum class TopBarNavigation {
@@ -76,7 +76,7 @@ fun CaraMLTopBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 64.dp),
+                .heightIn(min = AppTheme.spacing.spacing64),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             when (navigation) {
@@ -88,7 +88,7 @@ fun CaraMLTopBar(
                     Icon(
                         imageVector = Icons.Default.Menu,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurface,
+                        tint = AppTheme.colors.onSurface,
                     )
                 }
                 TopBarNavigation.Back -> HeaderNavigationButton(
@@ -98,16 +98,16 @@ fun CaraMLTopBar(
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurface,
+                        tint = AppTheme.colors.onSurface,
                     )
                 }
             }
-            if (navigation != TopBarNavigation.None) Spacer(Modifier.width(8.dp))
+            if (navigation != TopBarNavigation.None) Spacer(Modifier.width(AppTheme.spacing.spacing8))
             Text(
                 text = title,
                 modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.prism.screenTitle,
-                color = MaterialTheme.colorScheme.onSurface,
+                style = AppTheme.typography.heading28,
+                color = AppTheme.colors.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -157,7 +157,7 @@ private fun HeaderNavigationButton(
     IconButton(
         onClick = onClick,
         modifier = Modifier
-            .size(48.dp)
+            .size(AppTheme.spacing.spacing48)
             .semantics { this.contentDescription = contentDescription },
         content = icon,
     )

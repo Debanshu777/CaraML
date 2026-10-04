@@ -6,12 +6,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
-import com.debanshu777.caraml.core.theme.AppTechnicalLabel
+import com.debanshu777.caraml.core.theme.AppTheme
 
 internal fun selectedVariantLabel(variant: String): AnnotatedString =
     buildAnnotatedString {
         append("Selected variant: ")
-        withStyle(AppTechnicalLabel.toSpanStyle()) {
+        withStyle(AppTheme.typography.technical12.toSpanStyle()) {
             append(variant)
         }
     }
@@ -20,6 +20,6 @@ internal fun selectedVariantLabel(variant: String): AnnotatedString =
 internal fun SelectedVariantLabel(variant: String) {
     Text(
         text = selectedVariantLabel(variant),
-        style = MaterialTheme.typography.bodySmall,
+        style = AppTheme.typography.bodySmall,
     )
 }

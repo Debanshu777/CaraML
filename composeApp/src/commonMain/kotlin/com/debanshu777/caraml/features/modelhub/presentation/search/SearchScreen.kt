@@ -2,8 +2,6 @@ package com.debanshu777.caraml.features.modelhub.presentation.search
 
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -22,6 +20,8 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -41,60 +41,56 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.debanshu777.caraml.core.drawer.LocalAppWindowWidth
+import com.debanshu777.caraml.core.theme.AppTheme
+import com.debanshu777.caraml.core.rating.ui.RecommendationDetailsSheet
+import com.debanshu777.caraml.core.rating.ui.recommendationPresentation
+import com.debanshu777.caraml.core.recommendation.OptimizationPriority
 import com.debanshu777.caraml.core.recommendation.RecommendationProfile
 import com.debanshu777.caraml.core.recommendation.RecommendationRolloutModeSource
 import com.debanshu777.caraml.core.recommendation.RiskTolerance
-import com.debanshu777.caraml.core.recommendation.OptimizationPriority
-import com.debanshu777.caraml.core.rating.ui.RecommendationDetailsSheet
-import com.debanshu777.caraml.core.rating.ui.recommendationPresentation
+import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
+import com.debanshu777.caraml.core.storage.localmodel.ModelType
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
-import com.debanshu777.caraml.core.theme.LocalSpacing
-import com.debanshu777.caraml.core.theme.auroraColors
-import com.debanshu777.caraml.core.theme.prismShapes
 import com.debanshu777.caraml.core.ui.components.CaraMLPrimaryTopBar
 import com.debanshu777.caraml.core.ui.layout.AppContentKind
 import com.debanshu777.caraml.core.ui.layout.ResponsiveContentPane
-import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.core.ui.motion.AuroraMotionPolicy
-import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
+import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
+import com.debanshu777.caraml.features.modelhub.domain.RecommendedModelUiState
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.DownloadedModelsViewModel
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.ReadinessFilter
-import com.debanshu777.caraml.features.modelhub.presentation.downloaded.components.LocalModelListItem
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelListItem
+import com.debanshu777.caraml.features.modelhub.presentation.downloaded.components.DownloadedListItem
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelDownloadQueueEntry
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelDownloadQueueSheet
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubContextStrip
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubFilterButton
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubHeader
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubStateKind
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubStateView
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubFilterButton
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelDownloadQueueEntry
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelDownloadQueueSheet
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.RecommendationProfileDialog
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchListItem
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.QuickCalibrationDialog
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.RecommendationProfileDialog
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchBar
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchModelListItem
-import com.debanshu777.caraml.features.modelhub.domain.RecommendedModelUiState
 import com.debanshu777.caraml.features.settings.presentation.RecommendationProfileSection
 import com.debanshu777.caraml.features.settings.presentation.SettingsViewModel
-import kotlinx.coroutines.launch
+import com.debanshu777.huggingfacemanager.model.ParameterRange
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -142,7 +138,7 @@ fun SearchScreen(
                 onOpenProfile = if (recommendationProfileState.isAvailable) ({
                     profileEditorVisible = true
                 }) else null,
-                modifier = Modifier.padding(bottom = LocalSpacing.current.s),
+                modifier = Modifier.padding(bottom = AppTheme.spacing.spacing8),
             )
         },
         downloadQueueEntry = if (downloadQueue.isNotEmpty()) {
@@ -153,18 +149,14 @@ fun SearchScreen(
         discoverContent = {
             SearchTabContent(
                 viewModel = modelViewModel,
-                storageInfo = storageInfo,
                 onNavigateToDetails = onNavigateToDetails,
                 onRecommendationInfoClick = { recommendationSheetState = it },
-                recommendationProfileState = recommendationProfileState,
-                onOpenProfileEditor = { profileEditorVisible = true },
                 modifier = Modifier.fillMaxSize(),
             )
         },
         libraryContent = {
             DownloadedTabContent(
                 viewModel = downloadedModelsViewModel,
-                storageInfo = storageInfo,
                 onSelectModelAndGoBack = onSelectModelAndGoBack,
                 onNavigateToDetails = onNavigateToDetails,
                 snackbarHostState = snackbarHostState,
@@ -275,7 +267,7 @@ internal fun ModelHubScreenLayout(
                     selectedTabIndex = selectedTabIndex,
                     onTabSelected = onTabSelected,
                 )
-                Box(modifier = Modifier.weight(1f).padding(top = LocalSpacing.current.s)) {
+                Box(modifier = Modifier.weight(1f)) {
                     when (selectedTabIndex) {
                         0 -> discoverContent()
                         1 -> libraryContent()
@@ -303,7 +295,7 @@ private fun ModelHubTabRow(
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .heightIn(min = 48.dp)
+                    .heightIn(min = AppTheme.spacing.spacing48)
                     .selectable(
                         selected = selected,
                         onClick = { onTabSelected(index) },
@@ -313,20 +305,20 @@ private fun ModelHubTabRow(
             ) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.labelLarge,
+                    style = AppTheme.typography.labelLarge,
                     color = if (selected) {
-                        MaterialTheme.colorScheme.primary
+                        AppTheme.colors.primary
                     } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
+                        AppTheme.colors.onSurfaceVariant
                     },
                 )
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        .heightIn(min = 2.dp, max = 2.dp)
+                        .heightIn(min = AppTheme.spacing.spacing2, max = AppTheme.spacing.spacing2)
                         .background(
-                            if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                            if (selected) AppTheme.colors.primary else Color.Transparent,
                         ),
                 )
             }
@@ -341,7 +333,6 @@ internal fun ModelHubTabLayout(
     summary: @Composable () -> Unit,
     results: LazyListScope.() -> Unit,
     modifier: Modifier = Modifier,
-    windowWidth: Dp? = null,
     command: (@Composable () -> Unit)? = null,
     scrollResetKey: Any? = null,
     autoLoadKeys: Set<Any> = emptySet(),
@@ -360,29 +351,26 @@ internal fun ModelHubTabLayout(
         }
     }
     BoxWithConstraints(modifier = modifier) {
-        val supportingWidth = 296.dp
-        val paneGap = 16.dp
-        val effectiveWindowWidth = windowWidth ?: maxWidth
+        val supportingWidth = AppTheme.dimensions.size296
+        val paneGap = AppTheme.spacing.spacing16
         val useSupportingContext = false // Device context is shared above the tabs at every width.
 
         val primaryContent: @Composable (Modifier, Boolean) -> Unit =
             { primaryModifier, includeContext ->
                 Column(primaryModifier) {
                     command?.let { commandContent ->
-                        Box(Modifier.padding(bottom = 8.dp)) { commandContent() }
+                        Box(Modifier.padding(vertical = AppTheme.spacing.spacing8)) { commandContent() }
                     }
                     LazyColumn(
                         modifier = Modifier.weight(1f).testTag("model-primary-results"),
                         state = listState,
-                        contentPadding = PaddingValues(bottom = LocalSpacing.current.xxl),
+                        contentPadding = PaddingValues(bottom = AppTheme.spacing.spacing32),
                     ) {
                         if (includeContext) {
-                            item(key = "model-context") {
-                                Box(Modifier.padding(bottom = 8.dp)) { context() }
-                            }
+                            item(key = "model-context") { context() }
                         }
                         item(key = "model-toolbar") {
-                            Box(Modifier.padding(bottom = 4.dp)) { toolbar() }
+                            toolbar()
                         }
                         item(key = "model-summary") {
                             summary()
@@ -415,11 +403,8 @@ internal fun ModelHubTabLayout(
 @Composable
 internal fun SearchTabContent(
     viewModel: ModelViewModel,
-    storageInfo: StorageInfoUiState,
     onNavigateToDetails: (modelId: String, hubBrowseMode: ModelHubBrowseMode) -> Unit,
     onRecommendationInfoClick: (RecommendedModelUiState) -> Unit,
-    recommendationProfileState: RecommendationProfileUiState,
-    onOpenProfileEditor: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val browseMode by viewModel.browseMode.collectAsState()
@@ -444,20 +429,19 @@ internal fun SearchTabContent(
                 model.id.orEmpty().contains(curatedQuery.trim(), ignoreCase = true)
     }
     val activeFilterCount = listOf(
-        listParams.minParams != com.debanshu777.huggingfacemanager.model.ParameterRange.ZERO,
-        listParams.maxParams != com.debanshu777.huggingfacemanager.model.ParameterRange.SIX_B,
+        listParams.minParams != ParameterRange.ZERO,
+        listParams.maxParams != ParameterRange.SIX_B,
     ).count { it }
     val resetFilters = {
         viewModel.setParameterFilters(
-            com.debanshu777.huggingfacemanager.model.ParameterRange.ZERO,
-            com.debanshu777.huggingfacemanager.model.ParameterRange.SIX_B,
+            ParameterRange.ZERO,
+            ParameterRange.SIX_B,
         )
     }
     val motion = LocalAuroraMotionPolicy.current
 
     ModelHubTabLayout(
         modifier = modifier,
-        windowWidth = LocalAppWindowWidth.current,
         scrollResetKey = results.key,
         autoLoadKeys = if (isLlmHub) models.takeLast(5).mapNotNull { it.id }
             .toSet() else emptySet(),
@@ -466,7 +450,7 @@ internal fun SearchTabContent(
         command = {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.xs),
+                horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing4),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(Modifier.weight(1f)) {
@@ -525,7 +509,6 @@ internal fun SearchTabContent(
                             ModelHubBrowseMode.DiffusionVideo -> ({ videoQuery = "" })
                         },
                         onResetFilters = if (isLlmHub && activeFilterCount > 0) resetFilters else null,
-                        modifier = Modifier.padding(horizontal = LocalSpacing.current.l),
                     )
                     if (isLlmHub && modelOrdering is ModelOrdering.Personalized) {
                         Text(
@@ -534,9 +517,9 @@ internal fun SearchTabContent(
                                     96
                                 )
                             } assessed (96 per session maximum)",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = LocalSpacing.current.m),
+                            style = AppTheme.typography.bodySmall,
+                            color = AppTheme.colors.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = AppTheme.spacing.spacing12),
                         )
                         if (results.canAssessMore) {
                             TextButton(onClick = viewModel::loadMoreRecommendations) {
@@ -574,7 +557,7 @@ internal fun SearchTabContent(
                 motion = motion,
             ) { model, itemModifier ->
                 val recommendation = model.id?.let(results.recommendationById::get)
-                ModelListItem(
+                SearchListItem(
                     model = model,
                     modifier = itemModifier,
                     onClick = { model.id?.let { onNavigateToDetails(it, browseMode) } },
@@ -657,17 +640,17 @@ internal fun ModelPageFooter(
     onStartOver: () -> Unit = {},
 ) {
     Column(
-        modifier = Modifier.fillMaxWidth().padding(16.dp).testTag("model-page-footer"),
+        modifier = Modifier.fillMaxWidth().padding(AppTheme.spacing.spacing16).testTag("model-page-footer"),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
     ) {
         when {
             error != null -> {
-                Text(error, color = MaterialTheme.colorScheme.error)
+                Text(error, color = AppTheme.colors.error)
                 if (hasMore) {
                     FilledTonalButton(
                         onClick = onLoadMore,
-                        modifier = Modifier.heightIn(min = 48.dp)
+                        modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48)
                     ) {
                         Text("Retry load more")
                     }
@@ -675,7 +658,7 @@ internal fun ModelPageFooter(
                     Text("Refine your search above to explore more models.")
                     FilledTonalButton(
                         onClick = onStartOver,
-                        modifier = Modifier.heightIn(min = 48.dp)
+                        modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48)
                     ) {
                         Text("Start over")
                     }
@@ -683,7 +666,7 @@ internal fun ModelPageFooter(
             }
 
             loading -> {
-                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                CircularProgressIndicator(modifier = Modifier.size(AppTheme.spacing.spacing24))
                 Text("Loading more models")
             }
 
@@ -704,14 +687,14 @@ internal fun SearchResultsSummary(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
+            .padding(vertical = AppTheme.spacing.spacing4),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = "Results for “$query” · $resultCount",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface,
+            style = AppTheme.typography.headingSmall,
+            color = AppTheme.colors.onSurface,
             modifier = Modifier.weight(1f),
         )
         TextButton(onClick = onClear) {
@@ -782,7 +765,6 @@ internal fun <T> LazyListScope.modelHubResultItems(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = LocalSpacing.current.m)
                     .animateItem(
                         fadeInSpec = null,
                         placementSpec = if (motion.spatialTransitionsEnabled) {
@@ -812,13 +794,13 @@ internal fun <T> LazyListScope.modelHubResultItems(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 48.dp)
-                    .padding(horizontal = 24.dp, vertical = 8.dp)
+                    .heightIn(min = AppTheme.spacing.spacing48)
+                    .padding(horizontal = AppTheme.spacing.spacing24, vertical = AppTheme.spacing.spacing8)
                     .semantics { contentDescription = refreshLoadingDescription },
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                CircularProgressIndicator(modifier = Modifier.size(AppTheme.spacing.spacing24))
             }
         }
     }
@@ -834,22 +816,22 @@ private fun RecommendationProfileEditorSheet(
     onRiskToleranceChange: (RiskTolerance) -> Unit,
     onOptimizationPriorityChange: (OptimizationPriority) -> Unit,
 ) {
-    val spacing = LocalSpacing.current
+    val spacing = AppTheme.spacing
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        shape = MaterialTheme.prismShapes.modal,
-        containerColor = AuroraSurfaceLevel.Floating.containerColor(MaterialTheme.colorScheme),
+        shape = AppTheme.shapes.extraLarge,
+        containerColor = AuroraSurfaceLevel.Floating.containerColor(AppTheme.colors),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = spacing.l)
-                .padding(bottom = spacing.xxl),
-            verticalArrangement = Arrangement.spacedBy(spacing.s),
+                .padding(horizontal = spacing.spacing16)
+                .padding(bottom = spacing.spacing32),
+            verticalArrangement = Arrangement.spacedBy(spacing.spacing8),
         ) {
             RecommendationProfileSection(
                 profile = profile,
@@ -860,8 +842,8 @@ private fun RecommendationProfileEditorSheet(
             if (errorMessage != null) {
                 Text(
                     text = errorMessage,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
+                    style = AppTheme.typography.bodySmall,
+                    color = AppTheme.colors.error,
                 )
             }
         }
@@ -871,7 +853,6 @@ private fun RecommendationProfileEditorSheet(
 @Composable
 internal fun DownloadedTabContent(
     viewModel: DownloadedModelsViewModel,
-    storageInfo: StorageInfoUiState,
     onSelectModelAndGoBack: (LocalModelEntity) -> Unit,
     onNavigateToDetails: (modelId: String, hubBrowseMode: ModelHubBrowseMode) -> Unit,
     snackbarHostState: SnackbarHostState,
@@ -908,7 +889,6 @@ internal fun DownloadedTabContent(
     }
     ModelHubTabLayout(
         modifier = modifier,
-        windowWidth = LocalAppWindowWidth.current,
         command = {
             SearchBar(
                 query = libraryQuery,
@@ -994,7 +974,7 @@ internal fun DownloadedTabContent(
                                 },
                             ),
                     ) {
-                        LocalModelListItem(
+                        DownloadedListItem(
                             model = model,
                             selectionMode = selectionMode,
                             isSelected = model.id in selectedIds,
@@ -1012,14 +992,14 @@ internal fun DownloadedTabContent(
                             },
                             onFixComponents = if (
                                 model.componentStatus ==
-                                com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity.STATUS_PARTIAL
+                                LocalModelEntity.STATUS_PARTIAL
                             ) {
                                 {
                                     val mode = when (model.modelType) {
-                                        com.debanshu777.caraml.core.storage.localmodel.ModelType.VIDEO ->
+                                        ModelType.VIDEO ->
                                             ModelHubBrowseMode.DiffusionVideo
 
-                                        com.debanshu777.caraml.core.storage.localmodel.ModelType.IMAGE ->
+                                        ModelType.IMAGE ->
                                             ModelHubBrowseMode.DiffusionImage
 
                                         else -> ModelHubBrowseMode.DiffusionImage
@@ -1039,8 +1019,8 @@ internal fun DownloadedTabContent(
     if (showDeleteConfirm) {
         AlertDialog(
             onDismissRequest = { if (!isDeleting) showDeleteConfirm = false },
-            shape = MaterialTheme.prismShapes.modal,
-            containerColor = AuroraSurfaceLevel.Floating.containerColor(MaterialTheme.colorScheme),
+            shape = AppTheme.shapes.extraLarge,
+            containerColor = AuroraSurfaceLevel.Floating.containerColor(AppTheme.colors),
             title = { Text("Remove downloads?") },
             text = { Text("Remove selected downloads from this device?") },
             confirmButton = {
@@ -1067,3 +1047,32 @@ internal fun DownloadedTabContent(
 }
 
 private const val MAX_LOCAL_MODEL_QUERY_LENGTH = 200
+
+@Preview(name = "Models compact - populated", widthDp = 412, heightDp = 915)
+@Composable
+private fun SearchScreenPopulatedPreview() {
+    ModelHubDevicePreview(populated = true)
+}
+
+@Preview(name = "Models compact - empty", widthDp = 412, heightDp = 915)
+@Composable
+private fun SearchScreenEmptyPreview() {
+    ModelHubDevicePreview(populated = false)
+}
+
+@Preview(
+    name = "Models compact - populated 200%",
+    widthDp = 360,
+    heightDp = 800,
+    fontScale = 2f,
+)
+@Composable
+private fun SearchScreenLargeTextPreview() {
+    ModelHubDevicePreview(populated = true)
+}
+
+@Preview(name = "Models desktop - populated", widthDp = 1180, heightDp = 780)
+@Composable
+private fun SearchScreenDesktopPreview() {
+    ModelHubDevicePreview(populated = true)
+}

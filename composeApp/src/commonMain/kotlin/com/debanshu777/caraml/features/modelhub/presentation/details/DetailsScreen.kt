@@ -19,8 +19,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.rating.ui.RecommendationDetailsSheet
 import com.debanshu777.caraml.core.rating.ui.recommendationPresentation
 import com.debanshu777.caraml.core.ui.components.CaraMLTopBar
@@ -28,6 +30,7 @@ import com.debanshu777.caraml.core.ui.components.TopBarNavigation
 import com.debanshu777.caraml.core.ui.layout.AppContentKind
 import com.debanshu777.caraml.core.ui.layout.ResponsiveContentPane
 import com.debanshu777.caraml.features.modelhub.presentation.details.components.ModelDetailContent
+import com.debanshu777.caraml.features.modelhub.presentation.details.components.ModelDetailsDevicePreview
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelViewModel
 
@@ -36,7 +39,7 @@ internal enum class ModelDetailLayout {
     SupportingPane,
 }
 
-internal fun modelDetailLayout(width: Dp): ModelDetailLayout = if (width >= 840.dp) {
+internal fun modelDetailLayout(width: Dp): ModelDetailLayout = if (width >= AppTheme.dimensions.size840) {
     ModelDetailLayout.SupportingPane
 } else {
     ModelDetailLayout.Compact
@@ -117,8 +120,8 @@ fun DetailsScreen(
                         isDetailLoading -> CircularProgressIndicator()
                         detailError != null -> Text(
                             text = detailError ?: "Could not load model details. Please try again.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.error,
+                            style = AppTheme.typography.bodyBase,
+                            color = AppTheme.colors.error,
                         )
                         detail != null -> {
                             val (weightHeading, weightEmpty) = when (hubBrowseMode) {
@@ -181,4 +184,22 @@ fun DetailsScreen(
             onDismiss = viewModel::dismissDownloadForLater,
         )
     }
+}
+
+@Preview(name = "Artifact compact", widthDp = 412, heightDp = 915)
+@Composable
+private fun DetailsScreenCompactPreview() {
+    ModelDetailsDevicePreview()
+}
+
+@Preview(name = "Artifact compact - 200%", widthDp = 360, heightDp = 800, fontScale = 2f)
+@Composable
+private fun DetailsScreenLargeTextPreview() {
+    ModelDetailsDevicePreview()
+}
+
+@Preview(name = "Artifact desktop", widthDp = 1180, heightDp = 780)
+@Composable
+private fun DetailsScreenDesktopPreview() {
+    ModelDetailsDevicePreview()
 }

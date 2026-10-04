@@ -35,9 +35,9 @@ import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import com.debanshu777.caraml.core.drawer.AppDrawerShell
 import com.debanshu777.caraml.core.navigation.AppScreen
+import com.debanshu777.caraml.core.ui.components.GenericListItem
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubContextStrip
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubToolbar
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelResultCard
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchBar
 import com.debanshu777.huggingfacemanager.model.ModelSort
 import com.debanshu777.huggingfacemanager.model.ParameterRange
@@ -246,7 +246,6 @@ class ModelHubWorkbenchScreenUiTest {
                     Box(Modifier.requiredSize(width = 840.dp, height = 480.dp)) {
                         FixtureTab(
                             modifier = Modifier.fillMaxSize(),
-                            windowWidth = 840.dp,
                         )
                     }
                 }
@@ -358,7 +357,6 @@ private fun WorkbenchFixture(
 @Composable
 private fun FixtureTab(
     modifier: Modifier = Modifier,
-    windowWidth: androidx.compose.ui.unit.Dp? = null,
     result: FixtureResult = FixtureResult.Content,
     activeFilterCount: Int = 0,
     onResetFilters: () -> Unit = {},
@@ -371,7 +369,6 @@ private fun FixtureTab(
     }
     ModelHubTabLayout(
         modifier = modifier,
-        windowWidth = windowWidth,
         command = {
             SearchBar(
                 query = "",
@@ -422,11 +419,11 @@ private fun FixtureTab(
                 },
                 motion = motion,
             ) { model, itemModifier ->
-                ModelResultCard(
-                    title = model,
-                    author = "org",
+                GenericListItem(
+                    title = model.substringAfter('/', missingDelimiterValue = model),
+                    eyebrow = "org",
                     metadata = "Text generation",
-                    status = {},
+                    titleStatus = {},
                     onClick = {},
                     modifier = itemModifier,
                 )

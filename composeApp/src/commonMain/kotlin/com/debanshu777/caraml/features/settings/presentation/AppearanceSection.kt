@@ -34,12 +34,11 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
-import com.debanshu777.caraml.core.theme.LocalSpacing
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.theme.ThemeDefaults
 import com.debanshu777.caraml.core.theme.ThemeMode
 import com.debanshu777.caraml.core.theme.ThemePaletteStyle
 import com.debanshu777.caraml.core.theme.ThemeViewModel
-import com.debanshu777.caraml.core.theme.prismShapes
 import com.debanshu777.caraml.core.ui.components.AuroraFocalSurface
 
 /** Appearance preferences hosted in [SettingsScreen]. */
@@ -50,7 +49,7 @@ fun AppearanceSection(
     modifier: Modifier = Modifier,
 ) {
     val preferences by viewModel.preferences.collectAsState()
-    val spacing = LocalSpacing.current
+    val spacing = AppTheme.spacing
     val selectedSeedIndex = ThemeDefaults.PRESET_SEEDS.indexOfFirst { color ->
         color.argbInt() == preferences.seedColor.argbInt()
     }
@@ -66,7 +65,7 @@ fun AppearanceSection(
         )
 
         AuroraThemePreview(
-            modifier = Modifier.padding(top = spacing.l, bottom = spacing.l),
+            modifier = Modifier.padding(top = spacing.spacing16, bottom = spacing.spacing16),
         )
         SettingsRowDivider(tag = "settings-divider-appearance-preview")
 
@@ -145,44 +144,44 @@ private fun SettingsChoiceBlock(
     supportingText: String? = null,
     content: @Composable () -> Unit,
 ) {
-    val spacing = LocalSpacing.current
+    val spacing = AppTheme.spacing
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = spacing.l),
-        verticalArrangement = Arrangement.spacedBy(spacing.s),
+            .padding(vertical = spacing.spacing16),
+        verticalArrangement = Arrangement.spacedBy(spacing.spacing8),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(spacing.m),
+            horizontalArrangement = Arrangement.spacedBy(spacing.spacing12),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
+                style = AppTheme.typography.headingSmall,
+                color = AppTheme.colors.onSurface,
                 modifier = Modifier.weight(1f),
             )
             Text(
                 text = selectedValue,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.primary,
+                style = AppTheme.typography.bodySmall,
+                color = AppTheme.colors.primary,
             )
         }
         FlowRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .selectableGroup(),
-            horizontalArrangement = Arrangement.spacedBy(spacing.s),
-            verticalArrangement = Arrangement.spacedBy(spacing.s),
+            horizontalArrangement = Arrangement.spacedBy(spacing.spacing8),
+            verticalArrangement = Arrangement.spacedBy(spacing.spacing8),
         ) {
             content()
         }
         supportingText?.let {
             Text(
                 text = it,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = AppTheme.typography.bodySmall,
+                color = AppTheme.colors.onSurfaceVariant,
             )
         }
     }
@@ -193,27 +192,27 @@ internal fun AuroraThemePreview(modifier: Modifier = Modifier) {
     AuroraFocalSurface(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 104.dp)
+            .heightIn(min = AppTheme.dimensions.size104)
             .semantics(mergeDescendants = true) {
                 contentDescription = "Current Aurora theme preview"
             },
-        shape = MaterialTheme.prismShapes.focal,
+        shape = AppTheme.shapes.large,
     ) {
         Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+                .padding(AppTheme.spacing.spacing16),
+            verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing2),
         ) {
             Text(
                 text = "CaraML workspace",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
+                style = AppTheme.typography.headingSmall,
+                color = AppTheme.colors.onSurface,
             )
             Text(
                 text = "Seed color, atmosphere, and grain",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = AppTheme.typography.bodySmall,
+                color = AppTheme.colors.onSurfaceVariant,
             )
         }
     }
@@ -228,12 +227,12 @@ private fun SeedSwatch(
     onClick: () -> Unit,
 ) {
     val borderColor = if (selected) {
-        MaterialTheme.colorScheme.primary
+        AppTheme.colors.primary
     } else {
-        MaterialTheme.colorScheme.outlineVariant
+        AppTheme.colors.outlineVariant
     }
-    val borderWidth = if (selected) 3.dp else 1.dp
-    Box(modifier = Modifier.size(48.dp)) {
+    val borderWidth = if (selected) AppTheme.dimensions.size3 else AppTheme.dimensions.size1
+    Box(modifier = Modifier.size(AppTheme.spacing.spacing48)) {
         Box(
             modifier = Modifier
                 .matchParentSize()
@@ -254,17 +253,17 @@ private fun SeedSwatch(
             Surface(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .size(20.dp)
+                    .size(AppTheme.dimensions.size20)
                     .testTag(selectedIndicatorTestTag),
                 shape = CircleShape,
-                color = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
+                color = AppTheme.colors.primary,
+                contentColor = AppTheme.colors.onPrimary,
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = Icons.Default.Check,
                         contentDescription = null,
-                        modifier = Modifier.size(14.dp),
+                        modifier = Modifier.size(AppTheme.dimensions.size14),
                     )
                 }
             }

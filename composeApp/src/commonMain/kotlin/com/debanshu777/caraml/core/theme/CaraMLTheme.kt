@@ -29,7 +29,7 @@ import com.materialkolor.DynamicMaterialTheme
  *     on our [AppShapes], [AppTypography], and [AppMotionScheme]
  *     (spring-based component motion). MaterialExpressiveTheme is the only
  *     entry point that takes `motionScheme`.
- *  3. [CompositionLocalProvider] for [LocalSpacing] — global spacing scale.
+ *  3. [CompositionLocalProvider] for the generated Aurora colors and motion policy.
  *
  * Wrap the entire app content (everything below [com.debanshu777.caraml.App])
  * exactly once.
@@ -81,7 +81,6 @@ fun CaraMLTheme(
             val durationScale = rememberCoroutineScope().coroutineContext[MotionDurationScale]?.scaleFactor ?: 1f
             val motionPolicy = auroraMotionPolicy(durationScale)
             CompositionLocalProvider(
-                LocalSpacing provides Spacing(),
                 LocalAuroraColors provides auroraColors,
                 LocalAuroraMotionPolicy provides motionPolicy,
             ) {

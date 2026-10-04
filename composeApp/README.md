@@ -202,6 +202,18 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 
 ## Recent Changes
 
+- Screens now use the centralized `AppTheme` API for colors, typography, shapes, spacing, dimensions, and effects; legacy theme access and Prism aliases were removed.
+- Model detail content now has in-file previews for compact, large-text, desktop, and empty-file layouts.
+- Artifact progress now appears beside its download controls, including pause, resume, and cancel actions.
+- Artifact download controls now have standard and large-text previews for available, disabled, active, paused, retry, verifying, and completed states.
+- Downloadable artifact rows follow the shared list typography and flat row spacing, with compact, wide, and large-text previews; download controls remain in a focused file.
+- Artifact screen previews now sit beside `DetailsScreen` for compact, large-text, and desktop layouts.
+- Install Bundle now has in-file previews for install, download progress, and large text using local sample state.
+- Install Bundle layout now uses direct columns and removes a redundant footer layer while preserving responsive summary and action placement.
+- Search, downloaded, and variant rows now have compact and large-text previews beside their composables.
+- Model registry rows now call `GenericListItem` directly; the wrapper composable was removed.
+- Model Hub screen previews now sit beside `SearchScreen` for compact populated, empty, large-text, and desktop states.
+- Generic list rows now use one composable API with compact and wide previews showing task tags and download actions.
 - Chat compression reserves the active turn before suspension, keeps the submitted prompt visible, shows one compact progress status, and rebuilds interrupted summaries before the next reply.
 - Common-source Compose previews have their tooling runtime on the `composeApp` debug classpath.
 

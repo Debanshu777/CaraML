@@ -14,10 +14,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.recommendation.OptimizationPriority
 import com.debanshu777.caraml.core.recommendation.RecommendationProfile
 import com.debanshu777.caraml.core.recommendation.RiskTolerance
-import com.debanshu777.caraml.core.theme.LocalSpacing
 
 private val riskChoices = listOf(
     RiskTolerance.CONSERVATIVE,
@@ -41,7 +41,7 @@ fun RecommendationProfileSection(
     enabled: Boolean = true,
     listStyle: Boolean = false,
 ) {
-    val spacing = LocalSpacing.current
+    val spacing = AppTheme.spacing
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -52,18 +52,18 @@ fun RecommendationProfileSection(
         verticalArrangement = if (listStyle) {
             Arrangement.Top
         } else {
-            Arrangement.spacedBy(spacing.m)
+            Arrangement.spacedBy(spacing.spacing12)
         },
     ) {
         if (!listStyle) {
             Text(
                 text = "Recommendation profile",
-                style = MaterialTheme.typography.titleMedium,
+                style = AppTheme.typography.headingSmall,
             )
             Text(
                 text = "Choose how cautiously CaraML rates device fit and what it optimizes for.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = AppTheme.typography.bodySmall,
+                color = AppTheme.colors.onSurfaceVariant,
             )
         }
 
@@ -109,25 +109,25 @@ private fun <T> ChoiceGroup(
     listStyle: Boolean,
     dividerTag: String,
 ) {
-    val spacing = LocalSpacing.current
+    val spacing = AppTheme.spacing
     Column(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = if (listStyle) {
                 Modifier
                     .fillMaxWidth()
-                    .padding(vertical = spacing.l)
+                    .padding(vertical = spacing.spacing16)
             } else {
                 Modifier.fillMaxWidth()
             },
-            verticalArrangement = Arrangement.spacedBy(spacing.s),
+            verticalArrangement = Arrangement.spacedBy(spacing.spacing8),
         ) {
-            Text(text = title, style = MaterialTheme.typography.labelLarge)
+            Text(text = title, style = AppTheme.typography.labelLarge)
             FlowRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .selectableGroup(),
-                horizontalArrangement = Arrangement.spacedBy(spacing.s),
-                verticalArrangement = Arrangement.spacedBy(spacing.s),
+                horizontalArrangement = Arrangement.spacedBy(spacing.spacing8),
+                verticalArrangement = Arrangement.spacedBy(spacing.spacing8),
             ) {
                 choices.forEach { choice ->
                     val isSelected = choice == selected
@@ -149,8 +149,8 @@ private fun <T> ChoiceGroup(
             }
             Text(
                 text = description(selected),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = AppTheme.typography.bodySmall,
+                color = AppTheme.colors.onSurfaceVariant,
             )
         }
         if (listStyle) {

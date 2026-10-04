@@ -24,7 +24,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
-import com.debanshu777.caraml.core.theme.LocalSpacing
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 
 enum class GenerationActivityPhase(
@@ -70,33 +70,33 @@ fun GenerationActivity(
         modifier = modifier.semantics {
             stateDescription = phase.description
         },
-        verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.s),
+        verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
     ) {
         Row(
-            horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.s),
+            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
                 imageVector = phase.icon,
                 contentDescription = null,
                 modifier = Modifier
-                    .size(20.dp)
+                    .size(AppTheme.dimensions.size20)
                     .testTag("generation-activity-signal"),
-                tint = MaterialTheme.colorScheme.primary,
+                tint = AppTheme.colors.primary,
             )
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.xxs),
+                verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing2),
             ) {
                 Text(
                     text = phase.description,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    style = AppTheme.typography.labelBase,
+                    color = AppTheme.colors.onSurface,
                 )
                 Text(
                     text = label,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = AppTheme.typography.bodySmall,
+                    color = AppTheme.colors.onSurfaceVariant,
                 )
             }
         }

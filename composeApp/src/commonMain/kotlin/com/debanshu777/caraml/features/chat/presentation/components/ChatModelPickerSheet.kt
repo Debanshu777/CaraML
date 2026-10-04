@@ -24,7 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.debanshu777.caraml.core.theme.prismShapes
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.storage.localmodel.displayFilename
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
@@ -48,20 +48,20 @@ fun ChatModelPickerSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        shape = MaterialTheme.prismShapes.modal,
-        containerColor = AuroraSurfaceLevel.Floating.containerColor(MaterialTheme.colorScheme),
+        shape = AppTheme.shapes.extraLarge,
+        containerColor = AuroraSurfaceLevel.Floating.containerColor(AppTheme.colors),
     ) {
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 32.dp)
+                .padding(horizontal = AppTheme.spacing.spacing16)
+                .padding(bottom = AppTheme.spacing.spacing32)
         ) {
             item {
                 Text(
                     text = "Select Model",
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.padding(vertical = 16.dp)
+                    style = AppTheme.typography.headingBase,
+                    modifier = Modifier.padding(vertical = AppTheme.spacing.spacing16)
                 )
             }
 
@@ -71,14 +71,14 @@ fun ChatModelPickerSheet(
                     headlineContent = {
                         Text(
                             text = model.modelId.substringAfterLast("/"),
-                            style = MaterialTheme.typography.bodyLarge
+                            style = AppTheme.typography.bodyLarge
                         )
                     },
                     supportingContent = {
                         Text(
                             text = model.displayFilename(),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            style = AppTheme.typography.bodySmall,
+                            color = AppTheme.colors.onSurfaceVariant
                         )
                     },
                     trailingContent = {
@@ -86,8 +86,8 @@ fun ChatModelPickerSheet(
                             Icon(
                                 imageVector = Icons.Default.Check,
                                 contentDescription = "Selected",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(24.dp)
+                                tint = AppTheme.colors.primary,
+                                modifier = Modifier.size(AppTheme.spacing.spacing24)
                             )
                         }
                     },
@@ -103,7 +103,7 @@ fun ChatModelPickerSheet(
 
             if (pickerModels.isNotEmpty()) {
                 item {
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = AppTheme.spacing.spacing8))
                 }
             }
 
@@ -112,14 +112,14 @@ fun ChatModelPickerSheet(
                     headlineContent = {
                         Text(
                             text = "Download model",
-                            style = MaterialTheme.typography.bodyLarge
+                            style = AppTheme.typography.bodyLarge
                         )
                     },
                     leadingContent = {
                         Icon(
                             imageVector = Icons.Default.Download,
                             contentDescription = "Download model",
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(AppTheme.spacing.spacing24)
                         )
                     },
                     modifier = Modifier.clickable {
@@ -133,7 +133,7 @@ fun ChatModelPickerSheet(
             }
 
             item {
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(AppTheme.spacing.spacing16))
             }
         }
     }

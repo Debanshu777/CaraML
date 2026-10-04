@@ -9,8 +9,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.theme.CaraMLTheme
-import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.theme.ThemePreferences
 import com.debanshu777.caraml.core.ui.components.AuroraBackdrop
 import androidx.compose.ui.tooling.preview.Preview
@@ -21,12 +21,12 @@ import androidx.compose.ui.tooling.preview.Preview
 private fun SettingsCompactPreview() {
     CaraMLTheme(ThemePreferences()) {
         AuroraBackdrop {
-            val spacing = LocalSpacing.current
+            val spacing = AppTheme.spacing
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = spacing.l, vertical = spacing.xl),
-                verticalArrangement = Arrangement.spacedBy(spacing.xl),
+                    .padding(horizontal = spacing.spacing16, vertical = spacing.spacing24),
+                verticalArrangement = Arrangement.spacedBy(spacing.spacing24),
             ) {
                 SettingsSectionHeader(
                     title = "Appearance",
@@ -34,8 +34,8 @@ private fun SettingsCompactPreview() {
                 )
                 FlowRow(
                     modifier = Modifier.selectableGroup(),
-                    horizontalArrangement = Arrangement.spacedBy(spacing.s),
-                    verticalArrangement = Arrangement.spacedBy(spacing.s),
+                    horizontalArrangement = Arrangement.spacedBy(spacing.spacing8),
+                    verticalArrangement = Arrangement.spacedBy(spacing.spacing8),
                 ) {
                     listOf("System", "Light", "Dark").forEachIndexed { index, label ->
                         SettingFilterChip(

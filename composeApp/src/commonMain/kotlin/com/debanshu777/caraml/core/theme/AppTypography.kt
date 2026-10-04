@@ -4,22 +4,11 @@ import androidx.compose.material3.Typography
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
-/**
- * App typography aligned to the Material 3 type scale.
- *
- * We do **not** override the M3 default font family — staying on the platform
- * default (Roboto on Android, System on iOS, default on Desktop) keeps text
- * crisp without bundling extra fonts and aligns with the MD3 spec
- * (Roboto / Roboto Flex is the recommended default).
- *
- * Customizations we *do* make:
- * - `titleLarge`, `titleMedium`, and `labelLarge` lifted to `SemiBold` to give cards/buttons
- *   a clearer hierarchy in dense screens (chat, model lists). This replaces
- *   ad-hoc `FontWeight.SemiBold` / `Medium` overrides scattered through the UI.
- */
+/** Material 3 roles use the platform font family with a slightly stronger title hierarchy. */
 val AppTypography: Typography = Typography().run {
     copy(
         titleLarge = titleLarge.copy(
@@ -40,68 +29,39 @@ val AppTypography: Typography = Typography().run {
     )
 }
 
-/** Helper for callers that need a numeric-emphasis style (stats, counters). */
-val AppNumericLabel: TextStyle = TextStyle(
-    fontWeight = FontWeight.Medium,
-    fontSize = 12.sp,
-    lineHeight = 16.sp,
-    fontFeatureSettings = "tnum",
-)
-
-/** Semantic type roles for the dense Prism workbench hierarchy. */
+/** Explicit size and weight scale for styles outside Material 3's standard roles. */
 @Immutable
-data class PrismTypography(
-    val screenTitle: TextStyle,
-    val sectionTitle: TextStyle,
-    val modelTitle: TextStyle,
-    val denseMetadata: TextStyle,
-    val technicalLabel: TextStyle,
-    val detailTitleCompact: TextStyle,
-    val detailTitleExpanded: TextStyle,
-)
-
-val AppPrismTypography: PrismTypography = PrismTypography(
-    screenTitle = TextStyle(
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 28.sp,
-        lineHeight = 34.sp,
-    ),
-    sectionTitle = TextStyle(
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 16.sp,
-        lineHeight = 22.sp,
-    ),
-    modelTitle = TextStyle(
-        fontWeight = FontWeight.Medium,
-        fontSize = 17.sp,
-        lineHeight = 22.sp,
-    ),
-    denseMetadata = TextStyle(
-        fontWeight = FontWeight.Normal,
-        fontSize = 14.sp,
-        lineHeight = 20.sp,
-    ),
-    technicalLabel = TextStyle(
+data class AppTypeScale(
+    val displayLarge: TextStyle = AppTypography.displayLarge,
+    val displayMedium: TextStyle = AppTypography.displayMedium,
+    val displaySmall: TextStyle = AppTypography.displaySmall,
+    val headingLarge: TextStyle = AppTypography.headlineSmall,
+    val headingBase: TextStyle = AppTypography.titleLarge,
+    val headingSmall: TextStyle = AppTypography.titleMedium,
+    val headingXSmall: TextStyle = AppTypography.titleSmall,
+    val bodyLarge: TextStyle = AppTypography.bodyLarge,
+    val bodyBase: TextStyle = AppTypography.bodyMedium,
+    val bodySmall: TextStyle = AppTypography.bodySmall,
+    val labelLarge: TextStyle = AppTypography.labelLarge,
+    val labelBase: TextStyle = AppTypography.labelMedium,
+    val labelSmall: TextStyle = AppTypography.labelSmall,
+    val heading32: TextStyle = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 32.sp, lineHeight = 38.sp),
+    val heading28: TextStyle = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 28.sp, lineHeight = 34.sp),
+    val heading24: TextStyle = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 24.sp, lineHeight = 30.sp),
+    val heading16: TextStyle = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 22.sp),
+    val body17: TextStyle = TextStyle(fontWeight = FontWeight.Medium, fontSize = 17.sp, lineHeight = 22.sp),
+    val body14: TextStyle = TextStyle(fontWeight = FontWeight.Normal, fontSize = 14.sp, lineHeight = 20.sp),
+    val label12: TextStyle = TextStyle(fontWeight = FontWeight.Medium, fontSize = 12.sp, lineHeight = 16.sp),
+    val numeric12: TextStyle = label12.copy(fontFeatureSettings = "tnum"),
+    val technical12: TextStyle = TextStyle(
         fontFamily = FontFamily.Monospace,
         fontWeight = FontWeight.Medium,
         fontSize = 12.sp,
         lineHeight = 17.sp,
     ),
-    detailTitleCompact = TextStyle(
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 24.sp,
-        lineHeight = 30.sp,
-    ),
-    detailTitleExpanded = TextStyle(
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 32.sp,
-        lineHeight = 38.sp,
-    ),
+    val bodySmallMedium: TextStyle = AppTypography.bodySmall.copy(fontWeight = FontWeight.Medium),
+    val bodySmallItalic: TextStyle = AppTypography.bodySmall.copy(fontStyle = FontStyle.Italic),
+    val bodyLargeCode: TextStyle = AppTypography.bodyLarge.copy(fontFamily = FontFamily.Monospace),
+    val bodyLargeQuote: TextStyle = AppTypography.bodyLarge.copy(fontStyle = FontStyle.Italic),
+    val headingLargeMono: TextStyle = AppTypography.headlineSmall.copy(fontFamily = FontFamily.Monospace),
 )
-
-/** Semantic Prism roles layered on top of the platform-default Material family. */
-val Typography.prism: PrismTypography
-    get() = AppPrismTypography
-
-/** Source-compatible alias for machine data outside the shared workbench rows. */
-val AppTechnicalLabel: TextStyle = AppPrismTypography.technicalLabel

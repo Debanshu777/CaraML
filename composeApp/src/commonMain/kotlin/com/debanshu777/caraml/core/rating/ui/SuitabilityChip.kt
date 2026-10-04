@@ -18,14 +18,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.recommendation.PersonalizedRecommendation
 import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
 import com.debanshu777.caraml.core.rating.SuitabilityRating
-import com.debanshu777.caraml.core.theme.prismShapes
 
 @Composable
 fun RecommendationStatusChip(
@@ -39,8 +38,8 @@ fun RecommendationStatusChip(
     } else {
         Surface(
             modifier = modifier,
-            shape = MaterialTheme.prismShapes.status,
-            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = AppTheme.shapes.extraSmall,
+            color = AppTheme.colors.surfaceVariant,
         ) {
             Text(
                 text = when (state) {
@@ -49,8 +48,8 @@ fun RecommendationStatusChip(
                     DescriptorState.NEEDS_INFORMATION -> "Needs information"
                     DescriptorState.ASSESSED -> "Needs information"
                 },
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.padding(horizontal = AppTheme.spacing.spacing8, vertical = AppTheme.spacing.spacing4),
+                style = AppTheme.typography.labelBase,
             )
         }
     }
@@ -73,27 +72,26 @@ fun SuitabilityChip(
 ) {
     Surface(
         modifier = modifier
-            .heightIn(min = if (onInfoClick != null) 48.dp else 0.dp)
+            .heightIn(min = if (onInfoClick != null) AppTheme.spacing.spacing48 else AppTheme.dimensions.size0)
             .semantics { contentDescription = recommendationSemantics(recommendation) },
-        shape = MaterialTheme.prismShapes.status,
+        shape = AppTheme.shapes.extraSmall,
         color = recommendation.category.containerColor(),
         contentColor = recommendation.category.onContainerColor(),
-        tonalElevation = 1.dp,
+        tonalElevation = AppTheme.dimensions.size1,
     ) {
         Row(
             modifier = Modifier
                 .let { if (onInfoClick != null) it.clickable { onInfoClick() } else it }
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                .padding(horizontal = AppTheme.spacing.spacing8, vertical = AppTheme.spacing.spacing4),
+            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing4),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 recommendationCategoryLabel(recommendation.category),
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Medium,
+                style = AppTheme.typography.label12,
             )
             if (onInfoClick != null) {
-                Icon(Icons.Outlined.Info, contentDescription = "Recommendation details", modifier = Modifier.size(18.dp))
+                Icon(Icons.Outlined.Info, contentDescription = "Recommendation details", modifier = Modifier.size(AppTheme.dimensions.size18))
             }
         }
     }
@@ -108,27 +106,26 @@ fun SuitabilityChip(
 ) {
     Surface(
         modifier = modifier,
-        shape = MaterialTheme.prismShapes.status,
+        shape = AppTheme.shapes.extraSmall,
         color = rating.containerColor(),
-        tonalElevation = 1.dp,
+        tonalElevation = AppTheme.dimensions.size1,
     ) {
         Row(
             modifier = Modifier
                 .let { if (onInfoClick != null) it.clickable { onInfoClick() } else it }
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                .padding(horizontal = AppTheme.spacing.spacing8, vertical = AppTheme.spacing.spacing4),
+            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing4),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             androidx.compose.foundation.layout.Box(
                 modifier = Modifier
-                    .size(8.dp)
+                    .size(AppTheme.spacing.spacing8)
                     .clip(CircleShape)
                     .background(rating.foregroundColor()),
             )
             Text(
                 text = rating.shortLabel(),
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Medium,
+                style = AppTheme.typography.label12,
                 color = rating.onContainerColor(),
             )
             if (onInfoClick != null) {
@@ -136,7 +133,7 @@ fun SuitabilityChip(
                     imageVector = Icons.Outlined.Info,
                     contentDescription = "About this rating",
                     tint = rating.onContainerColor(),
-                    modifier = Modifier.size(14.dp),
+                    modifier = Modifier.size(AppTheme.dimensions.size14),
                 )
             }
         }

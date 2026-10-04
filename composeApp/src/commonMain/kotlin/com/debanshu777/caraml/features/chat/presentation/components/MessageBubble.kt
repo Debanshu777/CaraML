@@ -47,12 +47,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
-import com.debanshu777.caraml.core.theme.LocalSpacing
-import com.debanshu777.caraml.core.theme.prismShapes
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
 import com.debanshu777.caraml.core.ui.components.CaraMLPane
 import com.debanshu777.caraml.core.ui.graphics.decodePngToImageBitmap
@@ -91,7 +89,7 @@ fun MessageBubble(
 ) {
     val isUser = message.role == MessageRole.User
     val alignment = if (isUser) Alignment.End else Alignment.Start
-    val textColor = MaterialTheme.colorScheme.onSurface
+    val textColor = AppTheme.colors.onSurface
 
     // For assistant messages: prefer the live streamingThinking (only set on the
     // streaming bubble); otherwise fall back to the persisted value. Output is
@@ -108,7 +106,7 @@ fun MessageBubble(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = LocalSpacing.current.m),
+            .padding(vertical = AppTheme.spacing.spacing12),
         horizontalAlignment = alignment
     ) {
         if (!isUser && (thinkingText.isNotEmpty() || (isStreaming && !showMediaPending))) {
@@ -123,12 +121,12 @@ fun MessageBubble(
             if (message.text.isNotEmpty()) {
                 CaraMLPane(
                     level = AuroraSurfaceLevel.Pane,
-                    shape = MaterialTheme.prismShapes.pane,
+                    shape = AppTheme.shapes.medium,
                 ) {
                     Text(
-                        modifier = Modifier.padding(LocalSpacing.current.m),
+                        modifier = Modifier.padding(AppTheme.spacing.spacing12),
                         text = message.text,
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = AppTheme.typography.bodyBase,
                         color = textColor,
                     )
                 }
@@ -140,7 +138,7 @@ fun MessageBubble(
                 Text(
                     text = output,
                     modifier = outputModifier,
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = AppTheme.typography.bodyLarge,
                     color = textColor,
                 )
             } else {
@@ -185,7 +183,7 @@ fun MessageBubble(
                 },
                 phase = phase,
                 modifier = Modifier
-                    .padding(top = LocalSpacing.current.s)
+                    .padding(top = AppTheme.spacing.spacing8)
                     .fillMaxWidth(),
             )
         }
@@ -202,9 +200,9 @@ fun MessageBubble(
                     bitmap = bitmap,
                     contentDescription = "Generated image",
                     modifier = Modifier
-                        .padding(top = LocalSpacing.current.s)
-                        .heightIn(max = 320.dp)
-                        .clip(MaterialTheme.prismShapes.pane),
+                        .padding(top = AppTheme.spacing.spacing8)
+                        .heightIn(max = AppTheme.dimensions.size320)
+                        .clip(AppTheme.shapes.medium),
                     contentScale = ContentScale.Fit
                 )
             }
@@ -223,8 +221,8 @@ fun MessageBubble(
             LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = LocalSpacing.current.s),
-                horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.s)
+                    .padding(top = AppTheme.spacing.spacing8),
+                horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8)
             ) {
                 itemsIndexed(frameSources, key = { index, _ -> "${message.id}_$index" }) {
                         index, (framePath, frameBytes) ->
@@ -239,8 +237,8 @@ fun MessageBubble(
                             bitmap = frameBitmap,
                             contentDescription = "Generated video frame ${index + 1}",
                             modifier = Modifier
-                                .size(120.dp)
-                                .clip(MaterialTheme.prismShapes.control),
+                                .size(AppTheme.dimensions.size120)
+                                .clip(AppTheme.shapes.small),
                             contentScale = ContentScale.Crop
                         )
                     }
@@ -249,14 +247,14 @@ fun MessageBubble(
         }
 
         if (!isUser && message.inferenceMetrics != null) {
-            val inferenceStatsColor = MaterialTheme.colorScheme.onSurfaceVariant
+            val inferenceStatsColor = AppTheme.colors.onSurfaceVariant
             Row(
-                modifier = Modifier.padding(top = LocalSpacing.current.s),
-                horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.s)
+                modifier = Modifier.padding(top = AppTheme.spacing.spacing8),
+                horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8)
             ) {
                 Text(
                     text = "Statistics:",
-                    style = MaterialTheme.typography.labelSmall,
+                    style = AppTheme.typography.labelSmall,
                     color = inferenceStatsColor,
                 )
 
@@ -333,13 +331,13 @@ private fun ThoughtsDisclosure(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(bottom = LocalSpacing.current.s)
+            .padding(bottom = AppTheme.spacing.spacing8)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 48.dp)
-                .clip(MaterialTheme.prismShapes.control)
+                .heightIn(min = AppTheme.spacing.spacing48)
+                .clip(AppTheme.shapes.small)
                 .clickable(
                     onClickLabel = if (expanded) "Collapse thoughts" else "Expand thoughts",
                     role = Role.Button,
@@ -348,35 +346,35 @@ private fun ThoughtsDisclosure(
                 .semantics {
                     stateDescription = if (expanded) "Expanded" else "Collapsed"
                 }
-                .padding(horizontal = LocalSpacing.current.s, vertical = LocalSpacing.current.xs),
+                .padding(horizontal = AppTheme.spacing.spacing8, vertical = AppTheme.spacing.spacing4),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.s),
+            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
         ) {
             if (showSpinner) {
                 CircularProgressIndicator(
-                    modifier = Modifier.size(14.dp),
-                    strokeWidth = 1.5.dp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(AppTheme.dimensions.size14),
+                    strokeWidth = AppTheme.dimensions.size1p5,
+                    color = AppTheme.colors.onSurfaceVariant,
                 )
             } else {
                 Icon(
                     imageVector = Icons.Default.Psychology,
                     contentDescription = null,
-                    modifier = Modifier.size(14.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(AppTheme.dimensions.size14),
+                    tint = AppTheme.colors.onSurfaceVariant,
                 )
             }
             Text(
                 text = if (showSpinner) "Thinking…" else "Thoughts",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = AppTheme.typography.labelBase,
+                color = AppTheme.colors.onSurfaceVariant,
                 modifier = Modifier.weight(1f, fill = false),
             )
             Icon(
                 imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                 contentDescription = null,
-                modifier = Modifier.size(16.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(AppTheme.spacing.spacing16),
+                tint = AppTheme.colors.onSurfaceVariant,
             )
         }
 
@@ -397,14 +395,14 @@ private fun ThoughtsDisclosure(
         ) {
             Text(
                 text = thinking,
-                style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = AppTheme.typography.bodySmallItalic,
+                color = AppTheme.colors.onSurfaceVariant,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = LocalSpacing.current.xs)
-                    .clip(MaterialTheme.prismShapes.pane)
-                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                    .padding(LocalSpacing.current.m),
+                    .padding(top = AppTheme.spacing.spacing4)
+                    .clip(AppTheme.shapes.medium)
+                    .background(AppTheme.colors.surfaceContainerLow)
+                    .padding(AppTheme.spacing.spacing12),
             )
         }
     }
@@ -419,18 +417,18 @@ private fun StatItem(
 ) {
     Row(
         modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.xxs),
+        horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing2),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
             imageVector = icon,
             contentDescription = null,
             tint = textColor,
-            modifier = Modifier.size(12.dp)
+            modifier = Modifier.size(AppTheme.spacing.spacing12)
         )
         Text(
             text = text,
-            style = MaterialTheme.typography.labelSmall,
+            style = AppTheme.typography.labelSmall,
             color = textColor,
         )
     }

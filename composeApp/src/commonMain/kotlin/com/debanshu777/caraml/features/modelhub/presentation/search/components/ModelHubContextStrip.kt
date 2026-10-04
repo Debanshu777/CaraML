@@ -44,11 +44,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.platform.DeviceHints
 import com.debanshu777.caraml.core.recommendation.RecommendationProfile
-import com.debanshu777.caraml.core.theme.LocalSpacing
-import com.debanshu777.caraml.core.theme.prism
-import com.debanshu777.caraml.core.theme.prismShapes
 import com.debanshu777.caraml.core.ui.components.CaraMLPane
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.features.modelhub.presentation.search.StorageInfoUiState
@@ -71,14 +69,14 @@ fun ModelHubContextStrip(
     if (!showStorage && !showDevice && profile == null) return
 
     val visibleItemCount = listOf(showStorage, showDevice, profile != null).count { it }
-    val spacing = LocalSpacing.current
+    val spacing = AppTheme.spacing
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 48.dp)
+            .heightIn(min = AppTheme.spacing.spacing48)
             .testTag("model-context"),
     ) {
-        val compact = maxWidth < 600.dp
+        val compact = maxWidth < AppTheme.dimensions.size600
         if (compact && visibleItemCount >= 2) {
             CompactDeviceProfile(
                 storageInfo = storageInfo,
@@ -88,7 +86,7 @@ fun ModelHubContextStrip(
         } else {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(spacing.s),
+                horizontalArrangement = Arrangement.spacedBy(spacing.spacing8),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (showStorage) {
@@ -127,7 +125,7 @@ private fun CompactDeviceProfile(
     onOpenProfile: (() -> Unit)?,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
-    val spacing = LocalSpacing.current
+    val spacing = AppTheme.spacing
     val motion = LocalAuroraMotionPolicy.current
     val risk = profile?.riskTolerance?.label()
     val summary = listOfNotNull(
@@ -151,33 +149,33 @@ private fun CompactDeviceProfile(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 48.dp)
+                .heightIn(min = AppTheme.spacing.spacing48)
                 .clickable(role = Role.Button) { expanded = !expanded }
-                .padding(horizontal = spacing.m)
+                .padding(horizontal = spacing.spacing12)
                 .semantics {
                     role = Role.Button
                     stateDescription = if (expanded) "Expanded" else "Collapsed"
                 },
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(spacing.s),
+            horizontalArrangement = Arrangement.spacedBy(spacing.spacing8),
         ) {
             Icon(
                 imageVector = Icons.Outlined.Tune,
                 contentDescription = null,
-                modifier = Modifier.size(18.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(AppTheme.dimensions.size18),
+                tint = AppTheme.colors.onSurfaceVariant,
             )
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = "Device profile",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    style = AppTheme.typography.labelLarge,
+                    color = AppTheme.colors.onSurface,
                 )
                 if (summary.isNotBlank()) {
                     Text(
                         text = summary,
-                        style = MaterialTheme.typography.prism.denseMetadata,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = AppTheme.typography.body14,
+                        color = AppTheme.colors.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -186,17 +184,17 @@ private fun CompactDeviceProfile(
             Icon(
                 imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                 contentDescription = if (expanded) "Collapse device profile" else "Expand device profile",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = AppTheme.colors.onSurfaceVariant,
             )
         }
         AnimatedVisibility(visible = expanded, enter = enter, exit = exit) {
             Column(
                 modifier = Modifier.padding(
-                    start = spacing.m,
-                    end = spacing.m,
-                    bottom = spacing.m,
+                    start = spacing.spacing12,
+                    end = spacing.spacing12,
+                    bottom = spacing.spacing12,
                 ),
-                verticalArrangement = Arrangement.spacedBy(spacing.s),
+                verticalArrangement = Arrangement.spacedBy(spacing.spacing8),
             ) {
                 if (storageInfo.totalDeviceBytes > 0L) {
                     ContextItem(
@@ -235,27 +233,27 @@ private fun ContextItem(
     modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = modifier.heightIn(min = 48.dp),
+        modifier = modifier.heightIn(min = AppTheme.spacing.spacing48),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             imageVector = icon,
             contentDescription = null,
-            modifier = Modifier.size(18.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(AppTheme.dimensions.size18),
+            tint = AppTheme.colors.onSurfaceVariant,
         )
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(AppTheme.spacing.spacing8))
         Column {
             Text(
                 text = label,
-                style = MaterialTheme.typography.prism.technicalLabel,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = AppTheme.typography.technical12,
+                color = AppTheme.colors.onSurfaceVariant,
                 maxLines = 1,
             )
             Text(
                 text = value,
-                style = MaterialTheme.typography.prism.denseMetadata,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = AppTheme.typography.body14,
+                color = AppTheme.colors.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -274,43 +272,43 @@ private fun RecommendationProfileContext(
     Surface(
         onClick = onClick,
         modifier = modifier
-            .heightIn(min = 48.dp)
+            .heightIn(min = AppTheme.spacing.spacing48)
             .semantics {
                 contentDescription = "Recommendation profile. Selected risk: $risk. " +
                     "Selected priority: $priority. Open profile controls."
             },
-        shape = MaterialTheme.prismShapes.status,
-        color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.54f),
-        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        shape = AppTheme.shapes.extraSmall,
+        color = AppTheme.colors.surfaceContainer.copy(alpha = AppTheme.effects.contextStripSurface),
+        contentColor = AppTheme.colors.onSurfaceVariant,
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = LocalSpacing.current.m),
+            modifier = Modifier.padding(horizontal = AppTheme.spacing.spacing12),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
                 imageVector = Icons.Outlined.Tune,
                 contentDescription = null,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(AppTheme.dimensions.size18),
             )
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(AppTheme.spacing.spacing8))
             Column {
                 Text(
                     "Profile",
-                    style = MaterialTheme.typography.prism.technicalLabel,
+                    style = AppTheme.typography.technical12,
                     maxLines = 1,
                 )
                 Text(
                     "$risk · $priority",
-                    style = MaterialTheme.typography.prism.denseMetadata,
+                    style = AppTheme.typography.body14,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Spacer(Modifier.width(6.dp))
+            Spacer(Modifier.width(AppTheme.dimensions.size6))
             Icon(
                 imageVector = Icons.Default.ChevronRight,
                 contentDescription = null,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(AppTheme.dimensions.size18),
             )
         }
     }

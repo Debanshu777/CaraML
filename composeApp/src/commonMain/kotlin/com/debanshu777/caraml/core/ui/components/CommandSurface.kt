@@ -12,24 +12,23 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.debanshu777.caraml.core.theme.auroraColors
-import com.debanshu777.caraml.core.theme.prismShapes
+import com.debanshu777.caraml.core.theme.AppTheme
 
 @Composable
 fun CommandSurface(
     focused: Boolean,
     active: Boolean,
     modifier: Modifier = Modifier,
-    contentPadding: PaddingValues = PaddingValues(16.dp),
+    contentPadding: PaddingValues = PaddingValues(AppTheme.spacing.spacing16),
     idleContainerColor: Color? = null,
     idleBorderColor: Color? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
-    val colors = MaterialTheme.auroraColors
+    val colors = AppTheme.auroraColors
     val emphasized = focused || active
-    val shape = MaterialTheme.prismShapes.command
+    val shape = AppTheme.shapes.medium
     val outerTreatment = if (emphasized) {
-        Modifier.background(color = colors.focusPrimary.copy(alpha = 0.20f), shape = shape)
+        Modifier.background(color = colors.focusPrimary.copy(alpha = AppTheme.effects.commandFocus), shape = shape)
     } else {
         Modifier.background(color = idleContainerColor ?: colors.commandSurface, shape = shape)
     }
@@ -37,16 +36,16 @@ fun CommandSurface(
     Box(
         modifier = modifier
             .then(outerTreatment)
-            .padding(2.dp),
+            .padding(AppTheme.spacing.spacing2),
         propagateMinConstraints = true,
     ) {
         Surface(
             shape = shape,
             color = idleContainerColor ?: colors.commandSurface,
-            contentColor = MaterialTheme.colorScheme.onSurface,
+            contentColor = AppTheme.colors.onSurface,
             border = when {
-                emphasized -> BorderStroke(1.dp, colors.focusPrimary)
-                idleBorderColor != null -> BorderStroke(1.dp, idleBorderColor)
+                emphasized -> BorderStroke(AppTheme.dimensions.size1, colors.focusPrimary)
+                idleBorderColor != null -> BorderStroke(AppTheme.dimensions.size1, idleBorderColor)
                 else -> null
             },
         ) {

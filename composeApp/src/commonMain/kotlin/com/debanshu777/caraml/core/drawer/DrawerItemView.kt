@@ -21,10 +21,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.unit.dp
-import com.debanshu777.caraml.core.theme.auroraColors
-import com.debanshu777.caraml.core.theme.prismShapes
-import com.debanshu777.caraml.core.ui.components.SignalRail
-import com.debanshu777.caraml.core.ui.components.SignalTone
+import com.debanshu777.caraml.core.theme.AppTheme
 
 @Composable
 fun DrawerItemView(
@@ -34,13 +31,13 @@ fun DrawerItemView(
     modifier: Modifier = Modifier,
     showLabel: Boolean = true,
 ) {
-    val colors = MaterialTheme.auroraColors
+    val colors = AppTheme.auroraColors
     Row(
         modifier = modifier
             .fillMaxWidth()
             .height(IntrinsicSize.Min)
-            .heightIn(min = 48.dp)
-            .clip(MaterialTheme.prismShapes.control)
+            .heightIn(min = AppTheme.spacing.spacing48)
+            .clip(AppTheme.shapes.small)
             .background(if (selected) colors.selectedSurface else androidx.compose.ui.graphics.Color.Transparent)
             .selectable(
                 selected = selected,
@@ -52,33 +49,30 @@ fun DrawerItemView(
                 this.selected = selected
             },
     ) {
-        if (selected) {
-            SignalRail(tone = SignalTone.Accent)
-        }
         Row(
             modifier = Modifier
                 .weight(1f)
-                .padding(horizontal = if (showLabel) 16.dp else 12.dp, vertical = 12.dp),
-            horizontalArrangement = if (showLabel) Arrangement.spacedBy(16.dp) else Arrangement.Center,
+                .padding(horizontal = if (showLabel) AppTheme.spacing.spacing16 else AppTheme.spacing.spacing12, vertical = AppTheme.spacing.spacing12),
+            horizontalArrangement = if (showLabel) Arrangement.spacedBy(AppTheme.spacing.spacing16) else Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
                 imageVector = item.icon,
                 contentDescription = null,
                 tint = if (selected) {
-                    MaterialTheme.colorScheme.primary
+                    AppTheme.colors.primary
                 } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
+                    AppTheme.colors.onSurfaceVariant
                 },
             )
             if (showLabel) {
                 Text(
                     text = item.title,
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = AppTheme.typography.bodyLarge,
                     color = if (selected) {
-                        MaterialTheme.colorScheme.onSurface
+                        AppTheme.colors.onSurface
                     } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
+                        AppTheme.colors.onSurfaceVariant
                     },
                 )
             }

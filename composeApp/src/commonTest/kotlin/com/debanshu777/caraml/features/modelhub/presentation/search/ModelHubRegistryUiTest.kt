@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -46,6 +47,7 @@ import com.debanshu777.caraml.core.platform.DeviceHints
 import com.debanshu777.caraml.core.recommendation.PersonalizedRecommendation
 import com.debanshu777.caraml.core.recommendation.RecommendationCategory
 import com.debanshu777.caraml.core.recommendation.RecommendationProfile
+import com.debanshu777.caraml.core.ui.components.GenericListItem
 import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
 import com.debanshu777.caraml.features.modelhub.domain.RecommendedModelUiState
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubBrowseControls
@@ -53,15 +55,13 @@ import com.debanshu777.caraml.features.modelhub.presentation.search.components.M
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubOverview
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubStateKind
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubStateView
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelListItem
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelResultCard
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchListItem
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelRecommendationStatus
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchBar
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchModelListItem
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.selectedVariantLabel
 import com.debanshu777.huggingfacemanager.model.ListModelsResponse
 import com.debanshu777.huggingfacemanager.model.ModelSort
 import com.debanshu777.huggingfacemanager.model.ParameterRange
-import com.debanshu777.huggingfacemanager.model.SearchModelsResponse
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -85,7 +85,7 @@ class ModelHubRegistryUiTest {
             AtDensityOne {
                 MaterialTheme {
                     Box(Modifier.width(360.dp)) {
-                        ModelListItem(
+                        SearchListItem(
                             model = model,
                             onClick = {},
                             recommendationState = recommendedState(
@@ -129,18 +129,18 @@ class ModelHubRegistryUiTest {
                 AtDensityOne {
                     MaterialTheme {
                         Column(Modifier.width(360.dp)) {
-                            ModelResultCard(
-                                title = "iiiiiiii/narrow-metadata",
-                                author = "iiiiiiii",
+                            GenericListItem(
+                                title = "narrow-metadata",
+                                eyebrow = "iiiiiiii",
                                 metadata = "iiiiiiii downloads",
-                                status = {},
+                                titleStatus = {},
                                 onClick = {},
                             )
-                            ModelResultCard(
-                                title = "WWWWWWWW/wide-metadata",
-                                author = "WWWWWWWW",
+                            GenericListItem(
+                                title = "wide-metadata",
+                                eyebrow = "WWWWWWWW",
                                 metadata = "WWWWWWWW downloads",
-                                status = {},
+                                titleStatus = {},
                                 onClick = {},
                             )
                         }
@@ -469,12 +469,13 @@ class ModelHubRegistryUiTest {
                             .width(360.dp)
                             .background(pageColor),
                     ) {
-                        ModelResultCard(
-                            title = "org/tiny-model",
-                            author = "org",
+                        GenericListItem(
+                            title = "tiny-model",
+                            eyebrow = "org",
                             metadata = "GGUF · 1.2 GB",
-                            status = { Text("Usable") },
+                            titleStatus = { Text("Usable") },
                             onClick = {},
+                            modifier = Modifier.testTag("model-row:org/tiny-model"),
                         )
                     }
                 }
@@ -501,11 +502,11 @@ class ModelHubRegistryUiTest {
             AtDensityOne {
                 MaterialTheme {
                     Box(Modifier.width(360.dp)) {
-                        ModelResultCard(
-                            title = "org/a-long-but-readable-model-name",
-                            author = "org",
+                        GenericListItem(
+                            title = "a-long-but-readable-model-name",
+                            eyebrow = "org",
                             metadata = metadata,
-                            status = { Text("Needs information") },
+                            titleStatus = { Text("Needs information") },
                             onClick = {},
                         )
                     }
@@ -534,12 +535,20 @@ class ModelHubRegistryUiTest {
             AtDensityOne {
                 MaterialTheme {
                     Box(Modifier.width(360.dp)) {
-                        SearchModelListItem(
-                            model = SearchModelsResponse.Model(
-                                id = "org/compact-model",
-                                trendingWeight = 42,
-                            ),
+                        GenericListItem(
+                            title = "compact-model",
+                            eyebrow = "org",
+                            metadata = "Trending weight: 42",
+                            titleStatus = {
+                                ModelRecommendationStatus(
+                                    state = DescriptorState.NEEDS_INFORMATION,
+                                    recommendation = null,
+                                    onInfoClick = null,
+                                    compact = true,
+                                )
+                            },
                             onClick = {},
+                            modifier = Modifier.testTag("model-row:org/compact-model"),
                         )
                     }
                 }
@@ -570,11 +579,11 @@ class ModelHubRegistryUiTest {
             AtDensityOne {
                 MaterialTheme {
                     Box(Modifier.width(360.dp)) {
-                        ModelResultCard(
-                            title = "research-lab/a-very-long-model-name-that-needs-two-lines-on-phone",
-                            author = "research-lab",
+                        GenericListItem(
+                            title = "a-very-long-model-name-that-needs-two-lines-on-phone",
+                            eyebrow = "research-lab",
                             metadata = "GGUF · text generation · 12.4 GB",
-                            status = { Text("Info") },
+                            titleStatus = { Text("Info") },
                             onClick = {},
                         )
                     }
@@ -617,13 +626,14 @@ class ModelHubRegistryUiTest {
             AtDensityOne {
                 MaterialTheme(colorScheme = scheme) {
                     Box(Modifier.width(360.dp)) {
-                        ModelResultCard(
-                            title = "org/recommended",
-                            author = "org",
+                        GenericListItem(
+                            title = "recommended",
+                            eyebrow = "org",
                             metadata = "GGUF · 2 GB",
-                            status = { Text("Recommended") },
+                            titleStatus = { Text("Recommended") },
                             onClick = {},
-                            highlighted = true,
+                            emphasized = true,
+                            modifier = Modifier.testTag("model-row:org/recommended"),
                         )
                     }
                 }
@@ -657,8 +667,17 @@ class ModelHubRegistryUiTest {
             AtDensityOne {
                 MaterialTheme {
                     Box(Modifier.width(360.dp)) {
-                        SearchModelListItem(
-                            model = SearchModelsResponse.Model(id = "org/uncertain"),
+                        GenericListItem(
+                            title = "uncertain",
+                            eyebrow = "org",
+                            titleStatus = {
+                                ModelRecommendationStatus(
+                                    state = DescriptorState.NEEDS_INFORMATION,
+                                    recommendation = null,
+                                    onInfoClick = null,
+                                    compact = true,
+                                )
+                            },
                             onClick = {},
                         )
                     }

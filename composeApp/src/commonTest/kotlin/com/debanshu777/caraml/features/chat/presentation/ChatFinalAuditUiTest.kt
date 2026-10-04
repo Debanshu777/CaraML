@@ -39,6 +39,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.ui.layout.AppNavigationLayout
 import com.debanshu777.caraml.core.ui.layout.LocalAppNavigationLayout
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
@@ -236,7 +237,7 @@ class ChatFinalAuditUiTest {
                         Box(
                             Modifier
                                 .requiredSize(width = 320.dp, height = 96.dp)
-                                .background(MaterialTheme.colorScheme.surface)
+                                .background(AppTheme.colors.surface)
                                 .testTag("context-host"),
                         ) {
                             ContextProgressIndicator(

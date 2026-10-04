@@ -44,7 +44,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import com.debanshu777.caraml.core.theme.LocalSpacing
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelOrdering
 import com.debanshu777.huggingfacemanager.model.ModelSort
@@ -67,14 +67,14 @@ fun ModelHubFilterButton(
         ordering != ModelOrdering.Server(ModelSort.TRENDING)
     IconButton(
         onClick = { visible = true },
-        modifier = Modifier.heightIn(min = 48.dp).testTag("model-sort-filter-button").semantics {
+        modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48).testTag("model-sort-filter-button").semantics {
             contentDescription = if (active) "Sort and filter models, active" else "Sort and filter models"
         },
     ) {
         Icon(
             Icons.Default.Tune,
             contentDescription = null,
-            tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            tint = if (active) AppTheme.colors.primary else AppTheme.colors.onSurface,
         )
     }
     if (!visible) return
@@ -106,12 +106,12 @@ internal fun ModelHubFilterPanel(
     var section by remember { mutableStateOf("Type") }
     val sections = listOf("Type", "Sort", "Size")
     Column(Modifier.fillMaxWidth()) {
-        val spacing = LocalSpacing.current
+        val spacing = AppTheme.spacing
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = spacing.m, vertical = spacing.s),
+            Modifier.fillMaxWidth().padding(horizontal = spacing.spacing12, vertical = spacing.spacing8),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Filters", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            Text("Filters", style = AppTheme.typography.headingBase, modifier = Modifier.weight(1f))
             TextButton(onClick = {
                 draftMode = ModelHubBrowseMode.LanguageModels
                 draftOrdering = ModelOrdering.Server(ModelSort.TRENDING)
@@ -120,15 +120,15 @@ internal fun ModelHubFilterPanel(
             }) { Text("Clear all") }
         }
         HorizontalDivider()
-        BoxWithConstraints(Modifier.fillMaxWidth().heightIn(min = 240.dp, max = 440.dp)) {
-            val railWidth = (maxWidth * 0.32f).coerceAtMost(132.dp)
+        BoxWithConstraints(Modifier.fillMaxWidth().heightIn(min = AppTheme.dimensions.size240, max = AppTheme.dimensions.size440)) {
+            val railWidth = (maxWidth * 0.32f).coerceAtMost(AppTheme.dimensions.size132)
             Row(Modifier.fillMaxSize()) {
                 Column(Modifier.width(railWidth).fillMaxHeight()) {
                     sections.forEach { item ->
                         FilterSection(item, section == item) { section = item }
                     }
                 }
-                Box(Modifier.fillMaxHeight().width(1.dp).background(MaterialTheme.colorScheme.outlineVariant))
+                Box(Modifier.fillMaxHeight().width(AppTheme.dimensions.size1).background(AppTheme.colors.outlineVariant))
                 Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())) {
                     FilterChoices(section, draftMode, draftOrdering, draftMin, draftMax,
                         { draftMode = it }, { draftOrdering = it },
@@ -140,7 +140,7 @@ internal fun ModelHubFilterPanel(
         HorizontalDivider()
         Button(
             onClick = { onApply(draftMode, draftOrdering, draftMin, draftMax) },
-            modifier = Modifier.fillMaxWidth().padding(spacing.m).heightIn(min = 48.dp),
+            modifier = Modifier.fillMaxWidth().padding(spacing.spacing12).heightIn(min = AppTheme.spacing.spacing48),
         ) { Text("View models") }
     }
 }
@@ -148,18 +148,18 @@ internal fun ModelHubFilterPanel(
 @Composable
 private fun FilterSection(label: String, selected: Boolean, onClick: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)
-            .background(if (selected) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent)
+        modifier = Modifier.fillMaxWidth().heightIn(min = AppTheme.dimensions.size56)
+            .background(if (selected) AppTheme.colors.surfaceContainerHigh else Color.Transparent)
             .selectable(selected, onClick = onClick, role = Role.Tab),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.width(4.dp).height(56.dp)
-            .background(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent))
+        Box(Modifier.width(AppTheme.spacing.spacing4).height(AppTheme.dimensions.size56)
+            .background(if (selected) AppTheme.colors.primary else Color.Transparent))
         Text(
             text = label,
-            style = if (selected) MaterialTheme.typography.labelLarge else MaterialTheme.typography.bodyMedium,
-            color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp),
+            style = if (selected) AppTheme.typography.labelLarge else AppTheme.typography.bodyBase,
+            color = if (selected) AppTheme.colors.onSurface else AppTheme.colors.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = AppTheme.spacing.spacing12, vertical = AppTheme.dimensions.size14),
         )
     }
     HorizontalDivider()
@@ -186,9 +186,9 @@ private fun FilterChoices(
         "Sort" -> {
             if (mode != ModelHubBrowseMode.LanguageModels) {
                 Text("Sorting applies to the online text catalog.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(16.dp))
+                    style = AppTheme.typography.bodySmall,
+                    color = AppTheme.colors.onSurfaceVariant,
+                    modifier = Modifier.padding(AppTheme.spacing.spacing16))
             } else {
                 listOf(
                     ModelOrdering.Server(ModelSort.TRENDING) to "Trending",
@@ -203,15 +203,15 @@ private fun FilterChoices(
         "Size" -> {
             if (mode != ModelHubBrowseMode.LanguageModels) {
                 Text("Size filtering applies to the online text catalog.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(16.dp))
+                    style = AppTheme.typography.bodySmall,
+                    color = AppTheme.colors.onSurfaceVariant,
+                    modifier = Modifier.padding(AppTheme.spacing.spacing16))
             } else {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 20.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Parameters", style = MaterialTheme.typography.titleSmall)
-                    Text("Minimum ${min.apiValue}", style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Column(Modifier.fillMaxWidth().padding(horizontal = AppTheme.spacing.spacing16, vertical = AppTheme.dimensions.size20),
+                    verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing12)) {
+                    Text("Parameters", style = AppTheme.typography.headingXSmall)
+                    Text("Minimum ${min.apiValue}", style = AppTheme.typography.bodyBase,
+                        color = AppTheme.colors.onSurfaceVariant)
                     RangeSlider(
                         value = min.ordinal.toFloat()..max.ordinal.toFloat(),
                         modifier = Modifier.testTag("model-size-range").semantics {
@@ -227,8 +227,8 @@ private fun FilterChoices(
                         valueRange = 0f..ParameterRange.entries.lastIndex.toFloat(),
                         steps = ParameterRange.entries.size - 2,
                     )
-                    Text("Maximum ${max.apiValue}", style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Maximum ${max.apiValue}", style = AppTheme.typography.bodyBase,
+                        color = AppTheme.colors.onSurfaceVariant)
                 }
             }
         }
@@ -238,14 +238,14 @@ private fun FilterChoices(
 @Composable
 private fun FilterOption(label: String, selected: Boolean, onClick: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).selectable(selected, onClick = onClick, role = Role.RadioButton)
-            .padding(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = AppTheme.dimensions.size52).selectable(selected, onClick = onClick, role = Role.RadioButton)
+            .padding(horizontal = AppTheme.spacing.spacing16),
+        horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing12),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         RadioButton(selected = selected, onClick = null)
-        Text(label, style = MaterialTheme.typography.bodyLarge,
-            color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(label, style = AppTheme.typography.bodyLarge,
+            color = if (selected) AppTheme.colors.onSurface else AppTheme.colors.onSurfaceVariant)
     }
     HorizontalDivider()
 }

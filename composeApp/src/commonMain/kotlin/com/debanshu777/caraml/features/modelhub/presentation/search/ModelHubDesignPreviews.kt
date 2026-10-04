@@ -1,23 +1,24 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.debanshu777.caraml.core.drawer.LocalNavigationMenuAction
 import com.debanshu777.caraml.core.platform.DeviceHints
 import com.debanshu777.caraml.core.recommendation.RecommendationProfile
 import com.debanshu777.caraml.core.theme.CaraMLTheme
-import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.theme.ThemePreferences
 import com.debanshu777.caraml.core.ui.components.AuroraBackdrop
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubContextStrip
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubHeader
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubStateKind
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubStateView
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubToolbar
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelListItem
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchListItem
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchBar
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelDownloadQueueRow
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelDownloadBatchControls
@@ -35,35 +36,7 @@ import com.debanshu777.huggingfacemanager.model.ModelSort
 import com.debanshu777.huggingfacemanager.model.ParameterRange
 import com.debanshu777.huggingfacemanager.model.ListModelsResponse
 import androidx.compose.ui.tooling.preview.Preview
-
-@Preview(name = "Models compact - populated", widthDp = 412, heightDp = 915)
-@Composable
-private fun ModelHubPopulatedPreview() {
-    ModelHubDevicePreview(populated = true)
-}
-
-@Preview(name = "Models compact - empty", widthDp = 412, heightDp = 915)
-@Composable
-private fun ModelHubEmptyPreview() {
-    ModelHubDevicePreview(populated = false)
-}
-
-@Preview(
-    name = "Models compact - populated 200%",
-    widthDp = 360,
-    heightDp = 800,
-    fontScale = 2f,
-)
-@Composable
-private fun ModelHubPopulatedLargeTextPreview() {
-    ModelHubDevicePreview(populated = true)
-}
-
-@Preview(name = "Models desktop - populated", widthDp = 1180, heightDp = 780)
-@Composable
-private fun ModelHubDesktopPreview() {
-    ModelHubDevicePreview(populated = true)
-}
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubFilterButton
 
 @Preview(name = "Download queue - unknown progress 200%", widthDp = 360, heightDp = 480, fontScale = 2f)
 @Composable
@@ -99,8 +72,8 @@ internal fun ModelDownloadQueueLargeTextPreview() {
         evidence = EncodedModelEvidence(InstalledEvidenceState.REQUIRES_ENRICHMENT, 1, "", ""),
     )
     CaraMLTheme(ThemePreferences()) {
-        androidx.compose.material3.Surface {
-            androidx.compose.foundation.layout.Column {
+        Surface {
+            Column {
                 ModelDownloadQueueRow(batch, snapshot)
                 ModelDownloadBatchControls(batch, {}, {}, {}, {})
             }
@@ -129,8 +102,8 @@ internal fun ModelHubDevicePreview(populated: Boolean) {
                         ModelHubTabLayout(
                             modifier = Modifier.fillMaxSize(),
                             command = {
-                                androidx.compose.foundation.layout.Row(
-                                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     SearchBar(
                                         query = "",
@@ -138,7 +111,7 @@ internal fun ModelHubDevicePreview(populated: Boolean) {
                                         onSearch = {},
                                         modifier = Modifier.weight(1f),
                                     )
-                                    com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubFilterButton(
+                                    ModelHubFilterButton(
                                         mode = ModelHubBrowseMode.LanguageModels,
                                         ordering = ModelOrdering.Server(ModelSort.TRENDING),
                                         minParams = ParameterRange.ZERO,
@@ -155,14 +128,13 @@ internal fun ModelHubDevicePreview(populated: Boolean) {
                                     summary = if (populated) "1 filter active" else null,
                                     actionLabel = if (populated) "Reset filters" else null,
                                     onAction = if (populated) ({}) else null,
-                                    modifier = Modifier.padding(horizontal = LocalSpacing.current.l),
                                 )
                             },
                             results = {
                                 if (populated) {
                                     previewModels.forEach { model ->
                                         item(key = requireNotNull(model.id)) {
-                                            ModelListItem(model = model, onClick = {})
+                                            SearchListItem(model = model, onClick = {})
                                         }
                                     }
                                 } else {

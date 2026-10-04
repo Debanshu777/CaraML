@@ -44,7 +44,7 @@ import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.runtime.NavKey
 import com.debanshu777.caraml.core.navigation.AppScreen
 import com.debanshu777.caraml.core.navigation.NavigationTransitionDisplay
-import com.debanshu777.caraml.core.theme.auroraColors
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.ui.components.CaraMLPrimaryTopBar
 import com.debanshu777.caraml.core.ui.layout.AppNavigationLayout
 import com.debanshu777.caraml.core.ui.layout.LocalAppNavigationLayout
@@ -399,7 +399,7 @@ class AdaptiveNavigationUiTest {
         setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f)) {
                 MaterialTheme(colorScheme = scheme) {
-                    selectedSurface = MaterialTheme.auroraColors.selectedSurface
+                    selectedSurface = AppTheme.auroraColors.selectedSurface
                     AdaptiveNavigation(
                         navigation = AppNavigationLayout.Sidebar,
                         items = primaryNavigationItems(),

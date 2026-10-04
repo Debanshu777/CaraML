@@ -66,7 +66,7 @@ class LocalModelListItemPrismUiTest {
                             .background(canvas)
                             .testTag("local-row-host"),
                     ) {
-                        LocalModelListItem(
+                        DownloadedListItem(
                             model = localModel(
                                 modelId = "org/local-model",
                                 filename = "local-model.gguf",
@@ -113,7 +113,7 @@ class LocalModelListItemPrismUiTest {
         var longPresses = 0
         setContent {
             MaterialTheme {
-                LocalModelListItem(
+                DownloadedListItem(
                     model = localModel("org/interactive", "interactive.gguf"),
                     selectionMode = selectionMode,
                     isSelected = selected,
@@ -170,7 +170,7 @@ class LocalModelListItemPrismUiTest {
                             .requiredSize(width = 360.dp, height = 400.dp)
                             .testTag("partial-row-host"),
                     ) {
-                        LocalModelListItem(
+                        DownloadedListItem(
                             model = localModel(
                                 modelId = "org/partial",
                                 filename = "partial.safetensors",
@@ -289,7 +289,7 @@ private fun UnsupportedRowFixture(
             .background(canvas)
             .testTag(hostTag),
     ) {
-        LocalModelListItem(
+        DownloadedListItem(
             model = localModel(
                 modelId = modelId,
                 filename = "$modelId.bin",

@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.AppTheme
 
 enum class ModelHubStateKind {
     Loading,
@@ -43,36 +44,36 @@ fun ModelHubStateView(
             .fillMaxWidth()
             .testTag("model-results")
             .semantics { stateDescription = kind.stateDescription }
-            .padding(vertical = 24.dp),
+            .padding(vertical = AppTheme.spacing.spacing24),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
     ) {
         when (kind) {
             ModelHubStateKind.Loading -> CircularProgressIndicator()
             ModelHubStateKind.Empty -> Icon(
                 imageVector = Icons.Outlined.Inventory2,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = AppTheme.colors.onSurfaceVariant,
             )
             ModelHubStateKind.Error -> Icon(
                 imageVector = Icons.Outlined.CloudOff,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.error,
+                tint = AppTheme.colors.error,
             )
         }
         Text(
             text = message,
-            style = MaterialTheme.typography.bodyMedium,
+            style = AppTheme.typography.bodyBase,
             color = if (kind == ModelHubStateKind.Error) {
-                MaterialTheme.colorScheme.error
+                AppTheme.colors.error
             } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
+                AppTheme.colors.onSurfaceVariant
             },
         )
         if (actionLabel != null && onAction != null) {
             TextButton(
                 onClick = onAction,
-                modifier = Modifier.heightIn(min = 48.dp),
+                modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48),
             ) {
                 Text(actionLabel)
             }

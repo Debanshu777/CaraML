@@ -342,7 +342,6 @@ class ModelHubProductionBranchUiTest {
                     Box(Modifier.requiredSize(width = 360.dp, height = 760.dp)) {
                         DownloadedTabContent(
                             viewModel = viewModel,
-                            storageInfo = testStorageInfo(),
                             onSelectModelAndGoBack = {},
                             onNavigateToDetails = { _, _ -> },
                             snackbarHostState = SnackbarHostState(),
@@ -380,7 +379,6 @@ class ModelHubProductionBranchUiTest {
                     Box(Modifier.requiredSize(width = 360.dp, height = 760.dp)) {
                         DownloadedTabContent(
                             viewModel = viewModel,
-                            storageInfo = testStorageInfo(),
                             onSelectModelAndGoBack = {},
                             onNavigateToDetails = { _, _ -> },
                             snackbarHostState = SnackbarHostState(),
@@ -441,7 +439,6 @@ class ModelHubProductionBranchUiTest {
                                         libraryContent = {
                                             DownloadedTabContent(
                                                 viewModel = viewModel,
-                                                storageInfo = testStorageInfo(),
                                                 onSelectModelAndGoBack = {},
                                                 onNavigateToDetails = { _, _ -> },
                                                 snackbarHostState = SnackbarHostState(),
@@ -510,15 +507,8 @@ class ModelHubProductionBranchUiTest {
                     Box(Modifier.requiredSize(width = 360.dp, height = 760.dp)) {
                         SearchTabContent(
                             viewModel = viewModel,
-                            storageInfo = testStorageInfo(),
                             onNavigateToDetails = { _, _ -> },
                             onRecommendationInfoClick = {},
-                            recommendationProfileState = RecommendationProfileUiState(
-                                profile = RecommendationProfile(),
-                                isAvailable = false,
-                                showDialog = false,
-                            ),
-                            onOpenProfileEditor = {},
                             modifier = Modifier.fillMaxSize(),
                         )
                     }

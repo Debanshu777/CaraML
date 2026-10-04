@@ -34,6 +34,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.ui.components.CommandSurface
 
 @Composable
@@ -54,34 +55,34 @@ fun SearchBar(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("model-command"),
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-        idleContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        idleBorderColor = MaterialTheme.colorScheme.outlineVariant,
+        contentPadding = PaddingValues(horizontal = AppTheme.spacing.spacing12, vertical = AppTheme.spacing.spacing4),
+        idleContainerColor = AppTheme.colors.surfaceContainerHigh,
+        idleBorderColor = AppTheme.colors.outlineVariant,
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 48.dp),
+                .heightIn(min = AppTheme.spacing.spacing48),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
                 imageVector = Icons.Default.Search,
                 contentDescription = null,
-                modifier = Modifier.size(24.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(AppTheme.spacing.spacing24),
+                tint = AppTheme.colors.onSurfaceVariant,
             )
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(AppTheme.spacing.spacing12))
             BasicTextField(
                 value = query,
                 onValueChange = onQueryChange,
                 modifier = Modifier
                     .weight(1f)
                     .onFocusChanged { focused = it.isFocused },
-                textStyle = MaterialTheme.typography.bodyLarge.copy(
-                    color = MaterialTheme.colorScheme.onSurface,
+                textStyle = AppTheme.typography.bodyLarge.copy(
+                    color = AppTheme.colors.onSurface,
                 ),
                 singleLine = true,
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                cursorBrush = SolidColor(AppTheme.colors.primary),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { onSearch() }),
                 decorationBox = { innerTextField ->
@@ -89,8 +90,8 @@ fun SearchBar(
                         if (query.isEmpty()) {
                             Text(
                                 text = "Search models",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = AppTheme.typography.bodyLarge,
+                                color = AppTheme.colors.onSurfaceVariant,
                             )
                         }
                         innerTextField()
@@ -98,7 +99,7 @@ fun SearchBar(
                 },
             )
             if (query.isNotEmpty()) {
-                IconButton(onClick = onClear, modifier = Modifier.size(48.dp)) {
+                IconButton(onClick = onClear, modifier = Modifier.size(AppTheme.spacing.spacing48)) {
                     Icon(
                         imageVector = Icons.Default.Clear,
                         contentDescription = "Clear model search",
@@ -110,8 +111,8 @@ fun SearchBar(
     if (errorMessage != null) {
         Text(
             text = errorMessage,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.error,
+            style = AppTheme.typography.bodySmall,
+            color = AppTheme.colors.error,
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
         )
     }

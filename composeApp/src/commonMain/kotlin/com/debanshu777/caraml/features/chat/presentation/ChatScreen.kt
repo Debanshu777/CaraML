@@ -62,12 +62,11 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.drawer.DrawerController
 import com.debanshu777.caraml.core.drawer.GenerationModeController
 import com.debanshu777.caraml.core.drawer.LocalDrawerController
@@ -75,10 +74,7 @@ import com.debanshu777.caraml.core.drawer.LocalFocusModeController
 import com.debanshu777.caraml.core.drawer.LocalGenerationModeController
 import com.debanshu777.caraml.core.drawer.LocalNavigationMenuAction
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
-import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
-import com.debanshu777.caraml.core.theme.auroraColors
-import com.debanshu777.caraml.core.theme.prismShapes
 import com.debanshu777.caraml.core.ui.components.CaraMLPane
 import com.debanshu777.caraml.core.ui.components.AuroraFocalSurface
 import com.debanshu777.caraml.core.ui.components.CommandSurface
@@ -250,15 +246,15 @@ fun ChatScreenContent(
                         title = "Create",
                         onMenuClick = navigationMenuAction,
                         modifier = Modifier
-                            .widthIn(max = 840.dp)
+                            .widthIn(max = AppTheme.dimensions.size840)
                             .fillMaxWidth()
                             .padding(
                                 horizontal = if (
                                     navigationLayout == AppNavigationLayout.ModalSidebar
                                 ) {
-                                    16.dp
+                                    AppTheme.spacing.spacing16
                                 } else {
-                                    24.dp
+                                    AppTheme.spacing.spacing24
                                 },
                             ),
                         generationMode = generationMode.takeUnless {
@@ -283,16 +279,16 @@ fun ChatScreenContent(
                     Column(modifier = Modifier.fillMaxWidth()) {
                         if (streamingState.isCompacting) {
                             Row(
-                                modifier = Modifier.fillMaxWidth().padding(12.dp)
+                                modifier = Modifier.fillMaxWidth().padding(AppTheme.spacing.spacing12)
                                     .testTag("chat-context-maintenance"),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
                             ) {
-                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                CircularProgressIndicator(modifier = Modifier.size(AppTheme.spacing.spacing16), strokeWidth = AppTheme.spacing.spacing2)
                                 Text(
                                     text = "Making room for your next reply…",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = AppTheme.typography.labelBase,
+                                    color = AppTheme.colors.onSurfaceVariant,
                                 )
                             }
                         }
@@ -334,7 +330,7 @@ fun ChatScreenContent(
                     start = paddingValues.calculateStartPadding(layoutDirection),
                     top = paddingValues.calculateTopPadding(),
                     end = paddingValues.calculateEndPadding(layoutDirection),
-                    bottom = if (uiState is ChatUiState.Ready) 0.dp else bottomPadding,
+                    bottom = if (uiState is ChatUiState.Ready) AppTheme.dimensions.size0 else bottomPadding,
                 ),
         ) {
             when (uiState) {
@@ -425,7 +421,7 @@ fun ChatScreenContent(
                             loadMedia = loadMedia,
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(
-                                top = if (focusModeEnabled) 72.dp else 0.dp,
+                                top = if (focusModeEnabled) AppTheme.dimensions.size72 else AppTheme.dimensions.size0,
                                 bottom = bottomPadding,
                             ),
                         )
@@ -443,14 +439,14 @@ fun ChatScreenContent(
                                 onClick = navigationMenuAction,
                                 modifier = Modifier
                                     .align(Alignment.TopStart)
-                                    .padding(LocalSpacing.current.s)
-                                    .size(48.dp)
+                                    .padding(AppTheme.spacing.spacing8)
+                                    .size(AppTheme.spacing.spacing48)
                                     .testTag("focus-navigation-action"),
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Menu,
                                     contentDescription = "Open navigation menu",
-                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    tint = AppTheme.colors.onSurface,
                                 )
                             }
                         }
@@ -487,10 +483,10 @@ private fun CreateStateViewport(
 ) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(vertical = LocalSpacing.current.l),
+        contentPadding = PaddingValues(vertical = AppTheme.spacing.spacing16),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(
-            space = LocalSpacing.current.m,
+            space = AppTheme.spacing.spacing12,
             alignment = Alignment.CenterVertically,
         ),
     ) {
@@ -508,7 +504,7 @@ private fun AnimatedCreateEmptyState(
     modifier: Modifier = Modifier,
 ) {
     val motion = LocalAuroraMotionPolicy.current
-    val focalAccent = MaterialTheme.auroraColors.focusPrimary.copy(alpha = 1f)
+    val focalAccent = AppTheme.auroraColors.focusPrimary.copy(alpha = AppTheme.effects.opaque)
     Crossfade(
         targetState = mode,
         modifier = modifier,
@@ -525,34 +521,31 @@ private fun AnimatedCreateEmptyState(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 360.dp)
+                .heightIn(min = AppTheme.dimensions.size360)
                 .testTag("create-empty-state")
-                .padding(horizontal = LocalSpacing.current.l, vertical = LocalSpacing.current.xl),
+                .padding(horizontal = AppTheme.spacing.spacing16, vertical = AppTheme.spacing.spacing24),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.s),
+            verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
         ) {
             WorkspaceGlyph()
             Text(
                 text = "${targetMode.name.uppercase()} WORKSPACE",
-                style = MaterialTheme.typography.labelSmall,
+                style = AppTheme.typography.label12,
                 color = focalAccent,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = androidx.compose.ui.unit.TextUnit.Unspecified,
                 textAlign = TextAlign.Center,
             )
             Text(
-                modifier = Modifier.heightIn(min = 96.dp),
+                modifier = Modifier.heightIn(min = AppTheme.dimensions.size96),
                 text = copy.title,
-                style = MaterialTheme.typography.displaySmall,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.ExtraBold,
+                style = AppTheme.typography.heading32,
+                color = AppTheme.colors.onSurface,
                 textAlign = TextAlign.Center,
             )
             Text(
-                modifier = Modifier.heightIn(min = 72.dp),
+                modifier = Modifier.heightIn(min = AppTheme.dimensions.size72),
                 text = copy.supportingText,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = AppTheme.typography.bodyBase,
+                color = AppTheme.colors.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )
         }
@@ -567,35 +560,33 @@ private fun CreateUnavailableWorkspace(
     modifier: Modifier = Modifier,
 ) {
     val copy = emptyStateCopy(mode)
-    val focalAccent = MaterialTheme.auroraColors.focusPrimary.copy(alpha = 1f)
+    val focalAccent = AppTheme.auroraColors.focusPrimary.copy(alpha = AppTheme.effects.opaque)
     Column(
         modifier = modifier
             .testTag("create-empty-state")
-            .padding(horizontal = LocalSpacing.current.l, vertical = LocalSpacing.current.xl),
+            .padding(horizontal = AppTheme.spacing.spacing16, vertical = AppTheme.spacing.spacing24),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.m),
+        verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing12),
     ) {
         WorkspaceGlyph()
         Text(
             text = "${mode.name.uppercase()} WORKSPACE",
-            style = MaterialTheme.typography.labelSmall,
+            style = AppTheme.typography.label12,
             color = focalAccent,
-            fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
         )
         Text(
-            modifier = Modifier.heightIn(min = 96.dp),
+            modifier = Modifier.heightIn(min = AppTheme.dimensions.size96),
             text = copy.title,
-            style = MaterialTheme.typography.displaySmall,
-            color = MaterialTheme.colorScheme.onSurface,
-            fontWeight = FontWeight.ExtraBold,
+            style = AppTheme.typography.heading32,
+            color = AppTheme.colors.onSurface,
             textAlign = TextAlign.Center,
         )
         Text(
-            modifier = Modifier.heightIn(min = 72.dp),
+            modifier = Modifier.heightIn(min = AppTheme.dimensions.size72),
             text = supportingText,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = AppTheme.typography.bodyLarge,
+            color = AppTheme.colors.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
         CommandSurface(
@@ -607,17 +598,17 @@ private fun CreateUnavailableWorkspace(
                 .semantics(mergeDescendants = true) {
                     contentDescription = "Browse models"
                 },
-            contentPadding = PaddingValues(horizontal = LocalSpacing.current.l),
+            contentPadding = PaddingValues(horizontal = AppTheme.spacing.spacing16),
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = AppTheme.dimensions.size56),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
                     text = "Browse models",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    style = AppTheme.typography.bodyLarge,
+                    color = AppTheme.colors.onSurface,
                 )
                 Icon(
                     imageVector = Icons.AutoMirrored.Default.ArrowForward,
@@ -631,24 +622,23 @@ private fun CreateUnavailableWorkspace(
 
 @Composable
 private fun WorkspaceGlyph() {
-    val focalAccent = MaterialTheme.auroraColors.focusPrimary.copy(alpha = 1f)
+    val focalAccent = AppTheme.auroraColors.focusPrimary.copy(alpha = AppTheme.effects.opaque)
     Surface(
         modifier = Modifier
-            .size(52.dp)
+            .size(AppTheme.dimensions.size52)
             .clearAndSetSemantics { },
-        color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.78f),
+        color = AppTheme.colors.surfaceContainer.copy(alpha = AppTheme.effects.workspaceGlyphSurface),
         contentColor = focalAccent,
-        shape = MaterialTheme.prismShapes.focal,
+        shape = AppTheme.shapes.large,
         border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outlineVariant,
+            AppTheme.dimensions.size1,
+            AppTheme.colors.outlineVariant,
         ),
     ) {
         Box(contentAlignment = Alignment.Center) {
             Text(
                 text = "I",
-                style = MaterialTheme.typography.headlineSmall,
-                fontFamily = FontFamily.Monospace,
+                style = AppTheme.typography.headingLargeMono,
                 color = focalAccent,
             )
         }
@@ -681,26 +671,26 @@ private fun LoadActionRequiredScreen(
         is PendingLoadAction.RetryQuarantined -> action.request.plan.compromises
     }
     Column(
-        modifier = modifier.fillMaxWidth().padding(LocalSpacing.current.xl),
+        modifier = modifier.fillMaxWidth().padding(AppTheme.spacing.spacing24),
     ) {
         CaraMLPane(
             modifier = Modifier.fillMaxWidth(),
             level = AuroraSurfaceLevel.Pane,
         ) {
-            Column(modifier = Modifier.padding(LocalSpacing.current.l)) {
-                Text(title, style = MaterialTheme.typography.titleLarge)
-                Spacer(Modifier.height(LocalSpacing.current.s))
-                Text(detail, style = MaterialTheme.typography.bodyMedium)
+            Column(modifier = Modifier.padding(AppTheme.spacing.spacing16)) {
+                Text(title, style = AppTheme.typography.headingBase)
+                Spacer(Modifier.height(AppTheme.spacing.spacing8))
+                Text(detail, style = AppTheme.typography.bodyBase)
                 if (compromises.isNotEmpty()) {
-                    Spacer(Modifier.height(LocalSpacing.current.m))
+                    Spacer(Modifier.height(AppTheme.spacing.spacing12))
                     Text(
                         compromises.joinToString(separator = "\n") {
                             "• ${it.toString().lowercase().replace('_', ' ')}"
                         },
-                        style = MaterialTheme.typography.bodySmall,
+                        style = AppTheme.typography.bodySmall,
                     )
                 }
-                Spacer(Modifier.height(LocalSpacing.current.l))
+                Spacer(Modifier.height(AppTheme.spacing.spacing16))
                 Button(
                     onClick = {
                         when (action) {
@@ -743,63 +733,63 @@ private fun MissingComponentsScreen(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(LocalSpacing.current.xl),
+            .padding(AppTheme.spacing.spacing24),
         horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
     ) {
         Icon(
             Icons.Default.Error,
             contentDescription = null,
-            modifier = Modifier.size(64.dp),
-            tint = MaterialTheme.colorScheme.error
+            modifier = Modifier.size(AppTheme.spacing.spacing64),
+            tint = AppTheme.colors.error
         )
         
-        Spacer(modifier = Modifier.height(LocalSpacing.current.l))
+        Spacer(modifier = Modifier.height(AppTheme.spacing.spacing16))
 
         Text(
             text = "Missing Required Components",
-            style = MaterialTheme.typography.headlineSmall,
-            color = MaterialTheme.colorScheme.onSurface
+            style = AppTheme.typography.headingLarge,
+            color = AppTheme.colors.onSurface
         )
 
-        Spacer(modifier = Modifier.height(LocalSpacing.current.s))
+        Spacer(modifier = Modifier.height(AppTheme.spacing.spacing8))
 
         Text(
             text = "$modelName requires additional components to run:",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            style = AppTheme.typography.bodyBase,
+            color = AppTheme.colors.onSurfaceVariant
         )
 
-        Spacer(modifier = Modifier.height(LocalSpacing.current.l))
+        Spacer(modifier = Modifier.height(AppTheme.spacing.spacing16))
 
         CaraMLPane(
             modifier = Modifier.fillMaxWidth(),
             level = AuroraSurfaceLevel.Pane,
         ) {
             Column(
-                modifier = Modifier.padding(LocalSpacing.current.l),
-                verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.s)
+                modifier = Modifier.padding(AppTheme.spacing.spacing16),
+                verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8)
             ) {
                 missingComponentLabels.forEach { label ->
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.s),
+                        horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
                         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
                     ) {
                         Text(
                             text = "•",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.error
+                            style = AppTheme.typography.bodyBase,
+                            color = AppTheme.colors.error
                         )
                         Text(
                             text = label,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
+                            style = AppTheme.typography.bodyBase,
+                            color = AppTheme.colors.onSurface
                         )
                     }
                 }
             }
         }
         
-        Spacer(modifier = Modifier.height(LocalSpacing.current.xl))
+        Spacer(modifier = Modifier.height(AppTheme.spacing.spacing24))
 
         Button(
             onClick = onFixComponentsClick,
@@ -808,9 +798,9 @@ private fun MissingComponentsScreen(
             Icon(
                 Icons.Default.Download,
                 contentDescription = null,
-                modifier = Modifier.size(18.dp)
+                modifier = Modifier.size(AppTheme.dimensions.size18)
             )
-            Spacer(modifier = Modifier.size(LocalSpacing.current.s))
+            Spacer(modifier = Modifier.size(AppTheme.spacing.spacing8))
             Text("Download missing components")
         }
     }

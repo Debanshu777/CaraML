@@ -29,12 +29,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.download.DownloadArtifactSnapshot
 import com.debanshu777.caraml.core.download.DownloadArtifactState
 import com.debanshu777.caraml.core.download.DownloadBatchSnapshot
 import com.debanshu777.caraml.core.download.DownloadBatchState
-import com.debanshu777.caraml.core.theme.LocalSpacing
-import com.debanshu777.caraml.core.theme.prismShapes
 
 @Composable
 fun ModelDownloadQueueEntry(
@@ -65,17 +64,17 @@ fun ModelDownloadQueueEntry(
     }
     Surface(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("model-download-queue-entry"),
-        shape = MaterialTheme.prismShapes.control,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        modifier = Modifier.fillMaxWidth().heightIn(min = AppTheme.spacing.spacing48).testTag("model-download-queue-entry"),
+        shape = AppTheme.shapes.small,
+        color = AppTheme.colors.surfaceContainerLow,
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = LocalSpacing.current.l, vertical = LocalSpacing.current.s),
+            modifier = Modifier.padding(horizontal = AppTheme.spacing.spacing16, vertical = AppTheme.spacing.spacing8),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.s),
+            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
         ) {
-            Icon(Icons.Outlined.Download, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
-            Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+            Icon(Icons.Outlined.Download, contentDescription = null, tint = AppTheme.colors.tertiary)
+            Text(label, style = AppTheme.typography.labelLarge, modifier = Modifier.weight(1f))
             Icon(Icons.Outlined.ChevronRight, contentDescription = "Open downloads")
         }
     }
@@ -94,16 +93,16 @@ fun ModelDownloadQueueSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        shape = MaterialTheme.prismShapes.modal,
+        shape = AppTheme.shapes.extraLarge,
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
-                .padding(horizontal = LocalSpacing.current.l, vertical = LocalSpacing.current.m),
-            verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.m),
+                .padding(horizontal = AppTheme.spacing.spacing16, vertical = AppTheme.spacing.spacing12),
+            verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing12),
         ) {
-            Text("Downloads", style = MaterialTheme.typography.titleLarge)
+            Text("Downloads", style = AppTheme.typography.headingBase)
             if (batches.isEmpty()) {
-                Text("No active downloads", style = MaterialTheme.typography.bodyMedium)
+                Text("No active downloads", style = AppTheme.typography.bodyBase)
             }
             batches.forEach { batch ->
                 batch.artifacts.filter {
@@ -149,16 +148,16 @@ internal fun ModelDownloadQueueRow(
     }
     Column(
         modifier = Modifier.fillMaxWidth().testTag("download-${artifact.artifactId}"),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing4),
     ) {
-        Text(batch.displayName, style = MaterialTheme.typography.titleSmall)
+        Text(batch.displayName, style = AppTheme.typography.headingXSmall)
         Text(
             artifact.request.metadata.artifact.relativePath,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = AppTheme.typography.bodySmall,
+            color = AppTheme.colors.onSurfaceVariant,
             maxLines = 2,
         )
-        Text(status, style = MaterialTheme.typography.bodyMedium)
+        Text(status, style = AppTheme.typography.bodyBase)
         if (artifact.state == DownloadArtifactState.RUNNING || artifact.state == DownloadArtifactState.VERIFYING) {
             val expected = artifact.expectedBytes
             if (artifact.state == DownloadArtifactState.RUNNING && expected > 0L) {
@@ -166,10 +165,10 @@ internal fun ModelDownloadQueueRow(
                     progress = { (artifact.bytesReceived.toFloat() / expected).coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Text("${(artifact.bytesReceived.coerceAtLeast(0) * 100 / expected).coerceIn(0, 100)}%", style = MaterialTheme.typography.bodySmall)
+                Text("${(artifact.bytesReceived.coerceAtLeast(0) * 100 / expected).coerceIn(0, 100)}%", style = AppTheme.typography.bodySmall)
             } else {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                Text("Progress unavailable", style = MaterialTheme.typography.bodySmall)
+                Text("Progress unavailable", style = AppTheme.typography.bodySmall)
             }
         }
     }
@@ -184,12 +183,12 @@ internal fun ModelDownloadBatchControls(
     onRetry: () -> Unit,
     onCancel: () -> Unit,
 ) {
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8)) {
             when (batch.state) {
                 DownloadBatchState.RUNNING, DownloadBatchState.QUEUED,
-                DownloadBatchState.WAITING_FOR_NETWORK -> TextButton(onClick = onPause, modifier = Modifier.heightIn(min = 48.dp)) { Text("Pause download") }
-                DownloadBatchState.PAUSED -> TextButton(onClick = onResume, modifier = Modifier.heightIn(min = 48.dp)) { Text("Resume download") }
-                DownloadBatchState.FAILED_RETRYABLE -> TextButton(onClick = onRetry, modifier = Modifier.heightIn(min = 48.dp)) { Text("Retry download") }
+                DownloadBatchState.WAITING_FOR_NETWORK -> TextButton(onClick = onPause, modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48)) { Text("Pause download") }
+                DownloadBatchState.PAUSED -> TextButton(onClick = onResume, modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48)) { Text("Resume download") }
+                DownloadBatchState.FAILED_RETRYABLE -> TextButton(onClick = onRetry, modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48)) { Text("Retry download") }
                 else -> Unit
             }
             if (batch.state in listOf(
@@ -198,7 +197,7 @@ internal fun ModelDownloadBatchControls(
                     DownloadBatchState.FAILED_RETRYABLE,
                 )
             ) {
-                TextButton(onClick = onCancel, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel download") }
+                TextButton(onClick = onCancel, modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48)) { Text("Cancel download") }
             }
         }
 }

@@ -8,6 +8,7 @@ import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.v2.runComposeUiTest
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.theme.CaraMLTheme
 import com.debanshu777.caraml.core.theme.ThemePreferences
 import kotlin.test.Test
@@ -49,7 +50,7 @@ class AuroraMotionPolicyTest {
             setContent {
                 CaraMLTheme(preferences = ThemePreferences()) {
                     observed = LocalAuroraMotionPolicy.current
-                    Text("Theme content", color = MaterialTheme.colorScheme.onSurface)
+                    Text("Theme content", color = AppTheme.colors.onSurface)
                 }
             }
 
@@ -67,7 +68,7 @@ class AuroraMotionPolicyTest {
             setContent {
                 CaraMLTheme(preferences = ThemePreferences()) {
                     observed = LocalAuroraMotionPolicy.current
-                    Text("Theme content", color = MaterialTheme.colorScheme.onSurface)
+                    Text("Theme content", color = AppTheme.colors.onSurface)
                 }
             }
 

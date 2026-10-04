@@ -23,7 +23,6 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -45,6 +44,8 @@ import androidx.compose.ui.unit.dp
 import androidx.navigationevent.NavigationEventInfo
 import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigationevent.compose.rememberNavigationEventState
+import com.debanshu777.caraml.core.theme.AppTheme
+import com.debanshu777.caraml.core.theme.AppDrawerPanelShape
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
 import com.debanshu777.caraml.core.ui.components.CaraMLPane
 import com.debanshu777.caraml.core.ui.layout.AppNavigationLayout
@@ -103,12 +104,12 @@ fun AppNavigationPanel(
                 if (!compact) {
                     Text(
                         text = "CaraML",
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp),
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(horizontal = AppTheme.dimensions.size20, vertical = AppTheme.spacing.spacing24),
+                        style = AppTheme.typography.headingBase,
+                        color = AppTheme.colors.onSurface,
                     )
                 } else {
-                    Spacer(modifier = Modifier.padding(top = 16.dp))
+                    Spacer(modifier = Modifier.padding(top = AppTheme.spacing.spacing16))
                 }
 
                 items.forEach { item ->
@@ -117,7 +118,7 @@ fun AppNavigationPanel(
                         selected = item.id == selectedItemId,
                         showLabel = !compact,
                         onClick = { onItemClick(item) },
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier.padding(horizontal = AppTheme.spacing.spacing8, vertical = AppTheme.spacing.spacing2),
                     )
                 }
 
@@ -125,13 +126,13 @@ fun AppNavigationPanel(
                     Text(
                         text = "Create modes",
                         modifier = Modifier.padding(
-                            start = 20.dp,
-                            end = 20.dp,
-                            top = 28.dp,
-                            bottom = 8.dp,
+                            start = AppTheme.dimensions.size20,
+                            end = AppTheme.dimensions.size20,
+                            top = AppTheme.dimensions.size28,
+                            bottom = AppTheme.spacing.spacing8,
                         ),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = AppTheme.typography.labelLarge,
+                        color = AppTheme.colors.onSurfaceVariant,
                     )
                     contextualItems.forEach { item ->
                         DrawerItemView(
@@ -139,7 +140,7 @@ fun AppNavigationPanel(
                             selected = item.id == selectedContextualItemId,
                             showLabel = true,
                             onClick = { onContextualItemClick(item) },
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                            modifier = Modifier.padding(horizontal = AppTheme.spacing.spacing16, vertical = AppTheme.spacing.spacing2),
                         )
                     }
                 }
@@ -151,10 +152,10 @@ fun AppNavigationPanel(
                     selected = item.id == selectedItemId,
                     showLabel = !compact,
                     onClick = { onFooterItemClick(item) },
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                    modifier = Modifier.padding(horizontal = AppTheme.spacing.spacing8, vertical = AppTheme.spacing.spacing2),
                 )
             }
-            Spacer(modifier = Modifier.padding(bottom = 8.dp))
+            Spacer(modifier = Modifier.padding(bottom = AppTheme.spacing.spacing8))
         }
     }
 }
@@ -210,7 +211,7 @@ fun AdaptiveNavigation(
                 compact = true,
                 onItemClick = onItemClick,
                 onFooterItemClick = onFooterItemClick,
-                modifier = Modifier.width(80.dp),
+                modifier = Modifier.width(AppTheme.dimensions.size80),
                 contentInsets = navigationInsets,
                 contentInsetSides = WindowInsetsSides.Vertical,
             )
@@ -235,7 +236,7 @@ fun AdaptiveNavigation(
                 compact = false,
                 onItemClick = onItemClick,
                 onFooterItemClick = onFooterItemClick,
-                modifier = Modifier.width(256.dp),
+                modifier = Modifier.width(AppTheme.dimensions.size256),
                 contentInsets = navigationInsets,
                 contentInsetSides = WindowInsetsSides.Vertical,
                 contextualItems = contextualItems,
@@ -310,7 +311,7 @@ private fun ModalSidebarNavigation(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.44f))
+                    .background(AppTheme.colors.scrim.copy(alpha = AppTheme.effects.modalScrim))
                     .clickable(
                         role = Role.Button,
                         onClickLabel = "Dismiss navigation menu",
@@ -322,7 +323,7 @@ private fun ModalSidebarNavigation(
             )
         }
 
-        val panelWidth = (maxWidth - 40.dp).coerceAtMost(320.dp).coerceAtLeast(0.dp)
+        val panelWidth = (maxWidth - AppTheme.dimensions.size40).coerceAtMost(AppTheme.dimensions.size320).coerceAtLeast(AppTheme.dimensions.size0)
         val panelEnter = if (motion.spatialMovementEnabled) {
             fadeIn(tween(motion.scrimDurationMillis)) +
                 slideInHorizontally(tween(motion.panelDurationMillis)) { -it }
@@ -357,7 +358,7 @@ private fun ModalSidebarNavigation(
                 contextualItems = contextualItems,
                 selectedContextualItemId = selectedContextualItemId,
                 onContextualItemClick = selectAndClose(onContextualItemClick),
-                shape = RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp),
+                shape = AppDrawerPanelShape,
             )
         }
     }

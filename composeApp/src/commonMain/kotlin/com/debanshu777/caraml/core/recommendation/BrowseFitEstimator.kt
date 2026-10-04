@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.core.recommendation
 
+import androidx.compose.runtime.Stable
 import com.debanshu777.caraml.core.platform.DeviceSnapshot
 import com.debanshu777.caraml.core.platform.MemoryTopology
 import kotlin.time.Clock
@@ -12,6 +13,7 @@ enum class BrowseResourceFit {
 }
 
 /** Presentation evidence only. It carries no executable or native-load permit. */
+@Stable
 data class BrowseFitEstimate(
     val compatibility: Compatibility,
     val memoryFit: BrowseResourceFit,

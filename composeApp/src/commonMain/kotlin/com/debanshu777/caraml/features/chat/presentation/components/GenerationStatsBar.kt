@@ -15,9 +15,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
-import com.debanshu777.caraml.core.theme.AppNumericLabel
-import com.debanshu777.caraml.core.theme.AppTechnicalLabel
-import com.debanshu777.caraml.core.theme.LocalSpacing
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.features.chat.data.LiveGenerationStats
 import com.debanshu777.caraml.features.chat.presentation.components.providers.LiveGenerationStatsPreviewProvider
 
@@ -41,19 +39,19 @@ fun GenerationStatsBar(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = LocalSpacing.current.s),
-        horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.s),
+            .padding(vertical = AppTheme.spacing.spacing8),
+        horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text = "Live output",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = AppTheme.typography.labelSmall,
+            color = AppTheme.colors.onSurfaceVariant,
         )
         Text(
             text = "${stats.outputTokenCount}/∞",
-            style = AppNumericLabel,
-            color = MaterialTheme.colorScheme.onSurface,
+            style = AppTheme.typography.numeric12,
+            color = AppTheme.colors.onSurface,
         )
         Spacer(modifier = Modifier.weight(1f))
 
@@ -63,8 +61,8 @@ fun GenerationStatsBar(
             modifier = Modifier.semantics {
                 contentDescription = "Generation speed $formattedSpeed tokens per second"
             },
-            style = AppTechnicalLabel,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = AppTheme.typography.technical12,
+            color = AppTheme.colors.onSurfaceVariant,
         )
     }
 }

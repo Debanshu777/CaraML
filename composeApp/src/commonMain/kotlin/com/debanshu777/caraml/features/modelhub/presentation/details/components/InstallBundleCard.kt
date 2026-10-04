@@ -4,7 +4,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -28,18 +27,20 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.debanshu777.caraml.core.theme.AppTechnicalLabel
-import com.debanshu777.caraml.core.theme.LocalSpacing
-import com.debanshu777.caraml.core.theme.auroraColors
+import com.debanshu777.caraml.core.theme.AppTheme
+import com.debanshu777.caraml.core.theme.CaraMLTheme
+import com.debanshu777.caraml.core.theme.ThemePreferences
 import com.debanshu777.caraml.core.ui.components.CaraMLSectionHeader
-import com.debanshu777.caraml.core.ui.components.SignalTone
 import com.debanshu777.caraml.core.ui.components.StatusMark
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.features.modelhub.presentation.search.InstallBundleUiState
+import com.debanshu777.caraml.features.modelhub.presentation.search.GgufFileUiState
 import com.debanshu777.caraml.features.modelhub.presentation.search.SetupComponentUiState
 import com.debanshu777.caraml.features.modelhub.presentation.search.DurableDownloadControlUiState
 import com.debanshu777.caraml.core.download.DownloadBatchState
+import com.debanshu777.huggingfacemanager.sdcpp.ComponentRole
 
 private fun formatBytes(bytes: Long): String {
     if (bytes <= 0L) return "0 B"
@@ -80,7 +81,10 @@ fun InstallBundleCard(
     onCancel: () -> Unit = {},
     onRetry: () -> Unit = {},
 ) {
-    InstallBundleContainer(modifier) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing12),
+    ) {
         InstallBundleSummaryContent(
             state = state,
             familyLabel = familyLabel,
@@ -111,7 +115,10 @@ internal fun InstallBundleSummaryCard(
     modifier: Modifier = Modifier,
     recommendedVariantPath: String? = null,
 ) {
-    InstallBundleContainer(modifier) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing12),
+    ) {
         InstallBundleSummaryContent(
             state = state,
             familyLabel = familyLabel,
@@ -136,42 +143,25 @@ internal fun InstallBundleActionFooter(
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 2.dp,
+        color = AppTheme.colors.surfaceContainerHigh,
+        tonalElevation = AppTheme.spacing.spacing2,
     ) {
-        Column(
-            modifier = Modifier.padding(LocalSpacing.current.m),
-            verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.s),
-        ) {
-            InstallBundleActionContent(
-                state = state,
-                onInstall = onInstall,
-                installEnabled = installEnabled,
-                durableControl = durableControl,
-                onPause = onPause,
-                onResume = onResume,
-                onCancel = onCancel,
-                onRetry = onRetry,
-            )
-        }
+        InstallBundleActionContent(
+            state = state,
+            onInstall = onInstall,
+            installEnabled = installEnabled,
+            modifier = Modifier.padding(AppTheme.spacing.spacing12),
+            durableControl = durableControl,
+            onPause = onPause,
+            onResume = onResume,
+            onCancel = onCancel,
+            onRetry = onRetry,
+        )
     }
 }
 
 @Composable
-private fun InstallBundleContainer(
-    modifier: Modifier,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    val spacing = LocalSpacing.current
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(spacing.m),
-        content = content,
-    )
-}
-
-@Composable
-private fun ColumnScope.InstallBundleSummaryContent(
+private fun InstallBundleSummaryContent(
     state: InstallBundleUiState,
     familyLabel: String?,
     modelDescription: String?,
@@ -185,8 +175,8 @@ private fun ColumnScope.InstallBundleSummaryContent(
     if (!modelDescription.isNullOrBlank()) {
         Text(
             text = modelDescription,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = AppTheme.typography.bodySmall,
+            color = AppTheme.colors.onSurfaceVariant,
         )
     }
 
@@ -205,7 +195,6 @@ private fun ColumnScope.InstallBundleSummaryContent(
         StatusMark(
             label = "Model downloaded",
             contentDescription = "Model downloaded",
-            tone = SignalTone.Positive,
             icon = Icons.Default.CheckCircle,
         )
     }
@@ -219,14 +208,13 @@ private fun ColumnScope.InstallBundleSummaryContent(
         StatusMark(
             label = "Self-contained",
             contentDescription = "Self-contained. No extra downloads needed.",
-            tone = SignalTone.Positive,
             icon = Icons.Default.CheckCircle,
         )
     }
 }
 
 @Composable
-private fun ColumnScope.InstallBundleActionContent(
+private fun InstallBundleActionContent(
     state: InstallBundleUiState,
     onInstall: () -> Unit,
     installEnabled: Boolean,
@@ -260,7 +248,7 @@ private fun ColumnScope.InstallBundleActionContent(
     }
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.s),
+        verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
     ) {
         Button(
             onClick = command?.second ?: onInstall,
@@ -270,16 +258,16 @@ private fun ColumnScope.InstallBundleActionContent(
             when {
                 command != null -> Text(command.first)
                 state.isReady -> {
-                    Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(AppTheme.dimensions.size18))
                     Text("  Ready to use")
                 }
                 state.isInstalling -> Text("Installing…")
                 state.totalNewDownloadBytes > 0L -> {
-                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(AppTheme.dimensions.size18))
                     Text("  Install  ·  ${formatBytes(state.totalNewDownloadBytes)}")
                 }
                 else -> {
-                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(AppTheme.dimensions.size18))
                     Text("  Install")
                 }
             }
@@ -299,8 +287,8 @@ private fun ColumnScope.InstallBundleActionContent(
         if (!installEnabled && !state.isReady && !state.isInstalling) {
             Text(
                 text = "Select the recommended assessed variant to continue.",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = AppTheme.typography.labelSmall,
+                color = AppTheme.colors.onSurfaceVariant,
             )
         }
 
@@ -321,16 +309,16 @@ private fun ColumnScope.InstallBundleActionContent(
                 if (state.currentDownloadLabel != null) {
                     Text(
                         text = state.currentDownloadLabel,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = AppTheme.typography.labelSmall,
+                        color = AppTheme.colors.onSurfaceVariant,
                         modifier = Modifier.weight(1f),
                     )
                 }
                 if (state.overallBytesTotal > 0L) {
                     Text(
                         text = "${formatBytes(state.overallBytesReceived)} / ${formatBytes(state.overallBytesTotal)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = AppTheme.typography.labelSmall,
+                        color = AppTheme.colors.onSurfaceVariant,
                     )
                 }
             }
@@ -343,7 +331,7 @@ private fun ComponentRow(
     component: SetupComponentUiState,
     modifier: Modifier = Modifier,
 ) {
-    val spacing = LocalSpacing.current
+    val spacing = AppTheme.spacing
     val motion = LocalAuroraMotionPolicy.current
     val reportedProgress = component.progress
         ?.takeIf { it >= 0f }
@@ -362,69 +350,67 @@ private fun ComponentRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = spacing.m),
-            horizontalArrangement = Arrangement.spacedBy(spacing.m),
+                .padding(vertical = spacing.spacing12),
+            horizontalArrangement = Arrangement.spacedBy(spacing.spacing12),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             when {
                 component.isDownloaded -> Icon(
                     Icons.Default.CheckCircle,
                     contentDescription = "Downloaded",
-                    modifier = Modifier.size(18.dp),
-                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(AppTheme.dimensions.size18),
+                    tint = AppTheme.colors.primary,
                 )
                 reportedProgress != null -> CircularProgressIndicator(
                     progress = { displayedProgress },
-                    modifier = Modifier.size(18.dp),
-                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(AppTheme.dimensions.size18),
+                    strokeWidth = AppTheme.spacing.spacing2,
                 )
                 else -> Icon(
                     Icons.Default.Circle,
                     contentDescription = "Not downloaded",
-                    modifier = Modifier.size(18.dp),
-                    tint = MaterialTheme.colorScheme.outlineVariant,
+                    modifier = Modifier.size(AppTheme.dimensions.size18),
+                    tint = AppTheme.colors.outlineVariant,
                 )
             }
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = component.role.displayLabel,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    style = AppTheme.typography.bodySmall,
+                    color = AppTheme.colors.onSurface,
                 )
                 Text(
                     text = component.filePath,
-                    style = AppTechnicalLabel,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = AppTheme.typography.technical12,
+                    color = AppTheme.colors.onSurfaceVariant,
                 )
                 FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(spacing.s),
-                    verticalArrangement = Arrangement.spacedBy(spacing.s),
+                    horizontalArrangement = Arrangement.spacedBy(spacing.spacing8),
+                    verticalArrangement = Arrangement.spacedBy(spacing.spacing8),
                 ) {
                     Text(
                         text = component.repoId.substringAfterLast('/'),
-                        style = AppTechnicalLabel,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = AppTheme.typography.technical12,
+                        color = AppTheme.colors.onSurfaceVariant,
                     )
                     component.sizeHint?.let { size ->
                         Text(
                             text = "· $size",
-                            style = AppTechnicalLabel,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = AppTheme.typography.technical12,
+                            color = AppTheme.colors.onSurfaceVariant,
                         )
                     }
                     if (component.sharedFrom != null) {
                         StatusMark(
                             label = "Already have it",
                             contentDescription = "Already downloaded with another model",
-                            tone = SignalTone.Positive,
                             icon = Icons.Default.CheckCircle,
                         )
                     } else if (component.required && !component.isDownloaded) {
                         StatusMark(
                             label = "Required",
                             contentDescription = "Required component",
-                            tone = SignalTone.Warning,
                             icon = Icons.Default.Circle,
                         )
                     }
@@ -432,15 +418,99 @@ private fun ComponentRow(
                 if (reportedProgress != null) {
                     LinearProgressIndicator(
                         progress = { displayedProgress },
-                        modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = AppTheme.dimensions.size3),
                     )
                 }
             }
         }
         HorizontalDivider(
-            modifier = Modifier.padding(start = 28.dp),
-            thickness = 1.dp,
-            color = MaterialTheme.auroraColors.divider,
+            modifier = Modifier.padding(start = AppTheme.dimensions.size28),
+            thickness = AppTheme.dimensions.size1,
+            color = AppTheme.auroraColors.divider,
         )
+    }
+}
+
+@Preview(name = "Install bundle - ready to install", widthDp = 412, heightDp = 720)
+@Composable
+private fun InstallBundleReadyToInstallPreview() {
+    InstallBundlePreviewContent(installing = false)
+}
+
+@Preview(name = "Install bundle - downloading", widthDp = 412, heightDp = 720)
+@Composable
+private fun InstallBundleDownloadingPreview() {
+    InstallBundlePreviewContent(installing = true)
+}
+
+@Preview(name = "Install bundle - large text", widthDp = 360, heightDp = 950, fontScale = 2f)
+@Composable
+private fun InstallBundleLargeTextPreview() {
+    InstallBundlePreviewContent(installing = false)
+}
+
+@Composable
+private fun InstallBundlePreviewContent(installing: Boolean) {
+    val selectedPath = "flux1-dev-Q4_K_M.gguf"
+    val state = InstallBundleUiState(
+        variants = listOf(
+            GgufFileUiState(
+                path = selectedPath,
+                filename = selectedPath,
+                sizeBytes = 7_516_192_768L,
+                isDownloaded = false,
+                progress = if (installing) 0.42f else null,
+            ),
+            GgufFileUiState(
+                path = "flux1-dev-Q5_K_M.gguf",
+                filename = "flux1-dev-Q5_K_M.gguf",
+                sizeBytes = 9_663_676_416L,
+                isDownloaded = false,
+                progress = null,
+            ),
+        ),
+        selectedVariantPath = selectedPath,
+        components = listOf(
+            SetupComponentUiState(
+                role = ComponentRole.VAE,
+                repoId = "sample/flux-components",
+                filePath = "ae.safetensors",
+                sizeHint = "335 MB",
+                isDownloaded = false,
+                progress = if (installing) 42f else null,
+                required = true,
+            ),
+            SetupComponentUiState(
+                role = ComponentRole.CLIP_L,
+                repoId = "sample/flux-components",
+                filePath = "clip_l.safetensors",
+                sizeHint = "246 MB",
+                isDownloaded = true,
+                progress = null,
+                required = true,
+                sharedFrom = "sample/another-model",
+            ),
+        ),
+        totalNewDownloadBytes = 7_867_305_984L,
+        isInstalling = installing,
+        isSelfContained = false,
+        overallProgress = if (installing) 0.42f else null,
+        overallBytesReceived = if (installing) 3_304_268_800L else 0L,
+        overallBytesTotal = 7_867_305_984L,
+        currentDownloadLabel = if (installing) selectedPath else null,
+    )
+    CaraMLTheme(ThemePreferences()) {
+        Surface {
+            InstallBundleCard(
+                modelId = "sample/flux-model",
+                state = state,
+                familyLabel = "FLUX.1",
+                modelDescription = "Image generation model with two required components.",
+                onVariantSelected = {},
+                onInstall = {},
+                modifier = Modifier.padding(AppTheme.spacing.spacing16),
+                recommendedVariantPath = selectedPath,
+            )
+        }
     }
 }

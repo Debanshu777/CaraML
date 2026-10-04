@@ -45,7 +45,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
-import com.debanshu777.caraml.core.theme.LocalSpacing
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.ui.components.CommandSurface
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
@@ -119,7 +119,7 @@ private fun ChatInputBarGeneratingPreview() {
                         contextLimit = stats.contextLimit,
                         modifier = Modifier.align(Alignment.CenterVertically)
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
+                    Spacer(modifier = Modifier.width(AppTheme.spacing.spacing4))
                 },
                 modifier = Modifier.fillMaxWidth()
             )
@@ -198,7 +198,7 @@ fun ChatInputBar(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(bottom = LocalSpacing.current.l),
+            .padding(bottom = AppTheme.spacing.spacing16),
     ) {
         CommandSurface(
             focused = isFocused,
@@ -206,7 +206,7 @@ fun ChatInputBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag("create-command"),
-            contentPadding = PaddingValues(0.dp),
+            contentPadding = PaddingValues(AppTheme.dimensions.size0),
         ) {
             Column {
                 TextField(
@@ -230,9 +230,9 @@ fun ChatInputBar(
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(
-                        start = LocalSpacing.current.l,
-                        end = LocalSpacing.current.xs,
-                        bottom = LocalSpacing.current.xs
+                        start = AppTheme.spacing.spacing16,
+                        end = AppTheme.spacing.spacing4,
+                        bottom = AppTheme.spacing.spacing4
                     ),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -243,7 +243,7 @@ fun ChatInputBar(
                     Row(
                         modifier = Modifier
                             .weight(1f)
-                            .heightIn(min = 48.dp)
+                            .heightIn(min = AppTheme.spacing.spacing48)
                             .clickable { showModelSheet = true }
                             .semantics {
                                 contentDescription = selectedModel?.modelId
@@ -258,8 +258,8 @@ fun ChatInputBar(
                         Text(
                             modifier = Modifier.weight(1f, fill = false),
                             text = selectedModel?.modelId?.substringAfterLast("/") ?: "Select model",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = AppTheme.typography.bodyBase,
+                            color = AppTheme.colors.onSurfaceVariant,
                             overflow = TextOverflow.Ellipsis,
                             textAlign = TextAlign.End,
                             maxLines = 1
@@ -267,8 +267,8 @@ fun ChatInputBar(
                         Icon(
                             imageVector = Icons.Default.ArrowDropDown,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(24.dp)
+                            tint = AppTheme.colors.onSurfaceVariant,
+                            modifier = Modifier.size(AppTheme.spacing.spacing24)
                         )
                     }
 
@@ -282,7 +282,7 @@ fun ChatInputBar(
                             }
                         },
                         modifier = Modifier
-                            .size(48.dp)
+                            .size(AppTheme.spacing.spacing48)
                             .semantics {
                                 contentDescription = if (isGenerating) {
                                     "Stop generation"

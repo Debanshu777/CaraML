@@ -69,7 +69,7 @@ import com.debanshu777.caraml.features.modelhub.presentation.details.components.
 import com.debanshu777.caraml.features.modelhub.presentation.details.components.RepositoryHeading
 import com.debanshu777.caraml.features.modelhub.presentation.details.components.formatHubTimestamp
 import com.debanshu777.caraml.features.modelhub.presentation.details.components.GgufFileAction
-import com.debanshu777.caraml.features.modelhub.presentation.details.components.GgufFileListItem
+import com.debanshu777.caraml.features.modelhub.presentation.details.components.ModelDetailsDownloadableListItem
 import com.debanshu777.caraml.features.modelhub.presentation.details.components.InstallBundleCard
 import com.debanshu777.caraml.features.modelhub.presentation.details.components.splitRepositoryId
 import com.debanshu777.caraml.features.modelhub.presentation.details.components.visibleModelTags
@@ -105,7 +105,7 @@ class ModelDetailsAuroraUiTest {
                                 .width(360.dp)
                                 .background(surface),
                         ) {
-                            GgufFileListItem(
+                            ModelDetailsDownloadableListItem(
                                 filename = "Qwen3.8-27B-Q4_K_M.gguf",
                                 sizeBytes = 902_823_936L,
                                 isDownloaded = false,
@@ -237,7 +237,7 @@ class ModelDetailsAuroraUiTest {
         var requested = ""
         setContent {
             MaterialTheme {
-                GgufFileListItem(
+                ModelDetailsDownloadableListItem(
                     filename = "weights/model-q4.gguf",
                     sizeBytes = 1_073_741_824L,
                     isDownloaded = false,
@@ -261,7 +261,7 @@ class ModelDetailsAuroraUiTest {
         setContent {
             MaterialTheme {
                 Column {
-                    GgufFileListItem(
+                    ModelDetailsDownloadableListItem(
                         filename = "idle.gguf",
                         sizeBytes = 1_024L,
                         isDownloaded = false,
@@ -269,7 +269,7 @@ class ModelDetailsAuroraUiTest {
                         isDownloading = false,
                         onDownloadClick = { requested = "idle.gguf" },
                     )
-                    GgufFileListItem(
+                    ModelDetailsDownloadableListItem(
                         filename = "active.gguf",
                         sizeBytes = 2_048L,
                         isDownloaded = false,
@@ -461,7 +461,7 @@ class ModelDetailsAuroraUiTest {
                         Box(Modifier.width(360.dp).height(180.dp)) {
                             Column(Modifier.verticalScroll(rememberScrollState())) {
                                 Spacer(Modifier.height(240.dp))
-                                GgufFileListItem(
+                                ModelDetailsDownloadableListItem(
                                     filename = "weights/model-q4.gguf",
                                     sizeBytes = 1_073_741_824L,
                                     isDownloaded = false,
@@ -704,6 +704,38 @@ class ModelDetailsAuroraUiTest {
         }
 
     @Test
+    fun runningFileProgressSharesTheActionBand() = runComposeUiTest {
+        setContent {
+            MaterialTheme {
+                GgufFileAction(
+                    filename = "running.gguf",
+                    isDownloaded = false,
+                    isDownloading = true,
+                    downloadEnabled = true,
+                    interactionLocked = false,
+                    durableState = DownloadArtifactState.RUNNING,
+                    onDownloadClick = {},
+                    onPause = {},
+                    onResume = {},
+                    onCancel = {},
+                    onRetry = {},
+                    progress = 42f,
+                )
+            }
+        }
+
+        val progressBounds = onNode(
+            SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo),
+        ).fetchSemanticsNode().boundsInRoot
+        val percentBounds = onNodeWithText("42%").fetchSemanticsNode().boundsInRoot
+        val pauseBounds = onNodeWithContentDescription("Pause download running.gguf")
+            .fetchSemanticsNode().boundsInRoot
+        assertTrue(progressBounds.right <= percentBounds.left)
+        assertTrue(percentBounds.right <= pauseBounds.left)
+        assertTrue(progressBounds.top < pauseBounds.bottom && progressBounds.bottom > pauseBounds.top)
+    }
+
+    @Test
     fun retryableInstallOffersIndependentRetryAndCancelActions() = runComposeUiTest {
         val fixture = realisticInstallFixture()
         val artifact = requireNotNull(fixture.installState.variants.first().artifact)
@@ -785,7 +817,7 @@ class ModelDetailsAuroraUiTest {
         mainClock.autoAdvance = false
         setContent {
             MaterialTheme {
-                GgufFileListItem(
+                ModelDetailsDownloadableListItem(
                     filename = "model-q4.gguf",
                     sizeBytes = 1_073_741_824L,
                     isDownloaded = false,
@@ -823,7 +855,7 @@ class ModelDetailsAuroraUiTest {
                 LocalAuroraMotionPolicy provides auroraMotionPolicy(durationScale = 0f),
             ) {
                 MaterialTheme {
-                    GgufFileListItem(
+                    ModelDetailsDownloadableListItem(
                         filename = "model-q4.gguf",
                         sizeBytes = 1_073_741_824L,
                         isDownloaded = false,

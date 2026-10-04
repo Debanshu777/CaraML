@@ -20,8 +20,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.debanshu777.caraml.core.theme.auroraColors
-import com.debanshu777.caraml.core.theme.prismShapes
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
 
 /**
@@ -34,13 +33,13 @@ fun GenerationModeSwitcher(
     onModeSelected: (GenerationMode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val auroraColors = MaterialTheme.auroraColors
+    val auroraColors = AppTheme.auroraColors
     Surface(
         modifier = modifier
             .fillMaxWidth()
             .selectableGroup(),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        shape = MaterialTheme.prismShapes.command,
+        color = AppTheme.colors.surfaceContainerLow,
+        shape = AppTheme.shapes.medium,
     ) {
         Row(modifier = Modifier.fillMaxWidth()) {
             GenerationMode.entries.forEach { item ->
@@ -49,8 +48,8 @@ fun GenerationModeSwitcher(
                 Surface(
                     modifier = Modifier
                         .weight(1f)
-                        .heightIn(min = 48.dp)
-                        .clip(MaterialTheme.prismShapes.control)
+                        .heightIn(min = AppTheme.spacing.spacing48)
+                        .clip(AppTheme.shapes.small)
                         .selectable(
                             selected = selected,
                             onClick = { onModeSelected(item) },
@@ -64,20 +63,20 @@ fun GenerationModeSwitcher(
                             }
                         },
                     color = if (selected) {
-                        auroraColors.focusPrimary.copy(alpha = 1f)
+                        auroraColors.focusPrimary.copy(alpha = AppTheme.effects.opaque)
                     } else {
-                        MaterialTheme.colorScheme.surfaceContainerLow
+                        AppTheme.colors.surfaceContainerLow
                     },
-                    shape = MaterialTheme.prismShapes.control,
+                    shape = AppTheme.shapes.small,
                 ) {
                     Text(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
+                        modifier = Modifier.padding(horizontal = AppTheme.spacing.spacing8, vertical = AppTheme.spacing.spacing12),
                         text = label,
-                        style = MaterialTheme.typography.labelLarge,
+                        style = AppTheme.typography.labelLarge,
                         color = if (selected) {
                             auroraColors.onFocusPrimary
                         } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
+                            AppTheme.colors.onSurfaceVariant
                         },
                         maxLines = 1,
                         textAlign = TextAlign.Center,

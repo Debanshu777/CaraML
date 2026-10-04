@@ -59,7 +59,7 @@ import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
 import com.debanshu777.caraml.features.modelhub.domain.BrowseVariantUiState
 import com.debanshu777.caraml.features.modelhub.domain.RecommendedModelUiState
 import com.debanshu777.caraml.features.modelhub.presentation.details.components.ModelDetailContent
-import com.debanshu777.caraml.features.modelhub.presentation.details.components.GgufFileListItem
+import com.debanshu777.caraml.features.modelhub.presentation.details.components.ModelDetailsDownloadableListItem
 import com.debanshu777.caraml.features.modelhub.presentation.search.GgufFileUiState
 import com.debanshu777.caraml.features.modelhub.presentation.search.InstallBundleUiState
 import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
@@ -274,17 +274,12 @@ class ModelDetailsWorkbenchUiTest {
 
     @Test
     fun compactGgufRowGivesFilenameThenSizeAndActionTheirOwnBands() = runComposeUiTest {
-        val pageColor = Color.Magenta
         val filename = "Qwen3.8-27B-Uncensored-HauhauCS-Aggressive-FastMTP-32K.gguf"
         setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f)) {
                 MaterialTheme {
-                    Box(
-                        Modifier
-                            .width(360.dp)
-                            .background(pageColor),
-                    ) {
-                        GgufFileListItem(
+                    Box(Modifier.width(360.dp)) {
+                        ModelDetailsDownloadableListItem(
                             filename = filename,
                             sizeBytes = 902_823_936L,
                             isDownloaded = false,
@@ -309,13 +304,6 @@ class ModelDetailsWorkbenchUiTest {
         val sizeBounds = onNodeWithText("861 MB", useUnmergedTree = true)
             .fetchSemanticsNode().boundsInRoot
         assertTrue(sizeBounds.top >= filenameBounds.bottom, "Size belongs below the filename")
-
-        val pixels = onNodeWithTag("compact-gguf-row").captureToImage().toPixelMap()
-        assertEquals(pageColor, pixels[1, 1], "Rounded file-row corner must reveal the page")
-        assertTrue(
-            pixels[pixels.width / 2, 1].colorDistance(pageColor) >= 0.05f,
-            "File row must own a rounded tonal surface",
-        )
     }
 
     @Test
@@ -325,7 +313,7 @@ class ModelDetailsWorkbenchUiTest {
             CompositionLocalProvider(LocalDensity provides Density(1f, fontScale = 2f)) {
                 MaterialTheme {
                     Box(Modifier.width(360.dp)) {
-                        GgufFileListItem(
+                        ModelDetailsDownloadableListItem(
                             filename = filename,
                             sizeBytes = 902_823_936L,
                             isDownloaded = false,

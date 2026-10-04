@@ -9,7 +9,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import com.debanshu777.caraml.core.theme.prism
+import com.debanshu777.caraml.core.theme.AppTheme
 
 @Composable
 fun CaraMLSectionHeader(
@@ -26,14 +26,14 @@ fun CaraMLSectionHeader(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.prism.sectionTitle,
-                color = MaterialTheme.colorScheme.onSurface,
+                style = AppTheme.typography.heading16,
+                color = AppTheme.colors.onSurface,
             )
             supportingText?.let {
                 Text(
                     text = it,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = AppTheme.typography.bodyBase,
+                    color = AppTheme.colors.onSurfaceVariant,
                 )
             }
         }

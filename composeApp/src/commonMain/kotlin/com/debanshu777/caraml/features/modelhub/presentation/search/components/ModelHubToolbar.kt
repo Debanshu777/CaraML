@@ -44,10 +44,8 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
-import com.debanshu777.caraml.core.theme.LocalSpacing
-import com.debanshu777.caraml.core.theme.auroraColors
-import com.debanshu777.caraml.core.theme.prismShapes
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelOrdering
 import com.debanshu777.huggingfacemanager.model.ModelSort
@@ -70,15 +68,15 @@ fun ModelHubToolbar(
     onFiltersApplied: () -> Unit = {},
     onParameterFiltersApplied: ((ParameterRange, ParameterRange) -> Unit)? = null,
 ) {
-    val spacing = LocalSpacing.current
+    val spacing = AppTheme.spacing
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
             .testTag("model-toolbar"),
     ) {
-        val compact = maxWidth < 600.dp
+        val compact = maxWidth < AppTheme.dimensions.size600
         if (compact) {
-            Column(verticalArrangement = Arrangement.spacedBy(spacing.s)) {
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.spacing8)) {
                 ModelKindControls(
                     browseMode = browseMode,
                     onBrowseModeChange = onBrowseModeChange,
@@ -88,7 +86,7 @@ fun ModelHubToolbar(
                 if (showSortFilters) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(spacing.s),
+                        horizontalArrangement = Arrangement.spacedBy(spacing.spacing8),
                     ) {
                         ModelSortAndFilterControls(
                             ordering = ordering,
@@ -109,7 +107,7 @@ fun ModelHubToolbar(
         } else {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(spacing.s),
+                horizontalArrangement = Arrangement.spacedBy(spacing.spacing8),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 ModelKindControls(
@@ -142,12 +140,12 @@ private fun ModelKindControls(
     modifier: Modifier = Modifier,
     equalWidth: Boolean = false,
 ) {
-    val colors = MaterialTheme.auroraColors
+    val colors = AppTheme.auroraColors
     Row(
         modifier = modifier
             .selectableGroup()
             .testTag("model-kind-group"),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
     ) {
         listOf(
             ModelHubBrowseMode.LanguageModels to "Text",
@@ -165,7 +163,7 @@ private fun ModelKindControls(
                             imageVector = Icons.Default.Check,
                             contentDescription = null,
                             modifier = Modifier
-                                .size(18.dp)
+                                .size(AppTheme.dimensions.size18)
                                 .testTag("Selected model kind $label"),
                         )
                     }
@@ -174,12 +172,12 @@ private fun ModelKindControls(
                 },
                 modifier = Modifier
                     .then(if (equalWidth) Modifier.weight(1f) else Modifier)
-                    .heightIn(min = 48.dp)
+                    .heightIn(min = AppTheme.spacing.spacing48)
                     .semantics {
                         this.selected = selected
                         role = Role.RadioButton
                     },
-                shape = MaterialTheme.prismShapes.control,
+                shape = AppTheme.shapes.small,
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = colors.focusPrimary,
                     selectedLabelColor = colors.onFocusPrimary,
@@ -219,25 +217,25 @@ internal fun RowScope.ModelSortAndFilterControls(
         onClick = { orderingExpanded = true },
         modifier = Modifier
             .then(if (expand) Modifier.weight(1f) else Modifier)
-            .heightIn(min = 48.dp)
+            .heightIn(min = AppTheme.spacing.spacing48)
             .semantics {
                 contentDescription = "Sort models"
                 stateDescription = orderingLabel
             },
-        shape = MaterialTheme.prismShapes.control,
+        shape = AppTheme.shapes.small,
     ) {
         Text("Sort")
         Icon(
             imageVector = Icons.Default.ArrowDropDown,
             contentDescription = null,
-            modifier = Modifier.size(18.dp),
+            modifier = Modifier.size(AppTheme.dimensions.size18),
         )
     }
     OutlinedButton(
         onClick = { filtersExpanded = true },
         modifier = Modifier
             .then(if (expand) Modifier.weight(1f) else Modifier)
-            .heightIn(min = 48.dp)
+            .heightIn(min = AppTheme.spacing.spacing48)
             .semantics {
                 contentDescription = if (activeFilterCount == 0) {
                     "Filters"
@@ -246,12 +244,12 @@ internal fun RowScope.ModelSortAndFilterControls(
                 }
                 stateDescription = "$activeFilterCount active filters"
             },
-        shape = MaterialTheme.prismShapes.control,
+        shape = AppTheme.shapes.small,
     ) {
         Icon(
             imageVector = Icons.Default.Tune,
             contentDescription = null,
-            modifier = Modifier.size(18.dp),
+            modifier = Modifier.size(AppTheme.dimensions.size18),
         )
         Text(if (activeFilterCount == 0) "Filters" else "Filters ($activeFilterCount)")
     }
@@ -294,17 +292,17 @@ private fun OrderingSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        shape = MaterialTheme.prismShapes.modal,
-        containerColor = AuroraSurfaceLevel.Floating.containerColor(MaterialTheme.colorScheme),
+        shape = AppTheme.shapes.extraLarge,
+        containerColor = AuroraSurfaceLevel.Floating.containerColor(AppTheme.colors),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+                .padding(horizontal = AppTheme.spacing.spacing16)
+                .padding(bottom = AppTheme.spacing.spacing32),
+            verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing4),
         ) {
-            Text("Sort models", style = MaterialTheme.typography.titleLarge)
+            Text("Sort models", style = AppTheme.typography.headingBase)
             SelectionRow(
                 label = "Best fit among loaded models",
                 selected = selected is ModelOrdering.Personalized,
@@ -313,7 +311,7 @@ private fun OrderingSheet(
                     onDismiss()
                 },
             )
-            Text("Hugging Face order", style = MaterialTheme.typography.titleMedium)
+            Text("Hugging Face order", style = AppTheme.typography.headingSmall)
             HUB_SORT_OPTIONS.forEach { option ->
                 SelectionRow(
                     label = option.displayName,
@@ -345,18 +343,18 @@ private fun ModelFilterSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        shape = MaterialTheme.prismShapes.modal,
-        containerColor = AuroraSurfaceLevel.Floating.containerColor(MaterialTheme.colorScheme),
+        shape = AppTheme.shapes.extraLarge,
+        containerColor = AuroraSurfaceLevel.Floating.containerColor(AppTheme.colors),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+                .padding(horizontal = AppTheme.spacing.spacing16)
+                .padding(bottom = AppTheme.spacing.spacing32),
+            verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
         ) {
-            Text("Filters", style = MaterialTheme.typography.titleLarge)
+            Text("Filters", style = AppTheme.typography.headingBase)
             FilterSelectionGroup(
                 title = "Minimum parameters",
                 options = ParameterRange.entries,
@@ -398,7 +396,7 @@ private fun <T> FilterSelectionGroup(
     label: (T) -> String,
     onSelect: (T) -> Unit,
 ) {
-    Text(title, style = MaterialTheme.typography.titleMedium)
+    Text(title, style = AppTheme.typography.headingSmall)
     options.forEach { option ->
         SelectionRow(
             label = label(option),
@@ -417,21 +415,21 @@ private fun SelectionRow(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 48.dp)
+            .heightIn(min = AppTheme.spacing.spacing48)
             .selectable(
                 selected = selected,
                 role = Role.RadioButton,
                 onClick = onClick,
             ),
-        shape = MaterialTheme.prismShapes.control,
+        shape = AppTheme.shapes.small,
         color = if (selected) {
-            MaterialTheme.colorScheme.secondaryContainer
+            AppTheme.colors.secondaryContainer
         } else {
-            MaterialTheme.colorScheme.surfaceContainerHigh
+            AppTheme.colors.surfaceContainerHigh
         },
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp),
+            modifier = Modifier.padding(horizontal = AppTheme.spacing.spacing16),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(label, modifier = Modifier.weight(1f))

@@ -18,11 +18,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.recommendation.RecommendationProfile
 import com.debanshu777.caraml.core.recommendation.CalibrationDeferralReason
 import com.debanshu777.caraml.core.recommendation.CalibrationRunResult
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
-import com.debanshu777.caraml.core.theme.prismShapes
 import com.debanshu777.caraml.features.modelhub.presentation.search.QuickCalibrationUiState
 import com.debanshu777.caraml.features.settings.presentation.RecommendationProfileSection
 
@@ -40,8 +40,8 @@ fun RecommendationProfileDialog(
         onDismissRequest = {
             if (!submitting) onDismissWithBalanced()
         },
-        shape = MaterialTheme.prismShapes.modal,
-        containerColor = AuroraSurfaceLevel.Floating.containerColor(MaterialTheme.colorScheme),
+        shape = AppTheme.shapes.extraLarge,
+        containerColor = AuroraSurfaceLevel.Floating.containerColor(AppTheme.colors),
         title = { Text("Personalize model recommendations") },
         text = {
             Column(
@@ -63,8 +63,8 @@ fun RecommendationProfileDialog(
                 if (errorMessage != null) {
                     Text(
                         text = errorMessage,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
+                        color = AppTheme.colors.error,
+                        style = AppTheme.typography.bodySmall,
                     )
                 }
             }
@@ -73,7 +73,7 @@ fun RecommendationProfileDialog(
             Button(
                 onClick = { onContinue(draft) },
                 enabled = !submitting,
-                modifier = Modifier.heightIn(min = 48.dp),
+                modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48),
             ) {
                 Text("Continue")
             }
@@ -82,7 +82,7 @@ fun RecommendationProfileDialog(
             TextButton(
                 onClick = onDismissWithBalanced,
                 enabled = !submitting,
-                modifier = Modifier.heightIn(min = 48.dp),
+                modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48),
             ) {
                 Text("Use Balanced")
             }
@@ -101,8 +101,8 @@ fun QuickCalibrationDialog(
     val result = state.result
     AlertDialog(
         onDismissRequest = { if (!state.running) onSkip() },
-        shape = MaterialTheme.prismShapes.modal,
-        containerColor = AuroraSurfaceLevel.Floating.containerColor(MaterialTheme.colorScheme),
+        shape = AppTheme.shapes.extraLarge,
+        containerColor = AuroraSurfaceLevel.Floating.containerColor(AppTheme.colors),
         title = { Text(if (state.running) "Optimizing for this device" else "Improve recommendations") },
         text = {
             Column {
@@ -131,7 +131,7 @@ fun QuickCalibrationDialog(
                     onRun
                 },
                 enabled = !state.running && result != CalibrationRunResult.Quarantined,
-                modifier = Modifier.heightIn(min = 48.dp),
+                modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48),
             ) {
                 Text(
                     when {
@@ -145,7 +145,7 @@ fun QuickCalibrationDialog(
         dismissButton = {
             TextButton(
                 onClick = if (state.running) onCancel else onSkip,
-                modifier = Modifier.heightIn(min = 48.dp),
+                modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48),
             ) {
                 Text(
                     when {

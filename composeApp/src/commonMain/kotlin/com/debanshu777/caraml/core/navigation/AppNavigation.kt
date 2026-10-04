@@ -21,6 +21,7 @@ import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.metadata
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.features.chat.presentation.ChatScreen
 import com.debanshu777.caraml.features.chat.presentation.ChatViewModel
 import com.debanshu777.caraml.features.modelhub.presentation.details.DetailsScreen
@@ -216,7 +217,7 @@ fun NavigationHost(
     backStack: NavBackStack<NavKey>,
 ) {
     val motionPolicy = LocalAuroraMotionPolicy.current
-    val detailOffsetPx = with(LocalDensity.current) { 16.dp.roundToPx() }
+    val detailOffsetPx = with(LocalDensity.current) { AppTheme.spacing.spacing16.roundToPx() }
     val chatViewModel: ChatViewModel = koinViewModel()
     NavigationTransitionDisplay(
         modifier = modifier,

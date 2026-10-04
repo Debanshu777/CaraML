@@ -77,7 +77,7 @@ private fun Hct.rotate(degrees: Double, alpha: Float): Color = Color(
 
 internal val LocalAuroraColors = staticCompositionLocalOf<AuroraColors?> { null }
 
-val MaterialTheme.auroraColors: AuroraColors
+internal val currentAuroraColors: AuroraColors
     @Composable
     @ReadOnlyComposable
-    get() = LocalAuroraColors.current ?: colorScheme.toAuroraColors()
+    get() = LocalAuroraColors.current ?: MaterialTheme.colorScheme.toAuroraColors()

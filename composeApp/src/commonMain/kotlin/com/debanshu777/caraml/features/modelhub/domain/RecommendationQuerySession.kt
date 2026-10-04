@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.features.modelhub.domain
 
+import androidx.compose.runtime.Stable
 import com.debanshu777.caraml.core.platform.DeviceSnapshot
 import com.debanshu777.caraml.core.recommendation.ModelAssessment
 import com.debanshu777.caraml.core.recommendation.BrowseFitEstimate
@@ -37,6 +38,7 @@ enum class RecommendationOrdering {
     PERSONALIZED,
 }
 
+@Stable
 data class RecommendedModelUiState(
     val sourceModel: ListModelsResponse.Model,
     val repositoryId: String?,

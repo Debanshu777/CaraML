@@ -25,6 +25,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
 import com.debanshu777.caraml.core.ui.components.CaraMLEmptyState
 import com.debanshu777.caraml.core.ui.components.CaraMLPane
@@ -127,8 +128,8 @@ fun ModelLoadingScreen(
         level = AuroraSurfaceLevel.Pane,
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(AppTheme.spacing.spacing16),
+            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             CircularProgressIndicator()
@@ -160,7 +161,7 @@ fun ModelErrorScreen(
         Column(
             modifier = stateModifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
         ) {
             CaraMLEmptyState(
                 icon = Icons.Default.Error,
@@ -169,13 +170,13 @@ fun ModelErrorScreen(
             )
             Button(
                 onClick = onRetryCurrentModelClick,
-                modifier = Modifier.heightIn(min = 48.dp),
+                modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48),
             ) {
                 Text("Retry current model")
             }
             OutlinedButton(
                 onClick = onTryAnotherModelClick,
-                modifier = Modifier.heightIn(min = 48.dp),
+                modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48),
             ) {
                 Text("Try Another Model")
             }

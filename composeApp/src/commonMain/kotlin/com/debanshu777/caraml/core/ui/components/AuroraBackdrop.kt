@@ -17,15 +17,15 @@ import androidx.compose.ui.graphics.ImageShader
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.TileMode
-import com.debanshu777.caraml.core.theme.auroraColors
 import androidx.compose.material3.MaterialTheme
+import com.debanshu777.caraml.core.theme.AppTheme
 
 @Composable
 fun AuroraBackdrop(
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit,
 ) {
-    val colors = MaterialTheme.auroraColors
+    val colors = AppTheme.auroraColors
     val grain = rememberAuroraGrainBrush(colors.grainTint)
     Box(
         modifier = modifier
@@ -71,7 +71,7 @@ fun AuroraBackdrop(
                     radius = size.maxDimension * 0.62f,
                 )
                 val grainAlpha = colors.grainTint.alpha * AmbientGrainAlphaScale
-                val grainFilter = ColorFilter.tint(colors.grainTint.copy(alpha = 1f))
+                val grainFilter = ColorFilter.tint(colors.grainTint.copy(alpha = AppTheme.effects.opaque))
                 onDrawBehind {
                     drawRect(color = colors.canvas)
                     drawRect(brush = primaryWash)
@@ -106,7 +106,7 @@ private fun createGrainBrush(): Brush {
     for (y in 0 until GrainTileSize) {
         for (x in 0 until GrainTileSize) {
             val strength = 0.25f + deterministicGrain(x, y) * 0.75f
-            paint.color = Color.White.copy(alpha = strength)
+            paint.color = AppTheme.effects.grainBase.copy(alpha = strength)
             canvas.drawRect(
                 left = x.toFloat(),
                 top = y.toFloat(),

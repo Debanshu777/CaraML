@@ -31,8 +31,8 @@ class CaraMLThemeResolvedModeTest {
                         paletteStyle = ThemePaletteStyle.EXPRESSIVE,
                     ),
                 ) {
-                    val primary = MaterialTheme.colorScheme.primary
-                    val onPrimary = MaterialTheme.colorScheme.onPrimary
+                    val primary = AppTheme.colors.primary
+                    val onPrimary = AppTheme.colors.onPrimary
                     SideEffect {
                         resolvedPrimary = primary
                         resolvedOnPrimary = onPrimary
