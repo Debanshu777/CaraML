@@ -8,6 +8,9 @@ enum class MessageRole {
     System
 }
 
+/** A terminal generation outcome; null means no terminal outcome has been recorded. */
+enum class MessageDelivery { Complete, Stopped, Error }
+
 data class ChatMessage(
     val id: String = generateId(),
     val role: MessageRole,
@@ -21,6 +24,7 @@ data class ChatMessage(
     /** Preview/test compatibility only; generated media is persisted to [videoFramePaths]. */
     val videoFrames: List<ByteArray>? = null,
     val metadata: Map<String, String>? = null,
+    val delivery: MessageDelivery? = null,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -36,6 +40,7 @@ data class ChatMessage(
         if (!bytesEqual(imageBytes, other.imageBytes)) return false
         if (videoFrames?.size != other.videoFrames?.size) return false
         if (metadata != other.metadata) return false
+        if (delivery != other.delivery) return false
         return true
     }
 
@@ -50,6 +55,7 @@ data class ChatMessage(
         result = 31 * result + (imageBytes?.size ?: 0)
         result = 31 * result + (videoFrames?.size ?: 0)
         result = 31 * result + (metadata?.hashCode() ?: 0)
+        result = 31 * result + (delivery?.hashCode() ?: 0)
         return result
     }
 }

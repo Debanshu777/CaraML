@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -67,14 +68,18 @@ fun ModelHubFilterButton(
         ordering != ModelOrdering.Server(ModelSort.TRENDING)
     IconButton(
         onClick = { visible = true },
-        modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48).testTag("model-sort-filter-button").semantics {
+        modifier = Modifier
+            .heightIn(min = AppTheme.spacing.spacing48)
+            .clip(AppTheme.shapes.medium)
+            .background(if (active) AppTheme.colors.primaryContainer else AppTheme.colors.surfaceContainer)
+            .testTag("model-sort-filter-button").semantics {
             contentDescription = if (active) "Sort and filter models, active" else "Sort and filter models"
         },
     ) {
         Icon(
             Icons.Default.Tune,
             contentDescription = null,
-            tint = if (active) AppTheme.colors.primary else AppTheme.colors.onSurface,
+            tint = if (active) AppTheme.colors.onPrimaryContainer else AppTheme.colors.onSurface,
         )
     }
     if (!visible) return

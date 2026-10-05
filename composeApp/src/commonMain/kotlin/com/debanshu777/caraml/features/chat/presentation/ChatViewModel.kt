@@ -18,6 +18,7 @@ import com.debanshu777.caraml.core.recommendation.RunPlan
 import com.debanshu777.caraml.features.chat.data.ChatMessage
 import com.debanshu777.caraml.features.chat.data.LiveGenerationStats
 import com.debanshu777.caraml.features.chat.data.MessageRole
+import com.debanshu777.caraml.features.chat.data.MessageDelivery
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
 import com.debanshu777.caraml.features.chat.domain.filterForMode
 import com.debanshu777.caraml.features.chat.domain.matchesGenerationMode
@@ -345,6 +346,7 @@ class ChatViewModel(
 
     fun setGenerationMode(mode: GenerationMode) {
         if (_generationMode.value == mode) return
+        _streamingState.value.streamingMessageId?.let(::recordStoppedMessage)
         invalidatePendingLoadAction()
         modelLoadJob?.cancel()
         signalGenerationCancellation()
@@ -432,6 +434,7 @@ class ChatViewModel(
         val mode = _generationMode.value
         if (!model.matchesGenerationMode(mode) || _selectedModel.value != model) return
 
+        _streamingState.value.streamingMessageId?.let(::recordStoppedMessage)
         invalidatePendingLoadAction()
         val previousJob = modelLoadJob
         modelLoadJob?.cancel()
@@ -847,7 +850,7 @@ class ChatViewModel(
                     return@launch
                 }
                 val result = generateResponse(userMessage.text) { thinking, output, stats ->
-                    updateStreamingState(thinking, output, stats)
+                    updateStreamingState(assistantMessage.id, thinking, output, stats)
                 }
                 finalizeMessage(assistantMessage.id, result)
                 if (result.stopReason == StopReason.CONTEXT_FULL) {
@@ -865,6 +868,7 @@ class ChatViewModel(
         // Completion also runs when cancellation happens before the body starts.
         job.invokeOnCompletion {
             if (generationJob === job && modelLoadGeneration.load() == loadGeneration) {
+                recordStoppedMessage(assistantMessage.id)
                 updateReadyCore { it.copy(isGenerating = false) }
                 _streamingState.value = StreamingState()
             }
@@ -993,20 +997,28 @@ class ChatViewModel(
     }
 
     private fun updateStreamingState(
+        assistantMessageId: String,
         thinkingText: String,
         outputText: String,
         liveStats: LiveGenerationStats,
     ) {
-        _streamingState.value = StreamingState(
-            streamingText = outputText,
-            streamingThinkingText = thinkingText,
-            streamingMessageId = _streamingState.value.streamingMessageId,
-            liveStats = liveStats,
-        )
+        _streamingState.update { current ->
+            if (current.streamingMessageId != assistantMessageId) current else current.copy(
+                streamingText = outputText,
+                streamingThinkingText = thinkingText,
+                liveStats = liveStats,
+            )
+        }
     }
 
     private fun finalizeMessage(assistantMessageId: String, result: GenerationResult) {
         val state = _streamingState.value
+        if (state.streamingMessageId != assistantMessageId) return
+        val delivery = when (result.stopReason) {
+            StopReason.CANCELLED -> MessageDelivery.Stopped
+            StopReason.ERROR -> MessageDelivery.Error
+            else -> MessageDelivery.Complete
+        }
         val finalText = state.streamingText
         val finalThinking = state.streamingThinkingText.takeIf { it.isNotBlank() }
         _messages.update { list ->
@@ -1017,6 +1029,7 @@ class ChatViewModel(
                     text = finalText,
                     thinking = finalThinking,
                     inferenceMetrics = result.metrics,
+                    delivery = delivery,
                 )
             }
             messages.toImmutableList()
@@ -1024,11 +1037,12 @@ class ChatViewModel(
         _streamingState.value = StreamingState()
     }
 
-    private fun finalizeMediaMessage(
+    private suspend fun finalizeMediaMessage(
         assistantMessageId: String,
         imagePath: String? = null,
         videoFramePaths: List<String>? = null,
-    ) {
+    ) = withContext(Dispatchers.Main.immediate) {
+        if (_streamingState.value.streamingMessageId != assistantMessageId) return@withContext
         _messages.update { list ->
             val messages = list.toMutableList()
             val idx = messages.indexOfLast { it.id == assistantMessageId }
@@ -1037,6 +1051,7 @@ class ChatViewModel(
                     text = "",
                     imagePath = imagePath,
                     videoFramePaths = videoFramePaths,
+                    delivery = MessageDelivery.Complete,
                 )
             }
             messages.toImmutableList()
@@ -1045,22 +1060,45 @@ class ChatViewModel(
         _streamingState.value = StreamingState()
     }
 
-    private fun finalizeWithError(
+    private suspend fun finalizeWithError(
         assistantMessageId: String,
         message: String = "Something went wrong. Please try again.",
-    ) {
+    ) = withContext(Dispatchers.Main.immediate) {
+        val stream = _streamingState.value
+        if (stream.streamingMessageId != assistantMessageId) return@withContext
         _messages.update { list ->
             val messages = list.toMutableList()
             val idx = messages.indexOfLast { it.id == assistantMessageId }
             if (idx >= 0) {
                 messages[idx] = messages[idx].copy(
-                    text = message,
+                    text = stream.streamingText.takeIf(String::isNotBlank) ?: message,
+                    thinking = stream.streamingThinkingText.takeIf(String::isNotBlank),
+                    delivery = MessageDelivery.Error,
                 )
             }
             messages.toImmutableList()
         }
         updateReadyCore { it.copy(isGenerating = false) }
         _streamingState.value = StreamingState()
+    }
+
+    private fun recordStoppedMessage(assistantMessageId: String) {
+        val stream = _streamingState.value
+        if (stream.streamingMessageId != assistantMessageId) return
+        _messages.update { messages ->
+            messages.map { message ->
+                if (message.id == assistantMessageId && message.delivery == null) {
+                    message.copy(
+                        text = stream.streamingText,
+                        thinking = stream.streamingThinkingText.takeIf(String::isNotBlank),
+                        delivery = MessageDelivery.Stopped,
+                    )
+                } else {
+                    message
+                }
+            }.toImmutableList()
+        }
+        _streamingState.compareAndSet(stream, StreamingState())
     }
 
     private suspend fun handleContextReset(messages: List<ChatMessage>): ContextResetResult {
@@ -1073,6 +1111,7 @@ class ChatViewModel(
     }
 
     fun cancelGeneration() {
+        _streamingState.value.streamingMessageId?.let(::recordStoppedMessage)
         signalGenerationCancellation()
         generationJob?.cancel()
         // Text releases its reservation only after its cancellation cleanup finishes.

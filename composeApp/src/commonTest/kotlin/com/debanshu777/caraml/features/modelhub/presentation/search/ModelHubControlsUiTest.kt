@@ -393,7 +393,8 @@ class ModelHubControlsUiTest {
                 )
             }
         }
-        onNodeWithText("Connection lost").assertIsDisplayed()
+        onNodeWithText("Couldn't load more").assertIsDisplayed()
+        onNodeWithText("Your loaded models are still here. Connection lost").assertIsDisplayed()
         onNodeWithText("Retry load more").performClick()
         runOnIdle { assertEquals(1, retries) }
     }

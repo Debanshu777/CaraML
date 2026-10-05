@@ -1,6 +1,8 @@
 package com.debanshu777.caraml.core.drawer
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
@@ -31,14 +33,13 @@ fun DrawerItemView(
     modifier: Modifier = Modifier,
     showLabel: Boolean = true,
 ) {
-    val colors = AppTheme.auroraColors
     Row(
         modifier = modifier
             .fillMaxWidth()
             .height(IntrinsicSize.Min)
-            .heightIn(min = AppTheme.spacing.spacing48)
-            .clip(AppTheme.shapes.small)
-            .background(if (selected) colors.selectedSurface else androidx.compose.ui.graphics.Color.Transparent)
+            .heightIn(min = 58.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(if (selected) AppTheme.colors.primary else androidx.compose.ui.graphics.Color.Transparent)
             .selectable(
                 selected = selected,
                 role = Role.Tab,
@@ -59,8 +60,9 @@ fun DrawerItemView(
             Icon(
                 imageVector = item.icon,
                 contentDescription = null,
+                modifier = Modifier.size(21.dp),
                 tint = if (selected) {
-                    AppTheme.colors.primary
+                    AppTheme.colors.onPrimary
                 } else {
                     AppTheme.colors.onSurfaceVariant
                 },
@@ -70,7 +72,7 @@ fun DrawerItemView(
                     text = item.title,
                     style = AppTheme.typography.bodyLarge,
                     color = if (selected) {
-                        AppTheme.colors.onSurface
+                        AppTheme.colors.onPrimary
                     } else {
                         AppTheme.colors.onSurfaceVariant
                     },

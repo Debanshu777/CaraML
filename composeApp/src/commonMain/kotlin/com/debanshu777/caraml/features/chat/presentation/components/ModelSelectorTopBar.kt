@@ -3,6 +3,8 @@ package com.debanshu777.caraml.features.chat.presentation.components
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -57,7 +59,7 @@ fun ModelSelectorTopBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = AppTheme.spacing.spacing64)
+                .heightIn(min = AppTheme.spacing.spacing48)
                 .padding(vertical = AppTheme.spacing.spacing4),
             horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing12),
             verticalAlignment = Alignment.CenterVertically,
@@ -67,6 +69,8 @@ fun ModelSelectorTopBar(
                     onClick = onMenuClick,
                     modifier = Modifier
                         .size(AppTheme.spacing.spacing48)
+                        .clip(AppTheme.shapes.medium)
+                        .background(AppTheme.colors.surfaceContainerHigh)
                         .semantics { contentDescription = "Open navigation menu" },
                 ) {
                     Icon(
@@ -76,7 +80,7 @@ fun ModelSelectorTopBar(
                     )
                 }
             }
-            if (!useCompactLargeTextLayout) {
+            if (generationMode == null && !useCompactLargeTextLayout) {
                 QuietHeaderTitle(title)
             }
             if (generationMode != null && onGenerationModeSelected != null) {

@@ -13,6 +13,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.debanshu777.caraml.core.download.DownloadArtifactRequest
 import com.debanshu777.caraml.core.download.DownloadArtifactSnapshot
@@ -32,7 +33,7 @@ import kotlin.test.assertEquals
 
 class ModelDownloadQueueUiTest {
     @Test
-    fun activeQueueSummarySitsBetweenProfileAndTabsAndOpensQueue() = runComposeUiTest {
+    fun activeQueueAppearsInlineBelowFiltersAndOpensQueue() = runComposeUiTest {
         val (batch, _) = queueSnapshot(DownloadBatchState.RUNNING, DownloadArtifactState.RUNNING)
         var opens = 0
         setContent {
@@ -42,8 +43,12 @@ class ModelDownloadQueueUiTest {
                         selectedTabIndex = 0,
                         onTabSelected = {},
                         sharedContext = { Text("Device profile") },
-                        downloadQueueEntry = { ModelDownloadQueueEntry(listOf(batch)) { opens++ } },
-                        discoverContent = { Text("Discover content") },
+                        discoverContent = {
+                            ModelHubTabLayout(context = {}, toolbar = {}, results = {}, summary = {
+                                Text("Filters")
+                                ModelDownloadQueueEntry(listOf(batch), onClick = { opens++ })
+                            })
+                        },
                         libraryContent = {},
                     )
                 }
@@ -52,10 +57,12 @@ class ModelDownloadQueueUiTest {
         val profile = onNodeWithText("Device profile").fetchSemanticsNode().boundsInRoot
         val queue = onNodeWithTag("model-download-queue-entry").fetchSemanticsNode().boundsInRoot
         val tabs = onNodeWithTag("model-tabs").fetchSemanticsNode().boundsInRoot
-        kotlin.test.assertTrue(profile.bottom <= queue.top)
-        kotlin.test.assertTrue(queue.bottom <= tabs.top)
-        onNodeWithText("1 download active").assertIsDisplayed()
-        onNodeWithTag("model-download-queue-entry").performClick()
+        val filters = onNodeWithText("Filters").fetchSemanticsNode().boundsInRoot
+        kotlin.test.assertTrue(profile.bottom <= tabs.top)
+        kotlin.test.assertTrue(tabs.bottom <= filters.top)
+        kotlin.test.assertTrue(filters.bottom <= queue.top)
+        onNodeWithText("Downloading").assertIsDisplayed()
+        onNodeWithText("Download details").performScrollTo().performClick()
         runOnIdle { assertEquals(1, opens) }
     }
 

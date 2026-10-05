@@ -82,6 +82,7 @@ fun ChatMessageList(
     loadMedia: suspend (String) -> ByteArray? = { null },
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(),
+    footer: (@Composable () -> Unit)? = null,
 ) {
     val initialMessageIds = remember { messages.mapTo(mutableSetOf()) { it.id } }
     val completedEntryIds = remember { mutableStateMapOf<String, Boolean>() }
@@ -161,6 +162,7 @@ fun ChatMessageList(
                     }
                 }
             }
+            if (footer != null) item(key = "reply-recovery-actions") { footer() }
     }
 }
 

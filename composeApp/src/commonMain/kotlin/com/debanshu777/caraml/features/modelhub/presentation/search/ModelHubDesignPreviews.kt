@@ -36,11 +36,33 @@ import com.debanshu777.huggingfacemanager.model.ModelSort
 import com.debanshu777.huggingfacemanager.model.ParameterRange
 import com.debanshu777.huggingfacemanager.model.ListModelsResponse
 import androidx.compose.ui.tooling.preview.Preview
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubFilterButton
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubInlineFilters
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubDeviceInfo
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelDownloadQueueEntry
 
 @Preview(name = "Download queue - unknown progress 200%", widthDp = 360, heightDp = 480, fontScale = 2f)
 @Composable
 internal fun ModelDownloadQueueLargeTextPreview() {
+    ModelDownloadQueueStatePreview(DownloadArtifactState.RUNNING, DownloadBatchState.RUNNING)
+}
+
+@Preview(name = "Download queue - retry", widthDp = 320, heightDp = 400)
+@Composable
+private fun ModelDownloadQueueErrorPreview() {
+    ModelDownloadQueueStatePreview(DownloadArtifactState.FAILED_RETRYABLE, DownloadBatchState.FAILED_RETRYABLE)
+}
+
+@Preview(name = "Download queue - paused", widthDp = 320, heightDp = 400)
+@Composable
+private fun ModelDownloadQueuePausedPreview() {
+    ModelDownloadQueueStatePreview(DownloadArtifactState.PAUSED, DownloadBatchState.PAUSED)
+}
+
+@Composable
+private fun ModelDownloadQueueStatePreview(
+    artifactState: DownloadArtifactState,
+    batchState: DownloadBatchState,
+) {
     val artifact = requireNotNull(DownloadArtifactIdentity.create(
         repositoryId = "sample/Long-Model-Name-GGUF",
         immutableRevision = "a".repeat(40),
@@ -56,7 +78,7 @@ internal fun ModelDownloadQueueLargeTextPreview() {
         artifactId = "preview-artifact",
         batchId = "preview-batch",
         request = request,
-        state = DownloadArtifactState.RUNNING,
+        state = artifactState,
         userIntent = DownloadUserIntent.RUN,
         bytesReceived = 24_000_000L,
         expectedBytes = 0L,
@@ -66,17 +88,14 @@ internal fun ModelDownloadQueueLargeTextPreview() {
         ownerModelId = artifact.repositoryId,
         modelType = "LLM",
         displayName = "Long Model Name GGUF",
-        state = DownloadBatchState.RUNNING,
+        state = batchState,
         userIntent = DownloadUserIntent.RUN,
         artifacts = listOf(snapshot),
         evidence = EncodedModelEvidence(InstalledEvidenceState.REQUIRES_ENRICHMENT, 1, "", ""),
     )
     CaraMLTheme(ThemePreferences()) {
         Surface {
-            Column {
-                ModelDownloadQueueRow(batch, snapshot)
-                ModelDownloadBatchControls(batch, {}, {}, {}, {})
-            }
+            ModelDownloadQueueEntry(listOf(batch), {}, { _, _ -> }, { _, _ -> }, { _, _ -> }, { _, _ -> })
         }
     }
 }
@@ -95,39 +114,23 @@ internal fun ModelHubDevicePreview(populated: Boolean) {
                             storageInfo = previewStorageInfo(),
                             profile = RecommendationProfile(),
                             onOpenProfile = {},
+                            onOpenDevice = {},
                         )
                     },
                     modifier = Modifier.fillMaxSize(),
                     discoverContent = {
                         ModelHubTabLayout(
                             modifier = Modifier.fillMaxSize(),
-                            command = {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    SearchBar(
-                                        query = "",
-                                        onQueryChange = {},
-                                        onSearch = {},
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                    ModelHubFilterButton(
-                                        mode = ModelHubBrowseMode.LanguageModels,
-                                        ordering = ModelOrdering.Server(ModelSort.TRENDING),
-                                        minParams = ParameterRange.ZERO,
-                                        maxParams = ParameterRange.THREE_B,
-                                        onApply = { _, _, _, _ -> },
-                                    )
-                                }
-                            },
+                            command = { SearchBar(query = "", onQueryChange = {}, onSearch = {}) },
                             context = {},
                             toolbar = {},
                             summary = {
-                                ModelHubHeader(
-                                    title = if (populated) "3 models loaded" else "0 models loaded",
-                                    summary = if (populated) "1 filter active" else null,
-                                    actionLabel = if (populated) "Reset filters" else null,
-                                    onAction = if (populated) ({}) else null,
+                                ModelHubInlineFilters(
+                                    resultLabel = if (populated) "3 models loaded" else "0 models loaded",
+                                    mode = ModelHubBrowseMode.LanguageModels,
+                                    ordering = ModelOrdering.Server(ModelSort.TRENDING),
+                                    minParams = ParameterRange.ZERO, maxParams = ParameterRange.SIX_B,
+                                    onApply = { _, _, _, _ -> },
                                 )
                             },
                             results = {
@@ -187,3 +190,23 @@ private val previewModels = listOf(
         downloads = 375_400,
     ),
 )
+
+@Preview(name = "Device info - sampled", widthDp = 390, heightDp = 800)
+@Composable
+private fun ModelHubDeviceInfoPreview() {
+    CaraMLTheme(ThemePreferences()) {
+        AuroraBackdrop {
+            ModelHubDeviceInfo(previewStorageInfo(), RecommendationProfile(), {}, {}, {})
+        }
+    }
+}
+
+@Preview(name = "Device info - unavailable 200%", widthDp = 320, heightDp = 800, fontScale = 2f)
+@Composable
+private fun ModelHubDeviceUnavailablePreview() {
+    CaraMLTheme(ThemePreferences()) {
+        AuroraBackdrop {
+            ModelHubDeviceInfo(StorageInfoUiState(hasSampled = true), null, {}, {}, null)
+        }
+    }
+}

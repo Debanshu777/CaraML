@@ -101,7 +101,7 @@ class AuroraComponentsUiTest {
     }
 
     @Test
-    fun backdropKeepsFaintThreeAnchorAtmosphereAndReadableDarkAndLightContent() = runComposeUiTest {
+    fun backdropKeepsFullStrengthThreeAnchorAtmosphereAndReadableDarkAndLightContent() = runComposeUiTest {
         setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f)) {
                 Column {
@@ -151,15 +151,15 @@ class AuroraComponentsUiTest {
                 tertiary.colorDistance(primary)
 
             assertTrue(
-                fieldDelta in 0.05f..0.22f,
-                "The ambient field must stay faint rather than become a full-screen hero; " +
+                fieldDelta in 0.20f..0.95f,
+                "The full-strength field must retain distinct bounded color regions; " +
                     "delta was $fieldDelta",
             )
             assertTrue(
                 primary.colorDistance(secondary) >= 0.01f &&
                     secondary.colorDistance(tertiary) >= 0.01f &&
                     tertiary.colorDistance(primary) >= 0.01f,
-                "The three faint anchors must remain spatially distinct without becoming " +
+                "The three anchors must remain spatially distinct without becoming " +
                     "saturated panels; primary=$primary secondary=$secondary tertiary=$tertiary",
             )
 

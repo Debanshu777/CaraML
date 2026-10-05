@@ -148,8 +148,8 @@ class ChatAuroraUiTest {
 
             val image = onNodeWithTag("generating-composer-host").captureToImage()
             val pixels = image.toPixelMap()
-            val leftBoundary = pixels[2, 70]
-            val rightBoundary = pixels[357, 70]
+            val leftBoundary = pixels[0, 70]
+            val rightBoundary = pixels[pixels.width - 1, 70]
 
             assertTrue(
                 colorDistance(leftBoundary, rightBoundary) <= 0.01f,
@@ -232,10 +232,10 @@ class ChatAuroraUiTest {
     }
 
     @Test
-    fun everyGenerationModeHasSpecificHumanCopy() {
-        assertEquals("Start with a private thought.", emptyStateCopy(GenerationMode.Text).title)
-        assertEquals("Create without the cloud.", emptyStateCopy(GenerationMode.Image).title)
-        assertEquals("Set ideas in motion.", emptyStateCopy(GenerationMode.Video).title)
+    fun everyGenerationModeKeepsTheBrandGreeting() {
+        assertEquals("Got a\nweird idea?", emptyStateCopy(GenerationMode.Text).title)
+        assertEquals("Got a\nweird idea?", emptyStateCopy(GenerationMode.Image).title)
+        assertEquals("Got a\nweird idea?", emptyStateCopy(GenerationMode.Video).title)
     }
 
     @Test
@@ -484,7 +484,7 @@ private fun assertChatSurfaceAlignment(
     }
 
     val body = onNodeWithText(messageText).fetchSemanticsNode().boundsInRoot
-    val composer = onNodeWithText("How can I help you today?").fetchSemanticsNode().boundsInRoot
+    val composer = onNodeWithText("One more little thought…").fetchSemanticsNode().boundsInRoot
     val stats = onNodeWithContentDescription(
         "Generation speed 42.5 tokens per second",
     ).fetchSemanticsNode().boundsInRoot

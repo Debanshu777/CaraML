@@ -1,8 +1,33 @@
 package com.debanshu777.caraml.features.chat.presentation
 
-import androidx.compose.animation.Crossfade
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.style.TextOverflow
+import com.debanshu777.caraml.core.ui.components.BrandNavigationButton
+import com.debanshu777.caraml.core.ui.components.BrandPalAppearance
+import com.debanshu777.caraml.core.ui.components.BrandPalState
+import com.debanshu777.caraml.features.chat.data.MessageRole
+import com.debanshu777.caraml.features.chat.data.MessageDelivery
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.graphics.graphicsLayer
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -50,6 +75,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
@@ -65,6 +92,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.drawer.DrawerController
@@ -75,10 +103,9 @@ import com.debanshu777.caraml.core.drawer.LocalGenerationModeController
 import com.debanshu777.caraml.core.drawer.LocalNavigationMenuAction
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
+import com.debanshu777.caraml.core.ui.components.BrandPal
 import com.debanshu777.caraml.core.ui.components.CaraMLPane
-import com.debanshu777.caraml.core.ui.components.AuroraFocalSurface
 import com.debanshu777.caraml.core.ui.components.CommandSurface
-import com.debanshu777.caraml.core.ui.components.FocalEntrance
 import com.debanshu777.caraml.core.ui.layout.AppContentKind
 import com.debanshu777.caraml.core.ui.layout.AppNavigationLayout
 import com.debanshu777.caraml.core.ui.layout.LocalAppNavigationLayout
@@ -94,6 +121,7 @@ import com.debanshu777.caraml.features.chat.presentation.components.ChatInputBar
 import com.debanshu777.caraml.features.chat.presentation.components.ContextStatsIndicator
 import com.debanshu777.caraml.features.chat.presentation.components.ChatMessageList
 import com.debanshu777.caraml.features.chat.presentation.components.GenerationStatsBar
+import com.debanshu777.caraml.features.chat.presentation.components.GenerationModeSwitcher
 import com.debanshu777.caraml.features.chat.presentation.components.ModelErrorScreen
 import com.debanshu777.caraml.features.chat.presentation.components.ModelLoadingScreen
 import com.debanshu777.caraml.features.chat.presentation.components.ModelSelectorTopBar
@@ -108,20 +136,10 @@ data class ChatEmptyStateCopy(
     val supportingText: String,
 )
 
-internal fun emptyStateCopy(mode: GenerationMode): ChatEmptyStateCopy = when (mode) {
-    GenerationMode.Text -> ChatEmptyStateCopy(
-        title = "Start with a private thought.",
-        supportingText = "Ask a question, shape an idea, or begin writing. Nothing leaves this device.",
-    )
-    GenerationMode.Image -> ChatEmptyStateCopy(
-        title = "Create without the cloud.",
-        supportingText = "Describe a scene and generate it entirely on this device.",
-    )
-    GenerationMode.Video -> ChatEmptyStateCopy(
-        title = "Set ideas in motion.",
-        supportingText = "Describe a short sequence for local video generation.",
-    )
-}
+internal fun emptyStateCopy(mode: GenerationMode): ChatEmptyStateCopy = ChatEmptyStateCopy(
+    title = "Got a\nweird idea?",
+    supportingText = "Good. Let’s do something with it.",
+)
 
 @Composable
 fun ChatScreen(
@@ -189,460 +207,422 @@ fun ChatScreenContent(
     controlledGenerationMode: GenerationMode? = null,
 ) {
     val listState = rememberLazyListState()
-    val navigationLayout = LocalAppNavigationLayout.current
+    val emptyListState = rememberLazyListState()
+    val motion = LocalAuroraMotionPolicy.current
     val navigationMenuAction = LocalNavigationMenuAction.current
     val focusModeController = LocalFocusModeController.current
     val safeDrawingInsets = LocalCreateSafeDrawingInsetsOverride.current ?: WindowInsets.safeDrawing
-    val generationMode = controlledGenerationMode ?: when (val state = uiState) {
-        is ChatUiState.Ready -> state.generationMode
-        is ChatUiState.NoModelsForMode -> state.mode
+    val ready = uiState as? ChatUiState.Ready
+    val generationMode = controlledGenerationMode ?: when (uiState) {
+        is ChatUiState.Ready -> uiState.generationMode
+        is ChatUiState.NoModelsForMode -> uiState.mode
         else -> GenerationMode.Text
     }
-
-    val messageCount = (uiState as? ChatUiState.Ready)?.messages?.size ?: 0
-    val focusModeEnabled = messageCount > 0 && focusModeController != null
-    val composerInsets = safeDrawingInsets.only(
-        WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom,
-    )
-    val scaffoldContentInsets = if (focusModeEnabled) {
-        safeDrawingInsets
-    } else {
-        composerInsets
-    }
+    val hasConversation = ready?.messages?.isNotEmpty() == true
+    val messageCount = ready?.messages?.size ?: 0
+    val composerInsets = safeDrawingInsets.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)
     val imeBottomPadding = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
-
-    SideEffect {
-        focusModeController?.update(focusModeEnabled)
+    var draft by rememberSaveable { mutableStateOf("") }
+    val inputFocusRequester = remember { FocusRequester() }
+    var inputAttached by remember { mutableStateOf(false) }
+    var inputFocused by remember { mutableStateOf(false) }
+    var emptyViewportHeight by remember { mutableIntStateOf(0) }
+    var focusDraftRequest by remember { mutableIntStateOf(0) }
+    var handledFocusRequest by remember { mutableIntStateOf(0) }
+    // A request belongs to the current enabled composer, including its model and mode.
+    val composerOwner = ready?.takeUnless { it.isGenerating }?.let {
+        Triple(generationMode, it.selectedModel, hasConversation)
     }
+    val currentComposerOwner by rememberUpdatedState(composerOwner)
+    LaunchedEffect(focusDraftRequest, composerOwner) {
+        if (focusDraftRequest > handledFocusRequest) {
+            handledFocusRequest = focusDraftRequest
+            if (composerOwner != null) {
+                if (!hasConversation) {
+                    if (motion.spatialTransitionsEnabled) emptyListState.animateScrollToItem(2)
+                    else emptyListState.scrollToItem(2)
+                    withFrameNanos { }
+                }
+                if (inputAttached && currentComposerOwner == composerOwner) inputFocusRequester.requestFocus()
+            }
+        }
+    }
+    // The keyboard changes the scroll range after focus is granted. Reveal the whole
+    // composer again in that settled viewport, rather than only the TextField's cursor.
+    LaunchedEffect(inputFocused, emptyViewportHeight, imeBottomPadding, composerOwner) {
+        if (inputFocused && !hasConversation && composerOwner != null && emptyViewportHeight > 0) {
+            withFrameNanos { }
+            if (inputAttached && currentComposerOwner == composerOwner) emptyListState.scrollToItem(2)
+        }
+    }
+    SideEffect { focusModeController?.update(hasConversation) }
     DisposableEffect(focusModeController) {
         onDispose { focusModeController?.update(false) }
     }
 
-    CreateRouteCanvas(
-        focal = when (uiState) {
-            is ChatUiState.Ready -> uiState.messages.isEmpty()
-            ChatUiState.NoModels, is ChatUiState.NoModelsForMode -> true
-            else -> false
-        },
-        modifier = modifier,
-    ) {
     Scaffold(
-        modifier = Modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize().testTag("create-route-canvas"),
         containerColor = Color.Transparent,
-        contentWindowInsets = scaffoldContentInsets,
-        topBar = {
-            if (!focusModeEnabled) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .windowInsetsPadding(
-                            safeDrawingInsets.only(
-                                WindowInsetsSides.Top + WindowInsetsSides.Horizontal,
-                            ),
-                        ),
-                    contentAlignment = Alignment.TopCenter,
-                ) {
-                    ModelSelectorTopBar(
-                        title = "Create",
-                        onMenuClick = navigationMenuAction,
-                        modifier = Modifier
-                            .widthIn(max = AppTheme.dimensions.size840)
-                            .fillMaxWidth()
-                            .padding(
-                                horizontal = if (
-                                    navigationLayout == AppNavigationLayout.ModalSidebar
-                                ) {
-                                    AppTheme.spacing.spacing16
-                                } else {
-                                    AppTheme.spacing.spacing24
-                                },
-                            ),
-                        generationMode = generationMode.takeUnless {
-                            navigationLayout == AppNavigationLayout.Sidebar
-                        },
-                        onGenerationModeSelected = onGenerationModeSelected.takeIf {
-                            navigationLayout != AppNavigationLayout.Sidebar
-                        },
-                    )
-                }
-            }
-        },
+        contentWindowInsets = safeDrawingInsets,
         bottomBar = {
-            if (uiState is ChatUiState.Ready) {
+            if (ready != null && hasConversation) {
                 ResponsiveContentPane(
                     kind = AppContentKind.Chat,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .windowInsetsPadding(composerInsets),
+                    modifier = Modifier.fillMaxWidth().windowInsetsPadding(composerInsets),
                     fillMaxHeight = false,
                 ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+                        GenerationModeSwitcher(
+                            mode = generationMode,
+                            onModeSelected = onGenerationModeSelected,
+                            modifier = Modifier.padding(bottom = 8.dp),
+                            compact = true,
+                        )
                         if (streamingState.isCompacting) {
                             Row(
-                                modifier = Modifier.fillMaxWidth().padding(AppTheme.spacing.spacing12)
-                                    .testTag("chat-context-maintenance"),
+                                modifier = Modifier.fillMaxWidth().padding(12.dp).testTag("chat-context-maintenance"),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                CircularProgressIndicator(modifier = Modifier.size(AppTheme.spacing.spacing16), strokeWidth = AppTheme.spacing.spacing2)
-                                Text(
-                                    text = "Making room for your next reply…",
-                                    style = AppTheme.typography.labelBase,
-                                    color = AppTheme.colors.onSurfaceVariant,
-                                )
+                                if (motion.pulseEnabled) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                                Text("Making room for your next reply…", style = AppTheme.typography.labelBase, color = AppTheme.colors.onSurfaceVariant)
                             }
                         }
-                        if (uiState.generationMode == GenerationMode.Text &&
-                            uiState.isGenerating &&
-                            streamingState.liveStats != null
-                        ) {
+                        if (ready.generationMode == GenerationMode.Text && ready.isGenerating && streamingState.liveStats != null) {
                             GenerationStatsBar(stats = streamingState.liveStats)
                         }
-
                         ChatInputBar(
-                            generationMode = uiState.generationMode,
-                            isGenerating = uiState.isGenerating,
-                            selectedModel = uiState.selectedModel,
-                            topModels = uiState.topModels,
+                            generationMode = ready.generationMode,
+                            isGenerating = ready.isGenerating,
+                            selectedModel = ready.selectedModel,
+                            topModels = ready.topModels,
                             onSelectModel = onSelectModel,
                             onDownloadModelClick = onNavigateToSearch,
                             onSendMessage = onSendMessage,
                             onCancelGeneration = onCancelGeneration,
                             contextIndicator = contextIndicator,
+                            draftText = draft,
+                            onDraftTextChange = { draft = it },
+                            isConversation = true,
+                            inputFocusRequester = inputFocusRequester,
+                            onInputAttachmentChanged = { inputAttached = it },
+                            onInputFocusChanged = { inputFocused = it },
                         )
                     }
                 }
             }
-        }
+        },
     ) { paddingValues ->
-        val layoutDirection = LocalLayoutDirection.current
         val bottomPadding = paddingValues.calculateBottomPadding()
         LaunchedEffect(messageCount, imeBottomPadding, bottomPadding) {
             if (messageCount > 0) {
-                listState.animateScrollToItem(messageCount - 1)
+                if (motion.spatialTransitionsEnabled) listState.animateScrollToItem(messageCount - 1)
+                else listState.scrollToItem(messageCount - 1)
+                withFrameNanos { }
+                val layout = listState.layoutInfo
+                val lastRow = layout.visibleItemsInfo.firstOrNull { it.index == messageCount - 1 }
+                if (lastRow != null) {
+                    val clippedBottom = lastRow.offset + lastRow.size + layout.afterContentPadding - layout.viewportEndOffset
+                    if (clippedBottom > 0) {
+                        if (motion.spatialTransitionsEnabled) {
+                            listState.animateScrollBy(clippedBottom.toFloat(), tween(motion.peerTransitionMillis))
+                        } else {
+                            listState.scrollBy(clippedBottom.toFloat())
+                        }
+                    }
+                }
             }
         }
         ResponsiveContentPane(
             kind = AppContentKind.Chat,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(
-                    start = paddingValues.calculateStartPadding(layoutDirection),
-                    top = paddingValues.calculateTopPadding(),
-                    end = paddingValues.calculateEndPadding(layoutDirection),
-                    bottom = if (uiState is ChatUiState.Ready) AppTheme.dimensions.size0 else bottomPadding,
-                ),
+            modifier = Modifier.fillMaxSize().padding(paddingValues),
         ) {
-            when (uiState) {
-                is ChatUiState.NoModels -> {
-                    CreateStateViewport {
-                        CreateUnavailableWorkspace(
-                            mode = generationMode,
-                            supportingText = "Choose a local model to begin. Your prompts and responses stay on this device.",
-                            onBrowseModels = onNavigateToSearch,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                }
-
-                is ChatUiState.NoModelsForMode -> {
-                    CreateStateViewport {
-                        CreateUnavailableWorkspace(
-                            mode = uiState.mode,
-                            supportingText = when (uiState.mode) {
-                                GenerationMode.Text -> "Choose a local language model to begin."
-                                GenerationMode.Image -> "Choose a local image model to begin."
-                                GenerationMode.Video -> "Choose a local video model to begin."
-                            },
-                            onBrowseModels = onNavigateToSearch,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                }
-
-                is ChatUiState.ModelLoading -> {
-                    CreateStateViewport {
-                        ModelLoadingScreen(Modifier.fillMaxWidth())
-                    }
-                }
-
-                is ChatUiState.ModelError -> {
-                    CreateStateViewport {
-                        ModelErrorScreen(
-                            errorMessage = uiState.message,
-                            onRetryCurrentModelClick = onRetryCurrentModel.takeIf {
-                                uiState.canRetryCurrentModel
-                            },
-                            onTryAnotherModelClick = onNavigateToSearch,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                }
-
-                is ChatUiState.MissingComponents -> {
-                    CreateStateViewport {
-                        MissingComponentsScreen(
-                            missingComponentLabels = uiState.missingComponentLabels,
-                            modelName = uiState.modelName,
-                            onGoToModelHubClick = onNavigateToSearch,
-                            onFixComponentsClick = {
-                                onNavigateToModelDetail(
-                                    uiState.modelId,
-                                    ModelHubBrowseMode.DiffusionImage,
-                                )
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                }
-
-                is ChatUiState.LoadActionRequired -> {
-                    CreateStateViewport {
-                        key(uiState.action) {
-                            LoadActionRequiredScreen(
-                                action = uiState.action,
-                                onConfirmLoad = onConfirmLoad,
-                                onAcceptAlternative = onAcceptAlternative,
-                                onRetryLoad = onRetryLoad,
-                                onCancelLoad = onCancelLoad,
-                                modifier = Modifier.fillMaxWidth(),
+            Column(Modifier.fillMaxSize()) {
+                if (hasConversation) {
+                    ConversationHeading(
+                        title = ready.messages.firstOrNull { it.role == MessageRole.User }?.text.orEmpty(),
+                        modelName = ready.selectedModel?.modelId?.substringAfterLast("/"),
+                        onMenuClick = navigationMenuAction,
+                    )
+                    val lastMessage = ready.messages.lastOrNull()
+                    val recoverable = !ready.isGenerating && lastMessage?.role == MessageRole.Assistant &&
+                        lastMessage.delivery in setOf(MessageDelivery.Stopped, MessageDelivery.Error)
+                    ChatMessageList(
+                        messages = ready.messages,
+                        listState = listState,
+                        streamingMessageId = streamingState.streamingMessageId,
+                        streamingState = streamingState,
+                        loadMedia = loadMedia,
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        contentPadding = PaddingValues(top = 8.dp, bottom = 20.dp),
+                        footer = if (recoverable) ({
+                            ReplyRecoveryActions(
+                                stopped = lastMessage.delivery == MessageDelivery.Stopped && ready.generationMode == GenerationMode.Text,
+                                onContinue = { onSendMessage("Please continue your previous reply.") },
+                                onRetry = {
+                                    ready.messages.lastOrNull { it.role == MessageRole.User }?.text
+                                        ?.takeIf(String::isNotBlank)?.let(onSendMessage)
+                                },
+                                onNewIdea = { draft = ""; focusDraftRequest++ },
                             )
+                        }) else null,
+                    )
+                } else if (ready != null || uiState is ChatUiState.NoModels || uiState is ChatUiState.NoModelsForMode) {
+                    LazyColumn(
+                        state = emptyListState,
+                        modifier = Modifier.fillMaxSize().onSizeChanged { emptyViewportHeight = it.height },
+                        contentPadding = PaddingValues(top = 18.dp, bottom = 24.dp),
+                        verticalArrangement = Arrangement.spacedBy(18.dp),
+                    ) {
+                        item {
+                            CreateWelcome(generationMode, navigationMenuAction)
                         }
-                    }
-                }
-
-                is ChatUiState.Ready -> {
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        ChatMessageList(
-                            messages = uiState.messages,
-                            listState = listState,
-                            streamingMessageId = streamingState.streamingMessageId,
-                            streamingState = streamingState,
-                            loadMedia = loadMedia,
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(
-                                top = if (focusModeEnabled) AppTheme.dimensions.size72 else AppTheme.dimensions.size0,
-                                bottom = bottomPadding,
-                            ),
-                        )
-                        if (uiState.messages.isEmpty()) {
-                            AnimatedCreateEmptyState(
-                                mode = uiState.generationMode,
-                                modifier = Modifier
-                                    .align(Alignment.Center)
-                                    .padding(bottom = bottomPadding),
-                            )
+                        item {
+                            GenerationModeSwitcher(generationMode, onGenerationModeSelected)
                         }
-
-                        if (focusModeEnabled && navigationMenuAction != null) {
-                            IconButton(
-                                onClick = navigationMenuAction,
-                                modifier = Modifier
-                                    .align(Alignment.TopStart)
-                                    .padding(AppTheme.spacing.spacing8)
-                                    .size(AppTheme.spacing.spacing48)
-                                    .testTag("focus-navigation-action"),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Menu,
-                                    contentDescription = "Open navigation menu",
-                                    tint = AppTheme.colors.onSurface,
+                        item {
+                            if (ready != null) {
+                                ChatInputBar(
+                                    generationMode = generationMode,
+                                    isGenerating = ready.isGenerating,
+                                    selectedModel = ready.selectedModel,
+                                    topModels = ready.topModels,
+                                    onSelectModel = onSelectModel,
+                                    onDownloadModelClick = onNavigateToSearch,
+                                    onSendMessage = onSendMessage,
+                                    onCancelGeneration = onCancelGeneration,
+                                    contextIndicator = contextIndicator,
+                                    draftText = draft,
+                                    onDraftTextChange = { draft = it },
+                                    inputFocusRequester = inputFocusRequester,
+                                    onInputAttachmentChanged = { inputAttached = it },
+                                    onInputFocusChanged = { inputFocused = it },
                                 )
+                            } else {
+                                CreateModelPrompt(generationMode, onNavigateToSearch)
                             }
                         }
+                        if (ready != null) item {
+                            StarterIdeas(onChoose = { draft = it; focusDraftRequest++ })
+                        }
+                    }
+                } else {
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        navigationMenuAction?.let { BrandNavigationButton(it) }
+                        GenerationModeSwitcher(generationMode, onGenerationModeSelected, Modifier.weight(1f), compact = true)
+                    }
+                    CreateStateViewport {
+                        when (uiState) {
+                            ChatUiState.ModelLoading -> ModelLoadingScreen(Modifier.fillMaxWidth())
+                            is ChatUiState.ModelError -> ModelErrorScreen(
+                                errorMessage = uiState.message,
+                                onRetryCurrentModelClick = onRetryCurrentModel.takeIf { uiState.canRetryCurrentModel },
+                                onTryAnotherModelClick = onNavigateToSearch,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            is ChatUiState.MissingComponents -> MissingComponentsScreen(
+                                missingComponentLabels = uiState.missingComponentLabels,
+                                modelName = uiState.modelName,
+                                onGoToModelHubClick = onNavigateToSearch,
+                                onFixComponentsClick = { onNavigateToModelDetail(uiState.modelId, ModelHubBrowseMode.DiffusionImage) },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            is ChatUiState.LoadActionRequired -> key(uiState.action) {
+                                LoadActionRequiredScreen(uiState.action, onConfirmLoad, onAcceptAlternative, onRetryLoad, onCancelLoad, Modifier.fillMaxWidth())
+                            }
+                            else -> Unit
+                        }
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun ConversationHeading(title: String, modelName: String?, onMenuClick: (() -> Unit)?) {
+    val words = remember(title) { title.split(' ', '\n', '\t').filter(String::isNotBlank) }
+    val conversationTitle = words.take(4).joinToString(" ").let { if (words.size > 4) "$it…" else it }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val compact = maxWidth <= 328.dp
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            onMenuClick?.let { BrandNavigationButton(it, Modifier.testTag("focus-navigation-action")) }
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = conversationTitle.ifBlank { "A little conversation" },
+                    style = AppTheme.typography.modelTitle21.copy(
+                        fontSize = if (compact) 19.sp else 21.sp,
+                        lineHeight = if (compact) 20.9.sp else 23.1.sp,
+                        letterSpacing = (-0.6).sp,
+                    ),
+                    color = AppTheme.colors.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = "CaraML · ${modelName ?: "Select a model"}",
+                    style = AppTheme.typography.labelSmall,
+                    color = AppTheme.colors.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
     }
 }
 
 @Composable
-private fun CreateRouteCanvas(
-    focal: Boolean,
-    modifier: Modifier = Modifier,
-    content: @Composable BoxScope.() -> Unit,
-) {
-    if (focal) {
-        AuroraFocalSurface(
-            modifier = modifier.testTag("create-focal-canvas"),
-            shape = RectangleShape,
-            entrance = FocalEntrance.OneShot,
-            content = content,
-        )
-    } else {
-        Box(modifier = modifier, content = content)
+private fun CreateWelcome(mode: GenerationMode, onMenuClick: (() -> Unit)?) {
+    val copy = emptyStateCopy(mode)
+    var booped by remember(mode) { mutableStateOf(false) }
+    val motion = LocalAuroraMotionPolicy.current
+    val boop by animateFloatAsState(
+        targetValue = if (booped && motion.spatialTransitionsEnabled) 1f else 0f,
+        animationSpec = AppTheme.motion.pressSpec(),
+        label = "Pocket pal hello",
+    )
+    LaunchedEffect(booped) {
+        if (booped) {
+            delay(650)
+            booped = false
+        }
+    }
+    val appearance = when (mode) {
+        GenerationMode.Text -> BrandPalAppearance.Write
+        GenerationMode.Image -> BrandPalAppearance.Imagine
+        GenerationMode.Video -> BrandPalAppearance.Animate
+    }
+    BoxWithConstraints(Modifier.fillMaxWidth().heightIn(min = 248.dp).testTag("create-empty-state")) {
+        val compact = maxWidth < 330.dp
+        onMenuClick?.let { BrandNavigationButton(it, Modifier.align(Alignment.TopStart)) }
+        Column(Modifier.padding(top = 68.dp, end = if (compact) 72.dp else 92.dp, bottom = 12.dp)) {
+            Text(
+                text = buildAnnotatedString {
+                    append(copy.title.substringBefore('\n'))
+                    append("\n")
+                    withStyle(SpanStyle(color = AppTheme.actionColor)) { append(copy.title.substringAfter('\n')) }
+                },
+                style = if (compact) AppTheme.typography.hero36Compact else AppTheme.typography.hero42,
+                color = AppTheme.colors.onSurface,
+            )
+            Text(
+                copy.supportingText,
+                modifier = Modifier.padding(top = 17.dp).widthIn(max = 220.dp),
+                style = AppTheme.typography.bodySmall,
+                color = AppTheme.colors.onSurface,
+            )
+        }
+        Column(
+            modifier = Modifier.align(Alignment.TopEnd).padding(top = 68.dp)
+                .widthIn(min = if (compact) 64.dp else 85.dp)
+                .clickable(role = Role.Button, onClickLabel = "Say hello to CaraML") { booped = true },
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            BrandPal(
+                state = BrandPalState.Idle,
+                appearance = appearance,
+                modifier = Modifier.size(if (compact) 68.dp else 88.dp).graphicsLayer {
+                    scaleX = 1f + boop * .06f
+                    scaleY = 1f + boop * .06f
+                    translationY = -8.dp.toPx() * boop
+                },
+            )
+            Text(
+                if (booped) "oh, hi!" else "psst. tap me.",
+                style = AppTheme.typography.labelSmall,
+                color = AppTheme.colors.onSurface,
+            )
+        }
     }
 }
 
 @Composable
-private fun CreateStateViewport(
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
-) {
+private fun CreateModelPrompt(mode: GenerationMode, onBrowseModels: () -> Unit) {
+    CommandSurface(focused = false, active = false, contentPadding = PaddingValues(16.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(
+                text = when (mode) {
+                    GenerationMode.Text -> "A tiny astronaut opens a noodle shop…"
+                    GenerationMode.Image -> "A tiny noodle shop on the moon, in clay…"
+                    GenerationMode.Video -> "A tiny astronaut flips a noodle in slow motion…"
+                },
+                style = AppTheme.typography.bodyLarge,
+                color = AppTheme.colors.onSurfaceVariant,
+            )
+            Text(
+                "Choose a local ${when (mode) { GenerationMode.Text -> "language"; GenerationMode.Image -> "image"; GenerationMode.Video -> "video" }} model to begin.",
+                style = AppTheme.typography.bodySmall,
+                color = AppTheme.colors.onSurfaceVariant,
+            )
+            Button(onClick = onBrowseModels, modifier = Modifier.heightIn(min = 44.dp)) {
+                Text("Browse models")
+                Spacer(Modifier.size(8.dp))
+                Icon(Icons.AutoMirrored.Default.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun StarterIdeas(onChoose: (String) -> Unit) {
+    var surpriseIndex by remember { mutableIntStateOf(0) }
+    val surprises = listOf(
+        "Invent a tiny holiday for people who love rainy days.",
+        "Tell me about a dragon who is terrible at keeping secrets.",
+        "Imagine a garden that only blooms under moonlight.",
+    )
+    Column(Modifier.fillMaxWidth().padding(top = 3.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Or try", style = AppTheme.typography.labelBase, color = AppTheme.colors.onSurface)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            StarterChip("Space noodles") { onChoose("Write a story about a tiny astronaut who opens a noodle shop.") }
+            StarterChip("Bad band names") { onChoose("Pitch three wonderfully bad names for a band.") }
+            StarterChip("Surprise me") { onChoose(surprises[surpriseIndex++ % surprises.size]) }
+        }
+    }
+}
+
+@Composable
+private fun StarterChip(label: String, onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier.heightIn(min = 44.dp),
+        contentPadding = PaddingValues(horizontal = 13.dp, vertical = 9.dp),
+        border = BorderStroke(1.dp, AppTheme.colors.outlineVariant),
+        shape = RoundedCornerShape(24.dp),
+    ) { Text(label, style = AppTheme.typography.labelBase, color = AppTheme.colors.onSurface) }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ReplyRecoveryActions(stopped: Boolean, onContinue: () -> Unit, onRetry: () -> Unit, onNewIdea: () -> Unit) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (stopped) StarterChip("Continue", onContinue)
+        StarterChip("Try again", onRetry)
+        OutlinedButton(
+            onClick = onNewIdea,
+            modifier = Modifier.heightIn(min = 44.dp).semantics { contentDescription = "New idea. Clear the draft and keep this conversation." },
+            shape = RoundedCornerShape(12.dp),
+        ) { Text("New idea") }
+    }
+}
+
+@Composable
+private fun CreateStateViewport(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(vertical = AppTheme.spacing.spacing16),
+        contentPadding = PaddingValues(vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(
-            space = AppTheme.spacing.spacing12,
-            alignment = Alignment.CenterVertically,
-        ),
-    ) {
-        item {
-            Box(modifier = Modifier.fillParentMaxWidth()) {
-                content()
-            }
-        }
-    }
-}
-
-@Composable
-private fun AnimatedCreateEmptyState(
-    mode: GenerationMode,
-    modifier: Modifier = Modifier,
-) {
-    val motion = LocalAuroraMotionPolicy.current
-    val focalAccent = AppTheme.auroraColors.focusPrimary.copy(alpha = AppTheme.effects.opaque)
-    Crossfade(
-        targetState = mode,
-        modifier = modifier,
-        animationSpec = tween(
-            durationMillis = if (motion.spatialTransitionsEnabled) {
-                180
-            } else {
-                minOf(90, motion.opacityDurationMillis)
-            },
-        ),
-        label = "create mode statement",
-    ) { targetMode ->
-        val copy = emptyStateCopy(targetMode)
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = AppTheme.dimensions.size360)
-                .testTag("create-empty-state")
-                .padding(horizontal = AppTheme.spacing.spacing16, vertical = AppTheme.spacing.spacing24),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
-        ) {
-            WorkspaceGlyph()
-            Text(
-                text = "${targetMode.name.uppercase()} WORKSPACE",
-                style = AppTheme.typography.label12,
-                color = focalAccent,
-                textAlign = TextAlign.Center,
-            )
-            Text(
-                modifier = Modifier.heightIn(min = AppTheme.dimensions.size96),
-                text = copy.title,
-                style = AppTheme.typography.heading32,
-                color = AppTheme.colors.onSurface,
-                textAlign = TextAlign.Center,
-            )
-            Text(
-                modifier = Modifier.heightIn(min = AppTheme.dimensions.size72),
-                text = copy.supportingText,
-                style = AppTheme.typography.bodyBase,
-                color = AppTheme.colors.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
-        }
-    }
-}
-
-@Composable
-private fun CreateUnavailableWorkspace(
-    mode: GenerationMode,
-    supportingText: String,
-    onBrowseModels: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val copy = emptyStateCopy(mode)
-    val focalAccent = AppTheme.auroraColors.focusPrimary.copy(alpha = AppTheme.effects.opaque)
-    Column(
-        modifier = modifier
-            .testTag("create-empty-state")
-            .padding(horizontal = AppTheme.spacing.spacing16, vertical = AppTheme.spacing.spacing24),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing12),
-    ) {
-        WorkspaceGlyph()
-        Text(
-            text = "${mode.name.uppercase()} WORKSPACE",
-            style = AppTheme.typography.label12,
-            color = focalAccent,
-            textAlign = TextAlign.Center,
-        )
-        Text(
-            modifier = Modifier.heightIn(min = AppTheme.dimensions.size96),
-            text = copy.title,
-            style = AppTheme.typography.heading32,
-            color = AppTheme.colors.onSurface,
-            textAlign = TextAlign.Center,
-        )
-        Text(
-            modifier = Modifier.heightIn(min = AppTheme.dimensions.size72),
-            text = supportingText,
-            style = AppTheme.typography.bodyLarge,
-            color = AppTheme.colors.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
-        CommandSurface(
-            focused = false,
-            active = false,
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onBrowseModels)
-                .semantics(mergeDescendants = true) {
-                    contentDescription = "Browse models"
-                },
-            contentPadding = PaddingValues(horizontal = AppTheme.spacing.spacing16),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().heightIn(min = AppTheme.dimensions.size56),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(
-                    text = "Browse models",
-                    style = AppTheme.typography.bodyLarge,
-                    color = AppTheme.colors.onSurface,
-                )
-                Icon(
-                    imageVector = Icons.AutoMirrored.Default.ArrowForward,
-                    contentDescription = null,
-                    tint = focalAccent,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun WorkspaceGlyph() {
-    val focalAccent = AppTheme.auroraColors.focusPrimary.copy(alpha = AppTheme.effects.opaque)
-    Surface(
-        modifier = Modifier
-            .size(AppTheme.dimensions.size52)
-            .clearAndSetSemantics { },
-        color = AppTheme.colors.surfaceContainer.copy(alpha = AppTheme.effects.workspaceGlyphSurface),
-        contentColor = focalAccent,
-        shape = AppTheme.shapes.large,
-        border = androidx.compose.foundation.BorderStroke(
-            AppTheme.dimensions.size1,
-            AppTheme.colors.outlineVariant,
-        ),
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(
-                text = "I",
-                style = AppTheme.typography.headingLargeMono,
-                color = focalAccent,
-            )
-        }
-    }
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) { item { Box(Modifier.fillParentMaxWidth()) { content() } } }
 }
 
 @Composable
@@ -671,7 +651,7 @@ private fun LoadActionRequiredScreen(
         is PendingLoadAction.RetryQuarantined -> action.request.plan.compromises
     }
     Column(
-        modifier = modifier.fillMaxWidth().padding(AppTheme.spacing.spacing24),
+        modifier = modifier.fillMaxWidth(),
     ) {
         CaraMLPane(
             modifier = Modifier.fillMaxWidth(),
@@ -732,22 +712,16 @@ private fun MissingComponentsScreen(
 ) {
     Column(
         modifier = modifier
-            .fillMaxWidth()
-            .padding(AppTheme.spacing.spacing24),
-        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
+            .fillMaxWidth(),
+        horizontalAlignment = Alignment.Start,
     ) {
-        Icon(
-            Icons.Default.Error,
-            contentDescription = null,
-            modifier = Modifier.size(AppTheme.spacing.spacing64),
-            tint = AppTheme.colors.error
-        )
+        BrandPal(BrandPalState.Paused, Modifier.size(44.dp))
         
         Spacer(modifier = Modifier.height(AppTheme.spacing.spacing16))
 
         Text(
-            text = "Missing Required Components",
-            style = AppTheme.typography.headingLarge,
+            text = "A few pieces are missing",
+            style = AppTheme.typography.stateTitle26,
             color = AppTheme.colors.onSurface
         )
 
@@ -756,7 +730,7 @@ private fun MissingComponentsScreen(
         Text(
             text = "$modelName requires additional components to run:",
             style = AppTheme.typography.bodyBase,
-            color = AppTheme.colors.onSurfaceVariant
+            color = AppTheme.colors.onSurface
         )
 
         Spacer(modifier = Modifier.height(AppTheme.spacing.spacing16))

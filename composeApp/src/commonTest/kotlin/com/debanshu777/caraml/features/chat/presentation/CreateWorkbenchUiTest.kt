@@ -34,6 +34,8 @@ import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
@@ -67,6 +69,8 @@ import com.debanshu777.caraml.core.recommendation.ObservationModelIdentity
 import com.debanshu777.caraml.core.recommendation.RunPlanCompromise
 import com.debanshu777.caraml.core.recommendation.task6LlmDescriptor
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
+import com.debanshu777.caraml.core.theme.CaraMLTheme
+import com.debanshu777.caraml.core.theme.ThemePreferences
 import com.debanshu777.caraml.core.ui.layout.AppNavigationLayout
 import com.debanshu777.caraml.core.ui.layout.LocalAppNavigationLayout
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
@@ -91,7 +95,7 @@ class CreateWorkbenchUiTest {
     @Test
     fun productionCreateHeaderUsesTheExactScreenTitleRole() = runComposeUiTest {
         setContent {
-            MaterialTheme {
+            CaraMLTheme(preferences = ThemePreferences()) {
                 ModelSelectorTopBar(title = "Create workspace")
             }
         }
@@ -104,7 +108,7 @@ class CreateWorkbenchUiTest {
         val style = layoutResults.single().layoutInput.style
         assertEquals(28.sp, style.fontSize)
         assertEquals(34.sp, style.lineHeight)
-        assertEquals(FontWeight.SemiBold, style.fontWeight)
+        assertEquals(FontWeight.Bold, style.fontWeight)
     }
 
     @Test
@@ -131,7 +135,7 @@ class CreateWorkbenchUiTest {
         }
 
         listOf(
-            599.dp to 16f,
+            599.dp to 18f,
             600.dp to 104f,
             839.dp to 104f,
             840.dp to 280f,
@@ -147,10 +151,8 @@ class CreateWorkbenchUiTest {
                 onNodeWithContentDescription("Open navigation menu")
                     .fetchSemanticsNode().boundsInRoot
             } else {
-                onAllNodesWithText("Create", useUnmergedTree = true)
-                    .fetchSemanticsNodes()
-                    .maxBy { it.boundsInRoot.width }
-                    .boundsInRoot
+                onNodeWithContentDescription("Text mode, selected", useUnmergedTree = true)
+                    .fetchSemanticsNode().boundsInRoot
             }
             val composer = onNodeWithTag("create-command", useUnmergedTree = true)
                 .fetchSemanticsNode().boundsInRoot
@@ -191,22 +193,25 @@ class CreateWorkbenchUiTest {
 
         onNodeWithContentDescription("Open navigation menu").performClick()
         onAllNodesWithContentDescription("Create, selected").assertCountEquals(1)
-        onNodeWithContentDescription("Image").performClick()
+        onNodeWithContentDescription("Create, selected").performClick()
+        onNodeWithContentDescription("Image mode").performClick()
         runOnIdle {
             assertEquals(GenerationMode.Image, modeController.mode)
             assertEquals(AppScreen.Home, backStack.last())
         }
         onNodeWithContentDescription("Open navigation menu").performClick()
         onAllNodesWithContentDescription("Create, selected").assertCountEquals(1)
-        onAllNodesWithContentDescription("Image, selected").assertCountEquals(1)
-        onNodeWithContentDescription("Video").performClick()
+        onNodeWithContentDescription("Create, selected").performClick()
+        onNodeWithContentDescription("Image mode, selected").assertIsDisplayed()
+        onNodeWithContentDescription("Video mode").performClick()
         runOnIdle {
             assertEquals(GenerationMode.Video, modeController.mode)
             assertEquals(AppScreen.Home, backStack.last())
         }
         onNodeWithContentDescription("Open navigation menu").performClick()
         onAllNodesWithContentDescription("Create, selected").assertCountEquals(1)
-        onAllNodesWithContentDescription("Video, selected").assertCountEquals(1)
+        onNodeWithContentDescription("Create, selected").performClick()
+        onNodeWithContentDescription("Video mode, selected").assertIsDisplayed()
     }
 
     @Test
@@ -287,9 +292,9 @@ class CreateWorkbenchUiTest {
     }
 
     @Test
-    fun compactModeSwitcherUsesAConnectedTonalSelectionInsteadOfUnderlineChrome() =
+    fun compactModeSwitcherUsesTheWritePastelAndKeepsAnIndependentSelection() =
         runComposeUiTest {
-            val selectedColor = Color(0xFFFFD84D)
+            val selectedColor = Color(0xFFF6CD57)
             val hostColor = Color(0xFFB00020)
             setContent {
                 MaterialTheme(
@@ -307,6 +312,7 @@ class CreateWorkbenchUiTest {
                         GenerationModeSwitcher(
                             mode = GenerationMode.Text,
                             onModeSelected = {},
+                            compact = true,
                         )
                     }
                 }
@@ -321,7 +327,7 @@ class CreateWorkbenchUiTest {
                 abs(fill.red - selectedColor.red) < 0.03f &&
                     abs(fill.green - selectedColor.green) < 0.03f &&
                     abs(fill.blue - selectedColor.blue) < 0.03f,
-                "The selected mode must be a connected tonal segment, not a transparent tab; " +
+                "The selected Write mode must use its fixed character pastel; " +
                     "sampled $fill",
             )
         }
@@ -346,15 +352,15 @@ class CreateWorkbenchUiTest {
             }
         }
 
-        onAllNodesWithText("Start with a private thought.").assertCountEquals(1)
-        onAllNodesWithText("Ask a question, shape an idea, or begin writing. Nothing leaves this device.")
+        onAllNodesWithText("Got a\nweird idea?").assertCountEquals(1)
+        onAllNodesWithText("Good. Let’s do something with it.")
             .assertCountEquals(1)
         onNodeWithTag("create-command").assertIsDisplayed()
 
         val emptyStateNode = onNodeWithTag("create-empty-state")
         val emptyStateBounds = emptyStateNode.fetchSemanticsNode().boundsInRoot
         val emptyState = emptyStateNode.captureToImage().toPixelMap()
-        val focalNode = onNodeWithTag("create-focal-canvas", useUnmergedTree = true)
+        val focalNode = onNodeWithTag("create-route-canvas", useUnmergedTree = true)
         val focalBounds = focalNode.fetchSemanticsNode().boundsInRoot
         val focalCanvas = focalNode.captureToImage().toPixelMap()
         val focalX = (emptyStateBounds.left - focalBounds.left).toInt() + 1
@@ -388,7 +394,7 @@ class CreateWorkbenchUiTest {
 
             val hostBounds = onNodeWithTag("create-host", useUnmergedTree = true)
                 .fetchSemanticsNode().boundsInRoot
-            val bounds = onNodeWithTag("create-focal-canvas", useUnmergedTree = true)
+            val bounds = onNodeWithTag("create-route-canvas", useUnmergedTree = true)
                 .assertIsDisplayed()
                 .fetchSemanticsNode().boundsInRoot
             assertEquals(hostBounds, bounds)
@@ -427,14 +433,14 @@ class CreateWorkbenchUiTest {
 
             val hostBounds = onNodeWithTag("no-model-host", useUnmergedTree = true)
                 .fetchSemanticsNode().boundsInRoot
-            val focalBounds = onNodeWithTag("create-focal-canvas", useUnmergedTree = true)
+            val focalBounds = onNodeWithTag("create-route-canvas", useUnmergedTree = true)
                 .assertIsDisplayed()
                 .fetchSemanticsNode().boundsInRoot
             assertEquals(hostBounds, focalBounds)
-            onNodeWithText("TEXT WORKSPACE").assertIsDisplayed()
-            onNodeWithText("Start with a private thought.").assertIsDisplayed()
+            onNodeWithContentDescription("Text mode, selected").assertIsDisplayed()
+            onNodeWithText("Got a\nweird idea?").assertIsDisplayed()
             onNodeWithText(
-                "Choose a local model to begin. Your prompts and responses stay on this device.",
+                "Choose a local language model to begin.",
             ).assertIsDisplayed()
             onAllNodesWithText("I").assertCountEquals(0)
             onAllNodesWithText("No models downloaded yet").assertCountEquals(0)
@@ -457,7 +463,7 @@ class CreateWorkbenchUiTest {
                         backStack = backStack,
                     ) {
                         observedLayout = LocalAppNavigationLayout.current
-                        ChatScreenContent(
+                        if (backStack.last() == AppScreen.Home) ChatScreenContent(
                             uiState = readyState(
                                 mode = GenerationMode.Text,
                                 messages = messages,
@@ -499,7 +505,9 @@ class CreateWorkbenchUiTest {
             }
             waitForIdle()
 
-            onAllNodesWithText("CaraML").assertCountEquals(0)
+            onAllNodesWithText("CaraML").assertCountEquals(1) // Assistant sender identity.
+            onAllNodesWithContentDescription("Create, selected").assertCountEquals(0)
+            onNodeWithContentDescription("Text mode, selected").assertIsDisplayed()
             onAllNodesWithText("Create").assertCountEquals(0)
             onNodeWithText("Start with one observable outcome.").assertIsDisplayed()
             onNodeWithText("Thoughts").assertIsDisplayed()
@@ -651,11 +659,11 @@ class CreateWorkbenchUiTest {
 
             runOnIdle { mode = GenerationMode.Image }
             mainClock.advanceTimeByFrame()
-            onNodeWithText("Start with a private thought.").assertExists()
-            val entering = onNodeWithText("Create without the cloud.")
+            onNodeWithText("Got a\nweird idea?").assertExists()
+            val entering = onNodeWithContentDescription("Image mode, selected")
                 .fetchSemanticsNode().positionInRoot
             mainClock.advanceTimeBy(220)
-            val settled = onNodeWithText("Create without the cloud.")
+            val settled = onNodeWithContentDescription("Image mode, selected")
                 .fetchSemanticsNode().positionInRoot
             assertTrue(
                 abs(entering.y - settled.y) <= 8f,
@@ -687,10 +695,10 @@ class CreateWorkbenchUiTest {
             mainClock.advanceTimeByFrame()
             runOnIdle { reducedMode = GenerationMode.Video }
             mainClock.advanceTimeByFrame()
-            val reducedEntering = onNodeWithText("Set ideas in motion.")
+            val reducedEntering = onNodeWithContentDescription("Video mode, selected")
                 .fetchSemanticsNode().positionInRoot
             mainClock.advanceTimeBy(90)
-            val reducedSettled = onNodeWithText("Set ideas in motion.")
+            val reducedSettled = onNodeWithContentDescription("Video mode, selected")
                 .fetchSemanticsNode().positionInRoot
             assertEquals(reducedEntering.y, reducedSettled.y)
         }
@@ -713,20 +721,23 @@ class CreateWorkbenchUiTest {
                 }
             }
 
+            onNode(hasScrollToIndexAction()).performScrollToIndex(1)
             onNodeWithContentDescription("Text mode, selected").assertIsDisplayed()
-            assertTextDoesNotOverflow("Text")
-            assertTextDoesNotOverflow("Image")
-            assertTextDoesNotOverflow("Video")
+            assertTextDoesNotOverflow("Write")
+            assertTextDoesNotOverflow("Imagine")
+            assertTextDoesNotOverflow("Animate")
             onNodeWithContentDescription("Image mode").performClick()
             runOnIdle { assertEquals(GenerationMode.Image, controller.mode) }
             onNodeWithContentDescription("Image mode, selected").assertIsDisplayed()
-            assertTextDoesNotOverflow("Image")
+            assertTextDoesNotOverflow("Imagine")
             onNodeWithContentDescription("Video mode").performClick()
             runOnIdle { assertEquals(GenerationMode.Video, controller.mode) }
             onNodeWithContentDescription("Video mode, selected").assertIsDisplayed()
-            assertTextDoesNotOverflow("Video")
-            onNode(hasSetTextAction()).assertIsDisplayed()
+            assertTextDoesNotOverflow("Animate")
+            onNode(hasScrollToIndexAction()).performScrollToIndex(2)
+            onNode(hasSetTextAction()).performScrollTo().assertIsDisplayed()
             onNodeWithContentDescription("Send message")
+                .performScrollTo()
                 .assertIsDisplayed()
                 .assertWidthIsAtLeast(48.dp)
                 .assertHeightIsAtLeast(48.dp)
@@ -765,15 +776,10 @@ class CreateWorkbenchUiTest {
                     navigation = nextLayout
                     width = nextWidth
                 }
-                val bounds = if (layout == AppNavigationLayout.Sidebar) {
-                    onNodeWithText("Create", useUnmergedTree = true)
-                        .fetchSemanticsNode()
-                        .boundsInRoot
-                } else {
-                    onNodeWithContentDescription("Text mode, selected", useUnmergedTree = true)
-                        .fetchSemanticsNode()
-                        .boundsInRoot
-                }
+                onNode(hasScrollToIndexAction()).performScrollToIndex(1)
+                val bounds = onNodeWithContentDescription("Text mode, selected", useUnmergedTree = true)
+                    .fetchSemanticsNode()
+                    .boundsInRoot
                 assertTrue(
                     bounds.top >= 24f,
                     "$layout Create chrome must start below the 24dp safe top; bounds=$bounds",
@@ -816,7 +822,9 @@ class CreateWorkbenchUiTest {
                     navigation = nextLayout
                     width = nextWidth
                 }
+                onNode(hasScrollToIndexAction()).performScrollToIndex(2)
                 val action = onNodeWithContentDescription("Send message")
+                    .performScrollTo()
                     .assertIsDisplayed()
                     .assertWidthIsAtLeast(48.dp)
                     .assertHeightIsAtLeast(48.dp)
@@ -878,16 +886,18 @@ class CreateWorkbenchUiTest {
                 runOnIdle { state = nextState }
                 waitForIdle()
                 onAllNodes(
-                    SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollBy),
+                    SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange),
                     useUnmergedTree = true,
                 ).assertCountEquals(1)
             }
 
             show(ChatUiState.NoModels)
+            onNode(hasScrollToIndexAction()).performScrollToIndex(2)
             onNodeWithText("Browse models").performScrollTo().assertIsDisplayed().performClick()
             runOnIdle { assertEquals(1, modelHubNavigations) }
 
             show(ChatUiState.NoModelsForMode(GenerationMode.Video))
+            onNode(hasScrollToIndexAction()).performScrollToIndex(2)
             onNodeWithText("Browse models").performScrollTo().assertIsDisplayed().performClick()
             runOnIdle { assertEquals(2, modelHubNavigations) }
 
@@ -1134,12 +1144,12 @@ class CreateWorkbenchUiTest {
         assertTrue(
             !result.didOverflowWidth,
             "$text must not overflow horizontally at 200% font scale; " +
-                "size=${result.size}, lines=${result.lineCount}",
+                "size=${result.size}, lines=${result.lineCount}, paragraphWidth=${result.multiParagraph.width}, constraints=${result.layoutInput.constraints}",
         )
         assertTrue(
             !result.didOverflowHeight,
             "$text must not overflow vertically at 200% font scale; " +
-                "size=${result.size}, lines=${result.lineCount}",
+                "size=${result.size}, lines=${result.lineCount}, paragraphWidth=${result.multiParagraph.width}, constraints=${result.layoutInput.constraints}",
         )
     }
 }

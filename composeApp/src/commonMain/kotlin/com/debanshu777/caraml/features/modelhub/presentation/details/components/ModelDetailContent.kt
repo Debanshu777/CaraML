@@ -1,6 +1,7 @@
 package com.debanshu777.caraml.features.modelhub.presentation.details.components
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -39,6 +40,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -51,6 +53,8 @@ import com.debanshu777.caraml.core.download.DownloadArtifactState
 import com.debanshu777.caraml.core.rating.ui.RecommendationStatusChip
 import com.debanshu777.caraml.core.rating.ui.formatBytesHuman
 import com.debanshu777.caraml.core.recommendation.BrowseFitEstimate
+import com.debanshu777.caraml.core.recommendation.BrowseResourceFit
+import com.debanshu777.caraml.core.recommendation.Compatibility
 import com.debanshu777.caraml.core.recommendation.DiffusionModelDescriptor
 import com.debanshu777.caraml.core.recommendation.LlmModelDescriptor
 import com.debanshu777.caraml.core.recommendation.ModelDescriptor
@@ -109,6 +113,7 @@ fun ModelDetailContent(
     onResumeDownload: (String, String) -> Unit = { _, _ -> },
     onCancelDownload: (String, String) -> Unit = { _, _ -> },
     onRetryDownload: (String, String) -> Unit = { _, _ -> },
+    onOpenDeviceInfo: (() -> Unit)? = null,
 ) {
     if (model == null) return
 
@@ -144,7 +149,8 @@ fun ModelDetailContent(
                 ) {
                     ModelOverviewSection(
                         model = model,
-                        description = modelSetup?.description
+                        description = modelSetup?.description,
+                        expandedLayout = true,
                     )
                     ModelMetadataSection(model)
                     if (!showInstallBundle) {
@@ -178,6 +184,7 @@ fun ModelDetailContent(
                         onRecommendationInfoClick,
                         browseSelection?.estimate,
                         browseSelection?.displayName,
+                        onOpenDeviceInfo = onOpenDeviceInfo,
                     )
                     if (showInstallBundle) {
                         InstallBundleCard(
@@ -221,8 +228,8 @@ fun ModelDetailContent(
                         browseFit = browseSelection?.estimate,
                         browseVariantName = browseSelection?.displayName,
                         modifier = Modifier.testTag("detail-support"),
+                        onOpenDeviceInfo = onOpenDeviceInfo,
                     )
-                    ModelMetadataSection(model)
                     if (showInstallBundle) {
                         InstallBundleSummaryCard(
                             state = installBundleState,
@@ -253,6 +260,7 @@ fun ModelDetailContent(
                             onRetryDownload = onRetryDownload,
                         )
                     }
+                    ModelMetadataSection(model)
                 }
                 if (showInstallBundle) {
                     InstallBundleActionFooter(
@@ -277,12 +285,15 @@ fun ModelDetailContent(
 @Composable
 private fun ModelOverviewSection(
     model: ModelDetailResponse,
-    description: String?
+    description: String?,
+    expandedLayout: Boolean = false,
 ) {
     val spacing = AppTheme.spacing
     val heading = splitRepositoryId(model.modelId ?: model.id.orEmpty())
     val owner = heading.owner ?: model.author?.trim()?.takeIf { it.isNotEmpty() }
     var descriptionExpanded by rememberSaveable(model.modelId, model.id) { mutableStateOf(false) }
+    var titleExpanded by rememberSaveable(model.modelId, model.id) { mutableStateOf(false) }
+    var titleOverflow by remember(model.modelId, model.id) { mutableStateOf(false) }
     AuroraFocalSurface(
         modifier = Modifier
             .fillMaxWidth()
@@ -296,16 +307,22 @@ private fun ModelOverviewSection(
                 Text(
                     text = it,
                     style = AppTheme.typography.technical12,
-                    color = AppTheme.colors.primary,
+                    color = AppTheme.colors.onSurfaceVariant,
                 )
             }
             Text(
                 text = heading.name,
-                style = AppTheme.typography.heading24,
+                style = AppTheme.typography.pageTitle32,
                 color = AppTheme.colors.onSurface,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis
+                maxLines = if (titleExpanded) Int.MAX_VALUE else 2,
+                overflow = TextOverflow.Ellipsis,
+                onTextLayout = { if (!titleExpanded) titleOverflow = it.hasVisualOverflow },
             )
+            if (titleOverflow || titleExpanded) {
+                TextButton(onClick = { titleExpanded = !titleExpanded }) {
+                    Text(if (titleExpanded) "Show less" else "Show full name")
+                }
+            }
             val technicalSummary = listOfNotNull(
                 model.pipelineTag?.takeIf { it.isNotBlank() },
                 model.libraryName?.takeIf { it.isNotBlank() },
@@ -415,9 +432,10 @@ private fun ModelMetadataSection(model: ModelDetailResponse) {
     var detailsVisible by rememberSaveable(model.modelId, model.id, "details-visible") {
         mutableStateOf(false)
     }
+    var showAll by rememberSaveable(model.modelId, model.id, "all-metadata") { mutableStateOf(false) }
+    val visibleEntries = if (showAll) entries else entries.take(4)
     Surface(
-        onClick = { detailsVisible = !detailsVisible },
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().testTag("detail-metadata"),
         shape = AppTheme.shapes.small,
         color = AppTheme.colors.surfaceContainerLow.copy(alpha = AppTheme.effects.decisionSurface),
         contentColor = AppTheme.colors.onSurface,
@@ -426,6 +444,7 @@ private fun ModelMetadataSection(model: ModelDetailResponse) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .clickable(role = Role.Button) { detailsVisible = !detailsVisible }
                     .padding(spacing.spacing16),
                 horizontalArrangement = Arrangement.spacedBy(spacing.spacing8),
                 verticalAlignment = Alignment.CenterVertically,
@@ -453,7 +472,7 @@ private fun ModelMetadataSection(model: ModelDetailResponse) {
             }
             if (detailsVisible) {
                 CaraMLPane(modifier = Modifier.fillMaxWidth()) {
-                    entries.forEachIndexed { index, entry ->
+                    visibleEntries.forEachIndexed { index, entry ->
                         DetailRow(
                             label = entry.label,
                             value = entry.value,
@@ -462,7 +481,7 @@ private fun ModelMetadataSection(model: ModelDetailResponse) {
                                 vertical = spacing.spacing12,
                             ),
                         )
-                        if (index != entries.lastIndex || tags.isNotEmpty()) {
+                        if (index != visibleEntries.lastIndex || (showAll && tags.isNotEmpty())) {
                             HorizontalDivider(
                                 modifier = Modifier.padding(horizontal = spacing.spacing16),
                                 color = AppTheme.auroraColors.divider,
@@ -470,7 +489,7 @@ private fun ModelMetadataSection(model: ModelDetailResponse) {
                             )
                         }
                     }
-                    if (tags.isNotEmpty()) {
+                    if (showAll && tags.isNotEmpty()) {
                         Column(
                             modifier = Modifier.padding(spacing.spacing16),
                             verticalArrangement = Arrangement.spacedBy(spacing.spacing8),
@@ -497,6 +516,11 @@ private fun ModelMetadataSection(model: ModelDetailResponse) {
                             }
                         }
                     }
+                    if (entries.size > 4 || tags.isNotEmpty()) {
+                        TextButton(onClick = { showAll = !showAll }, modifier = Modifier.padding(horizontal = spacing.spacing8)) {
+                            Text(if (showAll) "Show less" else "Show all")
+                        }
+                    }
                 }
             }
         }
@@ -510,6 +534,7 @@ private fun ModelRecommendationSection(
     browseFit: BrowseFitEstimate? = null,
     browseVariantName: String? = null,
     modifier: Modifier = Modifier,
+    onOpenDeviceInfo: (() -> Unit)? = null,
 ) {
     val spacing = AppTheme.spacing
     Column(
@@ -537,7 +562,7 @@ private fun ModelRecommendationSection(
             Text(
                 text = "${if (recommendationState?.descriptorState == DescriptorState.NEEDS_INFORMATION) "Provisional variant" else "Selected variant"}: ${browseVariantName ?: recommendationState?.provisionalVariantName ?: "model file"}",
                 style = AppTheme.typography.labelBase,
-                color = AppTheme.colors.onSurfaceVariant,
+                color = AppTheme.colors.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -549,9 +574,23 @@ private fun ModelRecommendationSection(
                 Text(
                     text = "Device resource snapshot is stale; fit is not current",
                     style = AppTheme.typography.bodySmall,
-                    color = AppTheme.colors.onSurfaceVariant,
+                    color = AppTheme.colors.onSurface,
                 )
             }
+        }
+        if (recommendationState == null || recommendationState.descriptorState == DescriptorState.NEEDS_INFORMATION) {
+            val explanation = when {
+                browseFit == null || browseFit.memoryFit == BrowseResourceFit.UNKNOWN ->
+                    "We need more model or device information before estimating fit. An unknown fit doesn't mean the model will run."
+                browseFit.compatibility is Compatibility.Unknown ->
+                    "This is a provisional memory estimate. Model compatibility is still unverified."
+                else -> "This is a provisional memory estimate. More information is needed for a complete recommendation."
+            }
+            Text(explanation,
+                style = AppTheme.typography.bodySmall, color = AppTheme.colors.onSurface)
+        }
+        onOpenDeviceInfo?.let { action ->
+            com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubAction("See device info", action)
         }
     }
 }
@@ -681,7 +720,7 @@ private fun ArtifactFileRow(
     val colors = AppTheme.auroraColors
     val highlightLabel = when {
         recommended -> "Recommended"
-        provisional -> "Suggested · fit unverified"
+        provisional -> "Suggested · support unverified"
         evaluated -> "Evaluated variant"
         else -> null
     }

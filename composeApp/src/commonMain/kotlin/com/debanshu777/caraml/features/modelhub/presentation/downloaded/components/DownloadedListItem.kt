@@ -14,18 +14,20 @@ import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.CheckBoxOutlineBlank
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AppTheme
@@ -34,7 +36,8 @@ import com.debanshu777.caraml.core.storage.localmodel.displayFilename
 import com.debanshu777.caraml.core.theme.CaraMLTheme
 import com.debanshu777.caraml.core.theme.ThemePreferences
 import com.debanshu777.caraml.core.ui.components.StatusMark
-import com.debanshu777.caraml.core.ui.components.GenericListItem
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubCard
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubAction
 import com.debanshu777.huggingfacemanager.model.DIFFUSERS_BUNDLE_DB_FILENAME
 import com.debanshu777.huggingfacemanager.model.PipelineTag
 import kotlin.math.roundToInt
@@ -79,7 +82,7 @@ fun DownloadedListItem(
                         icon = Icons.Default.Build,
                     )
                 }
-                if (isReady) {
+                if (isReady && isSupported) {
                     LocalModelStatusMark(
                         label = "Ready",
                         description = "Ready for chat.",
@@ -101,30 +104,17 @@ fun DownloadedListItem(
     val fixComponentsAction: (@Composable () -> Unit)? =
         if (isPartial && onFixComponents != null && !selectionMode) {
             {
-                TextButton(
-                    onClick = onFixComponents,
-                    modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48),
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Build,
-                        contentDescription = null,
-                        modifier = Modifier.size(AppTheme.dimensions.size14),
-                    )
-                    Spacer(modifier = Modifier.width(AppTheme.spacing.spacing4))
-                    Text(
-                        text = "Finish setup",
-                        style = AppTheme.typography.labelSmall,
-                    )
-                }
+                ModelHubAction("Finish setup", onClick = onFixComponents)
             }
         } else {
             null
         }
 
-    GenericListItem(
-        title = model.modelId,
+    ModelHubCard(
+        title = model.modelId.substringAfterLast('/'),
         eyebrow = model.displayFilename(),
         metadata = metadata,
+        task = model.pipelineTag,
         emphasized = isSelected,
         modifier = modifier
             .combinedClickable(
@@ -151,14 +141,20 @@ fun DownloadedListItem(
                         Icons.Outlined.CheckBoxOutlineBlank
                     },
                     contentDescription = null,
-                    tint = AppTheme.colors.primary,
+                    tint = AppTheme.actionColor,
                 )
             }
         } else {
             null
         },
         status = statusContent,
-        trailing = fixComponentsAction,
+        action = fixComponentsAction ?: if (!selectionMode) ({
+            ModelHubAction(
+                label = if (isSupported) "Use model" else "Unavailable",
+                onClick = onOpenModel,
+                enabled = isSupported,
+            )
+        }) else null,
     )
 }
 
@@ -168,11 +164,15 @@ private fun LocalModelStatusMark(
     description: String,
     icon: ImageVector,
 ) {
-    StatusMark(
-        label = label,
-        contentDescription = description,
-        icon = icon,
-        modifier = Modifier.semantics { contentDescription = description },
+    Text(
+        text = label,
+        style = AppTheme.typography.labelSmall,
+        color = when (label) {
+            "Ready" -> AppTheme.brandColors.positiveText(AppTheme.colors.background.luminance() < .5f)
+            "Needs setup" -> AppTheme.brandColors.cautionText(AppTheme.colors.background.luminance() < .5f)
+            else -> AppTheme.colors.onSurface
+        },
+        modifier = Modifier.semantics { contentDescription = description; stateDescription = description },
     )
 }
 
@@ -190,13 +190,13 @@ private fun formatSize(bytes: Long): String {
     }
 }
 
-@Preview(name = "Downloaded rows - compact", widthDp = 360, heightDp = 320)
+@Preview(name = "Downloaded rows - compact", widthDp = 360, heightDp = 800)
 @Composable
 private fun DownloadedListItemCompactPreview() {
     DownloadedListItemPreviewContent()
 }
 
-@Preview(name = "Downloaded rows - large text", widthDp = 360, heightDp = 500, fontScale = 2f)
+@Preview(name = "Downloaded rows - large text", widthDp = 360, heightDp = 1200, fontScale = 2f)
 @Composable
 private fun DownloadedListItemLargeTextPreview() {
     DownloadedListItemPreviewContent()
@@ -213,6 +213,18 @@ private fun DownloadedListItemPreviewContent() {
                         filename = "MiniCPM5-2B-Q4_K_M.gguf",
                         status = LocalModelEntity.STATUS_READY,
                     ),
+                    selectionMode = false,
+                    isSelected = false,
+                    onOpenModel = {},
+                    onToggleSelect = {},
+                    onLongPress = {},
+                )
+                DownloadedListItem(
+                    model = previewLocalModel(
+                        id = 4,
+                        filename = "audio-encoder.onnx",
+                        status = LocalModelEntity.STATUS_READY,
+                    ).copy(modelId = "sample/Audio-encoder", pipelineTag = "audio-classification"),
                     selectionMode = false,
                     isSelected = false,
                     onOpenModel = {},

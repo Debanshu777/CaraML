@@ -14,6 +14,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PixelMap
@@ -34,12 +35,17 @@ import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AppTheme
+import com.debanshu777.caraml.core.drawer.FocusModeController
+import com.debanshu777.caraml.core.drawer.LocalFocusModeController
+import com.debanshu777.caraml.core.drawer.LocalNavigationMenuAction
 import com.debanshu777.caraml.core.ui.layout.AppNavigationLayout
 import com.debanshu777.caraml.core.ui.layout.LocalAppNavigationLayout
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
@@ -59,6 +65,59 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class ChatFinalAuditUiTest {
+
+    @Test
+    fun focusedConversationKeepsTextImageAndVideoModesAvailable() = runComposeUiTest {
+        val focusController = FocusModeController()
+        var mode by mutableStateOf(GenerationMode.Text)
+        setContent {
+            CompositionLocalProvider(
+                LocalFocusModeController provides focusController,
+                LocalNavigationMenuAction provides {},
+                LocalAppNavigationLayout provides AppNavigationLayout.ModalSidebar,
+                LocalDensity provides Density(1f, fontScale = 2f),
+                LocalCreateSafeDrawingInsetsOverride provides WindowInsets(0),
+            ) {
+                MaterialTheme {
+                    ChatScreenContent(
+                        uiState = readyState(
+                            messages = persistentListOf(
+                                ChatMessage(id = "first-turn", role = MessageRole.User, text = "Hello"),
+                            ),
+                        ).copy(generationMode = mode),
+                        streamingState = StreamingState(),
+                        onSelectModel = {},
+                        onSendMessage = {},
+                        onCancelGeneration = {},
+                        onNavigateToSearch = {},
+                        onGenerationModeSelected = { mode = it },
+                        modifier = Modifier.requiredSize(width = 320.dp, height = 780.dp),
+                    )
+                }
+            }
+        }
+
+        runOnIdle { assertTrue(focusController.isActive) }
+        for ((label, expected) in listOf("Imagine" to GenerationMode.Image, "Animate" to GenerationMode.Video, "Write" to GenerationMode.Text)) {
+            onNodeWithText(label).performScrollTo().assertIsDisplayed().performClick()
+            val textLayouts = mutableListOf<TextLayoutResult>()
+            onNodeWithText(label, useUnmergedTree = true)
+                .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(textLayouts) }
+            val layout = textLayouts.single()
+            assertEquals(1, layout.lineCount, "$label must remain a whole word at 200% text")
+            assertEquals(label.length, layout.getLineEnd(0, visibleEnd = true))
+            assertTrue(!layout.isLineEllipsized(0) && !layout.didOverflowHeight)
+            // Plain Text semantics rebuilds an infinite-width MultiParagraph in the scroll row.
+            // Its actual line bounds, not that parent width, determine whether the label fits.
+            assertTrue(
+                layout.getLineLeft(0) >= 0f && layout.getLineRight(0) <= layout.size.width,
+                "$label must fit its measured width: line=${layout.getLineLeft(0)}..${layout.getLineRight(0)}, size=${layout.size}",
+            )
+            runOnIdle { assertEquals(expected, mode) }
+        }
+        onNodeWithTag("focus-navigation-action").assertIsDisplayed()
+        onNode(hasSetTextAction()).assertIsDisplayed()
+    }
 
     @Test
     fun notchedLandscapeConversationConsumesScaffoldStartAndEndInsets() = runComposeUiTest {
@@ -100,8 +159,8 @@ class ChatFinalAuditUiTest {
             composer.left >= 96f && composer.right <= 820f,
             "Composer must remain inside the injected horizontal cutouts: $composer",
         )
-        val headerStart = onNodeWithText("Create").fetchSemanticsNode().boundsInRoot
-        val headerEnd = onNodeWithText("Video").fetchSemanticsNode().boundsInRoot
+        val headerStart = onNodeWithText("Write").fetchSemanticsNode().boundsInRoot
+        val headerEnd = onNodeWithText("Animate").fetchSemanticsNode().boundsInRoot
         assertTrue(
             headerStart.left >= 96f && headerEnd.right <= 820f,
             "Header must remain inside the injected horizontal cutouts: " +
@@ -149,8 +208,11 @@ class ChatFinalAuditUiTest {
                 }
             }
 
-            onNode(hasSetTextAction()).performTextInput("Line one\nLine two\nLine three\nLine four")
+            val completeDraft = "Line one\nLine two\nLine three\nLine four"
+            onNode(hasSetTextAction()).performTextInput(completeDraft)
             runOnIdle { generating = true }
+            // Capping the visible editor must preserve the complete, scrollable draft.
+            onNodeWithText(completeDraft).assertExists()
 
             val terminal = onNodeWithText("Terminal response").assertIsDisplayed()
                 .fetchSemanticsNode().boundsInRoot

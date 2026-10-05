@@ -1,6 +1,7 @@
 package com.debanshu777.caraml
 
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -58,16 +59,20 @@ fun App(onEffectiveDarkThemeChanged: (Boolean) -> Unit = {}) {
         preferences = themePreferences,
         onEffectiveDarkThemeChanged = onEffectiveDarkThemeChanged,
     ) {
-        AuroraBackdrop(
+        Box(
             modifier = Modifier.fillMaxSize()
                 .windowInsetsPadding(WindowInsets.ime)
         ) {
             val backStack = rememberNavBackStack(config, AppScreen.Home)
             AppDrawerShell(backStack = backStack) {
-                NavigationHost(
-                    modifier = Modifier.fillMaxSize(),
-                    backStack = backStack,
-                )
+                // The backdrop belongs to the moving page. Drawing it outside the shell
+                // lets the shell's opaque page surface cover it on compact devices.
+                AuroraBackdrop {
+                    NavigationHost(
+                        modifier = Modifier.fillMaxSize(),
+                        backStack = backStack,
+                    )
+                }
             }
         }
     }

@@ -3,11 +3,8 @@ package com.debanshu777.caraml.core.drawer
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.ChatBubbleOutline
-import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
@@ -22,7 +19,6 @@ import com.debanshu777.caraml.core.ui.layout.AppContentKind
 import com.debanshu777.caraml.core.ui.layout.AppNavigationLayout
 import com.debanshu777.caraml.core.ui.layout.LocalAppNavigationLayout
 import com.debanshu777.caraml.core.ui.layout.adaptiveLayoutPolicy
-import com.debanshu777.caraml.features.chat.domain.GenerationMode
 
 /** Full app-window width before persistent navigation consumes horizontal space. */
 internal val LocalAppWindowWidth = compositionLocalOf<Dp?> { null }
@@ -45,24 +41,6 @@ private val utilityNavigationItems = listOf(
         id = "settings",
         title = "Settings",
         icon = Icons.Default.Settings,
-    ),
-)
-
-private val generationModeItems = listOf(
-    DrawerItem(
-        id = "mode-text",
-        title = "Text",
-        icon = Icons.Default.ChatBubbleOutline,
-    ),
-    DrawerItem(
-        id = "mode-image",
-        title = "Image",
-        icon = Icons.Default.Image,
-    ),
-    DrawerItem(
-        id = "mode-video",
-        title = "Video",
-        icon = Icons.Default.Videocam,
     ),
 )
 
@@ -89,12 +67,6 @@ fun AppDrawerShell(
             AppScreen.Settings -> "settings"
             else -> null
         }
-        val selectedModeItemId = when (modeController.mode) {
-            GenerationMode.Text -> "mode-text"
-            GenerationMode.Image -> "mode-image"
-            GenerationMode.Video -> "mode-video"
-        }
-
         val navigateToItem: (DrawerItem) -> Unit = { item ->
             val target = when (item.id) {
                 "create" -> AppScreen.Home
@@ -109,14 +81,6 @@ fun AppDrawerShell(
                 }
             }
         }
-        val selectGenerationMode: (DrawerItem) -> Unit = { item ->
-            when (item.id) {
-                "mode-text" -> modeController.setState(GenerationMode.Text)
-                "mode-image" -> modeController.setState(GenerationMode.Image)
-                "mode-video" -> modeController.setState(GenerationMode.Video)
-            }
-        }
-
         BoxWithConstraints(modifier = modifier) {
             val appWindowWidth = maxWidth
             val navigation = adaptiveLayoutPolicy(maxWidth, AppContentKind.Chat).navigation
@@ -135,16 +99,6 @@ fun AppDrawerShell(
                 onItemClick = navigateToItem,
                 onFooterItemClick = navigateToItem,
                 drawerController = drawerController,
-                contextualItems = if (
-                    effectiveNavigation != AppNavigationLayout.Rail &&
-                    currentScreen == AppScreen.Home
-                ) {
-                    generationModeItems
-                } else {
-                    emptyList()
-                },
-                selectedContextualItemId = selectedModeItemId,
-                onContextualItemClick = selectGenerationMode,
                 content = {
                     CompositionLocalProvider(
                         LocalAppWindowWidth provides appWindowWidth,

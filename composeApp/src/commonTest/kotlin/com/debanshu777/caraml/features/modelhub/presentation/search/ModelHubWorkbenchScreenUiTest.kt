@@ -21,6 +21,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -139,10 +140,9 @@ class ModelHubWorkbenchScreenUiTest {
                 onNodeWithContentDescription("Open navigation menu")
                     .fetchSemanticsNode().boundsInRoot
             } else {
-                onAllNodesWithText("Models")
-                    .fetchSemanticsNodes()
-                    .maxBy { it.boundsInRoot.width }
-                    .boundsInRoot
+                onNode(
+                    hasText("Models") and SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading),
+                ).fetchSemanticsNode().boundsInRoot
             }
             val tabs = onNodeWithTag("model-tabs").fetchSemanticsNode().boundsInRoot
             assertTrue(
@@ -277,6 +277,7 @@ class ModelHubWorkbenchScreenUiTest {
 
         assertEquals(1, verticalScrollOwnerCount())
         onNodeWithText("Reset filters").performScrollTo().assertIsDisplayed().performClick()
+        onNodeWithTag("model-primary-results").performScrollToIndex(3)
         onNodeWithText("long-model-name-that-remains-readable")
             .performScrollTo()
             .assertIsDisplayed()

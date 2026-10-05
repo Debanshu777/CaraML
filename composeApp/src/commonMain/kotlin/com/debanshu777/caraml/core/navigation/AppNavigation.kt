@@ -8,6 +8,11 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
@@ -219,6 +224,7 @@ fun NavigationHost(
     val motionPolicy = LocalAuroraMotionPolicy.current
     val detailOffsetPx = with(LocalDensity.current) { AppTheme.spacing.spacing16.roundToPx() }
     val chatViewModel: ChatViewModel = koinViewModel()
+    var requestedModelHubTab by rememberSaveable { mutableStateOf(0) }
     NavigationTransitionDisplay(
         modifier = modifier,
         backStack = backStack,
@@ -247,6 +253,7 @@ fun NavigationHost(
                     SearchScreen(
                         modelViewModel = modelViewModel,
                         downloadedModelsViewModel = downloadedModelsViewModel,
+                        initialTabIndex = requestedModelHubTab,
                         onNavigateToDetails = { modelId, hubMode ->
                             backStack.add(AppScreen.Details(modelId, hubMode))
                         },
@@ -255,6 +262,8 @@ fun NavigationHost(
                             returnHomeAfterModelSelection(backStack)
                         }
                     )
+                    // Search owns its saveable selection after entry; consume this one-time route request.
+                    LaunchedEffect(Unit) { requestedModelHubTab = 0 }
                 }
                 entry<AppScreen.Details>(
                     metadata = metadata {
@@ -291,7 +300,14 @@ fun NavigationHost(
                 entry(AppScreen.Settings) {
                     val settingsViewModel: SettingsViewModel = koinViewModel()
                     SettingsScreen(
-                        viewModel = settingsViewModel
+                        viewModel = settingsViewModel,
+                        onOpenShelf = {
+                            Snapshot.withMutableSnapshot {
+                                requestedModelHubTab = 1
+                                backStack.clear()
+                                backStack.add(AppScreen.Search)
+                            }
+                        },
                     )
                 }
             },

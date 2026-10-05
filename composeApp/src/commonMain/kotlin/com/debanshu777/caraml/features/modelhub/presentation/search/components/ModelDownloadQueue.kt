@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -30,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AppTheme
+import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.core.download.DownloadArtifactSnapshot
 import com.debanshu777.caraml.core.download.DownloadArtifactState
 import com.debanshu777.caraml.core.download.DownloadBatchSnapshot
@@ -39,43 +42,42 @@ import com.debanshu777.caraml.core.download.DownloadBatchState
 fun ModelDownloadQueueEntry(
     batches: List<DownloadBatchSnapshot>,
     onClick: () -> Unit,
+    onPause: ((String, String) -> Unit)? = null,
+    onResume: ((String, String) -> Unit)? = null,
+    onRetry: ((String, String) -> Unit)? = null,
+    onCancel: ((String, String) -> Unit)? = null,
 ) {
-    if (batches.isEmpty()) return
-    val pending = batches.flatMap { it.artifacts }.filter {
-        it.state != DownloadArtifactState.COMPLETED && it.state != DownloadArtifactState.CANCELLED
+    val pending = batches.flatMap { batch ->
+        batch.artifacts.filter {
+            it.state != DownloadArtifactState.COMPLETED && it.state != DownloadArtifactState.CANCELLED
+        }.map { batch to it }
     }
-    if (pending.isEmpty()) return
-    val count = pending.size
-    val active = pending.count { it.state == DownloadArtifactState.RUNNING || it.state == DownloadArtifactState.VERIFYING }
-    val needsAttention = pending.count { it.state == DownloadArtifactState.FAILED_RETRYABLE || it.state == DownloadArtifactState.FAILED_TERMINAL }
-    val paused = pending.count { it.state == DownloadArtifactState.PAUSED }
-    val waiting = pending.count { it.state == DownloadArtifactState.WAITING_FOR_NETWORK }
-    val label = when {
-        count == 1 && needsAttention > 0 -> "1 download needs attention"
-        count == 1 && paused > 0 -> "1 download paused"
-        count == 1 && waiting > 0 -> "1 download waiting for network"
-        count == 1 && active > 0 -> "1 download active"
-        count == 1 -> "1 download queued"
-        needsAttention > 0 -> "$count downloads · $needsAttention need attention"
-        active > 0 -> "$count downloads · $active active"
-        paused > 0 -> "$count downloads · $paused paused"
-        waiting > 0 -> "$count downloads · waiting for network"
-        else -> "$count downloads queued"
-    }
+    val (batch, artifact) = pending.firstOrNull() ?: return
     Surface(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth().heightIn(min = AppTheme.spacing.spacing48).testTag("model-download-queue-entry"),
-        shape = AppTheme.shapes.small,
-        color = AppTheme.colors.surfaceContainerLow,
+        modifier = Modifier.fillMaxWidth().padding(vertical = AppTheme.spacing.spacing8)
+            .testTag("model-download-queue-entry"),
+        shape = AppTheme.shapes.medium,
+        border = BorderStroke(1.dp, AppTheme.colors.outlineVariant),
+        color = AppTheme.colors.surfaceContainerLowest,
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = AppTheme.spacing.spacing16, vertical = AppTheme.spacing.spacing8),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
+        Column(
+            modifier = Modifier.padding(15.dp),
+            verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
         ) {
-            Icon(Icons.Outlined.Download, contentDescription = null, tint = AppTheme.colors.tertiary)
-            Text(label, style = AppTheme.typography.labelLarge, modifier = Modifier.weight(1f))
-            Icon(Icons.Outlined.ChevronRight, contentDescription = "Open downloads")
+            ModelDownloadQueueRow(batch = batch, artifact = artifact)
+            if (onPause != null && onResume != null && onRetry != null && onCancel != null) {
+                ModelDownloadBatchControls(
+                    batch = batch,
+                    onPause = { onPause(batch.batchId, artifact.artifactId) },
+                    onResume = { onResume(batch.batchId, artifact.artifactId) },
+                    onRetry = { onRetry(batch.batchId, artifact.artifactId) },
+                    onCancel = { onCancel(batch.batchId, artifact.artifactId) },
+                )
+            }
+            TextButton(onClick = onClick, modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48)) {
+                Text(if (pending.size > 1) "All downloads (${pending.size})" else "Download details", color = AppTheme.actionColor)
+                Icon(Icons.Outlined.ChevronRight, contentDescription = "Open downloads")
+            }
         }
     }
 }
@@ -150,24 +152,26 @@ internal fun ModelDownloadQueueRow(
         modifier = Modifier.fillMaxWidth().testTag("download-${artifact.artifactId}"),
         verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing4),
     ) {
-        Text(batch.displayName, style = AppTheme.typography.headingXSmall)
+        Text(batch.displayName, style = AppTheme.typography.bodyBase)
         Text(
             artifact.request.metadata.artifact.relativePath,
             style = AppTheme.typography.bodySmall,
             color = AppTheme.colors.onSurfaceVariant,
             maxLines = 2,
         )
-        Text(status, style = AppTheme.typography.bodyBase)
-        if (artifact.state == DownloadArtifactState.RUNNING || artifact.state == DownloadArtifactState.VERIFYING) {
+        Text(status, style = AppTheme.typography.labelSmall, color = AppTheme.colors.onSurfaceVariant)
+        if (artifact.state != DownloadArtifactState.CANCELLED) {
             val expected = artifact.expectedBytes
-            if (artifact.state == DownloadArtifactState.RUNNING && expected > 0L) {
+            if (expected > 0L) {
                 LinearProgressIndicator(
                     progress = { (artifact.bytesReceived.toFloat() / expected).coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Text("${(artifact.bytesReceived.coerceAtLeast(0) * 100 / expected).coerceIn(0, 100)}%", style = AppTheme.typography.bodySmall)
+                Text("${formatStorageBytes(artifact.bytesReceived)} of ${formatStorageBytes(expected)} · ${(artifact.bytesReceived.toDouble() * 100 / expected).toInt().coerceIn(0, 100)}%", style = AppTheme.typography.labelSmall, color = AppTheme.colors.onSurfaceVariant)
             } else {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                if (LocalAuroraMotionPolicy.current.pulseEnabled && artifact.state in listOf(DownloadArtifactState.RUNNING, DownloadArtifactState.VERIFYING)) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
                 Text("Progress unavailable", style = AppTheme.typography.bodySmall)
             }
         }
@@ -186,9 +190,9 @@ internal fun ModelDownloadBatchControls(
         FlowRow(horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8)) {
             when (batch.state) {
                 DownloadBatchState.RUNNING, DownloadBatchState.QUEUED,
-                DownloadBatchState.WAITING_FOR_NETWORK -> TextButton(onClick = onPause, modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48)) { Text("Pause download") }
-                DownloadBatchState.PAUSED -> TextButton(onClick = onResume, modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48)) { Text("Resume download") }
-                DownloadBatchState.FAILED_RETRYABLE -> TextButton(onClick = onRetry, modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48)) { Text("Retry download") }
+                DownloadBatchState.WAITING_FOR_NETWORK -> ModelHubAction(label = "Pause download", onClick = onPause)
+                DownloadBatchState.PAUSED -> ModelHubAction(label = "Resume download", onClick = onResume)
+                DownloadBatchState.FAILED_RETRYABLE -> ModelHubAction(label = "Retry download", onClick = onRetry)
                 else -> Unit
             }
             if (batch.state in listOf(
@@ -197,7 +201,7 @@ internal fun ModelDownloadBatchControls(
                     DownloadBatchState.FAILED_RETRYABLE,
                 )
             ) {
-                TextButton(onClick = onCancel, modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48)) { Text("Cancel download") }
+                ModelHubAction(label = "Cancel download", onClick = onCancel)
             }
         }
 }

@@ -27,10 +27,10 @@ fun CaraMLPane(
     Surface(
         modifier = modifier,
         shape = shape,
-        color = level.containerColor(AppTheme.colors).copy(alpha = level.containerAlpha),
+        color = level.containerColor(AppTheme.colors).copy(alpha = if (AppTheme.softEffects) level.containerAlpha else 1f),
         contentColor = AppTheme.colors.onSurface,
         border = if (showBorder) BorderStroke(AppTheme.dimensions.size1, AppTheme.auroraColors.paneBorder) else null,
-        shadowElevation = if (level == AuroraSurfaceLevel.Floating) AppTheme.dimensions.size3 else AppTheme.dimensions.size0,
+        shadowElevation = if (AppTheme.softEffects && level == AuroraSurfaceLevel.Floating) AppTheme.dimensions.size3 else AppTheme.dimensions.size0,
     ) {
         Column(content = content)
     }

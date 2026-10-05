@@ -26,6 +26,8 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
+import com.debanshu777.caraml.core.ui.components.BrandPal
+import com.debanshu777.caraml.core.ui.components.BrandPalState
 
 enum class GenerationActivityPhase(
     val description: String,
@@ -76,13 +78,15 @@ fun GenerationActivity(
             horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
-                imageVector = phase.icon,
-                contentDescription = null,
+            BrandPal(
+                state = when (phase) {
+                    GenerationActivityPhase.Preparing -> BrandPalState.Loading
+                    GenerationActivityPhase.Generating -> BrandPalState.Replying
+                    GenerationActivityPhase.Finalizing -> BrandPalState.Thinking
+                },
                 modifier = Modifier
-                    .size(AppTheme.dimensions.size20)
+                    .size(40.dp)
                     .testTag("generation-activity-signal"),
-                tint = AppTheme.colors.primary,
             )
             Column(
                 modifier = Modifier.weight(1f),
@@ -105,7 +109,7 @@ fun GenerationActivity(
                 progress = { displayedProgress },
                 modifier = Modifier.fillMaxWidth(),
             )
-        } else {
+        } else if (motion.pulseEnabled) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
     }

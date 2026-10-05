@@ -162,8 +162,9 @@ class ModelHubAuroraUiTest {
             .fetchSemanticsNode().positionInRoot.y
         assertTrue(authorY < titleY)
         assertTrue(titleY < metadataY)
-        assertTrue(statusBounds.left == titleBounds.left)
-        assertTrue(statusBounds.top >= metadataY)
+        assertTrue(statusBounds.left >= titleBounds.right)
+        assertTrue(kotlin.math.abs(statusBounds.center.y - titleBounds.center.y) <= 1f)
+        assertTrue(statusBounds.bottom <= metadataY)
         onNodeWithContentDescription("Open model org/tiny-model")
             .assertWidthIsAtLeast(48.dp)
             .assertHeightIsAtLeast(48.dp)

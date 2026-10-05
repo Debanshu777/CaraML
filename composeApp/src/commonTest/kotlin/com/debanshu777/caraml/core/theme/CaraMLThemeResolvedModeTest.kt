@@ -2,11 +2,15 @@
 
 package com.debanshu777.caraml.core.theme
 
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.test.v2.runComposeUiTest
@@ -15,6 +19,44 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class CaraMLThemeResolvedModeTest {
+
+    @Test
+    fun uncoloredPageLabelsStayReadableWhenTheThemeChanges() = runComposeUiTest {
+        var mode by mutableStateOf(ThemeMode.DARK)
+        var resolvedPageContent: Color? = null
+        var expectedContentColor: Color? = null
+        var pageBackground: Color? = null
+
+        setContent {
+            CaraMLTheme(ThemePreferences(themeMode = mode, reduceMotion = true)) {
+                val scheme = AppTheme.colors
+                SideEffect {
+                    expectedContentColor = scheme.onSurface
+                    pageBackground = scheme.background
+                }
+                // Settings draws directly over Aurora, without an opaque Surface provider.
+                Scaffold(containerColor = Color.Transparent) { padding ->
+                    val contentColor = LocalContentColor.current
+                    SideEffect { resolvedPageContent = contentColor }
+                    Text(
+                        text = "Risk tolerance",
+                        style = AppTheme.typography.labelLarge,
+                        modifier = Modifier.padding(padding),
+                    )
+                }
+            }
+        }
+
+        listOf(ThemeMode.DARK, ThemeMode.LIGHT).forEach { requestedMode ->
+            runOnIdle { mode = requestedMode }
+            waitForIdle()
+            assertEquals(expectedContentColor, resolvedPageContent)
+            assertTrue(
+                contrastRatio(requireNotNull(resolvedPageContent), requireNotNull(pageBackground)) >= 4.5f,
+                "Uncolored labels must inherit readable page content in $requestedMode mode",
+            )
+        }
+    }
 
     @Test
     fun selectedControlsUseTheExactSeedAsTheAppPrimaryWithReadableContent() =

@@ -45,6 +45,7 @@ fun SearchBar(
     onClear: () -> Unit = { onQueryChange("") },
     modifier: Modifier = Modifier,
     errorMessage: String? = null,
+    placeholder: String = "Find your next little brain",
 ) {
     var focused by remember { mutableStateOf(false) }
 
@@ -56,8 +57,10 @@ fun SearchBar(
             .fillMaxWidth()
             .testTag("model-command"),
         contentPadding = PaddingValues(horizontal = AppTheme.spacing.spacing12, vertical = AppTheme.spacing.spacing4),
-        idleContainerColor = AppTheme.colors.surfaceContainerHigh,
-        idleBorderColor = AppTheme.colors.outlineVariant,
+        idleContainerColor = AppTheme.colors.surfaceContainerLowest.copy(
+            alpha = if (AppTheme.softEffects) AppTheme.effects.workspaceGlyphSurface else 1f,
+        ),
+        idleBorderColor = AppTheme.auroraColors.paneBorder,
     ) {
         Row(
             modifier = Modifier
@@ -89,7 +92,7 @@ fun SearchBar(
                     Box(contentAlignment = Alignment.CenterStart) {
                         if (query.isEmpty()) {
                             Text(
-                                text = "Search models",
+                                text = placeholder,
                                 style = AppTheme.typography.bodyLarge,
                                 color = AppTheme.colors.onSurfaceVariant,
                             )

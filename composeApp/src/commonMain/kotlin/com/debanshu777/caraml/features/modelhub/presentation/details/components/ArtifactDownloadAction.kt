@@ -69,7 +69,7 @@ internal fun GgufFileAction(
                     DownloadArtifactState.RUNNING,
                     DownloadArtifactState.QUEUED,
                     DownloadArtifactState.WAITING_FOR_NETWORK,
-                    -> IconButton(onClick = onPause, modifier = Modifier.size(AppTheme.dimensions.size30)) {
+                    -> IconButton(onClick = onPause, modifier = Modifier.size(AppTheme.spacing.spacing48)) {
                         Icon(
                             Icons.Default.Pause,
                             contentDescription = "Pause download $filename",
@@ -78,7 +78,7 @@ internal fun GgufFileAction(
                     }
                     DownloadArtifactState.PAUSED -> IconButton(
                         onClick = onResume,
-                        modifier = Modifier.size(AppTheme.dimensions.size30),
+                        modifier = Modifier.size(AppTheme.spacing.spacing48),
                     ) {
                         Icon(
                             Icons.Default.PlayArrow,
@@ -88,7 +88,7 @@ internal fun GgufFileAction(
                     }
                     DownloadArtifactState.FAILED_RETRYABLE -> IconButton(
                         onClick = onRetry,
-                        modifier = Modifier.size(AppTheme.dimensions.size30),
+                        modifier = Modifier.size(AppTheme.spacing.spacing48),
                     ) {
                         Icon(
                             Icons.Default.Refresh,
@@ -102,7 +102,7 @@ internal fun GgufFileAction(
                         DownloadArtifactState.VERIFYING,
                     )
                 ) {
-                    IconButton(onClick = onCancel, modifier = Modifier.size(AppTheme.dimensions.size30)) {
+                    IconButton(onClick = onCancel, modifier = Modifier.size(AppTheme.spacing.spacing48)) {
                         Icon(
                             Icons.Default.Close,
                             contentDescription = "Cancel download $filename",
@@ -116,7 +116,7 @@ internal fun GgufFileAction(
             reportedProgress?.let { ArtifactActionProgress(it) }
             IconButton(
                 onClick = onDownloadClick,
-                modifier = Modifier.size(AppTheme.dimensions.size30),
+                modifier = Modifier.size(AppTheme.spacing.spacing48),
                 enabled = downloadEnabled && !interactionLocked && !isDownloading,
             ) {
                 Icon(

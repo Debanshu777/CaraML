@@ -222,7 +222,7 @@ class ModelDetailsAuroraUiTest {
         onNodeWithText("Show all").performScrollTo().assertIsDisplayed().performClick()
         onNodeWithText("3 Jul 2026").performScrollTo().assertIsDisplayed()
         onNodeWithContentDescription("Tag: llama.cpp").performScrollTo().assertIsDisplayed()
-        onNodeWithText("zh").assertDoesNotExist()
+        onNodeWithContentDescription("Tag: zh").assertExists()
         onNodeWithText("Show less").assertExists()
     }
 

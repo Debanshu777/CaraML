@@ -86,7 +86,7 @@ fun ChatModelPickerSheet(
                             Icon(
                                 imageVector = Icons.Default.Check,
                                 contentDescription = "Selected",
-                                tint = AppTheme.colors.primary,
+                                tint = AppTheme.actionColor,
                                 modifier = Modifier.size(AppTheme.spacing.spacing24)
                             )
                         }

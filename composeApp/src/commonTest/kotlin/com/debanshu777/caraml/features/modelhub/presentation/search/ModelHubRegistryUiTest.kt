@@ -111,7 +111,7 @@ class ModelHubRegistryUiTest {
         title.assertIsDisplayed()
         metadata.assertIsDisplayed()
         onNodeWithText("Text generation", useUnmergedTree = true).assertIsDisplayed()
-        onNodeWithText("Best fit", useUnmergedTree = true).assertIsDisplayed()
+        onNodeWithText("Recommended", useUnmergedTree = true).assertIsDisplayed()
 
         val titleWidth = title.fetchSemanticsNode().boundsInRoot.width
         val metadataWidth = metadata.fetchSemanticsNode().boundsInRoot.width
@@ -179,7 +179,10 @@ class ModelHubRegistryUiTest {
 
     @Test
     fun selectedVariantLabelStylesOnlyArtifactTokenAsTechnical() {
-        val label = selectedVariantLabel("model-Q4_K_M.gguf")
+        val label = selectedVariantLabel(
+            "model-Q4_K_M.gguf",
+            androidx.compose.ui.text.SpanStyle(fontFamily = FontFamily.Monospace),
+        )
 
         assertEquals("Selected variant: model-Q4_K_M.gguf", label.text)
         assertEquals(
@@ -228,7 +231,7 @@ class ModelHubRegistryUiTest {
         with(titleLayouts.single().layoutInput.style) {
             assertEquals(16.sp, fontSize)
             assertEquals(22.sp, lineHeight)
-            assertEquals(FontWeight.SemiBold, fontWeight)
+            assertEquals(FontWeight.Medium, fontWeight)
         }
         with(summaryLayouts.single().layoutInput.style) {
             assertEquals(14.sp, fontSize)
@@ -453,7 +456,7 @@ class ModelHubRegistryUiTest {
         }
 
     @Test
-    fun oneLineModelRowUsesOneRoundedSurfaceWithoutReturningToOutlinedCardChrome() =
+    fun oneLineGenericRowKeepsPageCanvasAndOneDivider() =
         runComposeUiTest {
         val pageColor = Color(0xFFF8FAFC)
         val rowColor = Color(0xFFD7E4E8)
@@ -486,12 +489,11 @@ class ModelHubRegistryUiTest {
         val bounds = row.fetchSemanticsNode().boundsInRoot
         assertTrue(bounds.height <= 148f, "A simple registry row was ${bounds.height}dp tall")
         val pixels = row.captureToImage().toPixelMap()
-        val roundedCorner = pixels[1, 1]
-        val filledTopEdge = pixels[pixels.width / 2, 1]
-        assertColorNear(pageColor, roundedCorner, "Rounded row corner must reveal the page canvas")
+        assertColorNear(pageColor, pixels[1, 1], "An ordinary row must preserve the page canvas")
+        assertColorNear(pageColor, pixels[pixels.width / 2, 1], "The top edge must not add card chrome")
         assertTrue(
-            filledTopEdge.registryColorDistance(roundedCorner) >= 0.05f,
-            "The rounded registry row must own a quiet tonal surface",
+            pixels[pixels.width / 2, pixels.height - 1].registryColorDistance(pageColor) >= 0.03f,
+            "A quiet bottom divider must separate ordinary rows",
         )
     }
 
@@ -615,7 +617,7 @@ class ModelHubRegistryUiTest {
     }
 
     @Test
-    fun recommendedRowUsesOneSignalRailRatherThanGradientFill() = runComposeUiTest {
+    fun emphasizedGenericRowUsesOneTonalSurfaceWithoutChangingSelectionSemantics() = runComposeUiTest {
         val railColor = Color(0xFF007A52)
         val selectedColor = Color(0xFFDCEFE7)
         val scheme = lightColorScheme(
@@ -648,17 +650,13 @@ class ModelHubRegistryUiTest {
             .config
         assertEquals(Role.Button, rowSemantics[SemanticsProperties.Role])
         assertEquals(null, rowSemantics.getOrNull(SemanticsProperties.Selected))
-        val middleY = pixels.height / 2
-        var matchingLeadingPixels = 0
-        for (x in 0 until minOf(12, pixels.width)) {
-            if (colorsNear(railColor, pixels[x, middleY])) matchingLeadingPixels++ else break
+        listOf(1, pixels.width / 2, pixels.width - 2).forEach { x ->
+            assertColorNear(
+                selectedColor,
+                pixels[x, 1],
+                "Emphasis must use one uniform tonal surface without a leading rail or gradient",
+            )
         }
-        assertEquals(3, matchingLeadingPixels, "Recommended rows must use exactly one 3dp signal rail")
-        assertColorNear(
-            selectedColor,
-            pixels[(pixels.width / 2), middleY],
-            "Recommended row interiors must use a tonal surface, not a gradient fill",
-        )
     }
 
     @Test

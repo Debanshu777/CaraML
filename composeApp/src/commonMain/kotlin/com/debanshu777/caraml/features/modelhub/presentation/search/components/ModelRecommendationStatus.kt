@@ -18,10 +18,12 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.rating.ui.recommendationCategoryLabel
@@ -55,6 +57,7 @@ internal fun ModelRecommendationStatus(
     modifier: Modifier = Modifier,
     browseFit: BrowseFitEstimate? = null,
     compact: Boolean = false,
+    plain: Boolean = false,
 ) {
     val presentation = recommendationStatusPresentation(state, recommendation)
     val largeText = LocalDensity.current.fontScale >= 1.5f
@@ -72,6 +75,23 @@ internal fun ModelRecommendationStatus(
     ) {
         val browse = browseFit?.let(::browseVerdict)
         val needsCautionColors = browseFit?.memoryFit == BrowseResourceFit.TIGHT_FIT
+        if (plain) {
+            Text(
+                text = browse?.label ?: presentation.label,
+                style = AppTheme.typography.labelSmall,
+                color = when {
+                    browseFit?.memoryFit == BrowseResourceFit.LIKELY_FIT ||
+                        recommendation?.category in setOf(RecommendationCategory.RECOMMENDED, RecommendationCategory.USABLE) -> AppTheme.brandColors.positiveText(AppTheme.colors.background.luminance() < .5f)
+                    browseFit?.memoryFit == BrowseResourceFit.TOO_LARGE ||
+                        recommendation?.category in setOf(RecommendationCategory.NOT_SUITABLE, RecommendationCategory.INCOMPATIBLE) -> AppTheme.colors.onSurface
+                    else -> AppTheme.brandColors.cautionText(AppTheme.colors.background.luminance() < .5f)
+                },
+                modifier = Modifier.semantics {
+                    stateDescription = browse?.description ?: presentation.stateDescription
+                    contentDescription = browse?.description ?: presentation.stateDescription
+                },
+            )
+        } else {
         StatusMark(
             label = (browse?.label ?: presentation.label).let { label ->
                 when {
@@ -99,6 +119,7 @@ internal fun ModelRecommendationStatus(
             containerColorOverride = if (needsCautionColors) AppTheme.colors.primaryContainer else null,
             contentColorOverride = if (needsCautionColors) AppTheme.colors.onPrimaryContainer else null,
         )
+        }
     }
 }
 

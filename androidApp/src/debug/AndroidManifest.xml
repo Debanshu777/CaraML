@@ -4,4 +4,11 @@
         android:name="com.debanshu777.caraml.benchmark.NativeGenerationBenchmark"
         android:targetPackage="com.debanshu777.caraml"
         android:label="Debug native generation benchmark" />
+    <application>
+        <activity
+            android:name=".audit.BrandUiAuditActivity"
+            android:exported="true"
+            android:permission="android.permission.DUMP"
+            android:label="Debug UI state" />
+    </application>
 </manifest>

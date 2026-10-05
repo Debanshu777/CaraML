@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -215,6 +216,7 @@ internal fun RowScope.ModelSortAndFilterControls(
 
     OutlinedButton(
         onClick = { orderingExpanded = true },
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = AppTheme.actionColor),
         modifier = Modifier
             .then(if (expand) Modifier.weight(1f) else Modifier)
             .heightIn(min = AppTheme.spacing.spacing48)
@@ -233,6 +235,7 @@ internal fun RowScope.ModelSortAndFilterControls(
     }
     OutlinedButton(
         onClick = { filtersExpanded = true },
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = AppTheme.actionColor),
         modifier = Modifier
             .then(if (expand) Modifier.weight(1f) else Modifier)
             .heightIn(min = AppTheme.spacing.spacing48)
@@ -370,6 +373,7 @@ private fun ModelFilterSheet(
                 onSelect = { pendingMaxParams = it },
             )
             TextButton(
+                colors = ButtonDefaults.textButtonColors(contentColor = AppTheme.actionColor),
                 onClick = {
                     if (onParameterFiltersApplied != null) {
                         onParameterFiltersApplied(pendingMinParams, pendingMaxParams)

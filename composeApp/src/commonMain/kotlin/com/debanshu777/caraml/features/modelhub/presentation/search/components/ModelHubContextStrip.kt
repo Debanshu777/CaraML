@@ -7,8 +7,10 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -24,6 +26,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.Smartphone
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -59,14 +62,49 @@ fun ModelHubContextStrip(
     profile: RecommendationProfile?,
     onOpenProfile: (() -> Unit)?,
     modifier: Modifier = Modifier,
+    onOpenDevice: (() -> Unit)? = null,
 ) {
     require((profile == null) == (onOpenProfile == null)) {
         "profile and onOpenProfile must either both be provided or both be null"
     }
 
+    if (onOpenDevice != null) {
+        val summary = listOfNotNull(
+            storageInfo.totalDeviceBytes.takeIf { it > 0L }?.let { "${formatStorageBytes(storageInfo.availableDeviceBytes)} free" },
+            storageInfo.deviceHints?.memoryBudgetMB?.takeIf { it > 0L }?.let { "${formatStorageBytes(it * 1024L * 1024L)} memory budget" },
+        ).joinToString(" · ").ifEmpty { "Device readings unavailable" }
+        Surface(
+            onClick = onOpenDevice,
+            modifier = modifier.fillMaxWidth().testTag("model-context"),
+            shape = AppTheme.shapes.large,
+            color = AppTheme.colors.surfaceContainerLowest.copy(alpha = if (AppTheme.softEffects) .82f else 1f),
+            border = BorderStroke(1.dp, AppTheme.colors.outlineVariant),
+        ) {
+            Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Icon(Icons.Outlined.Smartphone, contentDescription = null, modifier = Modifier.size(23.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Your device", style = AppTheme.typography.labelLarge)
+                    Text(summary, style = AppTheme.typography.labelSmall, color = AppTheme.colors.onSurfaceVariant)
+                }
+                Icon(Icons.Default.ChevronRight, contentDescription = "Open device info")
+            }
+        }
+        return
+    }
+
     val showStorage = storageInfo.totalDeviceBytes > 0L
     val showDevice = storageInfo.deviceHints != null
-    if (!showStorage && !showDevice && profile == null) return
+    if (!showStorage && !showDevice && profile == null) {
+        CaraMLPane(modifier = modifier.fillMaxWidth().testTag("model-context")) {
+            Text(
+                text = "Device details aren't available yet. Fit estimates may need more information.",
+                style = AppTheme.typography.bodySmall,
+                color = AppTheme.colors.onSurfaceVariant,
+                modifier = Modifier.padding(AppTheme.spacing.spacing12),
+            )
+        }
+        return
+    }
 
     val visibleItemCount = listOf(showStorage, showDevice, profile != null).count { it }
     val spacing = AppTheme.spacing
@@ -145,7 +183,7 @@ private fun CompactDeviceProfile(
         shrinkVertically(tween(0))
     }
 
-    CaraMLPane(modifier = Modifier.fillMaxWidth()) {
+    CaraMLPane(modifier = Modifier.fillMaxWidth(), shape = AppTheme.shapes.large) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -159,12 +197,16 @@ private fun CompactDeviceProfile(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(spacing.spacing8),
         ) {
-            Icon(
-                imageVector = Icons.Outlined.Tune,
-                contentDescription = null,
-                modifier = Modifier.size(AppTheme.dimensions.size18),
-                tint = AppTheme.colors.onSurfaceVariant,
-            )
+            Surface(shape = AppTheme.shapes.small, color = AppTheme.colors.secondaryContainer) {
+                Box(Modifier.size(AppTheme.spacing.spacing32), contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Outlined.Tune,
+                        contentDescription = null,
+                        modifier = Modifier.size(AppTheme.dimensions.size18),
+                        tint = AppTheme.colors.onSecondaryContainer,
+                    )
+                }
+            }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = "Device profile",
@@ -254,8 +296,7 @@ private fun ContextItem(
                 text = value,
                 style = AppTheme.typography.body14,
                 color = AppTheme.colors.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                softWrap = true,
             )
         }
     }
@@ -277,8 +318,10 @@ private fun RecommendationProfileContext(
                 contentDescription = "Recommendation profile. Selected risk: $risk. " +
                     "Selected priority: $priority. Open profile controls."
             },
-        shape = AppTheme.shapes.extraSmall,
-        color = AppTheme.colors.surfaceContainer.copy(alpha = AppTheme.effects.contextStripSurface),
+        shape = AppTheme.shapes.medium,
+        color = AppTheme.colors.surfaceContainer.copy(
+            alpha = if (AppTheme.softEffects) AppTheme.effects.contextStripSurface else 1f,
+        ),
         contentColor = AppTheme.colors.onSurfaceVariant,
     ) {
         Row(
@@ -320,7 +363,7 @@ private fun DeviceHints.summary(): String {
     return "$performanceCoreCount/$totalCoreCount cores · ${formatStorageBytes(ramBudgetBytes)} · $gpu"
 }
 
-private fun formatStorageBytes(bytes: Long): String {
+internal fun formatStorageBytes(bytes: Long): String {
     if (bytes <= 0L) return "0 B"
     val units = listOf("B", "KB", "MB", "GB", "TB")
     var value = bytes.toDouble()

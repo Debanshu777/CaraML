@@ -2,6 +2,9 @@ package com.debanshu777.caraml.features.chat.presentation.components
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,7 +23,12 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -29,6 +37,9 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -44,8 +56,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AppTheme
+import com.debanshu777.caraml.core.theme.AppMotionTokens
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.ui.components.CommandSurface
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
@@ -181,24 +195,49 @@ fun ChatInputBar(
     onSendMessage: (String) -> Unit,
     onCancelGeneration: () -> Unit,
     contextIndicator: @Composable RowScope.() -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    draftText: String? = null,
+    onDraftTextChange: ((String) -> Unit)? = null,
+    isConversation: Boolean = false,
+    inputFocusRequester: FocusRequester? = null,
+    onInputAttachmentChanged: (Boolean) -> Unit = {},
+    onInputFocusChanged: (Boolean) -> Unit = {},
 ) {
-    var inputText by remember { mutableStateOf("") }
+    val currentOnInputAttachmentChanged by rememberUpdatedState(onInputAttachmentChanged)
+    val currentOnInputFocusChanged by rememberUpdatedState(onInputFocusChanged)
+    DisposableEffect(Unit) {
+        onDispose {
+            currentOnInputAttachmentChanged(false)
+            currentOnInputFocusChanged(false)
+        }
+    }
+    var localDraft by remember { mutableStateOf("") }
+    val inputText = draftText ?: localDraft
+    val updateDraft: (String) -> Unit = { value ->
+        localDraft = value
+        onDraftTextChange?.invoke(value)
+    }
     var showModelSheet by remember { mutableStateOf(false) }
     var isFocused by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState()
     val motion = LocalAuroraMotionPolicy.current
+    val sendInteractions = remember { MutableInteractionSource() }
+    val sendPressed by sendInteractions.collectIsPressedAsState()
+    val sendScale by animateFloatAsState(
+        targetValue = if (sendPressed && motion.spatialTransitionsEnabled) AppMotionTokens.pressScale else 1f,
+        animationSpec = AppTheme.motion.pressSpec(),
+        label = "Send button press",
+    )
 
     val placeholderText = when (generationMode) {
-        GenerationMode.Text -> "How can I help you today?"
-        GenerationMode.Image -> "Describe an image"
-        GenerationMode.Video -> "Describe a video"
+        GenerationMode.Text -> if (isConversation) "One more little thought…" else "A tiny astronaut opens a noodle shop…"
+        GenerationMode.Image -> "A tiny noodle shop on the moon, in clay…"
+        GenerationMode.Video -> "A tiny astronaut flips a noodle in slow motion…"
     }
 
     Box(
         modifier = modifier
-            .fillMaxWidth()
-            .padding(bottom = AppTheme.spacing.spacing16),
+            .fillMaxWidth(),
     ) {
         CommandSurface(
             focused = isFocused,
@@ -212,9 +251,21 @@ fun ChatInputBar(
                 TextField(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .onFocusChanged { isFocused = it.isFocused },
+                        // Keep conversation output visible at large text sizes. TextField
+                        // scrolls the complete draft within this viewport without truncating it.
+                        .heightIn(
+                            min = if (isConversation) 64.dp else 90.dp,
+                            max = if (isConversation) 128.dp else Dp.Infinity,
+                        )
+                        .then(inputFocusRequester?.let { Modifier.focusRequester(it) } ?: Modifier)
+                        .onFocusChanged {
+                            isFocused = it.isFocused
+                            currentOnInputFocusChanged(it.isFocused)
+                        }
+                        .onGloballyPositioned { currentOnInputAttachmentChanged(true) },
                     value = inputText,
-                    onValueChange = { inputText = it },
+                    onValueChange = updateDraft,
+                    textStyle = AppTheme.typography.bodyLarge,
                     placeholder = { Text(placeholderText) },
                     minLines = 1,
                     maxLines = 4,
@@ -231,15 +282,11 @@ fun ChatInputBar(
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(
                         start = AppTheme.spacing.spacing16,
-                        end = AppTheme.spacing.spacing4,
-                        bottom = AppTheme.spacing.spacing4
+                        end = AppTheme.spacing.spacing12,
+                        bottom = AppTheme.spacing.spacing12
                     ),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if(generationMode == GenerationMode.Text) {
-                        contextIndicator()
-                    }
-
                     Row(
                         modifier = Modifier
                             .weight(1f)
@@ -252,16 +299,15 @@ fun ChatInputBar(
                                     ?: "Select model"
                             },
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.End
+                        horizontalArrangement = Arrangement.Start
                     ) {
-                        Spacer(modifier= Modifier.weight(0.5f))
                         Text(
                             modifier = Modifier.weight(1f, fill = false),
                             text = selectedModel?.modelId?.substringAfterLast("/") ?: "Select model",
-                            style = AppTheme.typography.bodyBase,
+                            style = AppTheme.typography.labelBase,
                             color = AppTheme.colors.onSurfaceVariant,
                             overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.End,
+                            textAlign = TextAlign.Start,
                             maxLines = 1
                         )
                         Icon(
@@ -272,17 +318,23 @@ fun ChatInputBar(
                         )
                     }
 
-                    FilledIconButton(
+                    if (generationMode == GenerationMode.Text) {
+                        contextIndicator()
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        interactionSource = sendInteractions,
                         onClick = {
                             if (isGenerating) {
                                 onCancelGeneration()
                             } else if (inputText.isNotBlank()) {
                                 onSendMessage(inputText)
-                                inputText = ""
+                                updateDraft("")
                             }
                         },
                         modifier = Modifier
-                            .size(AppTheme.spacing.spacing48)
+                            .heightIn(min = 48.dp)
+                            .graphicsLayer { scaleX = sendScale; scaleY = sendScale }
                             .semantics {
                                 contentDescription = if (isGenerating) {
                                     "Stop generation"
@@ -291,7 +343,19 @@ fun ChatInputBar(
                                 }
                             },
                         enabled = isGenerating || inputText.isNotBlank(),
+                        shape = RoundedCornerShape(13.dp),
+                        border = BorderStroke(1.dp, AppTheme.brandColors.ink.copy(alpha = .75f)),
+                        contentPadding = PaddingValues(horizontal = 13.dp, vertical = 10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isGenerating) AppTheme.brandColors.ink else AppTheme.colors.primary,
+                            contentColor = if (isGenerating) Color.White else AppTheme.colors.onPrimary,
+                        ),
                     ) {
+                        Text(
+                            text = if (isGenerating) "Stop" else if (isConversation) "Send" else "Let’s go",
+                            style = AppTheme.typography.labelLarge,
+                        )
+                        Spacer(Modifier.width(7.dp))
                         Crossfade(
                             targetState = isGenerating,
                             animationSpec = tween(durationMillis = motion.opacityDurationMillis),
@@ -301,11 +365,13 @@ fun ChatInputBar(
                                 Icon(
                                     imageVector = Icons.Default.Stop,
                                     contentDescription = null,
+                                    modifier = Modifier.size(17.dp),
                                 )
                             } else {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Default.Send,
                                     contentDescription = null,
+                                    modifier = Modifier.size(17.dp),
                                 )
                             }
                         }

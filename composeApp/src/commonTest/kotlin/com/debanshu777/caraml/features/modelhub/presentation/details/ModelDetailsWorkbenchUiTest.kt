@@ -74,7 +74,7 @@ import kotlin.test.assertTrue
 class ModelDetailsWorkbenchUiTest {
 
     @Test
-    fun productionDetailTitleUsesCompactAndExpandedSemanticRolesAtTheExactBreakpoint() =
+    fun productionDetailTitleKeepsTheBrandRoleAcrossTheSupportingPaneBreakpoint() =
         runComposeUiTest {
             var windowWidth by mutableStateOf(839.dp)
             setContent {
@@ -92,9 +92,9 @@ class ModelDetailsWorkbenchUiTest {
             }
 
             textStyleFor("focal-artifact").let { style ->
-                assertEquals(24.sp, style.fontSize)
-                assertEquals(30.sp, style.lineHeight)
-                assertEquals(FontWeight.SemiBold, style.fontWeight)
+                assertEquals(32.sp, style.fontSize)
+                assertEquals(44.sp, style.lineHeight)
+                assertEquals(FontWeight.ExtraBold, style.fontWeight)
             }
 
             runOnIdle { windowWidth = 840.dp }
@@ -102,8 +102,8 @@ class ModelDetailsWorkbenchUiTest {
 
             textStyleFor("focal-artifact").let { style ->
                 assertEquals(32.sp, style.fontSize)
-                assertEquals(38.sp, style.lineHeight)
-                assertEquals(FontWeight.SemiBold, style.fontWeight)
+                assertEquals(44.sp, style.lineHeight)
+                assertEquals(FontWeight.ExtraBold, style.fontWeight)
             }
         }
 
@@ -187,9 +187,9 @@ class ModelDetailsWorkbenchUiTest {
             )
             val overviewSecondary = overviewPixels[overviewPixels.width - 20, 20]
             assertTrue(
-                overviewSecondary.green > overviewSecondary.red &&
-                    overviewSecondary.green > overviewSecondary.blue,
-                "Overview should expose the shared secondary spectral region",
+                overviewSecondary.blue > overviewSecondary.red &&
+                    overviewSecondary.blue > overviewSecondary.green,
+                "Overview should expose the shared lilac secondary region",
             )
 
             val metadataNode = onNodeWithTag("detail-metadata")
@@ -451,7 +451,7 @@ class ModelDetailsWorkbenchUiTest {
     }
 
     @Test
-    fun selectedArtifactUsesOneSignalRailAndExactDownloadAction() = runComposeUiTest {
+    fun evaluatedArtifactKeepsExplicitStateAndExactDownloadAction() = runComposeUiTest {
         val fixture = workbenchGgufFixture()
         val scheme = workbenchColorScheme()
         var requestedModelId = ""
@@ -497,15 +497,8 @@ class ModelDetailsWorkbenchUiTest {
             .assert(
                 SemanticsMatcher.expectValue(SemanticsProperties.Selected, false),
             )
-        val pixels = selectedRow.captureToImage().toPixelMap()
-        val middleY = pixels.height / 2
-        assertTrue(colorsNear(pixels[0, middleY], scheme.primary))
-        assertTrue(colorsNear(pixels[1, middleY], scheme.primary))
-        assertTrue(colorsNear(pixels[2, middleY], scheme.primary))
-        assertTrue(
-            !colorsNear(pixels[3, middleY], scheme.primary),
-            "Evaluated artifact must use one 3dp signal rail",
-        )
+        selectedRow.assertIsDisplayed()
+        onNodeWithText("Evaluated variant").assertIsDisplayed()
 
         onNodeWithContentDescription("Download ${fixture.secondaryArtifact.relativePath}")
             .performClick()
@@ -646,6 +639,7 @@ class ModelDetailsWorkbenchUiTest {
             ),
         )
         var submitted: List<DownloadMetadataDTO>? = null
+        var memoryFit by mutableStateOf(BrowseResourceFit.UNKNOWN)
         setContent {
             MaterialTheme {
                 Box(Modifier.width(420.dp).height(800.dp)) {
@@ -655,13 +649,31 @@ class ModelDetailsWorkbenchUiTest {
                         isDownloading = false,
                         onDownloadClick = { _, _, _ -> error("Shard icon must submit the exact group") },
                         onDownloadGroupClick = { _, metadata -> submitted = metadata },
-                        recommendationState = fixture.recommendation.copy(browseVariants = listOf(variant)),
+                        recommendationState = fixture.recommendation.copy(
+                            descriptorState = DescriptorState.NEEDS_INFORMATION,
+                            selectedDescriptor = null,
+                            stableModelId = variant.stableIdentity,
+                            browseVariants = listOf(variant.copy(estimate = variant.estimate.copy(
+                                memoryFit = memoryFit,
+                                resourceSnapshotFresh = memoryFit != BrowseResourceFit.UNKNOWN,
+                            ))),
+                        ),
                     )
                 }
             }
         }
         onNodeWithTag("detail-action").assertDoesNotExist()
         onNodeWithText("Selected artifact").assertDoesNotExist()
+        onNodeWithText("We need more model or device information before estimating fit. An unknown fit doesn't mean the model will run.")
+            .performScrollTo().assertIsDisplayed()
+        runOnIdle { memoryFit = BrowseResourceFit.TIGHT_FIT }
+        onNodeWithText("Tight fit").performScrollTo().assertIsDisplayed()
+        onNodeWithText("This is a provisional memory estimate. Model compatibility is still unverified.")
+            .performScrollTo().assertIsDisplayed()
+        onNodeWithText("We need more model or device information before estimating fit. An unknown fit doesn't mean the model will run.")
+            .assertDoesNotExist()
+        onNodeWithText("Suggested · support unverified · Part 1 of 2").assertExists()
+        onNodeWithText("Suggested · support unverified · Part 2 of 2").assertExists()
         onAllNodes(hasContentDescription("Download all 2 parts")).assertCountEquals(2)
         onAllNodes(hasContentDescription("Download all 2 parts"))[0].performScrollTo().performClick()
         runOnIdle {

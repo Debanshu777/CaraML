@@ -31,33 +31,29 @@ fun StatusMark(
     containerColorOverride: Color? = null,
     contentColorOverride: Color? = null,
 ) {
-    if (containerColorOverride != null) {
-        if (contentColorOverride != null) {
-            Surface(
-                modifier = modifier.semantics(mergeDescendants = true) {
-                    stateDescription = contentDescription
-                },
-                shape = AppTheme.shapes.extraSmall,
-                color = containerColorOverride,
-                contentColor = contentColorOverride,
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = AppTheme.spacing.spacing8, vertical = AppTheme.spacing.spacing4),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        modifier = Modifier.size(AppTheme.dimensions.size14),
-                    )
-                    Spacer(modifier = Modifier.width(AppTheme.spacing.spacing4))
-                    Text(
-                        text = label,
-                        style = AppTheme.typography.labelBase,
-                        maxLines = 1,
-                    )
-                }
-            }
+    Surface(
+        modifier = modifier.semantics(mergeDescendants = true) {
+            stateDescription = contentDescription
+        },
+        shape = AppTheme.shapes.extraSmall,
+        color = containerColorOverride ?: AppTheme.colors.secondaryContainer,
+        contentColor = contentColorOverride ?: AppTheme.colors.onSecondaryContainer,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = AppTheme.spacing.spacing8, vertical = AppTheme.spacing.spacing4),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(AppTheme.dimensions.size14),
+            )
+            Spacer(modifier = Modifier.width(AppTheme.spacing.spacing4))
+            Text(
+                text = label,
+                style = AppTheme.typography.labelBase,
+                modifier = Modifier.weight(1f, fill = false),
+            )
         }
     }
 }

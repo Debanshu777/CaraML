@@ -47,7 +47,7 @@ import kotlin.test.assertTrue
 class LocalModelListItemPrismUiTest {
 
     @Test
-    fun localRowUsesPageWidthDividerGrammarWithoutAnIndependentPane() = runComposeUiTest {
+    fun localRowPreservesPageCanvasAndReadableIdentityBesideTheMonogram() = runComposeUiTest {
         val canvas = Color(0xFF101217)
         val oldPane = Color(0xFF7B3048)
         setContent {
@@ -62,7 +62,7 @@ class LocalModelListItemPrismUiTest {
                 ) {
                     Box(
                         Modifier
-                            .requiredSize(width = 360.dp, height = 160.dp)
+                            .requiredSize(width = 360.dp, height = 220.dp)
                             .background(canvas)
                             .testTag("local-row-host"),
                     ) {
@@ -86,21 +86,21 @@ class LocalModelListItemPrismUiTest {
         val host = onNodeWithTag("local-row-host")
         val hostBounds = host.fetchSemanticsNode().boundsInRoot
         val rowBounds = onNodeWithTag("local-row").fetchSemanticsNode().boundsInRoot
-        val titleBounds = onNodeWithText("org/local-model", useUnmergedTree = true)
+        val titleBounds = onNodeWithText("local-model", useUnmergedTree = true)
             .fetchSemanticsNode().boundsInRoot
         assertTrue(
-            titleBounds.left - hostBounds.left <= 20f,
-            "Library identity must use the page grid once; left=${titleBounds.left - hostBounds.left}",
+            titleBounds.left - hostBounds.left in 52f..58f && titleBounds.right <= hostBounds.right,
+            "Library identity must remain inside the row beside its monogram; bounds=$titleBounds",
         )
 
         val pixels = host.captureToImage().toPixelMap()
         val clearEdgePixel = pixels[
             (340f - hostBounds.left).toInt().coerceIn(0, pixels.width - 1),
-            (rowBounds.center.y - hostBounds.top).toInt().coerceIn(0, pixels.height - 1),
+            (rowBounds.top + 2f - hostBounds.top).toInt().coerceIn(0, pixels.height - 1),
         ]
         assertTrue(
-            clearEdgePixel.colorDistance(canvas) <= 0.03f,
-            "An ordinary library row must stay on the canvas instead of painting its own pane",
+            clearEdgePixel.colorDistance(canvas) < 0.03f,
+            "The model row must preserve the Aurora page canvas",
         )
     }
 

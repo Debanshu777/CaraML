@@ -6,6 +6,13 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -47,16 +54,21 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
 import com.debanshu777.caraml.core.ui.components.CaraMLPane
+import com.debanshu777.caraml.core.ui.components.BrandPal
+import com.debanshu777.caraml.core.ui.components.BrandPalState
 import com.debanshu777.caraml.core.ui.graphics.decodePngToImageBitmap
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.features.chat.data.ChatMessage
 import com.debanshu777.caraml.features.chat.data.MessageRole
+import com.debanshu777.caraml.features.chat.data.MessageDelivery
 import com.debanshu777.caraml.features.chat.presentation.components.providers.ChatMessagePreviewProvider
 import com.mikepenz.markdown.m3.Markdown
 import kotlinx.coroutines.Dispatchers
@@ -102,6 +114,7 @@ fun MessageBubble(
         }
     }
     val output = message.text
+    val mediaPhase = reportedMediaPhase(imageGenStep, imageGenTotalSteps)
 
     Column(
         modifier = modifier
@@ -109,7 +122,13 @@ fun MessageBubble(
             .padding(vertical = AppTheme.spacing.spacing12),
         horizontalAlignment = alignment
     ) {
-        if (!isUser && (thinkingText.isNotEmpty() || (isStreaming && !showMediaPending))) {
+        MessageIdentity(message, isStreaming, thinkingText, showMediaPending, mediaPhase)
+        if (message.role == MessageRole.Assistant && !showMediaPending &&
+            ((isStreaming && output.isEmpty()) || message.delivery == MessageDelivery.Stopped || message.delivery == MessageDelivery.Error)
+        ) {
+            ReplyActivityCard(message.delivery, thinkingText.isNotEmpty(), isStreaming)
+        }
+        if (!isUser && thinkingText.isNotEmpty()) {
             ThoughtsDisclosure(
                 thinking = thinkingText,
                 isStreaming = isStreaming && !showMediaPending,
@@ -119,14 +138,15 @@ fun MessageBubble(
 
         if (isUser) {
             if (message.text.isNotEmpty()) {
-                CaraMLPane(
-                    level = AuroraSurfaceLevel.Pane,
-                    shape = AppTheme.shapes.medium,
+                Surface(
+                    modifier = Modifier.padding(start = 35.dp),
+                    color = lerp(AppTheme.colors.surface, AppTheme.brandColors.lilac, 0.24f),
+                    shape = RoundedCornerShape(topStart = 21.dp, topEnd = 21.dp, bottomEnd = 5.dp, bottomStart = 21.dp),
                 ) {
                     Text(
-                        modifier = Modifier.padding(AppTheme.spacing.spacing12),
+                        modifier = Modifier.padding(horizontal = 17.dp, vertical = 15.dp),
                         text = message.text,
-                        style = AppTheme.typography.bodyBase,
+                        style = AppTheme.typography.conversationBody15.copy(lineHeight = 24.sp),
                         color = textColor,
                     )
                 }
@@ -138,7 +158,7 @@ fun MessageBubble(
                 Text(
                     text = output,
                     modifier = outputModifier,
-                    style = AppTheme.typography.bodyLarge,
+                    style = AppTheme.typography.conversationBody15,
                     color = textColor,
                 )
             } else {
@@ -155,33 +175,28 @@ fun MessageBubble(
             //   1. Preparing — sampler hasn't reported any step yet (text encoding, latent prep)
             //   2. Sampling — sampler is reporting step/total
             //   3. Finalizing — sampler reached total but image hasn't decoded yet (rare)
-            val isSampling = imageGenTotalSteps > 0 && imageGenStep > 0
-            val isFinalizing = imageGenTotalSteps > 0 && imageGenStep >= imageGenTotalSteps
+            val isSampling = imageGenStep > 0
+            val isFinalizing = mediaPhase == GenerationActivityPhase.Finalizing
             val elapsed = imageGenElapsedSeconds
 
             val statusText = when {
                 isFinalizing -> "Finalizing local output · ${elapsed}s"
-                isSampling   -> "Step $imageGenStep / $imageGenTotalSteps · ${elapsed}s"
+                isSampling && imageGenTotalSteps > 0 -> "Step $imageGenStep / $imageGenTotalSteps · ${elapsed}s"
+                isSampling -> "Step $imageGenStep · ${elapsed}s"
                 else         -> if (imageGenRequestedSteps > 0)
                                     "Preparing local generation · " +
                                         "$imageGenRequestedSteps planned steps · ${elapsed}s"
                                 else "Preparing local generation · ${elapsed}s"
             }
 
-            val phase = when {
-                isFinalizing -> GenerationActivityPhase.Finalizing
-                isSampling -> GenerationActivityPhase.Generating
-                else -> GenerationActivityPhase.Preparing
-            }
-
             GenerationActivity(
                 label = statusText,
-                progress = if (isSampling) {
+                progress = if (isSampling && imageGenTotalSteps > 0) {
                     imageGenStep.toFloat() / imageGenTotalSteps
                 } else {
                     null
                 },
-                phase = phase,
+                phase = mediaPhase,
                 modifier = Modifier
                     .padding(top = AppTheme.spacing.spacing8)
                     .fillMaxWidth(),
@@ -283,6 +298,123 @@ fun MessageBubble(
     }
 }
 
+internal fun reportedMediaPhase(step: Int, totalSteps: Int): GenerationActivityPhase = when {
+    totalSteps > 0 && step >= totalSteps -> GenerationActivityPhase.Finalizing
+    step > 0 -> GenerationActivityPhase.Generating
+    else -> GenerationActivityPhase.Preparing
+}
+
+internal fun messageCharacterState(
+    message: ChatMessage,
+    isStreaming: Boolean,
+    thinking: String,
+    mediaPending: Boolean,
+    mediaPhase: GenerationActivityPhase = GenerationActivityPhase.Preparing,
+): BrandPalState = when {
+    isStreaming && mediaPending -> when (mediaPhase) {
+        GenerationActivityPhase.Generating -> BrandPalState.Replying
+        GenerationActivityPhase.Finalizing -> BrandPalState.Thinking
+        else -> BrandPalState.Loading
+    }
+    isStreaming && message.text.isNotEmpty() -> BrandPalState.Replying
+    isStreaming && thinking.isNotEmpty() -> BrandPalState.Thinking
+    isStreaming -> BrandPalState.Loading
+    message.delivery == MessageDelivery.Error -> BrandPalState.Error
+    message.delivery == MessageDelivery.Stopped -> BrandPalState.Paused
+    message.delivery == MessageDelivery.Complete -> BrandPalState.Success
+    else -> BrandPalState.Idle
+}
+
+@Composable
+private fun ReplyActivityCard(delivery: MessageDelivery?, thinking: Boolean, streaming: Boolean) {
+    val title = when (delivery) {
+        MessageDelivery.Stopped -> "Reply stopped"
+        MessageDelivery.Error -> "That didn’t go through"
+        else -> if (thinking) "One little moment" else "Getting things ready"
+    }
+    val note = when (delivery) {
+        MessageDelivery.Stopped -> "Your message is still here. Pick it up whenever you like."
+        MessageDelivery.Error -> "Couldn’t finish this reply. Give it another try."
+        else -> if (thinking) "Putting the little pieces together." else "Getting the model ready for your idea."
+    }
+    val base = AppTheme.colors.surface
+    val wash = if (AppTheme.softEffects) lerp(base, AppTheme.brandColors.lilac, 0.22f) else base
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+        shape = RoundedCornerShape(22.dp),
+        border = BorderStroke(1.dp, AppTheme.colors.outlineVariant.copy(alpha = .6f)),
+        color = base,
+    ) {
+        Column(
+            Modifier.fillMaxWidth().heightIn(min = 124.dp)
+                .background(Brush.linearGradient(listOf(base, wash)))
+                .padding(20.dp),
+        ) {
+            Text(title, style = AppTheme.typography.activityTitle21, color = AppTheme.colors.onSurface)
+            Text(note, Modifier.padding(top = 10.dp), style = AppTheme.typography.bodySmall, color = AppTheme.colors.onSurfaceVariant)
+            if (streaming) {
+                Row(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    repeat(3) { index ->
+                        Box(Modifier.size(6.dp).clip(RoundedCornerShape(50)).background(AppTheme.colors.primary.copy(alpha = 1f - index * .2f)))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MessageIdentity(
+    message: ChatMessage,
+    isStreaming: Boolean,
+    thinking: String,
+    mediaPending: Boolean,
+    mediaPhase: GenerationActivityPhase,
+) {
+    val isAssistant = message.role == MessageRole.Assistant
+    val state = messageCharacterState(message, isStreaming, thinking, mediaPending, mediaPhase)
+    Row(
+        modifier = Modifier.then(if (isAssistant) Modifier.fillMaxWidth() else Modifier).padding(bottom = AppTheme.spacing.spacing8),
+        horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (isAssistant) BrandPal(state, Modifier.size(32.dp))
+        Text(
+            text = when (message.role) {
+                MessageRole.User -> "You"
+                MessageRole.Assistant -> "CaraML"
+                MessageRole.System -> "Notice"
+            },
+            style = AppTheme.typography.labelLarge,
+            color = AppTheme.colors.onSurface,
+        )
+        val status = if (isStreaming && mediaPending) {
+            when (mediaPhase) {
+                GenerationActivityPhase.Generating -> "Generating"
+                GenerationActivityPhase.Finalizing -> "Finalizing"
+                else -> "Getting ready"
+            }
+        } else when (state) {
+            BrandPalState.Loading -> "Getting ready"
+            BrandPalState.Thinking -> "Thinking"
+            BrandPalState.Replying -> "Writing…"
+            BrandPalState.Success -> "Done"
+            BrandPalState.Error -> "Couldn’t reply"
+            BrandPalState.Paused -> "Stopped"
+            BrandPalState.Idle -> null
+        }
+        if (isAssistant && status != null) {
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = status,
+                style = AppTheme.typography.labelSmall,
+                color = if (state == BrandPalState.Error) AppTheme.colors.error else AppTheme.colors.onSurface,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
+        }
+    }
+}
+
 @Composable
 private fun rememberDecodedMediaBitmap(
     key: String,
@@ -311,9 +443,8 @@ private fun rememberDecodedMediaBitmap(
 /**
  * Collapsible "Thoughts" panel that surfaces a model's `<think>...</think>` block.
  *
- * Auto-expansion follows: `isStreaming || outputIsEmpty`. Once the answer starts
- * arriving (and we're done streaming), it auto-collapses. The user can pin it
- * open or shut for the lifetime of the message via the local override.
+ * Starts collapsed so live reasoning cannot overwhelm the reply activity. The user's
+ * explicit expansion choice is retained for the lifetime of this message.
  */
 @Composable
 private fun ThoughtsDisclosure(
@@ -324,8 +455,7 @@ private fun ThoughtsDisclosure(
 ) {
     val motion = LocalAuroraMotionPolicy.current
     var override by rememberSaveable { mutableStateOf<Boolean?>(null) }
-    val autoExpanded = isStreaming || outputIsEmpty
-    val expanded = override ?: autoExpanded
+    val expanded = override ?: false
     val showSpinner = isStreaming && outputIsEmpty
 
     Column(
@@ -350,7 +480,7 @@ private fun ThoughtsDisclosure(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
         ) {
-            if (showSpinner) {
+            if (showSpinner && motion.pulseEnabled) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(AppTheme.dimensions.size14),
                     strokeWidth = AppTheme.dimensions.size1p5,
@@ -365,7 +495,7 @@ private fun ThoughtsDisclosure(
                 )
             }
             Text(
-                text = if (showSpinner) "Thinking…" else "Thoughts",
+                text = if (showSpinner) "Peek at thoughts" else "Thoughts",
                 style = AppTheme.typography.labelBase,
                 color = AppTheme.colors.onSurfaceVariant,
                 modifier = Modifier.weight(1f, fill = false),

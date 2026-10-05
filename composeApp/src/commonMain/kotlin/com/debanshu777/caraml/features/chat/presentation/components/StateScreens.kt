@@ -1,5 +1,10 @@
 package com.debanshu777.caraml.features.chat.presentation.components
 
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import com.debanshu777.caraml.core.ui.components.CommandSurface
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -7,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Download
@@ -29,6 +35,8 @@ import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
 import com.debanshu777.caraml.core.ui.components.CaraMLEmptyState
 import com.debanshu777.caraml.core.ui.components.CaraMLPane
+import com.debanshu777.caraml.core.ui.components.BrandPal
+import com.debanshu777.caraml.core.ui.components.BrandPalState
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
 import com.debanshu777.caraml.features.chat.presentation.components.providers.ErrorMessagePreviewProvider
 
@@ -120,20 +128,17 @@ fun NoModelsScreen(
 }
 
 @Composable
-fun ModelLoadingScreen(
-    modifier: Modifier = Modifier
-) {
-    CaraMLPane(
-        modifier = modifier.fillMaxWidth(),
-        level = AuroraSurfaceLevel.Pane,
+fun ModelLoadingScreen(modifier: Modifier = Modifier) {
+    CommandSurface(
+        focused = false, active = true,
+        modifier = modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
+        contentPadding = PaddingValues(20.dp),
     ) {
-        Row(
-            modifier = Modifier.padding(AppTheme.spacing.spacing16),
-            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            CircularProgressIndicator()
-            Text("Loading model...")
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            BrandPal(BrandPalState.Loading, Modifier.size(40.dp))
+            Text("Waking up your model", style = AppTheme.typography.activityTitle21)
+            Text("Loading model...", style = AppTheme.typography.bodySmall, color = AppTheme.colors.onSurfaceVariant)
+            Text("Getting everything ready for your idea.", style = AppTheme.typography.bodySmall, color = AppTheme.colors.onSurfaceVariant)
         }
     }
 }
@@ -143,41 +148,24 @@ fun ModelErrorScreen(
     errorMessage: String,
     onTryAnotherModelClick: () -> Unit,
     onRetryCurrentModelClick: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
-    val stateModifier = modifier.semantics(mergeDescendants = true) {
-        stateDescription = "Error"
-    }
-    if (onRetryCurrentModelClick == null) {
-        CaraMLEmptyState(
-            icon = Icons.Default.Error,
-            title = "Unable to load model",
-            supportingText = errorMessage,
-            actionLabel = "Try Another Model",
-            onAction = onTryAnotherModelClick,
-            modifier = stateModifier,
-        )
-    } else {
-        Column(
-            modifier = stateModifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
-        ) {
-            CaraMLEmptyState(
-                icon = Icons.Default.Error,
-                title = "Unable to load model",
-                supportingText = errorMessage,
-            )
-            Button(
-                onClick = onRetryCurrentModelClick,
-                modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48),
-            ) {
-                Text("Retry current model")
+    CommandSurface(
+        focused = false, active = false,
+        modifier = modifier.fillMaxWidth().semantics(mergeDescendants = true) { stateDescription = "Error" },
+        contentPadding = PaddingValues(20.dp),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            BrandPal(BrandPalState.Error, Modifier.size(40.dp))
+            Text("A little snag", style = AppTheme.typography.stateTitle26, color = AppTheme.colors.onSurface)
+            Text("Unable to load model", style = AppTheme.typography.labelLarge, color = AppTheme.colors.onSurface)
+            Text(errorMessage, style = AppTheme.typography.bodyBase, color = AppTheme.colors.onSurfaceVariant)
+            if (onRetryCurrentModelClick != null) {
+                Button(onClick = onRetryCurrentModelClick, modifier = Modifier.heightIn(min = 48.dp), shape = RoundedCornerShape(12.dp)) {
+                    Text("Retry current model")
+                }
             }
-            OutlinedButton(
-                onClick = onTryAnotherModelClick,
-                modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48),
-            ) {
+            OutlinedButton(onClick = onTryAnotherModelClick, modifier = Modifier.heightIn(min = 48.dp), shape = RoundedCornerShape(12.dp)) {
                 Text("Try Another Model")
             }
         }

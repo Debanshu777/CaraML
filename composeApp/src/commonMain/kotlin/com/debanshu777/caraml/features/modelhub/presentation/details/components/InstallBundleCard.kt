@@ -298,7 +298,7 @@ private fun InstallBundleActionContent(
                     progress = { displayedOverallProgress },
                     modifier = Modifier.fillMaxWidth(),
                 )
-            } else {
+            } else if (motion.pulseEnabled) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
             Row(
@@ -359,7 +359,7 @@ private fun ComponentRow(
                     Icons.Default.CheckCircle,
                     contentDescription = "Downloaded",
                     modifier = Modifier.size(AppTheme.dimensions.size18),
-                    tint = AppTheme.colors.primary,
+                    tint = AppTheme.actionColor,
                 )
                 reportedProgress != null -> CircularProgressIndicator(
                     progress = { displayedProgress },

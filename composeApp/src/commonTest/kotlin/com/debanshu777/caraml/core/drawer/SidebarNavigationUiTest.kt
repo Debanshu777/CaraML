@@ -23,16 +23,20 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -56,7 +60,33 @@ import kotlin.test.assertTrue
 class SidebarNavigationUiTest {
 
     @Test
-    fun compactShellStartsClosedAndOverlaysAStationaryRouteSurface() = runComposeUiTest {
+    fun modalMenuTakesKeyboardFocusAndEscapeDismissesIt() = runComposeUiTest {
+        val controller = DrawerController()
+        setContent {
+            MaterialTheme {
+                AdaptiveNavigation(
+                    navigation = AppNavigationLayout.ModalSidebar,
+                    items = sidebarPrimaryItems().dropLast(1),
+                    footerItems = sidebarPrimaryItems().takeLast(1),
+                    selectedItemId = "create",
+                    onItemClick = {},
+                    drawerController = controller,
+                    modifier = Modifier.requiredSize(width = 420.dp, height = 720.dp),
+                    content = { Box(Modifier.fillMaxSize()) },
+                )
+            }
+        }
+
+        runOnIdle { controller.open() }
+        onNodeWithContentDescription("Close navigation menu")
+            .assertIsFocused()
+            .performKeyInput { pressKey(Key.Escape) }
+        runOnIdle { assertFalse(controller.isOpen) }
+        onAllNodesWithContentDescription("Create, selected").assertCountEquals(0)
+    }
+
+    @Test
+    fun compactShellRevealsSidebarByMovingAndScalingThePageThenRestoresIt() = runComposeUiTest {
         lateinit var backStack: NavBackStack<NavKey>
 
         mainClock.autoAdvance = false
@@ -77,7 +107,7 @@ class SidebarNavigationUiTest {
             }
         }
 
-        val closedBounds = onNodeWithTag("route-surface", useUnmergedTree = true)
+        val closedBounds = onNodeWithTag("sidebar-page-surface", useUnmergedTree = true)
             .fetchSemanticsNode().boundsInRoot
         onNodeWithContentDescription("Open navigation menu")
             .assertIsDisplayed()
@@ -92,23 +122,18 @@ class SidebarNavigationUiTest {
 
         val midpointPanel = onNodeWithTag("modal-sidebar-panel")
             .fetchSemanticsNode().boundsInRoot
-        val midpointItem = onNodeWithContentDescription("Create, selected")
-            .fetchSemanticsNode().boundsInRoot
-        assertTrue(midpointItem.left < 0f, "The standard panel must still be translating at 90ms")
         assertTrue(midpointPanel.width <= 320f, "Compact sidebar width must be capped at 320dp")
         onNodeWithContentDescription("Create, selected").assertIsDisplayed()
         onNodeWithContentDescription("Models").assertIsDisplayed()
         onNodeWithContentDescription("Settings").assertIsDisplayed()
         onNodeWithContentDescription("Dismiss navigation menu").assertIsDisplayed()
         onAllNodesWithContentDescription("Open navigation menu").assertCountEquals(0)
-        assertEquals(
-            closedBounds,
-            onNodeWithTag("route-surface", useUnmergedTree = true)
-                .fetchSemanticsNode().boundsInRoot,
-            "The modal sidebar must overlay rather than push or resize route content",
-        )
+        val movingBounds = onNodeWithTag("sidebar-page-surface", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        assertTrue(movingBounds.left > closedBounds.left)
+        assertTrue(movingBounds.height < closedBounds.height)
 
-        mainClock.advanceTimeBy(91)
+        mainClock.advanceTimeBy(500)
         mainClock.advanceTimeByFrame()
         assertTrue(
             onNodeWithContentDescription("Create, selected")
@@ -116,13 +141,13 @@ class SidebarNavigationUiTest {
         )
 
         onNodeWithContentDescription("Dismiss navigation menu").performClick()
-        mainClock.advanceTimeBy(500)
+        mainClock.advanceTimeBy(600)
         mainClock.advanceTimeByFrame()
         onAllNodesWithContentDescription("Create, selected").assertCountEquals(0)
         assertEquals(AppScreen.Home, backStack.last())
         assertEquals(
             closedBounds,
-            onNodeWithTag("route-surface", useUnmergedTree = true)
+            onNodeWithTag("sidebar-page-surface", useUnmergedTree = true)
                 .fetchSemanticsNode().boundsInRoot,
         )
     }
@@ -200,7 +225,7 @@ class SidebarNavigationUiTest {
             waitForIdle()
             val narrowPanel = onNodeWithTag("modal-sidebar-panel")
                 .fetchSemanticsNode().boundsInRoot
-            assertEquals(280f, narrowPanel.width)
+            assertEquals(211f, narrowPanel.width)
 
             runOnIdle { width = 500.dp }
             waitForIdle()

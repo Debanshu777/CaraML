@@ -2,19 +2,21 @@ package com.debanshu777.caraml.features.modelhub.presentation.search.components
 
 import androidx.compose.runtime.Composable
 import androidx.compose.foundation.layout.Column
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.clickable
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.recommendation.RecommendationCategory
 import com.debanshu777.caraml.core.theme.CaraMLTheme
 import com.debanshu777.caraml.core.theme.ThemePreferences
-import com.debanshu777.caraml.core.ui.components.GenericListItem
 import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
 import com.debanshu777.caraml.features.modelhub.domain.RecommendedModelUiState
 import com.debanshu777.huggingfacemanager.model.ListModelsResponse
@@ -31,41 +33,39 @@ fun SearchListItem(
     val repositoryId = model.id ?: "Unknown"
     val taskTag = model.pipelineTag?.takeUnless { it.equals("text-generation", ignoreCase = true) }
         ?.let(::humanReadableTask)
-    GenericListItem(
+    ModelHubCard(
         title = repositoryId.substringAfter('/', missingDelimiterValue = repositoryId),
         eyebrow = model.author?.takeIf(String::isNotBlank)
             ?: repositoryId.substringBefore('/', missingDelimiterValue = "").takeIf(String::isNotBlank),
+        task = model.pipelineTag,
         metadata = listOfNotNull(
-            model.numParameters?.let { "${formatParams(it)} parameters" },
+            model.numParameters?.let { "${formatCompactMetric(it)} parameters" },
             model.downloads?.let { "${formatCompactMetric(it.toLong())} downloads" },
         ).joinToString(" · "),
-        contentDescription = "Open model $repositoryId",
-        titleStatus = {
+        status = {
             ModelRecommendationStatus(
                 state = recommendationState?.descriptorState ?: DescriptorState.NEEDS_INFORMATION,
                 recommendation = recommendationState?.personalizedResult,
                 onInfoClick = onRecommendationInfoClick,
                 browseFit = recommendationState?.browseFit,
-                compact = true,
+                compact = false,
+                plain = true,
             )
         },
-        onClick = onClick,
-        modifier = modifier.testTag("model-row:$repositoryId"),
-        emphasized = recommendationState?.personalizedResult?.category ==
-            RecommendationCategory.RECOMMENDED,
-        eyebrowTrailing = taskTag?.let { label ->
+        modifier = modifier
+            .testTag("model-row:$repositoryId")
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics(mergeDescendants = true) { contentDescription = "Open model $repositoryId" },
+        action = {
+            ModelHubAction("View model", onClick = onClick)
+        },
+        badge = taskTag?.let { label ->
             {
-                Surface(
-                    shape = AppTheme.shapes.extraSmall,
-                    color = AppTheme.colors.secondaryContainer,
-                    contentColor = AppTheme.colors.onSecondaryContainer,
-                ) {
-                    Text(
-                        text = label,
-                        style = AppTheme.typography.labelSmall,
-                        modifier = Modifier.padding(horizontal = AppTheme.spacing.spacing8, vertical = AppTheme.dimensions.size3),
-                    )
-                }
+                Text(
+                    text = label,
+                    style = AppTheme.typography.labelSmall,
+                    color = AppTheme.colors.onSurface,
+                )
             }
         },
     )
@@ -80,22 +80,13 @@ private fun humanReadableTask(tag: String): String = when (tag.lowercase()) {
     else -> tag.replace('-', ' ').replace('_', ' ').replaceFirstChar { it.uppercase() }
 }
 
-private fun formatParams(params: Long): String {
-    return when {
-        params >= 1_000_000_000 -> "${params / 1_000_000_000}B"
-        params >= 1_000_000 -> "${params / 1_000_000}M"
-        params >= 1_000 -> "${params / 1_000}K"
-        else -> params.toString()
-    }
-}
-
-@Preview(name = "Search rows - compact", widthDp = 360, heightDp = 260)
+@Preview(name = "Search rows - unknown fit", widthDp = 360, heightDp = 480)
 @Composable
 private fun SearchListItemCompactPreview() {
     SearchListItemPreviewContent()
 }
 
-@Preview(name = "Search rows - large text", widthDp = 360, heightDp = 420, fontScale = 2f)
+@Preview(name = "Search rows - large text", widthDp = 360, heightDp = 820, fontScale = 2f)
 @Composable
 private fun SearchListItemLargeTextPreview() {
     SearchListItemPreviewContent()

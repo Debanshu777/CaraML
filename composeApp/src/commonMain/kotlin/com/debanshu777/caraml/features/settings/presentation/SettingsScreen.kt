@@ -16,8 +16,10 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -44,7 +46,7 @@ import com.debanshu777.caraml.core.recommendation.RecommendationRolloutModeSourc
 import com.debanshu777.caraml.core.settings.AppSettings
 import com.debanshu777.caraml.core.settings.KvQuantPreset
 import com.debanshu777.caraml.core.theme.ThemeViewModel
-import com.debanshu777.caraml.core.ui.components.CaraMLPrimaryTopBar
+import com.debanshu777.caraml.core.ui.components.BrandPageHeader
 import com.debanshu777.caraml.core.ui.layout.AppContentKind
 import com.debanshu777.caraml.core.ui.layout.ResponsiveContentPane
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.QuickCalibrationDialog
@@ -59,6 +61,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
     themeViewModel: ThemeViewModel = koinViewModel(),
     rolloutModeSource: RecommendationRolloutModeSource = koinInject(),
+    onOpenShelf: () -> Unit = {},
 ) {
     val settings by viewModel.settings.collectAsState()
     val settingsLoaded by viewModel.settingsLoaded.collectAsState()
@@ -77,7 +80,6 @@ fun SettingsScreen(
     Scaffold(
         modifier = modifier,
         containerColor = Color.Transparent,
-        topBar = { CaraMLPrimaryTopBar(title = "Settings") },
     ) { paddingValues ->
         ResponsiveContentPane(
             kind = AppContentKind.Settings,
@@ -90,10 +92,36 @@ fun SettingsScreen(
                     .fillMaxSize()
                     .testTag("settings-scroll")
                     .verticalScroll(rememberScrollState())
-                    .padding(top = spacing.spacing16, bottom = spacing.spacing48),
-                verticalArrangement = Arrangement.spacedBy(spacing.spacing32),
+                    .padding(top = 22.dp, bottom = spacing.spacing48),
+                verticalArrangement = Arrangement.spacedBy(spacing.spacing24),
             ) {
-                AppearanceSection(viewModel = themeViewModel)
+                Column(verticalArrangement = Arrangement.spacedBy(spacing.spacing12)) {
+                    BrandPageHeader(title = "Your kind of CaraML.")
+                    Text(
+                        "A few small things. Just how you like them.",
+                        style = AppTheme.typography.bodySmall,
+                        color = AppTheme.colors.onSurface,
+                    )
+                }
+                Column {
+                    AppearanceSection(viewModel = themeViewModel)
+                    SettingsPreferenceRow(
+                        title = "Your model shelf",
+                        description = "See what’s already on your device.",
+                    ) {
+                        OutlinedButton(
+                            onClick = onOpenShelf,
+                            modifier = Modifier.heightIn(min = 48.dp),
+                            shape = AppTheme.shapes.small,
+                            border = BorderStroke(1.dp, AppTheme.colors.outlineVariant),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = AppTheme.colors.surface,
+                                contentColor = AppTheme.colors.onSurface,
+                            ),
+                        ) { Text("Open shelf", style = AppTheme.typography.bodySmall) }
+                    }
+                    SettingsRowDivider("settings-divider-shelf")
+                }
 
                 if (profileUiState.isAvailable) {
                     Column(
@@ -190,7 +218,7 @@ internal fun SettingsSectionHeader(
         Text(
             text = supportingText,
             style = AppTheme.typography.bodySmall,
-            color = AppTheme.colors.onSurfaceVariant,
+            color = AppTheme.colors.onSurface,
         )
     }
 }
@@ -233,7 +261,7 @@ private fun CalibrationSetting(
             Text(
                 text = "Run a short local benchmark to tune device-specific estimates.",
                 style = AppTheme.typography.bodySmall,
-                color = AppTheme.colors.onSurfaceVariant,
+                color = AppTheme.colors.onSurface,
             )
             Button(
                 onClick = onRunCalibration,
@@ -276,7 +304,7 @@ private fun GenerationSettingsSection(
             Text(
                 text = "These instructions are applied when a new conversation begins.",
                 style = AppTheme.typography.bodySmall,
-                color = AppTheme.colors.onSurfaceVariant,
+                color = AppTheme.colors.onSurface,
             )
             OutlinedTextField(
                 value = settings.systemPrompt,
@@ -307,7 +335,7 @@ private fun GenerationSettingsSection(
                 Text(
                     text = displayTemperature.toString(),
                     style = AppTheme.typography.bodyBase,
-                    color = AppTheme.colors.primary,
+                    color = AppTheme.actionColor,
                 )
             }
             Box(
@@ -330,7 +358,7 @@ private fun GenerationSettingsSection(
             Text(
                 text = "0 is deterministic; 2 explores more varied responses.",
                 style = AppTheme.typography.bodySmall,
-                color = AppTheme.colors.onSurfaceVariant,
+                color = AppTheme.colors.onSurface,
             )
         }
         SettingsRowDivider(tag = "settings-divider-generation")
@@ -377,7 +405,7 @@ internal fun GpuAccelerationSection(
                 Text(
                     text = "Use Vulkan when available for faster local inference.",
                     style = AppTheme.typography.bodySmall,
-                    color = AppTheme.colors.onSurfaceVariant,
+                    color = AppTheme.colors.onSurface,
                 )
             }
             Switch(
@@ -411,7 +439,7 @@ internal fun KvCacheSection(
         Text(
             text = "Current: ${selected.chipLabel()}",
             style = AppTheme.typography.bodySmall,
-            color = AppTheme.colors.primary,
+            color = AppTheme.actionColor,
         )
         FlowRow(
             modifier = Modifier
@@ -439,7 +467,7 @@ internal fun KvCacheSection(
         Text(
             text = selected.description(),
             style = AppTheme.typography.bodySmall,
-            color = AppTheme.colors.onSurfaceVariant,
+            color = AppTheme.colors.onSurface,
         )
         ExpandableSettingDescription(
             summary = "Lower precision saves memory and speeds up prefill; " +

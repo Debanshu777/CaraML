@@ -25,6 +25,8 @@ import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
 import com.debanshu777.caraml.core.storage.localmodel.ModelType
 import com.debanshu777.caraml.core.platform.DeviceCapabilities
 import com.debanshu777.caraml.core.platform.DeviceHints
+import com.debanshu777.caraml.core.platform.HardwareProfile
+import com.debanshu777.caraml.core.platform.ResourceSnapshot
 import com.debanshu777.caraml.core.rating.parseSizeHintToBytes
 import com.debanshu777.caraml.core.download.DownloadArtifactRequest
 import com.debanshu777.caraml.core.download.DownloadArtifactSnapshot
@@ -86,6 +88,8 @@ import com.debanshu777.huggingfacemanager.sdcpp.toVideoListModelsResponse
 import com.debanshu777.huggingfacemanager.sdcpp.getModelSetup
 import com.debanshu777.huggingfacemanager.sdcpp.ComponentRole
 import com.debanshu777.huggingfacemanager.sdcpp.SdCppComponent
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
@@ -389,6 +393,9 @@ data class StorageInfoUiState(
     val availableDeviceBytes: Long = 0L,
     val usedByModelsBytes: Long = 0L,
     val deviceHints: DeviceHints? = null,
+    val hardwareProfile: HardwareProfile? = null,
+    val resourceSnapshot: ResourceSnapshot? = null,
+    val hasSampled: Boolean = false,
 )
 
 data class QuickCalibrationUiState(
@@ -560,21 +567,41 @@ class ModelViewModel(
         }
     }
 
+    private val deviceInfoRefresh = MutableStateFlow(0L)
+
+    /** Re-sample platform readings without changing the recommendation profile or model query. */
+    fun refreshDeviceInfo() {
+        deviceInfoRefresh.value += 1L
+    }
+
     val storageInfo: StateFlow<StorageInfoUiState> =
-        localModelRepository.getTotalDownloadedSizeBytes()
-            .map { usedBytes ->
+        combine(localModelRepository.getTotalDownloadedSizeBytes(), deviceInfoRefresh) { usedBytes, _ ->
+                val totalStorage = readDeviceValue { storagePathProvider.getTotalStorageBytes() }?.takeIf { it > 0L }
+                val freeStorage = readDeviceValue { storagePathProvider.getAvailableStorageBytes() }?.takeIf { it >= 0L }
                 StorageInfoUiState(
-                    totalDeviceBytes = storagePathProvider.getTotalStorageBytes(),
-                    availableDeviceBytes = storagePathProvider.getAvailableStorageBytes(),
-                    usedByModelsBytes = usedBytes,
-                    deviceHints = deviceCapabilities.getDeviceHints(),
+                    totalDeviceBytes = if (freeStorage != null) totalStorage ?: 0L else 0L,
+                    availableDeviceBytes = freeStorage ?: 0L,
+                    usedByModelsBytes = usedBytes.coerceAtLeast(0L),
+                    deviceHints = readDeviceValue { deviceCapabilities.getDeviceHints() },
+                    hardwareProfile = readDeviceValue { deviceCapabilities.getHardwareProfile() },
+                    resourceSnapshot = readDeviceValue { deviceCapabilities.getResourceSnapshot() },
+                    hasSampled = true,
                 )
             }
+            .flowOn(Dispatchers.Default)
             .stateIn(
                 scope = viewModelScope,
                 started = SharingStarted.WhileSubscribed(5000),
                 initialValue = StorageInfoUiState()
             )
+
+    private inline fun <T> readDeviceValue(read: () -> T): T? = try {
+        read()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        null
+    }
 
     private val _browseMode = MutableStateFlow(ModelHubBrowseMode.LanguageModels)
     val browseMode: StateFlow<ModelHubBrowseMode> = _browseMode.asStateFlow()

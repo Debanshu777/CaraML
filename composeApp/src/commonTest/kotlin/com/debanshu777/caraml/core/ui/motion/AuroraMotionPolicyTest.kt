@@ -4,6 +4,8 @@ package com.debanshu777.caraml.core.ui.motion
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.animation.core.SnapSpec
+import androidx.compose.animation.core.TweenSpec
 import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithText
@@ -15,8 +17,40 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlin.test.assertIs
+import com.debanshu777.caraml.core.theme.AppMotion
 
 class AuroraMotionPolicyTest {
+    @Test
+    fun reducedMotionSnapsSpatialSpecsAndKeepsBriefStatusFeedback() {
+        val motion = AppMotion(auroraMotionPolicy(0f))
+
+        assertIs<SnapSpec<Float>>(motion.drawerRevealSpec<Float>())
+        assertIs<SnapSpec<Float>>(motion.pressSpec<Float>())
+        assertIs<SnapSpec<Float>>(motion.statusSpec<Float>())
+        assertEquals(90, assertIs<TweenSpec<Float>>(motion.opacitySpec<Float>()).durationMillis)
+    }
+
+    @Test
+    fun userReducedMotionOverridesSystemAndSoftEffectsReachTheTheme() = runComposeUiTest {
+        lateinit var observed: AuroraMotionPolicy
+        var softEffects = true
+        setContent {
+            CaraMLTheme(preferences = ThemePreferences(reduceMotion = true, softEffects = false)) {
+                observed = LocalAuroraMotionPolicy.current
+                softEffects = AppTheme.softEffects
+                Text("Quiet theme")
+            }
+        }
+
+        onNodeWithText("Quiet theme").assertIsDisplayed()
+        runOnIdle {
+            assertFalse(observed.spatialTransitionsEnabled)
+            assertFalse(observed.pulseEnabled)
+            assertFalse(softEffects)
+        }
+    }
+
     @Test
     fun zeroDurationScaleDisablesEverySpatialOrContinuousEffect() {
         val policy = auroraMotionPolicy(durationScale = 0f)

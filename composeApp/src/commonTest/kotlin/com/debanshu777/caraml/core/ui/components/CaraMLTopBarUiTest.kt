@@ -32,6 +32,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.debanshu777.caraml.core.theme.CaraMLTheme
+import com.debanshu777.caraml.core.theme.ThemePreferences
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -42,7 +44,7 @@ class CaraMLTopBarUiTest {
     @Test
     fun productionTopBarUsesTheExactScreenTitleRole() = runComposeUiTest {
         setContent {
-            MaterialTheme {
+            CaraMLTheme(preferences = ThemePreferences()) {
                 CaraMLPrimaryTopBar(title = "Models workspace")
             }
         }
@@ -50,7 +52,7 @@ class CaraMLTopBarUiTest {
         val style = textStyleFor("Models workspace")
         assertEquals(28.sp, style.fontSize)
         assertEquals(34.sp, style.lineHeight)
-        assertEquals(FontWeight.SemiBold, style.fontWeight)
+        assertEquals(FontWeight.Bold, style.fontWeight)
     }
 
     @Test

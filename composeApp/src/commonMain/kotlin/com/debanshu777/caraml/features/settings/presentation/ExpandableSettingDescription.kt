@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -43,6 +44,7 @@ fun ExpandableSettingDescription(
         )
         TextButton(
             onClick = { expanded = !expanded },
+            colors = ButtonDefaults.textButtonColors(contentColor = AppTheme.actionColor),
             modifier = Modifier
                 .heightIn(min = AppTheme.spacing.spacing48)
                 .semantics {

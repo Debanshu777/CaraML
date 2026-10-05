@@ -17,7 +17,6 @@ import androidx.compose.ui.graphics.ImageShader
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.TileMode
-import androidx.compose.material3.MaterialTheme
 import com.debanshu777.caraml.core.theme.AppTheme
 
 @Composable
@@ -90,9 +89,9 @@ fun AuroraBackdrop(
 }
 
 private const val GrainTileSize = 64
-private const val AmbientWashAlphaScale = 0.25f
-private const val AmbientGrainAlphaScale = 0.28f
-private const val AmbientVignetteAlphaScale = 0.5f
+private const val AmbientWashAlphaScale = 1f
+private const val AmbientGrainAlphaScale = 1f
+private const val AmbientVignetteAlphaScale = 1f
 
 @Composable
 internal fun rememberAuroraGrainBrush(tint: Color): Brush =

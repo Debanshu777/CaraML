@@ -116,7 +116,7 @@ class ModelDetailsRouteUiTest {
             onAllNodesWithText(owner).assertCountEquals(1)
             onAllNodesWithText(name).assertCountEquals(1)
             onNodeWithText("$owner/$name").assertDoesNotExist()
-            onNodeWithText("Artifact").assertExists()
+            onNodeWithContentDescription("Navigate back").assertExists()
         } finally {
             environment.close()
         }

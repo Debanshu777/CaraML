@@ -35,6 +35,7 @@ import com.debanshu777.caraml.core.storage.localmodel.LocalModelDao
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
 import com.debanshu777.caraml.features.chat.domain.ChatConfig
+import com.debanshu777.caraml.features.chat.data.MessageDelivery
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
 import com.debanshu777.caraml.features.chat.domain.usecase.GenerateResponseUseCase
 import com.debanshu777.caraml.features.chat.domain.usecase.GetAvailableModelsUseCase
@@ -46,11 +47,13 @@ import com.debanshu777.runner.StopReason
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -113,6 +116,7 @@ class ChatViewModelRetryTest {
             assertEquals(listOf(prompt), inference.prompts)
             assertEquals(false, finished.isGenerating)
             assertEquals(2, finished.messages.size, "Compression status must not become chat history")
+            assertEquals(MessageDelivery.Complete, finished.messages.last().delivery)
 
             // The reservation must also cover compression after a context-full response.
             inference.aboveThreshold = false
@@ -134,7 +138,112 @@ class ChatViewModelRetryTest {
             viewModel.cancelGeneration()
             runCurrent()
             assertEquals(false, assertIs<ChatUiState.Ready>(viewModel.uiState.value).isGenerating)
+            assertEquals(
+                MessageDelivery.Stopped,
+                assertIs<ChatUiState.Ready>(viewModel.uiState.value).messages.last().delivery,
+            )
             assertEquals(listOf(prompt, "follow-up"), inference.prompts)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun interruptionPathsPreservePartialRepliesAndErrorsHaveTheirOwnDeliveryState() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val model = textModel()
+            val request = loadRequest(model, "fresh-cpu", BackendKind.CPU)
+            val inference = RecordingInferenceRepository(request).apply {
+                response = flow {
+                    emit(InferenceChunk(reasoningDelta = "Let me think", contentDelta = "A little answer"))
+                    awaitCancellation()
+                }
+            }
+            val localModels = LocalModelRepository(StaticLocalModelDao(model))
+            val viewModel = ChatViewModel(
+                getAvailableModels = GetAvailableModelsUseCase(localModels, ChatConfig()),
+                generateResponse = GenerateResponseUseCase(inference),
+                manageContext = ManageContextUseCase(inference, ChatConfig()),
+                trackModelUsage = TrackModelUsageUseCase(localModels),
+                inferenceRepository = inference,
+                diffusionRepository = DiffusionInferenceRepository(
+                    runner = DiffusionRunner(),
+                    deviceCapabilities = DeviceCapabilities(),
+                    settingsRepository = StaticSettingsRepository(),
+                ),
+                generatedMediaStore = GeneratedMediaStore(baseDirectory = "/tmp", sessionId = "message-delivery"),
+                installedModelLoadRequestResolver = RecordingResolver(
+                    ArrayDeque(List(3) { InstalledModelLoadResolution.Ready(request) }),
+                ),
+                modelLoadDispatcher = dispatcher,
+                releaseDiffusionModel = {},
+            )
+            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.uiState.collect() }
+            advanceUntilIdle()
+
+            viewModel.sendMessage("Start a reply")
+            viewModel.streamingState.first { it.streamingText == "A little answer" }
+            viewModel.cancelGeneration()
+            val stopped = assertIs<ChatUiState.Ready>(
+                viewModel.uiState.first { it is ChatUiState.Ready && !it.isGenerating },
+            ).messages.last()
+            assertEquals(MessageDelivery.Stopped, stopped.delivery)
+            assertEquals("A little answer", stopped.text)
+            assertEquals("Let me think", stopped.thinking)
+            assertEquals(null, viewModel.streamingState.value.streamingMessageId)
+
+            inference.response = flow { error("Test generation failure") }
+            viewModel.sendMessage("Try again")
+            val failed = assertIs<ChatUiState.Ready>(
+                viewModel.uiState.first { it is ChatUiState.Ready && !it.isGenerating && it.messages.size == 4 },
+            )
+            assertEquals(MessageDelivery.Error, failed.messages.last().delivery)
+            assertEquals("Something went wrong. Please try again.", failed.messages.last().text)
+            assertEquals(stopped, failed.messages[1], "A new turn must not replace the stopped reply")
+
+            inference.response = flow {
+                emit(InferenceChunk(reasoningDelta = "More thinking", contentDelta = "Another partial reply"))
+                awaitCancellation()
+            }
+            viewModel.sendMessage("Change the loaded model")
+            viewModel.streamingState.first { it.streamingText == "Another partial reply" }
+            viewModel.selectModel(model)
+            val reloaded = assertIs<ChatUiState.Ready>(
+                viewModel.uiState.first { it is ChatUiState.Ready && !it.isGenerating && it.messages.size == 6 },
+            )
+            assertEquals(MessageDelivery.Stopped, reloaded.messages.last().delivery)
+            assertEquals("Another partial reply", reloaded.messages.last().text)
+            assertEquals("More thinking", reloaded.messages.last().thinking)
+
+            viewModel.sendMessage("Switch the creation mode")
+            viewModel.streamingState.first { it.streamingText == "Another partial reply" }
+            viewModel.setGenerationMode(GenerationMode.Image)
+            viewModel.uiState.first { it is ChatUiState.NoModelsForMode }
+            viewModel.setGenerationMode(GenerationMode.Text)
+            val restored = assertIs<ChatUiState.Ready>(
+                viewModel.uiState.first { it is ChatUiState.Ready && !it.isGenerating && it.messages.size == 8 },
+            )
+            assertEquals(MessageDelivery.Stopped, restored.messages.last().delivery)
+            assertEquals("Another partial reply", restored.messages.last().text)
+            assertEquals("More thinking", restored.messages.last().thinking)
+
+            val failAfterPartialOutput = CompletableDeferred<Unit>()
+            inference.response = flow {
+                emit(InferenceChunk(reasoningDelta = "Useful reasoning", contentDelta = "Keep this partial output"))
+                failAfterPartialOutput.await()
+                error("Failure after the first output")
+            }
+            viewModel.sendMessage("Fail after some output")
+            viewModel.streamingState.first { it.streamingText == "Keep this partial output" }
+            failAfterPartialOutput.complete(Unit)
+            val partialFailure = assertIs<ChatUiState.Ready>(
+                viewModel.uiState.first { it is ChatUiState.Ready && !it.isGenerating && it.messages.size == 10 },
+            ).messages.last()
+            assertEquals(MessageDelivery.Error, partialFailure.delivery)
+            assertEquals("Keep this partial output", partialFailure.text)
+            assertEquals("Useful reasoning", partialFailure.thinking)
         } finally {
             Dispatchers.resetMain()
         }
@@ -324,6 +433,7 @@ private class RecordingInferenceRepository(
     var aboveThreshold = true
     var responseStopReason = 0
     var resetStarted = CompletableDeferred<Unit>()
+    var response: Flow<InferenceChunk> = emptyFlow()
     val prompts = mutableListOf<String>()
 
     override suspend fun loadModel(request: LoadRequest): ModelLoadResult {
@@ -349,7 +459,7 @@ private class RecordingInferenceRepository(
     override suspend fun unloadModel() = Unit
     override fun generateResponse(userPrompt: String): Flow<InferenceChunk> {
         prompts += userPrompt
-        return emptyFlow()
+        return response
     }
     override fun cancelGeneration() = Unit
     override fun getContextUsed(): Int = 0
