@@ -1,12 +1,12 @@
 package com.debanshu777.caraml.features.chat.presentation.components
 
+import com.debanshu777.caraml.core.ui.icons.AppIcons
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import com.debanshu777.caraml.core.ui.components.BrandButton
+import com.debanshu777.caraml.core.ui.components.BrandButtonStyle
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -18,15 +18,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.material3.Icon
@@ -40,14 +32,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -59,7 +48,6 @@ import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AppTheme
-import com.debanshu777.caraml.core.theme.AppMotionTokens
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.ui.components.CommandSurface
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
@@ -221,13 +209,6 @@ fun ChatInputBar(
     var isFocused by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState()
     val motion = LocalAuroraMotionPolicy.current
-    val sendInteractions = remember { MutableInteractionSource() }
-    val sendPressed by sendInteractions.collectIsPressedAsState()
-    val sendScale by animateFloatAsState(
-        targetValue = if (sendPressed && motion.spatialTransitionsEnabled) AppMotionTokens.pressScale else 1f,
-        animationSpec = AppTheme.motion.pressSpec(),
-        label = "Send button press",
-    )
 
     val placeholderText = when (generationMode) {
         GenerationMode.Text -> if (isConversation) "One more little thought…" else "A tiny astronaut opens a noodle shop…"
@@ -287,33 +268,30 @@ fun ChatInputBar(
                     ),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
+                    BrandButton(
+                        onClick = { showModelSheet = true },
+                        style = BrandButtonStyle.Secondary,
+                        contentPadding = PaddingValues(horizontal = AppTheme.spacing.spacing8),
                         modifier = Modifier
                             .weight(1f)
                             .heightIn(min = AppTheme.spacing.spacing48)
-                            .clickable { showModelSheet = true }
                             .semantics {
                                 contentDescription = selectedModel?.modelId
                                     ?.substringAfterLast("/")
                                     ?.let { "Select model. Current model $it" }
                                     ?: "Select model"
                             },
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Start
                     ) {
                         Text(
                             modifier = Modifier.weight(1f, fill = false),
                             text = selectedModel?.modelId?.substringAfterLast("/") ?: "Select model",
-                            style = AppTheme.typography.labelBase,
-                            color = AppTheme.colors.onSurfaceVariant,
                             overflow = TextOverflow.Ellipsis,
                             textAlign = TextAlign.Start,
                             maxLines = 1
                         )
                         Icon(
-                            imageVector = Icons.Default.ArrowDropDown,
+                            imageVector = AppIcons.ChevronDown,
                             contentDescription = null,
-                            tint = AppTheme.colors.onSurfaceVariant,
                             modifier = Modifier.size(AppTheme.spacing.spacing24)
                         )
                     }
@@ -322,8 +300,7 @@ fun ChatInputBar(
                         contextIndicator()
                     }
                     Spacer(Modifier.width(8.dp))
-                    Button(
-                        interactionSource = sendInteractions,
+                    BrandButton(
                         onClick = {
                             if (isGenerating) {
                                 onCancelGeneration()
@@ -334,7 +311,6 @@ fun ChatInputBar(
                         },
                         modifier = Modifier
                             .heightIn(min = 48.dp)
-                            .graphicsLayer { scaleX = sendScale; scaleY = sendScale }
                             .semantics {
                                 contentDescription = if (isGenerating) {
                                     "Stop generation"
@@ -343,17 +319,11 @@ fun ChatInputBar(
                                 }
                             },
                         enabled = isGenerating || inputText.isNotBlank(),
-                        shape = RoundedCornerShape(13.dp),
-                        border = BorderStroke(1.dp, AppTheme.brandColors.ink.copy(alpha = .75f)),
                         contentPadding = PaddingValues(horizontal = 13.dp, vertical = 10.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isGenerating) AppTheme.brandColors.ink else AppTheme.colors.primary,
-                            contentColor = if (isGenerating) Color.White else AppTheme.colors.onPrimary,
-                        ),
+                        style = if (isGenerating) BrandButtonStyle.Secondary else BrandButtonStyle.Primary,
                     ) {
                         Text(
                             text = if (isGenerating) "Stop" else if (isConversation) "Send" else "Let’s go",
-                            style = AppTheme.typography.labelLarge,
                         )
                         Spacer(Modifier.width(7.dp))
                         Crossfade(
@@ -363,13 +333,13 @@ fun ChatInputBar(
                         ) { generating ->
                             if (generating) {
                                 Icon(
-                                    imageVector = Icons.Default.Stop,
+                                    imageVector = AppIcons.Stop,
                                     contentDescription = null,
                                     modifier = Modifier.size(17.dp),
                                 )
                             } else {
                                 Icon(
-                                    imageVector = Icons.AutoMirrored.Default.Send,
+                                    imageVector = AppIcons.Send,
                                     contentDescription = null,
                                     modifier = Modifier.size(17.dp),
                                 )

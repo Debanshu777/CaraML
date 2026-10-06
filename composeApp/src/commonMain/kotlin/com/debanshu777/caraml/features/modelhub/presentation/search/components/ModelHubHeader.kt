@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -15,6 +14,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AppTheme
+import com.debanshu777.caraml.core.ui.components.BrandButton
+import com.debanshu777.caraml.core.ui.components.BrandButtonStyle
 
 @Composable
 fun ModelHubHeader(
@@ -45,7 +46,8 @@ fun ModelHubHeader(
     }
     val action: @Composable () -> Unit = {
         if (actionLabel != null && onAction != null) {
-            TextButton(
+            BrandButton(
+                style = BrandButtonStyle.Secondary,
                 onClick = onAction,
                 modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48),
             ) {

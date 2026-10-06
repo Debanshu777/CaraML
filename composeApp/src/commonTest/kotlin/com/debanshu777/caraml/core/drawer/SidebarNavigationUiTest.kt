@@ -3,6 +3,7 @@
 package com.debanshu777.caraml.core.drawer
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -23,10 +24,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
@@ -58,6 +62,38 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class SidebarNavigationUiTest {
+
+    @Test
+    fun persistentNavigationPaintsTheLeadingLandscapeSafeArea() = runComposeUiTest {
+        var navigation by mutableStateOf(AppNavigationLayout.Rail)
+        setContent {
+            CompositionLocalProvider(LocalDensity provides Density(1f)) {
+                MaterialTheme {
+                    Box(Modifier.requiredSize(840.dp, 360.dp).background(Color.Magenta).testTag("navigation-root")) {
+                        AdaptiveNavigation(
+                            navigation = navigation,
+                            items = sidebarPrimaryItems().dropLast(1),
+                            footerItems = sidebarPrimaryItems().takeLast(1),
+                            selectedItemId = "create",
+                            onItemClick = {},
+                            navigationInsets = WindowInsets(left = 32.dp),
+                            modifier = Modifier.fillMaxSize(),
+                            content = { Box(Modifier.fillMaxSize()) },
+                        )
+                    }
+                }
+            }
+        }
+
+        fun assertInsetPainted() {
+            val pixels = onNodeWithTag("navigation-root").captureToImage().toPixelMap()
+            assertTrue(pixels[0, 180] != Color.Magenta, "$navigation leaves the leading safe area unpainted")
+            assertEquals(pixels[34, 180], pixels[0, 180], "$navigation safe area does not match the sidebar")
+        }
+        assertInsetPainted()
+        runOnIdle { navigation = AppNavigationLayout.Sidebar }
+        assertInsetPainted()
+    }
 
     @Test
     fun modalMenuTakesKeyboardFocusAndEscapeDismissesIt() = runComposeUiTest {
@@ -122,7 +158,7 @@ class SidebarNavigationUiTest {
 
         val midpointPanel = onNodeWithTag("modal-sidebar-panel")
             .fetchSemanticsNode().boundsInRoot
-        assertTrue(midpointPanel.width <= 320f, "Compact sidebar width must be capped at 320dp")
+        assertEquals(420f, midpointPanel.width, "The sidebar background/header spans the full viewport")
         onNodeWithContentDescription("Create, selected").assertIsDisplayed()
         onNodeWithContentDescription("Models").assertIsDisplayed()
         onNodeWithContentDescription("Settings").assertIsDisplayed()
@@ -225,14 +261,20 @@ class SidebarNavigationUiTest {
             waitForIdle()
             val narrowPanel = onNodeWithTag("modal-sidebar-panel")
                 .fetchSemanticsNode().boundsInRoot
-            assertEquals(211f, narrowPanel.width)
+            assertEquals(320f, narrowPanel.width)
+            val narrowItem = onNodeWithContentDescription("Create, selected").fetchSemanticsNode().boundsInRoot
+            assertEquals(19f, narrowItem.left)
+            assertEquals(176.12f, narrowItem.width, absoluteTolerance = 1f)
 
             runOnIdle { width = 500.dp }
             waitForIdle()
             runOnIdle { assertTrue(controller.isOpen) }
             val widePanel = onNodeWithTag("modal-sidebar-panel")
                 .fetchSemanticsNode().boundsInRoot
-            assertEquals(320f, widePanel.width)
+            assertEquals(500f, widePanel.width)
+            val wideItem = onNodeWithContentDescription("Create, selected").fetchSemanticsNode().boundsInRoot
+            assertEquals(19f, wideItem.left)
+            assertEquals(294.92f, wideItem.width, absoluteTolerance = 1f)
         }
 
     @Test

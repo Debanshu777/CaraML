@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search.components
 
+import com.debanshu777.caraml.core.ui.icons.AppIcons
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,11 +15,8 @@ import androidx.compose.foundation.background
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.Text
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,11 +26,11 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import com.debanshu777.caraml.core.theme.AppTheme
+import com.debanshu777.caraml.core.ui.components.BrandButton
 import com.debanshu777.caraml.core.theme.CaraMLTheme
 import com.debanshu777.caraml.core.theme.ThemePreferences
 import com.debanshu777.caraml.core.ui.components.BrandPal
 import com.debanshu777.caraml.core.ui.components.BrandPalState
-import com.debanshu777.caraml.core.ui.components.CaraMLPane
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 
 enum class ModelHubStateKind {
@@ -46,7 +44,7 @@ internal fun ModelHubLoadingMark(modifier: Modifier = Modifier) {
     if (LocalAuroraMotionPolicy.current.pulseEnabled) {
         CircularProgressIndicator(modifier = modifier)
     } else {
-        Icon(Icons.Outlined.HourglassEmpty, contentDescription = null, modifier = modifier)
+        Icon(AppIcons.Hourglass, contentDescription = null, modifier = modifier)
     }
 }
 
@@ -75,7 +73,6 @@ fun ModelHubStateView(
                             .background(AppTheme.colors.onSurfaceVariant.copy(alpha = .14f)))
                     }
                 }
-                androidx.compose.material3.HorizontalDivider(color = AppTheme.colors.outlineVariant)
             }
         }
         return
@@ -104,7 +101,7 @@ fun ModelHubStateView(
                     ModelHubStateKind.Empty -> "Nothing here. Yet."
                     ModelHubStateKind.Error -> "The hub is taking a breather"
                 },
-                style = AppTheme.typography.stateTitle26,
+                style = AppTheme.typography.stateTitle,
                 color = AppTheme.colors.onSurface,
                 textAlign = TextAlign.Center,
             )
@@ -116,14 +113,9 @@ fun ModelHubStateView(
             )
             FlowRow(horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8), verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8)) {
               if (actionLabel != null && onAction != null) {
-                FilledTonalButton(
+                BrandButton(
                     onClick = onAction,
                     modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48),
-                    shape = AppTheme.shapes.small,
-                    colors = androidx.compose.material3.ButtonDefaults.filledTonalButtonColors(
-                        containerColor = AppTheme.colors.primary,
-                        contentColor = AppTheme.colors.onPrimary,
-                    ),
                 ) {
                     Text(actionLabel)
                 }

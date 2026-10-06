@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.core.rating.ui
 
+import com.debanshu777.caraml.core.ui.icons.AppIcons
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,8 +17,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -141,7 +140,7 @@ private fun WarningsSection(warnings: List<String>) {
                 verticalAlignment = Alignment.Top,
             ) {
                 Icon(
-                    imageVector = Icons.Default.Warning,
+                    imageVector = AppIcons.Warning,
                     contentDescription = null,
                     tint = AppTheme.colors.error,
                     modifier = Modifier.size(AppTheme.dimensions.size18),

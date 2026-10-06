@@ -1,30 +1,22 @@
 package com.debanshu777.caraml.features.chat.presentation.components
 
+import com.debanshu777.caraml.core.ui.icons.AppIcons
+import com.debanshu777.caraml.core.ui.components.BrandButton
+import com.debanshu777.caraml.core.ui.components.BrandButtonStyle
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import com.debanshu777.caraml.core.ui.components.CommandSurface
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Error
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -32,9 +24,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AppTheme
-import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
 import com.debanshu777.caraml.core.ui.components.CaraMLEmptyState
-import com.debanshu777.caraml.core.ui.components.CaraMLPane
 import com.debanshu777.caraml.core.ui.components.BrandPal
 import com.debanshu777.caraml.core.ui.components.BrandPalState
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
@@ -103,7 +93,7 @@ fun NoCompatibleModelsScreen(
             "No video models downloaded" to "Download a diffusion checkpoint that supports video"
     }
     CaraMLEmptyState(
-        icon = Icons.Default.AutoAwesome,
+        icon = AppIcons.Spark,
         title = title,
         supportingText = subtitle,
         actionLabel = "Browse models",
@@ -118,10 +108,10 @@ fun NoModelsScreen(
     modifier: Modifier = Modifier
 ) {
     CaraMLEmptyState(
-        icon = Icons.Default.Download,
+        icon = AppIcons.Download,
         title = "No models downloaded yet",
         supportingText = "Download a model to start chatting",
-        actionLabel = "Download Model",
+        actionLabel = "Browse models",
         onAction = onDownloadModelClick,
         modifier = modifier,
     )
@@ -136,8 +126,7 @@ fun ModelLoadingScreen(modifier: Modifier = Modifier) {
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             BrandPal(BrandPalState.Loading, Modifier.size(40.dp))
-            Text("Waking up your model", style = AppTheme.typography.activityTitle21)
-            Text("Loading model...", style = AppTheme.typography.bodySmall, color = AppTheme.colors.onSurfaceVariant)
+            Text("Loading model…", style = AppTheme.typography.activityTitle)
             Text("Getting everything ready for your idea.", style = AppTheme.typography.bodySmall, color = AppTheme.colors.onSurfaceVariant)
         }
     }
@@ -157,16 +146,19 @@ fun ModelErrorScreen(
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             BrandPal(BrandPalState.Error, Modifier.size(40.dp))
-            Text("A little snag", style = AppTheme.typography.stateTitle26, color = AppTheme.colors.onSurface)
-            Text("Unable to load model", style = AppTheme.typography.labelLarge, color = AppTheme.colors.onSurface)
+            Text("Unable to load model", style = AppTheme.typography.stateTitle, color = AppTheme.colors.onSurface)
             Text(errorMessage, style = AppTheme.typography.bodyBase, color = AppTheme.colors.onSurfaceVariant)
             if (onRetryCurrentModelClick != null) {
-                Button(onClick = onRetryCurrentModelClick, modifier = Modifier.heightIn(min = 48.dp), shape = RoundedCornerShape(12.dp)) {
+                BrandButton(onClick = onRetryCurrentModelClick, modifier = Modifier.heightIn(min = 48.dp)) {
                     Text("Retry current model")
                 }
             }
-            OutlinedButton(onClick = onTryAnotherModelClick, modifier = Modifier.heightIn(min = 48.dp), shape = RoundedCornerShape(12.dp)) {
-                Text("Try Another Model")
+            BrandButton(
+                style = BrandButtonStyle.Secondary,
+                onClick = onTryAnotherModelClick,
+                modifier = Modifier.heightIn(min = 48.dp),
+            ) {
+                Text("Choose another model")
             }
         }
     }

@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -49,12 +48,13 @@ fun DrawerItemView(
                 contentDescription = if (selected) "${item.title}, selected" else item.title
                 this.selected = selected
             },
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(
             modifier = Modifier
                 .weight(1f)
-                .padding(horizontal = if (showLabel) AppTheme.spacing.spacing16 else AppTheme.spacing.spacing12, vertical = AppTheme.spacing.spacing12),
-            horizontalArrangement = if (showLabel) Arrangement.spacedBy(AppTheme.spacing.spacing16) else Arrangement.Center,
+                .padding(horizontal = if (showLabel) AppTheme.spacing.spacing16 else AppTheme.spacing.spacing12, vertical = AppTheme.spacing.spacing16),
+            horizontalArrangement = if (showLabel) Arrangement.spacedBy(14.dp) else Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
@@ -64,17 +64,17 @@ fun DrawerItemView(
                 tint = if (selected) {
                     AppTheme.colors.onPrimary
                 } else {
-                    AppTheme.colors.onSurfaceVariant
+                    AppTheme.colors.onSurface
                 },
             )
             if (showLabel) {
                 Text(
                     text = item.title,
-                    style = AppTheme.typography.bodyLarge,
+                    style = AppTheme.typography.sidebarLabel16,
                     color = if (selected) {
                         AppTheme.colors.onPrimary
                     } else {
-                        AppTheme.colors.onSurfaceVariant
+                        AppTheme.colors.onSurface
                     },
                 )
             }

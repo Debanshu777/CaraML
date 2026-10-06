@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.core.ui.components
 
+import com.debanshu777.caraml.core.ui.icons.AppIcons
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -12,12 +13,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -25,7 +21,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.ui.layout.AppContentKind
 import com.debanshu777.caraml.core.ui.layout.ResponsiveContentPane
@@ -86,7 +81,7 @@ fun CaraMLTopBar(
                     onClick = requireNotNull(onNavigationClick),
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Menu,
+                        imageVector = AppIcons.Menu,
                         contentDescription = null,
                         tint = AppTheme.colors.onSurface,
                     )
@@ -96,7 +91,7 @@ fun CaraMLTopBar(
                     onClick = requireNotNull(onNavigationClick),
                 ) {
                     Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        imageVector = AppIcons.Back,
                         contentDescription = null,
                         tint = AppTheme.colors.onSurface,
                     )
@@ -106,7 +101,7 @@ fun CaraMLTopBar(
             Text(
                 text = title,
                 modifier = Modifier.weight(1f),
-                style = AppTheme.typography.heading28,
+                style = AppTheme.typography.pageTitle,
                 color = AppTheme.colors.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -154,7 +149,7 @@ private fun HeaderNavigationButton(
     onClick: () -> Unit,
     icon: @Composable () -> Unit,
 ) {
-    IconButton(
+    BrandIconButton(
         onClick = onClick,
         modifier = Modifier
             .size(AppTheme.spacing.spacing48)

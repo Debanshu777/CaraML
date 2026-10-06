@@ -27,14 +27,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -63,6 +61,8 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AppTheme
+import com.debanshu777.caraml.core.ui.components.BrandButton
+import com.debanshu777.caraml.core.ui.components.BrandButtonStyle
 import com.debanshu777.caraml.core.rating.ui.RecommendationDetailsSheet
 import com.debanshu777.caraml.core.rating.ui.recommendationPresentation
 import com.debanshu777.caraml.core.recommendation.OptimizationPriority
@@ -72,6 +72,7 @@ import com.debanshu777.caraml.core.recommendation.RiskTolerance
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.storage.localmodel.ModelType
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
+import com.debanshu777.caraml.core.ui.components.FrostedPageScaffold
 import com.debanshu777.caraml.core.ui.components.BrandPageHeader
 import com.debanshu777.caraml.core.ui.layout.AppContentKind
 import com.debanshu777.caraml.core.ui.layout.ResponsiveContentPane
@@ -162,7 +163,7 @@ fun SearchScreen(
                     modelViewModel.refreshDeviceInfo()
                     deviceInfoVisible = true
                 },
-                modifier = Modifier.padding(bottom = 18.dp),
+                modifier = Modifier.padding(bottom = AppTheme.spacing.spacing16),
             )
         },
         modifier = modifier,
@@ -257,8 +258,11 @@ fun SearchScreen(
     }
 }
 
-/** Header and command share the result list so keyboard and large text never strand actions. */
+/** Route chrome stays fixed; secondary context travels with the results. */
 private val LocalModelHubListHeader = staticCompositionLocalOf<(@Composable () -> Unit)?> { null }
+
+private val LocalModelHubContext = staticCompositionLocalOf<(@Composable () -> Unit)?> { null }
+private val LocalModelHubSnackbar = staticCompositionLocalOf<SnackbarHostState?> { null }
 
 @Composable
 internal fun ModelHubScreenLayout(
@@ -273,30 +277,22 @@ internal fun ModelHubScreenLayout(
 ) {
     val tabs = listOf("Discover", "Library")
     val tabStateHolder = rememberSaveableStateHolder()
-    Scaffold(
-        modifier = modifier,
-        containerColor = Color.Transparent,
-        snackbarHost = {
-            if (snackbarHostState != null) SnackbarHost(snackbarHostState)
+    CompositionLocalProvider(
+        LocalModelHubListHeader provides {
+            BrandPageHeader(title = "Models", modifier = Modifier.padding(bottom = AppTheme.spacing.spacing12))
+            ModelHubTabRow(tabs = tabs, selectedTabIndex = selectedTabIndex, onTabSelected = onTabSelected)
         },
-    ) { paddingValues ->
-        ResponsiveContentPane(
-            kind = AppContentKind.ModelHub,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues),
-        ) {
-            CompositionLocalProvider(LocalModelHubListHeader provides {
-                BrandPageHeader(title = "Models", modifier = Modifier.padding(bottom = AppTheme.spacing.spacing24))
-                sharedContext?.invoke()
-                downloadQueueEntry?.invoke()
-                ModelHubTabRow(tabs = tabs, selectedTabIndex = selectedTabIndex, onTabSelected = onTabSelected)
-            }) {
-                tabStateHolder.SaveableStateProvider(selectedTabIndex) {
-                    when (selectedTabIndex) {
-                        0 -> discoverContent()
-                        1 -> libraryContent()
-                    }
+        LocalModelHubContext provides {
+            sharedContext?.invoke()
+            downloadQueueEntry?.invoke()
+        },
+        LocalModelHubSnackbar provides snackbarHostState,
+    ) {
+        Box(modifier.fillMaxSize()) {
+            tabStateHolder.SaveableStateProvider(selectedTabIndex) {
+                when (selectedTabIndex) {
+                    0 -> discoverContent()
+                    1 -> libraryContent()
                 }
             }
         }
@@ -313,7 +309,7 @@ private fun ModelHubTabRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(bottom = 18.dp)
+            .padding(bottom = AppTheme.spacing.spacing12)
             .testTag("model-tabs")
             .clip(AppTheme.shapes.medium)
             .background(AppTheme.colors.surfaceContainerLow.copy(
@@ -377,21 +373,43 @@ internal fun ModelHubTabLayout(
         }
     }
     val pageHeader = LocalModelHubListHeader.current
-    LazyColumn(
-        modifier = modifier.fillMaxSize().testTag("model-primary-results"),
-        state = listState,
-        contentPadding = PaddingValues(bottom = AppTheme.spacing.spacing32),
-    ) {
-        if (pageHeader != null) {
-            item(key = "model-page-header") { pageHeader() }
+    val sharedContext = LocalModelHubContext.current
+    val snackbar = LocalModelHubSnackbar.current
+    BoxWithConstraints(modifier) {
+        // A fixed title, tabs, and search field exceed the usable height in landscape.
+        // Keep them together in the result scroller instead of clipping the search field.
+        val scrollHeader = pageHeader != null && maxHeight < 480.dp
+        val stickyHeader: (@Composable () -> Unit)? = if (scrollHeader) null else {
+            { pageHeader?.invoke(); command?.invoke() }
         }
-        if (command != null) {
-            item(key = "model-command") { command() }
+        FrostedPageScaffold(
+            kind = AppContentKind.ModelHub,
+            modifier = Modifier.fillMaxSize(),
+            header = stickyHeader,
+            snackbarHost = { snackbar?.let { SnackbarHost(it) } },
+        ) { insets ->
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().testTag("model-primary-results"),
+                state = listState,
+                contentPadding = PaddingValues(
+                    top = insets.calculateTopPadding() + AppTheme.spacing.spacing16,
+                    bottom = insets.calculateBottomPadding() + AppTheme.spacing.spacing24,
+                ),
+            ) {
+                if (scrollHeader) {
+                    item(key = "model-page-header") {
+                        Column(Modifier.fillMaxWidth().padding(bottom = AppTheme.spacing.spacing24)) {
+                            pageHeader()
+                            command?.invoke()
+                        }
+                    }
+                }
+                item(key = "model-context") { sharedContext?.invoke(); context() }
+                item(key = "model-toolbar") { toolbar() }
+                item(key = "model-summary") { summary() }
+                results()
+            }
         }
-        item(key = "model-context") { context() }
-        item(key = "model-toolbar") { toolbar() }
-        item(key = "model-summary") { summary() }
-        results()
     }
 }
 
@@ -504,7 +522,7 @@ internal fun SearchTabContent(
                             modifier = Modifier.padding(horizontal = AppTheme.spacing.spacing12),
                         )
                         if (results.canAssessMore) {
-                            TextButton(onClick = viewModel::loadMoreRecommendations) {
+                            BrandButton(style = BrandButtonStyle.Secondary, onClick = viewModel::loadMoreRecommendations) {
                                 Text("Assess more loaded models")
                             }
                         }
@@ -641,7 +659,8 @@ internal fun ModelPageFooter(
                 Text("Couldn't load more", style = AppTheme.typography.labelLarge, color = AppTheme.colors.onSurface)
                 Text("Your loaded models are still here. $error", color = AppTheme.colors.onSurfaceVariant, style = AppTheme.typography.bodySmall)
                 if (hasMore) {
-                    FilledTonalButton(
+                    BrandButton(
+                        style = BrandButtonStyle.Secondary,
                         onClick = onLoadMore,
                         modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48)
                     ) {
@@ -649,7 +668,8 @@ internal fun ModelPageFooter(
                     }
                 } else {
                     Text("Refine your search above to explore more models.", color = AppTheme.colors.onSurface)
-                    FilledTonalButton(
+                    BrandButton(
+                        style = BrandButtonStyle.Secondary,
                         onClick = onStartOver,
                         modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48)
                     ) {
@@ -690,7 +710,7 @@ internal fun SearchResultsSummary(
             color = AppTheme.colors.onSurface,
             modifier = Modifier.weight(1f),
         )
-        TextButton(onClick = onClear) {
+        BrandButton(style = BrandButtonStyle.Secondary, onClick = onClear) {
             Text("Clear")
         }
     }
@@ -909,13 +929,15 @@ internal fun DownloadedTabContent(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    TextButton(
+                    BrandButton(
+                        style = BrandButtonStyle.Secondary,
                         onClick = viewModel::clearSelection,
                         enabled = !isDeleting,
                     ) {
                         Text("Cancel")
                     }
-                    FilledTonalButton(
+                    BrandButton(
+                        style = BrandButtonStyle.Destructive,
                         onClick = { showDeleteConfirm = true },
                         enabled = selectedIds.isNotEmpty() && !isDeleting,
                     ) {
@@ -937,11 +959,11 @@ internal fun DownloadedTabContent(
                 item(key = "downloaded-empty") {
                     ModelHubStateView(
                         kind = ModelHubStateKind.Empty,
-                        title = if (normalizedLibraryQuery.isEmpty()) "Your shelf is waiting" else "Nothing here. Yet.",
+                        title = if (normalizedLibraryQuery.isEmpty()) "Your library is empty" else "No matching models",
                         message = if (normalizedLibraryQuery.isNotEmpty()) {
                             "No downloaded models match “$libraryQuery”."
                         } else {
-                            "Download a little brain and make yourself at home. Your models will live here, ready whenever you are."
+                            "Download a model to start creating. Your saved models will appear here."
                         },
                         actionLabel = if (normalizedLibraryQuery.isNotEmpty()) "Clear search" else onExploreModels?.let { "Explore models" },
                         onAction = if (normalizedLibraryQuery.isNotEmpty()) ({ libraryQuery = "" }) else onExploreModels,
@@ -1024,7 +1046,8 @@ internal fun DownloadedTabContent(
             title = { Text("Remove downloads?") },
             text = { Text("Remove selected downloads from this device?") },
             confirmButton = {
-                TextButton(
+                BrandButton(
+                    style = BrandButtonStyle.Destructive,
                     onClick = {
                         showDeleteConfirm = false
                         viewModel.deleteSelected()
@@ -1035,7 +1058,8 @@ internal fun DownloadedTabContent(
                 }
             },
             dismissButton = {
-                TextButton(
+                BrandButton(
+                    style = BrandButtonStyle.Secondary,
                     onClick = { showDeleteConfirm = false },
                     enabled = !isDeleting
                 ) {

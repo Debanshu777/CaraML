@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.core.rating.ui
 
+import com.debanshu777.caraml.core.ui.icons.AppIcons
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -8,8 +9,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -91,7 +90,7 @@ fun SuitabilityChip(
                 style = AppTheme.typography.label12,
             )
             if (onInfoClick != null) {
-                Icon(Icons.Outlined.Info, contentDescription = "Recommendation details", modifier = Modifier.size(AppTheme.dimensions.size18))
+                Icon(AppIcons.Info, contentDescription = "Recommendation details", modifier = Modifier.size(AppTheme.dimensions.size18))
             }
         }
     }
@@ -130,7 +129,7 @@ fun SuitabilityChip(
             )
             if (onInfoClick != null) {
                 Icon(
-                    imageVector = Icons.Outlined.Info,
+                    imageVector = AppIcons.Info,
                     contentDescription = "About this rating",
                     tint = rating.onContainerColor(),
                     modifier = Modifier.size(AppTheme.dimensions.size14),

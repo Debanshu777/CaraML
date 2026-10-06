@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search.components
 
+import com.debanshu777.caraml.core.ui.icons.AppIcons
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -81,12 +82,12 @@ fun ModelHubContextStrip(
             border = BorderStroke(1.dp, AppTheme.colors.outlineVariant),
         ) {
             Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Icon(Icons.Outlined.Smartphone, contentDescription = null, modifier = Modifier.size(23.dp))
+                Icon(AppIcons.Device, contentDescription = null, modifier = Modifier.size(23.dp))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("Your device", style = AppTheme.typography.labelLarge)
-                    Text(summary, style = AppTheme.typography.labelSmall, color = AppTheme.colors.onSurfaceVariant)
+                    Text("Your device", style = AppTheme.typography.preferenceTitle)
+                    Text(summary, style = AppTheme.typography.bodySmall, color = AppTheme.colors.onSurfaceVariant)
                 }
-                Icon(Icons.Default.ChevronRight, contentDescription = "Open device info")
+                Icon(AppIcons.ChevronRight, contentDescription = "Open device info")
             }
         }
         return
@@ -129,7 +130,7 @@ fun ModelHubContextStrip(
             ) {
                 if (showStorage) {
                     ContextItem(
-                        icon = Icons.Outlined.Storage,
+                        icon = AppIcons.Storage,
                         label = "Storage",
                         value = "${formatStorageBytes(storageInfo.availableDeviceBytes)} storage free · " +
                             "Models: ${formatStorageBytes(storageInfo.usedByModelsBytes)}",
@@ -138,7 +139,7 @@ fun ModelHubContextStrip(
                 }
                 storageInfo.deviceHints?.let { hints ->
                     ContextItem(
-                        icon = Icons.Outlined.Memory,
+                        icon = AppIcons.Memory,
                         label = "Device",
                         value = hints.summary(),
                         modifier = Modifier.weight(1f),
@@ -200,7 +201,7 @@ private fun CompactDeviceProfile(
             Surface(shape = AppTheme.shapes.small, color = AppTheme.colors.secondaryContainer) {
                 Box(Modifier.size(AppTheme.spacing.spacing32), contentAlignment = Alignment.Center) {
                     Icon(
-                        imageVector = Icons.Outlined.Tune,
+                        imageVector = AppIcons.Filters,
                         contentDescription = null,
                         modifier = Modifier.size(AppTheme.dimensions.size18),
                         tint = AppTheme.colors.onSecondaryContainer,
@@ -224,7 +225,7 @@ private fun CompactDeviceProfile(
                 }
             }
             Icon(
-                imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                imageVector = if (expanded) Icons.Default.ExpandLess else AppIcons.ChevronDown,
                 contentDescription = if (expanded) "Collapse device profile" else "Expand device profile",
                 tint = AppTheme.colors.onSurfaceVariant,
             )
@@ -240,7 +241,7 @@ private fun CompactDeviceProfile(
             ) {
                 if (storageInfo.totalDeviceBytes > 0L) {
                     ContextItem(
-                        icon = Icons.Outlined.Storage,
+                        icon = AppIcons.Storage,
                         label = "Storage",
                         value = "${formatStorageBytes(storageInfo.availableDeviceBytes)} storage free · " +
                             "Models: ${formatStorageBytes(storageInfo.usedByModelsBytes)}",
@@ -249,7 +250,7 @@ private fun CompactDeviceProfile(
                 }
                 storageInfo.deviceHints?.let { hints ->
                     ContextItem(
-                        icon = Icons.Outlined.Memory,
+                        icon = AppIcons.Memory,
                         label = "Device",
                         value = hints.summary(),
                         modifier = Modifier.fillMaxWidth(),
@@ -329,7 +330,7 @@ private fun RecommendationProfileContext(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                imageVector = Icons.Outlined.Tune,
+                imageVector = AppIcons.Filters,
                 contentDescription = null,
                 modifier = Modifier.size(AppTheme.dimensions.size18),
             )
@@ -349,7 +350,7 @@ private fun RecommendationProfileContext(
             }
             Spacer(Modifier.width(AppTheme.dimensions.size6))
             Icon(
-                imageVector = Icons.Default.ChevronRight,
+                imageVector = AppIcons.ChevronRight,
                 contentDescription = null,
                 modifier = Modifier.size(AppTheme.dimensions.size18),
             )

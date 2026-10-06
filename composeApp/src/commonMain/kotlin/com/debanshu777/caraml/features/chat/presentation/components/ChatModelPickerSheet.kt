@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.features.chat.presentation.components
 
+import com.debanshu777.caraml.core.ui.icons.AppIcons
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -8,9 +9,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -25,6 +23,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AppTheme
+import com.debanshu777.caraml.core.ui.components.BrandButton
+import com.debanshu777.caraml.core.ui.components.BrandButtonStyle
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.storage.localmodel.displayFilename
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
@@ -59,7 +59,7 @@ fun ChatModelPickerSheet(
         ) {
             item {
                 Text(
-                    text = "Select Model",
+                    text = "Select model",
                     style = AppTheme.typography.headingBase,
                     modifier = Modifier.padding(vertical = AppTheme.spacing.spacing16)
                 )
@@ -84,7 +84,7 @@ fun ChatModelPickerSheet(
                     trailingContent = {
                         if (isSelected) {
                             Icon(
-                                imageVector = Icons.Default.Check,
+                                imageVector = AppIcons.Check,
                                 contentDescription = "Selected",
                                 tint = AppTheme.actionColor,
                                 modifier = Modifier.size(AppTheme.spacing.spacing24)
@@ -108,28 +108,22 @@ fun ChatModelPickerSheet(
             }
 
             item {
-                ListItem(
-                    headlineContent = {
-                        Text(
-                            text = "Download model",
-                            style = AppTheme.typography.bodyLarge
-                        )
-                    },
-                    leadingContent = {
-                        Icon(
-                            imageVector = Icons.Default.Download,
-                            contentDescription = "Download model",
-                            modifier = Modifier.size(AppTheme.spacing.spacing24)
-                        )
-                    },
-                    modifier = Modifier.clickable {
+                BrandButton(
+                    onClick = {
                         onDismiss()
                         onDownloadModelClick()
                     },
-                    colors = ListItemDefaults.colors(
-                        containerColor = Color.Transparent,
+                    modifier = Modifier.fillMaxWidth(),
+                    style = BrandButtonStyle.Secondary,
+                ) {
+                    Icon(
+                        imageVector = AppIcons.Search,
+                        contentDescription = null,
+                        modifier = Modifier.size(AppTheme.spacing.spacing24),
                     )
-                )
+                    Spacer(Modifier.size(AppTheme.spacing.spacing8))
+                    Text("Browse models")
+                }
             }
 
             item {

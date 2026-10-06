@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search.components
 
+import com.debanshu777.caraml.core.ui.icons.AppIcons
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -11,23 +12,17 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,10 +32,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import com.debanshu777.caraml.core.theme.AppTheme
+import com.debanshu777.caraml.core.ui.components.BrandButton
+import com.debanshu777.caraml.core.ui.components.BrandButtonStyle
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelOrdering
@@ -65,16 +64,16 @@ internal fun ModelHubInlineFilters(
         Row(Modifier.fillMaxWidth().padding(vertical = AppTheme.spacing.spacing8), verticalAlignment = Alignment.CenterVertically) {
             Text(resultLabel, style = AppTheme.typography.labelSmall, color = AppTheme.colors.onSurface,
                 modifier = Modifier.weight(1f).testTag("model-summary"))
-            TextButton(
+            BrandButton(
+                style = BrandButtonStyle.Secondary,
                 onClick = { expanded = !expanded },
-                colors = ButtonDefaults.textButtonColors(contentColor = AppTheme.colors.onSurface),
                 modifier = Modifier.testTag("model-sort-filter-button").semantics {
                     contentDescription = if (active) "Sort and filter models, active" else "Sort and filter models"
                     stateDescription = if (expanded) "Expanded" else "Collapsed"
                 },
             ) {
-                Icon(Icons.Default.Tune, null, Modifier.size(AppTheme.dimensions.size18))
-                Text(if (active) "  Filters · active" else "  Filters", style = AppTheme.typography.bodySmall)
+                Icon(AppIcons.Filters, null, Modifier.size(AppTheme.dimensions.size18))
+                Text(if (active) "  Filters · active" else "  Filters")
             }
         }
         AnimatedVisibility(
@@ -117,8 +116,8 @@ internal fun ModelHubInlineFilterPanel(
                     .map { it to "Up to ${it.apiValue}" }) {
                     draftMax = it; if (draftMin.ordinal > it.ordinal) draftMin = it
                 }
-                TextButton(onClick = { advanced = !advanced }, colors = ButtonDefaults.textButtonColors(contentColor = AppTheme.actionColor)) {
-                    Text(if (advanced) "Fewer options" else "Sort & more options", style = AppTheme.typography.bodySmall)
+                BrandButton(style = BrandButtonStyle.Secondary, onClick = { advanced = !advanced }) {
+                    Text(if (advanced) "Fewer options" else "Sort & more options")
                 }
                 if (advanced) {
                     ModelFilterChoice("Minimum", draftMin, ParameterRange.entries.map { it to it.apiValue }) {
@@ -135,11 +134,9 @@ internal fun ModelHubInlineFilterPanel(
                 }
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(spacing.spacing8)) {
-                Button(
+                BrandButton(
                     onClick = { onApply(draftMode, draftOrdering, draftMin, draftMax) },
-                    shape = AppTheme.shapes.small,
-                    colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.primary, contentColor = AppTheme.colors.onPrimary),
-                ) { Text("Apply filters", style = AppTheme.typography.bodySmall) }
+                ) { Text("Apply filters") }
                 ModelHubAction("Reset", onClick = {
                     onApply(ModelHubBrowseMode.LanguageModels, ModelOrdering.Server(ModelSort.TRENDING), ParameterRange.ZERO, ParameterRange.SIX_B)
                 })
@@ -151,18 +148,30 @@ internal fun ModelHubInlineFilterPanel(
 @Composable
 private fun <T> ModelFilterChoice(label: String, value: T, options: List<Pair<T, String>>, onChange: (T) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing12)) {
-        Text(label, style = AppTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-        Box(Modifier.weight(1.5f)) {
-            OutlinedButton(onClick = { expanded = true }, shape = AppTheme.shapes.small, modifier = Modifier.fillMaxWidth().heightIn(min = AppTheme.spacing.spacing48).semantics { contentDescription = label },
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = AppTheme.colors.onSurface, containerColor = AppTheme.colors.background)) {
-                Text(options.firstOrNull { it.first == value }?.second.orEmpty(), style = AppTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                Icon(Icons.Default.ExpandMore, null, Modifier.size(AppTheme.dimensions.size18))
+    val selection: @Composable (Modifier) -> Unit = { modifier ->
+        Box(modifier) {
+            BrandButton(style = BrandButtonStyle.Secondary, onClick = { expanded = true }, modifier = Modifier.fillMaxWidth().heightIn(min = AppTheme.spacing.spacing48).semantics { contentDescription = label }) {
+                Text(options.firstOrNull { it.first == value }?.second.orEmpty(), modifier = Modifier.weight(1f))
+                Icon(AppIcons.ChevronDown, null, Modifier.size(AppTheme.dimensions.size18))
             }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 options.forEach { (option, text) ->
                     DropdownMenuItem(text = { Text(text) }, onClick = { expanded = false; onChange(option) })
                 }
+            }
+        }
+    }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        if (LocalDensity.current.fontScale >= 1.5f || maxWidth < 280.dp) {
+            Column(verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8)) {
+                Text(label, style = AppTheme.typography.bodySmall)
+                selection(Modifier.fillMaxWidth())
+            }
+        } else {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing12)) {
+                Text(label, style = AppTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                selection(Modifier.weight(1.5f))
             }
         }
     }

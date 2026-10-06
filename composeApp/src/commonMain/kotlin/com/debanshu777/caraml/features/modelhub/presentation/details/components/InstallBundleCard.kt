@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.features.modelhub.presentation.details.components
 
+import com.debanshu777.caraml.core.ui.icons.AppIcons
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
@@ -9,19 +10,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Circle
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -30,6 +24,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AppTheme
+import com.debanshu777.caraml.core.ui.components.BrandButton
+import com.debanshu777.caraml.core.ui.components.BrandButtonStyle
 import com.debanshu777.caraml.core.theme.CaraMLTheme
 import com.debanshu777.caraml.core.theme.ThemePreferences
 import com.debanshu777.caraml.core.ui.components.CaraMLSectionHeader
@@ -195,7 +191,7 @@ private fun InstallBundleSummaryContent(
         StatusMark(
             label = "Model downloaded",
             contentDescription = "Model downloaded",
-            icon = Icons.Default.CheckCircle,
+            icon = AppIcons.CheckCircle,
         )
     }
 
@@ -208,7 +204,7 @@ private fun InstallBundleSummaryContent(
         StatusMark(
             label = "Self-contained",
             contentDescription = "Self-contained. No extra downloads needed.",
-            icon = Icons.Default.CheckCircle,
+            icon = AppIcons.CheckCircle,
         )
     }
 }
@@ -250,24 +246,25 @@ private fun InstallBundleActionContent(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
     ) {
-        Button(
+        BrandButton(
             onClick = command?.second ?: onInstall,
+            style = if (command == null) BrandButtonStyle.Primary else BrandButtonStyle.Secondary,
             enabled = command != null || (installEnabled && !state.isInstalling && !state.isReady),
             modifier = Modifier.fillMaxWidth(),
         ) {
             when {
                 command != null -> Text(command.first)
                 state.isReady -> {
-                    Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(AppTheme.dimensions.size18))
+                    Icon(AppIcons.CheckCircle, contentDescription = null, modifier = Modifier.size(AppTheme.dimensions.size18))
                     Text("  Ready to use")
                 }
                 state.isInstalling -> Text("Installing…")
                 state.totalNewDownloadBytes > 0L -> {
-                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(AppTheme.dimensions.size18))
+                    Icon(AppIcons.Download, contentDescription = null, modifier = Modifier.size(AppTheme.dimensions.size18))
                     Text("  Install  ·  ${formatBytes(state.totalNewDownloadBytes)}")
                 }
                 else -> {
-                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(AppTheme.dimensions.size18))
+                    Icon(AppIcons.Download, contentDescription = null, modifier = Modifier.size(AppTheme.dimensions.size18))
                     Text("  Install")
                 }
             }
@@ -280,7 +277,7 @@ private fun InstallBundleActionContent(
                 DownloadBatchState.FAILED_RETRYABLE,
             )
         ) {
-            TextButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) {
+            BrandButton(style = BrandButtonStyle.Secondary, onClick = onCancel, modifier = Modifier.fillMaxWidth()) {
                 Text("Cancel download")
             }
         }
@@ -356,7 +353,7 @@ private fun ComponentRow(
         ) {
             when {
                 component.isDownloaded -> Icon(
-                    Icons.Default.CheckCircle,
+                    AppIcons.CheckCircle,
                     contentDescription = "Downloaded",
                     modifier = Modifier.size(AppTheme.dimensions.size18),
                     tint = AppTheme.actionColor,
@@ -367,7 +364,7 @@ private fun ComponentRow(
                     strokeWidth = AppTheme.spacing.spacing2,
                 )
                 else -> Icon(
-                    Icons.Default.Circle,
+                    AppIcons.Circle,
                     contentDescription = "Not downloaded",
                     modifier = Modifier.size(AppTheme.dimensions.size18),
                     tint = AppTheme.colors.outlineVariant,
@@ -405,13 +402,13 @@ private fun ComponentRow(
                         StatusMark(
                             label = "Already have it",
                             contentDescription = "Already downloaded with another model",
-                            icon = Icons.Default.CheckCircle,
+                            icon = AppIcons.CheckCircle,
                         )
                     } else if (component.required && !component.isDownloaded) {
                         StatusMark(
                             label = "Required",
                             contentDescription = "Required component",
-                            icon = Icons.Default.Circle,
+                            icon = AppIcons.Circle,
                         )
                     }
                 }
@@ -423,11 +420,6 @@ private fun ComponentRow(
                 }
             }
         }
-        HorizontalDivider(
-            modifier = Modifier.padding(start = AppTheme.dimensions.size28),
-            thickness = AppTheme.dimensions.size1,
-            color = AppTheme.auroraColors.divider,
-        )
     }
 }
 

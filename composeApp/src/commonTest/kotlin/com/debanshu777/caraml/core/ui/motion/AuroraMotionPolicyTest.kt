@@ -27,6 +27,7 @@ class AuroraMotionPolicyTest {
 
         assertIs<SnapSpec<Float>>(motion.drawerRevealSpec<Float>())
         assertIs<SnapSpec<Float>>(motion.pressSpec<Float>())
+        assertIs<SnapSpec<Float>>(motion.pressInSpec<Float>())
         assertIs<SnapSpec<Float>>(motion.statusSpec<Float>())
         assertEquals(90, assertIs<TweenSpec<Float>>(motion.opacitySpec<Float>()).durationMillis)
     }

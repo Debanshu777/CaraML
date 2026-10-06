@@ -92,18 +92,18 @@ class ModelDetailsWorkbenchUiTest {
             }
 
             textStyleFor("focal-artifact").let { style ->
-                assertEquals(32.sp, style.fontSize)
-                assertEquals(44.sp, style.lineHeight)
-                assertEquals(FontWeight.ExtraBold, style.fontWeight)
+                assertEquals(24.sp, style.fontSize)
+                assertEquals(32.sp, style.lineHeight)
+                assertEquals(FontWeight.SemiBold, style.fontWeight)
             }
 
             runOnIdle { windowWidth = 840.dp }
             waitForIdle()
 
             textStyleFor("focal-artifact").let { style ->
-                assertEquals(32.sp, style.fontSize)
-                assertEquals(44.sp, style.lineHeight)
-                assertEquals(FontWeight.ExtraBold, style.fontWeight)
+                assertEquals(24.sp, style.fontSize)
+                assertEquals(32.sp, style.lineHeight)
+                assertEquals(FontWeight.SemiBold, style.fontWeight)
             }
         }
 
@@ -640,6 +640,7 @@ class ModelDetailsWorkbenchUiTest {
         )
         var submitted: List<DownloadMetadataDTO>? = null
         var memoryFit by mutableStateOf(BrowseResourceFit.UNKNOWN)
+        var selectedPath by mutableStateOf<String?>(null)
         setContent {
             MaterialTheme {
                 Box(Modifier.width(420.dp).height(800.dp)) {
@@ -649,6 +650,8 @@ class ModelDetailsWorkbenchUiTest {
                         isDownloading = false,
                         onDownloadClick = { _, _, _ -> error("Shard icon must submit the exact group") },
                         onDownloadGroupClick = { _, metadata -> submitted = metadata },
+                        installBundleState = InstallBundleUiState(selectedVariantPath = selectedPath),
+                        onVariantSelected = { selectedPath = it },
                         recommendationState = fixture.recommendation.copy(
                             descriptorState = DescriptorState.NEEDS_INFORMATION,
                             selectedDescriptor = null,
@@ -674,6 +677,16 @@ class ModelDetailsWorkbenchUiTest {
             .assertDoesNotExist()
         onNodeWithText("Suggested · support unverified · Part 1 of 2").assertExists()
         onNodeWithText("Suggested · support unverified · Part 2 of 2").assertExists()
+        onNodeWithContentDescription("Select variant ${fixture.files.first().filename}")
+            .performScrollTo()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, androidx.compose.ui.semantics.Role.RadioButton))
+            .performClick()
+        runOnIdle {
+            assertEquals(fixture.files.first().path, selectedPath)
+            assertEquals(null, submitted, "Selecting a variant must not download it")
+        }
+        onNodeWithContentDescription("Selected variant ${fixture.files.first().filename}")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Selected, true))
         onAllNodes(hasContentDescription("Download all 2 parts")).assertCountEquals(2)
         onAllNodes(hasContentDescription("Download all 2 parts"))[0].performScrollTo().performClick()
         runOnIdle {

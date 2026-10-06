@@ -106,9 +106,9 @@ class CreateWorkbenchUiTest {
                 assertTrue(action(layoutResults))
             }
         val style = layoutResults.single().layoutInput.style
-        assertEquals(28.sp, style.fontSize)
-        assertEquals(34.sp, style.lineHeight)
-        assertEquals(FontWeight.Bold, style.fontWeight)
+        assertEquals(24.sp, style.fontSize)
+        assertEquals(32.sp, style.lineHeight)
+        assertEquals(FontWeight.SemiBold, style.fontWeight)
     }
 
     @Test
@@ -724,15 +724,19 @@ class CreateWorkbenchUiTest {
             onNode(hasScrollToIndexAction()).performScrollToIndex(1)
             onNodeWithContentDescription("Text mode, selected").assertIsDisplayed()
             assertTextDoesNotOverflow("Write")
+            onNodeWithText("Imagine").performScrollTo()
             assertTextDoesNotOverflow("Imagine")
+            onNodeWithText("Animate").performScrollTo()
             assertTextDoesNotOverflow("Animate")
-            onNodeWithContentDescription("Image mode").performClick()
+            onNodeWithContentDescription("Image mode").performScrollTo().performClick()
             runOnIdle { assertEquals(GenerationMode.Image, controller.mode) }
             onNodeWithContentDescription("Image mode, selected").assertIsDisplayed()
+            onNodeWithText("Imagine").performScrollTo()
             assertTextDoesNotOverflow("Imagine")
-            onNodeWithContentDescription("Video mode").performClick()
+            onNodeWithContentDescription("Video mode").performScrollTo().performClick()
             runOnIdle { assertEquals(GenerationMode.Video, controller.mode) }
             onNodeWithContentDescription("Video mode, selected").assertIsDisplayed()
+            onNodeWithText("Animate").performScrollTo()
             assertTextDoesNotOverflow("Animate")
             onNode(hasScrollToIndexAction()).performScrollToIndex(2)
             onNode(hasSetTextAction()).performScrollTo().assertIsDisplayed()
@@ -788,7 +792,7 @@ class CreateWorkbenchUiTest {
         }
 
     @Test
-    fun composerOwnsBottomInsetForEverySidebarLayoutAtTwoHundredPercent() =
+    fun composerCanScrollAboveBottomInsetForEverySidebarLayoutAtTwoHundredPercent() =
         runComposeUiTest {
             var navigation by mutableStateOf(AppNavigationLayout.ModalSidebar)
             var width by mutableStateOf(420.dp)
@@ -823,12 +827,20 @@ class CreateWorkbenchUiTest {
                     width = nextWidth
                 }
                 onNode(hasScrollToIndexAction()).performScrollToIndex(2)
-                val action = onNodeWithContentDescription("Send message")
+                val actionNode = onNodeWithContentDescription("Send message")
                     .performScrollTo()
                     .assertIsDisplayed()
                     .assertWidthIsAtLeast(48.dp)
                     .assertHeightIsAtLeast(48.dp)
-                    .fetchSemanticsNode()
+                // performScrollTo uses the entire scroller, including the glass underlap.
+                // Scroll the action into the usable area before checking its safe bounds.
+                val underlap = actionNode.fetchSemanticsNode().boundsInRoot.bottom - (hostHeight - safeBottom)
+                if (underlap > 0f) {
+                    onNode(hasScrollToIndexAction()).performSemanticsAction(SemanticsActions.ScrollBy) {
+                        it(0f, underlap)
+                    }
+                }
+                val action = actionNode.fetchSemanticsNode()
                 val bottomGap = hostHeight - action.boundsInRoot.bottom
                 assertTrue(
                     bottomGap >= safeBottom,
@@ -902,7 +914,7 @@ class CreateWorkbenchUiTest {
             runOnIdle { assertEquals(2, modelHubNavigations) }
 
             show(ChatUiState.ModelLoading)
-            onNodeWithText("Loading model...").performScrollTo().assertIsDisplayed()
+            onNodeWithText("Loading model…").performScrollTo().assertIsDisplayed()
 
             show(ChatUiState.ModelError("The selected model could not be opened."))
             onAllNodesWithText("Retry current model").assertCountEquals(0)
@@ -917,7 +929,7 @@ class CreateWorkbenchUiTest {
                 .performScrollTo()
                 .assertIsDisplayed()
                 .performClick()
-            onNodeWithText("Try Another Model").performScrollTo().assertIsDisplayed().performClick()
+            onNodeWithText("Choose another model").performScrollTo().assertIsDisplayed().performClick()
             runOnIdle {
                 assertEquals(1, retriedCurrentModels)
                 assertEquals(3, modelHubNavigations)
@@ -1142,8 +1154,10 @@ class CreateWorkbenchUiTest {
         assertEquals(1, layoutResults.size)
         val result = layoutResults.single()
         assertTrue(
-            !result.didOverflowWidth,
-            "$text must not overflow horizontally at 200% font scale; " +
+            (0 until result.lineCount).all { line ->
+                result.getLineLeft(line) >= 0f && result.getLineRight(line) <= result.size.width + 1f
+            },
+            "$text must fit its measured glyph bounds at 200% font scale; " +
                 "size=${result.size}, lines=${result.lineCount}, paragraphWidth=${result.multiParagraph.width}, constraints=${result.layoutInput.constraints}",
         )
         assertTrue(

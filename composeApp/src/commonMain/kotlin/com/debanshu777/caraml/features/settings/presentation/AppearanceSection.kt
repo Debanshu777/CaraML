@@ -1,10 +1,16 @@
 package com.debanshu777.caraml.features.settings.presentation
 
+import com.debanshu777.caraml.core.ui.icons.AppIcons
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import com.debanshu777.caraml.core.ui.components.BrandButton
+import com.debanshu777.caraml.core.ui.components.BrandButtonStyle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -23,27 +29,23 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -81,16 +83,14 @@ fun AppearanceSection(
             description = "Make yourself at home.",
         ) {
             Box {
-                OutlinedButton(
+                BrandButton(
+                    style = BrandButtonStyle.Secondary,
                     onClick = { themeMenuOpen = true },
                     modifier = Modifier.heightIn(min = 48.dp).widthIn(min = 96.dp)
                         .semantics { contentDescription = "Choose appearance"; stateDescription = preferences.themeMode.displayName() },
-                    shape = AppTheme.shapes.small,
-                    border = BorderStroke(1.dp, AppTheme.colors.outlineVariant),
-                    colors = ButtonDefaults.outlinedButtonColors(containerColor = AppTheme.colors.surface, contentColor = AppTheme.colors.onSurface),
                 ) {
-                    Text(preferences.themeMode.displayName(), style = AppTheme.typography.bodySmall)
-                    Icon(Icons.Default.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text(preferences.themeMode.displayName())
+                    Icon(AppIcons.ChevronDown, contentDescription = null, modifier = Modifier.size(18.dp))
                 }
                 DropdownMenu(expanded = themeMenuOpen, onDismissRequest = { themeMenuOpen = false }) {
                     ThemeMode.entries.forEach { mode ->
@@ -98,7 +98,7 @@ fun AppearanceSection(
                         DropdownMenuItem(
                             text = { Text(mode.displayName()) },
                             onClick = { viewModel.updateThemeMode(mode); themeMenuOpen = false },
-                            trailingIcon = if (selected) ({ Icon(Icons.Default.Check, contentDescription = null) }) else null,
+                            trailingIcon = if (selected) ({ Icon(AppIcons.Check, contentDescription = null) }) else null,
                             modifier = Modifier.semantics {
                                 contentDescription = "Theme ${mode.displayName()}, " + if (selected) "selected" else "not selected"
                                 stateDescription = if (selected) "Selected" else "Not selected"
@@ -122,7 +122,7 @@ fun AppearanceSection(
                         .background(color, RoundedCornerShape(6.dp))
                         .border(1.dp, brand.ink, RoundedCornerShape(6.dp)))
                 }
-                Icon(if (paletteExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, Modifier.size(18.dp), tint = AppTheme.colors.onSurface)
+                Icon(if (paletteExpanded) Icons.Default.ExpandLess else AppIcons.ChevronDown, null, Modifier.size(18.dp), tint = AppTheme.colors.onSurface)
             }
         }
         if (paletteExpanded) {
@@ -213,16 +213,29 @@ internal fun SettingsPreferenceRow(
     modifier: Modifier = Modifier,
     trailing: @Composable () -> Unit,
 ) {
-    Row(
-        modifier = modifier.fillMaxWidth().padding(vertical = 22.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    BoxWithConstraints(
+        modifier = modifier.fillMaxWidth().padding(vertical = AppTheme.spacing.spacing16),
     ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Text(title, style = AppTheme.typography.body14, fontWeight = FontWeight.SemiBold, color = AppTheme.colors.onSurface)
-            Text(description, style = AppTheme.typography.bodySmall, color = AppTheme.colors.onSurface)
+        val label: @Composable (Modifier) -> Unit = { labelModifier ->
+            Column(labelModifier, verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing4)) {
+                Text(title, style = AppTheme.typography.preferenceTitle, color = AppTheme.colors.onSurface)
+                Text(description, style = AppTheme.typography.bodySmall, color = AppTheme.colors.onSurfaceVariant)
+            }
         }
-        trailing()
+        if (LocalDensity.current.fontScale >= 1.5f || maxWidth < 300.dp) {
+            Column(verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing12)) {
+                label(Modifier.fillMaxWidth())
+                trailing()
+            }
+        } else {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing12),
+            ) {
+                label(Modifier.weight(1f))
+                trailing()
+            }
+        }
     }
 }
 
@@ -320,7 +333,7 @@ private fun SeedSwatch(
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
-                        imageVector = Icons.Default.Check,
+                        imageVector = AppIcons.Check,
                         contentDescription = null,
                         modifier = Modifier.size(AppTheme.dimensions.size14),
                     )

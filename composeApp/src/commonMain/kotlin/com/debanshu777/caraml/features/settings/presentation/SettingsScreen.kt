@@ -1,5 +1,9 @@
 package com.debanshu777.caraml.features.settings.presentation
 
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import com.debanshu777.caraml.core.ui.components.BrandButton
+import com.debanshu777.caraml.core.ui.components.BrandButtonStyle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,10 +19,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -28,10 +28,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -46,6 +44,7 @@ import com.debanshu777.caraml.core.recommendation.RecommendationRolloutModeSourc
 import com.debanshu777.caraml.core.settings.AppSettings
 import com.debanshu777.caraml.core.settings.KvQuantPreset
 import com.debanshu777.caraml.core.theme.ThemeViewModel
+import com.debanshu777.caraml.core.ui.components.FrostedPageScaffold
 import com.debanshu777.caraml.core.ui.components.BrandPageHeader
 import com.debanshu777.caraml.core.ui.layout.AppContentKind
 import com.debanshu777.caraml.core.ui.layout.ResponsiveContentPane
@@ -77,48 +76,31 @@ fun SettingsScreen(
     )
     val spacing = AppTheme.spacing
 
-    Scaffold(
+    FrostedPageScaffold(
+        kind = AppContentKind.Settings,
         modifier = modifier,
-        containerColor = Color.Transparent,
+        header = { BrandPageHeader(title = "Settings") },
     ) { paddingValues ->
-        ResponsiveContentPane(
-            kind = AppContentKind.Settings,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues),
-        ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .testTag("settings-scroll")
                     .verticalScroll(rememberScrollState())
-                    .padding(top = 22.dp, bottom = spacing.spacing48),
+                    .padding(paddingValues)
+                    .padding(top = spacing.spacing16, bottom = spacing.spacing48),
                 verticalArrangement = Arrangement.spacedBy(spacing.spacing24),
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(spacing.spacing12)) {
-                    BrandPageHeader(title = "Your kind of CaraML.")
-                    Text(
-                        "A few small things. Just how you like them.",
-                        style = AppTheme.typography.bodySmall,
-                        color = AppTheme.colors.onSurface,
-                    )
-                }
                 Column {
                     AppearanceSection(viewModel = themeViewModel)
                     SettingsPreferenceRow(
-                        title = "Your model shelf",
-                        description = "See what’s already on your device.",
+                        title = "Downloaded models",
+                        description = "Models saved on this device.",
                     ) {
-                        OutlinedButton(
+                        BrandButton(
+                            style = BrandButtonStyle.Secondary,
                             onClick = onOpenShelf,
                             modifier = Modifier.heightIn(min = 48.dp),
-                            shape = AppTheme.shapes.small,
-                            border = BorderStroke(1.dp, AppTheme.colors.outlineVariant),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                containerColor = AppTheme.colors.surface,
-                                contentColor = AppTheme.colors.onSurface,
-                            ),
-                        ) { Text("Open shelf", style = AppTheme.typography.bodySmall) }
+                        ) { Text("Open library") }
                     }
                     SettingsRowDivider("settings-divider-shelf")
                 }
@@ -183,7 +165,6 @@ fun SettingsScreen(
                     )
                 }
             }
-        }
     }
 
     if (calibrationDialogVisible) {
@@ -212,7 +193,7 @@ internal fun SettingsSectionHeader(
     ) {
         Text(
             text = title,
-            style = AppTheme.typography.heading16,
+            style = AppTheme.typography.sectionTitle,
             color = AppTheme.colors.onSurface,
         )
         Text(
@@ -263,7 +244,7 @@ private fun CalibrationSetting(
                 style = AppTheme.typography.bodySmall,
                 color = AppTheme.colors.onSurface,
             )
-            Button(
+            BrandButton(
                 onClick = onRunCalibration,
                 modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48),
             ) {

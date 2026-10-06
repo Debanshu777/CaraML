@@ -211,7 +211,10 @@ class ModelHubControlsUiTest {
         }
         listOf("Sort models", "Filters").forEach { description ->
             val control = onNodeWithContentDescription(description).fetchSemanticsNode()
-            assertEquals(AppShapes.small, control.config[SemanticsProperties.Shape])
+            assertEquals(
+                androidx.compose.foundation.shape.RoundedCornerShape(com.debanshu777.caraml.core.theme.AppButtonTokens.cornerRadius),
+                control.config[SemanticsProperties.Shape],
+            )
         }
         onNodeWithText("Min: 0").assertDoesNotExist()
         onNodeWithText("Max: 6B").assertDoesNotExist()

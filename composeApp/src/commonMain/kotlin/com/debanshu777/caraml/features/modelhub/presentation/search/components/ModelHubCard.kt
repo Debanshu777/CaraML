@@ -1,6 +1,5 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search.components
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,9 +15,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,10 +29,10 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
 import com.debanshu777.caraml.core.theme.AppTheme
-import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
-import com.debanshu777.caraml.core.ui.components.CaraMLPane
+import com.debanshu777.caraml.core.ui.components.BrandButton
+import com.debanshu777.caraml.core.ui.components.BrandButtonStyle
 
-/** The same open, divided model row is used for Discover and the local library. */
+/** The same open model row is used for Discover and the local library. */
 @Composable
 internal fun ModelHubCard(
     title: String,
@@ -55,7 +51,7 @@ internal fun ModelHubCard(
         Column(
             modifier = modifier.fillMaxWidth()
                 .background(if (emphasized) AppTheme.colors.surfaceContainerHigh else Color.Transparent)
-                .padding(vertical = 18.dp),
+                .padding(vertical = spacing.spacing24),
             verticalArrangement = Arrangement.spacedBy(spacing.spacing12),
         ) {
             Row(
@@ -70,7 +66,7 @@ internal fun ModelHubCard(
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(spacing.spacing4)) {
                     Text(
                         text = title,
-                        style = AppTheme.typography.modelTitle21,
+                        style = AppTheme.typography.itemTitle,
                         color = AppTheme.colors.onSurface,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
@@ -78,8 +74,8 @@ internal fun ModelHubCard(
                     eyebrow?.takeIf(String::isNotBlank)?.let {
                         Text(
                             text = it,
-                            style = AppTheme.typography.labelSmall,
-                            color = AppTheme.colors.onSurface,
+                            style = AppTheme.typography.labelBase,
+                            color = AppTheme.colors.onSurfaceVariant,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -117,7 +113,6 @@ internal fun ModelHubCard(
                 }
             }
         }
-        HorizontalDivider(color = AppTheme.colors.outlineVariant, thickness = AppTheme.dimensions.size1)
     }
 }
 
@@ -128,18 +123,13 @@ internal fun ModelHubAction(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
 ) {
-    OutlinedButton(
+    BrandButton(
+        style = BrandButtonStyle.Secondary,
         onClick = onClick,
         enabled = enabled,
         modifier = modifier.heightIn(min = AppTheme.spacing.spacing48),
-        shape = AppTheme.shapes.small,
-        border = BorderStroke(AppTheme.dimensions.size1, AppTheme.colors.outlineVariant),
-        colors = ButtonDefaults.outlinedButtonColors(
-            containerColor = AppTheme.colors.surfaceContainerLowest,
-            contentColor = AppTheme.colors.onSurface,
-        ),
         contentPadding = PaddingValues(horizontal = AppTheme.spacing.spacing12, vertical = AppTheme.spacing.spacing8),
-    ) { Text(label, style = AppTheme.typography.bodySmall) }
+    ) { Text(label) }
 }
 
 @Composable

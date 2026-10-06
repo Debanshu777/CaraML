@@ -239,7 +239,7 @@ class ModelHubWorkbenchScreenUiTest {
     }
 
     @Test
-    fun width840KeepsFullWidthResultsWithSharedContextAboveTabs() = runComposeUiTest {
+    fun width840UsesTheSharedTwentyFourDpContentGutters() = runComposeUiTest {
         setContent {
             CompositionLocalProvider(LocalDensity provides Density(density = 1f, fontScale = 1f)) {
                 MaterialTheme {
@@ -255,7 +255,7 @@ class ModelHubWorkbenchScreenUiTest {
         val results = onNodeWithTag("model-primary-results")
             .fetchSemanticsNode().boundsInRoot
 
-        assertTrue(results.width >= 800f, "Results width was ${results.width}dp")
+        assertEquals(792f, results.width, "840dp viewport minus two shared 24dp gutters")
     }
 
     @Test

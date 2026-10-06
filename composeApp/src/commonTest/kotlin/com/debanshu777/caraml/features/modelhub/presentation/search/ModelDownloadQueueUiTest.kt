@@ -58,7 +58,7 @@ class ModelDownloadQueueUiTest {
         val queue = onNodeWithTag("model-download-queue-entry").fetchSemanticsNode().boundsInRoot
         val tabs = onNodeWithTag("model-tabs").fetchSemanticsNode().boundsInRoot
         val filters = onNodeWithText("Filters").fetchSemanticsNode().boundsInRoot
-        kotlin.test.assertTrue(profile.bottom <= tabs.top)
+        kotlin.test.assertTrue(tabs.bottom <= profile.top)
         kotlin.test.assertTrue(tabs.bottom <= filters.top)
         kotlin.test.assertTrue(filters.bottom <= queue.top)
         onNodeWithText("Downloading").assertIsDisplayed()

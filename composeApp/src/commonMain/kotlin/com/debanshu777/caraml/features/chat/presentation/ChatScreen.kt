@@ -1,13 +1,15 @@
 package com.debanshu777.caraml.features.chat.presentation
 
-import androidx.compose.foundation.BorderStroke
+import com.debanshu777.caraml.core.ui.icons.AppIcons
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import com.debanshu777.caraml.core.ui.components.BrandButton
+import com.debanshu777.caraml.core.ui.components.BrandButtonStyle
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.layout.onSizeChanged
@@ -16,6 +18,8 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
+import com.debanshu777.caraml.core.ui.components.FrostedPageScaffold
+import com.debanshu777.caraml.core.ui.components.BrandPageHeader
 import com.debanshu777.caraml.core.ui.components.BrandNavigationButton
 import com.debanshu777.caraml.core.ui.components.BrandPalAppearance
 import com.debanshu777.caraml.core.ui.components.BrandPalState
@@ -38,8 +42,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.calculateEndPadding
-import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -53,26 +55,18 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.Error
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -82,17 +76,11 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.drawer.DrawerController
@@ -107,8 +95,6 @@ import com.debanshu777.caraml.core.ui.components.BrandPal
 import com.debanshu777.caraml.core.ui.components.CaraMLPane
 import com.debanshu777.caraml.core.ui.components.CommandSurface
 import com.debanshu777.caraml.core.ui.layout.AppContentKind
-import com.debanshu777.caraml.core.ui.layout.AppNavigationLayout
-import com.debanshu777.caraml.core.ui.layout.LocalAppNavigationLayout
 import com.debanshu777.caraml.core.ui.layout.ResponsiveContentPane
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
@@ -124,7 +110,6 @@ import com.debanshu777.caraml.features.chat.presentation.components.GenerationSt
 import com.debanshu777.caraml.features.chat.presentation.components.GenerationModeSwitcher
 import com.debanshu777.caraml.features.chat.presentation.components.ModelErrorScreen
 import com.debanshu777.caraml.features.chat.presentation.components.ModelLoadingScreen
-import com.debanshu777.caraml.features.chat.presentation.components.ModelSelectorTopBar
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 
 internal val LocalCreateSafeDrawingInsetsOverride =
@@ -208,6 +193,7 @@ fun ChatScreenContent(
 ) {
     val listState = rememberLazyListState()
     val emptyListState = rememberLazyListState()
+    val conversationViewportHeight by remember { derivedStateOf { listState.layoutInfo.viewportSize.height } }
     val motion = LocalAuroraMotionPolicy.current
     val navigationMenuAction = LocalNavigationMenuAction.current
     val focusModeController = LocalFocusModeController.current
@@ -220,7 +206,6 @@ fun ChatScreenContent(
     }
     val hasConversation = ready?.messages?.isNotEmpty() == true
     val messageCount = ready?.messages?.size ?: 0
-    val composerInsets = safeDrawingInsets.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)
     val imeBottomPadding = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
     var draft by rememberSaveable { mutableStateOf("") }
     val inputFocusRequester = remember { FocusRequester() }
@@ -260,17 +245,30 @@ fun ChatScreenContent(
         onDispose { focusModeController?.update(false) }
     }
 
-    Scaffold(
+    FrostedPageScaffold(
+        kind = AppContentKind.Chat,
         modifier = modifier.fillMaxSize().testTag("create-route-canvas"),
-        containerColor = Color.Transparent,
-        contentWindowInsets = safeDrawingInsets,
+        safeInsets = safeDrawingInsets,
+        header = {
+            if (hasConversation) {
+                ConversationHeading(
+                    title = ready.messages.firstOrNull { it.role == MessageRole.User }?.text.orEmpty(),
+                    modelName = ready.selectedModel?.modelId?.substringAfterLast("/"),
+                    onMenuClick = navigationMenuAction,
+                )
+            } else if (ready != null || uiState is ChatUiState.NoModels || uiState is ChatUiState.NoModelsForMode) {
+                BrandPageHeader(title = "Create")
+            } else {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing12)) {
+                    navigationMenuAction?.let { BrandNavigationButton(it) }
+                    GenerationModeSwitcher(generationMode, onGenerationModeSelected, Modifier.weight(1f), compact = true)
+                }
+            }
+        },
         bottomBar = {
             if (ready != null && hasConversation) {
-                ResponsiveContentPane(
-                    kind = AppContentKind.Chat,
-                    modifier = Modifier.fillMaxWidth().windowInsetsPadding(composerInsets),
-                    fillMaxHeight = false,
-                ) {
+                Box(Modifier.fillMaxWidth()) {
                     Column(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
                         GenerationModeSwitcher(
                             mode = generationMode,
@@ -314,7 +312,7 @@ fun ChatScreenContent(
         },
     ) { paddingValues ->
         val bottomPadding = paddingValues.calculateBottomPadding()
-        LaunchedEffect(messageCount, imeBottomPadding, bottomPadding) {
+        LaunchedEffect(messageCount, imeBottomPadding, bottomPadding, conversationViewportHeight) {
             if (messageCount > 0) {
                 if (motion.spatialTransitionsEnabled) listState.animateScrollToItem(messageCount - 1)
                 else listState.scrollToItem(messageCount - 1)
@@ -333,17 +331,10 @@ fun ChatScreenContent(
                 }
             }
         }
-        ResponsiveContentPane(
-            kind = AppContentKind.Chat,
-            modifier = Modifier.fillMaxSize().padding(paddingValues),
-        ) {
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val compactChoices = maxHeight - paddingValues.calculateTopPadding() - paddingValues.calculateBottomPadding() < 320.dp
             Column(Modifier.fillMaxSize()) {
                 if (hasConversation) {
-                    ConversationHeading(
-                        title = ready.messages.firstOrNull { it.role == MessageRole.User }?.text.orEmpty(),
-                        modelName = ready.selectedModel?.modelId?.substringAfterLast("/"),
-                        onMenuClick = navigationMenuAction,
-                    )
                     val lastMessage = ready.messages.lastOrNull()
                     val recoverable = !ready.isGenerating && lastMessage?.role == MessageRole.Assistant &&
                         lastMessage.delivery in setOf(MessageDelivery.Stopped, MessageDelivery.Error)
@@ -354,7 +345,7 @@ fun ChatScreenContent(
                         streamingState = streamingState,
                         loadMedia = loadMedia,
                         modifier = Modifier.weight(1f).fillMaxWidth(),
-                        contentPadding = PaddingValues(top = 8.dp, bottom = 20.dp),
+                        contentPadding = PaddingValues(top = paddingValues.calculateTopPadding() + 8.dp, bottom = paddingValues.calculateBottomPadding() + 20.dp),
                         footer = if (recoverable) ({
                             ReplyRecoveryActions(
                                 stopped = lastMessage.delivery == MessageDelivery.Stopped && ready.generationMode == GenerationMode.Text,
@@ -371,14 +362,14 @@ fun ChatScreenContent(
                     LazyColumn(
                         state = emptyListState,
                         modifier = Modifier.fillMaxSize().onSizeChanged { emptyViewportHeight = it.height },
-                        contentPadding = PaddingValues(top = 18.dp, bottom = 24.dp),
+                        contentPadding = PaddingValues(top = paddingValues.calculateTopPadding() + 18.dp, bottom = paddingValues.calculateBottomPadding() + 24.dp),
                         verticalArrangement = Arrangement.spacedBy(18.dp),
                     ) {
                         item {
-                            CreateWelcome(generationMode, navigationMenuAction)
+                            CreateWelcome(generationMode, null)
                         }
                         item {
-                            GenerationModeSwitcher(generationMode, onGenerationModeSelected)
+                            GenerationModeSwitcher(generationMode, onGenerationModeSelected, compact = compactChoices)
                         }
                         item {
                             if (ready != null) {
@@ -407,15 +398,7 @@ fun ChatScreenContent(
                         }
                     }
                 } else {
-                    Row(
-                        Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        navigationMenuAction?.let { BrandNavigationButton(it) }
-                        GenerationModeSwitcher(generationMode, onGenerationModeSelected, Modifier.weight(1f), compact = true)
-                    }
-                    CreateStateViewport {
+                    CreateStateViewport(contentPadding = paddingValues) {
                         when (uiState) {
                             ChatUiState.ModelLoading -> ModelLoadingScreen(Modifier.fillMaxWidth())
                             is ChatUiState.ModelError -> ModelErrorScreen(
@@ -447,8 +430,7 @@ fun ChatScreenContent(
 private fun ConversationHeading(title: String, modelName: String?, onMenuClick: (() -> Unit)?) {
     val words = remember(title) { title.split(' ', '\n', '\t').filter(String::isNotBlank) }
     val conversationTitle = words.take(4).joinToString(" ").let { if (words.size > 4) "$it…" else it }
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val compact = maxWidth <= 328.dp
+    Box(Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -458,19 +440,15 @@ private fun ConversationHeading(title: String, modelName: String?, onMenuClick: 
             Column(Modifier.weight(1f)) {
                 Text(
                     text = conversationTitle.ifBlank { "A little conversation" },
-                    style = AppTheme.typography.modelTitle21.copy(
-                        fontSize = if (compact) 19.sp else 21.sp,
-                        lineHeight = if (compact) 20.9.sp else 23.1.sp,
-                        letterSpacing = (-0.6).sp,
-                    ),
+                    style = AppTheme.typography.itemTitle,
                     color = AppTheme.colors.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     text = "CaraML · ${modelName ?: "Select a model"}",
-                    style = AppTheme.typography.labelSmall,
-                    color = AppTheme.colors.onSurface,
+                    style = AppTheme.typography.labelBase,
+                    color = AppTheme.colors.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -500,17 +478,17 @@ private fun CreateWelcome(mode: GenerationMode, onMenuClick: (() -> Unit)?) {
         GenerationMode.Image -> BrandPalAppearance.Imagine
         GenerationMode.Video -> BrandPalAppearance.Animate
     }
-    BoxWithConstraints(Modifier.fillMaxWidth().heightIn(min = 248.dp).testTag("create-empty-state")) {
+    BoxWithConstraints(Modifier.fillMaxWidth().heightIn(min = 192.dp).testTag("create-empty-state")) {
         val compact = maxWidth < 330.dp
         onMenuClick?.let { BrandNavigationButton(it, Modifier.align(Alignment.TopStart)) }
-        Column(Modifier.padding(top = 68.dp, end = if (compact) 72.dp else 92.dp, bottom = 12.dp)) {
+        Column(Modifier.padding(top = 12.dp, end = if (compact) 72.dp else 92.dp, bottom = 12.dp)) {
             Text(
                 text = buildAnnotatedString {
                     append(copy.title.substringBefore('\n'))
                     append("\n")
                     withStyle(SpanStyle(color = AppTheme.actionColor)) { append(copy.title.substringAfter('\n')) }
                 },
-                style = if (compact) AppTheme.typography.hero36Compact else AppTheme.typography.hero42,
+                style = if (compact) AppTheme.typography.heroTitleCompact else AppTheme.typography.heroTitle,
                 color = AppTheme.colors.onSurface,
             )
             Text(
@@ -521,7 +499,7 @@ private fun CreateWelcome(mode: GenerationMode, onMenuClick: (() -> Unit)?) {
             )
         }
         Column(
-            modifier = Modifier.align(Alignment.TopEnd).padding(top = 68.dp)
+            modifier = Modifier.align(Alignment.TopEnd).padding(top = 12.dp)
                 .widthIn(min = if (compact) 64.dp else 85.dp)
                 .clickable(role = Role.Button, onClickLabel = "Say hello to CaraML") { booped = true },
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -562,10 +540,10 @@ private fun CreateModelPrompt(mode: GenerationMode, onBrowseModels: () -> Unit) 
                 style = AppTheme.typography.bodySmall,
                 color = AppTheme.colors.onSurfaceVariant,
             )
-            Button(onClick = onBrowseModels, modifier = Modifier.heightIn(min = 44.dp)) {
+            BrandButton(onClick = onBrowseModels, modifier = Modifier.heightIn(min = 44.dp)) {
                 Text("Browse models")
                 Spacer(Modifier.size(8.dp))
-                Icon(Icons.AutoMirrored.Default.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(AppIcons.Forward, contentDescription = null, modifier = Modifier.size(18.dp))
             }
         }
     }
@@ -592,13 +570,12 @@ private fun StarterIdeas(onChoose: (String) -> Unit) {
 
 @Composable
 private fun StarterChip(label: String, onClick: () -> Unit) {
-    OutlinedButton(
+    BrandButton(
+        style = BrandButtonStyle.Secondary,
         onClick = onClick,
         modifier = Modifier.heightIn(min = 44.dp),
         contentPadding = PaddingValues(horizontal = 13.dp, vertical = 9.dp),
-        border = BorderStroke(1.dp, AppTheme.colors.outlineVariant),
-        shape = RoundedCornerShape(24.dp),
-    ) { Text(label, style = AppTheme.typography.labelBase, color = AppTheme.colors.onSurface) }
+    ) { Text(label) }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -607,19 +584,19 @@ private fun ReplyRecoveryActions(stopped: Boolean, onContinue: () -> Unit, onRet
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (stopped) StarterChip("Continue", onContinue)
         StarterChip("Try again", onRetry)
-        OutlinedButton(
+        BrandButton(
+            style = BrandButtonStyle.Secondary,
             onClick = onNewIdea,
             modifier = Modifier.heightIn(min = 44.dp).semantics { contentDescription = "New idea. Clear the draft and keep this conversation." },
-            shape = RoundedCornerShape(12.dp),
         ) { Text("New idea") }
     }
 }
 
 @Composable
-private fun CreateStateViewport(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+private fun CreateStateViewport(modifier: Modifier = Modifier, contentPadding: PaddingValues = PaddingValues(0.dp), content: @Composable () -> Unit) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(vertical = 16.dp),
+        contentPadding = PaddingValues(top = contentPadding.calculateTopPadding() + 16.dp, bottom = contentPadding.calculateBottomPadding() + 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) { item { Box(Modifier.fillParentMaxWidth()) { content() } } }
@@ -671,7 +648,7 @@ private fun LoadActionRequiredScreen(
                     )
                 }
                 Spacer(Modifier.height(AppTheme.spacing.spacing16))
-                Button(
+                BrandButton(
                     onClick = {
                         when (action) {
                             is PendingLoadAction.ConfirmRisk -> onConfirmLoad(action)
@@ -691,7 +668,8 @@ private fun LoadActionRequiredScreen(
                         },
                     )
                 }
-                OutlinedButton(
+                BrandButton(
+                    style = BrandButtonStyle.Secondary,
                     onClick = { onCancelLoad(action) },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -721,7 +699,7 @@ private fun MissingComponentsScreen(
 
         Text(
             text = "A few pieces are missing",
-            style = AppTheme.typography.stateTitle26,
+            style = AppTheme.typography.stateTitle,
             color = AppTheme.colors.onSurface
         )
 
@@ -765,12 +743,12 @@ private fun MissingComponentsScreen(
         
         Spacer(modifier = Modifier.height(AppTheme.spacing.spacing24))
 
-        Button(
+        BrandButton(
             onClick = onFixComponentsClick,
             modifier = Modifier.fillMaxWidth()
         ) {
             Icon(
-                Icons.Default.Download,
+                AppIcons.Download,
                 contentDescription = null,
                 modifier = Modifier.size(AppTheme.dimensions.size18)
             )

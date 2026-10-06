@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search.components
 
+import com.debanshu777.caraml.core.ui.icons.AppIcons
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -12,11 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,6 +32,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AppTheme
+import com.debanshu777.caraml.core.ui.components.BrandIconButton
 import com.debanshu777.caraml.core.ui.components.CommandSurface
 
 @Composable
@@ -69,7 +67,7 @@ fun SearchBar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                imageVector = Icons.Default.Search,
+                imageVector = AppIcons.Search,
                 contentDescription = null,
                 modifier = Modifier.size(AppTheme.spacing.spacing24),
                 tint = AppTheme.colors.onSurfaceVariant,
@@ -102,9 +100,9 @@ fun SearchBar(
                 },
             )
             if (query.isNotEmpty()) {
-                IconButton(onClick = onClear, modifier = Modifier.size(AppTheme.spacing.spacing48)) {
+                BrandIconButton(onClick = onClear, modifier = Modifier.size(AppTheme.spacing.spacing48)) {
                     Icon(
-                        imageVector = Icons.Default.Clear,
+                        imageVector = AppIcons.Close,
                         contentDescription = "Clear model search",
                     )
                 }

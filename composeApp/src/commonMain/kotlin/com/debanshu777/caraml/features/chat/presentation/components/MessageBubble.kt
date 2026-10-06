@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.features.chat.presentation.components
 
+import com.debanshu777.caraml.core.ui.icons.AppIcons
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -146,7 +147,7 @@ fun MessageBubble(
                     Text(
                         modifier = Modifier.padding(horizontal = 17.dp, vertical = 15.dp),
                         text = message.text,
-                        style = AppTheme.typography.conversationBody15.copy(lineHeight = 24.sp),
+                        style = AppTheme.typography.conversationBody.copy(lineHeight = 24.sp),
                         color = textColor,
                     )
                 }
@@ -158,7 +159,7 @@ fun MessageBubble(
                 Text(
                     text = output,
                     modifier = outputModifier,
-                    style = AppTheme.typography.conversationBody15,
+                    style = AppTheme.typography.conversationBody,
                     color = textColor,
                 )
             } else {
@@ -197,6 +198,7 @@ fun MessageBubble(
                     null
                 },
                 phase = mediaPhase,
+                showPhaseHeader = false,
                 modifier = Modifier
                     .padding(top = AppTheme.spacing.spacing8)
                     .fillMaxWidth(),
@@ -276,20 +278,20 @@ fun MessageBubble(
                 val tokensPerSec =
                     ((message.inferenceMetrics.tokensPerSecond * 100).toInt() / 100.0)
                 StatItem(
-                    icon = Icons.Default.Speed,
+                    icon = AppIcons.Speed,
                     text = "$tokensPerSec tokens/s",
                     textColor = inferenceStatsColor,
                 )
 
                 StatItem(
-                    icon = Icons.Default.DataUsage,
+                    icon = AppIcons.Memory,
                     text = "${message.inferenceMetrics.tokenCount} tokens",
                     textColor = inferenceStatsColor,
                 )
 
                 val timeSec = ((message.inferenceMetrics.generationTimeMs / 10.0).toInt() / 100.0)
                 StatItem(
-                    icon = Icons.Default.AccessTime,
+                    icon = AppIcons.Clock,
                     text = "${timeSec}s",
                     textColor = inferenceStatsColor,
                 )
@@ -350,7 +352,7 @@ private fun ReplyActivityCard(delivery: MessageDelivery?, thinking: Boolean, str
                 .background(Brush.linearGradient(listOf(base, wash)))
                 .padding(20.dp),
         ) {
-            Text(title, style = AppTheme.typography.activityTitle21, color = AppTheme.colors.onSurface)
+            Text(title, style = AppTheme.typography.activityTitle, color = AppTheme.colors.onSurface)
             Text(note, Modifier.padding(top = 10.dp), style = AppTheme.typography.bodySmall, color = AppTheme.colors.onSurfaceVariant)
             if (streaming) {
                 Row(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -488,7 +490,7 @@ private fun ThoughtsDisclosure(
                 )
             } else {
                 Icon(
-                    imageVector = Icons.Default.Psychology,
+                    imageVector = AppIcons.Compute,
                     contentDescription = null,
                     modifier = Modifier.size(AppTheme.dimensions.size14),
                     tint = AppTheme.colors.onSurfaceVariant,
@@ -501,7 +503,7 @@ private fun ThoughtsDisclosure(
                 modifier = Modifier.weight(1f, fill = false),
             )
             Icon(
-                imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                imageVector = if (expanded) Icons.Default.ExpandLess else AppIcons.ChevronDown,
                 contentDescription = null,
                 modifier = Modifier.size(AppTheme.spacing.spacing16),
                 tint = AppTheme.colors.onSurfaceVariant,

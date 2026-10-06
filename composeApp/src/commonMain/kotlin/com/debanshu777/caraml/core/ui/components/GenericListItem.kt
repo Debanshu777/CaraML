@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -28,7 +27,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AppTheme
 
 @Composable
@@ -182,7 +180,7 @@ private fun GenericListItemCompactPreview() {
                 eyebrow = "QWEN",
                 metadata = "Q4_K_M · 4.7 GB",
                 eyebrowTrailing = { PreviewTaskTag("Image to text") },
-                trailing = { Button(onClick = {}) { Text("Download") } },
+                trailing = { BrandButton(onClick = {}) { Text("Download") } },
             )
             GenericListItem(
                 title = "Recommended artifact",
@@ -221,7 +219,7 @@ private fun GenericListItemWidePreview() {
                 leading = { Text("AI") },
                 titleStatus = { Text("Ready") },
                 eyebrowTrailing = { PreviewTaskTag("Image to text") },
-                trailing = { Button(onClick = {}) { Text("Download") } },
+                trailing = { BrandButton(onClick = {}) { Text("Download") } },
             )
             GenericListItem(
                 title = "Downloading artifact",

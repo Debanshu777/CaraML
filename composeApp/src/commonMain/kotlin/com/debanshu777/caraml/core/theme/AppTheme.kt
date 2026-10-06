@@ -13,6 +13,7 @@ object AppTheme {
     val dimensions: AppDimensions = AppDimensions()
     val effects: AppEffects = AppEffects()
     val shapes = AppShapes
+    val buttons = AppButtonTokens
 
     val typography: AppTypeScale
         @Composable

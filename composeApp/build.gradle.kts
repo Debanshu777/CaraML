@@ -79,6 +79,7 @@ kotlin {
             implementation(libs.androidx.work.runtime.ktx)
         }
         commonMain.dependencies {
+            implementation(libs.haze.blur)
             implementation(project.dependencies.platform(libs.koin.bom))
             implementation(libs.koin.core)
             implementation(libs.koin.compose)

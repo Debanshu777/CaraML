@@ -50,9 +50,9 @@ class CaraMLTopBarUiTest {
         }
 
         val style = textStyleFor("Models workspace")
-        assertEquals(28.sp, style.fontSize)
-        assertEquals(34.sp, style.lineHeight)
-        assertEquals(FontWeight.Bold, style.fontWeight)
+        assertEquals(24.sp, style.fontSize)
+        assertEquals(32.sp, style.lineHeight)
+        assertEquals(FontWeight.SemiBold, style.fontWeight)
     }
 
     @Test

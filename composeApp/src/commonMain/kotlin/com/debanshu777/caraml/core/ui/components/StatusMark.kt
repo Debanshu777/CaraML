@@ -1,12 +1,11 @@
 package com.debanshu777.caraml.core.ui.components
 
+import com.debanshu777.caraml.core.ui.icons.AppIcons
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -65,7 +64,7 @@ private fun StatusMarkPreview(){
         StatusMark(
             label = "Model downloaded",
             contentDescription = "Model downloaded",
-            icon = Icons.Default.CheckCircle,
+            icon = AppIcons.CheckCircle,
         )
     }
 }

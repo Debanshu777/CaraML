@@ -1,5 +1,7 @@
 package com.debanshu777.caraml.features.chat.presentation.components
 
+import com.debanshu777.caraml.core.ui.icons.AppIcons
+import com.debanshu777.caraml.core.ui.components.BrandIconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.foundation.layout.Arrangement
@@ -11,10 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Alignment
@@ -23,7 +22,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
 
@@ -65,7 +63,7 @@ fun ModelSelectorTopBar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (onMenuClick != null) {
-                IconButton(
+                BrandIconButton(
                     onClick = onMenuClick,
                     modifier = Modifier
                         .size(AppTheme.spacing.spacing48)
@@ -74,7 +72,7 @@ fun ModelSelectorTopBar(
                         .semantics { contentDescription = "Open navigation menu" },
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Menu,
+                        imageVector = AppIcons.Menu,
                         contentDescription = null,
                         tint = AppTheme.colors.onSurface,
                     )
@@ -98,7 +96,7 @@ fun ModelSelectorTopBar(
 private fun QuietHeaderTitle(title: String) {
     Text(
         text = title,
-        style = AppTheme.typography.heading28,
+        style = AppTheme.typography.pageTitle,
         color = AppTheme.colors.onSurface,
     )
 }

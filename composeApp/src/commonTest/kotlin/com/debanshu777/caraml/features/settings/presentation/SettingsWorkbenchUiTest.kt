@@ -41,6 +41,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -63,6 +64,27 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class SettingsWorkbenchUiTest {
+    @Test
+    fun largeTextPreferencesGiveTheDescriptionFullWidthAboveTheControl() = runComposeUiTest {
+        setContent {
+            FixedDensity(fontScale = 2f) {
+                MaterialTheme {
+                    Surface(Modifier.width(320.dp).height(700.dp)) {
+                        SettingsPreferenceRow("Downloaded models", "Models saved on this device.") {
+                            com.debanshu777.caraml.core.ui.components.BrandButton(onClick = {}) {
+                                androidx.compose.material3.Text("Open library")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        val description = onNodeWithText("Models saved on this device.").fetchSemanticsNode().boundsInRoot
+        val control = onNodeWithText("Open library").fetchSemanticsNode().boundsInRoot
+        assertTrue(description.width >= 280f, "Large text must not be squeezed beside an action: $description")
+        assertTrue(control.top >= description.bottom, "The action must follow its description")
+    }
+
     @Test
     fun settingsUsesSectionLabelsAndDividerRowsInsteadOfOutlinedPanePerGroup() =
         runComposeUiTest {
@@ -105,12 +127,12 @@ class SettingsWorkbenchUiTest {
                 }
             }
         }
-        onNodeWithText("Your kind of CaraML.").assertIsDisplayed()
+        onNodeWithText("Settings").assertIsDisplayed()
         onNodeWithContentDescription("Current Aurora theme preview").assertDoesNotExist()
-        listOf("Appearance", "A little color", "Keep things still", "Soft glass", "Your model shelf")
+        listOf("Appearance", "A little color", "Keep things still", "Soft glass", "Downloaded models")
             .forEach { onNodeWithText(it).assertIsDisplayed() }
         onNodeWithText("Seed color").assertDoesNotExist()
-        onNodeWithText("Open shelf").assertIsDisplayed().performClick()
+        onNodeWithText("Open library").assertIsDisplayed().performClick()
         runOnIdle { assertEquals(1, fixture.shelfOpenCount) }
         onNodeWithText("A little color").performClick()
         onNodeWithText("Seed color").performScrollTo().assertIsDisplayed()
@@ -300,6 +322,22 @@ class SettingsWorkbenchUiTest {
                 )
             }
 
+            fun selectVisibleChoice(description: String) {
+                val choice = onNodeWithContentDescription(description)
+                    .performScrollTo()
+                // performScrollTo uses the entire scroller bounds, including the glass
+                // underlap. Move the target below the fixed header before a real tap.
+                val headerBottom = onNodeWithTag("page-sticky-chrome")
+                    .fetchSemanticsNode().boundsInRoot.bottom
+                val choiceTop = choice.fetchSemanticsNode().boundsInRoot.top
+                if (choiceTop < headerBottom) {
+                    onNodeWithTag("settings-scroll").performSemanticsAction(SemanticsActions.ScrollBy) {
+                        it(0f, choiceTop - headerBottom - 8f)
+                    }
+                }
+                choice.assertIsDisplayed().performClick()
+            }
+
             listOf(
                 "Palette Vibrant" to listOf(
                     "Palette Tonal Spot",
@@ -329,9 +367,7 @@ class SettingsWorkbenchUiTest {
                     "KV cache F16/F16",
                 ),
             ).forEach { (nextSelection, group) ->
-                onNodeWithContentDescription("$nextSelection, not selected")
-                    .performScrollTo()
-                    .performClick()
+                selectVisibleChoice("$nextSelection, not selected")
                 group.forEach { option ->
                     if (option == nextSelection) {
                         onNodeWithContentDescription("$option, selected").assertIsSelected()
@@ -341,10 +377,8 @@ class SettingsWorkbenchUiTest {
                 }
             }
 
-            onNodeWithContentDescription("Seed color 2")
-                .performScrollTo()
-                .performClick()
-                .assertIsSelected()
+            selectVisibleChoice("Seed color 2")
+            onNodeWithContentDescription("Seed color 2").assertIsSelected()
             onNodeWithContentDescription("Seed color 1").assertIsNotSelected()
             onAllNodes(
                 SemanticsMatcher.expectValue(SemanticsProperties.Selected, true) and
@@ -497,7 +531,7 @@ class SettingsWorkbenchUiTest {
             onNodeWithContentDescription("Current Aurora theme preview").assertDoesNotExist()
             onNodeWithContentDescription("Choose appearance").performScrollTo()
                 .assertIsDisplayed().assertHeightIsAtLeast(48.dp)
-            onNodeWithText("Open shelf").performScrollTo().assertIsDisplayed().assertHeightIsAtLeast(48.dp)
+            onNodeWithText("Open library").performScrollTo().assertIsDisplayed().assertHeightIsAtLeast(48.dp)
 
             onNodeWithContentDescription("GPU acceleration (Vulkan)")
                 .performScrollTo()

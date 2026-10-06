@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.features.modelhub.presentation.details
 
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -28,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.rating.ui.RecommendationDetailsSheet
 import com.debanshu777.caraml.core.rating.ui.recommendationPresentation
+import com.debanshu777.caraml.core.ui.components.FrostedPageScaffold
 import com.debanshu777.caraml.core.ui.components.BrandPageHeader
 import com.debanshu777.caraml.core.ui.layout.AppContentKind
 import com.debanshu777.caraml.core.ui.layout.ResponsiveContentPane
@@ -101,35 +103,24 @@ fun DetailsScreen(
         storageInfo = storageInfo, profile = null,
         onBack = { deviceInfoVisible = false }, onRefresh = viewModel::refreshDeviceInfo,
         onOpenProfile = null, modifier = modifier,
-        backLabel = "Model details", backContentDescription = "Back to model details",
-    ) else Scaffold(
-        modifier = modifier.fillMaxSize(),
-        containerColor = Color.Transparent,
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
-    ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-        ) {
-            ResponsiveContentPane(
-                kind = AppContentKind.Details,
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                Column(Modifier.fillMaxSize()) {
-                    ModelHubBackHeader(onBack = onBack)
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center,
-                    ) {
+        backContentDescription = "Back to model details",
+    ) else FrostedPageScaffold(
+        kind = AppContentKind.Details,
+        modifier = modifier,
+        header = { ModelHubBackHeader(onBack = onBack) },
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+    ) { insets ->
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         val detail = modelDetail
                         when {
                             isDetailLoading -> ModelDetailStatus(
                                 kind = ModelHubStateKind.Loading,
+                                modifier = Modifier.padding(insets),
                                 message = "Loading model details",
                             )
                             detailError != null -> ModelDetailStatus(
                                 kind = ModelHubStateKind.Error,
+                                modifier = Modifier.padding(insets),
                                 message = detailError ?: "Could not load model details. Please try again.",
                                 onRetry = { viewModel.loadDetail(modelId, hubBrowseMode) },
                             )
@@ -162,6 +153,10 @@ fun DetailsScreen(
                                     recommendationState = recommendationState,
                                     onRecommendationInfoClick = { recommendationSheetVisible = true },
                                     modifier = Modifier.fillMaxSize(),
+                                    contentPadding = PaddingValues(
+                                        top = insets.calculateTopPadding() + AppTheme.spacing.spacing12,
+                                        bottom = insets.calculateBottomPadding() + AppTheme.spacing.spacing16,
+                                    ),
                                     onPauseDownload = viewModel::pauseDownload,
                                     onResumeDownload = viewModel::resumeDownload,
                                     onCancelDownload = viewModel::cancelDownload,
@@ -173,9 +168,6 @@ fun DetailsScreen(
                                 )
                             }
                         }
-                    }
-                }
-            }
         }
     }
 

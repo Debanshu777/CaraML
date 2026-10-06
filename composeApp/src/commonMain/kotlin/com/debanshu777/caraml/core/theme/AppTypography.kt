@@ -47,16 +47,16 @@ internal fun appTypography(headingFamily: FontFamily, bodyFamily: FontFamily): T
         displaySmall = displaySmall.copy(fontFamily = headingFamily, fontWeight = FontWeight.Bold, letterSpacing = (-0.8).sp),
         headlineLarge = headlineLarge.copy(fontFamily = headingFamily, fontWeight = FontWeight.Bold, letterSpacing = (-0.7).sp),
         headlineMedium = headlineMedium.copy(fontFamily = headingFamily, fontWeight = FontWeight.Bold, letterSpacing = (-0.6).sp),
-        headlineSmall = headlineSmall.copy(fontFamily = headingFamily, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp),
-        titleLarge = titleLarge.copy(fontFamily = headingFamily, fontWeight = FontWeight.Bold),
-        titleMedium = titleMedium.copy(fontFamily = headingFamily, fontWeight = FontWeight.SemiBold),
-        titleSmall = titleSmall.copy(fontFamily = headingFamily, fontWeight = FontWeight.SemiBold),
+        headlineSmall = headlineSmall.copy(fontFamily = headingFamily, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.3).sp),
+        titleLarge = titleLarge.copy(fontFamily = headingFamily, fontWeight = FontWeight.SemiBold),
+        titleMedium = titleMedium.copy(fontFamily = bodyFamily, fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp),
+        titleSmall = titleSmall.copy(fontFamily = bodyFamily, fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp),
         bodyLarge = bodyLarge.copy(fontFamily = bodyFamily, lineHeight = 24.sp, letterSpacing = 0.sp),
-        bodyMedium = bodyMedium.copy(fontFamily = bodyFamily, lineHeight = 20.sp, letterSpacing = 0.sp),
-        bodySmall = bodySmall.copy(fontFamily = bodyFamily, letterSpacing = 0.sp),
-        labelLarge = labelLarge.copy(fontFamily = bodyFamily, fontWeight = FontWeight.SemiBold),
-        labelMedium = labelMedium.copy(fontFamily = bodyFamily, fontWeight = FontWeight.Medium),
-        labelSmall = labelSmall.copy(fontFamily = bodyFamily, fontWeight = FontWeight.Medium),
+        bodyMedium = bodyMedium.copy(fontFamily = bodyFamily, fontSize = 15.sp, lineHeight = 22.sp, letterSpacing = 0.sp),
+        bodySmall = bodySmall.copy(fontFamily = bodyFamily, fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = 0.sp),
+        labelLarge = labelLarge.copy(fontFamily = bodyFamily, fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp),
+        labelMedium = labelMedium.copy(fontFamily = bodyFamily, fontWeight = FontWeight.Medium, fontSize = 13.sp, lineHeight = 18.sp, letterSpacing = 0.sp),
+        labelSmall = labelSmall.copy(fontFamily = bodyFamily, fontWeight = FontWeight.Medium, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = 0.sp),
     )
 }
 
@@ -77,23 +77,31 @@ data class AppTypeScale internal constructor(
     val labelLarge: TextStyle = material.labelLarge,
     val labelBase: TextStyle = material.labelMedium,
     val labelSmall: TextStyle = material.labelSmall,
-    val hero42: TextStyle = material.displayMedium.copy(
-        fontSize = 42.sp, lineHeight = 42.84.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-1.8).sp,
+    val sidebarLabel16: TextStyle = material.bodyLarge.copy(
+        fontSize = 16.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp,
     ),
-    val hero36Compact: TextStyle = hero42.copy(fontSize = 36.sp, lineHeight = 36.72.sp),
-    val pageTitle32: TextStyle = material.headlineLarge.copy(
-        fontSize = 32.sp, lineHeight = 44.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-1).sp,
+    val sidebarWordmark25: TextStyle = material.titleLarge.copy(
+        fontSize = 25.sp, lineHeight = 25.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-1.2).sp,
     ),
-    val modelTitle21: TextStyle = material.titleLarge.copy(
-        fontSize = 21.sp, lineHeight = 25.2.sp, fontWeight = FontWeight(750), letterSpacing = (-0.45).sp,
+    val heroTitle: TextStyle = material.displayMedium.copy(
+        fontSize = 34.sp, lineHeight = 38.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.8).sp,
     ),
-    val activityTitle21: TextStyle = material.titleLarge.copy(
-        fontSize = 21.sp, lineHeight = 25.2.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp,
+    val heroTitleCompact: TextStyle = heroTitle.copy(fontSize = 30.sp, lineHeight = 34.sp),
+    val pageTitle: TextStyle = material.headlineSmall.copy(
+        fontSize = 24.sp, lineHeight = 32.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.3).sp,
     ),
-    val stateTitle26: TextStyle = material.headlineSmall.copy(
-        fontSize = 26.sp, lineHeight = 28.6.sp, fontWeight = FontWeight(750), letterSpacing = (-0.8).sp,
+    val itemTitle: TextStyle = material.titleMedium.copy(
+        fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp,
     ),
-    val conversationBody15: TextStyle = material.bodyLarge.copy(fontSize = 15.sp, lineHeight = 26.25.sp),
+    val activityTitle: TextStyle = material.titleMedium.copy(
+        fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp,
+    ),
+    val stateTitle: TextStyle = material.titleLarge.copy(
+        fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.2).sp,
+    ),
+    val sectionTitle: TextStyle = material.titleMedium.copy(fontSize = 18.sp, lineHeight = 24.sp),
+    val preferenceTitle: TextStyle = material.titleMedium,
+    val conversationBody: TextStyle = material.bodyLarge.copy(fontSize = 16.sp, lineHeight = 25.sp),
     val heading32: TextStyle = material.headlineLarge.copy(fontSize = 32.sp, lineHeight = 38.sp),
     val heading28: TextStyle = material.headlineMedium.copy(fontSize = 28.sp, lineHeight = 34.sp),
     val heading24: TextStyle = material.headlineSmall.copy(fontSize = 24.sp, lineHeight = 30.sp),

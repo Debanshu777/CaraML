@@ -1,8 +1,7 @@
 package com.debanshu777.caraml.features.settings.presentation
 
+import com.debanshu777.caraml.core.ui.icons.AppIcons
 import androidx.compose.foundation.layout.sizeIn
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -34,7 +33,7 @@ internal fun SettingFilterChip(
         leadingIcon = if (selected) {
             {
                 Icon(
-                    imageVector = Icons.Default.Check,
+                    imageVector = AppIcons.Check,
                     contentDescription = null,
                     modifier = Modifier.testTag(selectedIndicatorTestTag),
                 )

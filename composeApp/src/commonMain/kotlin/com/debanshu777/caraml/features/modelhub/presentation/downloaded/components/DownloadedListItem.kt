@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.features.modelhub.presentation.downloaded.components
 
+import com.debanshu777.caraml.core.ui.icons.AppIcons
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -7,12 +8,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Block
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.CheckBox
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.outlined.CheckBoxOutlineBlank
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Surface
@@ -79,21 +74,21 @@ fun DownloadedListItem(
                     LocalModelStatusMark(
                         label = "Needs setup",
                         description = "Partial download. Missing components need setup.",
-                        icon = Icons.Default.Build,
+                        icon = AppIcons.Wrench,
                     )
                 }
                 if (isReady && isSupported) {
                     LocalModelStatusMark(
                         label = "Ready",
                         description = "Ready for chat.",
-                        icon = Icons.Default.CheckCircle,
+                        icon = AppIcons.CheckCircle,
                     )
                 }
                 if (!isSupported) {
                     LocalModelStatusMark(
                         label = "Unsupported",
                         description = "Unsupported. Chat is not available for this model type.",
-                        icon = Icons.Default.Block,
+                        icon = AppIcons.Block,
                     )
                 }
             }
@@ -136,9 +131,9 @@ fun DownloadedListItem(
             {
                 Icon(
                     imageVector = if (isSelected) {
-                        Icons.Filled.CheckBox
+                        AppIcons.Checkbox
                     } else {
-                        Icons.Outlined.CheckBoxOutlineBlank
+                        AppIcons.CheckboxEmpty
                     },
                     contentDescription = null,
                     tint = AppTheme.actionColor,

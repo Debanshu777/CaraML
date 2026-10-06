@@ -22,10 +22,21 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.text.input.ImeAction
+import androidx.navigationevent.DirectNavigationEventInput
+import androidx.navigationevent.NavigationEventDispatcher
+import androidx.navigationevent.NavigationEventDispatcherOwner
+import androidx.navigationevent.NavigationEventInfo
+import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
+import androidx.navigationevent.compose.NavigationBackHandler
+import androidx.navigationevent.compose.rememberNavigationEventState
+import com.debanshu777.caraml.core.drawer.DrawerController
+import com.debanshu777.caraml.core.drawer.LocalDrawerController
+import com.debanshu777.caraml.core.drawer.LocalNavigationMenuAction
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.components.DownloadedListItem
 import com.debanshu777.caraml.features.modelhub.presentation.details.ModelDetailStatus
@@ -41,8 +52,48 @@ import com.debanshu777.caraml.features.modelhub.presentation.search.components.S
 import com.debanshu777.huggingfacemanager.model.ListModelsResponse
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class ModelHubBrandInteractionTest {
+    @Test
+    fun deviceInfoUsesBackAndRefreshWithoutASecondNavigationMenu() = runComposeUiTest {
+        val controller = DrawerController()
+        val input = DirectNavigationEventInput()
+        var deviceBacks = 0
+        var fallbackBacks = 0
+        val dispatcher = NavigationEventDispatcher { fallbackBacks++ }.also { it.addInput(input) }
+        val owner = object : NavigationEventDispatcherOwner {
+            override val navigationEventDispatcher = dispatcher
+        }
+        setContent {
+            CompositionLocalProvider(
+                LocalNavigationEventDispatcherOwner provides owner,
+                LocalDrawerController provides controller,
+                LocalNavigationMenuAction provides controller::toggle,
+            ) {
+                MaterialTheme {
+                    NavigationBackHandler(
+                        state = rememberNavigationEventState(NavigationEventInfo.None),
+                        isBackEnabled = controller.isOpen,
+                        onBackCompleted = controller::close,
+                    )
+                    Box(Modifier.requiredSize(390.dp, 740.dp)) {
+                        ModelHubDeviceInfo(StorageInfoUiState(hasSampled = true), null,
+                            onBack = { deviceBacks++ }, onRefresh = {}, onOpenProfile = null)
+                    }
+                }
+            }
+        }
+        onNodeWithContentDescription("Open navigation menu").assertDoesNotExist()
+        onNodeWithContentDescription("Refresh device info").assertIsDisplayed()
+        runOnIdle { assertFalse(controller.isOpen); assertEquals(0, deviceBacks) }
+        runOnIdle { input.backCompleted() }
+        runOnIdle { assertEquals(1, deviceBacks); assertEquals(0, fallbackBacks) }
+        onNodeWithContentDescription("Back to models").performClick()
+        runOnIdle { assertEquals(2, deviceBacks) }
+    }
+
     @Test
     fun shortViewportKeepsSearchFocusAndErrorRecoveryAtDoubleTextScale() = runComposeUiTest {
         var viewportHeight by mutableStateOf(740.dp)
@@ -71,11 +122,12 @@ class ModelHubBrandInteractionTest {
             }
         }
         val input = onNode(hasImeAction(ImeAction.Search))
-        input.performScrollTo().performClick().performTextReplacement("tiny")
+        input.performClick().performTextReplacement("tiny")
         input.assertIsFocused()
         runOnIdle { viewportHeight = 220.dp }
         input.assertIsFocused().performTextInput(" brain")
         runOnIdle { assertEquals("tiny brain", query) }
+        onNodeWithTag("model-primary-results").performScrollToKey("error")
         onNodeWithText("Retry").performScrollTo().assertIsDisplayed().performClick()
         runOnIdle { assertEquals(1, retries) }
     }

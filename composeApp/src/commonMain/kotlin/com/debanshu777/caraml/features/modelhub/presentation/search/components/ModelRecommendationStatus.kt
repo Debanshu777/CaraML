@@ -1,17 +1,9 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search.components
 
+import com.debanshu777.caraml.core.ui.icons.AppIcons
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.HelpOutline
-import androidx.compose.material.icons.outlined.AutoAwesome
-import androidx.compose.material.icons.outlined.Block
-import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.HourglassEmpty
-import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Tune
-import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.runtime.Composable
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -43,10 +35,10 @@ internal data class BrowseVerdictPresentation(
 )
 
 internal fun browseVerdict(estimate: BrowseFitEstimate): BrowseVerdictPresentation = when (estimate.memoryFit) {
-    BrowseResourceFit.LIKELY_FIT -> BrowseVerdictPresentation("Likely fits", "Estimated memory may fit", Icons.Outlined.CheckCircle)
-    BrowseResourceFit.TIGHT_FIT -> BrowseVerdictPresentation("Tight fit", "Estimated memory fit is tight", Icons.Outlined.WarningAmber)
-    BrowseResourceFit.TOO_LARGE -> BrowseVerdictPresentation("Too large", "Estimated memory exceeds current budget",  Icons.Outlined.Block)
-    BrowseResourceFit.UNKNOWN -> BrowseVerdictPresentation("Resource fit unknown", "There is not enough current resource evidence", Icons.Outlined.Info)
+    BrowseResourceFit.LIKELY_FIT -> BrowseVerdictPresentation("Likely fits", "Estimated memory may fit", AppIcons.CheckCircle)
+    BrowseResourceFit.TIGHT_FIT -> BrowseVerdictPresentation("Tight fit", "Estimated memory fit is tight", AppIcons.Warning)
+    BrowseResourceFit.TOO_LARGE -> BrowseVerdictPresentation("Too large", "Estimated memory exceeds current budget",  AppIcons.Block)
+    BrowseResourceFit.UNKNOWN -> BrowseVerdictPresentation("Resource fit unknown", "There is not enough current resource evidence", AppIcons.Info)
 }
 
 @Composable
@@ -146,13 +138,13 @@ private fun recommendationStatusPresentation(
         -> RecommendationStatusPresentation(
             label = "Checking",
             stateDescription = "Checking model compatibility.",
-            icon = Icons.Outlined.HourglassEmpty,
+            icon = AppIcons.Hourglass,
         )
 
         DescriptorState.SELECT_VARIANT -> RecommendationStatusPresentation(
             label = "Select variant",
             stateDescription = "Select a model variant to assess compatibility.",
-            icon = Icons.Outlined.Tune,
+            icon = AppIcons.Filters,
         )
 
         DescriptorState.NEEDS_INFORMATION,
@@ -160,19 +152,19 @@ private fun recommendationStatusPresentation(
         -> RecommendationStatusPresentation(
             label = "Needs information",
             stateDescription = "Needs information. Compatibility has not been determined.",
-            icon = Icons.AutoMirrored.Outlined.HelpOutline,
+            icon = AppIcons.Help,
         )
     }
 }
 
 private val RecommendationCategory.statusIcon: ImageVector
     get() = when (this) {
-        RecommendationCategory.RECOMMENDED -> Icons.Outlined.AutoAwesome
-        RecommendationCategory.USABLE -> Icons.Outlined.CheckCircle
-        RecommendationCategory.RISKY -> Icons.Outlined.WarningAmber
+        RecommendationCategory.RECOMMENDED -> AppIcons.Spark
+        RecommendationCategory.USABLE -> AppIcons.CheckCircle
+        RecommendationCategory.RISKY -> AppIcons.Warning
         RecommendationCategory.NOT_SUITABLE,
         RecommendationCategory.INCOMPATIBLE,
-        -> Icons.Outlined.Block
+        -> AppIcons.Block
 
-        RecommendationCategory.NEEDS_INFORMATION -> Icons.Outlined.Info
+        RecommendationCategory.NEEDS_INFORMATION -> AppIcons.Info
     }

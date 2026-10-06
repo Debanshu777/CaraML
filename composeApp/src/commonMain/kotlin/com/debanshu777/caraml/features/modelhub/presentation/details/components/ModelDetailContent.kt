@@ -1,7 +1,9 @@
 package com.debanshu777.caraml.features.modelhub.presentation.details.components
 
+import com.debanshu777.caraml.core.ui.icons.AppIcons
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -15,19 +17,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.outlined.RadioButtonUnchecked
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,6 +48,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AppTheme
+import com.debanshu777.caraml.core.ui.components.BrandButton
+import com.debanshu777.caraml.core.ui.components.BrandButtonStyle
 import com.debanshu777.caraml.core.download.DownloadArtifactState
 import com.debanshu777.caraml.core.rating.ui.RecommendationStatusChip
 import com.debanshu777.caraml.core.rating.ui.formatBytesHuman
@@ -109,6 +110,7 @@ fun ModelDetailContent(
     onRecommendationInfoClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     windowWidth: Dp? = null,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
     onPauseDownload: (String, String) -> Unit = { _, _ -> },
     onResumeDownload: (String, String) -> Unit = { _, _ -> },
     onCancelDownload: (String, String) -> Unit = { _, _ -> },
@@ -140,6 +142,7 @@ fun ModelDetailContent(
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
+                    .padding(contentPadding)
                     .padding(vertical = spacing.spacing8),
                 horizontalArrangement = Arrangement.spacedBy(spacing.spacing24),
             ) {
@@ -215,6 +218,7 @@ fun ModelDetailContent(
                         .weight(1f)
                         .fillMaxWidth()
                         .verticalScroll(rememberScrollState())
+                    .padding(contentPadding)
                         .padding(top = spacing.spacing8),
                     verticalArrangement = Arrangement.spacedBy(spacing.spacing24),
                 ) {
@@ -267,6 +271,7 @@ fun ModelDetailContent(
                         state = installBundleState,
                         modifier = Modifier
                             .fillMaxWidth()
+                            .padding(bottom = contentPadding.calculateBottomPadding())
                             .testTag("detail-action"),
                         onInstall = onSmartInstall,
                         installEnabled = installEnabled,
@@ -312,14 +317,14 @@ private fun ModelOverviewSection(
             }
             Text(
                 text = heading.name,
-                style = AppTheme.typography.pageTitle32,
+                style = AppTheme.typography.pageTitle,
                 color = AppTheme.colors.onSurface,
                 maxLines = if (titleExpanded) Int.MAX_VALUE else 2,
                 overflow = TextOverflow.Ellipsis,
                 onTextLayout = { if (!titleExpanded) titleOverflow = it.hasVisualOverflow },
             )
             if (titleOverflow || titleExpanded) {
-                TextButton(onClick = { titleExpanded = !titleExpanded }) {
+                BrandButton(style = BrandButtonStyle.Secondary, onClick = { titleExpanded = !titleExpanded }) {
                     Text(if (titleExpanded) "Show less" else "Show full name")
                 }
             }
@@ -343,7 +348,7 @@ private fun ModelOverviewSection(
                     overflow = TextOverflow.Ellipsis,
                 )
                 if (it.length > 180) {
-                    TextButton(onClick = { descriptionExpanded = !descriptionExpanded }) {
+                    BrandButton(style = BrandButtonStyle.Secondary, onClick = { descriptionExpanded = !descriptionExpanded }) {
                         Text(if (descriptionExpanded) "Show less" else "Read description")
                     }
                 }
@@ -355,13 +360,13 @@ private fun ModelOverviewSection(
                 ) {
                     model.downloads?.let { count ->
                         ModelMetric(
-                            Icons.Default.Download,
+                            AppIcons.Download,
                             formatCompactMetric(count.toLong()),
                         )
                     }
                     model.likes?.let { count ->
                         ModelMetric(
-                            Icons.Default.FavoriteBorder,
+                            AppIcons.Favorite,
                             formatCompactMetric(count.toLong()),
                         )
                     }
@@ -461,7 +466,7 @@ private fun ModelMetadataSection(model: ModelDetailResponse) {
                     )
                 }
                 Icon(
-                    imageVector = if (detailsVisible) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    imageVector = if (detailsVisible) Icons.Default.ExpandLess else AppIcons.ChevronDown,
                     contentDescription = if (detailsVisible) {
                         "Collapse technical details"
                     } else {
@@ -517,7 +522,7 @@ private fun ModelMetadataSection(model: ModelDetailResponse) {
                         }
                     }
                     if (entries.size > 4 || tags.isNotEmpty()) {
-                        TextButton(onClick = { showAll = !showAll }, modifier = Modifier.padding(horizontal = spacing.spacing8)) {
+                        BrandButton(style = BrandButtonStyle.Secondary, onClick = { showAll = !showAll }, modifier = Modifier.padding(horizontal = spacing.spacing8)) {
                             Text(if (showAll) "Show less" else "Show all")
                         }
                     }
@@ -724,9 +729,10 @@ private fun ArtifactFileRow(
         evaluated -> "Evaluated variant"
         else -> null
     }
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = AppTheme.spacing.spacing8)) {
       Surface(
         modifier = Modifier.fillMaxWidth(),
+        shape = AppTheme.shapes.medium,
         color = if (recommended || provisional || evaluated) colors.selectedSurface else Color.Transparent,
         contentColor = AppTheme.colors.onSurface,
     ) {
@@ -745,15 +751,18 @@ private fun ArtifactFileRow(
             }
             .testTag("detail-artifact:${item.path}"),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.padding(horizontal = AppTheme.spacing.spacing8),
+                verticalAlignment = Alignment.Top,
+            ) {
                 if (onSelect != null) {
-                    IconButton(onClick = onSelect, enabled = !selected, modifier = Modifier.size(AppTheme.spacing.spacing48)) {
-                        Icon(
-                            imageVector = if (selected) Icons.Default.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
-                            contentDescription = if (selected) "Selected variant ${item.filename}" else "Select variant ${item.filename}",
-                            tint = if (selected) AppTheme.colors.primary else AppTheme.colors.onSurfaceVariant,
-                        )
-                    }
+                    RadioButton(
+                        selected = selected,
+                        onClick = onSelect,
+                        modifier = Modifier.size(AppTheme.spacing.spacing48).semantics {
+                            contentDescription = if (selected) "Selected variant ${item.filename}" else "Select variant ${item.filename}"
+                        },
+                    )
                 }
                 ModelDetailsDownloadableListItem(
                 filename = item.path.ifEmpty { item.filename },
@@ -776,7 +785,6 @@ private fun ArtifactFileRow(
             }
         }
       }
-      HorizontalDivider(color = colors.divider)
     }
 }
 

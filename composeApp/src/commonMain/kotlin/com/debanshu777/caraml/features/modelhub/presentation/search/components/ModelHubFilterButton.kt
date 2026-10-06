@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search.components
 
+import com.debanshu777.caraml.core.ui.icons.AppIcons
 import androidx.compose.foundation.background
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
@@ -16,19 +17,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -38,7 +34,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -46,6 +41,9 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AppTheme
+import com.debanshu777.caraml.core.ui.components.BrandButton
+import com.debanshu777.caraml.core.ui.components.BrandButtonStyle
+import com.debanshu777.caraml.core.ui.components.BrandIconButton
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelOrdering
 import com.debanshu777.huggingfacemanager.model.ModelSort
@@ -66,20 +64,18 @@ fun ModelHubFilterButton(
     val active = mode != ModelHubBrowseMode.LanguageModels ||
         minParams != ParameterRange.ZERO || maxParams != ParameterRange.SIX_B ||
         ordering != ModelOrdering.Server(ModelSort.TRENDING)
-    IconButton(
+    BrandIconButton(
         onClick = { visible = true },
+        style = if (active) BrandButtonStyle.Primary else BrandButtonStyle.Secondary,
         modifier = Modifier
             .heightIn(min = AppTheme.spacing.spacing48)
-            .clip(AppTheme.shapes.medium)
-            .background(if (active) AppTheme.colors.primaryContainer else AppTheme.colors.surfaceContainer)
             .testTag("model-sort-filter-button").semantics {
             contentDescription = if (active) "Sort and filter models, active" else "Sort and filter models"
         },
     ) {
         Icon(
-            Icons.Default.Tune,
+            AppIcons.Filters,
             contentDescription = null,
-            tint = if (active) AppTheme.colors.onPrimaryContainer else AppTheme.colors.onSurface,
         )
     }
     if (!visible) return
@@ -117,7 +113,7 @@ internal fun ModelHubFilterPanel(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("Filters", style = AppTheme.typography.headingBase, modifier = Modifier.weight(1f))
-            TextButton(onClick = {
+            BrandButton(style = BrandButtonStyle.Secondary, onClick = {
                 draftMode = ModelHubBrowseMode.LanguageModels
                 draftOrdering = ModelOrdering.Server(ModelSort.TRENDING)
                 draftMin = ParameterRange.ZERO
@@ -143,7 +139,7 @@ internal fun ModelHubFilterPanel(
             }
         }
         HorizontalDivider()
-        Button(
+        BrandButton(
             onClick = { onApply(draftMode, draftOrdering, draftMin, draftMax) },
             modifier = Modifier.fillMaxWidth().padding(spacing.spacing12).heightIn(min = AppTheme.spacing.spacing48),
         ) { Text("View models") }

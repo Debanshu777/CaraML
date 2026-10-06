@@ -2,6 +2,7 @@ package com.debanshu777.caraml.core.theme
 
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
@@ -31,6 +32,8 @@ object AppMotionTokens {
     const val reducedOpacityMillis = 90
     const val statusMillis = 240
     const val pressScale = 0.96f
+    const val pressInMillis = 60
+    const val minimumPressFeedbackMillis = 100L
 }
 
 /** Specs are selected from the effective system/user policy at the composition call site. */
@@ -47,6 +50,12 @@ class AppMotion internal constructor(private val policy: AuroraMotionPolicy) {
 
     fun <T> pressSpec(): FiniteAnimationSpec<T> = if (spatialTransitionsEnabled) {
         spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMedium)
+    } else {
+        snap()
+    }
+
+    fun <T> pressInSpec(): FiniteAnimationSpec<T> = if (spatialTransitionsEnabled) {
+        tween(AppMotionTokens.pressInMillis, easing = LinearOutSlowInEasing)
     } else {
         snap()
     }

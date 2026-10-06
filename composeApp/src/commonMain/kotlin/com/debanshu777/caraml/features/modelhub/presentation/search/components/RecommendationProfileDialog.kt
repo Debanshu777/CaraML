@@ -5,10 +5,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -19,6 +17,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import com.debanshu777.caraml.core.theme.AppTheme
+import com.debanshu777.caraml.core.ui.components.BrandButton
+import com.debanshu777.caraml.core.ui.components.BrandButtonStyle
 import com.debanshu777.caraml.core.recommendation.RecommendationProfile
 import com.debanshu777.caraml.core.recommendation.CalibrationDeferralReason
 import com.debanshu777.caraml.core.recommendation.CalibrationRunResult
@@ -70,7 +70,7 @@ fun RecommendationProfileDialog(
             }
         },
         confirmButton = {
-            Button(
+            BrandButton(
                 onClick = { onContinue(draft) },
                 enabled = !submitting,
                 modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48),
@@ -79,7 +79,8 @@ fun RecommendationProfileDialog(
             }
         },
         dismissButton = {
-            TextButton(
+            BrandButton(
+                style = BrandButtonStyle.Secondary,
                 onClick = onDismissWithBalanced,
                 enabled = !submitting,
                 modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48),
@@ -124,7 +125,7 @@ fun QuickCalibrationDialog(
             }
         },
         confirmButton = {
-            Button(
+            BrandButton(
                 onClick = if (result == CalibrationRunResult.RequiresConfirmation) {
                     onRunWithUnknownPower
                 } else {
@@ -143,7 +144,8 @@ fun QuickCalibrationDialog(
             }
         },
         dismissButton = {
-            TextButton(
+            BrandButton(
+                style = BrandButtonStyle.Secondary,
                 onClick = if (state.running) onCancel else onSkip,
                 modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48),
             ) {

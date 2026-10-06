@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search.components
 
+import com.debanshu777.caraml.core.ui.icons.AppIcons
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -13,22 +14,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -46,6 +40,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AppTheme
+import com.debanshu777.caraml.core.ui.components.BrandButton
+import com.debanshu777.caraml.core.ui.components.BrandButtonStyle
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelOrdering
@@ -161,7 +157,7 @@ private fun ModelKindControls(
                 leadingIcon = if (selected) {
                     {
                         Icon(
-                            imageVector = Icons.Default.Check,
+                            imageVector = AppIcons.Check,
                             contentDescription = null,
                             modifier = Modifier
                                 .size(AppTheme.dimensions.size18)
@@ -214,9 +210,9 @@ internal fun RowScope.ModelSortAndFilterControls(
         is ModelOrdering.Server -> ordering.value.displayName
     }
 
-    OutlinedButton(
+    BrandButton(
+        style = BrandButtonStyle.Secondary,
         onClick = { orderingExpanded = true },
-        colors = ButtonDefaults.outlinedButtonColors(contentColor = AppTheme.actionColor),
         modifier = Modifier
             .then(if (expand) Modifier.weight(1f) else Modifier)
             .heightIn(min = AppTheme.spacing.spacing48)
@@ -224,18 +220,17 @@ internal fun RowScope.ModelSortAndFilterControls(
                 contentDescription = "Sort models"
                 stateDescription = orderingLabel
             },
-        shape = AppTheme.shapes.small,
     ) {
         Text("Sort")
         Icon(
-            imageVector = Icons.Default.ArrowDropDown,
+            imageVector = AppIcons.ChevronDown,
             contentDescription = null,
             modifier = Modifier.size(AppTheme.dimensions.size18),
         )
     }
-    OutlinedButton(
+    BrandButton(
+        style = BrandButtonStyle.Secondary,
         onClick = { filtersExpanded = true },
-        colors = ButtonDefaults.outlinedButtonColors(contentColor = AppTheme.actionColor),
         modifier = Modifier
             .then(if (expand) Modifier.weight(1f) else Modifier)
             .heightIn(min = AppTheme.spacing.spacing48)
@@ -247,10 +242,9 @@ internal fun RowScope.ModelSortAndFilterControls(
                 }
                 stateDescription = "$activeFilterCount active filters"
             },
-        shape = AppTheme.shapes.small,
     ) {
         Icon(
-            imageVector = Icons.Default.Tune,
+            imageVector = AppIcons.Filters,
             contentDescription = null,
             modifier = Modifier.size(AppTheme.dimensions.size18),
         )
@@ -372,8 +366,8 @@ private fun ModelFilterSheet(
                 label = { it.displayName },
                 onSelect = { pendingMaxParams = it },
             )
-            TextButton(
-                colors = ButtonDefaults.textButtonColors(contentColor = AppTheme.actionColor),
+            BrandButton(
+                style = BrandButtonStyle.Secondary,
                 onClick = {
                     if (onParameterFiltersApplied != null) {
                         onParameterFiltersApplied(pendingMinParams, pendingMaxParams)

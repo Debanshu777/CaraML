@@ -217,6 +217,22 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 
 ## Recent Changes
 
+- Persistent rail/sidebar navigation now paints through the landscape leading safe area while keeping controls and route content at their prior safe positions.
+
+- On short landscape windows, Models scrolls its title, tabs, and search field while a status-bar glass layer fades over the moving content. Safe scroll padding keeps the first control clear of the frost without reserving an empty app bar.
+
+- Fixed app bars and composers sample the actual scrolling backdrop and fade continuously into the content. Bottom safe areas now use scroll padding instead of clipping the backdrop above the gesture bar; final actions scroll clear of the glass. Rendered checks cover both edges and touch targets.
+
+- Added shared sticky headers with full-width frosted edges, removed redundant result/file dividers, rebuilt Device info around storage/memory/compute, and corrected the drawer preview crop. SVG action assets now generate one shared icon set (`python3 scripts/generate_app_icons.py`). Layout evidence: `composeApp/build/reports/layout-qa-2026-10-06/`.
+
+- Rebalanced the shared typography hierarchy: calmer 24sp page titles, 18sp item titles, readable 14sp descriptions, and consistent chat/Settings roles. Typography before/after evidence is under `composeApp/build/reports/typography-qa-2026-10-06/`.
+
+- Design QA simplified Settings and device headers, removed repeated loading/error/generation labels, clarified model browsing actions, and made file selection and 200% text settings easier to use. Before/after Pixel and Compose evidence is generated under `composeApp/build/reports/design-qa-2026-10-06/`.
+
+- Unified action buttons around the raised Pocket pal style, with visible quick-tap press-depth motion, disabled and reduced-motion feedback, and matching compact/icon variants across Create, Models, and Settings.
+
+- Corrected sidebar fidelity against the approved mobile reference: semibold labels, outline icons, tilted logo, full-width header, full-page reveal, and back-only navigation on Device info.
+
 - Introduced Pocket pal + Aurora: bundled Bricolage Grotesque/DM Sans, warm light/dark surfaces, and shared orange/yellow/lilac/mint brand tokens.
 - Mobile navigation now reveals a rounded, scaled page over the sidebar; Create and Models stay above bottom Settings, with reduced-motion and optional soft effects.
 - Model Hub uses flat model rows, inline filters and queue controls, a dedicated device panel, and recoverable search/library/download states; memory estimates remain distinct from unverified compatibility.

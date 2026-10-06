@@ -1,10 +1,6 @@
 package com.debanshu777.caraml.core.drawer
 
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Storage
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
@@ -27,12 +23,12 @@ private val primaryNavigationItems = listOf(
     DrawerItem(
         id = "create",
         title = "Create",
-        icon = Icons.Default.AutoAwesome,
+        icon = BrandNavigationIcons.Create,
     ),
     DrawerItem(
         id = "models",
         title = "Models",
-        icon = Icons.Default.Storage,
+        icon = BrandNavigationIcons.Models,
     ),
 )
 
@@ -40,7 +36,7 @@ private val utilityNavigationItems = listOf(
     DrawerItem(
         id = "settings",
         title = "Settings",
-        icon = Icons.Default.Settings,
+        icon = BrandNavigationIcons.Settings,
     ),
 )
 

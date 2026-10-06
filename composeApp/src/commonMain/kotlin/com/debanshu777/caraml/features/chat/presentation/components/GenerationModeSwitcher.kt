@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.features.chat.presentation.components
 
+import com.debanshu777.caraml.core.ui.icons.AppIcons
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -14,10 +15,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.Movie
-import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -37,7 +34,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
 
@@ -117,9 +113,9 @@ private fun GenerationModeChoice(
         GenerationMode.Video -> "Video"
     }
     val icon = when (mode) {
-        GenerationMode.Text -> Icons.Default.TextFields
-        GenerationMode.Image -> Icons.Default.Image
-        GenerationMode.Video -> Icons.Default.Movie
+        GenerationMode.Text -> AppIcons.Text
+        GenerationMode.Image -> AppIcons.Image
+        GenerationMode.Video -> AppIcons.Video
     }
     val selectedColor = when (mode) {
         GenerationMode.Text -> AppTheme.brandColors.yellow
@@ -153,14 +149,14 @@ private fun GenerationModeChoice(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
-                Text(label, modifier = Modifier.weight(1f), style = AppTheme.typography.headingBase.copy(fontSize = 20.sp, lineHeight = 23.sp))
+                Text(label, modifier = Modifier.weight(1f), style = AppTheme.typography.itemTitle)
             }
             else -> Column(
                 modifier = Modifier.padding(start = 11.dp, end = 6.dp, top = 12.dp, bottom = 11.dp),
                 verticalArrangement = Arrangement.spacedBy(7.dp),
             ) {
                 Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
-                Text(label, style = AppTheme.typography.headingBase.copy(fontSize = 20.sp, lineHeight = 23.sp))
+                Text(label, style = AppTheme.typography.itemTitle)
             }
         }
     }

@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search.components
 
+import com.debanshu777.caraml.core.ui.icons.AppIcons
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -13,18 +14,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.Surface
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -32,6 +28,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AppTheme
+import com.debanshu777.caraml.core.ui.components.BrandButton
+import com.debanshu777.caraml.core.ui.components.BrandButtonStyle
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.core.download.DownloadArtifactSnapshot
 import com.debanshu777.caraml.core.download.DownloadArtifactState
@@ -74,9 +72,9 @@ fun ModelDownloadQueueEntry(
                     onCancel = { onCancel(batch.batchId, artifact.artifactId) },
                 )
             }
-            TextButton(onClick = onClick, modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48)) {
-                Text(if (pending.size > 1) "All downloads (${pending.size})" else "Download details", color = AppTheme.actionColor)
-                Icon(Icons.Outlined.ChevronRight, contentDescription = "Open downloads")
+            BrandButton(style = BrandButtonStyle.Secondary, onClick = onClick, modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48)) {
+                Text(if (pending.size > 1) "All downloads (${pending.size})" else "Download details")
+                Icon(AppIcons.ChevronRight, contentDescription = "Open downloads")
             }
         }
     }

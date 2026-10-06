@@ -77,6 +77,18 @@ import com.debanshu777.caraml.features.modelhub.presentation.search.components.S
 /** Optional rendered evidence; run with CARAML_VISUAL_EVIDENCE_DIR to save PNGs. */
 class ModelHubVisualEvidenceTest {
     @Test
+    fun landscapeModelsSpacing() = runComposeUiTest {
+        setContent {
+            CompositionLocalProvider(LocalDensity provides Density(1f)) {
+                Box(Modifier.requiredSize(820.dp, 360.dp).testTag("visual-root")) {
+                    BrandedModelHubEvidence(BrandEvidenceScene.Unknown)
+                }
+            }
+        }
+        saveModelHubEvidence("models-820x360-landscape.png")
+    }
+
+    @Test
     fun brandedLibraryUnknownAndErrorAt390() = runComposeUiTest {
         var scene by mutableStateOf(BrandEvidenceScene.Library)
         setContent {
@@ -158,7 +170,7 @@ class ModelHubVisualEvidenceTest {
                 }
             }
         }
-        onNodeWithText("Room to play").assertIsDisplayed()
+        onNodeWithText("Storage").assertIsDisplayed()
         saveModelHubEvidence("brand-390-device.png")
         runOnIdle { available = false }
         onNodeWithText("Check again").performScrollTo().assertIsDisplayed()
@@ -401,8 +413,8 @@ private fun BrandedModelHubEvidence(scene: BrandEvidenceScene) {
                                     ModelHubStateView(ModelHubStateKind.Loading, "Loading models")
                                 }
                                 BrandEvidenceScene.EmptyLibrary -> item(key = "empty-library") {
-                                    ModelHubStateView(ModelHubStateKind.Empty, "Download a little brain. Your models will live here, ready whenever you are.",
-                                        title = "Your shelf is waiting", actionLabel = "Explore models", onAction = {})
+                                    ModelHubStateView(ModelHubStateKind.Empty, "Download a model to start creating. Your saved models will appear here.",
+                                        title = "Your library is empty", actionLabel = "Explore models", onAction = {})
                                 }
                             }
                         },

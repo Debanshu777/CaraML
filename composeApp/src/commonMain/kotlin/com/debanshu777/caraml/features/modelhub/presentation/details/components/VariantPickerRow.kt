@@ -1,10 +1,9 @@
 package com.debanshu777.caraml.features.modelhub.presentation.details.components
 
+import com.debanshu777.caraml.core.ui.icons.AppIcons
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.Text
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -57,21 +56,21 @@ fun VariantPickerRow(
                     StatusMark(
                         label = "Downloaded",
                         contentDescription = "Downloaded artifact",
-                        icon = Icons.Default.CheckCircle,
+                        icon = AppIcons.CheckCircle,
                     )
                 })
                 isRecommended -> ({
                     StatusMark(
                         label = "Recommended",
                         contentDescription = "Recommended artifact",
-                        icon = Icons.Default.CheckCircle,
+                        icon = AppIcons.CheckCircle,
                     )
                 })
                 isSelected -> ({
                     StatusMark(
                         label = "Selected",
                         contentDescription = "Selected artifact",
-                        icon = Icons.Default.CheckCircle,
+                        icon = AppIcons.CheckCircle,
                     )
                 })
                 else -> null

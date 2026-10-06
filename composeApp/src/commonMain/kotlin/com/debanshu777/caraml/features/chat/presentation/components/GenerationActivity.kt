@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.features.chat.presentation.components
 
+import com.debanshu777.caraml.core.ui.icons.AppIcons
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
@@ -7,10 +8,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccessTime
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.DataUsage
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -33,9 +30,9 @@ enum class GenerationActivityPhase(
     val description: String,
     val icon: ImageVector,
 ) {
-    Preparing("Preparing", Icons.Default.AccessTime),
-    Generating("Generating", Icons.Default.AutoAwesome),
-    Finalizing("Finalizing", Icons.Default.DataUsage),
+    Preparing("Preparing", AppIcons.Clock),
+    Generating("Generating", AppIcons.Spark),
+    Finalizing("Finalizing", AppIcons.Memory),
 }
 
 /**
@@ -52,6 +49,7 @@ fun GenerationActivity(
     } else {
         GenerationActivityPhase.Generating
     },
+    showPhaseHeader: Boolean = true,
 ) {
     val motion = LocalAuroraMotionPolicy.current
     val reportedProgress = progress?.coerceIn(0f, 1f)
@@ -74,7 +72,7 @@ fun GenerationActivity(
         },
         verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
     ) {
-        Row(
+        if (showPhaseHeader) Row(
             horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -103,6 +101,9 @@ fun GenerationActivity(
                     color = AppTheme.colors.onSurfaceVariant,
                 )
             }
+        }
+        else {
+            Text(label, style = AppTheme.typography.bodySmall, color = AppTheme.colors.onSurfaceVariant)
         }
         if (progress != null) {
             LinearProgressIndicator(

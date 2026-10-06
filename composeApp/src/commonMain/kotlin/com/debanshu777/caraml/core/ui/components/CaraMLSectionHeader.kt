@@ -26,7 +26,7 @@ fun CaraMLSectionHeader(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
-                style = AppTheme.typography.heading16,
+                style = AppTheme.typography.sectionTitle,
                 color = AppTheme.colors.onSurface,
             )
             supportingText?.let {

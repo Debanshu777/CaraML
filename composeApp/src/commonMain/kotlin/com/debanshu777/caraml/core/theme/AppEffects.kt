@@ -2,10 +2,15 @@ package com.debanshu777.caraml.core.theme
 
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 
 /** Alpha values used by shared surfaces and Aurora effects. */
 @Immutable
 data class AppEffects(
+    val chromeBlur: Dp = 20.dp,
+    val chromeTint: Float = 0.28f,
+    val chromeFade: Dp = 32.dp,
     val opaque: Float = 1f,
     val workspaceGlyphSurface: Float = 0.78f,
     val contextStripSurface: Float = 0.54f,

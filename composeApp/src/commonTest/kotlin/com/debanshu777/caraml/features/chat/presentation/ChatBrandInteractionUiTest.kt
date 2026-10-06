@@ -64,14 +64,14 @@ class ChatBrandInteractionUiTest {
         onNodeWithText("Getting ready").assertIsDisplayed()
         runOnIdle { step = 12; total = 30 }
         onAllNodesWithText("Getting ready").assertCountEquals(0)
-        onAllNodesWithText("Generating").assertCountEquals(2)
+        onAllNodesWithText("Generating").assertCountEquals(1)
         onNodeWithText("Step 12 / 30 · 0s").assertIsDisplayed()
         // A reported step without a known total is still real sampler activity.
         runOnIdle { total = 0 }
-        onAllNodesWithText("Generating").assertCountEquals(2)
+        onAllNodesWithText("Generating").assertCountEquals(1)
         onNodeWithText("Step 12 · 0s").assertIsDisplayed()
         runOnIdle { step = 30; total = 30 }
-        onAllNodesWithText("Finalizing").assertCountEquals(2)
+        onAllNodesWithText("Finalizing").assertCountEquals(1)
         onAllNodesWithText("Done").assertCountEquals(0)
         runOnIdle { pending = false }
         onNodeWithText("Done").assertIsDisplayed()

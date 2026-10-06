@@ -7,11 +7,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,6 +24,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AppTheme
+import com.debanshu777.caraml.core.ui.components.BrandButton
+import com.debanshu777.caraml.core.ui.components.BrandButtonStyle
 import com.debanshu777.caraml.core.download.DownloadArtifactState
 import com.debanshu777.caraml.core.theme.CaraMLTheme
 import com.debanshu777.caraml.core.theme.ThemePreferences
@@ -186,7 +186,7 @@ private fun ArtifactIdentity(
             onTextLayout = { if (!expanded) nameOverflows = it.hasVisualOverflow },
         )
         if (expanded || directoryOverflows || nameOverflows) {
-            TextButton(onClick = { expanded = !expanded }) {
+            BrandButton(style = BrandButtonStyle.Secondary, onClick = { expanded = !expanded }) {
                 Text(if (expanded) "Show less" else "Show full filename")
             }
         }
@@ -237,7 +237,6 @@ private fun DownloadableFilesPreviewContent() {
                     onDownloadClick = {},
                     supportingLabel = "Recommended artifact",
                 )
-                HorizontalDivider(color = AppTheme.auroraColors.divider)
                 ModelDetailsDownloadableListItem(
                     filename = "weights/MiniCPM5-2B-Q5_K_M.gguf",
                     sizeBytes = 2_147_483_648L,
@@ -247,7 +246,6 @@ private fun DownloadableFilesPreviewContent() {
                     durableState = DownloadArtifactState.RUNNING,
                     onDownloadClick = {},
                 )
-                HorizontalDivider(color = AppTheme.auroraColors.divider)
                 ModelDetailsDownloadableListItem(
                     filename = "weights/MiniCPM5-2B-Q8_0.gguf",
                     sizeBytes = 3_221_225_472L,

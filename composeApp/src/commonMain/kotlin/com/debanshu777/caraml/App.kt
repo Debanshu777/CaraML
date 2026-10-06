@@ -20,7 +20,6 @@ import com.debanshu777.caraml.core.platform.AppLogger
 import com.debanshu777.caraml.core.recommendation.LoadSessionCoordinator
 import com.debanshu777.caraml.core.theme.CaraMLTheme
 import com.debanshu777.caraml.core.theme.ThemeViewModel
-import com.debanshu777.caraml.core.ui.components.AuroraBackdrop
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.serializer
@@ -65,14 +64,11 @@ fun App(onEffectiveDarkThemeChanged: (Boolean) -> Unit = {}) {
         ) {
             val backStack = rememberNavBackStack(config, AppScreen.Home)
             AppDrawerShell(backStack = backStack) {
-                // The backdrop belongs to the moving page. Drawing it outside the shell
-                // lets the shell's opaque page surface cover it on compact devices.
-                AuroraBackdrop {
-                    NavigationHost(
-                        modifier = Modifier.fillMaxSize(),
-                        backStack = backStack,
-                    )
-                }
+                // Each route captures its own backdrop beneath fixed frosted chrome.
+                NavigationHost(
+                    modifier = Modifier.fillMaxSize(),
+                    backStack = backStack,
+                )
             }
         }
     }
