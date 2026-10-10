@@ -53,6 +53,7 @@ import com.debanshu777.caraml.core.download.DownloadManagerCheckpointCleaner
 import com.debanshu777.caraml.core.download.DownloadManagerArtifactTransfer
 import com.debanshu777.caraml.core.download.DownloadManagerBundlePublisher
 import com.debanshu777.caraml.core.download.DownloadReconciler
+import com.debanshu777.caraml.core.download.PublishedDownloadReconciler
 import com.debanshu777.caraml.core.download.DownloadRuntime
 import com.debanshu777.caraml.core.download.DownloadTaskStore
 import com.debanshu777.caraml.core.download.ModelCatalogPublisher
@@ -127,7 +128,8 @@ val appModule = module {
     single<BatchFinalizer> { ModelDownloadFinalizer(get(), get(), get(), get()) }
     single { DownloadBatchRunner(get(), get(), get(), { Clock.System.now().toEpochMilliseconds() }) }
     single { DownloadRuntimeScope(CoroutineScope(SupervisorJob() + Dispatchers.Default)) }
-    single { DownloadReconciler(get(), get(), { Clock.System.now().toEpochMilliseconds() }) }
+    single { PublishedDownloadReconciler(get(), get(), get(), get(), get(), get(), { Clock.System.now().toEpochMilliseconds() }, get()) }
+    single { DownloadReconciler(get(), get(), { Clock.System.now().toEpochMilliseconds() }, get()) }
     single { DownloadRuntime(get(), get(), get<DownloadRuntimeScope>().scope) }
     single { DownloadCoordinator(get(), get(), get(), get(), { Clock.System.now().toEpochMilliseconds() }) }
 

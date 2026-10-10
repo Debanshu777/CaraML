@@ -1699,6 +1699,68 @@ class ModelViewModelRecommendationTest {
     }
 
     @Test
+    fun pausedVerificationResumeUsesCurrentIntentAndKeepsVerificationCheckpoint() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val store = ObservingDownloadTaskStore()
+        val intents = mutableListOf<DownloadUserIntent>()
+        val transitions = mutableListOf<DownloadArtifactState>()
+        val observedStore = object : DownloadTaskStore by store {
+            override suspend fun setUserIntent(batchId: String, intent: DownloadUserIntent, nowEpochMs: Long): Boolean {
+                intents += intent
+                return store.setUserIntent(batchId, intent, nowEpochMs)
+            }
+            override suspend fun transitionArtifact(artifactId: String, state: DownloadArtifactState,
+                failureCode: DownloadFailureCode?, nowEpochMs: Long): Boolean {
+                transitions += state
+                return store.transitionArtifact(artifactId, state, failureCode, nowEpochMs)
+            }
+        }
+        val scheduler = RecordingPlatformDownloadScheduler()
+        val artifact = requireNotNull(DownloadArtifactIdentity.create(
+            repositoryId = "org/verification",
+            immutableRevision = "a".repeat(40),
+            relativePath = "model.gguf",
+            remoteObjectId = "sha256:${"b".repeat(64)}",
+            expectedBytes = 100L,
+        ))
+        val verifying = durableSnapshot("verification-batch", artifact, DownloadArtifactState.VERIFYING,
+            DownloadBatchState.VERIFYING, 100L)
+        val engine = object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler { error("Resuming verification must not fetch model metadata") }
+        }) { override val dispatcher: CoroutineDispatcher = dispatcher }
+        val client = HttpClient(engine)
+        try {
+            val vm = viewModel(client, dispatcher,
+                downloadCoordinator = observingDownloadCoordinator(observedStore, scheduler))
+            for (intent in listOf(DownloadUserIntent.RUN, DownloadUserIntent.CANCEL)) {
+                store.snapshots.value = listOf(verifying.copy(userIntent = intent,
+                    artifacts = verifying.artifacts.map { it.copy(userIntent = intent) }))
+                advanceUntilIdle()
+                vm.resumeDownload(verifying.batchId, verifying.artifacts.single().artifactId)
+                advanceUntilIdle()
+                assertEquals(emptyList(), scheduler.enqueuedBatchIds)
+                assertEquals(emptyList(), intents)
+            }
+            store.snapshots.value = listOf(verifying.copy(userIntent = DownloadUserIntent.PAUSE,
+                artifacts = verifying.artifacts.map { it.copy(userIntent = DownloadUserIntent.PAUSE) }))
+            advanceUntilIdle()
+            assertEquals(emptyList(), scheduler.enqueuedBatchIds)
+            vm.resumeDownload(verifying.batchId, verifying.artifacts.single().artifactId)
+            advanceUntilIdle()
+            assertEquals(listOf(verifying.batchId), scheduler.enqueuedBatchIds)
+            assertEquals(listOf(DownloadUserIntent.RUN), intents)
+            assertEquals(emptyList(), transitions)
+            assertEquals(DownloadArtifactState.VERIFYING, store.getBatch(verifying.batchId)!!.artifacts.single().state)
+            assertEquals(100L, store.getBatch(verifying.batchId)!!.bytesReceived)
+        } finally {
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
     fun globalDownloadQueueSurvivesSearchChangesAndControlsExactBatch() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)

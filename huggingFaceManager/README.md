@@ -158,6 +158,9 @@ Network categories are `NoInternet`, `Unauthorized`, `RequestTimeout`, `RateLimi
 
 ## Recent Changes
 
+- Startup reconciliation fairly completes stale full-byte download rows only after exact published-artifact proof, preserving paused/cancelled intent and using final compare-and-set guards. Streaming deadlines, validator checkpoints, leases and bundle publication retain their integrity boundaries. See the [download and model validation report](../docs/model-validation/2026-10-08/report.md).
+
+
 <!-- Updated at end of each Claude Code session -->
 
 - Android and Desktop secure artifact reads reuse a bounded per-source buffer during hashing and manifest reads, avoiding a new managed byte array for every chunk

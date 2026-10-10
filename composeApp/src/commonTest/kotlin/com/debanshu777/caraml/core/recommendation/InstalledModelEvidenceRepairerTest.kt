@@ -60,6 +60,62 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class InstalledModelEvidenceRepairerTest {
+
+    @Test
+    fun verifiedNonGgufTextContainerHasAccurateFormatFailureRegardlessOfSuffix() = runTest {
+        for (filename in listOf("weights.onnx", "weights.gguf")) {
+            withFixture(bytes = "ONNX verified bytes".encodeToByteArray(), fileName = filename) { fixture ->
+                var lookups = 0
+                val rejected = assertIs<EvidenceRepairResult.Rejected>(
+                    fixture.repairer { _, _, _ ->
+                        lookups += 1
+                        InstalledDescriptorLookup.Ready(fixture.descriptor)
+                    }.requireComplete(fixture.model.modelId, GenerationMode.Text),
+                )
+                assertEquals(listOf(AssessmentReason.UNSUPPORTED_FORMAT), rejected.reasons)
+                assertEquals(0, lookups)
+                assertEquals(0, fixture.dao.upsertCalls)
+            }
+        }
+    }
+
+    @Test
+    fun completePersistedFactsCannotApproveVerifiedNonGgufContainer() = runTest {
+        withFixture(bytes = "ONNX verified bytes".encodeToByteArray()) { fixture ->
+            val cached = LlmModelDescriptor(
+                repositoryId = fixture.identity.repositoryId, revision = fixture.identity.revision,
+                file = fixture.identity, architecture = "llama",
+                quantization = QuantizationEvidence.Known("Q4_K_M"), parameterCount = 1_000_000,
+                contextLimit = 4_096, ggufVersion = 3,
+                transformerShape = TransformerShape(1, 1, 1, 64, 64),
+                requiredEngineFeatures = emptyList(), evidence = emptyList(),
+            )
+            fixture.repository.put(
+                fixture.model.modelId,
+                fixture.codec.encode(listOf(fixture.identity), cached),
+                nowEpochMs = 1L,
+            )
+            val rejected = assertIs<EvidenceRepairResult.Rejected>(
+                fixture.repairer { _, _, _ -> error("Unsupported container must not request metadata") }
+                    .requireComplete(fixture.model.modelId, GenerationMode.Text),
+            )
+            assertEquals(listOf(AssessmentReason.UNSUPPORTED_FORMAT), rejected.reasons)
+        }
+    }
+
+    @Test
+    fun truncatedOrSignatureOnlyContainerDoesNotEstablishUnsupportedFormat() = runTest {
+        for (bytes in listOf("ON".encodeToByteArray(), "GGUF".encodeToByteArray())) {
+            withFixture(bytes = bytes, fileName = "weights.onnx") { fixture ->
+                val rejected = assertIs<EvidenceRepairResult.Rejected>(
+                    fixture.repairer { _, _, _ -> error("Incomplete header must remain unknown") }
+                        .requireComplete(fixture.model.modelId, GenerationMode.Text),
+                )
+                assertEquals(listOf(AssessmentReason.INVALID_METADATA), rejected.reasons)
+            }
+        }
+    }
+
     @Test
     fun missingEvidenceIsFetchedPersistedAndReusedOffline() = runTest {
         withFixture { fixture ->
@@ -69,12 +125,17 @@ class InstalledModelEvidenceRepairerTest {
                 InstalledDescriptorLookup.Ready(fixture.descriptor)
             }
 
-            assertIs<EvidenceRepairResult.Ready>(
+            val first = assertIs<EvidenceRepairResult.Ready>(
                 repairer.requireComplete(fixture.model.modelId, GenerationMode.Text),
             )
-            assertIs<EvidenceRepairResult.Ready>(
+            val second = assertIs<EvidenceRepairResult.Ready>(
                 repairer.requireComplete(fixture.model.modelId, GenerationMode.Text),
             )
+            for (ready in listOf(first, second)) {
+                val verified = assertNotNull(ready.verifiedArtifact)
+                assertEquals(fixture.model, verified.model)
+                assertEquals(listOf(fixture.identity), verified.artifact.components.map { it.identity })
+            }
 
             assertEquals(1, lookups)
             assertEquals(1, fixture.dao.upsertCalls)
@@ -460,7 +521,8 @@ class InstalledModelEvidenceRepairerTest {
 
     @Test
     fun malformedVerifiedLocalGgufCannotBecomeReadyThroughRemoteMetadata() = runTest {
-        withFixture(bytes = ByteArray(32)) { fixture ->
+        val malformed = ByteArray(32).also { "GGUF".encodeToByteArray().copyInto(it) }
+        withFixture(bytes = malformed) { fixture ->
             val result = fixture.repairer { _, _, _ ->
                 error("A malformed local GGUF must be rejected before remote lookup")
             }.requireComplete(fixture.model.modelId, GenerationMode.Text)

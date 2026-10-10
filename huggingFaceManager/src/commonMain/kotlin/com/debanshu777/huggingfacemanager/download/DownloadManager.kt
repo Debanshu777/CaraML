@@ -15,7 +15,8 @@ expect class DownloadManager(
         resumeMetadata: DownloadResumeMetadata? = null,
     ): Flow<DownloadProgressDTO>
 
-    suspend fun publishBundle(ownerModelId: String, artifacts: List<DownloadMetadataDTO>): Boolean
+    suspend fun publishBundle(ownerModelId: String, artifacts: List<DownloadMetadataDTO>,
+        diagnostics: BundlePublicationDiagnostics? = null): Boolean
 
     suspend fun validateBundle(ownerModelId: String, artifacts: List<DownloadMetadataDTO>): Boolean
 

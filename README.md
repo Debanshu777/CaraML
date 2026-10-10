@@ -217,6 +217,20 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 
 ## Recent Changes
 
+- CI fixes preserve model-search focus across viewport changes and avoid a GCC 13 compiler crash in native preflight error handling.
+
+- Xcode’s Kotlin framework build phase locates JDK 21 and Homebrew native tools directly; no separate build helper script is required.
+
+- Text model validation covers 22 pinned artifacts across 16 architectures, with download-state repairs, verified loading, guarded native sampling and paired Pixel 9 measurements. The [detailed report](docs/model-validation/2026-10-08/report.md) retains failures, unsupported artifacts and measurement limits.
+
+- Chat, Images, and Videos now have separate drawer destinations; chat restores its model picker and labeled Send/Stop without inline mode tabs.
+
+- Chat generation now uses available native context with bounded reasoning and explicit incomplete/no-answer states; conversation controls and technical details stay compact.
+
+- Native preflight identifies Gemma assistant models that require a target context; chat reports the actual admission reason instead of labeling every temporary failure as memory/thermal pressure.
+
+- Installed GGUF models with incomplete app metadata now use a bounded CPU plan and native model/memory preflight, retaining exact artifact verification and load recovery.
+
 - Persistent rail/sidebar navigation now paints through the landscape leading safe area while keeping controls and route content at their prior safe positions.
 
 - On short landscape windows, Models scrolls its title, tabs, and search field while a status-bar glass layer fades over the moving content. Safe scroll padding keeps the first control clear of the frost without reserving an empty app bar.

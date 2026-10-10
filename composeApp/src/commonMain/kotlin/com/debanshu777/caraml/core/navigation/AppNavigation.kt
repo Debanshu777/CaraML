@@ -224,6 +224,10 @@ fun NavigationHost(
     val motionPolicy = LocalAuroraMotionPolicy.current
     val detailOffsetPx = with(LocalDensity.current) { AppTheme.spacing.spacing16.roundToPx() }
     val chatViewModel: ChatViewModel = koinViewModel()
+    val modelViewModel: ModelViewModel = koinViewModel()
+    val downloadedModelsViewModel: DownloadedModelsViewModel = koinViewModel()
+    val settingsViewModel: SettingsViewModel = koinViewModel()
+
     var requestedModelHubTab by rememberSaveable { mutableStateOf(0) }
     NavigationTransitionDisplay(
         modifier = modifier,
@@ -248,8 +252,6 @@ fun NavigationHost(
                     )
                 }
                 entry(AppScreen.Search) {
-                    val modelViewModel: ModelViewModel = koinViewModel()
-                    val downloadedModelsViewModel: DownloadedModelsViewModel = koinViewModel()
                     SearchScreen(
                         modelViewModel = modelViewModel,
                         downloadedModelsViewModel = downloadedModelsViewModel,
@@ -289,7 +291,6 @@ fun NavigationHost(
                         }
                     },
                 ) { key ->
-                    val modelViewModel: ModelViewModel = koinViewModel()
                     DetailsScreen(
                         viewModel = modelViewModel,
                         modelId = key.modelId,
@@ -298,7 +299,6 @@ fun NavigationHost(
                     )
                 }
                 entry(AppScreen.Settings) {
-                    val settingsViewModel: SettingsViewModel = koinViewModel()
                     SettingsScreen(
                         viewModel = settingsViewModel,
                         onOpenShelf = {

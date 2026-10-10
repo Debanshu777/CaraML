@@ -127,6 +127,11 @@ class ModelHubBrandInteractionTest {
         runOnIdle { viewportHeight = 220.dp }
         input.assertIsFocused().performTextInput(" brain")
         runOnIdle { assertEquals("tiny brain", query) }
+        runOnIdle { viewportHeight = 740.dp }
+        input.assertIsFocused().performTextInput(" model")
+        runOnIdle { assertEquals("tiny brain model", query) }
+        runOnIdle { viewportHeight = 220.dp }
+        input.assertIsFocused()
         onNodeWithTag("model-primary-results").performScrollToKey("error")
         onNodeWithText("Retry").performScrollTo().assertIsDisplayed().performClick()
         runOnIdle { assertEquals(1, retries) }

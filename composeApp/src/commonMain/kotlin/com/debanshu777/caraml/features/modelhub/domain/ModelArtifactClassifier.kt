@@ -44,7 +44,10 @@ internal object ModelArtifactClassifier {
             return ModelArtifactClassification(ModelArtifactRole.ADAPTER, ModelArtifactRoleEvidence.EXPLICIT_FILENAME)
         }
 
-        if (nameTokens.any { it in DRAFT_TOKENS }) return unverified()
+        if (nameTokens.any { it in DRAFT_TOKENS } ||
+            nameTokens.take(2) == listOf("gemma4", "assistant") ||
+            nameTokens.take(3) == listOf("gemma", "4", "assistant")
+        ) return unverified()
 
         if (!name.endsWith(".gguf")) return unverified()
         return ModelArtifactClassification(

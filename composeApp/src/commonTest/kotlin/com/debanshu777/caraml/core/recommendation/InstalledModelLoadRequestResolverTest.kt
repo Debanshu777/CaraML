@@ -36,6 +36,77 @@ class InstalledModelLoadRequestResolverTest {
     }
 
     @Test
+    fun preparationReusesExactArtifactVerifiedByEvidenceRepair() = runTest {
+        val fixture = Fixture().apply {
+            evidenceResult = EvidenceRepairResult.Ready(
+                descriptor,
+                VerifiedInstalledModelArtifact(model, emptyList(), artifact),
+            )
+        }
+
+        val prepared = assertIs<InstalledModelLoadPreparation.Ready>(
+            fixture.resolver().prepare(fixture.model, GenerationMode.Text),
+        )
+
+        assertSame(fixture.artifact, prepared.artifact)
+        assertEquals(0, fixture.persistedHubCalls)
+        assertEquals(0, fixture.strictRequestCalls)
+        assertIs<InstalledModelLoadResolution.Ready>(fixture.resolver().resolve(prepared))
+        assertEquals(1, fixture.strictRequestCalls)
+    }
+
+    @Test
+    fun proofForDifferentCatalogPathCannotBypassArtifactResolution() = runTest {
+        val fixture = Fixture().apply {
+            evidenceResult = EvidenceRepairResult.Ready(
+                descriptor,
+                VerifiedInstalledModelArtifact(model.copy(localPath = "/models/replaced.gguf"), emptyList(), artifact),
+            )
+            artifactResolution = ArtifactIdentityResolution.Rejected(ArtifactIdentityRejection.STALE_MANIFEST)
+        }
+        val terminal = assertIs<InstalledModelLoadPreparation.Terminal>(
+            fixture.resolver().prepare(fixture.model, GenerationMode.Text),
+        )
+        assertEquals(InstalledModelLoadResolution.Rejected(ArtifactIdentityRejection.STALE_MANIFEST), terminal.resolution)
+        assertEquals(1, fixture.persistedHubCalls)
+    }
+
+    @Test
+    fun proofForDifferentComponentSnapshotCannotBypassArtifactResolution() = runTest {
+        val fixture = Fixture().apply {
+            evidenceResult = EvidenceRepairResult.Ready(
+                descriptor,
+                VerifiedInstalledModelArtifact(model, emptyList(), artifact),
+            )
+            components = listOf(DownloadedComponentEntity(
+                repoId = model.modelId, role = "replacement", filePath = "new.gguf",
+                localPath = "/models/new.gguf", sizeBytes = 1, downloadedAt = 2,
+            ))
+            artifactResolution = ArtifactIdentityResolution.Rejected(ArtifactIdentityRejection.STALE_MANIFEST)
+        }
+        assertIs<InstalledModelLoadPreparation.Terminal>(fixture.resolver().prepare(fixture.model, GenerationMode.Text))
+        assertEquals(1, fixture.persistedHubCalls)
+    }
+
+    @Test
+    fun reusedProofStillRequiresExactDescriptorIdentities() = runTest {
+        val fixture = Fixture().apply {
+            val changed = artifact.copy(components = artifact.components.map {
+                it.copy(identity = identity.copyForResolverTest(path = "replaced.gguf"))
+            })
+            evidenceResult = EvidenceRepairResult.Ready(
+                descriptor, VerifiedInstalledModelArtifact(model, emptyList(), changed),
+            )
+            artifactResolution = ArtifactIdentityResolution.Verified(changed)
+        }
+        val terminal = assertIs<InstalledModelLoadPreparation.Terminal>(
+            fixture.resolver().prepare(fixture.model, GenerationMode.Text),
+        )
+        assertEquals(InstalledModelLoadResolution.Rejected(ArtifactIdentityRejection.STALE_MANIFEST), terminal.resolution)
+        assertEquals(0, fixture.assessmentCalls)
+    }
+
+    @Test
     fun completeLocalHeaderDescriptorWithoutRemoteParameterCountCanBeAdmitted() = runTest {
         val fixture = Fixture().apply {
             descriptor = task6LlmDescriptor(parameterCount = null)
@@ -45,6 +116,62 @@ class InstalledModelLoadRequestResolverTest {
         val ready = assertIs<InstalledModelLoadResolution.Ready>(fixture.resolve())
         assertSame(fixture.artifact, ready.request.artifact)
         assertEquals(1, fixture.strictRequestCalls)
+    }
+
+    @Test
+    fun incompleteMetadataStillPreparesVerifiedGgufForNativeLoading() = runTest {
+        val fixture = Fixture().apply {
+            evidenceResult = EvidenceRepairResult.Rejected(listOf(AssessmentReason.INVALID_METADATA))
+        }
+
+        val request = assertIs<InstalledModelLoadResolution.Ready>(fixture.resolve()).request
+
+        assertSame(fixture.artifact, request.artifact)
+        assertEquals(BackendKind.CPU, request.plan.backend)
+        assertEquals(0, fixture.assessmentCalls)
+        assertEquals(0, fixture.strictRequestCalls)
+    }
+
+    @Test
+    fun metadataFallbackStillRequiresNativePreflightAndCurrentArtifact() = runTest {
+        val fixture = Fixture().apply {
+            evidenceResult = EvidenceRepairResult.Rejected(listOf(AssessmentReason.INVALID_METADATA))
+            settings += AppSettings(kvQuantPreset = KvQuantPreset.Q8_Q8)
+        }
+        val request = assertIs<InstalledModelLoadResolution.Ready>(fixture.resolve()).request
+        val plan = assertIs<LlmRunPlan>(request.plan)
+        assertEquals(KvCacheType.Q8_0, plan.keyCacheType)
+        assertEquals(KvCacheType.Q8_0, plan.valueCacheType)
+        assertTrue(request.nativeMetadataFallback)
+        var preflight: NativeLoadPreflight = NativeLoadPreflight.Fit
+        var artifactCurrent = true
+        var preflightCalls = 0
+        val controller = LoadAdmissionController(
+            snapshotSource = { task6Snapshot() },
+            recommendationSource = { _, _ -> error("Incomplete metadata must not gate native loading") },
+            artifactValidator = { artifactCurrent && it.artifact == fixture.artifact },
+            nativePreflight = { preflightCalls++; preflight },
+            recoveryState = object : LoadRecoveryState {
+                override suspend fun quarantine(identity: ModelFileIdentity, plan: RunPlan, engineVersion: String) = LoadQuarantine.NONE
+                override suspend fun allowExplicitRetry(identity: ModelFileIdentity, plan: RunPlan, engineVersion: String) = Unit
+            },
+            engineVersion = "test-engine",
+            clock = { 1L },
+        )
+        assertIs<LoadAdmission.Ready>(controller.evaluate(request, null))
+        preflight = NativeLoadPreflight.Invalid
+        assertEquals(LoadAdmissionReason.NATIVE_PREFLIGHT_INVALID,
+            assertIs<LoadAdmission.Blocked>(controller.evaluate(request, null)).reason)
+        preflight = NativeLoadPreflight.NoFit
+        assertEquals(LoadAdmissionReason.NO_SAFE_CONFIGURATION,
+            assertIs<LoadAdmission.Blocked>(controller.evaluate(request, null)).reason)
+        preflight = NativeLoadPreflight.Unavailable
+        assertIs<LoadAdmission.TemporarilyUnavailable>(controller.evaluate(request, null))
+        artifactCurrent = false
+        assertEquals(LoadAdmissionReason.INVALID_MODEL,
+            assertIs<LoadAdmission.Blocked>(controller.evaluate(request, null)).reason)
+        assertEquals(4, preflightCalls)
+        assertIs<LoadAdmission.Blocked>(controller.evaluate(request.copy(artifact = null), null))
     }
 
     @Test
@@ -348,7 +475,7 @@ class InstalledModelLoadRequestResolverTest {
     }
 
     @Test
-    fun invalidMetadataNeverTriggersCpuFallback() = runTest {
+    fun incompleteGpuMetadataUsesNativeCpuLoading() = runTest {
         val fixture = Fixture().apply {
             snapshots += acceleratedSnapshot()
             settings += AppSettings(useGpu = true)
@@ -363,13 +490,9 @@ class InstalledModelLoadRequestResolverTest {
 
         val result = fixture.resolve()
 
-        assertEquals(
-            InstalledModelLoadResolution.NotAdmissible(
-                AssessmentReason.INVALID_METADATA,
-                candidateBackend = BackendKind.CPU,
-            ),
-            result,
-        )
+        val request = assertIs<InstalledModelLoadResolution.Ready>(result).request
+        assertEquals(BackendKind.CPU, request.plan.backend)
+        assertTrue(request.nativeMetadataFallback)
         assertEquals(1, fixture.assessmentCalls)
         assertEquals(0, fixture.strictRequestCalls)
     }
@@ -583,16 +706,17 @@ class InstalledModelLoadRequestResolverTest {
     }
 
     @Test
-    fun repairNetworkAndTerminalRejectionRemainDistinct() = runTest {
+    fun offlineMetadataUsesNativeLoadingWhileUnsupportedFormatsRemainRejected() = runTest {
         val network = Fixture().apply { evidenceResult = EvidenceRepairResult.NeedsNetwork }
         val rejected = Fixture().apply {
             evidenceResult = EvidenceRepairResult.Rejected(listOf(AssessmentReason.UNSUPPORTED_FORMAT))
         }
 
-        assertEquals(
-            InstalledModelLoadResolution.NeedsNetwork,
+        val request = assertIs<InstalledModelLoadResolution.Ready>(
             network.resolver().resolve(network.model, GenerationMode.Text),
-        )
+        ).request
+        assertSame(network.artifact, request.artifact)
+        assertEquals(BackendKind.CPU, request.plan.backend)
         assertEquals(
             InstalledModelLoadResolution.NotAdmissible(AssessmentReason.UNSUPPORTED_FORMAT),
             rejected.resolver().resolve(rejected.model, GenerationMode.Text),
@@ -618,7 +742,7 @@ class InstalledModelLoadRequestResolverTest {
     }
 
     @Test
-    fun needsInformationWithSelectedPlanIsNotAdmissible() = runTest {
+    fun incompleteRecommendationUsesNativeLoading() = runTest {
         val fixture = Fixture().apply {
             recommendationCategory = RecommendationCategory.NEEDS_INFORMATION
             recommendationReasons = listOf(AssessmentReason.RECOMMENDATION_EVIDENCE_INCOMPLETE)
@@ -626,13 +750,9 @@ class InstalledModelLoadRequestResolverTest {
 
         val result = fixture.resolver().resolve(fixture.model, GenerationMode.Text)
 
-        assertEquals(
-            InstalledModelLoadResolution.NotAdmissible(
-                AssessmentReason.RECOMMENDATION_EVIDENCE_INCOMPLETE,
-                candidateBackend = BackendKind.CPU,
-            ),
-            result,
-        )
+        val request = assertIs<InstalledModelLoadResolution.Ready>(result).request
+        assertSame(fixture.artifact, request.artifact)
+        assertEquals(BackendKind.CPU, request.plan.backend)
         assertEquals(0, fixture.strictRequestCalls)
     }
 
@@ -758,6 +878,7 @@ class InstalledModelLoadRequestResolverTest {
         )
         var evidenceResult: EvidenceRepairResult = EvidenceRepairResult.Ready(descriptor)
         var artifactResolution: ArtifactIdentityResolution? = null
+        var components = emptyList<DownloadedComponentEntity>()
         val snapshots = ArrayDeque<DeviceSnapshot>()
         val settings = ArrayDeque<AppSettings>()
         val assessmentSnapshots = mutableListOf<DeviceSnapshot>()
@@ -781,7 +902,7 @@ class InstalledModelLoadRequestResolverTest {
         fun resolver() = InstalledModelLoadRequestResolver(
             componentsForModel = {
                 cancelAt(ResolverStage.COMPONENTS)
-                emptyList<DownloadedComponentEntity>()
+                components
             },
             requireComplete = { _, _ ->
                 cancelAt(ResolverStage.REPAIR)

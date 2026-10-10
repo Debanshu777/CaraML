@@ -107,7 +107,6 @@ import com.debanshu777.caraml.features.chat.presentation.components.ChatInputBar
 import com.debanshu777.caraml.features.chat.presentation.components.ContextStatsIndicator
 import com.debanshu777.caraml.features.chat.presentation.components.ChatMessageList
 import com.debanshu777.caraml.features.chat.presentation.components.GenerationStatsBar
-import com.debanshu777.caraml.features.chat.presentation.components.GenerationModeSwitcher
 import com.debanshu777.caraml.features.chat.presentation.components.ModelErrorScreen
 import com.debanshu777.caraml.features.chat.presentation.components.ModelLoadingScreen
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
@@ -120,6 +119,12 @@ data class ChatEmptyStateCopy(
     val title: String,
     val supportingText: String,
 )
+
+internal fun generationDestinationTitle(mode: GenerationMode): String = when (mode) {
+    GenerationMode.Text -> "Chat"
+    GenerationMode.Image -> "Images"
+    GenerationMode.Video -> "Videos"
+}
 
 internal fun emptyStateCopy(mode: GenerationMode): ChatEmptyStateCopy = ChatEmptyStateCopy(
     title = "Got a\nweird idea?",
@@ -141,13 +146,6 @@ fun ChatScreen(
         viewModel.setGenerationMode(modeController.mode)
     }
 
-    val vmMode = (uiState as? ChatUiState.Ready)?.generationMode
-    LaunchedEffect(vmMode) {
-        if (vmMode != null && modeController.mode != vmMode) {
-            modeController.setState(vmMode)
-        }
-    }
-
     ChatScreenContent(
         uiState = uiState,
         streamingState = streamingState,
@@ -166,7 +164,6 @@ fun ChatScreen(
             ContextStatsIndicator(liveStats = streamingState.liveStats)
         },
         modifier = modifier,
-        onGenerationModeSelected = modeController::setState,
         controlledGenerationMode = modeController.mode,
     )
 }
@@ -188,7 +185,6 @@ fun ChatScreenContent(
     onNavigateToModelDetail: (modelId: String, mode: ModelHubBrowseMode) -> Unit = { _, _ -> },
     contextIndicator: @Composable RowScope.() -> Unit = {},
     modifier: Modifier = Modifier,
-    onGenerationModeSelected: (GenerationMode) -> Unit = {},
     controlledGenerationMode: GenerationMode? = null,
 ) {
     val listState = rememberLazyListState()
@@ -224,8 +220,8 @@ fun ChatScreenContent(
             handledFocusRequest = focusDraftRequest
             if (composerOwner != null) {
                 if (!hasConversation) {
-                    if (motion.spatialTransitionsEnabled) emptyListState.animateScrollToItem(2)
-                    else emptyListState.scrollToItem(2)
+                    if (motion.spatialTransitionsEnabled) emptyListState.animateScrollToItem(1)
+                    else emptyListState.scrollToItem(1)
                     withFrameNanos { }
                 }
                 if (inputAttached && currentComposerOwner == composerOwner) inputFocusRequester.requestFocus()
@@ -237,7 +233,7 @@ fun ChatScreenContent(
     LaunchedEffect(inputFocused, emptyViewportHeight, imeBottomPadding, composerOwner) {
         if (inputFocused && !hasConversation && composerOwner != null && emptyViewportHeight > 0) {
             withFrameNanos { }
-            if (inputAttached && currentComposerOwner == composerOwner) emptyListState.scrollToItem(2)
+            if (inputAttached && currentComposerOwner == composerOwner) emptyListState.scrollToItem(1)
         }
     }
     SideEffect { focusModeController?.update(hasConversation) }
@@ -253,16 +249,15 @@ fun ChatScreenContent(
             if (hasConversation) {
                 ConversationHeading(
                     title = ready.messages.firstOrNull { it.role == MessageRole.User }?.text.orEmpty(),
-                    modelName = ready.selectedModel?.modelId?.substringAfterLast("/"),
                     onMenuClick = navigationMenuAction,
                 )
             } else if (ready != null || uiState is ChatUiState.NoModels || uiState is ChatUiState.NoModelsForMode) {
-                BrandPageHeader(title = "Create")
+                BrandPageHeader(title = generationDestinationTitle(generationMode), modifier = Modifier.testTag("generation-destination-heading"))
             } else {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing12)) {
                     navigationMenuAction?.let { BrandNavigationButton(it) }
-                    GenerationModeSwitcher(generationMode, onGenerationModeSelected, Modifier.weight(1f), compact = true)
+                    Text(generationDestinationTitle(generationMode), style = AppTheme.typography.headingBase)
                 }
             }
         },
@@ -270,12 +265,6 @@ fun ChatScreenContent(
             if (ready != null && hasConversation) {
                 Box(Modifier.fillMaxWidth()) {
                     Column(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
-                        GenerationModeSwitcher(
-                            mode = generationMode,
-                            onModeSelected = onGenerationModeSelected,
-                            modifier = Modifier.padding(bottom = 8.dp),
-                            compact = true,
-                        )
                         if (streamingState.isCompacting) {
                             Row(
                                 modifier = Modifier.fillMaxWidth().padding(12.dp).testTag("chat-context-maintenance"),
@@ -285,9 +274,6 @@ fun ChatScreenContent(
                                 if (motion.pulseEnabled) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
                                 Text("Making room for your next reply…", style = AppTheme.typography.labelBase, color = AppTheme.colors.onSurfaceVariant)
                             }
-                        }
-                        if (ready.generationMode == GenerationMode.Text && ready.isGenerating && streamingState.liveStats != null) {
-                            GenerationStatsBar(stats = streamingState.liveStats)
                         }
                         ChatInputBar(
                             generationMode = ready.generationMode,
@@ -302,6 +288,7 @@ fun ChatScreenContent(
                             draftText = draft,
                             onDraftTextChange = { draft = it },
                             isConversation = true,
+                            liveStats = streamingState.liveStats,
                             inputFocusRequester = inputFocusRequester,
                             onInputAttachmentChanged = { inputAttached = it },
                             onInputFocusChanged = { inputFocused = it },
@@ -332,12 +319,11 @@ fun ChatScreenContent(
             }
         }
         BoxWithConstraints(Modifier.fillMaxSize()) {
-            val compactChoices = maxHeight - paddingValues.calculateTopPadding() - paddingValues.calculateBottomPadding() < 320.dp
             Column(Modifier.fillMaxSize()) {
                 if (hasConversation) {
                     val lastMessage = ready.messages.lastOrNull()
                     val recoverable = !ready.isGenerating && lastMessage?.role == MessageRole.Assistant &&
-                        lastMessage.delivery in setOf(MessageDelivery.Stopped, MessageDelivery.Error)
+                        lastMessage.delivery != null && lastMessage.delivery != MessageDelivery.Complete
                     ChatMessageList(
                         messages = ready.messages,
                         listState = listState,
@@ -348,7 +334,7 @@ fun ChatScreenContent(
                         contentPadding = PaddingValues(top = paddingValues.calculateTopPadding() + 8.dp, bottom = paddingValues.calculateBottomPadding() + 20.dp),
                         footer = if (recoverable) ({
                             ReplyRecoveryActions(
-                                stopped = lastMessage.delivery == MessageDelivery.Stopped && ready.generationMode == GenerationMode.Text,
+                                stopped = lastMessage.delivery in setOf(MessageDelivery.Stopped, MessageDelivery.TokenLimit, MessageDelivery.ContextLimit) && ready.generationMode == GenerationMode.Text,
                                 onContinue = { onSendMessage("Please continue your previous reply.") },
                                 onRetry = {
                                     ready.messages.lastOrNull { it.role == MessageRole.User }?.text
@@ -367,9 +353,6 @@ fun ChatScreenContent(
                     ) {
                         item {
                             CreateWelcome(generationMode, null)
-                        }
-                        item {
-                            GenerationModeSwitcher(generationMode, onGenerationModeSelected, compact = compactChoices)
                         }
                         item {
                             if (ready != null) {
@@ -427,7 +410,7 @@ fun ChatScreenContent(
 }
 
 @Composable
-private fun ConversationHeading(title: String, modelName: String?, onMenuClick: (() -> Unit)?) {
+private fun ConversationHeading(title: String, onMenuClick: (() -> Unit)?) {
     val words = remember(title) { title.split(' ', '\n', '\t').filter(String::isNotBlank) }
     val conversationTitle = words.take(4).joinToString(" ").let { if (words.size > 4) "$it…" else it }
     Box(Modifier.fillMaxWidth()) {
@@ -446,7 +429,7 @@ private fun ConversationHeading(title: String, modelName: String?, onMenuClick: 
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = "CaraML · ${modelName ?: "Select a model"}",
+                    text = "Private · on your device",
                     style = AppTheme.typography.labelBase,
                     color = AppTheme.colors.onSurfaceVariant,
                     maxLines = 1,

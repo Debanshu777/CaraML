@@ -52,6 +52,7 @@ import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.ui.components.CommandSurface
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
+import com.debanshu777.caraml.features.chat.data.LiveGenerationStats
 import com.debanshu777.caraml.features.chat.presentation.components.providers.LiveGenerationStatsPreviewProvider
 import com.debanshu777.caraml.features.chat.presentation.components.providers.LocalModelPreviewProvider
 import kotlinx.collections.immutable.ImmutableList
@@ -190,6 +191,7 @@ fun ChatInputBar(
     inputFocusRequester: FocusRequester? = null,
     onInputAttachmentChanged: (Boolean) -> Unit = {},
     onInputFocusChanged: (Boolean) -> Unit = {},
+    liveStats: LiveGenerationStats? = null,
 ) {
     val currentOnInputAttachmentChanged by rememberUpdatedState(onInputAttachmentChanged)
     val currentOnInputFocusChanged by rememberUpdatedState(onInputFocusChanged)
@@ -211,7 +213,7 @@ fun ChatInputBar(
     val motion = LocalAuroraMotionPolicy.current
 
     val placeholderText = when (generationMode) {
-        GenerationMode.Text -> if (isConversation) "One more little thought…" else "A tiny astronaut opens a noodle shop…"
+        GenerationMode.Text -> if (isConversation) "Message…" else "A tiny astronaut opens a noodle shop…"
         GenerationMode.Image -> "A tiny noodle shop on the moon, in clay…"
         GenerationMode.Video -> "A tiny astronaut flips a noodle in slow motion…"
     }
@@ -235,8 +237,8 @@ fun ChatInputBar(
                         // Keep conversation output visible at large text sizes. TextField
                         // scrolls the complete draft within this viewport without truncating it.
                         .heightIn(
-                            min = if (isConversation) 64.dp else 90.dp,
-                            max = if (isConversation) 128.dp else Dp.Infinity,
+                            min = if (isConversation) AppTheme.spacing.spacing48 else 90.dp,
+                            max = if (isConversation) AppTheme.dimensions.size96 else Dp.Infinity,
                         )
                         .then(inputFocusRequester?.let { Modifier.focusRequester(it) } ?: Modifier)
                         .onFocusChanged {
@@ -260,7 +262,19 @@ fun ChatInputBar(
                         disabledIndicatorColor = Color.Transparent
                     )
                 )
-                Row(
+                if (isConversation) {
+                    ConversationComposerControls(
+                        generationMode = generationMode,
+                        modelName = selectedModel?.modelId?.substringAfterLast("/"),
+                        isGenerating = isGenerating,
+                        canSend = inputText.isNotBlank(),
+                        onModelClick = { showModelSheet = true },
+                        onSend = { onSendMessage(inputText); updateDraft("") },
+                        onStop = onCancelGeneration,
+                        liveStats = liveStats,
+                        contextIndicator = contextIndicator,
+                    )
+                } else Row(
                     modifier = Modifier.fillMaxWidth().padding(
                         start = AppTheme.spacing.spacing16,
                         end = AppTheme.spacing.spacing12,

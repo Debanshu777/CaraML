@@ -1,6 +1,8 @@
 package com.debanshu777.caraml.features.chat.presentation
 
 import com.debanshu777.caraml.core.data.inference.ModelLoadResult
+import com.debanshu777.caraml.core.platform.AppLogger
+import kotlin.time.TimeSource
 import com.debanshu777.caraml.core.recommendation.AssessmentReason
 import com.debanshu777.caraml.core.recommendation.InstalledModelLoadPreparation
 import com.debanshu777.caraml.core.recommendation.InstalledModelLoadResolution
@@ -46,7 +48,12 @@ internal suspend fun loadInstalledModel(
     loadText: suspend (LoadRequest) -> ModelLoadResult,
     loadDiffusion: suspend (LoadRequest) -> ModelLoadResult,
 ): ModelLoadResult {
+    val started = TimeSource.Monotonic.markNow()
+    AppLogger.i("ModelLoad") { "stage=prepare mode=$mode sizeBytes=${model.sizeBytes ?: -1}" }
     val preparation = prepare(model, mode)
+    AppLogger.i("ModelLoad") {
+        "stage=prepared outcome=${preparation::class.simpleName} elapsedMs=${started.elapsedNow().inWholeMilliseconds}"
+    }
     val resolution = when (preparation) {
         is InstalledModelLoadPreparation.Terminal -> preparation.resolution
         is InstalledModelLoadPreparation.Ready -> {
@@ -59,6 +66,11 @@ internal suspend fun loadInstalledModel(
             }
             assess(preparation)
         }
+    }
+    AppLogger.i("ModelLoad") {
+        "stage=resolved outcome=${resolution::class.simpleName} " +
+            "reason=${(resolution as? InstalledModelLoadResolution.NotAdmissible)?.reason ?: "none"} " +
+            "elapsedMs=${started.elapsedNow().inWholeMilliseconds}"
     }
     return when (resolution) {
         is InstalledModelLoadResolution.Ready -> when (mode) {
@@ -76,7 +88,7 @@ internal suspend fun loadInstalledModel(
             "Connect once to verify this installed model's metadata, then try again.",
         )
         is InstalledModelLoadResolution.NotAdmissible -> ModelLoadResult.Error(
-            resolution.reason.safeInstalledModelMessage(),
+            resolution.reason.safeInstalledModelMessage(mode),
         )
         is InstalledModelLoadResolution.Rejected -> ModelLoadResult.Error(
             "The installed model could not be verified.",
@@ -84,10 +96,14 @@ internal suspend fun loadInstalledModel(
         InstalledModelLoadResolution.Failed -> ModelLoadResult.Error(
             "The installed model could not be prepared right now. Try again.",
         )
+    }.also { result ->
+        AppLogger.i("ModelLoad") {
+            "stage=complete outcome=${result::class.simpleName} elapsedMs=${started.elapsedNow().inWholeMilliseconds}"
+        }
     }
 }
 
-internal fun AssessmentReason.safeInstalledModelMessage(): String = when (this) {
+internal fun AssessmentReason.safeInstalledModelMessage(mode: GenerationMode? = null): String = when (this) {
     AssessmentReason.MEMORY_NO_FIT ->
         "This model does not fit the current memory headroom. Try Auto KV cache or close other apps."
     AssessmentReason.INVALID_METADATA ->
@@ -97,8 +113,12 @@ internal fun AssessmentReason.safeInstalledModelMessage(): String = when (this) 
     AssessmentReason.ENGINE_SUPPORT_UNKNOWN,
     AssessmentReason.RECOMMENDATION_EVIDENCE_INCOMPLETE,
     -> "Compatibility evidence for this installed model is incomplete."
+    AssessmentReason.UNSUPPORTED_FORMAT -> if (mode == GenerationMode.Text) {
+        "This text model's file format is not supported by this engine. Choose a GGUF text model."
+    } else {
+        "This model is not supported by the installed inference engine."
+    }
     AssessmentReason.UNSUPPORTED_ARCHITECTURE,
-    AssessmentReason.UNSUPPORTED_FORMAT,
     AssessmentReason.UNSUPPORTED_GGUF_VERSION,
     AssessmentReason.UNSUPPORTED_QUANTIZATION,
     AssessmentReason.UNSUPPORTED_ENGINE_FEATURE,
@@ -130,6 +150,17 @@ internal fun AssessmentReason.safeInstalledModelMessage(): String = when (this) 
 }
 
 internal fun LoadAdmissionReason.safeBlockedLoadMessage(): String = when (this) {
+    LoadAdmissionReason.CURRENT_MEMORY_PRESSURE ->
+        "The device is under memory pressure. Close other apps and try again."
+    LoadAdmissionReason.CURRENT_THERMAL_PRESSURE ->
+        "The device is too hot to load a model. Let it cool down and try again."
+    LoadAdmissionReason.RESOURCE_SNAPSHOT_UNAVAILABLE ->
+        "Current device resource readings are unavailable. Try again."
+    LoadAdmissionReason.NATIVE_PREFLIGHT_UNAVAILABLE ->
+        "The inference engine could not check this model. Try again or choose another model."
+    LoadAdmissionReason.NATIVE_TARGET_MODEL_REQUIRED ->
+        "This assistant model needs its main model and cannot be used alone. Choose a standalone model."
+
     LoadAdmissionReason.INCOMPATIBLE_MODEL ->
         "This model is incompatible with the current device capabilities."
     LoadAdmissionReason.INSUFFICIENT_INFORMATION ->

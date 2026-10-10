@@ -9,7 +9,7 @@ enum class MessageRole {
 }
 
 /** A terminal generation outcome; null means no terminal outcome has been recorded. */
-enum class MessageDelivery { Complete, Stopped, Error }
+enum class MessageDelivery { Complete, Stopped, Error, TokenLimit, ContextLimit, NoAnswer }
 
 data class ChatMessage(
     val id: String = generateId(),

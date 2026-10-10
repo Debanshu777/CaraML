@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.core.recommendation
 
+import com.debanshu777.caraml.core.platform.AppLogger
 import com.debanshu777.caraml.core.recommendation.storage.DecodedModelEvidence
 import com.debanshu777.caraml.core.recommendation.storage.EncodedModelEvidence
 import com.debanshu777.caraml.core.recommendation.storage.InstalledEvidenceState
@@ -16,8 +17,21 @@ import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrow
 import com.debanshu777.huggingfacemanager.download.ArtifactManifest
 import kotlinx.coroutines.CancellationException
 
+/** Operation-local result of verifying one exact installed catalog snapshot.
+ * This is a handoff between preparation stages, never a persistent hash cache.
+ * Strict request creation and the final load boundary still verify current bytes.
+ */
+class VerifiedInstalledModelArtifact internal constructor(
+    internal val model: LocalModelEntity,
+    internal val components: List<DownloadedComponentEntity>,
+    internal val artifact: ResolvedLocalArtifact,
+)
+
 sealed interface EvidenceRepairResult {
-    data class Ready(val descriptor: ModelDescriptor) : EvidenceRepairResult
+    data class Ready(
+        val descriptor: ModelDescriptor,
+        internal val verifiedArtifact: VerifiedInstalledModelArtifact? = null,
+    ) : EvidenceRepairResult
     data object NeedsNetwork : EvidenceRepairResult
     data class Rejected(val reasons: List<AssessmentReason>) : EvidenceRepairResult
 }
@@ -67,14 +81,24 @@ class InstalledModelEvidenceRepairer internal constructor(
     suspend fun requireComplete(
         modelId: String,
         generationMode: GenerationMode,
-    ): EvidenceRepairResult = try {
-        publicationCoordinator.coalesceRepair(modelId, generationMode.name) {
-            requireCompleteOnce(modelId, generationMode)
+    ): EvidenceRepairResult {
+        val result = try {
+            publicationCoordinator.coalesceRepair(modelId, generationMode.name) {
+                requireCompleteOnce(modelId, generationMode)
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            invalidMetadata()
         }
-    } catch (cancelled: CancellationException) {
-        throw cancelled
-    } catch (_: Exception) {
-        invalidMetadata()
+        AppLogger.i("ModelLoad") {
+            "stage=evidence-repair mode=$generationMode outcome=${when (result) {
+                is EvidenceRepairResult.Ready -> "READY"
+                EvidenceRepairResult.NeedsNetwork -> "NEEDS_NETWORK"
+                is EvidenceRepairResult.Rejected -> "REJECTED"
+            }} reasons=${(result as? EvidenceRepairResult.Rejected)?.reasons?.joinToString(",") { it.name }.orEmpty()}"
+        }
+        return result
     }
 
     private suspend fun requireCompleteOnce(
@@ -85,7 +109,13 @@ class InstalledModelEvidenceRepairer internal constructor(
         val captured = publicationCoordinator.withOwnerPublication(modelId) {
             captureVerified(modelId)
         } ?: return invalidMetadata()
+        captured.textContainerFailure(mode)?.let { failure ->
+            return fallbackUnlessBaselineChanged(captured, mode, failure)
+        }
         val persisted = captured.completeExactDescriptor(mode)
+        AppLogger.i("ModelLoad") {
+            "stage=evidence-captured outcome=VERIFIED hasExactDescriptor=${persisted != null} components=${captured.identities.size}"
+        }
         if (persisted != null) {
             val enriched = ggufMetadataInspector.enrich(persisted, captured.artifact)
                 ?: return fallbackUnlessBaselineChanged(captured, mode, invalidMetadata())
@@ -93,7 +123,7 @@ class InstalledModelEvidenceRepairer internal constructor(
                 return fallbackUnlessBaselineChanged(
                     captured,
                     mode,
-                    EvidenceRepairResult.Ready(persisted),
+                    captured.ready(persisted),
                 )
             }
             return persistIfUnchanged(captured, mode, enriched)
@@ -111,6 +141,7 @@ class InstalledModelEvidenceRepairer internal constructor(
             }
         }
 
+        AppLogger.i("ModelLoad") { "stage=evidence-lookup outcome=EXACT_LOOKUP_REQUIRED" }
         return when (val lookup = metadataSource.findExact(modelId, mode, captured.identities)) {
             InstalledDescriptorLookup.RetryableUnavailable ->
                 fallbackUnlessBaselineChanged(captured, mode, EvidenceRepairResult.NeedsNetwork)
@@ -207,7 +238,7 @@ class InstalledModelEvidenceRepairer internal constructor(
             val decoded = decode(encoded)?.descriptor
                 ?.takeIf { it.isExactFor(captured, mode) }
                 ?: return@withOwnerPublication invalidMetadata()
-            EvidenceRepairResult.Ready(decoded)
+            captured.ready(decoded)
         }
     }
 
@@ -232,9 +263,23 @@ class InstalledModelEvidenceRepairer internal constructor(
         val artifact = (resolution as? ArtifactIdentityResolution.Verified)?.artifact
             ?: return invalidMetadata()
         val current = VerifiedRepairSnapshot(baseline.catalog, baseline.manifest, artifact)
+        current.textContainerFailure(mode)?.let { return it }
         val descriptor = current.completeExactDescriptor(mode) ?: return invalidMetadata()
         val enriched = ggufMetadataInspector.enrich(descriptor, artifact) ?: return invalidMetadata()
-        return EvidenceRepairResult.Ready(enriched)
+        return current.ready(enriched)
+    }
+
+    private fun VerifiedRepairSnapshot.textContainerFailure(
+        mode: ModelHubBrowseMode,
+    ): EvidenceRepairResult.Rejected? {
+        if (mode != ModelHubBrowseMode.LanguageModels) return null
+        val target = artifact.loadTarget as? VerifiedArtifactLoadTarget.File ?: return null
+        return when (ggufMetadataInspector.recognizeContainer(target.path)) {
+            GgufContainerRecognition.GGUF -> null
+            GgufContainerRecognition.NON_GGUF ->
+                EvidenceRepairResult.Rejected(listOf(AssessmentReason.UNSUPPORTED_FORMAT))
+            GgufContainerRecognition.UNKNOWN -> invalidMetadata()
+        }
     }
 
     private fun VerifiedRepairSnapshot.completeExactDescriptor(
@@ -295,6 +340,11 @@ class InstalledModelEvidenceRepairer internal constructor(
     ) {
         val modelId: String = catalog.model.modelId
         val identities: List<ModelFileIdentity> = artifact.components.map(ResolvedArtifactComponent::identity)
+
+        fun ready(descriptor: ModelDescriptor): EvidenceRepairResult.Ready = EvidenceRepairResult.Ready(
+            descriptor,
+            VerifiedInstalledModelArtifact(catalog.model, catalog.components.toList(), artifact),
+        )
 
         fun matches(other: RepairBaseline): Boolean =
             catalog == other.catalog && manifest == other.manifest

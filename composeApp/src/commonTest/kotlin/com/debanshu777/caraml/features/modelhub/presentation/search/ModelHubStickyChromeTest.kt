@@ -77,7 +77,8 @@ class ModelHubStickyChromeTest {
         val title = onNodeWithText("Models").fetchSemanticsNode().boundsInRoot
         val search = onNodeWithTag("model-command").fetchSemanticsNode().boundsInRoot
         val device = onNodeWithTag("model-device-card").fetchSemanticsNode().boundsInRoot
-        assertTrue(title.top < 48f, "Empty header chrome pushed the title down: $title")
+        assertTrue(search.top < 48f, "Empty header chrome pushed search down: $search")
+        assertTrue(title.top >= search.bottom, "Scrolling title must clear the fixed search field")
         assertTrue(search.bottom <= 360f, "Search field was clipped below the landscape viewport: $search")
         assertTrue(device.top - search.bottom >= 20f, "Search and device card are too close: $search, $device")
         onNodeWithTag("model-command").assertIsDisplayed()

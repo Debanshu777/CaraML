@@ -92,7 +92,7 @@ class ChatBrandInteractionUiTest {
                         uiState = ChatUiState.Ready(generationMode = mode),
                         streamingState = StreamingState(),
                         onSelectModel = {}, onSendMessage = sent::add, onCancelGeneration = {}, onNavigateToSearch = {},
-                        onGenerationModeSelected = { mode = it },
+
                         modifier = Modifier.requiredSize(390.dp, 800.dp),
                     )
                 }
@@ -103,8 +103,8 @@ class ChatBrandInteractionUiTest {
         onNode(hasSetTextAction()).assertTextContains(prompt)
         runOnIdle { assertTrue(sent.isEmpty(), "Starter ideas must only populate a draft") }
         onNode(hasScrollToIndexAction()).performScrollToIndex(1)
-        onNodeWithContentDescription("Image mode").performClick()
-        onNode(hasScrollToIndexAction()).performScrollToIndex(2)
+        runOnIdle { mode = GenerationMode.Image }
+        onNode(hasScrollToIndexAction()).performScrollToIndex(1)
         onNode(hasSetTextAction()).assertTextContains(prompt)
         onNodeWithContentDescription("Send message").performScrollTo().performClick()
         runOnIdle { assertEquals(listOf(prompt), sent) }
@@ -168,7 +168,7 @@ class ChatBrandInteractionUiTest {
                 }
             }
         }
-        onNode(hasScrollToIndexAction()).performScrollToIndex(2)
+        onNode(hasScrollToIndexAction()).performScrollToIndex(1)
         onNodeWithText("Continue").performScrollTo().performClick()
         onNodeWithText("Try again").performClick()
         runOnIdle { assertEquals(listOf("Please continue your previous reply.", prompt), sent) }

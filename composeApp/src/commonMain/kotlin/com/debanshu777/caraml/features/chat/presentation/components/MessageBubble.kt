@@ -125,29 +125,27 @@ fun MessageBubble(
     ) {
         MessageIdentity(message, isStreaming, thinkingText, showMediaPending, mediaPhase)
         if (message.role == MessageRole.Assistant && !showMediaPending &&
-            ((isStreaming && output.isEmpty()) || message.delivery == MessageDelivery.Stopped || message.delivery == MessageDelivery.Error)
+            message.delivery != null && message.delivery != MessageDelivery.Complete
         ) {
-            ReplyActivityCard(message.delivery, thinkingText.isNotEmpty(), isStreaming)
+            ReplyNotice(message)
         }
         if (!isUser && thinkingText.isNotEmpty()) {
             ThoughtsDisclosure(
                 thinking = thinkingText,
-                isStreaming = isStreaming && !showMediaPending,
-                outputIsEmpty = output.isEmpty(),
             )
         }
 
         if (isUser) {
             if (message.text.isNotEmpty()) {
                 Surface(
-                    modifier = Modifier.padding(start = 35.dp),
+                    modifier = Modifier.padding(start = AppTheme.spacing.spacing32),
                     color = lerp(AppTheme.colors.surface, AppTheme.brandColors.lilac, 0.24f),
                     shape = RoundedCornerShape(topStart = 21.dp, topEnd = 21.dp, bottomEnd = 5.dp, bottomStart = 21.dp),
                 ) {
                     Text(
                         modifier = Modifier.padding(horizontal = 17.dp, vertical = 15.dp),
                         text = message.text,
-                        style = AppTheme.typography.conversationBody.copy(lineHeight = 24.sp),
+                        style = AppTheme.typography.conversationBody,
                         color = textColor,
                     )
                 }
@@ -264,37 +262,39 @@ fun MessageBubble(
         }
 
         if (!isUser && message.inferenceMetrics != null) {
-            val inferenceStatsColor = AppTheme.colors.onSurfaceVariant
-            Row(
-                modifier = Modifier.padding(top = AppTheme.spacing.spacing8),
-                horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8)
-            ) {
-                Text(
-                    text = "Statistics:",
-                    style = AppTheme.typography.labelSmall,
-                    color = inferenceStatsColor,
-                )
+            var detailsExpanded by rememberSaveable(message.id) { mutableStateOf(false) }
+            androidx.compose.material3.TextButton(onClick = { detailsExpanded = !detailsExpanded }) {
+                Text(if (detailsExpanded) "Hide details" else "Reply details", style = AppTheme.typography.labelBase)
+            }
+            AnimatedVisibility(visible = detailsExpanded) {
+                val inferenceStatsColor = AppTheme.colors.onSurfaceVariant
+                androidx.compose.foundation.layout.FlowRow(
+                    modifier = Modifier.padding(top = AppTheme.spacing.spacing8),
+                    horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing12),
+                    verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
+                ) {
 
-                val tokensPerSec =
-                    ((message.inferenceMetrics.tokensPerSecond * 100).toInt() / 100.0)
-                StatItem(
-                    icon = AppIcons.Speed,
-                    text = "$tokensPerSec tokens/s",
-                    textColor = inferenceStatsColor,
-                )
+                    val tokensPerSec =
+                        ((message.inferenceMetrics.tokensPerSecond * 100).toInt() / 100.0)
+                    StatItem(
+                        icon = AppIcons.Speed,
+                        text = "$tokensPerSec tokens/s",
+                        textColor = inferenceStatsColor,
+                    )
 
-                StatItem(
-                    icon = AppIcons.Memory,
-                    text = "${message.inferenceMetrics.tokenCount} tokens",
-                    textColor = inferenceStatsColor,
-                )
+                    StatItem(
+                        icon = AppIcons.Memory,
+                        text = "${message.inferenceMetrics.tokenCount} tokens",
+                        textColor = inferenceStatsColor,
+                    )
 
-                val timeSec = ((message.inferenceMetrics.generationTimeMs / 10.0).toInt() / 100.0)
-                StatItem(
-                    icon = AppIcons.Clock,
-                    text = "${timeSec}s",
-                    textColor = inferenceStatsColor,
-                )
+                    val timeSec = ((message.inferenceMetrics.generationTimeMs / 10.0).toInt() / 100.0)
+                    StatItem(
+                        icon = AppIcons.Clock,
+                        text = "${timeSec}s",
+                        textColor = inferenceStatsColor,
+                    )
+                }
             }
         }
     }
@@ -322,46 +322,41 @@ internal fun messageCharacterState(
     isStreaming && thinking.isNotEmpty() -> BrandPalState.Thinking
     isStreaming -> BrandPalState.Loading
     message.delivery == MessageDelivery.Error -> BrandPalState.Error
-    message.delivery == MessageDelivery.Stopped -> BrandPalState.Paused
+    message.delivery in setOf(MessageDelivery.Stopped, MessageDelivery.TokenLimit, MessageDelivery.ContextLimit) -> BrandPalState.Paused
+    message.delivery == MessageDelivery.NoAnswer -> BrandPalState.Error
     message.delivery == MessageDelivery.Complete -> BrandPalState.Success
     else -> BrandPalState.Idle
 }
 
 @Composable
-private fun ReplyActivityCard(delivery: MessageDelivery?, thinking: Boolean, streaming: Boolean) {
-    val title = when (delivery) {
+private fun ReplyNotice(message: ChatMessage) {
+    val hasAnswer = message.text.isNotBlank()
+    val title = when (message.delivery) {
+        MessageDelivery.TokenLimit -> if (hasAnswer) "Reply paused at the length limit" else "Length limit reached before an answer"
+        MessageDelivery.ContextLimit -> if (hasAnswer) "Reply paused: context is full" else "Context filled before an answer"
+        MessageDelivery.NoAnswer -> "The model finished without an answer"
         MessageDelivery.Stopped -> "Reply stopped"
-        MessageDelivery.Error -> "That didn’t go through"
-        else -> if (thinking) "One little moment" else "Getting things ready"
+        else -> "Couldn’t finish this reply"
     }
-    val note = when (delivery) {
-        MessageDelivery.Stopped -> "Your message is still here. Pick it up whenever you like."
-        MessageDelivery.Error -> "Couldn’t finish this reply. Give it another try."
-        else -> if (thinking) "Putting the little pieces together." else "Getting the model ready for your idea."
+    val note = when (message.delivery) {
+        MessageDelivery.TokenLimit -> "Continue the reply, or try a shorter request."
+        MessageDelivery.ContextLimit -> "Continue in a refreshed context, or try another model."
+        MessageDelivery.NoAnswer -> "Try again or choose another model. Thoughts are kept below."
+        MessageDelivery.Stopped -> "Your partial reply is saved. Continue whenever you’re ready."
+        else -> "Your message is still here. Try again."
     }
-    val base = AppTheme.colors.surface
-    val wash = if (AppTheme.softEffects) lerp(base, AppTheme.brandColors.lilac, 0.22f) else base
-    Surface(
-        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-        shape = RoundedCornerShape(22.dp),
-        border = BorderStroke(1.dp, AppTheme.colors.outlineVariant.copy(alpha = .6f)),
-        color = base,
-    ) {
-        Column(
-            Modifier.fillMaxWidth().heightIn(min = 124.dp)
-                .background(Brush.linearGradient(listOf(base, wash)))
-                .padding(20.dp),
-        ) {
-            Text(title, style = AppTheme.typography.activityTitle, color = AppTheme.colors.onSurface)
-            Text(note, Modifier.padding(top = 10.dp), style = AppTheme.typography.bodySmall, color = AppTheme.colors.onSurfaceVariant)
-            if (streaming) {
-                Row(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    repeat(3) { index ->
-                        Box(Modifier.size(6.dp).clip(RoundedCornerShape(50)).background(AppTheme.colors.primary.copy(alpha = 1f - index * .2f)))
-                    }
+    Column(
+        Modifier.fillMaxWidth().padding(vertical = AppTheme.spacing.spacing12)
+            .semantics(mergeDescendants = true) {
+                // These outcomes replace the identity's live status with this notice.
+                if (message.delivery in setOf(MessageDelivery.TokenLimit, MessageDelivery.ContextLimit, MessageDelivery.NoAnswer)) {
+                    liveRegion = LiveRegionMode.Polite
                 }
-            }
-        }
+            },
+        verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing4),
+    ) {
+        Text(title, style = AppTheme.typography.labelLarge, color = AppTheme.colors.onSurface)
+        Text(note, style = AppTheme.typography.bodySmall, color = AppTheme.colors.onSurfaceVariant)
     }
 }
 
@@ -382,6 +377,9 @@ private fun MessageIdentity(
     ) {
         if (isAssistant) BrandPal(state, Modifier.size(32.dp))
         Text(
+            modifier = if (isAssistant) Modifier.weight(1f) else Modifier,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             text = when (message.role) {
                 MessageRole.User -> "You"
                 MessageRole.Assistant -> "CaraML"
@@ -396,17 +394,19 @@ private fun MessageIdentity(
                 GenerationActivityPhase.Finalizing -> "Finalizing"
                 else -> "Getting ready"
             }
-        } else when (state) {
-            BrandPalState.Loading -> "Getting ready"
-            BrandPalState.Thinking -> "Thinking"
-            BrandPalState.Replying -> "Writing…"
-            BrandPalState.Success -> "Done"
-            BrandPalState.Error -> "Couldn’t reply"
-            BrandPalState.Paused -> "Stopped"
-            BrandPalState.Idle -> null
+        } else when {
+            message.delivery in setOf(MessageDelivery.TokenLimit, MessageDelivery.ContextLimit, MessageDelivery.NoAnswer) -> null
+            else -> when (state) {
+                BrandPalState.Loading -> "Getting ready"
+                BrandPalState.Thinking -> "Thinking"
+                BrandPalState.Replying -> "Writing…"
+                BrandPalState.Success -> "Done"
+                BrandPalState.Error -> "Couldn’t reply"
+                BrandPalState.Paused -> "Stopped"
+                BrandPalState.Idle -> null
+            }
         }
         if (isAssistant && status != null) {
-            Spacer(Modifier.weight(1f))
             Text(
                 text = status,
                 style = AppTheme.typography.labelSmall,
@@ -451,14 +451,11 @@ private fun rememberDecodedMediaBitmap(
 @Composable
 private fun ThoughtsDisclosure(
     thinking: String,
-    isStreaming: Boolean,
-    outputIsEmpty: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val motion = LocalAuroraMotionPolicy.current
     var override by rememberSaveable { mutableStateOf<Boolean?>(null) }
     val expanded = override ?: false
-    val showSpinner = isStreaming && outputIsEmpty
 
     Column(
         modifier = modifier
@@ -482,22 +479,14 @@ private fun ThoughtsDisclosure(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
         ) {
-            if (showSpinner && motion.pulseEnabled) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(AppTheme.dimensions.size14),
-                    strokeWidth = AppTheme.dimensions.size1p5,
-                    color = AppTheme.colors.onSurfaceVariant,
-                )
-            } else {
-                Icon(
-                    imageVector = AppIcons.Compute,
-                    contentDescription = null,
-                    modifier = Modifier.size(AppTheme.dimensions.size14),
-                    tint = AppTheme.colors.onSurfaceVariant,
-                )
-            }
+            Icon(
+                imageVector = AppIcons.Compute,
+                contentDescription = null,
+                modifier = Modifier.size(AppTheme.dimensions.size14),
+                tint = AppTheme.colors.onSurfaceVariant,
+            )
             Text(
-                text = if (showSpinner) "Peek at thoughts" else "Thoughts",
+                text = "Thoughts",
                 style = AppTheme.typography.labelBase,
                 color = AppTheme.colors.onSurfaceVariant,
                 modifier = Modifier.weight(1f, fill = false),

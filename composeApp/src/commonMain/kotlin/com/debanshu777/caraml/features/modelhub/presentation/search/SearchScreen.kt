@@ -376,11 +376,14 @@ internal fun ModelHubTabLayout(
     val sharedContext = LocalModelHubContext.current
     val snackbar = LocalModelHubSnackbar.current
     BoxWithConstraints(modifier) {
-        // A fixed title, tabs, and search field exceed the usable height in landscape.
-        // Keep them together in the result scroller instead of clipping the search field.
+        // In short viewports, scroll the title and tabs with the results. Keep the
+        // search controls in the same composition so resizing preserves focus and selection.
         val scrollHeader = pageHeader != null && maxHeight < 480.dp
-        val stickyHeader: (@Composable () -> Unit)? = if (scrollHeader) null else {
-            { pageHeader?.invoke(); command?.invoke() }
+        val stickyHeader: (@Composable () -> Unit)? = if (scrollHeader && command == null) null else {
+            {
+                if (!scrollHeader) pageHeader?.invoke()
+                key("model-command") { command?.invoke() }
+            }
         }
         FrostedPageScaffold(
             kind = AppContentKind.ModelHub,
@@ -400,7 +403,6 @@ internal fun ModelHubTabLayout(
                     item(key = "model-page-header") {
                         Column(Modifier.fillMaxWidth().padding(bottom = AppTheme.spacing.spacing24)) {
                             pageHeader()
-                            command?.invoke()
                         }
                     }
                 }

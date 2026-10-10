@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.features.modelhub.domain
 
+import com.debanshu777.caraml.core.platform.AppLogger
 import com.debanshu777.caraml.core.recommendation.AssessmentReason
 import com.debanshu777.caraml.core.recommendation.DescriptorBuildResult
 import com.debanshu777.caraml.core.recommendation.DescriptorLimits
@@ -22,6 +23,7 @@ import com.debanshu777.huggingfacemanager.model.TransformerConfigResponse
 import com.debanshu777.huggingfacemanager.sdcpp.SdCppModelSetup
 import com.debanshu777.huggingfacemanager.sdcpp.getModelSetup
 import kotlinx.coroutines.CancellationException
+import kotlin.time.TimeSource
 
 internal interface HuggingFaceMetadataGateway {
     suspend fun getStrictDetail(repositoryId: String): Result<ModelDetailResponse, DataError.Network>
@@ -51,23 +53,60 @@ internal interface HuggingFaceMetadataGateway {
 private class ApiHuggingFaceMetadataGateway(
     private val api: HuggingFaceApi,
 ) : HuggingFaceMetadataGateway {
-    override suspend fun getStrictDetail(repositoryId: String) =
+    override suspend fun getStrictDetail(repositoryId: String) = acquire(MetadataAcquisitionStage.DETAIL) {
         api.getRecommendationModelDetail(repositoryId)
+    }
 
-    override suspend fun getStrictDetail(repositoryId: String, revision: String) =
+    override suspend fun getStrictDetail(repositoryId: String, revision: String) = acquire(MetadataAcquisitionStage.DETAIL) {
         api.getRecommendationModelDetail(repositoryId, revision)
+    }
 
     override suspend fun getTree(
         repositoryId: String,
         revision: String,
         filter: ModelFileWeightFilter,
-    ) = api.getModelFileTree(repositoryId, revision, filter)
+    ) = acquire(MetadataAcquisitionStage.TREE) {
+        api.getModelFileTree(repositoryId, revision, filter)
+    }
 
-    override suspend fun getConfig(repositoryId: String, revision: String) =
+    override suspend fun getConfig(repositoryId: String, revision: String) = acquire(MetadataAcquisitionStage.CONFIG) {
         api.getModelConfig(repositoryId, revision)
+    }
 
-    override suspend fun getExactConfig(repositoryId: String, revision: String) =
+    override suspend fun getExactConfig(repositoryId: String, revision: String) = acquire(MetadataAcquisitionStage.CONFIG) {
         api.getModelConfig.forExactInstalledRepair(repositoryId, revision)
+    }
+
+    private suspend fun <T> acquire(
+        stage: MetadataAcquisitionStage,
+        request: suspend () -> Result<T, DataError.Network>,
+    ): Result<T, DataError.Network> {
+        val started = TimeSource.Monotonic.markNow()
+        val result = request()
+        val elapsedMs = started.elapsedNow().inWholeMilliseconds
+        val errorCode = when (result) {
+            is Result.Success -> "NONE"
+            is Result.Error -> when (result.error) {
+                DataError.Network.NoInternet -> "NO_INTERNET"
+                DataError.Network.Serialization -> "SERIALIZATION"
+                DataError.Network.Unauthorized -> "UNAUTHORIZED"
+                DataError.Network.NotFound -> "NOT_FOUND"
+                DataError.Network.Conflict -> "CONFLICT"
+                DataError.Network.RequestTimeout -> "REQUEST_TIMEOUT"
+                DataError.Network.RateLimited -> "RATE_LIMITED"
+                DataError.Network.PayloadTooLarge -> "PAYLOAD_TOO_LARGE"
+                DataError.Network.ServerError -> "SERVER_ERROR"
+                DataError.Network.Unknown -> "UNKNOWN"
+            }
+        }
+        AppLogger.i("ModelMetadata") {
+            "stage=${stage.name} outcome=${if (result is Result.Success) "SUCCESS" else "ERROR"} " +
+                "error=$errorCode elapsedMs=$elapsedMs"
+        }
+        return result
+    }
+
+    private enum class MetadataAcquisitionStage { DETAIL, TREE, CONFIG }
 }
 
 class HuggingFaceModelMetadataSource internal constructor(

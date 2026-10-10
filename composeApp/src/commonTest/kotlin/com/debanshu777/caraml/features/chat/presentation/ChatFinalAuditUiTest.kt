@@ -34,6 +34,7 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performScrollTo
@@ -67,7 +68,7 @@ import kotlin.test.assertTrue
 class ChatFinalAuditUiTest {
 
     @Test
-    fun focusedConversationKeepsTextImageAndVideoModesAvailable() = runComposeUiTest {
+    fun focusedConversationKeepsDrawerAndSeparateComposerControlsAvailable() = runComposeUiTest {
         val focusController = FocusModeController()
         var mode by mutableStateOf(GenerationMode.Text)
         setContent {
@@ -90,7 +91,7 @@ class ChatFinalAuditUiTest {
                         onSendMessage = {},
                         onCancelGeneration = {},
                         onNavigateToSearch = {},
-                        onGenerationModeSelected = { mode = it },
+
                         modifier = Modifier.requiredSize(width = 320.dp, height = 780.dp),
                     )
                 }
@@ -98,23 +99,11 @@ class ChatFinalAuditUiTest {
         }
 
         runOnIdle { assertTrue(focusController.isActive) }
-        for ((label, expected) in listOf("Imagine" to GenerationMode.Image, "Animate" to GenerationMode.Video, "Write" to GenerationMode.Text)) {
-            onNodeWithText(label).performScrollTo().assertIsDisplayed().performClick()
-            val textLayouts = mutableListOf<TextLayoutResult>()
-            onNodeWithText(label, useUnmergedTree = true)
-                .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(textLayouts) }
-            val layout = textLayouts.single()
-            assertEquals(1, layout.lineCount, "$label must remain a whole word at 200% text")
-            assertEquals(label.length, layout.getLineEnd(0, visibleEnd = true))
-            assertTrue(!layout.isLineEllipsized(0) && !layout.didOverflowHeight)
-            // Plain Text semantics rebuilds an infinite-width MultiParagraph in the scroll row.
-            // Its actual line bounds, not that parent width, determine whether the label fits.
-            assertTrue(
-                layout.getLineLeft(0) >= 0f && layout.getLineRight(0) <= layout.size.width,
-                "$label must fit its measured width: line=${layout.getLineLeft(0)}..${layout.getLineRight(0)}, size=${layout.size}",
-            )
-            runOnIdle { assertEquals(expected, mode) }
-        }
+        onNodeWithTag("chat-model-picker").assertIsDisplayed()
+        onNodeWithText("Send").assertIsDisplayed()
+        onAllNodesWithText("Write").assertCountEquals(0)
+        onAllNodesWithText("Imagine").assertCountEquals(0)
+        onAllNodesWithText("Animate").assertCountEquals(0)
         onNodeWithTag("focus-navigation-action").assertIsDisplayed()
         onNode(hasSetTextAction()).assertIsDisplayed()
     }
@@ -159,13 +148,10 @@ class ChatFinalAuditUiTest {
             composer.left >= 96f && composer.right <= 820f,
             "Composer must remain inside the injected horizontal cutouts: $composer",
         )
-        val headerStart = onNodeWithText("Write").fetchSemanticsNode().boundsInRoot
-        val headerEnd = onNodeWithText("Animate").fetchSemanticsNode().boundsInRoot
-        assertTrue(
-            headerStart.left >= 96f && headerEnd.right <= 820f,
-            "Header must remain inside the injected horizontal cutouts: " +
-                "start=$headerStart end=$headerEnd",
-        )
+        val options = onNodeWithTag("chat-model-picker").fetchSemanticsNode().boundsInRoot
+        assertTrue(options.left >= 96f && options.right <= 820f,
+            "Conversation options must remain inside injected cutouts: $options")
+
     }
 
     @Test
@@ -216,20 +202,12 @@ class ChatFinalAuditUiTest {
 
             val terminal = onNodeWithText("Terminal response").assertIsDisplayed()
                 .fetchSemanticsNode().boundsInRoot
-            val stats = onNodeWithText("Live output").assertIsDisplayed()
-                .fetchSemanticsNode().boundsInRoot
-            val statsEnd = onNodeWithText("12.5 tok/s").assertIsDisplayed()
-                .fetchSemanticsNode().boundsInRoot
-            assertTrue(
-                stats.left >= 96f && statsEnd.right <= 820f,
-                "Stats must remain inside the injected horizontal cutouts: " +
-                    "start=$stats end=$statsEnd",
-            )
-            assertTrue(
-                terminal.bottom <= stats.top,
-                "The final message must clear the measured stats/composer region; " +
-                    "message=$terminal stats=$stats",
-            )
+            val composer = onNodeWithTag("create-command").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            assertTrue(composer.left >= 96f && composer.right <= 820f,
+                "Composer must remain inside the injected cutouts: $composer")
+            assertTrue(terminal.bottom <= composer.top,
+                "The last message must clear the measured composer: message=$terminal composer=$composer")
+            onNodeWithText("Live output").assertDoesNotExist()
             onAllNodes(hasScrollToIndexAction()).assertCountEquals(1)
         }
 

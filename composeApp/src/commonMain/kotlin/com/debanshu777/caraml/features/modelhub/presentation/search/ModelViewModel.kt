@@ -34,6 +34,7 @@ import com.debanshu777.caraml.core.download.DownloadArtifactState
 import com.debanshu777.caraml.core.download.DownloadBatchRequest
 import com.debanshu777.caraml.core.download.DownloadBatchSnapshot
 import com.debanshu777.caraml.core.download.DownloadBatchState
+import com.debanshu777.caraml.core.download.DownloadUserIntent
 import com.debanshu777.caraml.core.download.DownloadCoordinator
 import com.debanshu777.caraml.core.download.DownloadEvidenceFactory
 import com.debanshu777.caraml.core.download.downloadArtifactTaskId
@@ -458,13 +459,14 @@ private enum class DownloadControlCommand {
     RETRY,
     ;
 
-    fun accepts(state: DownloadBatchState): Boolean = when (this) {
+    fun accepts(state: DownloadBatchState, intent: DownloadUserIntent): Boolean = when (this) {
         PAUSE -> state in setOf(
             DownloadBatchState.QUEUED,
             DownloadBatchState.RUNNING,
             DownloadBatchState.WAITING_FOR_NETWORK,
         )
-        RESUME -> state == DownloadBatchState.PAUSED
+        RESUME -> state == DownloadBatchState.PAUSED ||
+            (state == DownloadBatchState.VERIFYING && intent == DownloadUserIntent.PAUSE)
         CANCEL -> state in setOf(
             DownloadBatchState.QUEUED,
             DownloadBatchState.RUNNING,
@@ -1440,9 +1442,10 @@ class ModelViewModel(
         artifactId: String,
         command: DownloadControlCommand,
     ) {
-        val batch = downloadQueue.value.singleOrNull { it.batchId == batchId } ?: return
-        if (batch.artifacts.none { it.artifactId == artifactId } || !command.accepts(batch.state)) return
         viewModelScope.launch {
+            val batch = downloadQueue.value.singleOrNull { it.batchId == batchId } ?: return@launch
+            if (batch.artifacts.none { it.artifactId == artifactId } ||
+                !command.accepts(batch.state, batch.userIntent)) return@launch
             when (command) {
                 DownloadControlCommand.PAUSE -> downloadCoordinator.pause(batch.batchId)
                 DownloadControlCommand.RESUME -> downloadCoordinator.resume(batch.batchId)
