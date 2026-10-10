@@ -132,8 +132,18 @@ The native `.so`/`.a`/`.dylib` is built by `:nativeEngine`, not this module. Thi
 
 ## Recent Changes
 
+- Generation profiling separates sampling, decode submission, synchronization and parsing. Dense repetition penalties preserve pinned sampler selection and history semantics with upstream fallback for unsupported candidate layouts. See the [paired device measurements](../docs/model-validation/2026-10-08/report.md).
+
+- Native loading/inference diagnostics now record scoped stage outcomes, monotonic timings and bounded upstream reason codes; raw parser/upstream exception text is excluded. See the [multi-architecture validation report](../docs/model-validation/2026-10-07/report.md).
+
+- Templated generation shares exact prompt/parser parameters and uses llama.cpp reasoning budgets with model delimiters to reserve answer space; context exhaustion takes precedence over the clamped output allowance.
+
+- Native preflight identifies Gemma assistant models that require a target context; chat reports the actual admission reason instead of labeling every temporary failure as memory/thermal pressure.
+
 <!-- Updated at end of each Claude Code session -->
 
+- Parameter audit validates cache types/CPU affinity and load paths, honors partial GPU requests, bounds single-sequence logits, and preserves multi-turn KV and final stream state; [Pixel 9 audit](../docs/benchmarks/pixel9-minicpm5-2026-09-30/parameter-audit.md)
+- Automatic fitting preserves llama.cpp's `-1` full-offload sentinel, fits the requested context, and reports resolved nonnegative GPU layer counts across preflight/JNI/FFI; Pixel 9 debug chat verified 43 GPU layers and 10.4 tok/s through 1,024 tokens
 - The runner now targets llama.cpp `f46bc30`, supports bounded lazy tensor loading and automatic integrated-GPU load mode, and exposes a sanitized bounded engine version across JNI and iOS
 - Preflight and load use the same exact admitted budget and placement; rebased ownership, bounds, logger, and Vulkan shader-capability patches are applied only to the build-owned source copy
 - Opt-in native parity verifies a digest-pinned tiny GGUF can preflight successfully and a bounded corrupt GGUF fails safely; run `CARAML_NATIVE_PARITY=true ./gradlew :runner:jvmTest`, while ordinary JVM tests remain fixture- and native-build-free

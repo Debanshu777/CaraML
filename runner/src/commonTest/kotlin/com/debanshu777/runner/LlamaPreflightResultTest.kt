@@ -13,7 +13,7 @@ class LlamaPreflightResultTest {
         val config = NativeRunnerConfig()
 
         assertEquals(LlamaLazyMode.AUTO, config.lazyMode)
-        assertEquals(0, config.nOutputsMaxPerSequence)
+        assertEquals(1, config.nOutputsMaxPerSequence)
     }
 
     @Test
@@ -87,6 +87,9 @@ class LlamaPreflightResultTest {
         )
         assertIs<LlamaPreflightResult.Unavailable>(
             decodeLlamaPreflight(longArrayOf(3L, 0L, 0L, 0L)),
+        )
+        assertIs<LlamaPreflightResult.InvalidModel>(
+            decodeLlamaPreflight(longArrayOf(4L, 0L, 0L, 0L)),
         )
     }
 

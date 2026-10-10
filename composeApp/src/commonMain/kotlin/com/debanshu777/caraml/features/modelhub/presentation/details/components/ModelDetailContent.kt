@@ -1,7 +1,9 @@
 package com.debanshu777.caraml.features.modelhub.presentation.details.components
 
-import androidx.compose.foundation.background
+import com.debanshu777.caraml.core.ui.icons.AppIcons
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -15,55 +17,66 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.AppTheme
+import com.debanshu777.caraml.core.ui.components.BrandButton
+import com.debanshu777.caraml.core.ui.components.BrandButtonStyle
 import com.debanshu777.caraml.core.download.DownloadArtifactState
+import com.debanshu777.caraml.core.rating.ui.RecommendationStatusChip
+import com.debanshu777.caraml.core.rating.ui.formatBytesHuman
+import com.debanshu777.caraml.core.recommendation.BrowseFitEstimate
+import com.debanshu777.caraml.core.recommendation.BrowseResourceFit
+import com.debanshu777.caraml.core.recommendation.Compatibility
 import com.debanshu777.caraml.core.recommendation.DiffusionModelDescriptor
 import com.debanshu777.caraml.core.recommendation.LlmModelDescriptor
 import com.debanshu777.caraml.core.recommendation.ModelDescriptor
 import com.debanshu777.caraml.core.recommendation.ModelFileIdentity
-import com.debanshu777.caraml.core.rating.ui.RecommendationStatusChip
-import com.debanshu777.caraml.core.theme.AppTechnicalLabel
-import com.debanshu777.caraml.core.theme.LocalSpacing
-import com.debanshu777.caraml.core.theme.auroraColors
-import com.debanshu777.caraml.core.theme.prism
-import com.debanshu777.caraml.core.theme.prismShapes
+import com.debanshu777.caraml.core.recommendation.RecommendationCategory
+import com.debanshu777.caraml.core.theme.CaraMLTheme
+import com.debanshu777.caraml.core.theme.ThemePreferences
+import com.debanshu777.caraml.core.ui.components.AuroraFocalSurface
 import com.debanshu777.caraml.core.ui.components.CaraMLPane
 import com.debanshu777.caraml.core.ui.components.CaraMLSectionHeader
-import com.debanshu777.caraml.core.ui.components.AuroraFocalSurface
-import com.debanshu777.caraml.core.ui.components.SignalRail
-import com.debanshu777.caraml.core.ui.components.SignalTone
 import com.debanshu777.caraml.core.ui.components.StatusMark
-import com.debanshu777.caraml.features.modelhub.presentation.details.modelDetailsUseSupportingPane
 import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
+import com.debanshu777.caraml.features.modelhub.domain.ModelArtifactClassifier
+import com.debanshu777.caraml.features.modelhub.domain.ModelArtifactRole
 import com.debanshu777.caraml.features.modelhub.domain.RecommendedModelUiState
+import com.debanshu777.caraml.features.modelhub.domain.matchesExactBrowseGroup
+import com.debanshu777.caraml.features.modelhub.domain.projectBrowseSelection
+import com.debanshu777.caraml.features.modelhub.presentation.details.modelDetailsUseSupportingPane
 import com.debanshu777.caraml.features.modelhub.presentation.search.GgufFileUiState
 import com.debanshu777.caraml.features.modelhub.presentation.search.InstallBundleUiState
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.browseVerdict
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.formatCompactMetric
 import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
@@ -84,6 +97,7 @@ fun ModelDetailContent(
     ggufFiles: List<GgufFileUiState>,
     isDownloading: Boolean,
     onDownloadClick: (String, String, DownloadMetadataDTO) -> Unit,
+    onDownloadGroupClick: (String, List<DownloadMetadataDTO>) -> Unit = { _, _ -> },
     activeDownloadArtifact: DownloadArtifactIdentity? = null,
     weightFilesHeading: String = "GGUF files",
     weightFilesEmptyLabel: String = "No GGUF files found",
@@ -96,10 +110,12 @@ fun ModelDetailContent(
     onRecommendationInfoClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     windowWidth: Dp? = null,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
     onPauseDownload: (String, String) -> Unit = { _, _ -> },
     onResumeDownload: (String, String) -> Unit = { _, _ -> },
     onCancelDownload: (String, String) -> Unit = { _, _ -> },
     onRetryDownload: (String, String) -> Unit = { _, _ -> },
+    onOpenDeviceInfo: (() -> Unit)? = null,
 ) {
     if (model == null) return
 
@@ -109,17 +125,15 @@ fun ModelDetailContent(
         recommendationState?.selectedDescriptor,
         installBundleState.variants,
     )
+    val browseSelection = recommendationState?.browseVariants?.let {
+        projectBrowseSelection(it, installBundleState.selectedVariantPath)
+    }
     val installEnabled = recommendedVariant != null &&
         installBundleState.selectedVariantPath == recommendedVariant
-    val compactArtifactAction = if (showInstallBundle) {
-        null
-    } else {
-        primaryArtifactItem(recommendationState?.selectedDescriptor, ggufFiles)
-            ?.takeUnless { it.isDownloaded }
-    }
-    val compactArtifactTask = compactArtifactAction?.durableControl
+    // Submit every immutable member of the selected group. Filename-only local state can
+    // refer to an older revision; the download coordinator performs exact-object reuse.
     val durableControl = installBundleState.durableControl
-    val spacing = LocalSpacing.current
+    val spacing = AppTheme.spacing
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val useSupportingPane = modelDetailsUseSupportingPane(windowWidth ?: maxWidth)
@@ -128,17 +142,18 @@ fun ModelDetailContent(
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
-                    .padding(vertical = spacing.s),
-                horizontalArrangement = Arrangement.spacedBy(spacing.xl),
+                    .padding(contentPadding)
+                    .padding(vertical = spacing.spacing8),
+                horizontalArrangement = Arrangement.spacedBy(spacing.spacing24),
             ) {
                 Column(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(spacing.xl),
+                    verticalArrangement = Arrangement.spacedBy(spacing.spacing24),
                 ) {
                     ModelOverviewSection(
                         model = model,
                         description = modelSetup?.description,
-                        expanded = true,
+                        expandedLayout = true,
                     )
                     ModelMetadataSection(model)
                     if (!showInstallBundle) {
@@ -148,9 +163,12 @@ fun ModelDetailContent(
                             isDownloading = isDownloading,
                             activeDownloadArtifact = activeDownloadArtifact,
                             onDownloadClick = onDownloadClick,
+                            onDownloadGroupClick = onDownloadGroupClick,
                             heading = weightFilesHeading,
                             emptyLabel = weightFilesEmptyLabel,
                             recommendationState = recommendationState,
+                            selectedVariantPath = installBundleState.selectedVariantPath,
+                            onVariantSelected = onVariantSelected,
                             onPauseDownload = onPauseDownload,
                             onResumeDownload = onResumeDownload,
                             onCancelDownload = onCancelDownload,
@@ -160,11 +178,17 @@ fun ModelDetailContent(
                 }
                 Column(
                     modifier = Modifier
-                        .width(336.dp)
+                        .width(AppTheme.dimensions.size336)
                         .testTag("detail-support"),
-                    verticalArrangement = Arrangement.spacedBy(spacing.xl),
+                    verticalArrangement = Arrangement.spacedBy(spacing.spacing24),
                 ) {
-                    ModelRecommendationSection(recommendationState, onRecommendationInfoClick)
+                    ModelRecommendationSection(
+                        recommendationState,
+                        onRecommendationInfoClick,
+                        browseSelection?.estimate,
+                        browseSelection?.displayName,
+                        onOpenDeviceInfo = onOpenDeviceInfo,
+                    )
                     if (showInstallBundle) {
                         InstallBundleCard(
                             modelId = modelId,
@@ -194,18 +218,21 @@ fun ModelDetailContent(
                         .weight(1f)
                         .fillMaxWidth()
                         .verticalScroll(rememberScrollState())
-                        .padding(top = spacing.s),
-                    verticalArrangement = Arrangement.spacedBy(spacing.xl),
+                    .padding(contentPadding)
+                        .padding(top = spacing.spacing8),
+                    verticalArrangement = Arrangement.spacedBy(spacing.spacing24),
                 ) {
                     ModelOverviewSection(
                         model = model,
-                        description = modelSetup?.description,
-                        expanded = false,
+                        description = modelSetup?.description
                     )
                     ModelRecommendationSection(
                         recommendationState = recommendationState,
                         onRecommendationInfoClick = onRecommendationInfoClick,
+                        browseFit = browseSelection?.estimate,
+                        browseVariantName = browseSelection?.displayName,
                         modifier = Modifier.testTag("detail-support"),
+                        onOpenDeviceInfo = onOpenDeviceInfo,
                     )
                     if (showInstallBundle) {
                         InstallBundleSummaryCard(
@@ -225,14 +252,16 @@ fun ModelDetailContent(
                             isDownloading = isDownloading,
                             activeDownloadArtifact = activeDownloadArtifact,
                             onDownloadClick = onDownloadClick,
+                            onDownloadGroupClick = onDownloadGroupClick,
                             heading = weightFilesHeading,
                             emptyLabel = weightFilesEmptyLabel,
                             recommendationState = recommendationState,
+                            selectedVariantPath = installBundleState.selectedVariantPath,
+                            onVariantSelected = onVariantSelected,
                             onPauseDownload = onPauseDownload,
                             onResumeDownload = onResumeDownload,
                             onCancelDownload = onCancelDownload,
                             onRetryDownload = onRetryDownload,
-                            footerOwnedArtifact = compactArtifactAction?.artifact,
                         )
                     }
                     ModelMetadataSection(model)
@@ -242,6 +271,7 @@ fun ModelDetailContent(
                         state = installBundleState,
                         modifier = Modifier
                             .fillMaxWidth()
+                            .padding(bottom = contentPadding.calculateBottomPadding())
                             .testTag("detail-action"),
                         onInstall = onSmartInstall,
                         installEnabled = installEnabled,
@@ -250,21 +280,6 @@ fun ModelDetailContent(
                         onResume = { durableControl?.let { onResumeDownload(it.batchId, it.artifactId) } },
                         onCancel = { durableControl?.let { onCancelDownload(it.batchId, it.artifactId) } },
                         onRetry = { durableControl?.let { onRetryDownload(it.batchId, it.artifactId) } },
-                    )
-                } else if (compactArtifactAction != null) {
-                    ArtifactDownloadActionFooter(
-                        model = model,
-                        item = compactArtifactAction,
-                        isDownloading = isDownloading,
-                        onDownloadClick = onDownloadClick,
-                        durableState = compactArtifactTask?.artifactState,
-                        onPause = { compactArtifactTask?.let { onPauseDownload(it.batchId, it.artifactId) } },
-                        onResume = { compactArtifactTask?.let { onResumeDownload(it.batchId, it.artifactId) } },
-                        onCancel = { compactArtifactTask?.let { onCancelDownload(it.batchId, it.artifactId) } },
-                        onRetry = { compactArtifactTask?.let { onRetryDownload(it.batchId, it.artifactId) } },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("detail-action"),
                     )
                 }
             }
@@ -276,36 +291,43 @@ fun ModelDetailContent(
 private fun ModelOverviewSection(
     model: ModelDetailResponse,
     description: String?,
-    expanded: Boolean,
+    expandedLayout: Boolean = false,
 ) {
-    val spacing = LocalSpacing.current
+    val spacing = AppTheme.spacing
     val heading = splitRepositoryId(model.modelId ?: model.id.orEmpty())
     val owner = heading.owner ?: model.author?.trim()?.takeIf { it.isNotEmpty() }
+    var descriptionExpanded by rememberSaveable(model.modelId, model.id) { mutableStateOf(false) }
+    var titleExpanded by rememberSaveable(model.modelId, model.id) { mutableStateOf(false) }
+    var titleOverflow by remember(model.modelId, model.id) { mutableStateOf(false) }
     AuroraFocalSurface(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("detail-overview"),
     ) {
         Column(
-            modifier = Modifier.padding(spacing.xl),
-            verticalArrangement = Arrangement.spacedBy(spacing.s),
+            modifier = Modifier.padding(spacing.spacing16),
+            verticalArrangement = Arrangement.spacedBy(spacing.spacing8),
         ) {
             owner?.let {
                 Text(
                     text = it,
-                    style = AppTechnicalLabel,
-                    color = MaterialTheme.colorScheme.primary,
+                    style = AppTheme.typography.technical12,
+                    color = AppTheme.colors.onSurfaceVariant,
                 )
             }
             Text(
                 text = heading.name,
-                style = if (expanded) {
-                    MaterialTheme.typography.prism.detailTitleExpanded
-                } else {
-                    MaterialTheme.typography.prism.detailTitleCompact
-                },
-                color = MaterialTheme.colorScheme.onSurface,
+                style = AppTheme.typography.pageTitle,
+                color = AppTheme.colors.onSurface,
+                maxLines = if (titleExpanded) Int.MAX_VALUE else 2,
+                overflow = TextOverflow.Ellipsis,
+                onTextLayout = { if (!titleExpanded) titleOverflow = it.hasVisualOverflow },
             )
+            if (titleOverflow || titleExpanded) {
+                BrandButton(style = BrandButtonStyle.Secondary, onClick = { titleExpanded = !titleExpanded }) {
+                    Text(if (titleExpanded) "Show less" else "Show full name")
+                }
+            }
             val technicalSummary = listOfNotNull(
                 model.pipelineTag?.takeIf { it.isNotBlank() },
                 model.libraryName?.takeIf { it.isNotBlank() },
@@ -313,32 +335,39 @@ private fun ModelOverviewSection(
             if (technicalSummary.isNotEmpty()) {
                 Text(
                     text = technicalSummary.joinToString("  ·  "),
-                    style = AppTechnicalLabel,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = AppTheme.typography.technical12,
+                    color = AppTheme.colors.tertiary,
                 )
             }
             description?.takeIf { it.isNotBlank() }?.let {
                 Text(
                     text = it,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = AppTheme.typography.bodyBase,
+                    color = AppTheme.colors.onSurfaceVariant,
+                    maxLines = if (descriptionExpanded) Int.MAX_VALUE else 3,
+                    overflow = TextOverflow.Ellipsis,
                 )
+                if (it.length > 180) {
+                    BrandButton(style = BrandButtonStyle.Secondary, onClick = { descriptionExpanded = !descriptionExpanded }) {
+                        Text(if (descriptionExpanded) "Show less" else "Read description")
+                    }
+                }
             }
             if (model.downloads != null || model.likes != null) {
                 FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(spacing.l),
-                    verticalArrangement = Arrangement.spacedBy(spacing.xs),
+                    horizontalArrangement = Arrangement.spacedBy(spacing.spacing16),
+                    verticalArrangement = Arrangement.spacedBy(spacing.spacing4),
                 ) {
                     model.downloads?.let { count ->
                         ModelMetric(
-                            Icons.Default.Download,
-                            "${formatCompactMetric(count.toLong())} downloads",
+                            AppIcons.Download,
+                            formatCompactMetric(count.toLong()),
                         )
                     }
                     model.likes?.let { count ->
                         ModelMetric(
-                            Icons.Default.FavoriteBorder,
-                            "${formatCompactMetric(count.toLong())} likes",
+                            AppIcons.Favorite,
+                            formatCompactMetric(count.toLong()),
                         )
                     }
                 }
@@ -349,21 +378,20 @@ private fun ModelOverviewSection(
 
 @Composable
 private fun ModelMetric(icon: ImageVector, label: String) {
-    val spacing = LocalSpacing.current
+    val spacing = AppTheme.spacing
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(spacing.xs),
     ) {
         Icon(
             imageVector = icon,
             contentDescription = null,
-            modifier = Modifier.size(18.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(AppTheme.spacing.spacing16),
+            tint = AppTheme.colors.onSurfaceVariant,
         )
         Text(
             text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = AppTheme.typography.labelBase,
+            color = AppTheme.colors.onSurfaceVariant,
         )
     }
 }
@@ -405,110 +433,98 @@ private fun ModelMetadataSection(model: ModelDetailResponse) {
     )
     if (entries.isEmpty() && tags.isEmpty()) return
 
-    val spacing = LocalSpacing.current
+    val spacing = AppTheme.spacing
     var detailsVisible by rememberSaveable(model.modelId, model.id, "details-visible") {
         mutableStateOf(false)
     }
-    var expanded by rememberSaveable(model.modelId, model.id, "details-expanded") {
-        mutableStateOf(false)
-    }
-    val primaryEntries = entries.take(PRIMARY_METADATA_COUNT)
-    val displayedEntries = if (expanded) entries else primaryEntries
-    val hasDisclosure = entries.size > PRIMARY_METADATA_COUNT || tags.isNotEmpty()
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("detail-metadata"),
-        verticalArrangement = Arrangement.spacedBy(spacing.s),
+    var showAll by rememberSaveable(model.modelId, model.id, "all-metadata") { mutableStateOf(false) }
+    val visibleEntries = if (showAll) entries else entries.take(4)
+    Surface(
+        modifier = Modifier.fillMaxWidth().testTag("detail-metadata"),
+        shape = AppTheme.shapes.small,
+        color = AppTheme.colors.surfaceContainerLow.copy(alpha = AppTheme.effects.decisionSurface),
+        contentColor = AppTheme.colors.onSurface,
     ) {
-        Surface(
-            onClick = { detailsVisible = !detailsVisible },
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.prismShapes.control,
-            color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.72f),
-            contentColor = MaterialTheme.colorScheme.onSurface,
-        ) {
+        Column {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = spacing.l, vertical = spacing.m),
-                horizontalArrangement = Arrangement.spacedBy(spacing.s),
+                    .clickable(role = Role.Button) { detailsVisible = !detailsVisible }
+                    .padding(spacing.spacing16),
+                horizontalArrangement = Arrangement.spacedBy(spacing.spacing8),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Technical details",
-                        style = MaterialTheme.typography.prism.sectionTitle,
+                        style = AppTheme.typography.heading16,
                     )
                     Text(
                         text = "${entries.size} properties${if (tags.isNotEmpty()) " · ${tags.size} tags" else ""}",
-                        style = MaterialTheme.typography.prism.denseMetadata,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = AppTheme.typography.body14,
+                        color = AppTheme.colors.onSurfaceVariant,
                     )
                 }
                 Icon(
-                    imageVector = if (detailsVisible) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    imageVector = if (detailsVisible) Icons.Default.ExpandLess else AppIcons.ChevronDown,
                     contentDescription = if (detailsVisible) {
                         "Collapse technical details"
                     } else {
                         "Expand technical details"
                     },
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = AppTheme.colors.onSurfaceVariant,
                 )
             }
-        }
-        if (detailsVisible) {
-            CaraMLPane(modifier = Modifier.fillMaxWidth()) {
-                displayedEntries.forEachIndexed { index, entry ->
-                    DetailRow(
-                        label = entry.label,
-                        value = entry.value,
-                        modifier = Modifier.padding(
-                            horizontal = spacing.l,
-                            vertical = spacing.m,
-                        ),
-                    )
-                    if (index != displayedEntries.lastIndex || expanded && tags.isNotEmpty()) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = spacing.l),
-                            color = MaterialTheme.auroraColors.divider,
-                            thickness = 1.dp,
+            if (detailsVisible) {
+                CaraMLPane(modifier = Modifier.fillMaxWidth()) {
+                    visibleEntries.forEachIndexed { index, entry ->
+                        DetailRow(
+                            label = entry.label,
+                            value = entry.value,
+                            modifier = Modifier.padding(
+                                horizontal = spacing.spacing16,
+                                vertical = spacing.spacing12,
+                            ),
                         )
+                        if (index != visibleEntries.lastIndex || (showAll && tags.isNotEmpty())) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = spacing.spacing16),
+                                color = AppTheme.auroraColors.divider,
+                                thickness = AppTheme.dimensions.size1,
+                            )
+                        }
                     }
-                }
-                if (expanded && tags.isNotEmpty()) {
-                    Column(
-                        modifier = Modifier.padding(spacing.l),
-                        verticalArrangement = Arrangement.spacedBy(spacing.s),
-                    ) {
-                        Text(
-                            text = "Tags",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(spacing.s),
-                            verticalArrangement = Arrangement.spacedBy(spacing.xs),
+                    if (showAll && tags.isNotEmpty()) {
+                        Column(
+                            modifier = Modifier.padding(spacing.spacing16),
+                            verticalArrangement = Arrangement.spacedBy(spacing.spacing8),
                         ) {
-                            tags.take(MAX_VISIBLE_DETAIL_TAGS).forEach { tag ->
-                                Text(
-                                    text = tag,
-                                    style = AppTechnicalLabel,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.semantics {
-                                        contentDescription = "Tag: $tag"
-                                    },
-                                )
+                            Text(
+                                text = "Tags",
+                                style = AppTheme.typography.labelBase,
+                                color = AppTheme.colors.onSurfaceVariant,
+                            )
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(spacing.spacing8),
+                                verticalArrangement = Arrangement.spacedBy(spacing.spacing4),
+                            ) {
+                                tags.forEach { tag ->
+                                    Text(
+                                        text = tag,
+                                        style = AppTheme.typography.technical12,
+                                        color = AppTheme.colors.onSurfaceVariant,
+                                        modifier = Modifier.semantics {
+                                            contentDescription = "Tag: $tag"
+                                        },
+                                    )
+                                }
                             }
                         }
                     }
-                }
-                if (hasDisclosure) {
-                    TextButton(
-                        onClick = { expanded = !expanded },
-                        modifier = Modifier.padding(horizontal = spacing.s),
-                    ) {
-                        Text(if (expanded) "Show less" else "Show all")
+                    if (entries.size > 4 || tags.isNotEmpty()) {
+                        BrandButton(style = BrandButtonStyle.Secondary, onClick = { showAll = !showAll }, modifier = Modifier.padding(horizontal = spacing.spacing8)) {
+                            Text(if (showAll) "Show less" else "Show all")
+                        }
                     }
                 }
             }
@@ -516,36 +532,70 @@ private fun ModelMetadataSection(model: ModelDetailResponse) {
     }
 }
 
-private const val PRIMARY_METADATA_COUNT = 4
-private const val MAX_VISIBLE_DETAIL_TAGS = 4
-
 @Composable
 private fun ModelRecommendationSection(
     recommendationState: RecommendedModelUiState?,
     onRecommendationInfoClick: (() -> Unit)?,
+    browseFit: BrowseFitEstimate? = null,
+    browseVariantName: String? = null,
     modifier: Modifier = Modifier,
+    onOpenDeviceInfo: (() -> Unit)? = null,
 ) {
-    val spacing = LocalSpacing.current
+    val spacing = AppTheme.spacing
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(spacing.s),
+        verticalArrangement = Arrangement.spacedBy(spacing.spacing8),
     ) {
         CaraMLSectionHeader(
             title = "Device fit",
-            supportingText = "Recommendation evidence for this device",
         )
-        RecommendationStatusChip(
-            state = recommendationState?.descriptorState ?: DescriptorState.NEEDS_INFORMATION,
-            recommendation = recommendationState?.personalizedResult,
-            onInfoClick = onRecommendationInfoClick,
-        )
-        recommendationState?.selectedVariantName?.let { variant ->
+        val browse = browseFit?.let(::browseVerdict)
+        if (browse != null) {
             StatusMark(
-                label = variant,
-                contentDescription = "Selected variant: $variant",
-                tone = SignalTone.Accent,
-                icon = Icons.Default.CheckCircle,
+                label = browse.label,
+                contentDescription = browse.description,
+                icon = browse.icon,
             )
+        } else {
+            RecommendationStatusChip(
+                state = recommendationState?.descriptorState ?: DescriptorState.NEEDS_INFORMATION,
+                recommendation = recommendationState?.personalizedResult,
+                onInfoClick = onRecommendationInfoClick,
+            )
+        }
+        browseFit?.let { estimate ->
+            Text(
+                text = "${if (recommendationState?.descriptorState == DescriptorState.NEEDS_INFORMATION) "Provisional variant" else "Selected variant"}: ${browseVariantName ?: recommendationState?.provisionalVariantName ?: "model file"}",
+                style = AppTheme.typography.labelBase,
+                color = AppTheme.colors.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            estimate.downloadBytes?.let { bytes ->
+                Text("Download ${formatBytesHuman(bytes)}", style = AppTheme.typography.bodySmall,
+                    color = AppTheme.colors.tertiary)
+            }
+            if (!estimate.resourceSnapshotFresh) {
+                Text(
+                    text = "Device resource snapshot is stale; fit is not current",
+                    style = AppTheme.typography.bodySmall,
+                    color = AppTheme.colors.onSurface,
+                )
+            }
+        }
+        if (recommendationState == null || recommendationState.descriptorState == DescriptorState.NEEDS_INFORMATION) {
+            val explanation = when {
+                browseFit == null || browseFit.memoryFit == BrowseResourceFit.UNKNOWN ->
+                    "We need more model or device information before estimating fit. An unknown fit doesn't mean the model will run."
+                browseFit.compatibility is Compatibility.Unknown ->
+                    "This is a provisional memory estimate. Model compatibility is still unverified."
+                else -> "This is a provisional memory estimate. More information is needed for a complete recommendation."
+            }
+            Text(explanation,
+                style = AppTheme.typography.bodySmall, color = AppTheme.colors.onSurface)
+        }
+        onOpenDeviceInfo?.let { action ->
+            com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubAction("See device info", action)
         }
     }
 }
@@ -557,64 +607,94 @@ private fun ModelFileVariantsSection(
     isDownloading: Boolean,
     activeDownloadArtifact: DownloadArtifactIdentity?,
     onDownloadClick: (String, String, DownloadMetadataDTO) -> Unit,
+    onDownloadGroupClick: (String, List<DownloadMetadataDTO>) -> Unit,
     heading: String,
     emptyLabel: String,
     recommendationState: RecommendedModelUiState?,
+    selectedVariantPath: String?,
+    onVariantSelected: (String) -> Unit,
     onPauseDownload: (String, String) -> Unit,
     onResumeDownload: (String, String) -> Unit,
     onCancelDownload: (String, String) -> Unit,
     onRetryDownload: (String, String) -> Unit,
-    footerOwnedArtifact: DownloadArtifactIdentity? = null,
 ) {
-    val spacing = LocalSpacing.current
+    val spacing = AppTheme.spacing
     val selectedDescriptor = recommendationState?.selectedDescriptor
     val primaryDescriptorFile = primaryDescriptorFile(selectedDescriptor)
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("detail-files"),
-        verticalArrangement = Arrangement.spacedBy(spacing.s),
+        verticalArrangement = Arrangement.spacedBy(spacing.spacing8),
     ) {
         CaraMLSectionHeader(
             title = heading,
-            supportingText = "Choose an assessed model weight to download",
+            supportingText = null,
         )
         if (ggufFiles.isEmpty()) {
             Text(
                 text = emptyLabel,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = AppTheme.typography.bodyBase,
+                color = AppTheme.colors.onSurfaceVariant,
             )
         } else {
             ggufFiles.forEach { item ->
+                val role = ModelArtifactClassifier.classify(item.path).role
+                val matchingBrowseVariant = recommendationState?.browseVariants?.singleOrNull { item.path in it.filePaths }
+                val groupMembers = matchingBrowseVariant?.takeIf { it.filePaths.size > 1 }?.filePaths
+                    ?.mapNotNull { path -> ggufFiles.singleOrNull { it.path == path } }
+                    ?.takeIf { it.size == matchingBrowseVariant.filePaths.size }
+                val groupMetadata = groupMembers?.mapNotNull { exactArtifactMetadata(model, it) }
+                    ?.takeIf { metadata ->
+                        metadata.size == groupMembers.size && matchingBrowseVariant?.let { variant ->
+                            matchesExactBrowseGroup(variant, metadata.map { it.artifact })
+                        } == true
+                    }
+                val isPrimary = role == ModelArtifactRole.PRIMARY_MODEL
                 val durableTask = item.durableControl
                 val hasExactArtifact = item.artifact != null
-                val needsInformationOnly = recommendationState == null ||
-                    recommendationState.descriptorState == DescriptorState.NEEDS_INFORMATION
-                val matchesSelectedDescriptor = item.artifact?.let { artifact ->
-                    artifactMatches(selectedDescriptor, artifact)
-                } == true
-                val isRecommendedArtifact = item.artifact?.let { artifact ->
+                val isDescriptorChoice = item.artifact?.let { artifact ->
                     primaryDescriptorFile?.matches(artifact) == true
                 } == true
+                val isRecommendedArtifact = isDescriptorChoice &&
+                    recommendationState?.personalizedResult?.category == RecommendationCategory.RECOMMENDED
+                val isEvaluatedArtifact = isDescriptorChoice && !isRecommendedArtifact
+                val isProvisionalSuggestion = recommendationState?.descriptorState == DescriptorState.NEEDS_INFORMATION &&
+                    matchingBrowseVariant?.stableIdentity == recommendationState.stableModelId
                 val isActiveDownload = isDownloading &&
                     activeDownloadArtifact != null &&
                     item.artifact == activeDownloadArtifact
                 ArtifactFileRow(
                     item = item,
                     recommended = isRecommendedArtifact,
+                    evaluated = isEvaluatedArtifact,
+                    provisional = isProvisionalSuggestion,
+                    selected = isPrimary && matchingBrowseVariant != null && matchingBrowseVariant.stableIdentity ==
+                        selectedVariantPath?.let { selectedPath ->
+                            recommendationState?.browseVariants?.singleOrNull { selectedPath in it.filePaths }?.stableIdentity
+                        },
+                    roleLabel = matchingBrowseVariant?.takeIf { it.filePaths.size > 1 }
+                        ?.let { "Part ${it.filePaths.indexOf(item.path) + 1} of ${it.filePaths.size}" }
+                        ?: role.label().takeUnless { role == ModelArtifactRole.PRIMARY_MODEL },
+                    onSelect = if (isPrimary && matchingBrowseVariant != null) ({ onVariantSelected(item.path) }) else null,
                     isActiveDownload = isActiveDownload,
                     interactionLocked = isDownloading &&
                         durableTask?.artifactState !in durableArtifactControlStates,
-                    downloadEnabled = hasExactArtifact && (needsInformationOnly || matchesSelectedDescriptor),
+                    downloadEnabled = if (matchingBrowseVariant?.filePaths?.size?.let { it > 1 } == true) {
+                        groupMetadata != null
+                    } else hasExactArtifact,
+                    downloadActionDescription = groupMembers?.let { "Download all ${it.size} parts" },
                     durableState = durableTask?.artifactState,
                     onPause = { durableTask?.let { onPauseDownload(it.batchId, it.artifactId) } },
                     onResume = { durableTask?.let { onResumeDownload(it.batchId, it.artifactId) } },
                     onCancel = { durableTask?.let { onCancelDownload(it.batchId, it.artifactId) } },
                     onRetry = { durableTask?.let { onRetryDownload(it.batchId, it.artifactId) } },
-                    showDownloadAction = item.artifact != footerOwnedArtifact,
                     onDownloadClick = {
-                        dispatchExactArtifactDownload(model, item, onDownloadClick)
+                        if (groupMetadata != null) {
+                            onDownloadGroupClick(model.modelId ?: model.id ?: "", groupMetadata)
+                        } else if (matchingBrowseVariant?.filePaths?.size?.let { it > 1 } != true) {
+                            dispatchExactArtifactDownload(model, item, onDownloadClick)
+                        }
                     },
                 )
             }
@@ -626,161 +706,125 @@ private fun ModelFileVariantsSection(
 private fun ArtifactFileRow(
     item: GgufFileUiState,
     recommended: Boolean,
+    evaluated: Boolean,
+    provisional: Boolean,
+    selected: Boolean,
+    roleLabel: String?,
+    onSelect: (() -> Unit)?,
     isActiveDownload: Boolean,
     interactionLocked: Boolean,
     downloadEnabled: Boolean,
+    downloadActionDescription: String?,
     durableState: DownloadArtifactState?,
     onPause: () -> Unit,
     onResume: () -> Unit,
     onCancel: () -> Unit,
     onRetry: () -> Unit,
-    showDownloadAction: Boolean = true,
     onDownloadClick: () -> Unit,
 ) {
-    val colors = MaterialTheme.auroraColors
-    Surface(
+    val colors = AppTheme.auroraColors
+    val highlightLabel = when {
+        recommended -> "Recommended"
+        provisional -> "Suggested · support unverified"
+        evaluated -> "Evaluated variant"
+        else -> null
+    }
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = AppTheme.spacing.spacing8)) {
+      Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.prismShapes.pane,
-        color = if (recommended) colors.selectedSurface else MaterialTheme.colorScheme.surfaceContainerLow,
-        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = AppTheme.shapes.medium,
+        color = if (recommended || provisional || evaluated) colors.selectedSurface else Color.Transparent,
+        contentColor = AppTheme.colors.onSurface,
     ) {
         Box(
             modifier = Modifier
             .fillMaxWidth()
             .semantics {
-                selected = recommended
-                if (recommended) stateDescription = "Recommended artifact"
+                this.selected = selected
+                stateDescription = when {
+                    recommended -> "Recommended variant${if (selected) ", selected" else ""}"
+                    provisional -> "Suggested variant, compatibility unverified${if (selected) ", selected" else ""}"
+                    evaluated -> "Evaluated variant${if (selected) ", selected" else ""}"
+                    selected -> "Selected variant"
+                    else -> "Available file"
+                }
             }
             .testTag("detail-artifact:${item.path}"),
         ) {
-            GgufFileTechnicalRow(
+            Row(
+                modifier = Modifier.padding(horizontal = AppTheme.spacing.spacing8),
+                verticalAlignment = Alignment.Top,
+            ) {
+                if (onSelect != null) {
+                    RadioButton(
+                        selected = selected,
+                        onClick = onSelect,
+                        modifier = Modifier.size(AppTheme.spacing.spacing48).semantics {
+                            contentDescription = if (selected) "Selected variant ${item.filename}" else "Select variant ${item.filename}"
+                        },
+                    )
+                }
+                ModelDetailsDownloadableListItem(
                 filename = item.path.ifEmpty { item.filename },
                 sizeBytes = item.sizeBytes,
                 isDownloaded = item.isDownloaded,
                 progress = item.progress,
                 isDownloading = isActiveDownload,
                 onDownloadClick = onDownloadClick,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.weight(1f),
                 downloadEnabled = downloadEnabled,
+                downloadActionDescription = downloadActionDescription,
                 interactionLocked = interactionLocked,
                 durableState = durableState,
                 onPause = onPause,
                 onResume = onResume,
                 onCancel = onCancel,
                 onRetry = onRetry,
-                showDownloadAction = showDownloadAction,
-                containerColor = androidx.compose.ui.graphics.Color.Transparent,
+                supportingLabel = listOfNotNull(highlightLabel, roleLabel).joinToString(" · ").ifBlank { null },
             )
-            if (recommended) {
-                Box(Modifier.matchParentSize()) {
-                    SignalRail(tone = SignalTone.Accent)
-                }
             }
         }
+      }
     }
 }
 
-@Composable
-private fun ArtifactDownloadActionFooter(
-    model: ModelDetailResponse,
-    item: GgufFileUiState,
-    isDownloading: Boolean,
-    onDownloadClick: (String, String, DownloadMetadataDTO) -> Unit,
-    durableState: DownloadArtifactState?,
-    onPause: () -> Unit,
-    onResume: () -> Unit,
-    onCancel: () -> Unit,
-    onRetry: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        modifier = modifier,
-        shape = MaterialTheme.prismShapes.command,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 2.dp,
-    ) {
-        Row(
-            modifier = Modifier.padding(LocalSpacing.current.m),
-            horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.s),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.xs),
-            ) {
-                Text(
-                    text = "Selected artifact",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    text = item.path.ifBlank { item.filename }.substringAfterLast('/'),
-                    style = AppTechnicalLabel,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            GgufFileAction(
-                filename = item.path.ifBlank { item.filename },
-                isDownloaded = item.isDownloaded,
-                isDownloading = isDownloading,
-                downloadEnabled = item.artifact != null,
-                interactionLocked = isDownloading && durableState == null,
-                durableState = durableState,
-                onDownloadClick = { dispatchExactArtifactDownload(model, item, onDownloadClick) },
-                onPause = onPause,
-                onResume = onResume,
-                onCancel = onCancel,
-                onRetry = onRetry,
-            )
-        }
-    }
+private fun ModelArtifactRole.label(): String = when (this) {
+    ModelArtifactRole.PRIMARY_MODEL -> "GGUF model"
+    ModelArtifactRole.PROJECTOR -> "Supporting projector file"
+    ModelArtifactRole.ADAPTER -> "Supporting adapter file"
+    ModelArtifactRole.UNVERIFIED -> "Role unverified"
 }
+
 
 private fun dispatchExactArtifactDownload(
     model: ModelDetailResponse,
     item: GgufFileUiState,
     onDownloadClick: (String, String, DownloadMetadataDTO) -> Unit,
 ) {
-    val artifact = item.artifact ?: return
-    onDownloadClick(
-        model.modelId ?: model.id ?: "",
-        item.path,
-        DownloadMetadataDTO(
-            artifact = artifact,
-            logicalRole = "model",
-            sizeBytes = artifact.expectedBytes,
-            author = model.author,
-            libraryName = model.libraryName,
-            pipelineTag = model.pipelineTag,
-            contextLength = model.gguf?.contextLength,
-        ),
-    )
+    val metadata = exactArtifactMetadata(model, item) ?: return
+    onDownloadClick(model.modelId ?: model.id ?: "", item.path, metadata)
 }
 
-private fun descriptorFiles(descriptor: ModelDescriptor?): List<ModelFileIdentity> = when (descriptor) {
-    is LlmModelDescriptor -> descriptor.files
-    is DiffusionModelDescriptor -> descriptor.components
-        .filter { it.required || it.isPrimary }
-        .map { it.file }
-    null -> emptyList()
+private fun exactArtifactMetadata(
+    model: ModelDetailResponse,
+    item: GgufFileUiState,
+): DownloadMetadataDTO? {
+    val artifact = item.artifact ?: return null
+    return DownloadMetadataDTO(
+        artifact = artifact,
+        logicalRole = "model",
+        sizeBytes = artifact.expectedBytes,
+        author = model.author,
+        libraryName = model.libraryName,
+        pipelineTag = model.pipelineTag,
+        contextLength = model.gguf?.contextLength,
+    )
 }
 
 private fun primaryDescriptorFile(descriptor: ModelDescriptor?): ModelFileIdentity? = when (descriptor) {
     is LlmModelDescriptor -> descriptor.file
     is DiffusionModelDescriptor -> descriptor.components.singleOrNull { it.isPrimary }?.file
     null -> null
-}
-
-private fun primaryArtifactItem(
-    descriptor: ModelDescriptor?,
-    files: List<GgufFileUiState>,
-): GgufFileUiState? {
-    val primaryFile = primaryDescriptorFile(descriptor) ?: return null
-    return files.singleOrNull { item ->
-        item.artifact?.let(primaryFile::matches) == true
-    }
 }
 
 private fun ModelFileIdentity.matches(artifact: DownloadArtifactIdentity): Boolean {
@@ -791,11 +835,6 @@ private fun ModelFileIdentity.matches(artifact: DownloadArtifactIdentity): Boole
         sizeBytes == artifact.expectedBytes &&
         remoteObjectId?.lowercase() == artifact.remoteObjectId
 }
-
-private fun artifactMatches(
-    descriptor: ModelDescriptor?,
-    artifact: DownloadArtifactIdentity,
-): Boolean = descriptorFiles(descriptor).singleOrNull { file -> file.matches(artifact) } != null
 
 private fun recommendedVariantPath(
     descriptor: ModelDescriptor?,
@@ -819,12 +858,12 @@ private fun DetailRow(
     modifier: Modifier = Modifier
 ) {
     if (value == null) return
-    val spacing = LocalSpacing.current
+    val spacing = AppTheme.spacing
     val stackValue = value.length > 28 || '/' in value || ',' in value
     if (stackValue) {
         Column(
             modifier = modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(spacing.xs),
+            verticalArrangement = Arrangement.spacedBy(spacing.spacing4),
         ) {
             DetailLabel(label)
             DetailValue(value)
@@ -832,7 +871,7 @@ private fun DetailRow(
     } else {
         Row(
             modifier = modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(spacing.s),
+            horizontalArrangement = Arrangement.spacedBy(spacing.spacing8),
             verticalAlignment = Alignment.Top,
         ) {
             DetailLabel(label, Modifier.weight(0.4f))
@@ -845,8 +884,8 @@ private fun DetailRow(
 private fun DetailLabel(label: String, modifier: Modifier = Modifier) {
     Text(
         text = label,
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = AppTheme.typography.labelBase,
+        color = AppTheme.colors.onSurfaceVariant,
         modifier = modifier,
     )
 }
@@ -855,8 +894,8 @@ private fun DetailLabel(label: String, modifier: Modifier = Modifier) {
 private fun DetailValue(value: String, modifier: Modifier = Modifier) {
     Text(
         text = value,
-        style = AppTechnicalLabel,
-        color = MaterialTheme.colorScheme.onSurface,
+        style = AppTheme.typography.technical12,
+        color = AppTheme.colors.onSurface,
         modifier = modifier,
     )
 }
@@ -921,3 +960,73 @@ internal fun visibleModelTags(
         .distinctBy { it.lowercase() }
         .toList()
 }
+
+@Preview(name = "Model detail content - compact", widthDp = 412, heightDp = 915)
+@Composable
+private fun ModelDetailContentCompactPreview() {
+    ModelDetailContentPreview()
+}
+
+@Preview(name = "Model detail content - large text", widthDp = 360, heightDp = 900, fontScale = 2f)
+@Composable
+private fun ModelDetailContentLargeTextPreview() {
+    ModelDetailContentPreview()
+}
+
+@Preview(name = "Model detail content - desktop", widthDp = 1180, heightDp = 780)
+@Composable
+private fun ModelDetailContentDesktopPreview() {
+    ModelDetailContentPreview()
+}
+
+@Preview(name = "Model detail content - no files", widthDp = 412, heightDp = 780)
+@Composable
+private fun ModelDetailContentEmptyPreview() {
+    ModelDetailContentPreview(showFiles = false)
+}
+
+@Composable
+private fun ModelDetailContentPreview(showFiles: Boolean = true) {
+    CaraMLTheme(ThemePreferences()) {
+        Surface {
+            ModelDetailContent(
+                model = modelDetailContentPreviewModel,
+                ggufFiles = if (showFiles) modelDetailContentPreviewFiles else emptyList(),
+                isDownloading = false,
+                onDownloadClick = { _, _, _ -> },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
+}
+
+private val modelDetailContentPreviewModel = ModelDetailResponse(
+    modelId = "Qwen/Qwen2.5-7B-Instruct-GGUF",
+    author = "Qwen",
+    pipelineTag = "text-generation",
+    downloads = 2_192_290,
+    likes = 1_324,
+    createdAt = "2026-08-17T00:00:00.000Z",
+    cardData = ModelDetailResponse.CardData(
+        baseModel = listOf("Qwen/Qwen2.5-7B-Instruct"),
+        license = "apache-2.0",
+        pipelineTag = "text-generation",
+    ),
+)
+
+private val modelDetailContentPreviewFiles = listOf(
+    GgufFileUiState(
+        path = "weights/Qwen2.5-7B-Instruct-Q4_K_M.gguf",
+        filename = "Qwen2.5-7B-Instruct-Q4_K_M.gguf",
+        sizeBytes = 4_700_000_000L,
+        isDownloaded = false,
+        progress = null,
+    ),
+    GgufFileUiState(
+        path = "weights/Qwen2.5-7B-Instruct-Q5_K_M.gguf",
+        filename = "Qwen2.5-7B-Instruct-Q5_K_M.gguf",
+        sizeBytes = 5_200_000_000L,
+        isDownloaded = true,
+        progress = null,
+    ),
+)

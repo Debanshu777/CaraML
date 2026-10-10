@@ -133,8 +133,14 @@ Create a **separate** Gradle module + CMake project. Do not add here unless it m
 
 ## Recent Changes
 
+- Native hardening tests cover bounded private logging, exact dense-penalty parity and upstream fallback. CTest and platform build evidence, with device inference limits, are recorded in the [validation report](../docs/model-validation/2026-10-08/report.md).
+
+- Native chat regressions cover pinned Qwen3, MiniCPM5 and GPT-OSS reasoning/content parsing, forced delimiter emission, zero budgets, per-turn reset, and context/output-limit classification.
+
 <!-- Updated at end of each Claude Code session -->
 
+- Build-owned fit accounting includes CPU-repacked weights; native regression gates cover parameter validation, memory pool attribution, prompt reconciliation, and finalization
+- Native runner regression coverage now accepts upstream full-offload fitting, rejects invalid negative layer counts and empty context, and checks resolved full/partial/CPU-only layer counts
 - Android CI installs pinned CMake 3.31.1 before native configuration; Windows artifact opens retain metadata-read access, and publication uses `NtSetInformationFile` with the pinned target-directory handle for root-contained atomic rename
 - Desktop static dependencies now build as position-independent code for Linux shared-library linking, the Android-root fixture uses the host temporary directory, and Windows directory creation uses best-effort metadata flushing when supported while preserving pinned no-reparse checks
 - Native builds pin llama.cpp `f46bc30` and stable-diffusion.cpp `c92d73c`, compile both runners against one patched llama GGML tree, and verify the exact public gitlinks before project checks

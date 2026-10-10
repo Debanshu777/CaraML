@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -46,6 +47,7 @@ import com.debanshu777.caraml.core.platform.DeviceHints
 import com.debanshu777.caraml.core.recommendation.PersonalizedRecommendation
 import com.debanshu777.caraml.core.recommendation.RecommendationCategory
 import com.debanshu777.caraml.core.recommendation.RecommendationProfile
+import com.debanshu777.caraml.core.ui.components.GenericListItem
 import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
 import com.debanshu777.caraml.features.modelhub.domain.RecommendedModelUiState
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubBrowseControls
@@ -53,15 +55,13 @@ import com.debanshu777.caraml.features.modelhub.presentation.search.components.M
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubOverview
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubStateKind
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubStateView
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelListItem
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelResultCard
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchListItem
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelRecommendationStatus
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchBar
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchModelListItem
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.selectedVariantLabel
 import com.debanshu777.huggingfacemanager.model.ListModelsResponse
 import com.debanshu777.huggingfacemanager.model.ModelSort
 import com.debanshu777.huggingfacemanager.model.ParameterRange
-import com.debanshu777.huggingfacemanager.model.SearchModelsResponse
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -85,7 +85,7 @@ class ModelHubRegistryUiTest {
             AtDensityOne {
                 MaterialTheme {
                     Box(Modifier.width(360.dp)) {
-                        ModelListItem(
+                        SearchListItem(
                             model = model,
                             onClick = {},
                             recommendationState = recommendedState(
@@ -104,15 +104,14 @@ class ModelHubRegistryUiTest {
             useUnmergedTree = true,
         )
         val metadata = onNodeWithText(
-            "Text generation • 12.3K downloads • 7B params",
+            "7B parameters · 12.3K downloads",
             useUnmergedTree = true,
         )
         owner.assertIsDisplayed()
         title.assertIsDisplayed()
         metadata.assertIsDisplayed()
+        onNodeWithText("Text generation", useUnmergedTree = true).assertIsDisplayed()
         onNodeWithText("Recommended", useUnmergedTree = true).assertIsDisplayed()
-        onNodeWithText("Selected variant: model-Q4_K_M.gguf", useUnmergedTree = true)
-            .assertIsDisplayed()
 
         val titleWidth = title.fetchSemanticsNode().boundsInRoot.width
         val metadataWidth = metadata.fetchSemanticsNode().boundsInRoot.width
@@ -130,18 +129,18 @@ class ModelHubRegistryUiTest {
                 AtDensityOne {
                     MaterialTheme {
                         Column(Modifier.width(360.dp)) {
-                            ModelResultCard(
-                                title = "iiiiiiii/narrow-metadata",
-                                author = "iiiiiiii",
+                            GenericListItem(
+                                title = "narrow-metadata",
+                                eyebrow = "iiiiiiii",
                                 metadata = "iiiiiiii downloads",
-                                status = {},
+                                titleStatus = {},
                                 onClick = {},
                             )
-                            ModelResultCard(
-                                title = "WWWWWWWW/wide-metadata",
-                                author = "WWWWWWWW",
+                            GenericListItem(
+                                title = "wide-metadata",
+                                eyebrow = "WWWWWWWW",
                                 metadata = "WWWWWWWW downloads",
-                                status = {},
+                                titleStatus = {},
                                 onClick = {},
                             )
                         }
@@ -180,7 +179,10 @@ class ModelHubRegistryUiTest {
 
     @Test
     fun selectedVariantLabelStylesOnlyArtifactTokenAsTechnical() {
-        val label = selectedVariantLabel("model-Q4_K_M.gguf")
+        val label = selectedVariantLabel(
+            "model-Q4_K_M.gguf",
+            androidx.compose.ui.text.SpanStyle(fontFamily = FontFamily.Monospace),
+        )
 
         assertEquals("Selected variant: model-Q4_K_M.gguf", label.text)
         assertEquals(
@@ -229,7 +231,7 @@ class ModelHubRegistryUiTest {
         with(titleLayouts.single().layoutInput.style) {
             assertEquals(16.sp, fontSize)
             assertEquals(22.sp, lineHeight)
-            assertEquals(FontWeight.SemiBold, fontWeight)
+            assertEquals(FontWeight.Medium, fontWeight)
         }
         with(summaryLayouts.single().layoutInput.style) {
             assertEquals(14.sp, fontSize)
@@ -240,7 +242,7 @@ class ModelHubRegistryUiTest {
     }
 
     @Test
-    fun searchCommandHasOneSearchAffordanceAndConditionalClearAction() = runComposeUiTest {
+    fun searchCommandUsesImeAndConditionalClearAction() = runComposeUiTest {
         var query by mutableStateOf("")
         var searches = 0
         setContent {
@@ -254,14 +256,12 @@ class ModelHubRegistryUiTest {
         }
 
         onNodeWithTag("model-command").assertIsDisplayed()
-        onAllNodesWithContentDescription("Search models").assertCountEquals(1)
         onAllNodesWithContentDescription("Submit model search").assertCountEquals(0)
         onNodeWithContentDescription("Clear model search").assertDoesNotExist()
         onNode(hasImeAction(ImeAction.Search)).performImeAction()
         runOnIdle { assertEquals(1, searches) }
 
         runOnIdle { query = "tinyllama" }
-        onAllNodesWithContentDescription("Search models").assertCountEquals(1)
         onAllNodesWithContentDescription("Submit model search").assertCountEquals(0)
         onNodeWithContentDescription("Clear model search").assertIsDisplayed()
     }
@@ -444,7 +444,7 @@ class ModelHubRegistryUiTest {
             }
 
             onNodeWithText("Device profile").assertIsDisplayed()
-            onNodeWithText("197 GB free · Balanced").assertIsDisplayed()
+            onNodeWithText("197 GB storage free · Balanced").assertIsDisplayed()
             listOf("Storage", "Device", "Profile").forEach { label ->
                 onNodeWithText(label, useUnmergedTree = true).assertDoesNotExist()
             }
@@ -456,7 +456,7 @@ class ModelHubRegistryUiTest {
         }
 
     @Test
-    fun oneLineModelRowUsesOneRoundedSurfaceWithoutReturningToOutlinedCardChrome() =
+    fun oneLineGenericRowKeepsPageCanvasAndOneDivider() =
         runComposeUiTest {
         val pageColor = Color(0xFFF8FAFC)
         val rowColor = Color(0xFFD7E4E8)
@@ -472,12 +472,13 @@ class ModelHubRegistryUiTest {
                             .width(360.dp)
                             .background(pageColor),
                     ) {
-                        ModelResultCard(
-                            title = "org/tiny-model",
-                            author = "org",
+                        GenericListItem(
+                            title = "tiny-model",
+                            eyebrow = "org",
                             metadata = "GGUF · 1.2 GB",
-                            status = { Text("Usable") },
+                            titleStatus = { Text("Usable") },
                             onClick = {},
+                            modifier = Modifier.testTag("model-row:org/tiny-model"),
                         )
                     }
                 }
@@ -488,12 +489,11 @@ class ModelHubRegistryUiTest {
         val bounds = row.fetchSemanticsNode().boundsInRoot
         assertTrue(bounds.height <= 148f, "A simple registry row was ${bounds.height}dp tall")
         val pixels = row.captureToImage().toPixelMap()
-        val roundedCorner = pixels[1, 1]
-        val filledTopEdge = pixels[pixels.width / 2, 1]
-        assertColorNear(pageColor, roundedCorner, "Rounded row corner must reveal the page canvas")
+        assertColorNear(pageColor, pixels[1, 1], "An ordinary row must preserve the page canvas")
+        assertColorNear(pageColor, pixels[pixels.width / 2, 1], "The top edge must not add card chrome")
         assertTrue(
-            filledTopEdge.registryColorDistance(roundedCorner) >= 0.05f,
-            "The rounded registry row must own a quiet tonal surface",
+            pixels[pixels.width / 2, pixels.height - 1].registryColorDistance(pageColor) >= 0.03f,
+            "A quiet bottom divider must separate ordinary rows",
         )
     }
 
@@ -504,11 +504,11 @@ class ModelHubRegistryUiTest {
             AtDensityOne {
                 MaterialTheme {
                     Box(Modifier.width(360.dp)) {
-                        ModelResultCard(
-                            title = "org/a-long-but-readable-model-name",
-                            author = "org",
+                        GenericListItem(
+                            title = "a-long-but-readable-model-name",
+                            eyebrow = "org",
                             metadata = metadata,
-                            status = { Text("Needs information") },
+                            titleStatus = { Text("Needs information") },
                             onClick = {},
                         )
                     }
@@ -537,12 +537,20 @@ class ModelHubRegistryUiTest {
             AtDensityOne {
                 MaterialTheme {
                     Box(Modifier.width(360.dp)) {
-                        SearchModelListItem(
-                            model = SearchModelsResponse.Model(
-                                id = "org/compact-model",
-                                trendingWeight = 42,
-                            ),
+                        GenericListItem(
+                            title = "compact-model",
+                            eyebrow = "org",
+                            metadata = "Trending weight: 42",
+                            titleStatus = {
+                                ModelRecommendationStatus(
+                                    state = DescriptorState.NEEDS_INFORMATION,
+                                    recommendation = null,
+                                    onInfoClick = null,
+                                    compact = true,
+                                )
+                            },
                             onClick = {},
+                            modifier = Modifier.testTag("model-row:org/compact-model"),
                         )
                     }
                 }
@@ -552,7 +560,7 @@ class ModelHubRegistryUiTest {
         val row = onNodeWithTag("model-row:org/compact-model")
         val title = onNodeWithText("compact-model", useUnmergedTree = true)
         val metadata = onNodeWithText("Trending weight: 42", useUnmergedTree = true)
-        val status = onNodeWithText("Needs information", useUnmergedTree = true)
+        val status = onNodeWithText("Needs info", useUnmergedTree = true)
         row.assertIsDisplayed()
         title.assertIsDisplayed()
         metadata.assertIsDisplayed()
@@ -563,10 +571,8 @@ class ModelHubRegistryUiTest {
         val metadataBounds = metadata.fetchSemanticsNode().boundsInRoot
         val statusBounds = status.fetchSemanticsNode().boundsInRoot
         assertTrue(rowBounds.height <= 172f, "Simple status row was ${rowBounds.height}dp tall")
-        assertTrue(
-            statusBounds.top >= metadataBounds.bottom,
-            "Compact status belongs below identity metadata; metadata=$metadataBounds status=$statusBounds",
-        )
+        assertTrue(statusBounds.bottom <= metadataBounds.top,
+            "Compact status belongs beside the model name; metadata=$metadataBounds status=$statusBounds")
     }
 
     @Test
@@ -575,11 +581,11 @@ class ModelHubRegistryUiTest {
             AtDensityOne {
                 MaterialTheme {
                     Box(Modifier.width(360.dp)) {
-                        ModelResultCard(
-                            title = "research-lab/a-very-long-model-name-that-needs-two-lines-on-phone",
-                            author = "research-lab",
+                        GenericListItem(
+                            title = "a-very-long-model-name-that-needs-two-lines-on-phone",
+                            eyebrow = "research-lab",
                             metadata = "GGUF · text generation · 12.4 GB",
-                            status = { Text("Needs information") },
+                            titleStatus = { Text("Info") },
                             onClick = {},
                         )
                     }
@@ -592,7 +598,7 @@ class ModelHubRegistryUiTest {
             "a-very-long-model-name-that-needs-two-lines-on-phone",
             useUnmergedTree = true,
         )
-        val status = onNodeWithText("Needs information", useUnmergedTree = true)
+        val status = onNodeWithText("Info", useUnmergedTree = true)
         val metadata = onNodeWithText("GGUF · text generation · 12.4 GB", useUnmergedTree = true)
         owner.assertIsDisplayed()
         title.assertIsDisplayed()
@@ -601,17 +607,17 @@ class ModelHubRegistryUiTest {
         val titleBounds = title.fetchSemanticsNode().boundsInRoot
         val statusBounds = status.fetchSemanticsNode().boundsInRoot
         assertTrue(
-            titleBounds.width >= 280f,
-            "Long names need the compact content width before status; width=${titleBounds.width}",
+            titleBounds.width >= 180f,
+            "Long names need at least half the row beside status; width=${titleBounds.width}",
         )
         assertTrue(
-            statusBounds.top >= metadata.fetchSemanticsNode().boundsInRoot.bottom,
-            "Long-name status must follow metadata without competing for title width",
+            statusBounds.bottom <= metadata.fetchSemanticsNode().boundsInRoot.top,
+            "Long-name status must sit beside the title above metadata",
         )
     }
 
     @Test
-    fun recommendedRowUsesOneSignalRailRatherThanGradientFill() = runComposeUiTest {
+    fun emphasizedGenericRowUsesOneTonalSurfaceWithoutChangingSelectionSemantics() = runComposeUiTest {
         val railColor = Color(0xFF007A52)
         val selectedColor = Color(0xFFDCEFE7)
         val scheme = lightColorScheme(
@@ -622,13 +628,14 @@ class ModelHubRegistryUiTest {
             AtDensityOne {
                 MaterialTheme(colorScheme = scheme) {
                     Box(Modifier.width(360.dp)) {
-                        ModelResultCard(
-                            title = "org/recommended",
-                            author = "org",
+                        GenericListItem(
+                            title = "recommended",
+                            eyebrow = "org",
                             metadata = "GGUF · 2 GB",
-                            status = { Text("Recommended") },
+                            titleStatus = { Text("Recommended") },
                             onClick = {},
-                            highlighted = true,
+                            emphasized = true,
+                            modifier = Modifier.testTag("model-row:org/recommended"),
                         )
                     }
                 }
@@ -643,17 +650,13 @@ class ModelHubRegistryUiTest {
             .config
         assertEquals(Role.Button, rowSemantics[SemanticsProperties.Role])
         assertEquals(null, rowSemantics.getOrNull(SemanticsProperties.Selected))
-        val middleY = pixels.height / 2
-        var matchingLeadingPixels = 0
-        for (x in 0 until minOf(12, pixels.width)) {
-            if (colorsNear(railColor, pixels[x, middleY])) matchingLeadingPixels++ else break
+        listOf(1, pixels.width / 2, pixels.width - 2).forEach { x ->
+            assertColorNear(
+                selectedColor,
+                pixels[x, 1],
+                "Emphasis must use one uniform tonal surface without a leading rail or gradient",
+            )
         }
-        assertEquals(3, matchingLeadingPixels, "Recommended rows must use exactly one 3dp signal rail")
-        assertColorNear(
-            selectedColor,
-            pixels[(pixels.width / 2), middleY],
-            "Recommended row interiors must use a tonal surface, not a gradient fill",
-        )
     }
 
     @Test
@@ -662,8 +665,17 @@ class ModelHubRegistryUiTest {
             AtDensityOne {
                 MaterialTheme {
                     Box(Modifier.width(360.dp)) {
-                        SearchModelListItem(
-                            model = SearchModelsResponse.Model(id = "org/uncertain"),
+                        GenericListItem(
+                            title = "uncertain",
+                            eyebrow = "org",
+                            titleStatus = {
+                                ModelRecommendationStatus(
+                                    state = DescriptorState.NEEDS_INFORMATION,
+                                    recommendation = null,
+                                    onInfoClick = null,
+                                    compact = true,
+                                )
+                            },
                             onClick = {},
                         )
                     }
@@ -671,7 +683,7 @@ class ModelHubRegistryUiTest {
             }
         }
 
-        onNodeWithText("Needs information").assertIsDisplayed()
+        onNodeWithText("Needs info").assertIsDisplayed()
         onNode(
             SemanticsMatcher.expectValue(
                 SemanticsProperties.StateDescription,

@@ -1,5 +1,7 @@
 package com.debanshu777.huggingfacemanager.download
 
+import kotlin.time.TimeSource
+
 private const val MAX_MODEL_ID_LENGTH = 193
 private const val MAX_REPOSITORY_SEGMENT_LENGTH = 96
 private const val MAX_RELATIVE_PATH_LENGTH = 1_024
@@ -101,22 +103,27 @@ private fun String.hasWellFormedUtf16(): Boolean {
 
 internal class DownloadProgressTracker(
     contentLength: Long?,
+    private val clockMillis: () -> Long = monotonicProgressClock(),
 ) {
     private val totalBytes = contentLength?.takeIf { it > 0L }
     private var lastPercentageBucket = -1
     private var lastUnknownLengthBytes = 0L
+    private var lastPublishedMs = clockMillis()
 
     fun next(bytesReceived: Long): DownloadProgressDTO? {
         require(bytesReceived >= 0L) { "bytesReceived must not be negative" }
 
+        val now = clockMillis()
+        val heartbeat = now - lastPublishedMs >= 1_000L
         val total = totalBytes
         if (total != null) {
             if (bytesReceived >= total) return null
             val percentageBucket = ((bytesReceived * 100L) / total)
                 .coerceIn(0L, 99L)
                 .toInt()
-            if (percentageBucket <= lastPercentageBucket) return null
+            if (percentageBucket <= lastPercentageBucket && !heartbeat) return null
             lastPercentageBucket = percentageBucket
+            lastPublishedMs = now
             return DownloadProgressDTO(
                 bytesReceived = bytesReceived,
                 contentLength = total,
@@ -124,14 +131,20 @@ internal class DownloadProgressTracker(
             )
         }
 
-        if (bytesReceived - lastUnknownLengthBytes < UNKNOWN_LENGTH_PROGRESS_INTERVAL_BYTES) {
+        if (bytesReceived - lastUnknownLengthBytes < UNKNOWN_LENGTH_PROGRESS_INTERVAL_BYTES && !heartbeat) {
             return null
         }
         lastUnknownLengthBytes = bytesReceived
+        lastPublishedMs = now
         return DownloadProgressDTO(
             bytesReceived = bytesReceived,
             contentLength = null,
             percentage = -1f,
         )
     }
+}
+
+private fun monotonicProgressClock(): () -> Long {
+    val started = TimeSource.Monotonic.markNow()
+    return { started.elapsedNow().inWholeMilliseconds }
 }

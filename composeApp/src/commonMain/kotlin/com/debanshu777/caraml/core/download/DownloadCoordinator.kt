@@ -46,6 +46,8 @@ class DownloadCoordinator(
     fun observeForModel(modelId: String): Flow<List<DownloadBatchSnapshot>> =
         store.observeForModel(modelId)
 
+    fun observeQueue(): Flow<List<DownloadBatchSnapshot>> = store.observeQueue()
+
     suspend fun enqueue(request: DownloadBatchRequest): String {
         val batchId = store.create(request, nowEpochMs())
         runCatching { notifications.requestIfNeeded() }

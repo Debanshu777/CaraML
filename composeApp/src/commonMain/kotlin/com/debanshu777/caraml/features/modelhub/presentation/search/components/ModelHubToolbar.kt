@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search.components
 
+import com.debanshu777.caraml.core.ui.icons.AppIcons
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -13,21 +14,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -44,10 +39,10 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.AppTheme
+import com.debanshu777.caraml.core.ui.components.BrandButton
+import com.debanshu777.caraml.core.ui.components.BrandButtonStyle
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
-import com.debanshu777.caraml.core.theme.LocalSpacing
-import com.debanshu777.caraml.core.theme.auroraColors
-import com.debanshu777.caraml.core.theme.prismShapes
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelOrdering
 import com.debanshu777.huggingfacemanager.model.ModelSort
@@ -68,16 +63,17 @@ fun ModelHubToolbar(
     onMaxParamsChange: (ParameterRange) -> Unit,
     modifier: Modifier = Modifier,
     onFiltersApplied: () -> Unit = {},
+    onParameterFiltersApplied: ((ParameterRange, ParameterRange) -> Unit)? = null,
 ) {
-    val spacing = LocalSpacing.current
+    val spacing = AppTheme.spacing
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
             .testTag("model-toolbar"),
     ) {
-        val compact = maxWidth < 600.dp
+        val compact = maxWidth < AppTheme.dimensions.size600
         if (compact) {
-            Column(verticalArrangement = Arrangement.spacedBy(spacing.s)) {
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.spacing8)) {
                 ModelKindControls(
                     browseMode = browseMode,
                     onBrowseModeChange = onBrowseModeChange,
@@ -87,7 +83,7 @@ fun ModelHubToolbar(
                 if (showSortFilters) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(spacing.s),
+                        horizontalArrangement = Arrangement.spacedBy(spacing.spacing8),
                     ) {
                         ModelSortAndFilterControls(
                             ordering = ordering,
@@ -99,6 +95,7 @@ fun ModelHubToolbar(
                             onMinParamsChange = onMinParamsChange,
                             onMaxParamsChange = onMaxParamsChange,
                             onFiltersApplied = onFiltersApplied,
+                            onParameterFiltersApplied = onParameterFiltersApplied,
                             expand = true,
                         )
                     }
@@ -107,7 +104,7 @@ fun ModelHubToolbar(
         } else {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(spacing.s),
+                horizontalArrangement = Arrangement.spacedBy(spacing.spacing8),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 ModelKindControls(
@@ -125,6 +122,7 @@ fun ModelHubToolbar(
                         onMinParamsChange = onMinParamsChange,
                         onMaxParamsChange = onMaxParamsChange,
                         onFiltersApplied = onFiltersApplied,
+                        onParameterFiltersApplied = onParameterFiltersApplied,
                     )
                 }
             }
@@ -139,12 +137,12 @@ private fun ModelKindControls(
     modifier: Modifier = Modifier,
     equalWidth: Boolean = false,
 ) {
-    val colors = MaterialTheme.auroraColors
+    val colors = AppTheme.auroraColors
     Row(
         modifier = modifier
             .selectableGroup()
             .testTag("model-kind-group"),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
     ) {
         listOf(
             ModelHubBrowseMode.LanguageModels to "Text",
@@ -159,10 +157,10 @@ private fun ModelKindControls(
                 leadingIcon = if (selected) {
                     {
                         Icon(
-                            imageVector = Icons.Default.Check,
+                            imageVector = AppIcons.Check,
                             contentDescription = null,
                             modifier = Modifier
-                                .size(18.dp)
+                                .size(AppTheme.dimensions.size18)
                                 .testTag("Selected model kind $label"),
                         )
                     }
@@ -171,12 +169,12 @@ private fun ModelKindControls(
                 },
                 modifier = Modifier
                     .then(if (equalWidth) Modifier.weight(1f) else Modifier)
-                    .heightIn(min = 48.dp)
+                    .heightIn(min = AppTheme.spacing.spacing48)
                     .semantics {
                         this.selected = selected
                         role = Role.RadioButton
                     },
-                shape = MaterialTheme.prismShapes.control,
+                shape = AppTheme.shapes.small,
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = colors.focusPrimary,
                     selectedLabelColor = colors.onFocusPrimary,
@@ -199,11 +197,11 @@ internal fun RowScope.ModelSortAndFilterControls(
     onMaxParamsChange: (ParameterRange) -> Unit,
     onFiltersApplied: () -> Unit = {},
     expand: Boolean = false,
+    onParameterFiltersApplied: ((ParameterRange, ParameterRange) -> Unit)? = null,
 ) {
     var orderingExpanded by remember { mutableStateOf(false) }
     var filtersExpanded by remember { mutableStateOf(false) }
     val activeFilterCount = listOf(
-        sort != ModelSort.TRENDING,
         minParams != ParameterRange.ZERO,
         maxParams != ParameterRange.SIX_B,
     ).count { it }
@@ -212,29 +210,30 @@ internal fun RowScope.ModelSortAndFilterControls(
         is ModelOrdering.Server -> ordering.value.displayName
     }
 
-    OutlinedButton(
+    BrandButton(
+        style = BrandButtonStyle.Secondary,
         onClick = { orderingExpanded = true },
         modifier = Modifier
             .then(if (expand) Modifier.weight(1f) else Modifier)
-            .heightIn(min = 48.dp)
+            .heightIn(min = AppTheme.spacing.spacing48)
             .semantics {
                 contentDescription = "Sort models"
                 stateDescription = orderingLabel
             },
-        shape = MaterialTheme.prismShapes.control,
     ) {
         Text("Sort")
         Icon(
-            imageVector = Icons.Default.ArrowDropDown,
+            imageVector = AppIcons.ChevronDown,
             contentDescription = null,
-            modifier = Modifier.size(18.dp),
+            modifier = Modifier.size(AppTheme.dimensions.size18),
         )
     }
-    OutlinedButton(
+    BrandButton(
+        style = BrandButtonStyle.Secondary,
         onClick = { filtersExpanded = true },
         modifier = Modifier
             .then(if (expand) Modifier.weight(1f) else Modifier)
-            .heightIn(min = 48.dp)
+            .heightIn(min = AppTheme.spacing.spacing48)
             .semantics {
                 contentDescription = if (activeFilterCount == 0) {
                     "Filters"
@@ -243,12 +242,11 @@ internal fun RowScope.ModelSortAndFilterControls(
                 }
                 stateDescription = "$activeFilterCount active filters"
             },
-        shape = MaterialTheme.prismShapes.control,
     ) {
         Icon(
-            imageVector = Icons.Default.Tune,
+            imageVector = AppIcons.Filters,
             contentDescription = null,
-            modifier = Modifier.size(18.dp),
+            modifier = Modifier.size(AppTheme.dimensions.size18),
         )
         Text(if (activeFilterCount == 0) "Filters" else "Filters ($activeFilterCount)")
     }
@@ -257,19 +255,23 @@ internal fun RowScope.ModelSortAndFilterControls(
         OrderingSheet(
             sort = sort,
             selected = ordering,
-            onSelect = onOrderingChange,
+            onSelect = { selectedOrdering ->
+                if (selectedOrdering is ModelOrdering.Server) {
+                    onSortChange(selectedOrdering.value)
+                }
+                onOrderingChange(selectedOrdering)
+            },
             onDismiss = { orderingExpanded = false },
         )
     }
     if (filtersExpanded) {
         ModelFilterSheet(
-            sort = sort,
             minParams = minParams,
             maxParams = maxParams,
-            onSortChange = onSortChange,
             onMinParamsChange = onMinParamsChange,
             onMaxParamsChange = onMaxParamsChange,
             onFiltersApplied = onFiltersApplied,
+            onParameterFiltersApplied = onParameterFiltersApplied,
             onDismiss = { filtersExpanded = false },
         )
     }
@@ -287,33 +289,36 @@ private fun OrderingSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        shape = MaterialTheme.prismShapes.modal,
-        containerColor = AuroraSurfaceLevel.Floating.containerColor(MaterialTheme.colorScheme),
+        shape = AppTheme.shapes.extraLarge,
+        containerColor = AuroraSurfaceLevel.Floating.containerColor(AppTheme.colors),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+                .padding(horizontal = AppTheme.spacing.spacing16)
+                .padding(bottom = AppTheme.spacing.spacing32),
+            verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing4),
         ) {
-            Text("Sort models", style = MaterialTheme.typography.titleLarge)
+            Text("Sort models", style = AppTheme.typography.headingBase)
             SelectionRow(
-                label = "Recommended for me",
+                label = "Best fit among loaded models",
                 selected = selected is ModelOrdering.Personalized,
                 onClick = {
                     onSelect(ModelOrdering.Personalized)
                     onDismiss()
                 },
             )
-            SelectionRow(
-                label = "Server: ${sort.displayName}",
-                selected = selected is ModelOrdering.Server,
-                onClick = {
-                    onSelect(ModelOrdering.Server(sort))
-                    onDismiss()
-                },
-            )
+            Text("Hugging Face order", style = AppTheme.typography.headingSmall)
+            HUB_SORT_OPTIONS.forEach { option ->
+                SelectionRow(
+                    label = option.displayName,
+                    selected = selected is ModelOrdering.Server && sort == option,
+                    onClick = {
+                        onSelect(ModelOrdering.Server(option))
+                        onDismiss()
+                    },
+                )
+            }
         }
     }
 }
@@ -321,41 +326,32 @@ private fun OrderingSheet(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ModelFilterSheet(
-    sort: ModelSort,
     minParams: ParameterRange,
     maxParams: ParameterRange,
-    onSortChange: (ModelSort) -> Unit,
     onMinParamsChange: (ParameterRange) -> Unit,
     onMaxParamsChange: (ParameterRange) -> Unit,
     onFiltersApplied: () -> Unit,
+    onParameterFiltersApplied: ((ParameterRange, ParameterRange) -> Unit)?,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var pendingSort by remember(sort) { mutableStateOf(sort) }
     var pendingMinParams by remember(minParams) { mutableStateOf(minParams) }
     var pendingMaxParams by remember(maxParams) { mutableStateOf(maxParams) }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        shape = MaterialTheme.prismShapes.modal,
-        containerColor = AuroraSurfaceLevel.Floating.containerColor(MaterialTheme.colorScheme),
+        shape = AppTheme.shapes.extraLarge,
+        containerColor = AuroraSurfaceLevel.Floating.containerColor(AppTheme.colors),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+                .padding(horizontal = AppTheme.spacing.spacing16)
+                .padding(bottom = AppTheme.spacing.spacing32),
+            verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
         ) {
-            Text("Filters", style = MaterialTheme.typography.titleLarge)
-            FilterSelectionGroup(
-                title = "Sort by",
-                options = ModelSort.entries.filter { it != ModelSort.SIMILAR },
-                selected = pendingSort,
-                label = { it.displayName },
-                onSelect = { pendingSort = it },
-            )
+            Text("Filters", style = AppTheme.typography.headingBase)
             FilterSelectionGroup(
                 title = "Minimum parameters",
                 options = ParameterRange.entries,
@@ -370,12 +366,16 @@ private fun ModelFilterSheet(
                 label = { it.displayName },
                 onSelect = { pendingMaxParams = it },
             )
-            TextButton(
+            BrandButton(
+                style = BrandButtonStyle.Secondary,
                 onClick = {
-                    onSortChange(pendingSort)
-                    onMinParamsChange(pendingMinParams)
-                    onMaxParamsChange(pendingMaxParams)
-                    onFiltersApplied()
+                    if (onParameterFiltersApplied != null) {
+                        onParameterFiltersApplied(pendingMinParams, pendingMaxParams)
+                    } else {
+                        onMinParamsChange(pendingMinParams)
+                        onMaxParamsChange(pendingMaxParams)
+                        onFiltersApplied()
+                    }
                     onDismiss()
                 },
                 modifier = Modifier.align(Alignment.End),
@@ -394,7 +394,7 @@ private fun <T> FilterSelectionGroup(
     label: (T) -> String,
     onSelect: (T) -> Unit,
 ) {
-    Text(title, style = MaterialTheme.typography.titleMedium)
+    Text(title, style = AppTheme.typography.headingSmall)
     options.forEach { option ->
         SelectionRow(
             label = label(option),
@@ -413,21 +413,21 @@ private fun SelectionRow(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 48.dp)
+            .heightIn(min = AppTheme.spacing.spacing48)
             .selectable(
                 selected = selected,
                 role = Role.RadioButton,
                 onClick = onClick,
             ),
-        shape = MaterialTheme.prismShapes.control,
+        shape = AppTheme.shapes.small,
         color = if (selected) {
-            MaterialTheme.colorScheme.secondaryContainer
+            AppTheme.colors.secondaryContainer
         } else {
-            MaterialTheme.colorScheme.surfaceContainerHigh
+            AppTheme.colors.surfaceContainerHigh
         },
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp),
+            modifier = Modifier.padding(horizontal = AppTheme.spacing.spacing16),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(label, modifier = Modifier.weight(1f))
@@ -447,6 +447,14 @@ private val ModelSort.displayName: String
         ModelSort.LEAST_PARAMS -> "Least params"
         ModelSort.SIMILAR -> "Similar"
     }
+
+private val HUB_SORT_OPTIONS = listOf(
+    ModelSort.TRENDING,
+    ModelSort.DOWNLOADS,
+    ModelSort.LIKES,
+    ModelSort.MODIFIED,
+    ModelSort.CREATED,
+)
 
 private val ParameterRange.displayName: String
     get() = when (this) {

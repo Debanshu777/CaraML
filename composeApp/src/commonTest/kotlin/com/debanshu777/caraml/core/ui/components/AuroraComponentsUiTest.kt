@@ -44,6 +44,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.rating.ui.RecommendationStatusChip
 import com.debanshu777.caraml.core.recommendation.PersonalizedRecommendation
 import com.debanshu777.caraml.core.recommendation.RecommendationCategory
@@ -54,9 +55,9 @@ import com.debanshu777.caraml.features.chat.data.MessageRole
 import com.debanshu777.caraml.features.chat.presentation.components.MessageBubble
 import com.debanshu777.caraml.features.chat.presentation.components.ModelErrorScreen
 import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
-import com.debanshu777.caraml.features.modelhub.presentation.details.components.GgufFileListItem
+import com.debanshu777.caraml.features.modelhub.presentation.details.components.ModelDetailsDownloadableListItem
 import com.debanshu777.caraml.features.modelhub.presentation.details.components.InstallBundleCard
-import com.debanshu777.caraml.features.modelhub.presentation.downloaded.components.LocalModelListItem
+import com.debanshu777.caraml.features.modelhub.presentation.downloaded.components.DownloadedListItem
 import com.debanshu777.caraml.features.modelhub.presentation.search.GgufFileUiState
 import com.debanshu777.caraml.features.modelhub.presentation.search.InstallBundleUiState
 import kotlin.test.Test
@@ -100,7 +101,7 @@ class AuroraComponentsUiTest {
     }
 
     @Test
-    fun backdropKeepsFaintThreeAnchorAtmosphereAndReadableDarkAndLightContent() = runComposeUiTest {
+    fun backdropKeepsFullStrengthThreeAnchorAtmosphereAndReadableDarkAndLightContent() = runComposeUiTest {
         setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f)) {
                 Column {
@@ -150,15 +151,15 @@ class AuroraComponentsUiTest {
                 tertiary.colorDistance(primary)
 
             assertTrue(
-                fieldDelta in 0.05f..0.22f,
-                "The ambient field must stay faint rather than become a full-screen hero; " +
+                fieldDelta in 0.20f..0.95f,
+                "The full-strength field must retain distinct bounded color regions; " +
                     "delta was $fieldDelta",
             )
             assertTrue(
                 primary.colorDistance(secondary) >= 0.01f &&
                     secondary.colorDistance(tertiary) >= 0.01f &&
                     tertiary.colorDistance(primary) >= 0.01f,
-                "The three faint anchors must remain spatially distinct without becoming " +
+                "The three anchors must remain spatially distinct without becoming " +
                     "saturated panels; primary=$primary secondary=$secondary tertiary=$tertiary",
             )
 
@@ -339,7 +340,7 @@ class AuroraComponentsUiTest {
     fun downloadingStateMappingExposesNonColorMeaning() = runComposeUiTest {
         setContent {
             MaterialTheme {
-                GgufFileListItem(
+                ModelDetailsDownloadableListItem(
                     filename = "weights.gguf",
                     sizeBytes = 1_024L,
                     isDownloaded = false,
@@ -437,7 +438,7 @@ private fun BackdropReadabilityFixture(
         androidx.compose.material3.Text(
             text = label,
             modifier = Modifier.align(Alignment.Center),
-            color = MaterialTheme.colorScheme.onSurface,
+            color = AppTheme.colors.onSurface,
         )
     }
 }
@@ -448,7 +449,7 @@ private fun LocalModelStatusFixture(
     filename: String,
     componentStatus: String?,
 ) {
-    LocalModelListItem(
+    DownloadedListItem(
         model = LocalModelEntity(
             modelId = id,
             filename = filename,

@@ -4,6 +4,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.AppTheme
 
 enum class AppNavigationLayout {
     ModalSidebar,
@@ -32,17 +33,21 @@ data class AdaptiveLayoutPolicy(
 
 fun adaptiveLayoutPolicy(width: Dp, contentKind: AppContentKind): AdaptiveLayoutPolicy {
     val navigation = when {
-        width < 600.dp -> AppNavigationLayout.ModalSidebar
-        width < 840.dp -> AppNavigationLayout.Rail
+        width < AppTheme.dimensions.size600 -> AppNavigationLayout.ModalSidebar
+        width < AppTheme.dimensions.size840 -> AppNavigationLayout.Rail
         else -> AppNavigationLayout.Sidebar
     }
-    val horizontalMargin = if (width < 600.dp) 16.dp else 24.dp
+    val horizontalMargin = when {
+        width <= 360.dp -> AppTheme.spacing.spacing16
+        width < AppTheme.dimensions.size600 -> 18.dp
+        else -> AppTheme.spacing.spacing24
+    }
     val maxContentWidth = when (contentKind) {
-        AppContentKind.Chat -> 840.dp
+        AppContentKind.Chat -> AppTheme.dimensions.size840
         AppContentKind.ModelHub,
         AppContentKind.Details,
-        -> 1040.dp
-        AppContentKind.Settings -> 760.dp
+        -> AppTheme.dimensions.size1040
+        AppContentKind.Settings -> AppTheme.dimensions.size760
     }
     return AdaptiveLayoutPolicy(
         navigation = navigation,

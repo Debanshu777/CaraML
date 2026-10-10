@@ -202,18 +202,54 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 
 ## Recent Changes
 
+- Installed text loading reuses an operation-local verified artifact only when the complete catalog snapshot matches, retaining fresh final load verification. Verified unsupported containers receive GGUF guidance; paused verification can resume, and startup reconciliation fairly repairs stale download rows only after exact published-artifact proof. See the [validation and performance report](../docs/model-validation/2026-10-08/report.md).
+
+- GGUF evidence honors explicit key dimensions and omitted KV-head defaults; loading, generation and transfer failures emit static reasons and timings without model text or paths. The debug matrix uses exact published identities and preserves user settings. See the [validation report](../docs/model-validation/2026-10-07/report.md).
+
+- Move creation modes into separate drawer destinations, preserve the chosen mode across restoration, and restore separate model and Send/Stop controls.
+
+- Chat keeps separate model and labeled Send/Stop controls, collapsed reasoning and generation details, and recoverable length/context/no-answer outcomes instead of reporting empty replies as done.
+
+- Native preflight identifies Gemma assistant models that require a target context; chat reports the actual admission reason instead of labeling every temporary failure as memory/thermal pressure.
+
+- Installed GGUF models with incomplete app metadata now use a bounded CPU plan and native model/memory preflight, retaining exact artifact verification and load recovery.
+
+- Persistent rail/sidebar navigation now paints through the landscape leading safe area while keeping controls and route content at their prior safe positions.
+
+- On short landscape windows, Models scrolls its title, tabs, and search field while a status-bar glass layer fades over the moving content. Safe scroll padding keeps the first control clear of the frost without reserving an empty app bar.
+
+- Fixed app bars and composers sample the actual scrolling backdrop and fade continuously into the content. Bottom safe areas now use scroll padding instead of clipping the backdrop above the gesture bar; final actions scroll clear of the glass. Rendered checks cover both edges and touch targets.
+
+- Added shared sticky headers with full-width frosted edges, removed redundant result/file dividers, rebuilt Device info around storage/memory/compute, and corrected the drawer preview crop. SVG action assets now generate one shared icon set (`python3 scripts/generate_app_icons.py`). Layout evidence: `build/reports/layout-qa-2026-10-06/`.
+
+- Rebalanced typography through shared semantic roles, retaining the bundled fonts while reducing title weight/size and increasing supporting-text readability; local chat and mode-label size overrides now use shared roles. Evidence: `build/reports/typography-qa-2026-10-06/`.
+
+- Design QA aligned utility-page spacing and language, preserved Device info navigation, replaced file-selection buttons with radio controls, and stacked preference controls at large text sizes. The before/after gallery is in `build/reports/design-qa-2026-10-06/index.html`; debug fixtures are labelled separately from live Pixel screens.
+
+- Unified action buttons around the raised Pocket pal style, with visible quick-tap press-depth motion, disabled and reduced-motion feedback, and matching compact/icon variants across Create, Models, and Settings.
+
+- Corrected sidebar fidelity against the approved mobile reference: semibold labels, outline icons, tilted logo, full-width header, full-page reveal, and back-only navigation on Device info.
+
+- Introduced Pocket pal + Aurora: bundled Bricolage Grotesque/DM Sans, warm light/dark surfaces, and shared orange/yellow/lilac/mint brand tokens.
+- Mobile navigation now reveals a rounded, scaled page over the sidebar; Create and Models stay above bottom Settings, with reduced-motion and optional soft effects.
+- Model Hub uses flat model rows, inline filters and queue controls, a dedicated device panel, and recoverable search/library/download states; memory estimates remain distinct from unverified compatibility.
+- Create follows the approved mobile layout with an inline empty composer; conversations show sender identity, real generation phases, and recovery actions. Keyboard resizing and large-text drafts preserve reachable controls and visible replies.
+- Appearance settings persist Keep things still and Soft glass. The character currently uses shared Compose; authored Rive playback remains pending a `.riv` asset and platform adapters.
+- [Implementation plan](../docs/superpowers/plans/2026-10-05-pocket-pal-brand.md) and [Rive asset contract](../docs/brand/rive-character-contract.md).
+- [Pixel fidelity audit](../docs/brand/pixel-fidelity-audit.md) records actual model loading/chat/search/device/library checks separately from labelled debug states and JVM renders.
+
 <!-- Updated at end of each AI-assisted development session -->
 
+- Parameter/placement and fit-accounting fixes use persistence namespace `caraml-native-20260930-f46bc30-c92d73c-params1` so earlier compatibility failures and measurements are not reused
+- Installed Text GGUF scanning remains bounded at 8 MiB while accepting valid tokenizer arrays beyond 4 MiB; the existing MiniCPM5 Q4_K_M reached native ready on a Pixel 9
+- Discover uses Paging 3.5.1 for bounded cursor loading, auto-appends near the last five models, and debounces search by 500 ms; the download queue sits below Discover filters, GGUF rows own exact single/group download actions, and complete verified local GGUF headers can repair missing installed Text evidence offline
+- Model discovery and details now show provisional device-resource guidance for sparse GGUF metadata, label supporting or unverified files, group shard downloads by exact identity, and keep transfer separate from strict load admission
 - Desktop large-text empty-state verification now mirrors the production scrollable viewport so titles and actions remain reachable across platform font metrics
 - Generated-media stores coordinate per cache root across the process, protect every active session, evict expired/LRU abandoned sessions, and enforce one aggregate 1 GiB write limit
-- Native admission now carries exact placement, memory budget, segmentation, prefetch, and disabled upstream auto-fit through load; persisted assessment, calibration, and quarantine state is isolated under `caraml-native-20260923-f46bc30-c92d73c`
+- Native admission carries the selected plan through load; diffusion fitting is disabled, while LLM plans without an explicit GPU-layer count permit native fitting at the admitted context
 - Low-risk September engine policy enables bounded llama lazy loading and trusted discrete-GPU diffusion segmentation/prefetch, while unknown native failures fail closed without an untyped OOM retry
 - Expanded the documented [CaraML Prism design system](../docs/caraml-design-system.md) with information hierarchy, progressive disclosure, consistent rounded surfaces, compact reflow, and data-heavy toolbar guidance
-- Compact Models now collapses device diagnostics into one remembered summary, uses rounded wrapping result panes and compact metrics, and prioritizes its command and first useful result
 - Artifact now puts device-fit and download decisions ahead of collapsed technical metadata, with rounded focal/file surfaces and 360–412dp production previews including 200% text
-- Active conversations now enter Focus Mode: persistent navigation and Create chrome disappear, the thread reclaims the canvas, and one accessible action opens the existing sidebar without replacing the production composer
-- Rebuilt the shared UI as a calm sidebar-first local AI workbench: compact windows reveal a modal left panel without moving content, tablets use a compact rail, and wider workspaces use a labeled contextual sidebar
-- Create now owns the full canvas with the baseline yellow/violet/green grain-backed atmosphere, a connected Text/Image/Video control, the production composer, truthful no-model action, and explicit generation states
 - Model Hub now uses one flat compact registry hierarchy, while Details integrates model identity into the route canvas and preserves exact durable artifact controls without sacrificing compact or large-text reachability
 - Android uses UIDT/foreground WorkManager notifications, iOS reconnects to a stable background URLSession, and Desktop recovers persisted download checkpoints at startup
 - LLM and diffusion admission now reuse one final exact artifact request set for storage checks, evidence, and enqueue; successful same-owner revision replacement publishes the new Ready catalog before retryable cleanup and preserves externally referenced components
@@ -221,8 +257,6 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 - Android UIDT and WorkManager workers now await one startup-reconciliation barrier, prefer and preserve the exact UIDT when duplicate owners exist, and use generation-bound completion and Task Manager stop markers; user-stopped or orphaned UIDT transfers become resumable pauses while cancellation checkpoints atomically release exact leases
 - Exact native loading now acquires every expected plus current-candidate repository root on the download subsystem's shared lock, recovery-validates and exactly compares the authoritative owner bundle, then retains the lifetime through byte validation, marker cleanup, and native open/load; Git, LFS, and Xet bindings fail closed
 - Ready catalogs now require exact revision, object, bundle, digest, local generation, and complete current request-set bindings; the unused app database starts at schema version 1, malformed current rows are isolated without terminating observers, Model Details controls carry exact revalidated batch/task IDs, and transactional removal prunes a generation only after its final owner is gone
-- Rebuilt the shared UI as a sidebar-first Prism workbench: compact windows reveal a modal left panel without moving content, tablets use a compact rail, and wider workspaces use a labeled sidebar with contextual generation modes
-- Create now centers one focused command composer, keeps Text, Image, and Video as local modes, and exposes explicit empty, preparation, generation, completion, and failure states
 - Model Hub now uses one compact registry hierarchy, while Details prioritizes exact artifacts and renders durable pause/resume/cancel/retry state without sacrificing compact or large-text reachability
 - Android uses UIDT/foreground WorkManager notifications, iOS restores each background task's exact response bound and terminal rejection reason across relaunch while stopped tasks relinquish ownership before replacement scheduling, and Desktop recovers persisted download checkpoints at startup
 - Durable download batches retain strict versioned exact descriptor evidence and bind its digest into idempotent identity; persisted payloads use capped allocation-free UTF-8 preflight before hashing or parsing, while uncertain descriptors remain enrichment-only

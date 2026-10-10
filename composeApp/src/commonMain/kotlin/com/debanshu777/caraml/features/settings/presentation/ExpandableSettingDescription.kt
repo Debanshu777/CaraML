@@ -1,23 +1,23 @@
 package com.debanshu777.caraml.features.settings.presentation
 
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import com.debanshu777.caraml.core.ui.components.BrandButton
+import com.debanshu777.caraml.core.ui.components.BrandButtonStyle
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 
 @Composable
@@ -37,13 +37,14 @@ fun ExpandableSettingDescription(
     Column(modifier = modifier) {
         Text(
             text = summary,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = AppTheme.typography.bodySmall,
+            color = AppTheme.colors.onSurfaceVariant,
         )
-        TextButton(
+        BrandButton(
+            style = BrandButtonStyle.Secondary,
             onClick = { expanded = !expanded },
             modifier = Modifier
-                .heightIn(min = 48.dp)
+                .heightIn(min = AppTheme.spacing.spacing48)
                 .semantics {
                     stateDescription = if (expanded) "Expanded" else "Collapsed"
                 },
@@ -64,7 +65,7 @@ fun ExpandableSettingDescription(
 private fun DetailText(details: String) {
     Text(
         text = details,
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = AppTheme.typography.bodySmall,
+        color = AppTheme.colors.onSurfaceVariant,
     )
 }

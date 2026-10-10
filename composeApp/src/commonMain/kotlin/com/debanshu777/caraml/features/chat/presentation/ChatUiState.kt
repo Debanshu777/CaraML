@@ -41,6 +41,7 @@ sealed interface ChatUiState {
 }
 
 data class StreamingState(
+    val isCompacting: Boolean = false,
     val streamingText: String = "",
     val streamingThinkingText: String = "",
     val streamingMessageId: String? = null,

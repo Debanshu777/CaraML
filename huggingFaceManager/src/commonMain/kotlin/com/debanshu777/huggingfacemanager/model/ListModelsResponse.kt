@@ -32,6 +32,15 @@ data class ListModelsResponse(
         val isLikedByUser: Boolean? = null,
         @SerialName("lastModified")
         val lastModified: String? = null,
+        @SerialName("createdAt")
+        val createdAt: String? = null,
+        @SerialName("library_name")
+        val libraryName: String? = null,
+        @SerialName("tags")
+        val tags: List<String>? = null,
+        /** GGUF architecture, when the public list projection provides it. */
+        val architecture: String? = null,
+        val contextLength: Int? = null,
         @SerialName("likes")
         val likes: Int? = null,
         @SerialName("numParameters")

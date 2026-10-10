@@ -9,6 +9,9 @@ import com.debanshu777.caraml.core.download.DownloadBatchState
 import com.debanshu777.caraml.core.download.DownloadFailureCode
 import com.debanshu777.caraml.core.download.DownloadTaskStore
 import com.debanshu777.caraml.core.download.DownloadUserIntent
+import com.debanshu777.caraml.core.download.PublishedDownloadSnapshot
+import com.debanshu777.caraml.core.download.PublishedDownloadScanPage
+import com.debanshu777.caraml.core.download.isPublishedDownloadCandidate
 import com.debanshu777.caraml.core.download.canTransitionTo
 import com.debanshu777.caraml.core.download.downloadBatchArtifactId
 import com.debanshu777.caraml.core.download.downloadBatchId
@@ -24,7 +27,54 @@ import kotlinx.coroutines.flow.transform
 class RoomDownloadTaskStore(
     private val dao: DownloadTaskDao,
 ) : DownloadTaskStore {
-    override suspend fun create(request: DownloadBatchRequest, nowEpochMs: Long): String {
+    override suspend fun create(request: DownloadBatchRequest, nowEpochMs: Long): String =
+        createRecord(request, nowEpochMs, newOnly = false).first
+
+    /** The insertion result proves fresh creation; existing terminal work is never reactivated. */
+    suspend fun createNewOnly(request: DownloadBatchRequest, nowEpochMs: Long): Pair<String, Boolean> =
+        createRecord(request, nowEpochMs, newOnly = true)
+
+    /** Retries only already-requested running-intent network work and preserves its checkpoint. */
+    suspend fun retryNetworkIfRunningIntent(batchId: String, nowEpochMs: Long): Boolean {
+        if (batchId.length != 64 || batchId.any { it !in '0'..'9' && it !in 'a'..'f' }) return false
+        return dao.retryNetworkIfRunningIntent(batchId, nowEpochMs)
+    }
+
+    suspend fun runningPauseSnapshot(batchId: String): Pair<DownloadBatchSnapshot, Long>? {
+        val persisted = dao.batch(batchId) ?: return null
+        val snapshot = persisted.toReadSafeSnapshotOrNull() ?: return null
+        if (snapshot.userIntent != DownloadUserIntent.RUN || snapshot.state in
+            setOf(DownloadBatchState.COMPLETED, DownloadBatchState.FAILED_TERMINAL, DownloadBatchState.CANCELLED)) return null
+        return snapshot to persisted.batch.updatedAtEpochMs
+    }
+
+    /** Pauses one observed running intent without overwriting any newer command. */
+    suspend fun pauseRunningSnapshot(snapshot: DownloadBatchSnapshot, observedVersion: Long, nowEpochMs: Long): Boolean {
+        val id = snapshot.batchId
+        if (id.length != 64 || id.any { it !in '0'..'9' && it !in 'a'..'f' } ||
+            observedVersion < 0L || observedVersion == Long.MAX_VALUE || nowEpochMs < 0L ||
+            snapshot.userIntent != DownloadUserIntent.RUN) return false
+        return dao.pauseRunningSnapshot(id, snapshot.state.name, snapshot.displayName, observedVersion, nowEpochMs)
+    }
+
+    /** Reads a fresh pause token; callers must verify the selected immutable identities before resuming. */
+    suspend fun pausedResumeSnapshot(batchId: String): Pair<DownloadBatchSnapshot, Long>? {
+        val persisted = dao.batch(batchId) ?: return null
+        val snapshot = persisted.toReadSafeSnapshotOrNull() ?: return null
+        if (snapshot.userIntent != DownloadUserIntent.PAUSE || snapshot.state !in
+            setOf(DownloadBatchState.PAUSED, DownloadBatchState.VERIFYING)) return null
+        return snapshot to persisted.batch.updatedAtEpochMs
+    }
+
+    suspend fun resumePausedSnapshot(snapshot: DownloadBatchSnapshot, observedVersion: Long, nowEpochMs: Long): Boolean {
+        val id = snapshot.batchId
+        if (id.length != 64 || id.any { it !in '0'..'9' && it !in 'a'..'f' } ||
+            observedVersion < 0L || observedVersion == Long.MAX_VALUE || nowEpochMs < 0L || snapshot.userIntent != DownloadUserIntent.PAUSE ||
+            snapshot.state !in setOf(DownloadBatchState.PAUSED, DownloadBatchState.VERIFYING)) return false
+        return dao.resumePausedSnapshot(id, snapshot.state.name, observedVersion, nowEpochMs)
+    }
+
+    private suspend fun createRecord(request: DownloadBatchRequest, nowEpochMs: Long, newOnly: Boolean): Pair<String, Boolean> {
         val batchId = downloadBatchId(request)
         val batch = DownloadBatchEntity(
             batchId = batchId,
@@ -74,8 +124,11 @@ class RoomDownloadTaskStore(
                 updatedAtEpochMs = nowEpochMs,
             )
         }
-        dao.insertIfAbsent(batch, artifacts)
-        return batchId
+        val inserted = if (newOnly) dao.insertOnly(batch, artifacts) else {
+            dao.insertIfAbsent(batch, artifacts)
+            false
+        }
+        return batchId to inserted
     }
 
     override fun observeForModel(modelId: String): Flow<List<DownloadBatchSnapshot>> =
@@ -88,6 +141,17 @@ class RoomDownloadTaskStore(
                 } else if (persisted.requiresQuarantine()) {
                     dao.quarantineMutableBatch(persisted.batch.batchId)
                 }
+            }
+            emit(snapshots)
+        }.distinctUntilChanged()
+
+    override fun observeQueue(): Flow<List<DownloadBatchSnapshot>> =
+        dao.observeQueue().transform { batches ->
+            val snapshots = mutableListOf<DownloadBatchSnapshot>()
+            batches.forEach { persisted ->
+                val snapshot = persisted.toReadSafeSnapshotOrNull()
+                if (snapshot != null) snapshots += snapshot
+                else if (persisted.requiresQuarantine()) dao.quarantineMutableBatch(persisted.batch.batchId)
             }
             emit(snapshots)
         }.distinctUntilChanged()
@@ -106,6 +170,33 @@ class RoomDownloadTaskStore(
                 ?: dao.quarantineMutableBatch(persisted.batch.batchId)
         }
         return recovered
+    }
+
+    override suspend fun publishedDownloadCandidates(nowEpochMs: Long): List<PublishedDownloadSnapshot> =
+        scanPublishedDownloads(nowEpochMs, null).candidates
+
+    override suspend fun scanPublishedDownloads(nowEpochMs: Long, afterBatchId: String?): PublishedDownloadScanPage {
+        if (nowEpochMs < 0L || afterBatchId != null &&
+            (afterBatchId.length != 64 || afterBatchId.any { it !in '0'..'9' && it !in 'a'..'f' })) {
+            return PublishedDownloadScanPage(emptyList(), null)
+        }
+        val scanned = dao.publishedDownloadCandidates(nowEpochMs, afterBatchId)
+        val candidates = scanned.mapNotNull { persisted ->
+            val snapshot = persisted.toMutationSafeSnapshotOrNull() ?: return@mapNotNull null
+            if (!snapshot.isPublishedDownloadCandidate()) return@mapNotNull null
+            PublishedDownloadSnapshot(snapshot, persisted.batch.updatedAtEpochMs)
+        }
+        // Advance across unreadable rows too; a corrupt observation never changes a queue row.
+        return PublishedDownloadScanPage(candidates, scanned.lastOrNull()?.batch?.batchId)
+    }
+
+    override suspend fun completePublishedDownload(expected: PublishedDownloadSnapshot, nowEpochMs: Long): Boolean {
+        if (nowEpochMs < 0L || expected.observedVersion < 0L || expected.observedVersion == Long.MAX_VALUE ||
+            !expected.batch.isPublishedDownloadCandidate()) return false
+        val persisted = dao.batch(expected.batch.batchId) ?: return false
+        if (persisted.batch.updatedAtEpochMs != expected.observedVersion ||
+            persisted.toMutationSafeSnapshotOrNull() != expected.batch) return false
+        return dao.completePublishedSnapshot(persisted, nowEpochMs)
     }
 
     override suspend fun claim(
@@ -127,6 +218,25 @@ class RoomDownloadTaskStore(
         val claimed = dao.claim(artifactId, owner, nowEpochMs, expiresAtEpochMs) == 1
         if (claimed) refreshBatchForArtifact(artifactId, nowEpochMs)
         return claimed
+    }
+
+    override suspend fun restartTransferCheckpoint(
+        artifactId: String, owner: String, previousBytes: Long, nowEpochMs: Long,
+    ): Boolean {
+        require(owner.isNotBlank() && owner.length <= 128 && owner.none(Char::isISOControl))
+        require(previousBytes > 0L)
+        return dao.restartTransferCheckpoint(artifactId, owner, previousBytes, nowEpochMs) == 1
+    }
+
+    override suspend fun updateTransferProgress(
+        artifactId: String, owner: String, bytesReceived: Long, entityTag: String?, lastModified: String?,
+        nowEpochMs: Long, expiresAtEpochMs: Long,
+    ): Boolean {
+        require(owner.isNotBlank() && owner.length <= 128 && owner.none(Char::isISOControl))
+        require(bytesReceived >= 0L && expiresAtEpochMs > nowEpochMs)
+        require(entityTag == null || entityTag.length <= 512 && entityTag.none(Char::isISOControl))
+        require(lastModified == null || lastModified.length <= 128 && lastModified.none(Char::isISOControl))
+        return dao.updateTransferProgress(artifactId, owner, bytesReceived, entityTag, lastModified, nowEpochMs, expiresAtEpochMs) == 1
     }
 
     override suspend fun updateProgress(

@@ -65,6 +65,34 @@ import kotlin.test.assertTrue
 class ChatAuroraUiTest {
 
     @Test
+    fun compressionShowsOneStatusOutsideHistoryAndKeepsTheFullPromptVisible() = runComposeUiTest {
+        val prompt = "explain ADMX in more details"
+        setContent {
+            MaterialTheme {
+                ChatScreenContent(
+                    uiState = ChatUiState.Ready(
+                        messages = persistentListOf(
+                            ChatMessage(id = "user", role = MessageRole.User, text = prompt),
+                            ChatMessage(id = "reply", role = MessageRole.Assistant, text = ""),
+                        ),
+                        isGenerating = true,
+                    ),
+                    streamingState = StreamingState(isCompacting = true, streamingMessageId = "reply"),
+                    onSelectModel = {},
+                    onSendMessage = {},
+                    onCancelGeneration = {},
+                    onNavigateToSearch = {},
+                )
+            }
+        }
+        onNodeWithTag("chat-context-maintenance").assertIsDisplayed()
+        onNodeWithText("Making room for your next reply…").assertIsDisplayed()
+        onNodeWithText(prompt).assertIsDisplayed()
+        onNodeWithText("Thoughts").assertDoesNotExist()
+        onNodeWithContentDescription("Stop generation").assertIsDisplayed()
+    }
+
+    @Test
     fun wideChatAlignsConversationComposerAndGenerationStatsToOneReadableWidth() =
         assertChatSurfaceAlignment(viewportWidth = 1200.dp, expectedBodyWidth = 792f)
 
@@ -120,8 +148,8 @@ class ChatAuroraUiTest {
 
             val image = onNodeWithTag("generating-composer-host").captureToImage()
             val pixels = image.toPixelMap()
-            val leftBoundary = pixels[2, 70]
-            val rightBoundary = pixels[357, 70]
+            val leftBoundary = pixels[0, 70]
+            val rightBoundary = pixels[pixels.width - 1, 70]
 
             assertTrue(
                 colorDistance(leftBoundary, rightBoundary) <= 0.01f,
@@ -204,10 +232,10 @@ class ChatAuroraUiTest {
     }
 
     @Test
-    fun everyGenerationModeHasSpecificHumanCopy() {
-        assertEquals("Start with a private thought.", emptyStateCopy(GenerationMode.Text).title)
-        assertEquals("Create without the cloud.", emptyStateCopy(GenerationMode.Image).title)
-        assertEquals("Set ideas in motion.", emptyStateCopy(GenerationMode.Video).title)
+    fun everyGenerationModeKeepsTheBrandGreeting() {
+        assertEquals("Got a\nweird idea?", emptyStateCopy(GenerationMode.Text).title)
+        assertEquals("Got a\nweird idea?", emptyStateCopy(GenerationMode.Image).title)
+        assertEquals("Got a\nweird idea?", emptyStateCopy(GenerationMode.Video).title)
     }
 
     @Test
@@ -456,15 +484,12 @@ private fun assertChatSurfaceAlignment(
     }
 
     val body = onNodeWithText(messageText).fetchSemanticsNode().boundsInRoot
-    val composer = onNodeWithText("How can I help you today?").fetchSemanticsNode().boundsInRoot
-    val stats = onNodeWithContentDescription(
-        "Generation speed 42.5 tokens per second",
-    ).fetchSemanticsNode().boundsInRoot
-
+    val composer = onNodeWithTag("create-command").fetchSemanticsNode().boundsInRoot
     assertBoundsWidth(expectedBodyWidth, body, "conversation body")
     assertAligned(body.left, composer.left, "composer left")
     assertAligned(body.right, composer.right, "composer right")
-    assertAligned(body.right, stats.right, "generation stats right")
+    onNodeWithContentDescription("Generation speed 42.5 tokens per second").assertDoesNotExist()
+
 }
 
 private fun assertBoundsWidth(expected: Float, bounds: Rect, label: String) {

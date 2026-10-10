@@ -6,6 +6,14 @@ import kotlin.test.assertEquals
 
 class AdaptiveLayoutPolicyTest {
     @Test
+    fun compactGuttersMatchTheNarrowPhoneOverride() {
+        assertEquals(16.dp, adaptiveLayoutPolicy(360.dp, AppContentKind.Settings).horizontalMargin)
+        assertEquals(18.dp, adaptiveLayoutPolicy(361.dp, AppContentKind.Settings).horizontalMargin)
+        assertEquals(18.dp, adaptiveLayoutPolicy(599.dp, AppContentKind.ModelHub).horizontalMargin)
+        assertEquals(24.dp, adaptiveLayoutPolicy(600.dp, AppContentKind.Chat).horizontalMargin)
+    }
+
+    @Test
     fun navigationUsesModalSidebarBelow600RailThrough839AndSidebarFrom840() {
         assertEquals(
             AppNavigationLayout.ModalSidebar,

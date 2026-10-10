@@ -11,10 +11,13 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
+import androidx.compose.material3.Text
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -40,7 +43,13 @@ import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CompletableDeferred
 import com.debanshu777.caraml.core.theme.AppShapes
+import com.debanshu777.caraml.core.theme.CaraMLTheme
+import com.debanshu777.caraml.core.theme.ThemePreferences
+import com.debanshu777.caraml.core.ui.components.AuroraBackdrop
+import com.debanshu777.caraml.core.drawer.LocalNavigationMenuAction
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubContextStrip
 import com.debanshu777.caraml.core.data.settings.SettingsRepository
 import com.debanshu777.caraml.core.platform.DeviceCapabilities
 import com.debanshu777.caraml.core.platform.DeviceSnapshot
@@ -84,6 +93,7 @@ import com.debanshu777.huggingfacemanager.repository.HuggingFaceRepository
 import com.debanshu777.huggingfacemanager.usecase.GetModelConfigUseCase
 import com.debanshu777.huggingfacemanager.usecase.GetModelDetailUseCase
 import com.debanshu777.huggingfacemanager.usecase.GetModelFileTreeUseCase
+import com.debanshu777.huggingfacemanager.usecase.GetModelPageUseCase
 import com.debanshu777.huggingfacemanager.usecase.GetRecommendationModelDetailUseCase
 import com.debanshu777.huggingfacemanager.usecase.ListModelsUseCase
 import com.debanshu777.huggingfacemanager.usecase.ListRecommendationModelsUseCase
@@ -108,6 +118,66 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ModelHubProductionBranchUiTest {
+    @Test
+    fun deviceRefreshResamplesStorageWithoutChangingTheModelQuery() = runComposeUiTest {
+        val environment = TestModelHubEnvironment()
+        try {
+            setContent {
+                val info = environment.modelViewModel.storageInfo.collectAsState().value
+                Text("${info.availableDeviceBytes}")
+            }
+            waitUntil(timeoutMillis = 10_000) { environment.modelViewModel.storageInfo.value.hasSampled }
+            runOnIdle {
+                assertEquals(10_000_000L, environment.modelViewModel.storageInfo.value.availableDeviceBytes)
+                environment.storage.availableBytes = 6_000_000L
+                environment.modelViewModel.refreshDeviceInfo()
+            }
+            waitUntil(timeoutMillis = 10_000) { environment.modelViewModel.storageInfo.value.availableDeviceBytes == 6_000_000L }
+            runOnIdle { assertTrue(environment.listRequests.isEmpty()) }
+        } finally {
+            environment.close()
+        }
+    }
+
+
+    @Test
+    fun firstPageLoadingDoesNotShowZeroCountOrEmptyState() = runComposeUiTest {
+        val gate = CompletableDeferred<Unit>()
+        val environment = TestModelHubEnvironment(firstPageGate = gate)
+        try {
+            setSearchContent(environment.modelViewModel)
+            waitUntil { environment.modelViewModel.results.value.initialLoading }
+            onNodeWithText("Loading models").assertIsDisplayed()
+            onNodeWithText("0 models loaded").assertDoesNotExist()
+            onNodeWithText("No models are available yet.").assertDoesNotExist()
+
+            gate.complete(Unit)
+            waitUntil { environment.modelViewModel.results.value.models.isNotEmpty() }
+            onNodeWithText("1 model loaded").assertIsDisplayed()
+        } finally {
+            gate.complete(Unit)
+            environment.close()
+        }
+    }
+
+    @Test
+    fun visibleDiscoverLoadsFirstPageOnceWithoutUserAction() = runComposeUiTest {
+        val environment = TestModelHubEnvironment()
+        try {
+            setSearchContent(environment.modelViewModel)
+            waitUntil {
+                environment.listRequests.size == 1 &&
+                    environment.modelViewModel.results.value.models.singleOrNull()?.id == "org/browse-result"
+            }
+            onNodeWithText("browse-result").performScrollTo().assertIsDisplayed()
+            onNodeWithText("1 model loaded").assertIsDisplayed()
+
+            runOnIdle { environment.modelViewModel.updateSearchQuery("draft only") }
+            runOnIdle { assertEquals(1, environment.listRequests.size) }
+        } finally {
+            environment.close()
+        }
+    }
 
     @Test
     fun textBranchBlankSubmitEscapesResponseBackedSearchAndKeepsCommandFirst() =
@@ -123,8 +193,8 @@ class ModelHubProductionBranchUiTest {
                 setSearchContent(environment.modelViewModel)
 
                 val command = onNodeWithTag("model-command").fetchSemanticsNode().boundsInRoot
-                val context = onNodeWithTag("model-context").fetchSemanticsNode().boundsInRoot
-                assertTrue(command.top < context.top)
+                val results = onNodeWithTag("model-primary-results").fetchSemanticsNode().boundsInRoot
+                assertTrue(command.bottom <= results.bottom)
                 onNodeWithText("search-result").performScrollTo().assertIsDisplayed()
 
                 onNode(hasImeAction(ImeAction.Search)).performTextReplacement("")
@@ -132,7 +202,7 @@ class ModelHubProductionBranchUiTest {
 
                 runOnIdle { assertNull(environment.modelViewModel.searchResponse.value) }
                 onNodeWithText("browse-result").performScrollTo().assertIsDisplayed()
-                onNodeWithText("1 model").assertIsDisplayed()
+                onNodeWithText("1 model loaded").assertIsDisplayed()
             } finally {
                 environment.close()
             }
@@ -155,9 +225,7 @@ class ModelHubProductionBranchUiTest {
                     )
                     assertNull(environment.modelViewModel.searchResponse.value)
                 }
-                onNodeWithText("Please enter a search query")
-                    .performScrollTo()
-                    .assertIsDisplayed()
+                onNodeWithText("Please enter a search query").assertIsDisplayed()
                 onNodeWithText("No models match “   ”.").assertDoesNotExist()
             } finally {
                 environment.close()
@@ -165,7 +233,7 @@ class ModelHubProductionBranchUiTest {
         }
 
     @Test
-    fun filterSheetAppliesExactParamsWithOneReloadAndUpdatedRows() = runComposeUiTest {
+    fun inlineFiltersApplyExactParamsWithOneReloadAndUpdatedRows() = runComposeUiTest {
         val environment = TestModelHubEnvironment()
         try {
             environment.modelViewModel.loadModels()
@@ -176,11 +244,16 @@ class ModelHubProductionBranchUiTest {
             setSearchContent(environment.modelViewModel)
             onNodeWithText("browse-result").performScrollTo().assertIsDisplayed()
 
-            onNodeWithText("Filters").performScrollTo().performClick()
-            onNode(hasText("Likes") and isSelectable()).performClick()
-            onAllNodes(hasText("3B") and isSelectable())[0].performScrollTo().performClick()
-            onAllNodes(hasText("12B") and isSelectable())[1].performScrollTo().performClick()
-            onNodeWithText("Done").performScrollTo().performClick()
+            onNodeWithContentDescription("Sort and filter models").performClick()
+            onNodeWithContentDescription("Parameters").performScrollTo().performClick()
+            onNodeWithText("Up to 12B").performClick()
+            onNodeWithText("Sort & more options").performScrollTo().performClick()
+            onNodeWithContentDescription("Minimum").performScrollTo().performClick()
+            onNodeWithText("3B").performClick()
+            onNodeWithContentDescription("Sort", useUnmergedTree = true).performScrollTo().performClick()
+            onNodeWithText("Most liked").performClick()
+            runOnIdle { assertEquals(1, environment.listRequests.size) }
+            onNodeWithText("Apply filters").performScrollTo().performClick()
 
             waitUntil {
                 environment.listRequests.size == 2 &&
@@ -194,7 +267,7 @@ class ModelHubProductionBranchUiTest {
             runOnIdle {
                 assertEquals(
                     listOf(
-                        RecordedListRequest("trending", "min:0,max:6B"),
+                        RecordedListRequest("trendingScore", "min:0,max:6B"),
                         RecordedListRequest("likes", "min:3B,max:12B"),
                     ),
                     environment.listRequests,
@@ -245,8 +318,8 @@ class ModelHubProductionBranchUiTest {
             setSearchContent(environment.modelViewModel)
 
             val command = onNodeWithTag("model-command").fetchSemanticsNode().boundsInRoot
-            val context = onNodeWithTag("model-context").fetchSemanticsNode().boundsInRoot
-            assertTrue(command.top < context.top)
+            val results = onNodeWithTag("model-primary-results").fetchSemanticsNode().boundsInRoot
+            assertTrue(command.bottom <= results.bottom)
             onNode(hasImeAction(ImeAction.Search)).performTextReplacement("CompVis")
             onNodeWithText("stable-diffusion-v-1-4-original")
                 .performScrollTo()
@@ -265,8 +338,8 @@ class ModelHubProductionBranchUiTest {
             setSearchContent(environment.modelViewModel)
 
             val command = onNodeWithTag("model-command").fetchSemanticsNode().boundsInRoot
-            val context = onNodeWithTag("model-context").fetchSemanticsNode().boundsInRoot
-            assertTrue(command.top < context.top)
+            val results = onNodeWithTag("model-primary-results").fetchSemanticsNode().boundsInRoot
+            assertTrue(command.bottom <= results.bottom)
             onNode(hasImeAction(ImeAction.Search)).performTextReplacement("calcuis")
             onNodeWithText("wan-1.3b-gguf").performScrollTo().assertIsDisplayed()
             onNodeWithText("Wan_2.1_ComfyUI_repackaged").assertDoesNotExist()
@@ -291,7 +364,6 @@ class ModelHubProductionBranchUiTest {
                     Box(Modifier.requiredSize(width = 360.dp, height = 760.dp)) {
                         DownloadedTabContent(
                             viewModel = viewModel,
-                            storageInfo = testStorageInfo(),
                             onSelectModelAndGoBack = {},
                             onNavigateToDetails = { _, _ -> },
                             snackbarHostState = SnackbarHostState(),
@@ -303,11 +375,11 @@ class ModelHubProductionBranchUiTest {
         }
 
         val command = onNodeWithTag("model-command").fetchSemanticsNode().boundsInRoot
-        val context = onNodeWithTag("model-context").fetchSemanticsNode().boundsInRoot
-        assertTrue(command.top < context.top)
+        val results = onNodeWithTag("model-primary-results").fetchSemanticsNode().boundsInRoot
+        assertTrue(command.bottom <= results.bottom)
         onNode(hasImeAction(ImeAction.Search)).performTextReplacement("alpha")
-        onNodeWithText("org/alpha-model").performScrollTo().assertIsDisplayed()
-        onNodeWithText("org/beta-model").assertDoesNotExist()
+        onNodeWithContentDescription("Open model org/alpha-model").performScrollTo().assertIsDisplayed()
+        onNodeWithContentDescription("Open model org/beta-model").assertDoesNotExist()
     }
 
     @Test
@@ -329,7 +401,6 @@ class ModelHubProductionBranchUiTest {
                     Box(Modifier.requiredSize(width = 360.dp, height = 760.dp)) {
                         DownloadedTabContent(
                             viewModel = viewModel,
-                            storageInfo = testStorageInfo(),
                             onSelectModelAndGoBack = {},
                             onNavigateToDetails = { _, _ -> },
                             snackbarHostState = SnackbarHostState(),
@@ -347,8 +418,8 @@ class ModelHubProductionBranchUiTest {
 
         onNode(hasImeAction(ImeAction.Search)).performTextReplacement("beta")
 
-        onNodeWithText("org/alpha-model").performScrollTo().assertIsDisplayed()
-        onNodeWithText("org/beta-model").performScrollTo().assertIsDisplayed()
+        onNodeWithContentDescription("Selected org/alpha-model, tap to deselect").performScrollTo().assertIsDisplayed()
+        onNodeWithContentDescription("Not selected org/beta-model, tap to select").performScrollTo().assertIsDisplayed()
         onNodeWithContentDescription("Selected org/alpha-model, tap to deselect")
             .assertIsDisplayed()
         onNodeWithText("Delete (1)").assertIsDisplayed()
@@ -356,7 +427,7 @@ class ModelHubProductionBranchUiTest {
     }
 
     @Test
-    fun libraryReadinessIsOneRadioGroupWithOneActionAndExactFilterCallback() =
+    fun libraryShowsReadinessPerRowWithoutFilterChips() =
         runComposeUiTest {
             val ready = localModel(
                 id = 1,
@@ -376,58 +447,41 @@ class ModelHubProductionBranchUiTest {
             )
             setContent {
                 DensityOne {
-                    MaterialTheme(shapes = AppShapes) {
-                        Box(Modifier.requiredSize(width = 360.dp, height = 760.dp)) {
-                            DownloadedTabContent(
-                                viewModel = viewModel,
-                                storageInfo = testStorageInfo(),
-                                onSelectModelAndGoBack = {},
-                                onNavigateToDetails = { _, _ -> },
-                                snackbarHostState = SnackbarHostState(),
-                                modifier = Modifier.fillMaxSize(),
-                            )
+                    CaraMLTheme(ThemePreferences()) {
+                        CompositionLocalProvider(LocalNavigationMenuAction provides {}) {
+                            AuroraBackdrop {
+                                Box(Modifier.requiredSize(width = 360.dp, height = 760.dp).testTag("visual-root")) {
+                                    ModelHubScreenLayout(
+                                        selectedTabIndex = 1,
+                                        onTabSelected = {},
+                                        sharedContext = {
+                                            ModelHubContextStrip(testStorageInfo(), null, null)
+                                        },
+                                        discoverContent = {},
+                                        libraryContent = {
+                                            DownloadedTabContent(
+                                                viewModel = viewModel,
+                                                onSelectModelAndGoBack = {},
+                                                onNavigateToDetails = { _, _ -> },
+                                                snackbarHostState = SnackbarHostState(),
+                                                modifier = Modifier.fillMaxSize(),
+                                            )
+                                        },
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
 
-            onNodeWithText("org/ready-model").performScrollTo().assertIsDisplayed()
-            onNodeWithTag("model-toolbar", useUnmergedTree = true)
-                .performScrollTo()
-                .assert(
-                    SemanticsMatcher.keyIsDefined(SemanticsProperties.SelectableGroup),
-                )
-            listOf(
-                "All" to true,
-                "Ready" to false,
-                "Needs setup" to false,
-            ).forEach { (label, selected) ->
-                val option = onNode(
-                    hasText(label) and isSelectable(),
-                ).performScrollTo().fetchSemanticsNode()
-                assertEquals(Role.RadioButton, option.config[SemanticsProperties.Role])
-                assertEquals(selected, option.config[SemanticsProperties.Selected])
-                assertEquals(AppShapes.small, option.config[SemanticsProperties.Shape])
-                val actionCount = onAllNodes(
-                    SemanticsMatcher.keyIsDefined(SemanticsActions.OnClick),
-                    useUnmergedTree = true,
-                ).fetchSemanticsNodes().count { actionNode ->
-                    option.boundsInRoot.contains(actionNode.boundsInRoot.center)
-                }
-                assertEquals(1, actionCount, "$label must expose exactly one click action")
-            }
-            onNodeWithTag("Selected library readiness All", useUnmergedTree = true)
-                .assertIsDisplayed()
-
-            onNode(hasText("Needs setup") and isSelectable()).performClick()
-
-            waitUntil { viewModel.readinessFilter.value == ReadinessFilter.PARTIAL }
-            onNode(hasText("All") and isSelectable()).assertIsNotSelected()
-            onNode(hasText("Needs setup") and isSelectable()).assertIsSelected()
-            onNodeWithTag("Selected library readiness Needs setup", useUnmergedTree = true)
-                .assertIsDisplayed()
-            onNodeWithText("org/partial-model").performScrollTo().assertIsDisplayed()
-            onNodeWithText("org/ready-model").assertDoesNotExist()
+            onNodeWithContentDescription("Open model org/ready-model").performScrollTo().assertIsDisplayed()
+            onNodeWithContentDescription("Open model org/partial-model").performScrollTo().assertIsDisplayed()
+            onNode(hasText("All") and isSelectable()).assertDoesNotExist()
+            onNode(hasText("Ready") and isSelectable()).assertDoesNotExist()
+            onNode(hasText("Needs setup") and isSelectable()).assertDoesNotExist()
+            saveModelHubEvidence("library-compact.png")
         }
 
     @Test
@@ -446,7 +500,7 @@ class ModelHubProductionBranchUiTest {
                 ) {
                     Box(
                         Modifier
-                            .requiredSize(width = 360.dp, height = 420.dp)
+                            .requiredSize(width = 360.dp, height = 640.dp)
                             .background(surface),
                     ) {
                         androidx.compose.foundation.layout.Column {
@@ -475,15 +529,8 @@ class ModelHubProductionBranchUiTest {
                     Box(Modifier.requiredSize(width = 360.dp, height = 760.dp)) {
                         SearchTabContent(
                             viewModel = viewModel,
-                            storageInfo = testStorageInfo(),
                             onNavigateToDetails = { _, _ -> },
                             onRecommendationInfoClick = {},
-                            recommendationProfileState = RecommendationProfileUiState(
-                                profile = RecommendationProfile(),
-                                isAvailable = false,
-                                showDialog = false,
-                            ),
-                            onOpenProfileEditor = {},
                             modifier = Modifier.fillMaxSize(),
                         )
                     }
@@ -531,13 +578,16 @@ private data class RecordedListRequest(
     val parameterRange: String?,
 )
 
-private class TestModelHubEnvironment : AutoCloseable {
+private class TestModelHubEnvironment(
+    private val firstPageGate: CompletableDeferred<Unit>? = null,
+) : AutoCloseable {
     val listRequests = mutableListOf<RecordedListRequest>()
 
     private val client = HttpClient(
         MockEngine { request ->
-            val body = if (request.url.encodedPath.contains("quicksearch")) {
-                """{"models":[{"_id":"org/search-result","id":"org/search-result","private":false}],"modelsCount":1,"q":"server"}"""
+            firstPageGate?.await()
+            val body = if (request.url.parameters["search"] == "server") {
+                """[{"id":"org/search-result","private":false}]"""
             } else {
                 val recorded = RecordedListRequest(
                     sort = request.url.parameters["sort"],
@@ -551,7 +601,7 @@ private class TestModelHubEnvironment : AutoCloseable {
                 } else {
                     "org/browse-result"
                 }
-                """{"models":[{"id":"$repositoryId","private":false}],"numItemsPerPage":1,"numTotalItems":1,"pageIndex":0}"""
+                """[{"id":"$repositoryId","private":false}]"""
             }
             respond(
                 content = body,
@@ -561,7 +611,7 @@ private class TestModelHubEnvironment : AutoCloseable {
         },
     )
     private val localModelDao = TestLocalModelDao(emptyList())
-    private val storage = TestStoragePathProvider()
+    val storage = TestStoragePathProvider()
 
     val modelViewModel = ModelViewModel(
         api = huggingFaceApi(client),
@@ -586,6 +636,7 @@ private fun huggingFaceApi(client: HttpClient): HuggingFaceApi {
     )
     return object : HuggingFaceApi {
         override val listModels = ListModelsUseCase(repository)
+        override val getModelPage = GetModelPageUseCase(repository)
         override val listRecommendationModels = ListRecommendationModelsUseCase(repository)
         override val searchModels = SearchModelsUseCase(repository)
         override val getModelDetail = GetModelDetailUseCase(repository)
@@ -717,10 +768,11 @@ private class TestDownloadedComponentDao : DownloadedComponentDao {
 }
 
 private class TestStoragePathProvider : StoragePathProvider {
+    @Volatile var availableBytes = 10_000_000L
     override fun getModelsStorageDirectory(modelId: String): String = "/tmp/models/$modelId"
     override fun getDatabasePath(): String = "/tmp/models.db"
     override fun fileExists(path: String): Boolean = false
-    override fun getAvailableStorageBytes(): Long = 10_000_000L
+    override fun getAvailableStorageBytes(): Long = availableBytes
     override fun getTotalStorageBytes(): Long = 20_000_000L
     override fun isModelFileReadable(path: String): Boolean = false
     override fun isDirectoryReadable(path: String): Boolean = false

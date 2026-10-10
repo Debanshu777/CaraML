@@ -9,6 +9,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.net.InetAddress
@@ -494,6 +495,116 @@ class DownloadManagerJvmTest {
             assertTrue(reopened.isPublished(metadataTwo))
             assertEquals(2, reopened.validatedArtifacts("org/model")?.entries?.size)
         }
+    }
+
+    @Test
+    fun streamingProgressCarriesResponseValidatorsBeforePublication() = withTemporaryRoot { root ->
+        val expected = ByteArray(8192) { (it % 127).toByte() }
+        val metadata = metadata("model.gguf", expected.size.toLong(), expected.sha256Hex())
+        withServer { exchange ->
+            exchange.responseHeaders.add("ETag", "etag-stream")
+            exchange.responseHeaders.add("Last-Modified", "Wed, 01 Jan 2025 00:00:00 GMT")
+            exchange.sendResponseHeaders(200, expected.size.toLong())
+            exchange.responseBody.use { body ->
+                body.write(expected, 0, 4096)
+                body.flush()
+                Thread.sleep(100)
+                body.write(expected, 4096, 4096)
+            }
+        }.use { server ->
+            val manager = DownloadManager(TestStoragePathProvider(root), server.baseUrl)
+            val updates = runBlocking { manager.download("org/model", "model.gguf", metadata).toList() }
+            val partial = updates.first { it.localPath == null && it.bytesReceived > 0L }
+            assertEquals("etag-stream", partial.entityTag)
+            assertEquals("Wed, 01 Jan 2025 00:00:00 GMT", partial.lastModified)
+            assertTrue(runBlocking { manager.isPublished(metadata) })
+        }
+    }
+
+    @Test
+    fun interruptedResumedBodyWithoutRepeatedHeadersRetainsValidatorsAndPublishesVerifiedBytes() = withTemporaryRoot { root ->
+        val expected = ByteArray(8192) { (it % 127).toByte() }
+        val metadata = metadata("model.gguf", expected.size.toLong(), expected.sha256Hex())
+        val requests = AtomicInteger()
+        withServer { exchange ->
+            when (requests.incrementAndGet()) {
+                1 -> {
+                    exchange.responseHeaders.add("ETag", "etag-interrupted")
+                    exchange.sendResponseHeaders(200, expected.size.toLong())
+                    try { exchange.responseBody.use { body ->
+                        body.write(expected, 0, 4096); body.flush(); Thread.sleep(100)
+                        body.write(expected, 4096, 4096)
+                    } } catch (_: java.io.IOException) { }
+                }
+                2 -> {
+                    assertEquals("bytes=4096-", exchange.requestHeaders.getFirst("Range"))
+                    assertEquals("etag-interrupted", exchange.requestHeaders.getFirst("If-Range"))
+                    exchange.responseHeaders.add("Content-Range", "bytes 4096-8191/8192")
+                    exchange.sendResponseHeaders(206, 4096L)
+                    try { exchange.responseBody.use { body ->
+                        body.write(expected, 4096, 2048); body.flush(); Thread.sleep(100)
+                        body.write(expected, 6144, 2048)
+                    } } catch (_: java.io.IOException) { }
+                }
+                else -> {
+                    assertEquals("bytes=6144-", exchange.requestHeaders.getFirst("Range"))
+                    assertEquals("etag-interrupted", exchange.requestHeaders.getFirst("If-Range"))
+                    exchange.responseHeaders.add("Content-Range", "bytes 6144-8191/8192")
+                    exchange.respond(206, 2048L, expected.copyOfRange(6144, 8192))
+                }
+            }
+        }.use { server ->
+            val manager = DownloadManager(TestStoragePathProvider(root), server.baseUrl)
+            val firstCheckpoint = runBlocking { manager.download("org/model", "model.gguf", metadata)
+                .first { it.bytesReceived > 0L && it.localPath == null } }
+            assertEquals(4096L, firstCheckpoint.bytesReceived)
+            val firstResume = assertNotNull(DownloadResumeMetadata.createOrNull(
+                firstCheckpoint.bytesReceived, firstCheckpoint.entityTag, firstCheckpoint.lastModified))
+            val secondCheckpoint = runBlocking { manager.download("org/model", "model.gguf", metadata, firstResume)
+                .first { it.bytesReceived > 4096L && it.localPath == null } }
+            assertEquals(6144L, secondCheckpoint.bytesReceived)
+            assertEquals("etag-interrupted", secondCheckpoint.entityTag)
+            val secondResume = assertNotNull(DownloadResumeMetadata.createOrNull(
+                secondCheckpoint.bytesReceived, secondCheckpoint.entityTag, secondCheckpoint.lastModified))
+            runBlocking { manager.download("org/model", "model.gguf", metadata, secondResume).toList() }
+            val published = assertNotNull(runBlocking { manager.validatedArtifacts("org/model") }).entries.single()
+            assertEquals(expected.sha256Hex(), published.contentSha256)
+            assertEquals(expected.size.toLong(), published.byteCount)
+            assertTrue(runBlocking { manager.isPublished(metadata) })
+            assertEquals(3, requests.get())
+        }
+    }
+
+    @Test
+    fun legacyUnvalidatedPartialRestartsFromZeroAndPublishesOnlyVerifiedBytes() = withTemporaryRoot { root ->
+        val expected = "verified-restart".encodeToByteArray()
+        val metadata = metadata("model.gguf", expected.size.toLong(), expected.sha256Hex())
+        val finalFile = modelFile(root, "org/model", metadata.destinationRelativePath)
+        finalFile.parentFile.mkdirs()
+        File(finalFile.path + ".part").writeBytes("old".encodeToByteArray())
+        withServer { exchange ->
+            assertEquals(null, exchange.requestHeaders.getFirst("Range"))
+            assertEquals(null, exchange.requestHeaders.getFirst("If-Range"))
+            exchange.respond(200, expected.size.toLong(), expected)
+        }.use { server ->
+            val manager = DownloadManager(TestStoragePathProvider(root), server.baseUrl)
+            val legacyResume = DownloadResumeMetadata.createOrNull(3L, null, null)
+            assertEquals(null, legacyResume)
+            runBlocking { manager.download("org/model", "model.gguf", metadata, legacyResume).toList() }
+            assertContentEquals(expected, finalFile.readBytes())
+            assertTrue(runBlocking { manager.isPublished(metadata) })
+        }
+    }
+
+    @Test
+    fun invalidLegacyResumeValidatorsCannotCreateAnotherRetryLoop() {
+        assertEquals(null, DownloadResumeMetadata.createOrNull(4L, "", null))
+        assertEquals(null, DownloadResumeMetadata.createOrNull(4L, "   ", "  "))
+        assertEquals(null, DownloadResumeMetadata.createOrNull(4L, "x".repeat(513), null))
+        assertEquals(null, DownloadResumeMetadata.createOrNull(4L, null, "x".repeat(129)))
+        assertEquals(null, DownloadResumeMetadata.createOrNull(4L, "bad\nheader", null))
+        assertEquals(DownloadResumeMetadata(4L, "safe", null),
+            DownloadResumeMetadata.createOrNull(4L, "safe", "invalid\nheader"))
     }
 
     @Test

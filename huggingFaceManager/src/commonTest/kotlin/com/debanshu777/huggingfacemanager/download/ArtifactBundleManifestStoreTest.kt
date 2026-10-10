@@ -4,6 +4,7 @@ import okio.ByteString.Companion.toByteString
 import okio.fakefilesystem.FakeFileSystem
 import okio.Path
 import okio.Path.Companion.toPath
+import kotlinx.coroutines.CancellationException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -13,6 +14,73 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ArtifactBundleManifestStoreTest {
+    @Test
+    fun diagnosticCancellationBeforeWriteRetainsAndRecoversThePreviousVerifiedBundle() {
+        val fixture = BundleFixture("diagnostic-cancellation")
+        val old = fixture.installBundle("a".repeat(40), "old-main", "old-vae")
+        val store = fixture.bundleStore()
+        store.publish(old)
+        val replacement = fixture.installBundle("b".repeat(40), "new-main", "new-vae")
+        assertFailsWith<CancellationException> {
+            store.publish(replacement) { stage, _ ->
+                if (stage == BundlePublicationStage.WRITE_MANIFEST) throw CancellationException("synthetic-cancel")
+            }
+        }
+        assertEquals(old.toSet(), store.readValidated()?.entries?.toSet())
+        store.recover()
+        assertEquals(old.toSet(), store.readValidated()?.entries?.toSet())
+        store.publish(replacement)
+        assertEquals(replacement.toSet(), store.readValidated()?.entries?.toSet())
+    }
+
+    @Test
+    fun exactPublishedBundleReplayPreservesInvalidPlanAndDifferentReplacementStillRejectsIt() {
+        val fixture = BundleFixture("idempotent-invalid-plan")
+        val entries = fixture.installBundle("a".repeat(40), "main", "vae")
+        val store = fixture.bundleStore()
+        store.publish(entries)
+        val planPath = fixture.mainRoot / ArtifactBundleManifestStore.REPLACEMENT_PLAN_FILE_NAME
+        fixture.fs.write(planPath) { writeUtf8("synthetic-invalid-plan") }
+        store.publish(entries)
+        assertEquals(entries.toSet(), store.readValidated()?.entries?.toSet())
+        assertEquals("synthetic-invalid-plan", fixture.fs.read(planPath) { readUtf8() })
+        val replacement = fixture.installBundle("b".repeat(40), "next-main", "next-vae")
+        assertFailsWith<ArtifactVerificationException> { store.publish(replacement) }
+        assertEquals(entries.toSet(), store.readValidated()?.entries?.toSet())
+        assertEquals("synthetic-invalid-plan", fixture.fs.read(planPath) { readUtf8() })
+    }
+
+    @Test
+    fun diagnosticCallbackFailureNeverChangesPublicationOrIdempotentReplay() {
+        val fixture = BundleFixture("diagnostic-callback")
+        val entries = fixture.installBundle("a".repeat(40), "main", "vae")
+        val store = fixture.bundleStore()
+        val seen = mutableListOf<Pair<BundlePublicationStage, BundlePublicationReason>>()
+        val observer: BundlePublicationDiagnostics = { stage, reason ->
+            seen += stage to reason
+            throw IllegalStateException("sensitive-path-and-message-sentinel")
+        }
+        store.publish(entries, observer)
+        store.publish(entries, observer)
+        assertEquals(entries.toSet(), store.readValidated()?.entries?.toSet())
+        assertTrue(seen.contains(BundlePublicationStage.REPLACEMENT_PREPARE to BundlePublicationReason.STARTED))
+        assertEquals(2, seen.count { it == (BundlePublicationStage.COMPLETE to BundlePublicationReason.COMPLETED) })
+    }
+
+    @Test
+    fun invalidPublicationEmitsOnlyTypedStageAndReasonAndRetainsPriorBundle() {
+        val fixture = BundleFixture("diagnostic-invalid")
+        val entries = fixture.installBundle("a".repeat(40), "main", "vae")
+        val store = fixture.bundleStore()
+        store.publish(entries)
+        val seen = mutableListOf<Pair<BundlePublicationStage, BundlePublicationReason>>()
+        assertFailsWith<ArtifactVerificationException> {
+            store.publish(emptyList()) { stage, reason -> seen += stage to reason }
+        }
+        assertTrue(seen.contains(BundlePublicationStage.VALIDATE_ENTRIES to BundlePublicationReason.INTEGRITY))
+        assertEquals(entries.toSet(), store.readValidated()?.entries?.toSet())
+    }
+
     @Test
     fun replacementPlanSurvivesRestartUntilCleanupIsAcknowledged() {
         val fixture = BundleFixture("replacement-plan")

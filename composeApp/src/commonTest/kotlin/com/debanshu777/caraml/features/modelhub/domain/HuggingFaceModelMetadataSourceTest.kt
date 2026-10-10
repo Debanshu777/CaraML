@@ -76,6 +76,43 @@ class HuggingFaceModelMetadataSourceTest {
     }
 
     @Test
+    fun projectorAndUnverifiedFastMtpDoNotBecomeStandaloneLanguageModelVariants() = runTest {
+        val fixture = Fixture()
+        fixture.gateway.tree = listOf(
+            ModelFileTreeResponse(path = "model-Q4_K_M.gguf", size = 100L, oid = "model", type = "file"),
+            ModelFileTreeResponse(path = "mmproj-model-f16.gguf", size = 50L, oid = "projector", type = "file"),
+            ModelFileTreeResponse(path = "model-FastMTP-Q4_K_M.gguf", size = 25L, oid = "mtp", type = "file"),
+        )
+
+        val ready = assertIs<RepositoryVariantSet.Ready>(
+            fixture.source().describeVariants(fixture.repositoryId, ModelHubBrowseMode.LanguageModels),
+        )
+
+        assertEquals(
+            listOf("model-Q4_K_M.gguf"),
+            ready.variants.map { assertIs<LlmModelDescriptor>(it.descriptor).file.path },
+        )
+    }
+
+    @Test
+    fun incompleteShardGroupDoesNotPoisonAnUnrelatedCompleteModelVariant() = runTest {
+        val fixture = Fixture()
+        fixture.gateway.tree = listOf(
+            ModelFileTreeResponse(path = "broken-00001-of-00002.gguf", size = 10L, oid = "broken-1", type = "file"),
+            ModelFileTreeResponse(path = "valid-Q4_K_M.gguf", size = 100L, oid = "valid", type = "file"),
+        )
+
+        val ready = assertIs<RepositoryVariantSet.Ready>(
+            fixture.source().describeVariants(fixture.repositoryId, ModelHubBrowseMode.LanguageModels),
+        )
+
+        assertEquals(
+            listOf("valid-Q4_K_M.gguf"),
+            ready.variants.map { assertIs<LlmModelDescriptor>(it.descriptor).file.path },
+        )
+    }
+
+    @Test
     fun exactDiffusionLookupPinsEachExternalRepositoryToItsInstalledRevision() = runTest {
         val owner = "owner/diffusion"
         val external = "owner/components"

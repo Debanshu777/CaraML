@@ -30,6 +30,7 @@ import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -44,15 +45,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.debanshu777.caraml.core.rating.SdArchitecture
 import com.debanshu777.caraml.core.recommendation.DiffusionComponentDescriptor
+import com.debanshu777.caraml.core.recommendation.AssessmentReason
+import com.debanshu777.caraml.core.recommendation.BrowseFitEstimate
+import com.debanshu777.caraml.core.recommendation.BrowseResourceFit
+import com.debanshu777.caraml.core.recommendation.Compatibility
 import com.debanshu777.caraml.core.recommendation.DiffusionMode
 import com.debanshu777.caraml.core.recommendation.DiffusionModelDescriptor
 import com.debanshu777.caraml.core.recommendation.LlmModelDescriptor
 import com.debanshu777.caraml.core.recommendation.ModelFileIdentity
+import com.debanshu777.caraml.core.recommendation.PerformanceEstimate
 import com.debanshu777.caraml.core.recommendation.QuantizationEvidence
 import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
+import com.debanshu777.caraml.features.modelhub.domain.BrowseVariantUiState
 import com.debanshu777.caraml.features.modelhub.domain.RecommendedModelUiState
 import com.debanshu777.caraml.features.modelhub.presentation.details.components.ModelDetailContent
-import com.debanshu777.caraml.features.modelhub.presentation.details.components.GgufFileListItem
+import com.debanshu777.caraml.features.modelhub.presentation.details.components.ModelDetailsDownloadableListItem
 import com.debanshu777.caraml.features.modelhub.presentation.search.GgufFileUiState
 import com.debanshu777.caraml.features.modelhub.presentation.search.InstallBundleUiState
 import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
@@ -67,7 +74,7 @@ import kotlin.test.assertTrue
 class ModelDetailsWorkbenchUiTest {
 
     @Test
-    fun productionDetailTitleUsesCompactAndExpandedSemanticRolesAtTheExactBreakpoint() =
+    fun productionDetailTitleKeepsTheBrandRoleAcrossTheSupportingPaneBreakpoint() =
         runComposeUiTest {
             var windowWidth by mutableStateOf(839.dp)
             setContent {
@@ -86,7 +93,7 @@ class ModelDetailsWorkbenchUiTest {
 
             textStyleFor("focal-artifact").let { style ->
                 assertEquals(24.sp, style.fontSize)
-                assertEquals(30.sp, style.lineHeight)
+                assertEquals(32.sp, style.lineHeight)
                 assertEquals(FontWeight.SemiBold, style.fontWeight)
             }
 
@@ -94,8 +101,8 @@ class ModelDetailsWorkbenchUiTest {
             waitForIdle()
 
             textStyleFor("focal-artifact").let { style ->
-                assertEquals(32.sp, style.fontSize)
-                assertEquals(38.sp, style.lineHeight)
+                assertEquals(24.sp, style.fontSize)
+                assertEquals(32.sp, style.lineHeight)
                 assertEquals(FontWeight.SemiBold, style.fontWeight)
             }
         }
@@ -128,7 +135,14 @@ class ModelDetailsWorkbenchUiTest {
         val result = results.single()
         assertTrue(result.lineCount > 1, "Large detail titles should wrap")
         assertTrue(!result.didOverflowWidth, "Wrapped detail title must not overflow width")
-        assertTrue(!result.didOverflowHeight, "Wrapped detail title must not be clipped")
+        assertTrue(result.lineCount <= 2, "Collapsed detail title must use at most two lines")
+        onNodeWithText("Show full name").performClick()
+        results.clear()
+        onNodeWithText(repositoryId.substringAfter('/'), useUnmergedTree = true)
+            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action ->
+                assertTrue(action(results))
+            }
+        assertTrue(!results.single().didOverflowHeight, "Expanded title must remain fully readable")
     }
 
     @Test
@@ -173,9 +187,9 @@ class ModelDetailsWorkbenchUiTest {
             )
             val overviewSecondary = overviewPixels[overviewPixels.width - 20, 20]
             assertTrue(
-                overviewSecondary.green > overviewSecondary.red &&
-                    overviewSecondary.green > overviewSecondary.blue,
-                "Overview should expose the shared secondary spectral region",
+                overviewSecondary.blue > overviewSecondary.red &&
+                    overviewSecondary.blue > overviewSecondary.green,
+                "Overview should expose the shared lilac secondary region",
             )
 
             val metadataNode = onNodeWithTag("detail-metadata")
@@ -260,17 +274,12 @@ class ModelDetailsWorkbenchUiTest {
 
     @Test
     fun compactGgufRowGivesFilenameThenSizeAndActionTheirOwnBands() = runComposeUiTest {
-        val pageColor = Color.Magenta
         val filename = "Qwen3.8-27B-Uncensored-HauhauCS-Aggressive-FastMTP-32K.gguf"
         setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f)) {
                 MaterialTheme {
-                    Box(
-                        Modifier
-                            .width(360.dp)
-                            .background(pageColor),
-                    ) {
-                        GgufFileListItem(
+                    Box(Modifier.width(360.dp)) {
+                        ModelDetailsDownloadableListItem(
                             filename = filename,
                             sizeBytes = 902_823_936L,
                             isDownloaded = false,
@@ -290,17 +299,41 @@ class ModelDetailsWorkbenchUiTest {
             assertTrue(action(layouts))
         }
         assertTrue(!layouts.single().hasVisualOverflow, "GGUF filename must remain readable")
+        onAllNodesWithText("Show full filename").assertCountEquals(0)
         val filenameBounds = filenameNode.fetchSemanticsNode().boundsInRoot
         val sizeBounds = onNodeWithText("861 MB", useUnmergedTree = true)
             .fetchSemanticsNode().boundsInRoot
         assertTrue(sizeBounds.top >= filenameBounds.bottom, "Size belongs below the filename")
+    }
 
-        val pixels = onNodeWithTag("compact-gguf-row").captureToImage().toPixelMap()
-        assertEquals(pageColor, pixels[1, 1], "Rounded file-row corner must reveal the page")
-        assertTrue(
-            pixels[pixels.width / 2, 1].colorDistance(pageColor) >= 0.05f,
-            "File row must own a rounded tonal surface",
-        )
+    @Test
+    fun truncatedGgufFilenameCanBeExpandedInDetails() = runComposeUiTest {
+        val filename = "an-extremely-long-quantized-model-filename-with-exact-version-and-shard-00001-of-00002.gguf"
+        setContent {
+            CompositionLocalProvider(LocalDensity provides Density(1f, fontScale = 2f)) {
+                MaterialTheme {
+                    Box(Modifier.width(360.dp)) {
+                        ModelDetailsDownloadableListItem(
+                            filename = filename,
+                            sizeBytes = 902_823_936L,
+                            isDownloaded = false,
+                            progress = null,
+                            isDownloading = false,
+                            onDownloadClick = {},
+                        )
+                    }
+                }
+            }
+        }
+
+        onNodeWithText("Show full filename").performClick()
+        val layouts = mutableListOf<TextLayoutResult>()
+        onNodeWithText(filename, useUnmergedTree = true)
+            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action ->
+                assertTrue(action(layouts))
+            }
+        assertTrue(!layouts.single().hasVisualOverflow, "Expanded exact filename must remain readable")
+        onNodeWithText("Show less").assertIsDisplayed()
     }
 
     @Test
@@ -418,7 +451,7 @@ class ModelDetailsWorkbenchUiTest {
     }
 
     @Test
-    fun selectedArtifactUsesOneSignalRailAndExactDownloadAction() = runComposeUiTest {
+    fun evaluatedArtifactKeepsExplicitStateAndExactDownloadAction() = runComposeUiTest {
         val fixture = workbenchGgufFixture()
         val scheme = workbenchColorScheme()
         var requestedModelId = ""
@@ -452,27 +485,20 @@ class ModelDetailsWorkbenchUiTest {
         onNodeWithTag("detail-files").performScrollTo().assertIsDisplayed()
         onAllNodes(
             SemanticsMatcher.expectValue(SemanticsProperties.Selected, true),
-        ).assertCountEquals(1)
+        ).assertCountEquals(0)
         onAllNodes(
             SemanticsMatcher.expectValue(
                 SemanticsProperties.StateDescription,
-                "Recommended artifact",
+                "Evaluated variant",
             ),
         ).assertCountEquals(1)
 
         val selectedRow = onNodeWithTag("detail-artifact:${fixture.primaryArtifact.relativePath}")
             .assert(
-                SemanticsMatcher.expectValue(SemanticsProperties.Selected, true),
+                SemanticsMatcher.expectValue(SemanticsProperties.Selected, false),
             )
-        val pixels = selectedRow.captureToImage().toPixelMap()
-        val middleY = pixels.height / 2
-        assertTrue(colorsNear(pixels[0, middleY], scheme.primary))
-        assertTrue(colorsNear(pixels[1, middleY], scheme.primary))
-        assertTrue(colorsNear(pixels[2, middleY], scheme.primary))
-        assertTrue(
-            !colorsNear(pixels[3, middleY], scheme.primary),
-            "Selected artifact must use one 3dp signal rail",
-        )
+        selectedRow.assertIsDisplayed()
+        onNodeWithText("Evaluated variant").assertIsDisplayed()
 
         onNodeWithContentDescription("Download ${fixture.secondaryArtifact.relativePath}")
             .performClick()
@@ -553,12 +579,13 @@ class ModelDetailsWorkbenchUiTest {
             onAllNodes(
                 SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange),
             ).assertCountEquals(1)
-            onNodeWithTag("detail-action").assertIsDisplayed()
+            onNodeWithTag("detail-action").assertDoesNotExist()
             onAllNodes(
                 hasContentDescription("Download ${fixture.primaryArtifact.relativePath}") and
                     hasClickAction(),
             ).assertCountEquals(1)
             onNodeWithContentDescription("Download ${fixture.primaryArtifact.relativePath}")
+                .performScrollTo()
                 .assertIsDisplayed()
                 .assertIsEnabled()
                 .performClick()
@@ -587,6 +614,88 @@ class ModelDetailsWorkbenchUiTest {
             onNodeWithContentDescription("Download ${fixture.secondaryArtifact.relativePath}")
                 .assertIsNotEnabled()
         }
+
+    @Test
+    fun groupedShardIconSubmitsEveryExactArtifactWithoutFooter() = runComposeUiTest {
+        val fixture = workbenchGgufFixture()
+        val descriptor = fixture.recommendation.selectedDescriptor as LlmModelDescriptor
+        val variant = BrowseVariantUiState(
+            stableIdentity = "exact-shards",
+            displayName = "Q4 two parts",
+            filePaths = descriptor.files.map { it.path },
+            fileIdentities = descriptor.files,
+            estimate = BrowseFitEstimate(
+                compatibility = Compatibility.Unknown(emptyList()),
+                memoryFit = BrowseResourceFit.UNKNOWN,
+                storageFit = BrowseResourceFit.UNKNOWN,
+                memory = null,
+                storageBytes = null,
+                downloadBytes = descriptor.files.sumOf { it.sizeBytes },
+                performance = PerformanceEstimate.Unknown(AssessmentReason.SPEED_NOT_VERIFIED),
+                resourceSnapshotFresh = false,
+                resourceTimestampEpochMs = 0L,
+                reasons = emptyList(),
+                evidence = emptyList(),
+            ),
+        )
+        var submitted: List<DownloadMetadataDTO>? = null
+        var memoryFit by mutableStateOf(BrowseResourceFit.UNKNOWN)
+        var selectedPath by mutableStateOf<String?>(null)
+        setContent {
+            MaterialTheme {
+                Box(Modifier.width(420.dp).height(800.dp)) {
+                    ModelDetailContent(
+                        model = ModelDetailResponse(modelId = fixture.repositoryId),
+                        ggufFiles = fixture.files,
+                        isDownloading = false,
+                        onDownloadClick = { _, _, _ -> error("Shard icon must submit the exact group") },
+                        onDownloadGroupClick = { _, metadata -> submitted = metadata },
+                        installBundleState = InstallBundleUiState(selectedVariantPath = selectedPath),
+                        onVariantSelected = { selectedPath = it },
+                        recommendationState = fixture.recommendation.copy(
+                            descriptorState = DescriptorState.NEEDS_INFORMATION,
+                            selectedDescriptor = null,
+                            stableModelId = variant.stableIdentity,
+                            browseVariants = listOf(variant.copy(estimate = variant.estimate.copy(
+                                memoryFit = memoryFit,
+                                resourceSnapshotFresh = memoryFit != BrowseResourceFit.UNKNOWN,
+                            ))),
+                        ),
+                    )
+                }
+            }
+        }
+        onNodeWithTag("detail-action").assertDoesNotExist()
+        onNodeWithText("Selected artifact").assertDoesNotExist()
+        onNodeWithText("We need more model or device information before estimating fit. An unknown fit doesn't mean the model will run.")
+            .performScrollTo().assertIsDisplayed()
+        runOnIdle { memoryFit = BrowseResourceFit.TIGHT_FIT }
+        onNodeWithText("Tight fit").performScrollTo().assertIsDisplayed()
+        onNodeWithText("This is a provisional memory estimate. Model compatibility is still unverified.")
+            .performScrollTo().assertIsDisplayed()
+        onNodeWithText("We need more model or device information before estimating fit. An unknown fit doesn't mean the model will run.")
+            .assertDoesNotExist()
+        onNodeWithText("Suggested · support unverified · Part 1 of 2").assertExists()
+        onNodeWithText("Suggested · support unverified · Part 2 of 2").assertExists()
+        onNodeWithContentDescription("Select variant ${fixture.files.first().filename}")
+            .performScrollTo()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, androidx.compose.ui.semantics.Role.RadioButton))
+            .performClick()
+        runOnIdle {
+            assertEquals(fixture.files.first().path, selectedPath)
+            assertEquals(null, submitted, "Selecting a variant must not download it")
+        }
+        onNodeWithContentDescription("Selected variant ${fixture.files.first().filename}")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Selected, true))
+        onAllNodes(hasContentDescription("Download all 2 parts")).assertCountEquals(2)
+        onAllNodes(hasContentDescription("Download all 2 parts"))[0].performScrollTo().performClick()
+        runOnIdle {
+            assertEquals(
+                listOf(fixture.primaryArtifact, fixture.secondaryArtifact),
+                submitted?.map { it.artifact },
+            )
+        }
+    }
 
     @Test
     fun expandedDetailsHasOneScrollOwnerAndA320To360DpSupportPane() = runComposeUiTest {

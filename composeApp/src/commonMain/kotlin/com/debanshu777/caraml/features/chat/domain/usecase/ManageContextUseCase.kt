@@ -20,16 +20,21 @@ class ManageContextUseCase(
         private const val TAG = "Inference"
     }
 
-    fun needsReset(): Boolean = inferenceRepository.isContextAboveThreshold()
+    // A cancelled summary leaves a temporary native context even below the threshold.
+    private var resetPending = false
+
+    fun needsReset(): Boolean = resetPending || inferenceRepository.isContextAboveThreshold()
 
     suspend fun resetContext(messages: List<ChatMessage>): ContextResetResult {
         AppLogger.i(TAG) {
             "contextReset: used=${inferenceRepository.getContextUsed()}/${inferenceRepository.getContextLimit()}"
         }
-        return try {
+        resetPending = true
+        val result = try {
             val nonSystemMessages = messages.filter { it.role != MessageRole.System }
             if (nonSystemMessages.isEmpty()) {
                 return if (inferenceRepository.resetContextWithSummary("", "")) {
+                    resetPending = false
                     ContextResetResult.Success
                 } else {
                     ContextResetResult.Failure
@@ -61,6 +66,8 @@ class ManageContextUseCase(
             }
             if (cleared) ContextResetResult.Success else ContextResetResult.Failure
         }
+        resetPending = result != ContextResetResult.Success
+        return result
     }
 
     private suspend fun buildSummary(messages: List<ChatMessage>): String {

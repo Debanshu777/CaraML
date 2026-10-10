@@ -1,6 +1,7 @@
 package com.debanshu777.caraml
 
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -19,7 +20,6 @@ import com.debanshu777.caraml.core.platform.AppLogger
 import com.debanshu777.caraml.core.recommendation.LoadSessionCoordinator
 import com.debanshu777.caraml.core.theme.CaraMLTheme
 import com.debanshu777.caraml.core.theme.ThemeViewModel
-import com.debanshu777.caraml.core.ui.components.AuroraBackdrop
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
 import kotlinx.serialization.serializer
@@ -58,12 +58,13 @@ fun App(onEffectiveDarkThemeChanged: (Boolean) -> Unit = {}) {
         preferences = themePreferences,
         onEffectiveDarkThemeChanged = onEffectiveDarkThemeChanged,
     ) {
-        AuroraBackdrop(
+        Box(
             modifier = Modifier.fillMaxSize()
                 .windowInsetsPadding(WindowInsets.ime)
         ) {
             val backStack = rememberNavBackStack(config, AppScreen.Home)
             AppDrawerShell(backStack = backStack) {
+                // Each route captures its own backdrop beneath fixed frosted chrome.
                 NavigationHost(
                     modifier = Modifier.fillMaxSize(),
                     backStack = backStack,

@@ -33,7 +33,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
-import com.debanshu777.caraml.core.theme.prismShapes
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.features.chat.data.LiveGenerationStats
 import kotlinx.coroutines.delay
@@ -76,8 +76,8 @@ internal fun ContextProgressIndicator(
 
     Row(
         modifier = modifier
-            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-            .clip(MaterialTheme.prismShapes.control)
+            .sizeIn(minWidth = AppTheme.spacing.spacing48, minHeight = AppTheme.spacing.spacing48)
+            .clip(AppTheme.shapes.small)
             .clickable(
                 onClickLabel = actionLabel,
                 role = Role.Button,
@@ -87,14 +87,14 @@ internal fun ContextProgressIndicator(
                 contentDescription = "Context usage"
                 stateDescription = if (expanded) "Expanded" else "Collapsed"
             }
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = AppTheme.spacing.spacing12),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8)
     ) {
         CircularProgressIndicator(
             progress = { displayedProgress },
-            modifier = Modifier.size(24.dp),
-            strokeWidth = 2.dp
+            modifier = Modifier.size(AppTheme.spacing.spacing24),
+            strokeWidth = AppTheme.spacing.spacing2
         )
         AnimatedVisibility(
             visible = expanded,
@@ -117,8 +117,8 @@ internal fun ContextProgressIndicator(
         ) {
             Text(
                 text = "$contextUsed/$contextLimit ($percent%)",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                style = AppTheme.typography.labelSmall,
+                color = AppTheme.colors.onSurfaceVariant
             )
         }
     }
@@ -134,6 +134,6 @@ fun RowScope.ContextStatsIndicator(
             contextLimit = liveStats.contextLimit,
             modifier = Modifier.align(Alignment.CenterVertically)
         )
-        Spacer(modifier = Modifier.width(4.dp))
+        Spacer(modifier = Modifier.width(AppTheme.spacing.spacing4))
     }
 }

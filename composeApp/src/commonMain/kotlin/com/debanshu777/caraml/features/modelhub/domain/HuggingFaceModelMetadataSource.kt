@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.features.modelhub.domain
 
+import com.debanshu777.caraml.core.platform.AppLogger
 import com.debanshu777.caraml.core.recommendation.AssessmentReason
 import com.debanshu777.caraml.core.recommendation.DescriptorBuildResult
 import com.debanshu777.caraml.core.recommendation.DescriptorLimits
@@ -22,6 +23,7 @@ import com.debanshu777.huggingfacemanager.model.TransformerConfigResponse
 import com.debanshu777.huggingfacemanager.sdcpp.SdCppModelSetup
 import com.debanshu777.huggingfacemanager.sdcpp.getModelSetup
 import kotlinx.coroutines.CancellationException
+import kotlin.time.TimeSource
 
 internal interface HuggingFaceMetadataGateway {
     suspend fun getStrictDetail(repositoryId: String): Result<ModelDetailResponse, DataError.Network>
@@ -51,23 +53,60 @@ internal interface HuggingFaceMetadataGateway {
 private class ApiHuggingFaceMetadataGateway(
     private val api: HuggingFaceApi,
 ) : HuggingFaceMetadataGateway {
-    override suspend fun getStrictDetail(repositoryId: String) =
+    override suspend fun getStrictDetail(repositoryId: String) = acquire(MetadataAcquisitionStage.DETAIL) {
         api.getRecommendationModelDetail(repositoryId)
+    }
 
-    override suspend fun getStrictDetail(repositoryId: String, revision: String) =
+    override suspend fun getStrictDetail(repositoryId: String, revision: String) = acquire(MetadataAcquisitionStage.DETAIL) {
         api.getRecommendationModelDetail(repositoryId, revision)
+    }
 
     override suspend fun getTree(
         repositoryId: String,
         revision: String,
         filter: ModelFileWeightFilter,
-    ) = api.getModelFileTree(repositoryId, revision, filter)
+    ) = acquire(MetadataAcquisitionStage.TREE) {
+        api.getModelFileTree(repositoryId, revision, filter)
+    }
 
-    override suspend fun getConfig(repositoryId: String, revision: String) =
+    override suspend fun getConfig(repositoryId: String, revision: String) = acquire(MetadataAcquisitionStage.CONFIG) {
         api.getModelConfig(repositoryId, revision)
+    }
 
-    override suspend fun getExactConfig(repositoryId: String, revision: String) =
+    override suspend fun getExactConfig(repositoryId: String, revision: String) = acquire(MetadataAcquisitionStage.CONFIG) {
         api.getModelConfig.forExactInstalledRepair(repositoryId, revision)
+    }
+
+    private suspend fun <T> acquire(
+        stage: MetadataAcquisitionStage,
+        request: suspend () -> Result<T, DataError.Network>,
+    ): Result<T, DataError.Network> {
+        val started = TimeSource.Monotonic.markNow()
+        val result = request()
+        val elapsedMs = started.elapsedNow().inWholeMilliseconds
+        val errorCode = when (result) {
+            is Result.Success -> "NONE"
+            is Result.Error -> when (result.error) {
+                DataError.Network.NoInternet -> "NO_INTERNET"
+                DataError.Network.Serialization -> "SERIALIZATION"
+                DataError.Network.Unauthorized -> "UNAUTHORIZED"
+                DataError.Network.NotFound -> "NOT_FOUND"
+                DataError.Network.Conflict -> "CONFLICT"
+                DataError.Network.RequestTimeout -> "REQUEST_TIMEOUT"
+                DataError.Network.RateLimited -> "RATE_LIMITED"
+                DataError.Network.PayloadTooLarge -> "PAYLOAD_TOO_LARGE"
+                DataError.Network.ServerError -> "SERVER_ERROR"
+                DataError.Network.Unknown -> "UNKNOWN"
+            }
+        }
+        AppLogger.i("ModelMetadata") {
+            "stage=${stage.name} outcome=${if (result is Result.Success) "SUCCESS" else "ERROR"} " +
+                "error=$errorCode elapsedMs=$elapsedMs"
+        }
+        return result
+    }
+
+    private enum class MetadataAcquisitionStage { DETAIL, TREE, CONFIG }
 }
 
 class HuggingFaceModelMetadataSource internal constructor(
@@ -189,12 +228,17 @@ class HuggingFaceModelMetadataSource internal constructor(
             .successOrNull(retryNetworkFailure)
             ?: return needsInformation(repositoryId)
         val grouped = groupGgufFiles(files) ?: return needsInformation(repositoryId)
+        val primaryGroups = grouped.filter { group ->
+            group.all { file ->
+                ModelArtifactClassifier.classify(file.path, detail.tags.orEmpty()).recommendationEligible
+            }
+        }
         val candidates = exactIdentities?.let { requested ->
             val requestedPaths = requested.asSequence()
                 .filter { it.repositoryId == repositoryId && it.revision.equals(revision, ignoreCase = true) }
                 .mapTo(hashSetOf(), ModelFileIdentity::path)
-            grouped.filter { group -> group.mapTo(hashSetOf()) { it.path } == requestedPaths }
-        } ?: grouped
+            primaryGroups.filter { group -> group.mapTo(hashSetOf()) { it.path } == requestedPaths }
+        } ?: primaryGroups
         if (candidates.isEmpty()) {
             return if (exactIdentities == null) selectVariant(repositoryId) else RepositoryVariantSet.Ready(emptyList())
         }
@@ -209,15 +253,25 @@ class HuggingFaceModelMetadataSource internal constructor(
             allowNotFound = true,
         )
         val variants = ArrayList<RepositoryVariant>(candidates.size)
+        val rejectedVariantReasons = linkedSetOf<AssessmentReason>()
         for (group in candidates) {
             when (val built = descriptorFactory.buildLlm(detail, group, config)) {
                 is DescriptorBuildResult.Ready -> variants += RepositoryVariant(
                     descriptor = built.descriptor,
-                    displayName = ggufDisplayName(group) ?: return selectVariant(repositoryId),
+                    displayName = ggufDisplayName(group) ?: continue,
                 )
-                is DescriptorBuildResult.NeedsVariant -> return selectVariant(repositoryId, built.reasons)
-                is DescriptorBuildResult.Invalid -> return needsInformation(repositoryId, built.reasons)
+                is DescriptorBuildResult.NeedsVariant -> rejectedVariantReasons += built.reasons
+                is DescriptorBuildResult.Invalid -> {
+                    if (built.reasons.any { it !in ISOLATABLE_VARIANT_REASONS }) {
+                        return needsInformation(repositoryId, built.reasons)
+                    }
+                    rejectedVariantReasons += built.reasons
+                }
             }
+        }
+        if (variants.isEmpty()) {
+            return if (rejectedVariantReasons.isEmpty()) selectVariant(repositoryId)
+            else needsInformation(repositoryId, rejectedVariantReasons)
         }
         return RepositoryVariantSet.Ready(variants)
     }
@@ -346,7 +400,7 @@ class HuggingFaceModelMetadataSource internal constructor(
         if (!hasUniqueBoundedPaths(files)) return null
         val ordinary = mutableListOf<List<ModelFileTreeResponse>>()
         val shards = linkedMapOf<String, MutableList<ShardEntry>>()
-        val totalsByPrefix = mutableMapOf<String, Int>()
+        val invalidShardPrefixes = mutableSetOf<String>()
         for (file in files) {
             val path = file.path ?: return null
             val match = GGUF_SHARD.matchEntire(path)
@@ -357,18 +411,20 @@ class HuggingFaceModelMetadataSource internal constructor(
             val prefix = match.groupValues[1]
             val index = match.groupValues[2].toIntOrNull() ?: return null
             val total = match.groupValues[3].toIntOrNull() ?: return null
-            if (total !in 1..DescriptorLimits.MAX_COMPONENTS || index !in 1..total) return null
-            val recordedTotal = totalsByPrefix[prefix]
-            if (recordedTotal != null && recordedTotal != total) return null
-            if (recordedTotal == null) totalsByPrefix[prefix] = total
-            shards.getOrPut("$prefix#$total") { mutableListOf() } += ShardEntry(index, file)
+            if (total !in 1..DescriptorLimits.MAX_COMPONENTS || index !in 1..total) {
+                invalidShardPrefixes += prefix
+                continue
+            }
+            shards.getOrPut(prefix) { mutableListOf() } += ShardEntry(index, total, file)
         }
         val grouped = mutableListOf<List<ModelFileTreeResponse>>()
         grouped += ordinary
-        for (entries in shards.values) {
-            val total = entries.firstOrNull()?.file?.path?.let(GGUF_SHARD::matchEntire)
-                ?.groupValues?.get(3)?.toIntOrNull() ?: return null
-            if (entries.size != total || entries.map { it.index }.toSet() != (1..total).toSet()) return null
+        for ((prefix, entries) in shards) {
+            if (prefix in invalidShardPrefixes) continue
+            val totals = entries.mapTo(hashSetOf()) { it.total }
+            if (totals.size != 1) continue
+            val total = totals.single()
+            if (entries.size != total || entries.map { it.index }.toSet() != (1..total).toSet()) continue
             grouped += entries.sortedBy { it.index }.map { it.file }
         }
         return grouped.sortedBy { it.first().path }
@@ -478,13 +534,19 @@ class HuggingFaceModelMetadataSource internal constructor(
         -> false
     }
 
-    private data class ShardEntry(val index: Int, val file: ModelFileTreeResponse)
+    private data class ShardEntry(val index: Int, val total: Int, val file: ModelFileTreeResponse)
 
     private data object RetryableMetadataUnavailable : Exception()
     private data object InvalidMetadataResponse : Exception()
 
     private companion object {
         val GGUF_SHARD = Regex("^(.+)-(\\d{5})-of-(\\d{5})\\.gguf$", RegexOption.IGNORE_CASE)
+        val ISOLATABLE_VARIANT_REASONS = setOf(
+            AssessmentReason.INVALID_FILE_PATH,
+            AssessmentReason.FILE_SIZE_LIMIT_EXCEEDED,
+            AssessmentReason.BUNDLE_SIZE_LIMIT_EXCEEDED,
+            AssessmentReason.MIXED_QUANTIZATION,
+        )
         const val MAX_VARIANT_DISPLAY_NAME: Int = 4_096
         const val MAX_RUNNABLE_VARIANTS: Int = 64
         const val MIN_REVISION_LENGTH: Int = 40

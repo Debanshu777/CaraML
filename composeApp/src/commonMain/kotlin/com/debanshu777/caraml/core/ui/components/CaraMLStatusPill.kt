@@ -16,7 +16,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import com.debanshu777.caraml.core.theme.prismShapes
+import com.debanshu777.caraml.core.theme.AppTheme
 
 enum class StatusTone {
     Neutral,
@@ -39,29 +39,29 @@ fun CaraMLStatusPill(
         modifier = modifier.semantics(mergeDescendants = true) {
             this.contentDescription = contentDescription
         },
-        shape = MaterialTheme.prismShapes.status,
+        shape = AppTheme.shapes.extraSmall,
         color = containerColor,
         contentColor = contentColor,
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            modifier = Modifier.padding(horizontal = AppTheme.spacing.spacing8, vertical = AppTheme.spacing.spacing4),
             horizontalArrangement = Arrangement.Center,
         ) {
             icon?.let {
                 Icon(
                     imageVector = it,
                     contentDescription = null,
-                    modifier = Modifier.size(16.dp),
+                    modifier = Modifier.size(AppTheme.spacing.spacing16),
                 )
-                Spacer(modifier = Modifier.size(4.dp))
+                Spacer(modifier = Modifier.size(AppTheme.spacing.spacing4))
             }
-            Text(text = label, style = MaterialTheme.typography.labelMedium)
+            Text(text = label, style = AppTheme.typography.labelBase)
         }
     }
 }
 
 @Composable
-private fun statusColors(tone: StatusTone): Pair<Color, Color> = MaterialTheme.colorScheme.run {
+private fun statusColors(tone: StatusTone): Pair<Color, Color> = AppTheme.colors.run {
     when (tone) {
         StatusTone.Neutral -> surfaceContainerHigh to onSurfaceVariant
         StatusTone.Accent -> primaryContainer to onPrimaryContainer

@@ -2,6 +2,7 @@ package com.debanshu777.caraml.core.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -29,7 +30,7 @@ import com.materialkolor.DynamicMaterialTheme
  *     on our [AppShapes], [AppTypography], and [AppMotionScheme]
  *     (spring-based component motion). MaterialExpressiveTheme is the only
  *     entry point that takes `motionScheme`.
- *  3. [CompositionLocalProvider] for [LocalSpacing] — global spacing scale.
+ *  3. [CompositionLocalProvider] for the generated Aurora colors and motion policy.
  *
  * Wrap the entire app content (everything below [com.debanshu777.caraml.App])
  * exactly once.
@@ -50,17 +51,23 @@ fun CaraMLTheme(
     LaunchedEffect(isDark) {
         currentOnEffectiveDarkThemeChanged(isDark)
     }
+    val runtimeDurationScale = rememberCoroutineScope().coroutineContext[MotionDurationScale]?.scaleFactor ?: 1f
+    val motionPolicy = auroraMotionPolicy(if (preferences.reduceMotion) 0f else runtimeDurationScale)
+    val typography = AppTypography
+    val typeScale = remember(typography) { AppTypeScale(typography) }
+    val brandColors = remember(preferences.seedColor) { AppBrandColors(accent = preferences.seedColor) }
+    val actionColor = remember(preferences.seedColor, isDark) { actionColor(preferences.seedColor, isDark) }
     DynamicMaterialTheme(
         seedColor = preferences.seedColor,
         isDark = isDark,
         style = preferences.paletteStyle.toMaterialKolor(),
-        animate = true,
+        animate = motionPolicy.spatialTransitionsEnabled,
     ) {
         val generatedScheme = MaterialTheme.colorScheme
         val appPrimary = preferences.seedColor
         val appOnPrimary = if (appPrimary.luminance() > 0.179f) Color.Black else Color.White
-        val appColorScheme = remember(generatedScheme, appPrimary, appOnPrimary) {
-            generatedScheme.copy(
+        val appColorScheme = remember(generatedScheme, appPrimary, appOnPrimary, isDark) {
+            generatedScheme.withBrandSurfaces(isDark).copy(
                 primary = appPrimary,
                 onPrimary = appOnPrimary,
             )
@@ -68,8 +75,8 @@ fun CaraMLTheme(
         MaterialExpressiveTheme(
             colorScheme = appColorScheme,
             shapes = AppShapes,
-            typography = AppTypography,
-            motionScheme = AppMotionScheme,
+            typography = typography,
+            motionScheme = appMotionScheme(motionPolicy),
         ) {
             val scheme = MaterialTheme.colorScheme
             val auroraColors = remember(scheme, isDark, preferences.seedColor) {
@@ -78,12 +85,15 @@ fun CaraMLTheme(
                     focalSeed = preferences.seedColor,
                 )
             }
-            val durationScale = rememberCoroutineScope().coroutineContext[MotionDurationScale]?.scaleFactor ?: 1f
-            val motionPolicy = auroraMotionPolicy(durationScale)
             CompositionLocalProvider(
-                LocalSpacing provides Spacing(),
+                // Transparent page scaffolds draw over Aurora without a Surface to set this.
+                LocalContentColor provides scheme.onSurface,
                 LocalAuroraColors provides auroraColors,
                 LocalAuroraMotionPolicy provides motionPolicy,
+                LocalAppTypeScale provides typeScale,
+                LocalAppBrandColors provides brandColors,
+                LocalAppActionColor provides actionColor,
+                LocalSoftEffects provides preferences.softEffects,
             ) {
                 content()
             }

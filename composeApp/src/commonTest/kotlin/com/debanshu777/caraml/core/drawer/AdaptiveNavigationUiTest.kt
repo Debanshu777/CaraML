@@ -44,7 +44,7 @@ import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.runtime.NavKey
 import com.debanshu777.caraml.core.navigation.AppScreen
 import com.debanshu777.caraml.core.navigation.NavigationTransitionDisplay
-import com.debanshu777.caraml.core.theme.auroraColors
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.ui.components.CaraMLPrimaryTopBar
 import com.debanshu777.caraml.core.ui.layout.AppNavigationLayout
 import com.debanshu777.caraml.core.ui.layout.LocalAppNavigationLayout
@@ -69,21 +69,21 @@ class AdaptiveNavigationUiTest {
                     modifier = Modifier.requiredSize(width = 599.dp, height = 720.dp),
                 ) {
                     observedLayout = LocalAppNavigationLayout.current
-                    CaraMLPrimaryTopBar(title = "Create")
+                    CaraMLPrimaryTopBar(title = "Chat")
                 }
             }
         }
 
         runOnIdle { assertEquals(AppNavigationLayout.ModalSidebar, observedLayout) }
         onAllNodesWithContentDescription("Open navigation menu").assertCountEquals(1)
-        onAllNodesWithContentDescription("Create, selected").assertCountEquals(0)
+        onAllNodesWithContentDescription("Chat, selected").assertCountEquals(0)
         onNodeWithContentDescription("Open navigation menu").performClick()
-        onAllNodesWithContentDescription("Create, selected").assertCountEquals(1)
+        onAllNodesWithContentDescription("Chat, selected").assertCountEquals(1)
         onAllNodesWithContentDescription("Models").assertCountEquals(1)
         onAllNodesWithContentDescription("Settings").assertCountEquals(1)
-        onAllNodesWithContentDescription("Text, selected").assertCountEquals(1)
-        onAllNodesWithContentDescription("Image").assertCountEquals(1)
-        onAllNodesWithContentDescription("Video").assertCountEquals(1)
+        onAllNodesWithContentDescription("Text, selected").assertCountEquals(0)
+        onAllNodesWithContentDescription("Images").assertCountEquals(1)
+        onAllNodesWithContentDescription("Videos").assertCountEquals(1)
     }
 
     @Test
@@ -107,17 +107,17 @@ class AdaptiveNavigationUiTest {
         }
 
         runOnIdle { assertEquals(AppNavigationLayout.Rail, observedLayout) }
-        onAllNodesWithContentDescription("Create, selected").assertCountEquals(1)
+        onAllNodesWithContentDescription("Chat, selected").assertCountEquals(1)
         onAllNodesWithText("CaraML").assertCountEquals(0)
 
         runOnIdle { windowWidth = 839.dp }
         runOnIdle { assertEquals(AppNavigationLayout.Rail, observedLayout) }
-        onAllNodesWithContentDescription("Create, selected").assertCountEquals(1)
+        onAllNodesWithContentDescription("Chat, selected").assertCountEquals(1)
         onAllNodesWithText("CaraML").assertCountEquals(0)
     }
 
     @Test
-    fun width840UsesContextualSidebar() = runComposeUiTest {
+    fun width840UsesSidebarWithDestinationsOnly() = runComposeUiTest {
         lateinit var observedLayout: AppNavigationLayout
 
         setContent {
@@ -135,15 +135,15 @@ class AdaptiveNavigationUiTest {
 
         runOnIdle { assertEquals(AppNavigationLayout.Sidebar, observedLayout) }
         onNodeWithText("CaraML").assertIsDisplayed()
-        onNodeWithText("Create modes").assertIsDisplayed()
-        onNodeWithText("Text").assertIsDisplayed()
-        onNodeWithText("Image").assertIsDisplayed()
-        onNodeWithText("Video").assertIsDisplayed()
-        onAllNodesWithContentDescription("Create, selected").assertCountEquals(1)
+        onAllNodesWithText("Create modes").assertCountEquals(0)
+        onAllNodesWithText("Text").assertCountEquals(0)
+        onAllNodesWithText("Images").assertCountEquals(1)
+        onAllNodesWithText("Videos").assertCountEquals(1)
+        onAllNodesWithContentDescription("Chat, selected").assertCountEquals(1)
     }
 
     @Test
-    fun generationModeChangeDoesNotChangeSelectedCreateDestination() = runComposeUiTest {
+    fun generationModeSelectsItsOwnDrawerDestination() = runComposeUiTest {
         lateinit var backStack: NavBackStack<NavKey>
         lateinit var modeController: GenerationModeController
 
@@ -160,19 +160,15 @@ class AdaptiveNavigationUiTest {
             }
         }
 
-        assertCreateAndModeSelection("Text", backStack)
-
-        onNodeWithContentDescription("Image").performClick()
-        runOnIdle { assertEquals(GenerationMode.Image, modeController.mode) }
-        assertCreateAndModeSelection("Image", backStack)
-
-        onNodeWithContentDescription("Video").performClick()
-        runOnIdle { assertEquals(GenerationMode.Video, modeController.mode) }
-        assertCreateAndModeSelection("Video", backStack)
-
-        onNodeWithContentDescription("Text").performClick()
-        runOnIdle { assertEquals(GenerationMode.Text, modeController.mode) }
-        assertCreateAndModeSelection("Text", backStack)
+        for (mode in GenerationMode.entries) {
+            runOnIdle { modeController.setState(mode) }
+            val title = when (mode) { GenerationMode.Text -> "Chat"; GenerationMode.Image -> "Images"; GenerationMode.Video -> "Videos" }
+            onAllNodesWithContentDescription("$title, selected").assertCountEquals(1)
+            runOnIdle {
+                assertEquals(mode, modeController.mode)
+                assertEquals(AppScreen.Home, backStack.last())
+            }
+        }
     }
 
     @Test
@@ -205,7 +201,7 @@ class AdaptiveNavigationUiTest {
         onNodeWithTag("visible-route").assertTextEquals("Models route")
         onNodeWithContentDescription("Open navigation menu").performClick()
         onAllNodesWithContentDescription("Models, selected").assertCountEquals(1)
-        onAllNodesWithContentDescription("Create").assertCountEquals(1)
+        onAllNodesWithContentDescription("Chat").assertCountEquals(1)
         runOnIdle {
             assertEquals(1, backStack.size)
             assertEquals(AppScreen.Search, backStack.last())
@@ -329,7 +325,7 @@ class AdaptiveNavigationUiTest {
 
             runOnIdle { drawerController.open() }
             waitForIdle()
-            val compactCreate = onNodeWithContentDescription("Create, selected")
+            val compactCreate = onNodeWithContentDescription("Chat, selected")
                 .performScrollTo()
                 .assertIsDisplayed()
                 .fetchSemanticsNode().boundsInRoot
@@ -341,7 +337,7 @@ class AdaptiveNavigationUiTest {
 
             runOnIdle { navigation = AppNavigationLayout.Rail }
 
-            val railCreate = onNodeWithContentDescription("Create, selected")
+            val railCreate = onNodeWithContentDescription("Chat, selected")
                 .assertIsDisplayed()
                 .fetchSemanticsNode().boundsInRoot
             assertTrue(railCreate.top >= 48f)
@@ -388,7 +384,7 @@ class AdaptiveNavigationUiTest {
         }
 
     @Test
-    fun selectedNavigationItemUsesOneSignalRailOverANeutralTonalSurface() = runComposeUiTest {
+    fun selectedNavigationItemUsesAConsistentContrastingSurface() = runComposeUiTest {
         val scheme = darkColorScheme(
             surface = Color(0xFF101217),
             surfaceContainerHigh = Color(0xFF2B303A),
@@ -399,7 +395,7 @@ class AdaptiveNavigationUiTest {
         setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f)) {
                 MaterialTheme(colorScheme = scheme) {
-                    selectedSurface = MaterialTheme.auroraColors.selectedSurface
+                    selectedSurface = AppTheme.colors.primary
                     AdaptiveNavigation(
                         navigation = AppNavigationLayout.Sidebar,
                         items = primaryNavigationItems(),
@@ -413,36 +409,22 @@ class AdaptiveNavigationUiTest {
             }
         }
 
-        val pixels = onNodeWithContentDescription("Create, selected")
+        val pixels = onNodeWithContentDescription("Chat, selected")
             .captureToImage()
             .toPixelMap()
         val centerY = pixels.height / 2
-        (0..2).forEach { x ->
-            assertTrue(
-                pixels[x, centerY].colorDistance(scheme.primary) <= 0.05f,
-                "Selected navigation must paint one 3dp accent signal rail",
-            )
-        }
         assertTrue(pixels[3, centerY].colorDistance(selectedSurface) <= 0.05f)
         assertTrue(pixels[pixels.width - 8, centerY].colorDistance(selectedSurface) <= 0.05f)
         assertTrue(
             pixels[3, centerY].colorDistance(pixels[pixels.width - 8, centerY]) <= 0.02f,
-            "Selected navigation background must remain a uniform neutral tone",
+            "Selected navigation background must remain a uniform contrasting tone",
         )
     }
 
-    private fun androidx.compose.ui.test.ComposeUiTest.assertCreateAndModeSelection(
-        modeLabel: String,
-        backStack: NavBackStack<NavKey>,
-    ) {
-        onAllNodesWithContentDescription("Create, selected").assertCountEquals(1)
-        onAllNodesWithContentDescription("$modeLabel, selected").assertCountEquals(1)
-        runOnIdle { assertEquals(AppScreen.Home, backStack.last()) }
-    }
 }
 
 private fun primaryNavigationItems() = listOf(
-    DrawerItem("create", "Create", Icons.Default.ChatBubbleOutline),
+    DrawerItem("create", "Chat", Icons.Default.ChatBubbleOutline),
     DrawerItem("models", "Models", Icons.Default.Storage),
     DrawerItem("settings", "Settings", Icons.Default.Settings),
 )

@@ -4,6 +4,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.debanshu777.caraml.core.theme.ThemeDefaults
@@ -29,6 +30,8 @@ class DefaultThemeRepository(
     private val seedColorKey = longPreferencesKey("theme_seed_color")
     private val themeModeKey = stringPreferencesKey("theme_mode")
     private val paletteStyleKey = stringPreferencesKey("theme_palette_style")
+    private val reduceMotionKey = booleanPreferencesKey("theme_reduce_motion")
+    private val softEffectsKey = booleanPreferencesKey("theme_soft_effects")
 
     override fun getPreferences(): Flow<ThemePreferences> =
         dataStore.data.map { prefs ->
@@ -42,6 +45,8 @@ class DefaultThemeRepository(
                 paletteStyle = prefs[paletteStyleKey]
                     ?.let { name -> ThemePaletteStyle.entries.firstOrNull { it.name == name } }
                     ?: ThemeDefaults.DEFAULT_PALETTE_STYLE,
+                reduceMotion = prefs[reduceMotionKey] ?: false,
+                softEffects = prefs[softEffectsKey] ?: true,
             )
         }
 
@@ -50,6 +55,8 @@ class DefaultThemeRepository(
             prefs[seedColorKey] = preferences.seedColor.toArgbLong()
             prefs[themeModeKey] = preferences.themeMode.name
             prefs[paletteStyleKey] = preferences.paletteStyle.name
+            prefs[reduceMotionKey] = preferences.reduceMotion
+            prefs[softEffectsKey] = preferences.softEffects
         }
     }
 

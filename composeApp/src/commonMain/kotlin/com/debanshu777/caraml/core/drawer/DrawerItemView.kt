@@ -1,6 +1,8 @@
 package com.debanshu777.caraml.core.drawer
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
@@ -10,7 +12,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -21,10 +22,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.unit.dp
-import com.debanshu777.caraml.core.theme.auroraColors
-import com.debanshu777.caraml.core.theme.prismShapes
-import com.debanshu777.caraml.core.ui.components.SignalRail
-import com.debanshu777.caraml.core.ui.components.SignalTone
+import com.debanshu777.caraml.core.theme.AppTheme
 
 @Composable
 fun DrawerItemView(
@@ -34,14 +32,13 @@ fun DrawerItemView(
     modifier: Modifier = Modifier,
     showLabel: Boolean = true,
 ) {
-    val colors = MaterialTheme.auroraColors
     Row(
         modifier = modifier
             .fillMaxWidth()
             .height(IntrinsicSize.Min)
-            .heightIn(min = 48.dp)
-            .clip(MaterialTheme.prismShapes.control)
-            .background(if (selected) colors.selectedSurface else androidx.compose.ui.graphics.Color.Transparent)
+            .heightIn(min = 58.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(if (selected) AppTheme.colors.primary else androidx.compose.ui.graphics.Color.Transparent)
             .selectable(
                 selected = selected,
                 role = Role.Tab,
@@ -51,34 +48,33 @@ fun DrawerItemView(
                 contentDescription = if (selected) "${item.title}, selected" else item.title
                 this.selected = selected
             },
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (selected) {
-            SignalRail(tone = SignalTone.Accent)
-        }
         Row(
             modifier = Modifier
                 .weight(1f)
-                .padding(horizontal = if (showLabel) 16.dp else 12.dp, vertical = 12.dp),
-            horizontalArrangement = if (showLabel) Arrangement.spacedBy(16.dp) else Arrangement.Center,
+                .padding(horizontal = if (showLabel) AppTheme.spacing.spacing16 else AppTheme.spacing.spacing12, vertical = AppTheme.spacing.spacing16),
+            horizontalArrangement = if (showLabel) Arrangement.spacedBy(14.dp) else Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
                 imageVector = item.icon,
                 contentDescription = null,
+                modifier = Modifier.size(21.dp),
                 tint = if (selected) {
-                    MaterialTheme.colorScheme.primary
+                    AppTheme.colors.onPrimary
                 } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
+                    AppTheme.colors.onSurface
                 },
             )
             if (showLabel) {
                 Text(
                     text = item.title,
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = AppTheme.typography.sidebarLabel16,
                     color = if (selected) {
-                        MaterialTheme.colorScheme.onSurface
+                        AppTheme.colors.onPrimary
                     } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
+                        AppTheme.colors.onSurface
                     },
                 )
             }

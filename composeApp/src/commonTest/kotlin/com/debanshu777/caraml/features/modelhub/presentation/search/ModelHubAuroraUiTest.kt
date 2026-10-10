@@ -37,9 +37,9 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.ui.components.CaraMLStatusPill
 import com.debanshu777.caraml.core.ui.components.StatusTone
+import com.debanshu777.caraml.core.ui.components.GenericListItem
 import com.debanshu777.caraml.core.recommendation.RecommendationProfile
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubOverview
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelResultCard
 import com.debanshu777.caraml.core.rating.ui.RecommendationStatusChip
 import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
 import kotlin.test.Test
@@ -133,11 +133,12 @@ class ModelHubAuroraUiTest {
         var opened = 0
         setContent {
             MaterialTheme {
-                ModelResultCard(
-                    title = "org/tiny-model",
-                    author = "org",
+                GenericListItem(
+                    title = "tiny-model",
+                    eyebrow = "org",
                     metadata = "Text generation · 1.2 GB",
-                    status = { Text("Recommended") },
+                    contentDescription = "Open model org/tiny-model",
+                    titleStatus = { Text("Recommended") },
                     onClick = { opened += 1 },
                     trailing = { Text("Download") },
                 )
@@ -161,8 +162,9 @@ class ModelHubAuroraUiTest {
             .fetchSemanticsNode().positionInRoot.y
         assertTrue(authorY < titleY)
         assertTrue(titleY < metadataY)
-        assertTrue(statusBounds.left == titleBounds.left)
-        assertTrue(statusBounds.top >= metadataY)
+        assertTrue(statusBounds.left >= titleBounds.right)
+        assertTrue(kotlin.math.abs(statusBounds.center.y - titleBounds.center.y) <= 1f)
+        assertTrue(statusBounds.bottom <= metadataY)
         onNodeWithContentDescription("Open model org/tiny-model")
             .assertWidthIsAtLeast(48.dp)
             .assertHeightIsAtLeast(48.dp)
@@ -223,11 +225,11 @@ class ModelHubAuroraUiTest {
                                     profile = RecommendationProfile(),
                                     onOpenProfile = {},
                                 )
-                                ModelResultCard(
-                                    title = "org/large-text-model",
-                                    author = "org",
+                                GenericListItem(
+                                    title = "large-text-model",
+                                    eyebrow = "org",
                                     metadata = "Text generation · 1.2 GB",
-                                    status = {
+                                    titleStatus = {
                                         CaraMLStatusPill(
                                             label = "Recommended",
                                             contentDescription = "Recommended status",

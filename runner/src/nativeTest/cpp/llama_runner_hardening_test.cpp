@@ -1,6 +1,28 @@
 #include "llama_operation_gate.h"
+#include "llama_sparse_penalties.h"
 #include "llama_runner_core.h"
+#include "llama_fit_policy.h"
+#include "llama_config_validation.h"
 #include "scoped-model-context.h"
+#include "gguf.h"
+#include "llama.h"
+#include "log.h"
+#ifdef _WIN32
+#include <io.h>
+#define TEST_DUP _dup
+#define TEST_DUP2 _dup2
+#define TEST_CLOSE _close
+#define TEST_FILENO _fileno
+#else
+#include <unistd.h>
+#define TEST_DUP dup
+#define TEST_DUP2 dup2
+#define TEST_CLOSE close
+#define TEST_FILENO fileno
+#endif
+#include <filesystem>
+#include <random>
+#include <cstdio>
 
 #include <atomic>
 #include <chrono>
@@ -35,6 +57,161 @@ void expect(bool condition, const char *message) {
     if (!condition) {
         throw std::runtime_error(message);
     }
+}
+
+std::vector<std::string> diagnostic_messages;
+void capture_diagnostic(LlamaLogLevel, const char *message) {
+    diagnostic_messages.emplace_back(message ? message : "");
+}
+
+// Capture the real C stdio sinks used by common/log.cpp on every native platform.
+class CapturedStdio {
+public:
+    explicit CapturedStdio(FILE *stream) : stream_(stream), capture_(std::tmpfile()) {
+        expect(capture_ != nullptr, "could not create stdio capture");
+        std::fflush(stream_);
+        original_ = TEST_DUP(TEST_FILENO(stream_));
+        if (original_ < 0 || TEST_DUP2(TEST_FILENO(capture_), TEST_FILENO(stream_)) < 0) {
+            if (original_ >= 0) TEST_CLOSE(original_);
+            std::fclose(capture_);
+            throw std::runtime_error("could not redirect stdio capture");
+        }
+    }
+    ~CapturedStdio() {
+        restore();
+        std::fclose(capture_);
+    }
+    std::string read() {
+        restore();
+        std::rewind(capture_);
+        std::string result;
+        char buffer[256];
+        size_t count;
+        while ((count = std::fread(buffer, 1, sizeof(buffer), capture_)) != 0) {
+            result.append(buffer, count);
+            expect(result.size() <= 65536, "stdio capture exceeded test bound");
+        }
+        return result;
+    }
+private:
+    void restore() {
+        if (original_ < 0) return;
+        std::fflush(stream_);
+        TEST_DUP2(original_, TEST_FILENO(stream_));
+        TEST_CLOSE(original_);
+        original_ = -1;
+    }
+    FILE *stream_;
+    FILE *capture_;
+    int original_ = -1;
+};
+
+void common_logger_cannot_bypass_private_upstream_diagnostics() {
+    CapturedStdio captured_out(stdout);
+    CapturedStdio captured_err(stderr);
+    llama_runner_core_set_logger(capture_diagnostic);
+    llama_runner_core_init(nullptr);
+    diagnostic_messages.clear();
+    LOG_ERR("private-sentinel-log-error prompt=private-sentinel-prompt\n");
+    // Direct additions bypass the verbosity macro and must also be discarded.
+    common_log_add(common_log_main(), GGML_LOG_LEVEL_ERROR,
+        "private-sentinel-direct-error path=/private/sentinel-model\n");
+    common_log_add(common_log_main(), GGML_LOG_LEVEL_NONE,
+        "private-sentinel-direct-output template=private-sentinel-template\n");
+    // Join the writer so the pre-fix failure is deterministic, without resuming it.
+    common_log_pause(common_log_main());
+    ggml_log_callback callback = nullptr;
+    void *user_data = nullptr;
+    llama_log_get(&callback, &user_data);
+    expect(callback != nullptr, "sanitized upstream logger was not installed");
+    callback(GGML_LOG_LEVEL_ERROR, "failed to open /private/private-sentinel-model", user_data);
+    llama_runner_core_shutdown();
+    llama_runner_core_set_logger({});
+    const std::string raw_output = captured_out.read() + captured_err.read();
+    expect(raw_output.find("private-sentinel") == std::string::npos,
+        "common logger bypass leaked private details through stdio");
+    bool classified = false;
+    for (const auto &message : diagnostic_messages) {
+        expect(message.find("private-sentinel") == std::string::npos,
+            "common logger bypass leaked private details through runner logger");
+        classified = classified || message.find("reason=ARTIFACT_ACCESS_FAILED") != std::string::npos;
+    }
+    expect(classified, "safe upstream reason stopped reaching runner logger");
+}
+
+void upstream_diagnostics_are_classified_bounded_and_private() {
+    llama_runner_core_set_logger(capture_diagnostic);
+    llama_runner_core_init(nullptr);
+    ggml_log_callback callback = nullptr;
+    void *user_data = nullptr;
+    llama_log_get(&callback, &user_data);
+    expect(callback != nullptr, "safe upstream logger was not installed");
+    diagnostic_messages.clear();
+    callback(GGML_LOG_LEVEL_WARN,
+        "FaIlEd To OpEn /private/sentinel-path prompt=sentinel-prompt template=sentinel-template", user_data);
+    for (int index = 0; index < 32; ++index) {
+        callback(GGML_LOG_LEVEL_ERROR, "raw-secret exception=sentinel-exception", user_data);
+    }
+    expect(!diagnostic_messages.empty() && diagnostic_messages.size() <= 8,
+        "upstream warning count was not bounded");
+    expect(diagnostic_messages.front().find("stage=IDLE reason=ARTIFACT_ACCESS_FAILED") != std::string::npos,
+        "mixed-case upstream diagnostic was not classified");
+    for (const auto &message : diagnostic_messages) {
+        expect(message.find("sentinel") == std::string::npos && message.find("raw-secret") == std::string::npos &&
+            message.find("/private/") == std::string::npos, "upstream diagnostic leaked sensitive details");
+    }
+    const size_t before = diagnostic_messages.size();
+    callback(GGML_LOG_LEVEL_INFO, "sentinel-generated-output", user_data);
+    expect(diagnostic_messages.size() == before, "upstream informational content was emitted");
+    llama_runner_core_shutdown();
+    llama_runner_core_set_logger({});
+}
+
+void assistant_architecture_requires_a_target_model_context() {
+    struct MetadataFixture {
+        std::filesystem::path root;
+        std::string file;
+        MetadataFixture() {
+            std::random_device random;
+            for (int attempt = 0; attempt < 16; ++attempt) {
+                const auto candidate = std::filesystem::temp_directory_path() /
+                    ("caraml-assistant-" + std::to_string(random()) + "-" + std::to_string(random()));
+                std::error_code error;
+                if (!std::filesystem::create_directory(candidate, error)) continue;
+                root = candidate;
+                std::filesystem::permissions(root, std::filesystem::perms::owner_all,
+                    std::filesystem::perm_options::replace, error);
+                if (error) {
+                    std::filesystem::remove_all(root, error);
+                    throw std::runtime_error("could not secure assistant metadata fixture");
+                }
+                file = (root / "metadata.gguf").string();
+                return;
+            }
+            throw std::runtime_error("could not create assistant metadata fixture");
+        }
+        ~MetadataFixture() { std::error_code error; std::filesystem::remove_all(root, error); }
+    } fixture;
+    const char *path = fixture.file.c_str();
+    gguf_context * metadata = gguf_init_empty();
+    gguf_set_val_str(metadata, "general.architecture", "gemma4-assistant");
+    const bool written = gguf_write_to_file(metadata, path, true);
+    gguf_free(metadata);
+    expect(written, "could not write assistant metadata fixture");
+    llama_runner_core_set_logger({});
+    llama_runner_core_init(nullptr);
+    LlamaRunnerConfig config;
+    config.n_ctx = 128;
+    config.n_ctx_min = 64;
+    config.n_batch = 32;
+    config.n_ubatch = 32;
+    config.n_gpu_layers = 0;
+    config.offload_kqv = false;
+    config.auto_fit = false;
+    const auto result = llama_runner_core_preflight(path, config);
+    llama_runner_core_shutdown();
+    expect(result.status == 4, "assistant model was reported as transient runtime failure");
+    expect(result.pool_count == 0, "unsupported assistant model supplied allocation evidence");
 }
 
 void operation_gate_excludes_concurrent_owners() {
@@ -424,11 +601,178 @@ void abandoned_calibration_quarantines_later_model_operations() {
 
 } // namespace
 
+namespace {
+using PenaltyOwner = std::unique_ptr<llama_sampler, decltype(&llama_sampler_free)>;
+PenaltyOwner penalty_sampler(bool fast, int vocab, float repeat = 1.1f, float frequency = 0, float presence = 0) {
+    auto * original = llama_sampler_init_penalties(vocab, 64, repeat, frequency, presence);
+    return PenaltyOwner(fast ? caraml_sampling::wrap_penalties(original, vocab, repeat, frequency, presence) : original, llama_sampler_free);
+}
+PenaltyOwner penalty_chain(bool fast, int vocab, float temperature) {
+    auto * chain = llama_sampler_chain_init(llama_sampler_chain_default_params());
+    llama_sampler_chain_add(chain, penalty_sampler(fast, vocab).release());
+    llama_sampler_chain_add(chain, llama_sampler_init_top_k(40));
+    llama_sampler_chain_add(chain, llama_sampler_init_top_p(0.95f, 0));
+    llama_sampler_chain_add(chain, llama_sampler_init_min_p(0.05f, 0));
+    llama_sampler_chain_add(chain, llama_sampler_init_temp_ext(temperature, 0.0f, 1.0f));
+    llama_sampler_chain_add(chain, llama_sampler_init_dist(42));
+    return PenaltyOwner(chain, llama_sampler_free);
+}
+void sparse_penalties_match_pinned_sampling() {
+    std::vector<llama_token_data> source;
+    for (int i = 0; i < 1024; ++i) source.push_back({i, static_cast<float>(i) * 0.01f - 5.0f, 0.25f});
+    auto original = penalty_sampler(false, 1024);
+    auto fast = penalty_sampler(true, 1024);
+    for (int event = 0; event < 128; ++event) {
+        const int accepted = event % 7;
+        llama_sampler_accept(original.get(), accepted); llama_sampler_accept(fast.get(), accepted);
+        auto a = source, b = source;
+        llama_token_data_array ca{a.data(), a.size(), 9, true}, cb{b.data(), b.size(), 9, true};
+        llama_sampler_apply(original.get(), &ca);
+        expect(caraml_sampling::apply_dense_penalties(*static_cast<caraml_sampling::PenaltyState *>(fast->ctx), &cb),
+            "dense penalties did not take sparse path");
+        expect(ca.size == cb.size && ca.selected == cb.selected && ca.sorted == cb.sorted, "penalty metadata changed");
+        for (size_t i = 0; i < a.size(); ++i) expect(a[i].id == b[i].id && a[i].logit == b[i].logit && a[i].p == b[i].p,
+            "penalty window/wrap/count formula changed");
+    }
+    // Preserve original behavior for sparse/permuted/backend candidates and invalid history.
+    for (int kind = 0; kind < 4; ++kind) {
+        auto a = source, b = source;
+        if (kind == 0) { a.resize(40); b = a; }
+        if (kind == 1) { std::swap(a[0], a[7]); b = a; }
+        if (kind == 2) { llama_sampler_accept(original.get(), 9999); llama_sampler_accept(fast.get(), 9999); }
+        if (kind == 3) { llama_sampler_reset(original.get()); llama_sampler_reset(fast.get()); }
+        llama_token_data_array ca{a.data(), a.size(), -1, false}, cb{b.data(), b.size(), -1, false};
+        llama_sampler_apply(original.get(), &ca); llama_sampler_apply(fast.get(), &cb);
+        for (size_t i = 0; i < a.size(); ++i) expect(a[i].logit == b[i].logit, "penalty fallback/reset changed logits");
+    }
+    for (const auto config : {std::array<float, 3>{1.0f, 0, 0}, std::array<float, 3>{1.3f, 0.2f, 0.4f}}) {
+        auto baseline = penalty_sampler(false, 1024, config[0], config[1], config[2]);
+        auto optimized = penalty_sampler(true, 1024, config[0], config[1], config[2]);
+        for (int pass = 0; pass < 2; ++pass) {
+            if (pass == 1) for (int accepted : {0, 1, 1, 2, 3, 7, 7}) {
+                llama_sampler_accept(baseline.get(), accepted); llama_sampler_accept(optimized.get(), accepted);
+            }
+            auto a = source, b = source;
+            a[0].logit = b[0].logit = -0.0f; a[1].logit = b[1].logit = 0.0f;
+            a[2].logit = b[2].logit = -INFINITY;
+            llama_token_data_array ca{a.data(), a.size(), 11, true}, cb{b.data(), b.size(), 11, true};
+            llama_sampler_apply(baseline.get(), &ca); llama_sampler_apply(optimized.get(), &cb);
+            expect(ca.size == cb.size && ca.selected == cb.selected && ca.sorted == cb.sorted, "disabled/empty penalty metadata changed");
+            for (size_t i = 0; i < a.size(); ++i) expect(a[i].id == b[i].id && a[i].p == b[i].p &&
+                std::memcmp(&a[i].logit, &b[i].logit, sizeof(float)) == 0, "penalty count/frequency/presence/sign changed");
+        }
+    }
+    for (const int vocab : {caraml_sampling::MAX_DENSE_VOCAB, caraml_sampling::MAX_DENSE_VOCAB + 1}) {
+        auto sampler = penalty_sampler(true, vocab); llama_sampler_accept(sampler.get(), 7);
+        std::vector<llama_token_data> dense;
+        for (int i = 0; i < vocab; ++i) dense.push_back({i, 1.0f, 0.0f});
+        auto before = dense;
+        llama_token_data_array c{dense.data(), dense.size(), 13, true};
+        const bool applied = caraml_sampling::apply_dense_penalties(*static_cast<caraml_sampling::PenaltyState *>(sampler->ctx), &c);
+        expect(applied == (vocab == caraml_sampling::MAX_DENSE_VOCAB), "dense vocab cap changed");
+        if (!applied) {
+            expect(c.selected == 13 && c.sorted && c.size == before.size(), "guard mutated metadata");
+            for (size_t i = 0; i < dense.size(); ++i) expect(dense[i].id == before[i].id && dense[i].logit == before[i].logit && dense[i].p == before[i].p,
+                "guard mutated caller candidates");
+        }
+    }
+    {
+        auto sampler = penalty_sampler(true, 1024); llama_sampler_accept(sampler.get(), -1);
+        auto unchanged = source; llama_token_data_array c{unchanged.data(), unchanged.size(), 17, true};
+        expect(!caraml_sampling::apply_dense_penalties(*static_cast<caraml_sampling::PenaltyState *>(sampler->ctx), &c), "invalid negative token indexed candidates");
+        expect(c.selected == 17 && c.sorted && c.size == source.size(), "invalid history changed metadata");
+    }
+    {
+        auto chain = penalty_chain(false, 1024, 2.0f);
+        const int count = llama_sampler_chain_n(chain.get());
+        expect(!caraml_sampling::install_fresh_dense_penalties(chain.get(), 1024, 64, 1.1f, 0, 0, true), "backend sampler was replaced");
+        expect(!caraml_sampling::install_fresh_dense_penalties(chain.get(), 1024, 63, 1.1f, 0, 0, false), "unknown window was replaced");
+        expect(caraml_sampling::install_fresh_dense_penalties(chain.get(), 1024, 64, 1.1f, 0, 0, false), "fresh penalty hook not installed");
+        expect(count == llama_sampler_chain_n(chain.get()) && std::string(llama_sampler_name(llama_sampler_chain_get(chain.get(), 0))) == "caraml-dense-penalties" &&
+            std::string(llama_sampler_name(llama_sampler_chain_get(chain.get(), 1))) == "top-k", "sampler hook changed chain order");
+    }
+    std::mt19937 random(20261008); std::uniform_real_distribution<float> logits(-8.0f, 8.0f);
+    for (const float temperature : {0.0f, 0.7f, 2.0f}) {
+        auto baseline = penalty_chain(false, 1024, temperature);
+        auto optimized = penalty_chain(false, 1024, temperature);
+        expect(caraml_sampling::install_fresh_dense_penalties(optimized.get(), 1024, 64, 1.1f, 0, 0, false), "chain installation failed");
+        for (int turn = 0; turn < 3; ++turn) {
+            if (turn == 1) {
+                baseline = PenaltyOwner(llama_sampler_clone(baseline.get()), llama_sampler_free);
+                optimized = PenaltyOwner(llama_sampler_clone(optimized.get()), llama_sampler_free);
+            }
+            if (turn == 2) { llama_sampler_reset(baseline.get()); llama_sampler_reset(optimized.get()); }
+            for (int event = 0; event < 128; ++event) {
+                std::vector<llama_token_data> a;
+                for (int i = 0; i < 1024; ++i) a.push_back({i, logits(random), 0.0f});
+                if (event % 7 == 0) { a[3].logit = 100.0f; a[7].logit = 100.0f; }
+                if (event % 11 == 0) for (int i = 0; i < 1000; ++i) a[i].logit = -INFINITY;
+                auto b = a;
+                llama_token_data_array ca{a.data(), a.size(), -1, false}, cb{b.data(), b.size(), -1, false};
+                llama_sampler_apply(baseline.get(), &ca); llama_sampler_apply(optimized.get(), &cb);
+                expect(ca.selected >= 0 && cb.selected >= 0 && ca.data[ca.selected].id == cb.data[cb.selected].id,
+                    "seeded token changed with penalties/clone/reset/masks");
+                expect(ca.size == cb.size, "penalty-chain candidate count changed");
+                for (size_t i = 0; i < ca.size; ++i) expect(ca.data[i].id == cb.data[i].id && ca.data[i].p == cb.data[i].p,
+                    "penalty-chain probabilities/order changed");
+                llama_sampler_accept(baseline.get(), ca.data[ca.selected].id); llama_sampler_accept(optimized.get(), cb.data[cb.selected].id);
+            }
+        }
+    }
+    std::vector<llama_token_data> big;
+    for (int i = 0; i < 151936; ++i) big.push_back({i, static_cast<float>(i) * 0.0001f, 0.0f});
+    std::shuffle(big.begin(), big.end(), random);
+    // Whole-chain comparison uses dense vocab order; top-k permutation happens later.
+    std::sort(big.begin(), big.end(), [](auto a, auto b) { return a.id < b.id; });
+    for (auto & candidate : big) candidate.logit = logits(random);
+    for (const float temperature : {0.0f, 2.0f}) {
+        double elapsed[2]{};
+        for (int variant = 0; variant < 2; ++variant) {
+            auto chain = penalty_chain(variant != 0, 151936, temperature);
+            for (int i = 0; i < 64; ++i) llama_sampler_accept(chain.get(), (i * 2039) % 151936);
+            std::vector<llama_token_data> working(big.size()); auto start = std::chrono::steady_clock::now();
+            for (int event = 0; event < 256; ++event) {
+                std::copy(big.begin(), big.end(), working.begin());
+                llama_token_data_array c{working.data(), working.size(), -1, false}; llama_sampler_apply(chain.get(), &c);
+                llama_sampler_accept(chain.get(), c.data[c.selected].id);
+            }
+            elapsed[variant] = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+        }
+        std::printf("penalty_microbenchmark vocab=151936 events=256 temp=%.1f baseline_ms=%.3f optimized_ms=%.3f\n", temperature, elapsed[0], elapsed[1]);
+    }
+}
+} // namespace
+
 int main() {
+    sparse_penalties_match_pinned_sampling();
+    common_logger_cannot_bypass_private_upstream_diagnostics();
+    upstream_diagnostics_are_classified_bounded_and_private();
+    expect(!llama_runner_supported_cache_type(4), "removed KV type accepted");
+    expect(!llama_runner_supported_cache_type(GGML_TYPE_I32), "integer KV type accepted");
+    expect(llama_runner_supported_cache_type(GGML_TYPE_Q8_0), "supported Q8 KV type rejected");
+    bool mask[GGML_MAX_N_THREADS]{};
+    expect(llama_runner_parse_cpu_mask("4-7", mask), "decimal CPU range rejected");
+    for (int cpu = 0; cpu < GGML_MAX_N_THREADS; ++cpu) {
+        expect(mask[cpu] == (cpu >= 4 && cpu <= 7), "CPU range parsed as hexadecimal mask");
+    }
+    expect(!llama_runner_parse_cpu_mask("0,512", mask), "out-of-bounds CPU accepted");
+    expect(mask[4] && !mask[0], "invalid mask partially overwrote affinity");
+    expect(llama_runner_parse_cpu_mask("7", mask), "single CPU index rejected");
+    expect(mask[7] && !mask[0] && !mask[1] && !mask[2], "single CPU index treated as bitmask");
+    expect(llama_runner_parse_cpu_mask("", mask) && !mask[7], "empty mask retained affinity");
+    expect(llama_runner_valid_fitted_dimensions(4096, -1),
+        "upstream all-layer sentinel rejected after successful auto-fit");
+    expect(!llama_runner_valid_fitted_dimensions(4096, -2), "invalid offload sentinel accepted");
+    expect(!llama_runner_valid_fitted_dimensions(0, -1), "empty fitted context accepted");
+    expect(llama_runner_resolved_gpu_layers(-1, 24, true) == 25, "full offload count lost output layer");
+    expect(llama_runner_resolved_gpu_layers(99, 24, true) == 25, "offload count exceeds model layers");
+    expect(llama_runner_resolved_gpu_layers(12, 24, true) == 12, "partial offload count changed");
+    expect(llama_runner_resolved_gpu_layers(-1, 24, false) == 0, "CPU-only device reports GPU layers");
     operation_gate_excludes_concurrent_owners();
     streamed_session_excludes_unload_between_tokens();
     exceptional_context_path_releases_both_handles();
     repeated_initialization_is_idempotent();
+    assistant_architecture_requires_a_target_model_context();
     core_gate_blocks_discovery_but_not_atomic_cancellation();
     pinned_native_quantization_labels_are_exact();
     engine_version_is_bounded_and_stable();

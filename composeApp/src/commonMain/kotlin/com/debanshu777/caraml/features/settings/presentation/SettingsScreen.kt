@@ -1,5 +1,9 @@
 package com.debanshu777.caraml.features.settings.presentation
 
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import com.debanshu777.caraml.core.ui.components.BrandButton
+import com.debanshu777.caraml.core.ui.components.BrandButtonStyle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,9 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -26,10 +28,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -39,15 +39,13 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.recommendation.RecommendationRolloutModeSource
 import com.debanshu777.caraml.core.settings.AppSettings
 import com.debanshu777.caraml.core.settings.KvQuantPreset
-import com.debanshu777.caraml.core.theme.LocalSpacing
 import com.debanshu777.caraml.core.theme.ThemeViewModel
-import com.debanshu777.caraml.core.theme.auroraColors
-import com.debanshu777.caraml.core.theme.prism
-import com.debanshu777.caraml.core.theme.prismShapes
-import com.debanshu777.caraml.core.ui.components.CaraMLPrimaryTopBar
+import com.debanshu777.caraml.core.ui.components.FrostedPageScaffold
+import com.debanshu777.caraml.core.ui.components.BrandPageHeader
 import com.debanshu777.caraml.core.ui.layout.AppContentKind
 import com.debanshu777.caraml.core.ui.layout.ResponsiveContentPane
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.QuickCalibrationDialog
@@ -62,6 +60,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
     themeViewModel: ThemeViewModel = koinViewModel(),
     rolloutModeSource: RecommendationRolloutModeSource = koinInject(),
+    onOpenShelf: () -> Unit = {},
 ) {
     val settings by viewModel.settings.collectAsState()
     val settingsLoaded by viewModel.settingsLoaded.collectAsState()
@@ -75,28 +74,36 @@ fun SettingsScreen(
         rolloutMode = rolloutModeSource.current(),
         settingsLoaded = settingsLoaded,
     )
-    val spacing = LocalSpacing.current
+    val spacing = AppTheme.spacing
 
-    Scaffold(
+    FrostedPageScaffold(
+        kind = AppContentKind.Settings,
         modifier = modifier,
-        containerColor = Color.Transparent,
-        topBar = { CaraMLPrimaryTopBar(title = "Settings") },
+        header = { BrandPageHeader(title = "Settings") },
     ) { paddingValues ->
-        ResponsiveContentPane(
-            kind = AppContentKind.Settings,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues),
-        ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .testTag("settings-scroll")
                     .verticalScroll(rememberScrollState())
-                    .padding(top = spacing.l, bottom = spacing.xxxl),
-                verticalArrangement = Arrangement.spacedBy(spacing.xxl),
+                    .padding(paddingValues)
+                    .padding(top = spacing.spacing16, bottom = spacing.spacing48),
+                verticalArrangement = Arrangement.spacedBy(spacing.spacing24),
             ) {
-                AppearanceSection(viewModel = themeViewModel)
+                Column {
+                    AppearanceSection(viewModel = themeViewModel)
+                    SettingsPreferenceRow(
+                        title = "Downloaded models",
+                        description = "Models saved on this device.",
+                    ) {
+                        BrandButton(
+                            style = BrandButtonStyle.Secondary,
+                            onClick = onOpenShelf,
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        ) { Text("Open library") }
+                    }
+                    SettingsRowDivider("settings-divider-shelf")
+                }
 
                 if (profileUiState.isAvailable) {
                     Column(
@@ -119,14 +126,14 @@ fun SettingsScreen(
                         if (profileError != null) {
                             Text(
                                 text = profileError.orEmpty(),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.padding(top = spacing.s),
+                                style = AppTheme.typography.bodySmall,
+                                color = AppTheme.colors.error,
+                                modifier = Modifier.padding(top = spacing.spacing8),
                             )
                         }
                         CalibrationSetting(
                             onRunCalibration = { calibrationDialogVisible = true },
-                            modifier = Modifier.padding(vertical = spacing.l),
+                            modifier = Modifier.padding(vertical = spacing.spacing16),
                         )
                         SettingsRowDivider(tag = "settings-divider-recommendations")
                     }
@@ -158,7 +165,6 @@ fun SettingsScreen(
                     )
                 }
             }
-        }
     }
 
     if (calibrationDialogVisible) {
@@ -183,17 +189,17 @@ internal fun SettingsSectionHeader(
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.xs),
+        verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing4),
     ) {
         Text(
             text = title,
-            style = MaterialTheme.typography.prism.sectionTitle,
-            color = MaterialTheme.colorScheme.onSurface,
+            style = AppTheme.typography.sectionTitle,
+            color = AppTheme.colors.onSurface,
         )
         Text(
             text = supportingText,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = AppTheme.typography.bodySmall,
+            color = AppTheme.colors.onSurface,
         )
     }
 }
@@ -207,8 +213,8 @@ internal fun SettingsRowDivider(
         modifier = modifier
             .fillMaxWidth()
             .testTag(tag),
-        thickness = 1.dp,
-        color = MaterialTheme.auroraColors.divider,
+        thickness = AppTheme.dimensions.size1,
+        color = AppTheme.auroraColors.divider,
     )
 }
 
@@ -217,30 +223,30 @@ private fun CalibrationSetting(
     onRunCalibration: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val spacing = LocalSpacing.current
+    val spacing = AppTheme.spacing
     Surface(
         modifier = modifier
             .fillMaxWidth()
             .testTag("settings-calibration-group"),
-        shape = MaterialTheme.prismShapes.pane,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = AppTheme.shapes.medium,
+        color = AppTheme.colors.surfaceContainerLow,
     ) {
         Column(
-            modifier = Modifier.padding(spacing.l),
-            verticalArrangement = Arrangement.spacedBy(spacing.m),
+            modifier = Modifier.padding(spacing.spacing16),
+            verticalArrangement = Arrangement.spacedBy(spacing.spacing12),
         ) {
             Text(
                 text = "Calibrate this device",
-                style = MaterialTheme.typography.titleMedium,
+                style = AppTheme.typography.headingSmall,
             )
             Text(
                 text = "Run a short local benchmark to tune device-specific estimates.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = AppTheme.typography.bodySmall,
+                color = AppTheme.colors.onSurface,
             )
-            Button(
+            BrandButton(
                 onClick = onRunCalibration,
-                modifier = Modifier.heightIn(min = 48.dp),
+                modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48),
             ) {
                 Text("Run calibration")
             }
@@ -255,7 +261,7 @@ private fun GenerationSettingsSection(
     onTemperatureChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val spacing = LocalSpacing.current
+    val spacing = AppTheme.spacing
     val displayTemperature = round(settings.temperature * 10f) / 10f
     Column(
         modifier = modifier
@@ -269,17 +275,17 @@ private fun GenerationSettingsSection(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = spacing.l),
-            verticalArrangement = Arrangement.spacedBy(spacing.m),
+                .padding(vertical = spacing.spacing16),
+            verticalArrangement = Arrangement.spacedBy(spacing.spacing12),
         ) {
             Text(
                 text = "System prompt",
-                style = MaterialTheme.typography.titleMedium,
+                style = AppTheme.typography.headingSmall,
             )
             Text(
                 text = "These instructions are applied when a new conversation begins.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = AppTheme.typography.bodySmall,
+                color = AppTheme.colors.onSurface,
             )
             OutlinedTextField(
                 value = settings.systemPrompt,
@@ -287,7 +293,7 @@ private fun GenerationSettingsSection(
                 label = { Text("Instructions") },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 140.dp),
+                    .heightIn(min = AppTheme.dimensions.size140),
                 maxLines = 5,
             )
         }
@@ -295,8 +301,8 @@ private fun GenerationSettingsSection(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = spacing.l),
-            verticalArrangement = Arrangement.spacedBy(spacing.s),
+                .padding(vertical = spacing.spacing16),
+            verticalArrangement = Arrangement.spacedBy(spacing.spacing8),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -305,18 +311,18 @@ private fun GenerationSettingsSection(
             ) {
                 Text(
                     text = "Temperature",
-                    style = MaterialTheme.typography.titleMedium,
+                    style = AppTheme.typography.headingSmall,
                 )
                 Text(
                     text = displayTemperature.toString(),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary,
+                    style = AppTheme.typography.bodyBase,
+                    color = AppTheme.actionColor,
                 )
             }
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 48.dp)
+                    .heightIn(min = AppTheme.spacing.spacing48)
                     .semantics(mergeDescendants = true) {
                         contentDescription = "Temperature $displayTemperature"
                     },
@@ -332,8 +338,8 @@ private fun GenerationSettingsSection(
             }
             Text(
                 text = "0 is deterministic; 2 explores more varied responses.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = AppTheme.typography.bodySmall,
+                color = AppTheme.colors.onSurface,
             )
         }
         SettingsRowDivider(tag = "settings-divider-generation")
@@ -346,12 +352,12 @@ internal fun GpuAccelerationSection(
     onToggle: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val spacing = LocalSpacing.current
+    val spacing = AppTheme.spacing
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 48.dp)
+                .heightIn(min = AppTheme.spacing.spacing48)
                 .toggleable(
                     value = enabled,
                     role = Role.Switch,
@@ -365,28 +371,28 @@ internal fun GpuAccelerationSection(
                         "GPU acceleration disabled"
                     }
                 }
-                .padding(vertical = spacing.l),
-            horizontalArrangement = Arrangement.spacedBy(spacing.m),
+                .padding(vertical = spacing.spacing16),
+            horizontalArrangement = Arrangement.spacedBy(spacing.spacing12),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(spacing.xs),
+                verticalArrangement = Arrangement.spacedBy(spacing.spacing4),
             ) {
                 Text(
                     text = "GPU acceleration",
-                    style = MaterialTheme.typography.titleMedium,
+                    style = AppTheme.typography.headingSmall,
                 )
                 Text(
                     text = "Use Vulkan when available for faster local inference.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = AppTheme.typography.bodySmall,
+                    color = AppTheme.colors.onSurface,
                 )
             }
             Switch(
                 checked = enabled,
                 onCheckedChange = null,
-                modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                modifier = Modifier.sizeIn(minWidth = AppTheme.spacing.spacing48, minHeight = AppTheme.spacing.spacing48),
             )
         }
         SettingsRowDivider(tag = "settings-divider-runtime")
@@ -400,28 +406,28 @@ internal fun KvCacheSection(
     onSelect: (KvQuantPreset) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val spacing = LocalSpacing.current
+    val spacing = AppTheme.spacing
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(top = spacing.l),
-        verticalArrangement = Arrangement.spacedBy(spacing.s),
+            .padding(top = spacing.spacing16),
+        verticalArrangement = Arrangement.spacedBy(spacing.spacing8),
     ) {
         Text(
             text = "KV cache quality",
-            style = MaterialTheme.typography.titleMedium,
+            style = AppTheme.typography.headingSmall,
         )
         Text(
             text = "Current: ${selected.chipLabel()}",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.primary,
+            style = AppTheme.typography.bodySmall,
+            color = AppTheme.actionColor,
         )
         FlowRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .selectableGroup(),
-            horizontalArrangement = Arrangement.spacedBy(spacing.s),
-            verticalArrangement = Arrangement.spacedBy(spacing.s),
+            horizontalArrangement = Arrangement.spacedBy(spacing.spacing8),
+            verticalArrangement = Arrangement.spacedBy(spacing.spacing8),
         ) {
             KvQuantPreset.entries.forEach { preset ->
                 val isSelected = selected == preset
@@ -441,8 +447,8 @@ internal fun KvCacheSection(
         }
         Text(
             text = selected.description(),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = AppTheme.typography.bodySmall,
+            color = AppTheme.colors.onSurface,
         )
         ExpandableSettingDescription(
             summary = "Lower precision saves memory and speeds up prefill; " +
@@ -453,7 +459,7 @@ internal fun KvCacheSection(
         )
         SettingsRowDivider(
             tag = "settings-divider-kv-cache",
-            modifier = Modifier.padding(top = spacing.s),
+            modifier = Modifier.padding(top = spacing.spacing8),
         )
     }
 }

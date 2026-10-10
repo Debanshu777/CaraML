@@ -4,6 +4,8 @@ package com.debanshu777.caraml.features.modelhub.presentation.search
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -19,12 +21,14 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -32,9 +36,9 @@ import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import com.debanshu777.caraml.core.drawer.AppDrawerShell
 import com.debanshu777.caraml.core.navigation.AppScreen
+import com.debanshu777.caraml.core.ui.components.GenericListItem
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubContextStrip
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubToolbar
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelResultCard
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchBar
 import com.debanshu777.huggingfacemanager.model.ModelSort
 import com.debanshu777.huggingfacemanager.model.ParameterRange
@@ -44,6 +48,37 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class ModelHubWorkbenchScreenUiTest {
+
+    @Test
+    fun scrollingIntoLastFiveModelRowsRequestsOneAppend() = runComposeUiTest {
+        var appends = 0
+        setContent {
+            MaterialTheme {
+                Box(Modifier.requiredSize(360.dp, 420.dp)) {
+                    ModelHubTabLayout(
+                        context = {}, toolbar = {}, summary = {},
+                        results = {
+                            repeat(12) { index ->
+                                item(key = "model-$index") {
+                                    Box(Modifier.fillMaxWidth().height(88.dp)) { Text("Model $index") }
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                        autoLoadKeys = (7..11).map { "model-$it" }.toSet(),
+                        autoLoadEnabled = true,
+                        onNearEnd = { appends++ },
+                    )
+                }
+            }
+        }
+
+        runOnIdle { assertEquals(0, appends) }
+        onNodeWithTag("model-primary-results").performScrollToIndex(10)
+        runOnIdle { assertEquals(1, appends) }
+        onNodeWithTag("model-primary-results").performScrollToIndex(11)
+        runOnIdle { assertEquals(1, appends) }
+    }
 
     @Test
     fun compactModelsPlacesCommandBeforeContextAndResultsInFirstViewport() = runComposeUiTest {
@@ -105,10 +140,9 @@ class ModelHubWorkbenchScreenUiTest {
                 onNodeWithContentDescription("Open navigation menu")
                     .fetchSemanticsNode().boundsInRoot
             } else {
-                onAllNodesWithText("Models")
-                    .fetchSemanticsNodes()
-                    .maxBy { it.boundsInRoot.width }
-                    .boundsInRoot
+                onNode(
+                    hasText("Models") and SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading),
+                ).fetchSemanticsNode().boundsInRoot
             }
             val tabs = onNodeWithTag("model-tabs").fetchSemanticsNode().boundsInRoot
             assertTrue(
@@ -205,28 +239,23 @@ class ModelHubWorkbenchScreenUiTest {
     }
 
     @Test
-    fun width840UsesSupportingContextWithoutShrinkingResultsBelow480Dp() = runComposeUiTest {
+    fun width840UsesTheSharedTwentyFourDpContentGutters() = runComposeUiTest {
         setContent {
             CompositionLocalProvider(LocalDensity provides Density(density = 1f, fontScale = 1f)) {
                 MaterialTheme {
                     Box(Modifier.requiredSize(width = 840.dp, height = 480.dp)) {
                         FixtureTab(
                             modifier = Modifier.fillMaxSize(),
-                            windowWidth = 840.dp,
                         )
                     }
                 }
             }
         }
 
-        val supporting = onNodeWithTag("model-supporting-context")
-            .fetchSemanticsNode().boundsInRoot
         val results = onNodeWithTag("model-primary-results")
             .fetchSemanticsNode().boundsInRoot
 
-        assertTrue(supporting.width in 280f..320f, "Supporting width was ${supporting.width}dp")
-        assertTrue(results.width >= 480f, "Results width was ${results.width}dp")
-        assertTrue(supporting.left > results.left)
+        assertEquals(792f, results.width, "840dp viewport minus two shared 24dp gutters")
     }
 
     @Test
@@ -248,6 +277,7 @@ class ModelHubWorkbenchScreenUiTest {
 
         assertEquals(1, verticalScrollOwnerCount())
         onNodeWithText("Reset filters").performScrollTo().assertIsDisplayed().performClick()
+        onNodeWithTag("model-primary-results").performScrollToIndex(3)
         onNodeWithText("long-model-name-that-remains-readable")
             .performScrollTo()
             .assertIsDisplayed()
@@ -328,7 +358,6 @@ private fun WorkbenchFixture(
 @Composable
 private fun FixtureTab(
     modifier: Modifier = Modifier,
-    windowWidth: androidx.compose.ui.unit.Dp? = null,
     result: FixtureResult = FixtureResult.Content,
     activeFilterCount: Int = 0,
     onResetFilters: () -> Unit = {},
@@ -341,7 +370,6 @@ private fun FixtureTab(
     }
     ModelHubTabLayout(
         modifier = modifier,
-        windowWidth = windowWidth,
         command = {
             SearchBar(
                 query = "",
@@ -392,11 +420,11 @@ private fun FixtureTab(
                 },
                 motion = motion,
             ) { model, itemModifier ->
-                ModelResultCard(
-                    title = model,
-                    author = "org",
+                GenericListItem(
+                    title = model.substringAfter('/', missingDelimiterValue = model),
+                    eyebrow = "org",
                     metadata = "Text generation",
-                    status = {},
+                    titleStatus = {},
                     onClick = {},
                     modifier = itemModifier,
                 )

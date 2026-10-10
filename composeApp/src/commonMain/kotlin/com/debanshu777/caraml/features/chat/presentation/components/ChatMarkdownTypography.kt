@@ -2,10 +2,9 @@ package com.debanshu777.caraml.features.chat.presentation.components
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontStyle
 import com.mikepenz.markdown.model.MarkdownTypography
 import com.mikepenz.markdown.m3.markdownTypography
+import com.debanshu777.caraml.core.theme.AppTheme
 
 /**
  * Typography for assistant chat bubbles rendered as Markdown.
@@ -21,21 +20,21 @@ import com.mikepenz.markdown.m3.markdownTypography
  */
 @Composable
 fun chatMarkdownTypography(): MarkdownTypography {
-    val t = MaterialTheme.typography
+    val t = AppTheme.typography
     return markdownTypography(
-        h1 = t.headlineSmall,
-        h2 = t.titleLarge,
-        h3 = t.titleMedium,
-        h4 = t.titleSmall,
-        h5 = t.titleSmall,
-        h6 = t.titleSmall,
-        text = t.bodyLarge,
-        paragraph = t.bodyLarge,
-        list = t.bodyLarge,
-        ordered = t.bodyLarge,
-        bullet = t.bodyLarge,
-        code = t.bodyLarge.copy(fontFamily = FontFamily.Monospace),
-        inlineCode = t.bodyLarge.copy(fontFamily = FontFamily.Monospace),
-        quote = t.bodyLarge.copy(fontStyle = FontStyle.Italic),
+        h1 = t.headingLarge,
+        h2 = t.headingBase,
+        h3 = t.headingSmall,
+        h4 = t.headingXSmall,
+        h5 = t.headingXSmall,
+        h6 = t.headingXSmall,
+        text = t.conversationBody,
+        paragraph = t.conversationBody,
+        list = t.conversationBody,
+        ordered = t.conversationBody,
+        bullet = t.conversationBody,
+        code = AppTheme.typography.bodyLargeCode,
+        inlineCode = AppTheme.typography.bodyLargeCode,
+        quote = AppTheme.typography.bodyLargeQuote,
     )
 }

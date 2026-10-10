@@ -35,7 +35,7 @@ private fun ModelDetailsCompactLargeTextPreview() {
 }
 
 @Composable
-private fun ModelDetailsDevicePreview() {
+internal fun ModelDetailsDevicePreview() {
     CaraMLTheme(ThemePreferences()) {
         AuroraBackdrop {
             Scaffold(

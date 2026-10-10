@@ -101,6 +101,36 @@ class DownloadBatchRunnerTest {
     }
 
     @Test
+    fun legacyCheckpointWithoutValidatorsRestartsThroughTheNormalTransfer() = runTest {
+        val store = RunnerStore(initialEntityTag = null)
+        val transfer = RecordingTransfer()
+        val runner = DownloadBatchRunner(store, transfer, BatchFinalizer {}, { 10L })
+        assertEquals(DownloadRunResult.Completed, runner.run("batch") {})
+        assertEquals(1, transfer.downloadCalls)
+        assertEquals(null, transfer.resume)
+    }
+
+    @Test
+    fun activeProgressRenewsTheLeaseAcrossMoreThanFifteenMinutes() = runTest {
+        var now = 0L
+        val store = RunnerStore()
+        val transfer = object : ArtifactTransfer {
+            override fun download(metadata: DownloadMetadataDTO, resumeMetadata: DownloadResumeMetadata?): Flow<DownloadProgressDTO> = flow {
+                for (bytes in listOf(6L, 8L, 10L)) {
+                    now += 10 * 60_000L
+                    emit(DownloadProgressDTO(bytes, 10L, bytes * 10f,
+                        localPath = "/synthetic/published".takeIf { bytes == 10L },
+                        contentSha256 = "c".repeat(64).takeIf { bytes == 10L }, entityTag = "etag-1"))
+                }
+            }
+        }
+        val runner = DownloadBatchRunner(store, transfer, BatchFinalizer {}, { now }, { "steady-owner" })
+        assertEquals(DownloadRunResult.Completed, runner.run("batch") {})
+        assertEquals(3, store.leaseRenewals)
+        assertTrue(now > 15 * 60_000L)
+    }
+
+    @Test
     fun alreadyPublishedArtifactIsFinalizedWithoutAnotherNetworkTransfer() = runTest {
         val store = RunnerStore()
         val transfer = RecordingTransfer(published = true)
@@ -402,6 +432,7 @@ private class CountingManifestTransfer(
 }
 
 private class RunnerStore(
+    private val initialEntityTag: String? = "etag-1",
     initialArtifactState: DownloadArtifactState = DownloadArtifactState.QUEUED,
     private val batchAvailable: Boolean = true,
     private val failCancellationCheckpoint: Boolean = false,
@@ -436,13 +467,16 @@ private class RunnerStore(
                 userIntent = DownloadUserIntent.RUN,
                 bytesReceived = 4L,
                 expectedBytes = 10L,
-                entityTag = "etag-1",
+                entityTag = initialEntityTag,
             ),
         ),
         evidence = pendingEvidence(identity),
     )
     val transitions = mutableListOf<DownloadArtifactState>()
     var released = false
+    private var claimedOwner: String? = null
+    private var leaseExpires = 0L
+    var leaseRenewals = 0
     var claimCalls = 0
     var progressUpdateCalls = 0
     var releaseCalls = 0
@@ -454,10 +488,25 @@ private class RunnerStore(
     override suspend fun recoverableBatches() = listOfNotNull(batch.takeIf { batchAvailable })
     override suspend fun claim(artifactId: String, owner: String, nowEpochMs: Long, expiresAtEpochMs: Long): Boolean {
         claimCalls += 1
+        claimedOwner = owner
+        leaseExpires = expiresAtEpochMs
         if (!claimResult) return false
         transitions += DownloadArtifactState.RUNNING
         batch = batch.withArtifactState(DownloadArtifactState.RUNNING)
         return true
+    }
+    override suspend fun restartTransferCheckpoint(artifactId: String, owner: String, previousBytes: Long, nowEpochMs: Long): Boolean {
+        val artifact = batch.artifacts.single()
+        if (artifact.state != DownloadArtifactState.RUNNING || artifact.bytesReceived != previousBytes) return false
+        batch = batch.copy(artifacts = listOf(artifact.copy(bytesReceived = 0L, entityTag = null, lastModified = null)))
+        return true
+    }
+    override suspend fun updateTransferProgress(artifactId: String, owner: String, bytesReceived: Long,
+        entityTag: String?, lastModified: String?, nowEpochMs: Long, expiresAtEpochMs: Long): Boolean {
+        if (claimedOwner != owner || nowEpochMs >= leaseExpires || batch.artifacts.single().state != DownloadArtifactState.RUNNING) return false
+        leaseExpires = maxOf(leaseExpires, expiresAtEpochMs)
+        leaseRenewals += 1
+        return updateProgress(artifactId, bytesReceived, entityTag, lastModified, nowEpochMs)
     }
     override suspend fun updateProgress(artifactId: String, bytesReceived: Long, entityTag: String?, lastModified: String?, nowEpochMs: Long): Boolean {
         progressUpdateCalls += 1

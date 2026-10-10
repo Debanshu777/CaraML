@@ -49,27 +49,50 @@ class ArtifactBundleManifestStore(
     private val secureRoot = if (fileSystem === FileSystem.SYSTEM) SecureArtifactRoot(ownerRoot) else null
     private val json = Json { encodeDefaults = true; ignoreUnknownKeys = false; isLenient = false }
 
-    fun publish(entries: Collection<ArtifactManifestEntry>) {
-        recover()
-        if (entries.isEmpty() || entries.size > MAX_BUNDLE_ENTRIES || entries.map { it.bundleId }.toSet().size != 1) {
-            throw ArtifactVerificationException()
+    fun publish(entries: Collection<ArtifactManifestEntry>, diagnostics: BundlePublicationDiagnostics? = null) {
+        var stage = BundlePublicationStage.RECOVER_BUNDLE
+        fun enter(next: BundlePublicationStage) { stage = next; diagnostics.emit(next, BundlePublicationReason.STARTED) }
+        try {
+            enter(BundlePublicationStage.RECOVER_BUNDLE)
+            recover()
+            enter(BundlePublicationStage.VALIDATE_ENTRIES)
+            if (entries.isEmpty() || entries.size > MAX_BUNDLE_ENTRIES || entries.map { it.bundleId }.toSet().size != 1) {
+                throw ArtifactVerificationException()
+            }
+            val manifest = ArtifactManifest.create(entries) ?: throw ArtifactVerificationException()
+            if (!manifest.entries.all(artifactValidator)) throw ArtifactVerificationException()
+            enter(BundlePublicationStage.CURRENT_DIGEST)
+            if (readValidated()?.bundleDigest == manifest.bundleDigest) {
+                // Exact already-published bytes need no new replacement transaction or plan mutation.
+                diagnostics.emit(BundlePublicationStage.CURRENT_DIGEST, BundlePublicationReason.SAME_VERIFIED_BUNDLE)
+                diagnostics.emit(BundlePublicationStage.COMPLETE, BundlePublicationReason.COMPLETED)
+                return
+            }
+            enter(BundlePublicationStage.REPLACEMENT_PREPARE)
+            prepareReplacementPlan(manifest, diagnostics)
+            enter(BundlePublicationStage.WRITE_MANIFEST)
+            writePart(manifest)
+            enter(BundlePublicationStage.WRITE_JOURNAL)
+            writeJournal(BundlePublicationJournal(ArtifactManifest.VERSION, manifest.bundleDigest))
+            phaseObserver(ManifestJournalPhase.PREPARED)
+            enter(BundlePublicationStage.PRESERVE_OLD)
+            preserveOld()
+            phaseObserver(ManifestJournalPhase.OLD_PRESERVED)
+            enter(BundlePublicationStage.PUBLISH_MANIFEST)
+            move(partPath, manifestPath)
+            phaseObserver(ManifestJournalPhase.NEW_PUBLISHED)
+            enter(BundlePublicationStage.VERIFY_PUBLISHED)
+            if (readValidated()?.bundleDigest != manifest.bundleDigest) {
+                restoreOld()
+                throw ArtifactVerificationException()
+            }
+            enter(BundlePublicationStage.FINISH)
+            finish()
+            diagnostics.emit(BundlePublicationStage.COMPLETE, BundlePublicationReason.COMPLETED)
+        } catch (error: Exception) {
+            diagnostics.emit(stage, bundlePublicationFailure(error))
+            throw error
         }
-        val manifest = ArtifactManifest.create(entries) ?: throw ArtifactVerificationException()
-        if (!manifest.entries.all(artifactValidator)) throw ArtifactVerificationException()
-        prepareReplacementPlan(manifest)
-        if (readValidated()?.bundleDigest == manifest.bundleDigest) return
-        writePart(manifest)
-        writeJournal(BundlePublicationJournal(ArtifactManifest.VERSION, manifest.bundleDigest))
-        phaseObserver(ManifestJournalPhase.PREPARED)
-        preserveOld()
-        phaseObserver(ManifestJournalPhase.OLD_PRESERVED)
-        move(partPath, manifestPath)
-        phaseObserver(ManifestJournalPhase.NEW_PUBLISHED)
-        if (readValidated()?.bundleDigest != manifest.bundleDigest) {
-            restoreOld()
-            throw ArtifactVerificationException()
-        }
-        finish()
     }
 
     fun recover() {
@@ -159,18 +182,27 @@ class ArtifactBundleManifestStore(
         delete(journalPath)
     }
 
-    private fun prepareReplacementPlan(next: ArtifactManifest) {
+    private fun prepareReplacementPlan(next: ArtifactManifest, diagnostics: BundlePublicationDiagnostics?) {
         val existingPlan = readReplacementPlan()
         if (existingPlan != null) {
-            if (existingPlan.nextBundleDigest != next.bundleDigest) throw ArtifactVerificationException()
+            if (existingPlan.nextBundleDigest != next.bundleDigest) {
+                diagnostics.emit(BundlePublicationStage.REPLACEMENT_PREPARE, BundlePublicationReason.REPLACEMENT_CONFLICT)
+                throw ArtifactVerificationException()
+            }
             return
         }
-        if (exists(replacementPlanPath)) throw ArtifactVerificationException()
+        if (exists(replacementPlanPath)) {
+            diagnostics.emit(BundlePublicationStage.REPLACEMENT_PREPARE, BundlePublicationReason.REPLACEMENT_PLAN_INVALID)
+            throw ArtifactVerificationException()
+        }
         val current = readValidated() ?: return
         if (current.bundleDigest == next.bundleDigest) return
         val plan = BundleReplacementPlan(ArtifactManifest.VERSION, next.bundleDigest, current)
         val encoded = json.encodeToString(plan).encodeToByteArray()
-        if (encoded.size > MAX_REPLACEMENT_PLAN_BYTES) throw ArtifactVerificationException()
+        if (encoded.size > MAX_REPLACEMENT_PLAN_BYTES) {
+            diagnostics.emit(BundlePublicationStage.REPLACEMENT_PREPARE, BundlePublicationReason.REPLACEMENT_PLAN_TOO_LARGE)
+            throw ArtifactVerificationException()
+        }
         delete(replacementPlanPartPath)
         write(replacementPlanPartPath, encoded)
         move(replacementPlanPartPath, replacementPlanPath)
