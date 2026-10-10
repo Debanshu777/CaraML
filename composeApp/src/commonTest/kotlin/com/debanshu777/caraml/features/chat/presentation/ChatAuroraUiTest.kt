@@ -484,15 +484,12 @@ private fun assertChatSurfaceAlignment(
     }
 
     val body = onNodeWithText(messageText).fetchSemanticsNode().boundsInRoot
-    val composer = onNodeWithText("One more little thought…").fetchSemanticsNode().boundsInRoot
-    val stats = onNodeWithContentDescription(
-        "Generation speed 42.5 tokens per second",
-    ).fetchSemanticsNode().boundsInRoot
-
+    val composer = onNodeWithTag("create-command").fetchSemanticsNode().boundsInRoot
     assertBoundsWidth(expectedBodyWidth, body, "conversation body")
     assertAligned(body.left, composer.left, "composer left")
     assertAligned(body.right, composer.right, "composer right")
-    assertAligned(body.right, stats.right, "generation stats right")
+    onNodeWithContentDescription("Generation speed 42.5 tokens per second").assertDoesNotExist()
+
 }
 
 private fun assertBoundsWidth(expected: Float, bounds: Rect, label: String) {

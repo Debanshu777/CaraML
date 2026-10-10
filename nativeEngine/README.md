@@ -133,6 +133,10 @@ Create a **separate** Gradle module + CMake project. Do not add here unless it m
 
 ## Recent Changes
 
+- Native hardening tests cover bounded private logging, exact dense-penalty parity and upstream fallback. CTest and platform build evidence, with device inference limits, are recorded in the [validation report](../docs/model-validation/2026-10-08/report.md).
+
+- Native chat regressions cover pinned Qwen3, MiniCPM5 and GPT-OSS reasoning/content parsing, forced delimiter emission, zero budgets, per-turn reset, and context/output-limit classification.
+
 <!-- Updated at end of each Claude Code session -->
 
 - Build-owned fit accounting includes CPU-repacked weights; native regression gates cover parameter validation, memory pool attribution, prompt reconciliation, and finalization

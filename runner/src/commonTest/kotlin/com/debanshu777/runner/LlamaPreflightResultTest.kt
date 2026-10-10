@@ -88,6 +88,9 @@ class LlamaPreflightResultTest {
         assertIs<LlamaPreflightResult.Unavailable>(
             decodeLlamaPreflight(longArrayOf(3L, 0L, 0L, 0L)),
         )
+        assertIs<LlamaPreflightResult.InvalidModel>(
+            decodeLlamaPreflight(longArrayOf(4L, 0L, 0L, 0L)),
+        )
     }
 
     @Test

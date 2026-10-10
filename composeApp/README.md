@@ -202,6 +202,18 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 
 ## Recent Changes
 
+- Installed text loading reuses an operation-local verified artifact only when the complete catalog snapshot matches, retaining fresh final load verification. Verified unsupported containers receive GGUF guidance; paused verification can resume, and startup reconciliation fairly repairs stale download rows only after exact published-artifact proof. See the [validation and performance report](../docs/model-validation/2026-10-08/report.md).
+
+- GGUF evidence honors explicit key dimensions and omitted KV-head defaults; loading, generation and transfer failures emit static reasons and timings without model text or paths. The debug matrix uses exact published identities and preserves user settings. See the [validation report](../docs/model-validation/2026-10-07/report.md).
+
+- Move creation modes into separate drawer destinations, preserve the chosen mode across restoration, and restore separate model and Send/Stop controls.
+
+- Chat keeps separate model and labeled Send/Stop controls, collapsed reasoning and generation details, and recoverable length/context/no-answer outcomes instead of reporting empty replies as done.
+
+- Native preflight identifies Gemma assistant models that require a target context; chat reports the actual admission reason instead of labeling every temporary failure as memory/thermal pressure.
+
+- Installed GGUF models with incomplete app metadata now use a bounded CPU plan and native model/memory preflight, retaining exact artifact verification and load recovery.
+
 - Persistent rail/sidebar navigation now paints through the landscape leading safe area while keeping controls and route content at their prior safe positions.
 
 - On short landscape windows, Models scrolls its title, tabs, and search field while a status-bar glass layer fades over the moving content. Safe scroll padding keeps the first control clear of the frost without reserving an empty app bar.

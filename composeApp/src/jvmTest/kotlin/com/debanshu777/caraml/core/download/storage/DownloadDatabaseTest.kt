@@ -2,6 +2,23 @@ package com.debanshu777.caraml.core.download.storage
 
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import androidx.sqlite.execSQL
+import com.debanshu777.caraml.core.download.DownloadManagerArtifactTransfer
+import com.debanshu777.huggingfacemanager.download.DownloadManager
+import com.debanshu777.huggingfacemanager.download.StoragePathProvider
+import com.sun.net.httpserver.HttpServer
+import java.net.InetSocketAddress
+import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
+import okio.Buffer
+import com.debanshu777.caraml.core.download.ArtifactTransfer
+import com.debanshu777.caraml.core.download.BatchFinalizer
+import com.debanshu777.caraml.core.download.DownloadBatchRunner
+import com.debanshu777.caraml.core.download.DownloadRunResult
+import com.debanshu777.huggingfacemanager.download.DownloadProgressDTO
+import com.debanshu777.huggingfacemanager.download.DownloadResumeMetadata
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.collect
 import com.debanshu777.caraml.core.download.DownloadArtifactRequest
 import com.debanshu777.caraml.core.download.DownloadArtifactState
 import com.debanshu777.caraml.core.download.DownloadBatchRequest
@@ -21,6 +38,8 @@ import com.debanshu777.huggingfacemanager.download.artifactBundleId
 import com.debanshu777.huggingfacemanager.download.immutableArtifactStorageLocation
 import java.nio.file.Files
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -32,6 +51,207 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class DownloadDatabaseTest {
+    @Test
+    fun ownedCleanupPauseRejectsNewerRunOrCancelAndKeepsCheckpoint() = runTest {
+        val database = getDownloadRoomDatabase(getDownloadDatabaseBuilder(
+            Files.createTempDirectory("caraml-cleanup-pause").resolve("downloads.db").toString()))
+        try {
+            val store = RoomDownloadTaskStore(database.downloadTaskDao())
+            val id = store.create(request().copy(displayName = "fixed-owned-marker"), 1L)
+            val artifact = store.getBatch(id)!!.artifacts.single().artifactId
+            assertTrue(store.claim(artifact, "worker", 2L, 20L))
+            assertTrue(store.updateTransferProgress(artifact, "worker", 256L, "validator", null, 3L, 20L))
+            val (first, firstVersion) = store.runningPauseSnapshot(id)!!
+            assertTrue(store.setUserIntent(id, DownloadUserIntent.RUN, firstVersion))
+            assertFalse(store.pauseRunningSnapshot(first, firstVersion, 4L))
+            val (second, secondVersion) = store.runningPauseSnapshot(id)!!
+            assertTrue(store.setUserIntent(id, DownloadUserIntent.CANCEL, secondVersion))
+            assertFalse(store.pauseRunningSnapshot(second, secondVersion, 5L))
+            assertEquals(DownloadUserIntent.CANCEL, store.getBatch(id)!!.userIntent)
+            assertEquals(DownloadArtifactState.RUNNING, store.getBatch(id)!!.artifacts.single().state)
+            assertEquals("worker", database.downloadTaskDao().requireArtifact(artifact).leaseOwner)
+            assertTrue(store.setUserIntent(id, DownloadUserIntent.RUN, 6L))
+            val (latest, latestVersion) = store.runningPauseSnapshot(id)!!
+            assertTrue(store.pauseRunningSnapshot(latest, latestVersion, 7L))
+            val paused = store.getBatch(id)!!
+            assertEquals(DownloadUserIntent.PAUSE, paused.userIntent)
+            assertEquals(DownloadArtifactState.PAUSED, paused.artifacts.single().state)
+            assertEquals(256L, paused.bytesReceived)
+            assertEquals("validator", paused.artifacts.single().entityTag)
+            assertNull(database.downloadTaskDao().requireArtifact(artifact).leaseOwner)
+        } finally { database.close() }
+    }
+
+    @Test
+    fun pausedResumeVersionRejectsSameMillisIntentAndClockRollbackRefresh() = runTest {
+        val database = getDownloadRoomDatabase(getDownloadDatabaseBuilder(
+            Files.createTempDirectory("caraml-resume-version").resolve("downloads.db").toString()))
+        try {
+            val dao = database.downloadTaskDao()
+            val store = RoomDownloadTaskStore(dao)
+            val id = store.create(request(), 1L)
+            val artifact = store.getBatch(id)!!.artifacts.single().artifactId
+            assertTrue(store.setUserIntent(id, DownloadUserIntent.PAUSE, 2L))
+            assertTrue(store.transitionArtifact(artifact, DownloadArtifactState.PAUSED, null, 3L))
+            val (first, firstVersion) = store.pausedResumeSnapshot(id)!!
+            assertTrue(store.setUserIntent(id, DownloadUserIntent.PAUSE, firstVersion))
+            assertFalse(store.resumePausedSnapshot(first, firstVersion, 10L))
+            val (second, secondVersion) = store.pausedResumeSnapshot(id)!!
+            assertTrue(secondVersion > firstVersion)
+            assertTrue(store.setUserIntent(id, DownloadUserIntent.PAUSE, 1L))
+            dao.updateBatchState(id, DownloadBatchState.PAUSED.name, null, 1L)
+            assertFalse(store.resumePausedSnapshot(second, secondVersion, 10L))
+            val (latest, latestVersion) = store.pausedResumeSnapshot(id)!!
+            assertTrue(latestVersion > secondVersion)
+            assertTrue(store.resumePausedSnapshot(latest, latestVersion, 1L))
+            assertEquals(DownloadUserIntent.RUN, store.getBatch(id)!!.userIntent)
+        } finally { database.close() }
+    }
+
+    @Test
+    fun explicitPausedResumePreservesCheckpointVerificationAndRejectsNewerIntent() = runTest {
+        val database = getDownloadRoomDatabase(getDownloadDatabaseBuilder(
+            Files.createTempDirectory("caraml-explicit-resume").resolve("downloads.db").toString()))
+        try {
+            val store = RoomDownloadTaskStore(database.downloadTaskDao())
+            val id = store.create(request(), 1L)
+            val artifact = store.getBatch(id)!!.artifacts.single().artifactId
+            assertTrue(store.claim(artifact, "worker", 2L, 20L))
+            assertTrue(store.updateTransferProgress(artifact, "worker", 256L, "validator", null, 3L, 20L))
+            assertTrue(store.setUserIntent(id, DownloadUserIntent.PAUSE, 4L))
+            assertTrue(store.transitionArtifact(artifact, DownloadArtifactState.PAUSED, null, 5L))
+            val (paused, version) = store.pausedResumeSnapshot(id)!!
+            assertTrue(store.setUserIntent(id, DownloadUserIntent.PAUSE, 6L))
+            assertFalse(store.resumePausedSnapshot(paused, version, 7L))
+            val (newPause, newVersion) = store.pausedResumeSnapshot(id)!!
+            assertTrue(store.setUserIntent(id, DownloadUserIntent.CANCEL, 8L))
+            assertFalse(store.resumePausedSnapshot(newPause, newVersion, 9L))
+            assertEquals(DownloadUserIntent.CANCEL, store.getBatch(id)!!.userIntent)
+            assertTrue(store.setUserIntent(id, DownloadUserIntent.PAUSE, 10L))
+            val (selected, selectedVersion) = store.pausedResumeSnapshot(id)!!
+            assertTrue(store.resumePausedSnapshot(selected, selectedVersion, 11L))
+            val queued = store.getBatch(id)!!
+            assertEquals(DownloadBatchState.QUEUED, queued.state)
+            assertEquals(DownloadUserIntent.RUN, queued.userIntent)
+            assertEquals(DownloadArtifactState.QUEUED, queued.artifacts.single().state)
+            assertEquals(256L, queued.bytesReceived)
+            assertEquals("validator", queued.artifacts.single().entityTag)
+            assertTrue(store.claim(artifact, "verify", 12L, 30L))
+            assertTrue(store.transitionArtifact(artifact, DownloadArtifactState.VERIFYING, null, 13L))
+            assertTrue(store.setUserIntent(id, DownloadUserIntent.PAUSE, 14L))
+            val (verifying, verifyVersion) = store.pausedResumeSnapshot(id)!!
+            assertTrue(store.resumePausedSnapshot(verifying, verifyVersion, 15L))
+            assertEquals(DownloadBatchState.VERIFYING, store.getBatch(id)!!.state)
+            assertEquals(DownloadArtifactState.VERIFYING, store.getBatch(id)!!.artifacts.single().state)
+            assertEquals(256L, store.getBatch(id)!!.bytesReceived)
+        } finally { database.close() }
+    }
+
+    @Test
+    fun queuedArtifactClaimAtomicallyHonorsPauseAndCancelBeforeArtifactTransitions() = runTest {
+        val database = getDownloadRoomDatabase(getDownloadDatabaseBuilder(
+            Files.createTempDirectory("caraml-claim-intent").resolve("downloads.db").toString()))
+        try {
+            val store = RoomDownloadTaskStore(database.downloadTaskDao())
+            val id = store.create(request(), 1L)
+            val artifact = store.getBatch(id)!!.artifacts.single().artifactId
+            assertTrue(store.setUserIntent(id, DownloadUserIntent.PAUSE, 2L))
+            assertFalse(store.claim(artifact, "worker", 3L, 30L))
+            assertEquals(DownloadArtifactState.QUEUED, store.getBatch(id)!!.artifacts.single().state)
+            assertNull(database.downloadTaskDao().requireArtifact(artifact).leaseOwner)
+            assertTrue(store.setUserIntent(id, DownloadUserIntent.CANCEL, 4L))
+            assertFalse(store.claim(artifact, "worker", 5L, 30L))
+            assertEquals(DownloadUserIntent.CANCEL, store.getBatch(id)!!.userIntent)
+            assertEquals(DownloadArtifactState.QUEUED, store.getBatch(id)!!.artifacts.single().state)
+            assertNull(database.downloadTaskDao().requireArtifact(artifact).leaseOwner)
+            assertTrue(store.setUserIntent(id, DownloadUserIntent.RUN, 6L))
+            assertTrue(store.claim(artifact, "worker", 7L, 30L))
+            assertEquals(DownloadArtifactState.RUNNING, store.getBatch(id)!!.artifacts.single().state)
+            assertEquals("worker", database.downloadTaskDao().requireArtifact(artifact).leaseOwner)
+        } finally { database.close() }
+    }
+
+    @Test
+    fun atomicNetworkRetryPreservesCheckpointAndHonorsConcurrentPauseAndCancel() = runTest {
+        val database = getDownloadRoomDatabase(getDownloadDatabaseBuilder(
+            Files.createTempDirectory("caraml-network-retry").resolve("downloads.db").toString()))
+        try {
+            val store = RoomDownloadTaskStore(database.downloadTaskDao())
+            val id = store.create(request(), 1L)
+            val artifact = store.getBatch(id)!!.artifacts.single().artifactId
+            assertTrue(store.claim(artifact, "active", 2L, 20L))
+            assertTrue(store.updateTransferProgress(artifact, "active", 256L, "strong-validator", null, 3L, 20L))
+            assertTrue(store.transitionArtifact(artifact, DownloadArtifactState.FAILED_RETRYABLE, DownloadFailureCode.NETWORK, 4L))
+            // The terminal transfer transition already clears its lease; production finally-release is idempotent.
+            assertNull(database.downloadTaskDao().requireArtifact(artifact).leaseOwner)
+            val failed = store.getBatch(id)!!
+            assertEquals(DownloadBatchState.FAILED_RETRYABLE, failed.state)
+            assertTrue(store.setUserIntent(id, DownloadUserIntent.PAUSE, 6L))
+            val paused = store.getBatch(id)
+            assertFalse(store.retryNetworkIfRunningIntent(id, 7L))
+            assertEquals(paused, store.getBatch(id))
+            assertTrue(store.setUserIntent(id, DownloadUserIntent.CANCEL, 8L))
+            val cancelled = store.getBatch(id)
+            assertFalse(store.retryNetworkIfRunningIntent(id, 9L))
+            assertEquals(cancelled, store.getBatch(id))
+            assertTrue(store.setUserIntent(id, DownloadUserIntent.RUN, 10L))
+            assertTrue(store.retryNetworkIfRunningIntent(id, 11L))
+            val queued = store.getBatch(id)!!
+            assertEquals(DownloadUserIntent.RUN, queued.userIntent)
+            assertEquals(DownloadBatchState.QUEUED, queued.state)
+            assertEquals(DownloadArtifactState.QUEUED, queued.artifacts.single().state)
+            assertEquals(256L, queued.bytesReceived)
+            assertEquals("strong-validator", queued.artifacts.single().entityTag)
+            assertFalse(store.retryNetworkIfRunningIntent(id, 12L))
+        } finally { database.close() }
+    }
+
+    @Test
+    fun insertOnlyNeverReactivatesExistingTerminalOrPausedWork() = runTest {
+        val path = Files.createTempDirectory("caraml-insert-only").resolve("downloads.db").toString()
+        val database = getDownloadRoomDatabase(getDownloadDatabaseBuilder(path))
+        try {
+            val store = RoomDownloadTaskStore(database.downloadTaskDao())
+            val request = request()
+            val id = store.create(request, 1L)
+            val artifact = store.getBatch(id)!!.artifacts.single().artifactId
+            assertTrue(store.setUserIntent(id, DownloadUserIntent.PAUSE, 2L))
+            assertTrue(store.transitionArtifact(artifact, DownloadArtifactState.PAUSED, null, 2L))
+            val paused = store.getBatch(id)
+            assertFalse(store.createNewOnly(request.copy(displayName = "fresh-debug-marker"), 3L).second)
+            assertEquals(paused, store.getBatch(id))
+            assertTrue(store.setUserIntent(id, DownloadUserIntent.CANCEL, 4L))
+            assertTrue(store.transitionArtifact(artifact, DownloadArtifactState.CANCELLED, null, 4L))
+            val cancelled = store.getBatch(id)
+            assertFalse(store.createNewOnly(request.copy(displayName = "another-marker"), 5L).second)
+            assertEquals(cancelled, store.getBatch(id))
+        } finally { database.close() }
+    }
+
+    @Test
+    fun concurrentInsertOnlyHasOneFreshOwnerAndPersistsItsMarkerBeforeScheduling() = runTest {
+        val path = Files.createTempDirectory("caraml-insert-race").resolve("downloads.db").toString()
+        var database = getDownloadRoomDatabase(getDownloadDatabaseBuilder(path))
+        val request = request()
+        val store = RoomDownloadTaskStore(database.downloadTaskDao())
+        val attempts = (1..2).map { index -> async {
+            val marker = "private-marker-$index"
+            marker to store.createNewOnly(request.copy(displayName = marker), index.toLong())
+        } }.awaitAll()
+        val winner = attempts.single { it.second.second }
+        assertEquals(1, database.downloadTaskDao().countBatches())
+        assertEquals(winner.first, store.getBatch(winner.second.first)!!.displayName)
+        database.close()
+        database = getDownloadRoomDatabase(getDownloadDatabaseBuilder(path))
+        try {
+            val recovered = RoomDownloadTaskStore(database.downloadTaskDao()).getBatch(winner.second.first)!!
+            assertEquals(winner.first, recovered.displayName)
+            assertEquals(DownloadBatchState.QUEUED, recovered.state)
+            assertEquals(DownloadUserIntent.RUN, recovered.userIntent)
+            assertNull(recovered.artifacts.single().platformTaskId)
+        } finally { database.close() }
+    }
+
     @Test
     fun evidenceSurvivesDatabaseReopen() = runTest {
         val directory = Files.createTempDirectory("caraml-evidence-reopen")
@@ -379,6 +599,135 @@ class DownloadDatabaseTest {
     }
 
     @Test
+    fun ownedLegacyCheckpointRestartPersistsSmallerProgressAndResumesAfterInterruption() = runTest {
+        val database = openDatabase("owned-legacy-restart")
+        val store = RoomDownloadTaskStore(database.downloadTaskDao())
+        try {
+            val batchId = store.create(request(), 1L)
+            val artifactId = store.getBatch(batchId)!!.artifacts.single().artifactId
+            assertTrue(store.claim(artifactId, "legacy-owner", 2L, 100L))
+            assertTrue(store.updateProgress(artifactId, 768L, null, null, 3L))
+            assertFalse(store.restartTransferCheckpoint(artifactId, "stale-owner", 768L, 4L))
+            assertFalse(store.restartTransferCheckpoint(artifactId, "legacy-owner", 512L, 4L))
+            assertFalse(store.restartTransferCheckpoint(artifactId, "legacy-owner", 768L, 101L))
+            assertTrue(store.transitionArtifact(artifactId, DownloadArtifactState.FAILED_RETRYABLE, DownloadFailureCode.NETWORK, 5L))
+            assertFalse(store.restartTransferCheckpoint(artifactId, "legacy-owner", 768L, 6L))
+            var attempt = 0
+            var now = 1000L
+            val transfer = object : ArtifactTransfer {
+                override fun download(metadata: DownloadMetadataDTO, resumeMetadata: DownloadResumeMetadata?): Flow<DownloadProgressDTO> = flow {
+                    if (++attempt == 1) {
+                        assertNull(resumeMetadata)
+                        emit(DownloadProgressDTO(128L, 1024L, 12.5f, entityTag = "new-validator"))
+                        throw IllegalStateException("synthetic interruption")
+                    }
+                    assertEquals(DownloadResumeMetadata(128L, "new-validator", null), resumeMetadata)
+                    emit(DownloadProgressDTO(1024L, 1024L, 100f, localPath = "/synthetic/published", contentSha256 = "b".repeat(64)))
+                }
+            }
+            val runner = DownloadBatchRunner(store, transfer, BatchFinalizer {}, { now += 1000L; now }, { "new-owner" })
+            assertEquals(DownloadRunResult.Retry(DownloadFailureCode.NETWORK), runner.run(batchId) {})
+            val checkpoint = assertNotNull(store.getBatch(batchId)).artifacts.single()
+            assertEquals(128L, checkpoint.bytesReceived)
+            assertEquals("new-validator", checkpoint.entityTag)
+            assertFalse(store.updateProgress(artifactId, 64L, "stale", null, now + 1L))
+            assertEquals(DownloadRunResult.Completed, runner.run(batchId) {})
+            assertEquals(DownloadBatchState.COMPLETED, store.getBatch(batchId)!!.state)
+        } finally { database.close() }
+    }
+
+    @Test
+    fun http200RangeRestartPersistsSmallerRoomCheckpointAndResumesWithNewValidator() = runTest {
+        val directory = Files.createTempDirectory("caraml-room-http-restart").toRealPath().toFile()
+        val payload = ByteArray(8192) { (it % 127).toByte() }
+        val hash = Buffer().write(payload).sha256().hex()
+        val identity = requireNotNull(DownloadArtifactIdentity.create("owner/model", "a".repeat(40), "weights/model.gguf", hash, payload.size.toLong()))
+        val metadata = DownloadMetadataDTO(artifact = identity, logicalRole = "model", sizeBytes = identity.expectedBytes,
+            author = "owner", libraryName = "gguf", pipelineTag = "text-generation")
+        val request = request().copy(artifacts = listOf(DownloadArtifactRequest(metadata, primary = true)), evidence = pendingEvidence(identity))
+        val database = openDatabase("http-range-restart")
+        val store = RoomDownloadTaskStore(database.downloadTaskDao())
+        val paths = RoomRestartStoragePathProvider(directory)
+        val staged = File(paths.getModelsStorageDirectory(identity.repositoryId), metadata.destinationRelativePath + ".part")
+        staged.parentFile.mkdirs(); staged.writeBytes(payload.copyOfRange(0, 6144))
+        val requests = AtomicInteger()
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/") { exchange ->
+            exchange.responseHeaders.add("ETag", "new-validator")
+            if (requests.incrementAndGet() == 1) {
+                assertEquals("bytes=6144-", exchange.requestHeaders.getFirst("Range"))
+                assertEquals("old-validator", exchange.requestHeaders.getFirst("If-Range"))
+                exchange.sendResponseHeaders(200, payload.size.toLong())
+                try { exchange.responseBody.use { body -> body.write(payload, 0, 4096); body.flush(); Thread.sleep(100); body.write(payload, 4096, 4096) } }
+                catch (_: java.io.IOException) { }
+                finally { exchange.close() }
+            } else {
+                assertEquals("bytes=4096-", exchange.requestHeaders.getFirst("Range"))
+                assertEquals("new-validator", exchange.requestHeaders.getFirst("If-Range"))
+                exchange.responseHeaders.add("Content-Range", "bytes 4096-8191/8192")
+                exchange.sendResponseHeaders(206, 4096L)
+                exchange.responseBody.use { it.write(payload, 4096, 4096) }
+            }
+        }
+        server.start()
+        try {
+            val batchId = store.create(request, 1L)
+            val artifactId = store.getBatch(batchId)!!.artifacts.single().artifactId
+            assertTrue(store.claim(artifactId, "old-owner", 2L, 100L))
+            assertTrue(store.updateProgress(artifactId, 6144L, "old-validator", null, 3L))
+            assertTrue(store.transitionArtifact(artifactId, DownloadArtifactState.FAILED_RETRYABLE, DownloadFailureCode.NETWORK, 4L))
+            val manager = DownloadManager(paths, "http://127.0.0.1:${server.address.port}")
+            var now = 1000L
+            val delegate = DownloadManagerArtifactTransfer(manager)
+            val attempts = AtomicInteger()
+            val transfer = object : ArtifactTransfer {
+                override suspend fun isPublished(metadata: DownloadMetadataDTO) = delegate.isPublished(metadata)
+                override fun download(metadata: DownloadMetadataDTO, resumeMetadata: DownloadResumeMetadata?): Flow<DownloadProgressDTO> = flow {
+                    val attempt = attempts.incrementAndGet()
+                    delegate.download(metadata, resumeMetadata).collect { progress ->
+                        emit(progress)
+                        if (attempt == 1 && progress.localPath == null && progress.bytesReceived > 0L) {
+                            throw java.io.IOException("synthetic interruption after persisted progress")
+                        }
+                    }
+                }
+            }
+            val runner = DownloadBatchRunner(store, transfer,
+                BatchFinalizer { assertTrue(manager.publishBundle(identity.repositoryId, listOf(metadata))) },
+                { now += 1000L; now }, { "new-owner" })
+            assertEquals(DownloadRunResult.Retry(DownloadFailureCode.NETWORK), runner.run(batchId) {})
+            val checkpoint = store.getBatch(batchId)!!.artifacts.single()
+            assertEquals(4096L, checkpoint.bytesReceived)
+            assertEquals("new-validator", checkpoint.entityTag)
+            assertEquals(DownloadRunResult.Completed, runner.run(batchId) {})
+            assertEquals(DownloadBatchState.COMPLETED, store.getBatch(batchId)!!.state)
+            val published = assertNotNull(manager.validatedArtifacts(identity.repositoryId)).entries.single()
+            assertEquals(hash, published.contentSha256)
+            assertEquals(payload.size.toLong(), published.byteCount)
+            assertEquals(2, requests.get())
+        } finally { server.stop(0); database.close() }
+    }
+
+    @Test
+    fun transferProgressRenewsOnlyLiveMatchingRunningOwner() = runTest {
+        val database = openDatabase("owned-lease-renewal")
+        val store = RoomDownloadTaskStore(database.downloadTaskDao())
+        try {
+            val batchId = store.create(request(), 1L)
+            val artifactId = store.getBatch(batchId)!!.artifacts.single().artifactId
+            assertTrue(store.claim(artifactId, "owner", 2L, 100L))
+            assertFalse(store.updateTransferProgress(artifactId, "foreign", 128L, "etag", null, 3L, 200L))
+            assertTrue(store.updateTransferProgress(artifactId, "owner", 128L, "etag", null, 3L, 200L))
+            assertEquals(200L, database.downloadTaskDao().requireArtifact(artifactId).leaseExpiresAtEpochMs)
+            assertFalse(store.updateTransferProgress(artifactId, "owner", 256L, "etag", null, 201L, 300L))
+            assertTrue(store.setUserIntent(batchId, DownloadUserIntent.PAUSE, 4L))
+            assertFalse(store.updateTransferProgress(artifactId, "owner", 256L, "etag", null, 5L, 300L))
+            assertTrue(store.transitionArtifact(artifactId, DownloadArtifactState.PAUSED, null, 6L))
+            assertFalse(store.updateTransferProgress(artifactId, "owner", 256L, "etag", null, 7L, 300L))
+        } finally { database.close() }
+    }
+
+    @Test
     fun missingCompletedArtifactCanBeAtomicallyRequeuedForReinstall() = runTest {
         val database = openDatabase("completed-reinstall")
         val store = RoomDownloadTaskStore(database.downloadTaskDao())
@@ -702,4 +1051,17 @@ class DownloadDatabaseTest {
             )
         }
     }
+}
+
+private class RoomRestartStoragePathProvider(private val root: File) : StoragePathProvider {
+    override fun getModelsStorageDirectory(modelId: String) = File(File(root, "models"), modelId).apply { mkdirs() }.absolutePath
+    override fun getDatabasePath() = File(root, "caraml.db").absolutePath
+    override fun fileExists(path: String) = File(path).exists()
+    override fun getAvailableStorageBytes() = Long.MAX_VALUE
+    override fun getTotalStorageBytes() = Long.MAX_VALUE
+    override fun isModelFileReadable(path: String) = File(path).isFile
+    override fun isDirectoryReadable(path: String) = File(path).isDirectory
+    override fun getFileSize(path: String) = File(path).length()
+    override fun renameFile(from: String, to: String) = false
+    override fun deleteDownloadedModelContent(modelId: String, localPath: String) = false
 }

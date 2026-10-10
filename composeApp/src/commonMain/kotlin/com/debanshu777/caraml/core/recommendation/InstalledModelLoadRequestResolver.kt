@@ -123,25 +123,22 @@ class InstalledModelLoadRequestResolver internal constructor(
         expectedMode: GenerationMode,
     ): InstalledModelLoadPreparation {
         val components = componentsForModel(model.modelId)
-        val descriptor = when (val evidence = requireComplete(model.modelId, expectedMode)) {
+        val evidence = requireComplete(model.modelId, expectedMode)
+        val descriptor = when (evidence) {
             is EvidenceRepairResult.Ready -> evidence.descriptor
-            EvidenceRepairResult.NeedsNetwork -> return InstalledModelLoadPreparation.Terminal(
+            EvidenceRepairResult.NeedsNetwork -> return prepareWithNativeMetadata(
+                model, expectedMode, components,
                 InstalledModelLoadResolution.NeedsNetwork,
             )
             is EvidenceRepairResult.Rejected -> {
-                if (AssessmentReason.INVALID_METADATA in evidence.reasons) {
-                    val artifactFailure = resolveArtifact(model, components)
-                    if (artifactFailure is ArtifactIdentityResolution.Rejected) {
-                        return InstalledModelLoadPreparation.Terminal(
-                            InstalledModelLoadResolution.Rejected(artifactFailure.reason),
-                        )
-                    }
-                }
-                return InstalledModelLoadPreparation.Terminal(
-                    InstalledModelLoadResolution.NotAdmissible(
-                        evidence.reasons.firstOrNull() ?: AssessmentReason.INVALID_METADATA,
-                    ),
+                val failure = InstalledModelLoadResolution.NotAdmissible(
+                    evidence.reasons.firstOrNull() ?: AssessmentReason.INVALID_METADATA,
                 )
+                return if (evidence.reasons.isEmpty() || evidence.reasons.all { it in METADATA_GAP_REASONS }) {
+                    prepareWithNativeMetadata(model, expectedMode, components, failure)
+                } else {
+                    InstalledModelLoadPreparation.Terminal(failure)
+                }
             }
         }
         if (descriptor.repositoryId != model.modelId) {
@@ -155,7 +152,12 @@ class InstalledModelLoadRequestResolver internal constructor(
             )
         }
 
-        val artifact = when (val resolution = resolveArtifact(model, components)) {
+        // Reuse only the exact catalog snapshot already verified during this
+        // operation. A replacement path/component falls back to fresh resolution.
+        // Strict request creation and native load still validate current bytes.
+        val verified = (evidence as? EvidenceRepairResult.Ready)?.verifiedArtifact
+            ?.takeIf { it.model == model && it.components == components }
+        val artifact = verified?.artifact ?: when (val resolution = resolveArtifact(model, components)) {
             is ArtifactIdentityResolution.Verified -> resolution.artifact
             is ArtifactIdentityResolution.Rejected -> return InstalledModelLoadPreparation.Terminal(
                 InstalledModelLoadResolution.Rejected(resolution.reason),
@@ -171,6 +173,42 @@ class InstalledModelLoadRequestResolver internal constructor(
             )
         }
 
+        return InstalledModelLoadPreparation.Ready(model, expectedMode, descriptor, artifact)
+    }
+
+    private suspend fun prepareWithNativeMetadata(
+        model: LocalModelEntity,
+        expectedMode: GenerationMode,
+        components: List<DownloadedComponentEntity>,
+        failure: InstalledModelLoadResolution,
+    ): InstalledModelLoadPreparation {
+        val artifact = when (val resolution = resolveArtifact(model, components)) {
+            is ArtifactIdentityResolution.Verified -> resolution.artifact
+            is ArtifactIdentityResolution.Rejected -> return InstalledModelLoadPreparation.Terminal(
+                InstalledModelLoadResolution.Rejected(resolution.reason),
+            )
+        }
+        val target = artifact.loadTarget as? VerifiedArtifactLoadTarget.File
+        val primary = artifact.components.singleOrNull { it.localPath == target?.path }?.identity
+        if (expectedMode != GenerationMode.Text || !artifact.matchesOwner(model.modelId) ||
+            primary == null || !primary.path.endsWith(".gguf", ignoreCase = true)
+        ) {
+            return InstalledModelLoadPreparation.Terminal(failure)
+        }
+        // Keep unknown properties unknown. Native preflight reads the verified GGUF itself.
+        val descriptor = LlmModelDescriptor(
+            repositoryId = model.modelId,
+            revision = primary.revision,
+            files = listOf(primary) + artifact.components.map(ResolvedArtifactComponent::identity).filterNot { it == primary },
+            architecture = null,
+            quantization = QuantizationParser.parseFilename(primary.path),
+            parameterCount = null,
+            contextLimit = null,
+            transformerShape = null,
+            ggufVersion = null,
+            requiredEngineFeatures = emptyList(),
+            evidence = emptyList(),
+        )
         return InstalledModelLoadPreparation.Ready(model, expectedMode, descriptor, artifact)
     }
 
@@ -192,6 +230,9 @@ class InstalledModelLoadRequestResolver internal constructor(
 
         val capturedSnapshot = captureSnapshot()
         val settings = currentSettings()
+        if (descriptor is LlmModelDescriptor && !descriptor.hasCompleteLocalCompatibilityMetadata()) {
+            return nativeMetadataRequest(model, descriptor, artifact, capturedSnapshot, settings)
+        }
         val cpuRequired =
             !settings.useGpu ||
             descriptor is LlmModelDescriptor && descriptor.architecture.requiresCpuOnlyLlmExecution()
@@ -210,6 +251,7 @@ class InstalledModelLoadRequestResolver internal constructor(
             workload = workload,
             snapshot = assessmentSnapshot,
             profile = settings.recommendationProfile,
+            settings = settings,
             requireCpu = cpuRequired,
         )
         if (cpuRequired) return primary
@@ -228,13 +270,18 @@ class InstalledModelLoadRequestResolver internal constructor(
                     workload = workload,
                     snapshot = capturedSnapshot.cpuOnly(),
                     profile = settings.recommendationProfile,
+                    settings = settings,
                     requireCpu = true,
                 )
             ) {
-                is InstalledModelLoadResolution.Ready -> InstalledModelLoadResolution.SafeAlternative(
-                    primaryReason = primary.reason,
-                    saferRequest = alternative.request.copy(backendAlternative = null),
-                )
+                is InstalledModelLoadResolution.Ready -> if (alternative.request.nativeMetadataFallback) {
+                    alternative
+                } else {
+                    InstalledModelLoadResolution.SafeAlternative(
+                        primaryReason = primary.reason,
+                        saferRequest = alternative.request.copy(backendAlternative = null),
+                    )
+                }
                 is InstalledModelLoadResolution.Rejected -> alternative
                 else -> primary
             }
@@ -253,14 +300,19 @@ class InstalledModelLoadRequestResolver internal constructor(
                 workload = workload,
                 snapshot = capturedSnapshot.cpuOnly(),
                 profile = settings.recommendationProfile,
+                settings = settings,
                 requireCpu = true,
             )
         ) {
-            is InstalledModelLoadResolution.Ready -> InstalledModelLoadResolution.Ready(
-                primary.request.copy(
-                    backendAlternative = alternative.request.copy(backendAlternative = null),
-                ),
-            )
+            is InstalledModelLoadResolution.Ready -> if (alternative.request.nativeMetadataFallback) {
+                primary
+            } else {
+                InstalledModelLoadResolution.Ready(
+                    primary.request.copy(
+                        backendAlternative = alternative.request.copy(backendAlternative = null),
+                    ),
+                )
+            }
             is InstalledModelLoadResolution.Rejected -> alternative
             InstalledModelLoadResolution.NeedsNetwork,
             is InstalledModelLoadResolution.SafeAlternative,
@@ -278,6 +330,7 @@ class InstalledModelLoadRequestResolver internal constructor(
         workload: WorkloadConfig,
         snapshot: DeviceSnapshot,
         profile: RecommendationProfile,
+        settings: AppSettings,
         requireCpu: Boolean,
     ): InstalledModelLoadResolution {
         val assessment = assess(descriptor, snapshot, workload)
@@ -291,6 +344,12 @@ class InstalledModelLoadRequestResolver internal constructor(
         )
         if (recommendation.assessmentKey != assessment.assessmentKey) {
             return InstalledModelLoadResolution.Rejected(ArtifactIdentityRejection.INVALID_INPUT)
+        }
+        if (descriptor is LlmModelDescriptor && recommendation.category == RecommendationCategory.NEEDS_INFORMATION &&
+            recommendation.reasons.all { it in METADATA_GAP_REASONS } &&
+            recommendation.reasonFrom(assessment, AssessmentReason.RECOMMENDATION_EVIDENCE_INCOMPLETE) in METADATA_GAP_REASONS
+        ) {
+            return nativeMetadataRequest(model, descriptor, artifact, snapshot, settings)
         }
         recommendation.nonAdmissibleReason(assessment)?.let { reason ->
             return InstalledModelLoadResolution.NotAdmissible(
@@ -320,6 +379,46 @@ class InstalledModelLoadRequestResolver internal constructor(
             is LoadRequestResolution.Ready -> InstalledModelLoadResolution.Ready(request.request)
             is LoadRequestResolution.Rejected -> InstalledModelLoadResolution.Rejected(request.reason)
         }
+    }
+
+    private fun nativeMetadataRequest(
+        model: LocalModelEntity,
+        descriptor: LlmModelDescriptor,
+        artifact: ResolvedLocalArtifact,
+        snapshot: DeviceSnapshot,
+        settings: AppSettings,
+    ): InstalledModelLoadResolution {
+        val target = artifact.loadTarget as? VerifiedArtifactLoadTarget.File
+        if (target == null || !target.path.endsWith(".gguf", ignoreCase = true)) {
+            return InstalledModelLoadResolution.NotAdmissible(AssessmentReason.UNSUPPORTED_FORMAT)
+        }
+        val workload = workloadFactory.create(descriptor, GenerationMode.Text, settings) as? LlmWorkloadConfig
+            ?: return InstalledModelLoadResolution.NotAdmissible(AssessmentReason.INVALID_WORKLOAD)
+        val cache = workload.kvCacheSelection as? KvCacheSelection.Explicit
+        val plan = LlmRunPlan(
+            contextTokens = workload.contextTokens,
+            batchSize = workload.batchSize,
+            microBatchSize = workload.microBatchSize,
+            sequenceCount = 1,
+            keyCacheType = cache?.keyType ?: KvCacheType.F16,
+            valueCacheType = cache?.valueType ?: KvCacheType.F16,
+            backend = BackendKind.CPU,
+            memoryTopology = snapshot.hardwareProfile.memoryTopology,
+            gpuLayerCount = 0,
+            compromises = emptyList(),
+        )
+        val observation = ObservationModelIdentity.fromDescriptor(descriptor)
+            ?: return InstalledModelLoadResolution.Rejected(ArtifactIdentityRejection.INVALID_INPUT)
+        return InstalledModelLoadResolution.Ready(LoadRequest(
+            model = model,
+            identity = artifact.identity,
+            observationIdentity = observation,
+            plan = plan,
+            assessmentKey = "native-metadata:${artifact.identity.revision}:${plan.stableKey}",
+            artifact = artifact,
+            profile = settings.recommendationProfile,
+            nativeMetadataFallback = true,
+        ))
     }
 
     private fun ModelAssessment.hasConsistentKeys(): Boolean =
@@ -440,6 +539,13 @@ class InstalledModelLoadRequestResolver internal constructor(
     )
 
     private companion object {
+        val METADATA_GAP_REASONS = setOf(
+            AssessmentReason.INVALID_METADATA,
+            AssessmentReason.UNKNOWN_ARCHITECTURE,
+            AssessmentReason.GGUF_VERSION_UNKNOWN,
+            AssessmentReason.ENGINE_SUPPORT_UNKNOWN,
+            AssessmentReason.RECOMMENDATION_EVIDENCE_INCOMPLETE,
+        )
         val STATIC_CPU_ALTERNATIVE_REASONS = setOf(
             AssessmentReason.MEMORY_NO_FIT,
             AssessmentReason.NO_RUN_PLAN,

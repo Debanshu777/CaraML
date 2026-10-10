@@ -4,7 +4,22 @@
         android:name="com.debanshu777.caraml.benchmark.NativeGenerationBenchmark"
         android:targetPackage="com.debanshu777.caraml"
         android:label="Debug native generation benchmark" />
+    <instrumentation
+        android:name="com.debanshu777.caraml.benchmark.ModelRuntimeValidation"
+        android:targetPackage="com.debanshu777.caraml"
+        android:label="Debug fixed-model runtime validation" />
+    <instrumentation
+        android:name="com.debanshu777.caraml.benchmark.PerformanceValidation"
+        android:targetPackage="com.debanshu777.caraml"
+        android:label="Debug installed-model performance validation" />
     <application>
+        <activity
+            android:name=".benchmark.PerformanceForegroundActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity="com.debanshu777.caraml.benchmark"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar"
+            android:label="Debug performance validation" />
         <activity
             android:name=".audit.BrandUiAuditActivity"
             android:exported="true"

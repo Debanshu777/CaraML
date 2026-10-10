@@ -86,6 +86,50 @@ class ModelDownloadQueueUiTest {
     }
 
     @Test
+    fun pausedVerificationReportsPauseAndResumesOnlyAfterUserAction() = runComposeUiTest {
+        val (originalBatch, originalArtifact) = queueSnapshot(DownloadBatchState.VERIFYING, DownloadArtifactState.VERIFYING)
+        val artifact = originalArtifact.copy(
+            userIntent = DownloadUserIntent.PAUSE,
+            bytesReceived = originalArtifact.request.metadata.artifact.expectedBytes,
+            expectedBytes = originalArtifact.request.metadata.artifact.expectedBytes,
+        )
+        val batch = originalBatch.copy(userIntent = DownloadUserIntent.PAUSE, artifacts = listOf(artifact))
+        var resumes = 0
+        setContent {
+            MaterialTheme {
+                androidx.compose.foundation.layout.Column {
+                    ModelDownloadQueueRow(batch, artifact)
+                    ModelDownloadBatchControls(batch, {}, { resumes++ }, {}, {})
+                }
+            }
+        }
+        onNodeWithText("Verification paused").assertIsDisplayed()
+        onNodeWithText("100%", substring = true).assertIsDisplayed()
+        onNodeWithText("Verifying").assertDoesNotExist()
+        onNodeWithText("Pause download").assertDoesNotExist()
+        onNodeWithText("Retry download").assertDoesNotExist()
+        runOnIdle { assertEquals(0, resumes) }
+        onNodeWithText("Resume download").performClick()
+        runOnIdle { assertEquals(1, resumes) }
+    }
+
+    @Test
+    fun activeVerificationDoesNotOfferResume() = runComposeUiTest {
+        val (batch, artifact) = queueSnapshot(DownloadBatchState.VERIFYING, DownloadArtifactState.VERIFYING)
+        setContent {
+            MaterialTheme {
+                androidx.compose.foundation.layout.Column {
+                    ModelDownloadQueueRow(batch, artifact)
+                    ModelDownloadBatchControls(batch, {}, {}, {}, {})
+                }
+            }
+        }
+        onNodeWithText("Verifying").assertIsDisplayed()
+        onNodeWithText("Verification paused").assertDoesNotExist()
+        onNodeWithText("Resume download").assertDoesNotExist()
+    }
+
+    @Test
     fun pausedAndFailedRowsExposeOnlyValidRecovery() = runComposeUiTest {
         val (pausedBatch, pausedArtifact) = queueSnapshot(DownloadBatchState.PAUSED, DownloadArtifactState.PAUSED)
         val (failedBatch, failedArtifact) = queueSnapshot(DownloadBatchState.FAILED_RETRYABLE, DownloadArtifactState.FAILED_RETRYABLE)

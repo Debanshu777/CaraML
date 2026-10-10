@@ -49,7 +49,7 @@ fun GenerationStatsBar(
             color = AppTheme.colors.onSurfaceVariant,
         )
         Text(
-            text = "${stats.outputTokenCount}/∞",
+            text = "${stats.outputTokenCount} tokens",
             style = AppTheme.typography.numeric12,
             color = AppTheme.colors.onSurface,
         )

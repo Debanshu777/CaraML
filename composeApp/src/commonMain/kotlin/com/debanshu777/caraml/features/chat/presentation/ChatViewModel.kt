@@ -713,7 +713,7 @@ class ChatViewModel(
             }
             is LoadAdmission.TemporarilyUnavailable -> {
                 _internal.value = InternalChatState.ModelError(
-                    "The device is under memory or thermal pressure. Try again after it recovers.",
+                    admission.reason.safeBlockedLoadMessage(),
                 )
             }
             is LoadAdmission.Blocked -> {
@@ -1017,7 +1017,9 @@ class ChatViewModel(
         val delivery = when (result.stopReason) {
             StopReason.CANCELLED -> MessageDelivery.Stopped
             StopReason.ERROR -> MessageDelivery.Error
-            else -> MessageDelivery.Complete
+            StopReason.MAX_TOKENS -> MessageDelivery.TokenLimit
+            StopReason.CONTEXT_FULL -> MessageDelivery.ContextLimit
+            else -> if (state.streamingText.isBlank()) MessageDelivery.NoAnswer else MessageDelivery.Complete
         }
         val finalText = state.streamingText
         val finalThinking = state.streamingThinkingText.takeIf { it.isNotBlank() }

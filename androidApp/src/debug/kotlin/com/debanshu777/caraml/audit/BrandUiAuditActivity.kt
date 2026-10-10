@@ -134,6 +134,7 @@ private fun AuditScreen(options: AuditOptions) {
         AuditState.NoVideoModel -> GenerationMode.Video
         else -> GenerationMode.Text
     }) }
+    var drawerModeInitialized by remember { mutableStateOf(false) }
     var nextId by remember { mutableIntStateOf(0) }
     val backStack = remember { NavBackStack<NavKey>(AppScreen.Home) }
     fun browse() {
@@ -142,6 +143,17 @@ private fun AuditScreen(options: AuditOptions) {
     }
     Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.ime)) {
         AppDrawerShell(modifier = Modifier.fillMaxSize(), backStack = backStack) {
+            val drawerModes = com.debanshu777.caraml.core.drawer.LocalGenerationModeController.current
+            androidx.compose.runtime.LaunchedEffect(drawerModes.mode) {
+                if (!drawerModeInitialized) {
+                    drawerModeInitialized = true
+                    drawerModes.setState(mode)
+                } else if (drawerModes.mode != mode) {
+                    mode = drawerModes.mode
+                    streaming = StreamingState()
+                    uiState = ready(mode)
+                }
+            }
             AuroraBackdrop(modifier = Modifier.fillMaxSize()) {
                 if (backStack.lastOrNull() == AppScreen.Home) {
                     ChatScreenContent(
@@ -181,11 +193,6 @@ private fun AuditScreen(options: AuditOptions) {
                         onRetryCurrentModel = { uiState = ChatUiState.ModelLoading },
                         onNavigateToSearch = ::browse,
                         onNavigateToModelDetail = { _, _ -> browse() },
-                        onGenerationModeSelected = { selected ->
-                            mode = selected
-                            streaming = StreamingState()
-                            uiState = ready(selected)
-                        },
                         controlledGenerationMode = mode,
                     )
                 } else {

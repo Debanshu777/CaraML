@@ -64,8 +64,8 @@ internal fun downloadArtifact(
             }.execute { response ->
                 val status = response.status.value
                 if (status !in 200..299) throw DownloadHttpException(status)
-                val responseEntityTag = response.headers[HttpHeaders.ETag]
-                val responseLastModified = response.headers[HttpHeaders.LastModified]
+                val responseEntityTag = boundedDownloadValidator(response.headers[HttpHeaders.ETag], 512)
+                val responseLastModified = boundedDownloadValidator(response.headers[HttpHeaders.LastModified], 128)
                 val responseLength = response.headers["Content-Length"]?.toLongOrNull()?.takeIf { it > 0L }
                 val append = requestedResume != null && status == 206
                 val startOffset = if (append) {
@@ -87,6 +87,8 @@ internal fun downloadArtifact(
                 if (responseLength != null && responseLength != expectedResponseBytes) {
                     throw IncompleteDownloadException(responseLength, expectedResponseBytes)
                 }
+                val checkpointEntityTag = responseEntityTag ?: requestedResume?.entityTag?.takeIf { append }
+                val checkpointLastModified = responseLastModified ?: requestedResume?.lastModified?.takeIf { append }
                 val channel = response.bodyAsChannel()
                 val buffer = ByteArray(BUFFER_SIZE)
                 var bytesReceived = startOffset
@@ -102,7 +104,9 @@ internal fun downloadArtifact(
                         }
                         sink.write(buffer, 0, count)
                         bytesReceived += count
-                        progressTracker.next(bytesReceived)?.let { emit(it) }
+                        progressTracker.next(bytesReceived)?.let {
+                            emit(it.copy(entityTag = checkpointEntityTag, lastModified = checkpointLastModified))
+                        }
                     }
                     sink.flush()
                 } finally {

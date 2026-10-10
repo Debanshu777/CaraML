@@ -10,6 +10,7 @@ enum class LlamaPreflightReason {
     INVALID_ARGUMENT,
     MODEL_DOES_NOT_FIT,
     INVALID_MODEL,
+    REQUIRES_TARGET_MODEL,
     NATIVE_RUNTIME_UNAVAILABLE,
     MALFORMED_NATIVE_PAYLOAD,
     INVALID_NATIVE_SIZE,
@@ -84,6 +85,7 @@ internal fun decodeLlamaPreflight(payload: LongArray?): LlamaPreflightResult {
             1L -> LlamaPreflightResult.NoFit()
             2L -> LlamaPreflightResult.InvalidModel(LlamaPreflightReason.INVALID_MODEL)
             3L -> LlamaPreflightResult.Unavailable(LlamaPreflightReason.NATIVE_RUNTIME_UNAVAILABLE)
+            4L -> LlamaPreflightResult.InvalidModel(LlamaPreflightReason.REQUIRES_TARGET_MODEL)
             else -> malformedPreflight()
         }
     }

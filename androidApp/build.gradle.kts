@@ -43,6 +43,7 @@ android {
 }
 
 dependencies {
+    debugImplementation(project(":huggingFaceManager"))
     implementation(project(":composeApp"))
     implementation(libs.androidx.activity.compose)
     implementation(project.dependencies.platform(libs.koin.bom))

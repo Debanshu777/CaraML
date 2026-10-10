@@ -24,6 +24,9 @@ import com.debanshu777.caraml.core.theme.ThemePreferences
 import com.debanshu777.caraml.core.ui.components.AuroraBackdrop
 import com.debanshu777.caraml.features.chat.data.ChatMessage
 import com.debanshu777.caraml.features.chat.data.MessageRole
+import com.debanshu777.caraml.features.chat.data.MessageDelivery
+import com.debanshu777.caraml.features.chat.data.LiveGenerationStats
+import com.debanshu777.caraml.features.chat.presentation.components.providers.LocalModelPreviewProvider
 import com.debanshu777.caraml.features.modelhub.presentation.search.saveModelHubEvidence
 import kotlinx.collections.immutable.persistentListOf
 import kotlin.test.Test
@@ -35,27 +38,41 @@ class BrandChatVisualEvidenceTest {
     @Test
     fun darkThinkingAt390() = renderConversation(ThemeMode.DARK, empty = false)
 
-    private fun renderConversation(theme: ThemeMode, empty: Boolean) = runComposeUiTest {
+    @Test
+    fun lightThinkingAt390() = renderConversation(ThemeMode.LIGHT, empty = false)
+
+    @Test
+    fun lightAnswerAt390() = renderConversation(ThemeMode.LIGHT, empty = false, completed = true)
+
+    @Test
+    fun lightLimitedAt320AndLargeText() = renderConversation(ThemeMode.LIGHT, empty = false, limited = true, width = 320, fontScale = 2f)
+
+    private fun renderConversation(theme: ThemeMode, empty: Boolean, completed: Boolean = false, limited: Boolean = false, width: Int = 390, fontScale: Float = 1f) = runComposeUiTest {
         setContent {
             CompositionLocalProvider(
-                LocalDensity provides Density(1f),
+                LocalDensity provides Density(1f, fontScale),
                 LocalCreateSafeDrawingInsetsOverride provides WindowInsets(0, 0, 0, 0),
                 LocalNavigationMenuAction provides {},
                 LocalFocusModeController provides FocusModeController(),
             ) {
                 CaraMLTheme(ThemePreferences(themeMode = theme, reduceMotion = true)) {
-                    Box(Modifier.requiredSize(390.dp, 740.dp).testTag("visual-root")) {
+                    Box(Modifier.requiredSize(width.dp, 740.dp).testTag("visual-root")) {
                         AuroraBackdrop {
                             ChatScreenContent(
                                 uiState = ChatUiState.Ready(
                                     messages = if (empty) persistentListOf() else persistentListOf(
-                                        ChatMessage(id = "prompt", role = MessageRole.User, text = "Write a tiny story about a noodle shop on the moon."),
-                                        ChatMessage(id = "reply", role = MessageRole.Assistant, text = ""),
+                                        ChatMessage(id = "prompt", role = MessageRole.User, text = "Explain dark matter in detail."),
+                                        ChatMessage(id = "reply", role = MessageRole.Assistant,
+                                            text = if (completed) "Dark matter is matter we detect through gravity.\n\n## How we infer its presence\n\nIts gravitational effects appear in galaxy rotation and gravitational lensing. The final answer now has its own space in the conversation." else "",
+                                            thinking = if (completed || limited) "A short reasoning summary." else null,
+                                            delivery = if (completed) MessageDelivery.Complete else if (limited) MessageDelivery.TokenLimit else null),
                                     ),
-                                    isGenerating = !empty,
+                                    isGenerating = !empty && !completed && !limited,
+                                    selectedModel = LocalModelPreviewProvider().values.first(),
                                 ),
-                                streamingState = if (empty) StreamingState() else StreamingState(
+                                streamingState = if (empty || completed || limited) StreamingState() else StreamingState(
                                     streamingMessageId = "reply", streamingThinkingText = "A quiet moon, a tiny kitchen, and an unexpected first customer…",
+                                    liveStats = LiveGenerationStats(128, 512, 128, 7.5),
                                 ),
                                 onSelectModel = {}, onSendMessage = {}, onCancelGeneration = {}, onNavigateToSearch = {},
                                 modifier = Modifier.fillMaxSize(),
@@ -66,6 +83,6 @@ class BrandChatVisualEvidenceTest {
             }
         }
         onNodeWithText(if (empty) "Got a\nweird idea?" else "CaraML").assertIsDisplayed()
-        saveModelHubEvidence(if (empty) "brand-chat-ready.png" else "brand-chat-thinking.png")
+        saveModelHubEvidence("chat-${theme.name.lowercase()}-${if (empty) "ready" else if (completed) "answer" else if (limited) "limited" else "thinking"}-$width-${fontScale}.png")
     }
 }

@@ -1,11 +1,16 @@
 package com.debanshu777.caraml.core.recommendation
 
+import com.debanshu777.caraml.core.platform.AppLogger
+import okio.Buffer
 import okio.BufferedSource
+import okio.EOFException
 import okio.FileSystem
 import okio.Path.Companion.toPath
 import okio.SYSTEM
 import okio.buffer
 import okio.use
+
+internal enum class GgufContainerRecognition { GGUF, NON_GGUF, UNKNOWN }
 
 internal data class GgufLocalMetadata(
     val version: Int,
@@ -18,61 +23,101 @@ internal data class GgufLocalMetadata(
 class GgufMetadataInspector(
     private val fileSystem: FileSystem = FileSystem.SYSTEM,
 ) {
-    internal fun inspect(path: String): GgufLocalMetadata? = try {
+    /** Negative format evidence only; a GGUF signature never establishes load compatibility. */
+    internal fun recognizeContainer(path: String): GgufContainerRecognition {
+        val result = try {
+            fileSystem.source(path.toPath()).use { source ->
+                val prefix = Buffer()
+                while (prefix.size < 4L) {
+                    if (source.read(prefix, 4L - prefix.size) <= 0L) {
+                        return@use GgufContainerRecognition.UNKNOWN
+                    }
+                }
+                if (prefix.readUtf8(4L) == GGUF_MAGIC) GgufContainerRecognition.GGUF
+                else GgufContainerRecognition.NON_GGUF
+            }
+        } catch (_: Exception) {
+            GgufContainerRecognition.UNKNOWN
+        }
+        AppLogger.i("ModelLoad") { "stage=gguf-container outcome=$result" }
+        return result
+    }
+
+    internal fun inspect(path: String): GgufLocalMetadata? {
+        val result = inspectHeader(path)
+        val shapeFields = result?.transformerShape?.let {
+            listOf(it.layerCount, it.kvHeadCount, it.attentionHeadCount, it.hiddenSize, it.headDim).count { field -> field != null }
+        } ?: 0
+        AppLogger.i("ModelLoad") {
+            "stage=gguf-header outcome=${if (result == null) "HEADER_REJECTED" else "HEADER_READ"} " +
+                "version=${result?.version ?: -1} hasContext=${result?.contextLimit != null} shapeFields=$shapeFields"
+        }
+        return result
+    }
+
+    private fun inspectHeader(path: String): GgufLocalMetadata? = try {
         fileSystem.source(path.toPath()).buffer().use { source ->
             val reader = BoundedGgufReader(source, MAX_HEADER_SCAN_BYTES)
-            if (reader.readUtf8(4L) != GGUF_MAGIC) return null
+            if (reader.readUtf8(4L) != GGUF_MAGIC) return rejectHeader(reader.rejection ?: GgufHeaderRejection.MALFORMED_HEADER)
             val version = reader.readUnsignedIntLe()?.toInt()
                 ?.takeIf { it in SUPPORTED_GGUF_VERSIONS }
-                ?: return null
-            val tensorCount = reader.readNonNegativeLongLe() ?: return null
-            if (tensorCount > MAX_TENSOR_COUNT) return null
-            val metadataCount = reader.readNonNegativeLongLe() ?: return null
-            if (metadataCount > MAX_METADATA_ENTRIES) return null
+                ?: return rejectHeader(reader.rejection ?: GgufHeaderRejection.UNSUPPORTED_VERSION)
+            val tensorCount = reader.readNonNegativeLongLe() ?: return rejectHeader(reader.rejection ?: GgufHeaderRejection.NUMERIC_BOUNDS)
+            if (tensorCount > MAX_TENSOR_COUNT) return rejectHeader(GgufHeaderRejection.NUMERIC_BOUNDS)
+            val metadataCount = reader.readNonNegativeLongLe() ?: return rejectHeader(reader.rejection ?: GgufHeaderRejection.NUMERIC_BOUNDS)
+            if (metadataCount > MAX_METADATA_ENTRIES) return rejectHeader(GgufHeaderRejection.NUMERIC_BOUNDS)
 
             var architecture: String? = null
             var architectureSeen = false
             val numericCandidates = mutableMapOf<String, Long?>()
             val duplicateNumericCandidates = mutableSetOf<String>()
+            val unsupportedShapeCandidates = mutableSetOf<String>()
             repeat(metadataCount.toInt()) {
-                val key = reader.readString(MAX_KEY_BYTES) ?: return null
-                val type = reader.readUnsignedIntLe()?.toInt() ?: return null
+                val key = reader.readString(MAX_KEY_BYTES) ?: return rejectHeader(reader.rejection ?: GgufHeaderRejection.MALFORMED_HEADER)
+                val type = reader.readUnsignedIntLe()?.toInt() ?: return rejectHeader(reader.rejection ?: GgufHeaderRejection.MALFORMED_HEADER)
                 if (key == ARCHITECTURE_KEY) {
-                    if (architectureSeen) return null
+                    if (architectureSeen) return rejectHeader(GgufHeaderRejection.DUPLICATE_KEY)
                     architectureSeen = true
-                    if (type != GGUF_TYPE_STRING) return null
+                    if (type != GGUF_TYPE_STRING) return rejectHeader(GgufHeaderRejection.ARCHITECTURE_INVALID)
                     architecture = reader.readString(MAX_ARCHITECTURE_BYTES)
                         ?.takeIf(::isSafeArchitecture)
-                        ?: return null
+                        ?: return rejectHeader(reader.rejection ?: GgufHeaderRejection.ARCHITECTURE_INVALID)
                 } else if (NUMERIC_SUFFIXES.any(key::endsWith)) {
                     if (numericCandidates.containsKey(key)) duplicateNumericCandidates += key
                     numericCandidates[key] = if (type == GGUF_TYPE_UINT32 || type == GGUF_TYPE_UINT64) {
-                        reader.readUnsignedMetadata(type) ?: return null
+                        reader.readUnsignedMetadata(type) ?: return rejectHeader(reader.rejection ?: GgufHeaderRejection.NUMERIC_BOUNDS)
                     } else {
-                        if (!reader.skipValue(type)) return null
+                        if (!reader.skipValue(type)) return rejectHeader(reader.rejection ?: GgufHeaderRejection.MALFORMED_HEADER)
+                        unsupportedShapeCandidates += key
                         null
                     }
                 } else if (!reader.skipValue(type)) {
-                    return null
+                    return rejectHeader(reader.rejection ?: GgufHeaderRejection.MALFORMED_HEADER)
                 }
             }
-            val exactArchitecture = architecture ?: return null
+            val exactArchitecture = architecture ?: return rejectHeader(GgufHeaderRejection.ARCHITECTURE_MISSING)
             val numericMetadata = mutableMapOf<String, Int>()
             NUMERIC_SUFFIXES.forEach { suffix ->
                 val key = "$exactArchitecture$suffix"
-                if (key in duplicateNumericCandidates) return null
+                if (key in duplicateNumericCandidates) return rejectHeader(GgufHeaderRejection.DUPLICATE_KEY)
+                if (key in unsupportedShapeCandidates) return rejectHeader(GgufHeaderRejection.UNSUPPORTED_SHAPE_ENCODING)
                 if (numericCandidates.containsKey(key)) {
                     val value = numericCandidates[key]
                         ?.takeIf { it in 1..MAX_TRANSFORMER_FIELD }
                         ?.toInt()
-                        ?: return null
+                        ?: return rejectHeader(GgufHeaderRejection.NUMERIC_BOUNDS)
                     numericMetadata[key] = value
                 }
             }
             metadata(version, exactArchitecture, numericMetadata)
         }
     } catch (_: Exception) {
-        null
+        rejectHeader(GgufHeaderRejection.READ_UNAVAILABLE)
+    }
+
+    private fun rejectHeader(reason: GgufHeaderRejection): GgufLocalMetadata? {
+        AppLogger.i("ModelLoad") { "stage=gguf-header outcome=HEADER_REJECTED reason=$reason" }
+        return null
     }
 
     internal fun enrich(
@@ -133,21 +178,27 @@ class GgufMetadataInspector(
         fun value(suffix: String): Int? = numericMetadata["$architecture$suffix"]
         val contextLimit = value(CONTEXT_LENGTH_SUFFIX)
             ?.takeIf { it <= DescriptorLimits.MAX_CONTEXT_TOKENS }
-            ?: if (numericMetadata.containsKey("$architecture$CONTEXT_LENGTH_SUFFIX")) return null else null
+            ?: if (numericMetadata.containsKey("$architecture$CONTEXT_LENGTH_SUFFIX")) return rejectHeader(GgufHeaderRejection.NUMERIC_BOUNDS) else null
         val hiddenSize = value(EMBEDDING_LENGTH_SUFFIX)
         val attentionHeads = value(ATTENTION_HEAD_COUNT_SUFFIX)
         val explicitHeadDim = value(ATTENTION_KEY_LENGTH_SUFFIX)
-        val derivedHeadDim = if (hiddenSize != null && attentionHeads != null) {
-            if (hiddenSize % attentionHeads != 0) return null
+        val derivedHeadDim = if (hiddenSize != null && attentionHeads != null && hiddenSize % attentionHeads == 0) {
             hiddenSize / attentionHeads
         } else {
             null
         }
-        if (explicitHeadDim != null && derivedHeadDim != null && explicitHeadDim != derivedHeadDim) return null
+        AppLogger.i("ModelLoad") {
+            "stage=gguf-shape explicitKeyLength=${explicitHeadDim ?: -1} derivedKeyLength=${derivedHeadDim ?: -1} " +
+                "kvHeadsDefaulted=${value(ATTENTION_HEAD_COUNT_KV_SUFFIX) == null && attentionHeads != null}"
+        }
+        // llama.cpp gives explicit key length authority; projection width need not match hidden size / heads.
+        if (explicitHeadDim == null && hiddenSize != null && attentionHeads != null && derivedHeadDim == null) {
+            return rejectHeader(GgufHeaderRejection.INCONSISTENT_SHAPE)
+        }
         val headDim = explicitHeadDim ?: derivedHeadDim
         val shapeValues = listOf(
             value(BLOCK_COUNT_SUFFIX),
-            value(ATTENTION_HEAD_COUNT_KV_SUFFIX),
+            value(ATTENTION_HEAD_COUNT_KV_SUFFIX) ?: attentionHeads,
             attentionHeads,
             hiddenSize,
             headDim,
@@ -231,10 +282,19 @@ private fun TransformerShape?.conflictsWith(local: TransformerShape?): Boolean {
         conflicts(headDim, local.headDim)
 }
 
+private enum class GgufHeaderRejection {
+    SCAN_LIMIT, UNSUPPORTED_VERSION, ARCHITECTURE_MISSING, ARCHITECTURE_INVALID,
+    DUPLICATE_KEY, UNSUPPORTED_SHAPE_ENCODING, NUMERIC_BOUNDS, INCONSISTENT_SHAPE,
+    MALFORMED_HEADER, TRUNCATED_HEADER, READ_UNAVAILABLE,
+}
+
 private class BoundedGgufReader(
     private val source: BufferedSource,
     private var remaining: Long,
 ) {
+    var rejection: GgufHeaderRejection? = null
+        private set
+
     fun readUtf8(byteCount: Long): String? = take(byteCount) { source.readUtf8(byteCount) }
 
     fun readUnsignedIntLe(): Long? = take(Int.SIZE_BYTES.toLong()) {
@@ -306,10 +366,14 @@ private class BoundedGgufReader(
     } ?: false
 
     private inline fun <T> take(byteCount: Long, block: () -> T): T? {
-        if (byteCount < 0L || byteCount > remaining) return null
+        if (byteCount < 0L || byteCount > remaining) {
+            rejection = if (byteCount > remaining) GgufHeaderRejection.SCAN_LIMIT else GgufHeaderRejection.NUMERIC_BOUNDS
+            return null
+        }
         return try {
             block().also { remaining -= byteCount }
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            rejection = if (error is EOFException) GgufHeaderRejection.TRUNCATED_HEADER else GgufHeaderRejection.READ_UNAVAILABLE
             null
         }
     }

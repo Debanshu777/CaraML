@@ -28,6 +28,7 @@ enum LlamaPreflightStatus {
     LLAMA_PREFLIGHT_NO_FIT = 1,
     LLAMA_PREFLIGHT_INVALID = 2,
     LLAMA_PREFLIGHT_UNAVAILABLE = 3,
+    LLAMA_PREFLIGHT_REQUIRES_TARGET_MODEL = 4,
 };
 
 enum LlamaPreflightPoolKind {

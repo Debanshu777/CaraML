@@ -24,7 +24,9 @@
 #include "chat.h"
 #include "common.h"
 #include "fit.h"
+#include "log.h"
 #include "ggml.h"
+#include "gguf.h"
 #include "ggml-backend.h"
 #include "ggml-cpp.h"
 #include "llama.h"
@@ -32,6 +34,7 @@
 #include "llama-model.h"
 #include "llama_operation_gate.h"
 #include "sampling.h"
+#include "llama_sparse_penalties.h"
 
 namespace {
 
@@ -101,6 +104,27 @@ private:
 int g_max_tokens_remaining = 0;
 std::vector<llama_token> g_streaming_tokens;
 size_t g_streaming_n_generated = 0;
+struct GenerationProfile {
+    int64_t sample_ns = 0;
+    int64_t decode_ns = 0;
+    int64_t wait_ns = 0;
+    int64_t parse_ns = 0;
+    size_t parse_calls = 0;
+};
+GenerationProfile g_generation_profile;
+
+// Numeric, operation-owned totals only; no per-token logging or model text.
+class ScopedProfileTimer {
+public:
+    explicit ScopedProfileTimer(int64_t &total) : total_(total), start_(std::chrono::steady_clock::now()) {}
+    ~ScopedProfileTimer() {
+        total_ += std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - start_).count();
+    }
+private:
+    int64_t &total_;
+    std::chrono::steady_clock::time_point start_;
+};
 llama_pos g_current_position = 0;
 llama_pos g_system_prompt_position = 0;
 std::string g_cached_utf8_chars;
@@ -133,7 +157,7 @@ static std::string g_assistant_buffer;
 static bool g_pending_chat_decode = false;
 
 // Parser params for splitting reasoning vs content from the model's own
-// template format. Rebuilt at each generation start from g_chat_msgs so the
+// template format. Captured from the exact rendered user turn so the
 // forced-open generation_prompt (e.g. a template-injected "<think>") is fed to
 // common_chat_parse and the reasoning/content split stays aligned.
 static common_chat_parser_params g_parser_params;
@@ -161,17 +185,73 @@ static bool g_supports_thinking = false;
 
 static void log_line(LlamaLogLevel level, const char *fmt, ...);
 
-static void sanitized_upstream_log(
-    ggml_log_level level,
-    const char * /*text*/,
-    void * /*user_data*/) {
-    if (!g_logger || level < GGML_LOG_LEVEL_WARN) {
-        return;
+// Upstream diagnostics can contain model paths, templates, or generated text.
+// Inspect a bounded prefix only to select a fixed code; never emit that text.
+static std::atomic<const char *> g_diagnostic_stage{"IDLE"};
+static std::atomic<unsigned> g_upstream_diagnostic_count{0};
+static std::atomic<unsigned> g_parse_diagnostic_count{0};
+
+static const char *upstream_reason(ggml_log_level level, const char *text) {
+    char prefix[1025] = {};
+    if (text) {
+        const size_t length = ::strnlen(text, sizeof(prefix) - 1);
+        for (size_t index = 0; index < length; ++index) {
+            const unsigned char byte = static_cast<unsigned char>(text[index]);
+            prefix[index] = byte >= 'A' && byte <= 'Z' ? static_cast<char>(byte - 'A' + 'a') : static_cast<char>(byte);
+        }
     }
-    g_logger(
-        level >= GGML_LOG_LEVEL_ERROR ? LLAMA_LOG_ERROR : LLAMA_LOG_WARN,
-        "native engine diagnostic suppressed");
+    const auto has = [&prefix](const char *needle) { return std::strstr(prefix, needle) != nullptr; };
+    if (has("out of memory") || has("insufficient memory")) return "MEMORY_EXHAUSTED";
+    if (has("unknown model architecture") || has("unsupported architecture")) return "ARCHITECTURE_UNSUPPORTED";
+    if (has("failed to allocate") || has("allocation failed")) return "ALLOCATION_FAILED";
+    if (has("failed to open") || has("cannot open") || has("failed to read")) return "ARTIFACT_ACCESS_FAILED";
+    if (has("tensor") && (has("missing") || has("invalid") || has("mismatch"))) return "TENSOR_METADATA_INVALID";
+    if (has("template") || has("jinja")) return "CHAT_TEMPLATE_DIAGNOSTIC";
+    if (has("backend") || has("vulkan") || has("metal")) return "BACKEND_DIAGNOSTIC";
+    return level >= GGML_LOG_LEVEL_ERROR ? "UPSTREAM_ERROR" : "UPSTREAM_WARNING";
 }
+
+static void sanitized_upstream_log(ggml_log_level level, const char *text, void * /*user_data*/) {
+    if (!g_logger || level < GGML_LOG_LEVEL_WARN) return;
+    // Cap repeated warnings for each operation rather than flooding production logs.
+    if (g_upstream_diagnostic_count.fetch_add(1, std::memory_order_relaxed) >= 8) return;
+    log_line(level >= GGML_LOG_LEVEL_ERROR ? LLAMA_LOG_ERROR : LLAMA_LOG_WARN,
+        "native stage=%s reason=%s", g_diagnostic_stage.load(std::memory_order_relaxed), upstream_reason(level, text));
+}
+
+// Token sampling may emit upstream diagnostics, but do not log every token or
+// reset the operation warning budget. Only annotate callback context.
+class ScopedNativeDiagnosticStage {
+public:
+    explicit ScopedNativeDiagnosticStage(const char *stage) : previous_(g_diagnostic_stage.exchange(stage, std::memory_order_relaxed)) {}
+    ~ScopedNativeDiagnosticStage() { g_diagnostic_stage.store(previous_, std::memory_order_relaxed); }
+private:
+    const char *previous_;
+};
+
+class ScopedNativeDiagnostic {
+public:
+    explicit ScopedNativeDiagnostic(const char *stage) :
+        previous_(g_diagnostic_stage.exchange(stage, std::memory_order_relaxed)),
+        stage_(stage), started_(std::chrono::steady_clock::now()) {
+        g_upstream_diagnostic_count.store(0, std::memory_order_relaxed);
+        log_line(LLAMA_LOG_INFO, "native stage=%s event=START", stage_);
+    }
+    ~ScopedNativeDiagnostic() {
+        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - started_).count();
+        log_line(LLAMA_LOG_INFO, "native stage=%s event=END reason=%s elapsed_ms=%lld",
+            stage_, reason_, static_cast<long long>(elapsed));
+        g_diagnostic_stage.store(previous_, std::memory_order_relaxed);
+    }
+    void success() { reason_ = "OK"; }
+    void reason(const char *reason) { reason_ = reason; }
+private:
+    const char *previous_;
+    const char *stage_;
+    const char *reason_ = "FAILED";
+    std::chrono::steady_clock::time_point started_;
+};
 
 static void discard_upstream_log(
     ggml_log_level /*level*/,
@@ -492,7 +572,7 @@ static void resolve_threadpool_fns() {
 // templates require certain message roles to be present). BOS handling is left
 // to the tokenizer — the templates struct is opaque so we can't read its
 // add_bos/add_eos flags here.
-static std::optional<std::string> try_apply_full_template(
+static std::optional<common_chat_params> try_apply_chat_template(
     const std::vector<common_chat_msg> &messages, bool add_generation_prompt) {
     if (!g_chat_templates || !g_chat_templates.get()) {
         return std::nullopt;
@@ -502,14 +582,22 @@ static std::optional<std::string> try_apply_full_template(
         inputs.use_jinja = true;
         inputs.messages = messages;
         inputs.add_generation_prompt = add_generation_prompt;
-        return common_chat_templates_apply(g_chat_templates.get(), inputs).prompt;
-    } catch (const std::exception &e) {
-        log_line(LLAMA_LOG_WARN, "chat template apply failed: %s", e.what());
+        inputs.reasoning_format = COMMON_REASONING_FORMAT_AUTO;
+        inputs.enable_thinking = true;
+        return common_chat_templates_apply(g_chat_templates.get(), inputs);
+    } catch (const std::exception &) {
+        log_line(LLAMA_LOG_WARN, "chat template apply failed");
         return std::nullopt;
     } catch (...) {
         log_line(LLAMA_LOG_WARN, "chat template apply failed: unknown exception");
         return std::nullopt;
     }
+}
+
+static std::optional<std::string> try_apply_full_template(
+    const std::vector<common_chat_msg> &messages, bool add_generation_prompt) {
+    auto params = try_apply_chat_template(messages, add_generation_prompt);
+    return params ? std::optional<std::string>(params->prompt) : std::nullopt;
 }
 
 // Format `new_msg` as the incremental diff against the existing chat history,
@@ -526,10 +614,9 @@ static std::optional<std::string> try_chat_format_single(
     try {
         return common_chat_format_single(
             g_chat_templates.get(), g_chat_msgs, new_msg, role == ROLE_USER, true);
-    } catch (const std::exception &e) {
+    } catch (const std::exception &) {
         log_line(LLAMA_LOG_WARN,
-            "chat template format_single failed (role=%s): %s",
-            role.c_str(), e.what());
+            "chat template format_single failed (role=%s)", role.c_str());
         return std::nullopt;
     } catch (...) {
         log_line(LLAMA_LOG_WARN,
@@ -541,33 +628,13 @@ static std::optional<std::string> try_chat_format_single(
 
 // Rebuild g_parser_params from the current chat history so per-token parsing
 // knows the template's format, PEG parser arena, and forced-open generation
-// prompt. Called at generation start (after the user message is in g_chat_msgs).
-static void capture_parser_params() {
+// prompt. Called using the same parameters as the decoded prompt.
+static void capture_parser_params(const common_chat_params &params) {
     g_parser_params = common_chat_parser_params{};
-    if (!g_chat_templates || !g_chat_templates.get()) {
-        return;
-    }
-    try {
-        common_chat_templates_inputs inputs;
-        inputs.use_jinja              = true;
-        inputs.messages               = g_chat_msgs;
-        inputs.add_generation_prompt  = true;
-        inputs.reasoning_format       = COMMON_REASONING_FORMAT_AUTO;
-        inputs.enable_thinking        = true;
-        common_chat_params p = common_chat_templates_apply(g_chat_templates.get(), inputs);
-        g_parser_params.format            = p.format;
-        g_parser_params.generation_prompt = p.generation_prompt;
-        g_parser_params.reasoning_format  = COMMON_REASONING_FORMAT_AUTO;
-        g_parser_params.parser            = p.parser.empty()
-            ? common_peg_arena{}
-            : ([&]{ common_peg_arena a; a.load(p.parser); return a; })();
-        log_line(LLAMA_LOG_INFO,
-            "capture_parser_params: format=%s gen_prompt_len=%zu",
-            common_chat_format_name(p.format), p.generation_prompt.size());
-    } catch (const std::exception &e) {
-        log_line(LLAMA_LOG_WARN, "capture_parser_params failed: %s", e.what());
-        g_parser_params = common_chat_parser_params{};
-    }
+    g_parser_params.format = params.format;
+    g_parser_params.generation_prompt = params.generation_prompt;
+    g_parser_params.reasoning_format = COMMON_REASONING_FORMAT_AUTO;
+    if (!params.parser.empty()) g_parser_params.parser.load(params.parser);
 }
 
 static bool is_valid_utf8(const char *string) {
@@ -618,7 +685,8 @@ float resolve_temperature(float temperature) {
     return g_config.temperature;
 }
 
-void recreate_sampler(float temperature, const std::string &grammar) {
+void recreate_sampler(float temperature, const std::string &grammar,
+                      const common_chat_params *chat = nullptr, int response_budget = 0) {
     if (g_sampler) {
         common_sampler_free(g_sampler);
         g_sampler = nullptr;
@@ -633,8 +701,29 @@ void recreate_sampler(float temperature, const std::string &grammar) {
     if (!grammar.empty()) {
         sparams.grammar = common_grammar(COMMON_GRAMMAR_TYPE_USER, grammar);
     }
+    if (chat && !chat->thinking_start_tag.empty() && !chat->thinking_end_tags.empty()) {
+        const llama_vocab *vocab = llama_model_get_vocab(g_model);
+        sparams.generation_prompt = chat->generation_prompt;
+        sparams.reasoning_budget_start = common_tokenize(vocab, chat->thinking_start_tag, false, true);
+        for (const auto &tag : chat->thinking_end_tags) {
+            if (!tag.empty()) {
+                auto tokens = common_tokenize(vocab, tag, false, true);
+                if (!tokens.empty()) sparams.reasoning_budget_end.push_back(std::move(tokens));
+            }
+        }
+        if (!sparams.reasoning_budget_end.empty()) {
+            sparams.reasoning_budget_forced = sparams.reasoning_budget_end.front();
+            sparams.reasoning_budget_tokens = llama_runner_reasoning_budget(
+                response_budget, static_cast<int>(sparams.reasoning_budget_forced.size()));
+        }
+    }
     // empty grammar string = leave default-constructed (COMMON_GRAMMAR_TYPE_NONE)
     g_sampler = common_sampler_init(g_model, sparams);
+    const bool dense_penalties = caraml_sampling::install_fresh_dense_penalties(
+        common_sampler_get(g_sampler), llama_vocab_n_tokens(llama_model_get_vocab(g_model)),
+        sparams.penalty_last_n, sparams.penalty_repeat, sparams.penalty_freq,
+        sparams.penalty_present, sparams.backend_sampling);
+    log_line(LLAMA_LOG_INFO, "native stage=SAMPLER penalties=%s", dense_penalties ? "DENSE" : "UPSTREAM");
     g_active_temperature = sparams.temp;
     g_active_grammar = grammar;
 
@@ -727,6 +816,8 @@ int decode_tokens_in_batches(
 // Re-parse the cumulative assistant buffer into reasoning/content. Called after
 // each token (is_partial=true) and once at finalize (is_partial=false).
 static void reparse_assistant_buffer(bool is_partial) {
+    ScopedProfileTimer parse_timer(g_generation_profile.parse_ns);
+    ++g_generation_profile.parse_calls;
     if (g_assistant_buffer.empty()) {
         g_reasoning_accum.clear();
         g_content_accum.clear();
@@ -737,7 +828,7 @@ static void reparse_assistant_buffer(bool is_partial) {
             g_assistant_buffer, is_partial, g_parser_params);
         g_reasoning_accum = msg.reasoning_content;
         g_content_accum   = msg.content;
-    } catch (const std::exception &e) {
+    } catch (const std::exception &) {
         // Lenient fallback: if parsing throws (malformed partial), leave the
         // last good accumulators in place; on final pass, surface raw buffer as
         // content so nothing is lost.
@@ -745,7 +836,9 @@ static void reparse_assistant_buffer(bool is_partial) {
             g_reasoning_accum.clear();
             g_content_accum = g_assistant_buffer;
         }
-        log_line(LLAMA_LOG_WARN, "reparse_assistant_buffer failed: %s", e.what());
+        if (g_parse_diagnostic_count.fetch_add(1, std::memory_order_relaxed) == 0) {
+            log_line(LLAMA_LOG_WARN, "native stage=PARSE reason=CHAT_PARSE_FAILED partial=%d", is_partial ? 1 : 0);
+        }
     }
 }
 
@@ -797,6 +890,11 @@ void llama_runner_core_set_logger(LlamaLogFn fn) {
 void llama_runner_core_init(const char *backend_path) {
     auto operation = g_operation_gate.lock_interruptible(native_operations_poisoned);
     if (!operation) return;
+    // common/fit.cpp logs exceptions directly to common's stdio writer, bypassing
+    // llama_log_set. Own its policy before upstream calls and keep it paused:
+    // verbosity alone does not suppress direct common_log_add calls.
+    common_log_set_verbosity_thold(-1);
+    common_log_pause(common_log_main());
     if (backend_path && !is_bounded_c_string(backend_path, 4096)) {
         log_line(LLAMA_LOG_ERROR, "init: Invalid backend directory");
         return;
@@ -808,6 +906,8 @@ void llama_runner_core_init(const char *backend_path) {
         }
         return;
     }
+    ScopedNativeDiagnostic diagnostic("BACKEND_INIT");
+    llama_log_set(sanitized_upstream_log, nullptr);
     if (backend_path && std::strlen(backend_path) > 0) {
         log_line(LLAMA_LOG_INFO, "init: Loading backends from configured directory");
         ggml_backend_load_all_from_path(backend_path);
@@ -818,12 +918,28 @@ void llama_runner_core_init(const char *backend_path) {
     llama_log_set(sanitized_upstream_log, nullptr);
     g_backend_path = backend_path ? backend_path : "";
     g_backend_initialized = true;
+    diagnostic.success();
     log_line(LLAMA_LOG_INFO, "init: Backend initialized");
 }
 
 std::string llama_runner_core_engine_version() {
     const char *version = llama_version();
     return is_bounded_engine_version(version) ? std::string(version) : std::string();
+}
+
+// A Gemma assistant is a draft model whose context must be bound to its target.
+// Read the architecture with the engine's GGUF parser; filenames are not evidence.
+static bool model_requires_target_context(const char *model_path) noexcept {
+    try {
+        std::unique_ptr<gguf_context, decltype(&gguf_free)> metadata(
+            gguf_init_from_file(model_path, {true, nullptr}), gguf_free);
+        if (!metadata) return false;
+        const int64_t key = gguf_find_key(metadata.get(), "general.architecture");
+        return key >= 0 && gguf_get_kv_type(metadata.get(), key) == GGUF_TYPE_STRING &&
+            std::strcmp(gguf_get_val_str(metadata.get(), key), "gemma4-assistant") == 0;
+    } catch (...) {
+        return false;
+    }
 }
 
 LlamaPreflightResultNative llama_runner_core_preflight(
@@ -844,10 +960,12 @@ LlamaPreflightResultNative llama_runner_core_preflight(
         result.status = LLAMA_PREFLIGHT_UNAVAILABLE;
         return result;
     }
-    ScopedLlamaLoggerOverride suppress(discard_upstream_log);
+    ScopedNativeDiagnostic diagnostic("PREFLIGHT");
+    ScopedLlamaLoggerOverride suppress(sanitized_upstream_log);
     try {
         FitPlan plan = resolve_fit_plan(model_path, config);
         if (plan.status == COMMON_PARAMS_FIT_STATUS_FAILURE) {
+            diagnostic.reason("NO_FIT");
             result.status = LLAMA_PREFLIGHT_NO_FIT;
             return result;
         }
@@ -894,6 +1012,7 @@ LlamaPreflightResultNative llama_runner_core_preflight(
             destination.total_bytes = source.total;
         }
 
+        diagnostic.success();
         result.status = LLAMA_PREFLIGHT_FIT;
         result.n_ctx = static_cast<int>(plan.context_params.n_ctx);
         result.n_gpu_layers = llama_runner_resolved_gpu_layers(
@@ -903,7 +1022,9 @@ LlamaPreflightResultNative llama_runner_core_preflight(
     } catch (const std::invalid_argument &) {
         result.status = LLAMA_PREFLIGHT_INVALID;
     } catch (const std::runtime_error &) {
-        result.status = LLAMA_PREFLIGHT_UNAVAILABLE;
+        result = LlamaPreflightResultNative{};
+        result.status = model_requires_target_context(model_path)
+            ? LLAMA_PREFLIGHT_REQUIRES_TARGET_MODEL : LLAMA_PREFLIGHT_UNAVAILABLE;
     } catch (...) {
         result.status = LLAMA_PREFLIGHT_UNAVAILABLE;
     }
@@ -1288,13 +1409,17 @@ bool llama_runner_core_load_model(const char *model_path, const LlamaRunnerConfi
         return false;
     }
 
+    ScopedNativeDiagnostic diagnostic("LOAD");
+    log_line(LLAMA_LOG_INFO, "native stage=CONFIG ctx=%d batch=%d ubatch=%d threads=%d batch_threads=%d gpu_layers=%d flash=%d kv_k=%d kv_v=%d auto_fit=%d mmap=%d",
+        config.n_ctx, config.n_batch, config.n_ubatch, config.n_threads, config.n_threads_batch,
+        config.n_gpu_layers, config.flash_attn, config.type_k, config.type_v, config.auto_fit ? 1 : 0, config.use_mmap ? 1 : 0);
     unload_model_state();
     g_config = config;
     llama_log_set(sanitized_upstream_log, nullptr);
 
     auto t0 = std::chrono::steady_clock::now();
     {
-        ScopedLlamaLoggerOverride suppress(discard_upstream_log);
+        ScopedLlamaLoggerOverride suppress(sanitized_upstream_log);
         FitPlan plan = resolve_fit_plan(model_path, g_config);
         if (plan.status != COMMON_PARAMS_FIT_STATUS_SUCCESS) {
             log_line(LLAMA_LOG_ERROR, "load: no valid fitted allocation plan");
@@ -1314,14 +1439,19 @@ bool llama_runner_core_load_model(const char *model_path, const LlamaRunnerConfi
             plan.context_params.n_batch,
             plan.model_params.n_gpu_layers);
 
-        g_model = llama_model_load_from_file(model_path, plan.model_params);
-        if (!g_model) {
-            log_line(LLAMA_LOG_ERROR, "load: model allocation failed");
-            return false;
+        {
+            ScopedNativeDiagnostic model_diagnostic("MODEL_ALLOCATION");
+            g_model = llama_model_load_from_file(model_path, plan.model_params);
+            if (!g_model) {
+                log_line(LLAMA_LOG_ERROR, "load: model allocation failed");
+                return false;
+            }
+            model_diagnostic.success();
         }
         g_actual_gpu_layers = llama_runner_resolved_gpu_layers(
             plan.model_params.n_gpu_layers, g_model->hparams.n_layer_all, !g_model->devices.empty());
 
+        ScopedNativeDiagnostic context_diagnostic("CONTEXT_ALLOCATION");
         g_context = llama_init_from_model(g_model, plan.context_params);
         if (!g_context) {
             log_line(LLAMA_LOG_ERROR, "load: context allocation failed");
@@ -1329,6 +1459,7 @@ bool llama_runner_core_load_model(const char *model_path, const LlamaRunnerConfi
             g_model = nullptr;
             return false;
         }
+        context_diagnostic.success();
     }
 
     auto t1 = std::chrono::steady_clock::now();
@@ -1384,6 +1515,7 @@ bool llama_runner_core_load_model(const char *model_path, const LlamaRunnerConfi
 
     const llama_vocab *vocab = llama_model_get_vocab(g_model);
     log_line(LLAMA_LOG_INFO, "load: Model ready (vocab_size=%d)", llama_vocab_n_tokens(vocab));
+    diagnostic.success();
     return true;
 }
 
@@ -1427,6 +1559,8 @@ bool llama_runner_core_start_generate(const char *prompt, int max_tokens, float 
     g_cancel_flag = false;
     g_cached_utf8_chars.clear();
     g_streaming_n_generated = 0;
+    g_generation_profile = {};
+    g_parse_diagnostic_count.store(0, std::memory_order_relaxed);
     g_assistant_buffer.clear();
     reset_delta_offsets();
 
@@ -1482,6 +1616,7 @@ const char *llama_runner_core_next_token() {
     if (!operation.has_value()) {
         return nullptr;
     }
+    ScopedNativeDiagnosticStage diagnostic_stage("DECODE");
     if (g_cancel_flag) {
         log_line(LLAMA_LOG_INFO, "next_token: cancelled");
         g_stop_reason = STOP_CANCELLED;
@@ -1489,19 +1624,13 @@ const char *llama_runner_core_next_token() {
         finalize_assistant_turn();
         return nullptr;
     }
-    if (g_max_tokens_remaining <= 0) {
-        log_line(LLAMA_LOG_INFO, "next_token: max_tokens reached");
-        g_stop_reason = STOP_MAX_TOKENS;
-        reparse_assistant_buffer(/*is_partial*/ false);
-        finalize_assistant_turn();
-        return nullptr;
-    }
-
     const uint32_t n_ctx = llama_n_ctx(g_context);
-    const int headroom = 4;
-    if (g_chat_templates && g_current_position >= static_cast<llama_pos>(n_ctx) - headroom) {
-        log_line(LLAMA_LOG_INFO, "next_token: context full");
-        g_stop_reason = STOP_CONTEXT_FULL;
+    const auto limit = llama_runner_generation_limit(
+        static_cast<size_t>(g_current_position), g_chat_templates ? static_cast<int>(n_ctx) : 0,
+        g_max_tokens_remaining);
+    if (limit != LlamaGenerationLimit::None) {
+        g_stop_reason = limit == LlamaGenerationLimit::Context ? STOP_CONTEXT_FULL : STOP_MAX_TOKENS;
+        log_line(LLAMA_LOG_INFO, "next_token: generation limit=%d", g_stop_reason);
         reparse_assistant_buffer(/*is_partial*/ false);
         finalize_assistant_turn();
         return nullptr;
@@ -1509,14 +1638,21 @@ const char *llama_runner_core_next_token() {
 
     const llama_vocab *vocab = llama_model_get_vocab(g_model);
 
-    llama_synchronize(g_context);
+    {
+        ScopedProfileTimer wait_timer(g_generation_profile.wait_ns);
+        llama_synchronize(g_context);
+    }
     if (llama_get_logits_ith(g_context, -1) == nullptr) {
         log_line(LLAMA_LOG_ERROR, "next_token: n_outputs=0, stopping");
         g_stop_reason = STOP_ERROR;
         return nullptr;
     }
 
-    const llama_token token = common_sampler_sample(g_sampler, g_context, -1);
+    llama_token token;
+    {
+        ScopedProfileTimer sample_timer(g_generation_profile.sample_ns);
+        token = common_sampler_sample(g_sampler, g_context, -1);
+    }
     if (llama_vocab_is_eog(vocab, token)) {
         log_line(LLAMA_LOG_INFO, "next_token: EOG token=%d", token);
 
@@ -1594,7 +1730,11 @@ const char *llama_runner_core_next_token() {
     common_batch_clear(g_batch);
     common_batch_add(g_batch, token, g_current_position, {0}, true);
 
-    int decode_ret = llama_decode(g_context, g_batch);
+    int decode_ret;
+    {
+        ScopedProfileTimer decode_timer(g_generation_profile.decode_ns);
+        decode_ret = llama_decode(g_context, g_batch);
+    }
     if (decode_ret != 0) {
         log_line(LLAMA_LOG_ERROR, "next_token: Decode failed ret=%d", decode_ret);
         g_stop_reason = STOP_ERROR;
@@ -1632,6 +1772,7 @@ void llama_runner_core_finalize_generation() {
         return;
     }
     ScopedSessionEnd session(g_operation_gate);
+    ScopedNativeDiagnostic diagnostic("FINALIZE");
     // Persist assistant content into templated chat history when generation
     // is ended by caller rather than EOG/cancel/max-token boundary. A stop
     // boundary already parsed and cleared the raw buffer; reparsing that empty
@@ -1641,6 +1782,15 @@ void llama_runner_core_finalize_generation() {
     }
     finalize_assistant_turn();
     g_cached_utf8_chars.clear();
+    log_line(LLAMA_LOG_INFO, "native stage=GENERATION reason=FINISHED stop=%d tokens=%zu context_used=%d", g_stop_reason, g_streaming_n_generated, static_cast<int>(g_current_position));
+    log_line(LLAMA_LOG_INFO,
+        "native stage=GENERATION_PROFILE sample_us=%lld decode_submit_us=%lld wait_us=%lld parse_us=%lld parse_calls=%zu tokens=%zu",
+        static_cast<long long>(g_generation_profile.sample_ns / 1000),
+        static_cast<long long>(g_generation_profile.decode_ns / 1000),
+        static_cast<long long>(g_generation_profile.wait_ns / 1000),
+        static_cast<long long>(g_generation_profile.parse_ns / 1000),
+        g_generation_profile.parse_calls, g_streaming_n_generated);
+    diagnostic.success();
 }
 
 int llama_runner_core_process_system_prompt(const char *system_prompt) {
@@ -1715,6 +1865,7 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
     auto operation = g_operation_gate.begin_session_interruptible(native_operations_poisoned);
     if (!operation) return 1;
     ScopedSessionEnd session(g_operation_gate);
+    ScopedNativeDiagnostic diagnostic("USER_PREFILL");
     if (!g_model || !g_context || !g_sampler) {
         log_line(LLAMA_LOG_ERROR, "process_user_prompt: Model not loaded");
         return 1;
@@ -1727,16 +1878,13 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
     g_cancel_flag = false;
     g_cached_utf8_chars.clear();
     g_streaming_n_generated = 0;
+    g_generation_profile = {};
+    g_parse_diagnostic_count.store(0, std::memory_order_relaxed);
     g_assistant_buffer.clear();
     reset_delta_offsets();
     g_stop_reason = STOP_NONE;
     g_reasoning_accum.clear();
     g_content_accum.clear();
-
-    if (!apply_sampler_for_turn(/*temperature*/ -1.0f, nullptr)) {
-        log_line(LLAMA_LOG_ERROR, "process_user_prompt: Failed to reconfigure sampler");
-        return 1;
-    }
 
     bool has_template = g_chat_templates && common_chat_templates_was_explicit(g_chat_templates.get());
 
@@ -1744,6 +1892,7 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
     user_msg.role = ROLE_USER;
     user_msg.content = user_prompt;
 
+    std::optional<common_chat_params> turn_params;
     std::vector<llama_token> tokens;
     llama_pos decode_start_pos = g_current_position;
     if (has_template) {
@@ -1752,12 +1901,12 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
         // rather than assuming an incremental string diff matches the KV cache.
         std::vector<common_chat_msg> full = g_chat_msgs;
         full.push_back(user_msg);
-        auto rendered = try_apply_full_template(full, /*add_generation_prompt*/ true);
-        if (!rendered.has_value()) {
+        turn_params = try_apply_chat_template(full, /*add_generation_prompt*/ true);
+        if (!turn_params.has_value()) {
             log_line(LLAMA_LOG_ERROR, "process_user_prompt: chat template render failed");
             return 3;
         }
-        tokens = common_tokenize(g_context, *rendered,
+        tokens = common_tokenize(g_context, turn_params->prompt,
             /*add_special*/ true, /*parse_special*/ true);
         decode_start_pos = 0;
     } else {
@@ -1777,6 +1926,22 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
     }
     if (tokens.empty()) {
         log_line(LLAMA_LOG_ERROR, "process_user_prompt: template produced no tokens");
+        return 3;
+    }
+
+    // Parsing and sampling share the exact parameters that produced the prompt.
+    // Recreate the upstream reasoning sampler every turn so its budget cannot leak.
+    try {
+        if (turn_params) {
+            capture_parser_params(*turn_params);
+            recreate_sampler(/*temperature*/ -1.0f, "", &*turn_params, response_budget);
+        } else {
+            g_parser_params = common_chat_parser_params{};
+            if (!apply_sampler_for_turn(/*temperature*/ -1.0f, nullptr)) return 1;
+        }
+        if (!g_sampler) return 1;
+    } catch (...) {
+        log_line(LLAMA_LOG_ERROR, "process_user_prompt: unable to prepare generation");
         return 3;
     }
 
@@ -1812,7 +1977,7 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
     g_streaming_tokens.clear();
     g_chat_msgs.push_back(user_msg);
     g_pending_chat_decode = false;
-    capture_parser_params();
+    diagnostic.success();
     session.keep_session();
     return 0;
 }
@@ -1820,7 +1985,9 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
 void llama_runner_core_unload() {
     auto operation = g_operation_gate.lock_interruptible(native_operations_poisoned);
     if (!operation) return;
+    ScopedNativeDiagnostic diagnostic("UNLOAD");
     unload_model_state();
+    diagnostic.success();
 }
 
 void llama_runner_core_shutdown() {
@@ -1946,6 +2113,8 @@ void llama_runner_core_clear_context() {
     g_cached_utf8_chars.clear();
     g_streaming_tokens.clear();
     g_streaming_n_generated = 0;
+    g_generation_profile = {};
+    g_parse_diagnostic_count.store(0, std::memory_order_relaxed);
     g_kv_token_history.clear();
     
     if (g_sampler) {

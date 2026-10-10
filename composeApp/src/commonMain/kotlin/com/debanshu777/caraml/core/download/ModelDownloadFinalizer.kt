@@ -21,6 +21,9 @@ import com.debanshu777.huggingfacemanager.download.StoragePathProvider
 import com.debanshu777.huggingfacemanager.download.deleteValidatedArtifactEntries
 import com.debanshu777.huggingfacemanager.download.persistedArtifactStorageLocation
 import com.debanshu777.huggingfacemanager.model.DIFFUSERS_BUNDLE_DB_FILENAME
+import com.debanshu777.caraml.core.platform.AppLogger
+import kotlinx.coroutines.CancellationException
+import kotlin.time.TimeSource
 import kotlin.time.Clock
 
 interface BundlePublisher {
@@ -34,8 +37,12 @@ interface BundlePublisher {
 class DownloadManagerBundlePublisher(
     private val downloadManager: DownloadManager,
 ) : BundlePublisher {
-    override suspend fun publish(ownerModelId: String, artifacts: List<DownloadMetadataDTO>): Boolean =
-        downloadManager.publishBundle(ownerModelId, artifacts)
+    override suspend fun publish(ownerModelId: String, artifacts: List<DownloadMetadataDTO>): Boolean {
+        val started = TimeSource.Monotonic.markNow()
+        return downloadManager.publishBundle(ownerModelId, artifacts) { stage, reason ->
+            AppLogger.i("Download") { "stage=bundle_publication boundary=${stage.name} reason=${reason.name} elapsedMs=${started.elapsedNow().inWholeMilliseconds}" }
+        }
+    }
 
     override suspend fun validate(ownerModelId: String, artifacts: List<DownloadMetadataDTO>): Boolean =
         downloadManager.validateBundle(ownerModelId, artifacts)
@@ -179,50 +186,75 @@ class ModelDownloadFinalizer(
     private val evidenceCodec: PersistedModelEvidenceCodec = PersistedModelEvidenceCodec(),
 ) : BatchFinalizer {
     override suspend fun finalize(batchId: String) {
-        val batch = store.getBatch(batchId) ?: throw ArtifactVerificationException()
-        val evidence = validateEvidence(batch)
-        val artifacts = batch.artifacts.map { it.request.metadata }
-        if (artifacts.any { !it.usesImmutableStorageLayout }) throw ArtifactVerificationException()
-        val observedBundle = bundlePublisher.current(batch.ownerModelId)
-        val pendingBundle = bundlePublisher.pendingReplacement(batch.ownerModelId, artifacts)
-        val storageKeys = (artifacts.map { metadata ->
-            artifactStorageCoordinationKey(
-                metadata.artifact.repositoryId,
-                metadata.destinationRelativePath,
-            )
-        } + (observedBundle?.entries.orEmpty() + pendingBundle?.entries.orEmpty()).map { entry ->
-            artifactStorageCoordinationKey(entry.identity.repositoryId, entry.localRelativePath)
-        }).distinct()
-        publicationCoordinator.withArtifactPublication(batch.ownerModelId, storageKeys) {
-            catalogPublisher.snapshot(batch.ownerModelId)
-            if (!bundlePublisher.publish(batch.ownerModelId, artifacts) ||
-                !bundlePublisher.validate(batch.ownerModelId, artifacts)
-            ) {
-                throw ArtifactVerificationException()
+        val started = TimeSource.Monotonic.markNow()
+        var stage = "BATCH_LOOKUP"
+        try {
+            val batch = store.getBatch(batchId) ?: throw ArtifactVerificationException()
+            val evidence = validateEvidence(batch) { stage = it }
+            stage = "IMMUTABLE_LAYOUT"
+            val artifacts = batch.artifacts.map { it.request.metadata }
+            if (artifacts.any { !it.usesImmutableStorageLayout }) throw ArtifactVerificationException()
+            stage = "CURRENT_BUNDLE"
+            val observedBundle = bundlePublisher.current(batch.ownerModelId)
+            stage = "PENDING_BUNDLE"
+            val pendingBundle = bundlePublisher.pendingReplacement(batch.ownerModelId, artifacts)
+            val storageKeys = (artifacts.map { metadata ->
+                artifactStorageCoordinationKey(
+                    metadata.artifact.repositoryId,
+                    metadata.destinationRelativePath,
+                )
+            } + (observedBundle?.entries.orEmpty() + pendingBundle?.entries.orEmpty()).map { entry ->
+                artifactStorageCoordinationKey(entry.identity.repositoryId, entry.localRelativePath)
+            }).distinct()
+            stage = "PUBLICATION_LOCK"
+            publicationCoordinator.withArtifactPublication(batch.ownerModelId, storageKeys) {
+                stage = "CATALOG_SNAPSHOT"
+                catalogPublisher.snapshot(batch.ownerModelId)
+                stage = "BUNDLE_PUBLISH"
+                if (!bundlePublisher.publish(batch.ownerModelId, artifacts)) throw ArtifactVerificationException()
+                stage = "BUNDLE_VALIDATE"
+                if (!bundlePublisher.validate(batch.ownerModelId, artifacts)) throw ArtifactVerificationException()
+                stage = "PENDING_REPLACEMENT"
+                val previous = bundlePublisher.pendingReplacement(batch.ownerModelId, artifacts)
+                stage = "CATALOG_PUBLISH"
+                catalogPublisher.publish(batch, evidence)
+                stage = "PRIOR_CLEANUP"
+                if (previous != null && !catalogPublisher.cleanupPrior(previous, artifacts)) {
+                    throw ReplacementCleanupException()
+                }
+                stage = "REPLACEMENT_ACKNOWLEDGE"
+                if (!bundlePublisher.acknowledgeReplacement(batch.ownerModelId, artifacts)) {
+                    throw ReplacementCleanupException()
+                }
             }
-            val previous = bundlePublisher.pendingReplacement(batch.ownerModelId, artifacts)
-            catalogPublisher.publish(batch, evidence)
-            if (previous != null && !catalogPublisher.cleanupPrior(previous, artifacts)) {
-                throw ReplacementCleanupException()
+            AppLogger.i("Download") { "stage=finalization boundary=COMPLETE outcome=completed elapsedMs=${started.elapsedNow().inWholeMilliseconds}" }
+        } catch (failure: Exception) {
+            val reason = when (failure) {
+                is CancellationException -> "CANCELLED"
+                is ArtifactVerificationException -> "INTEGRITY"
+                is ReplacementCleanupException -> "REPLACEMENT_PENDING"
+                else -> "OTHER"
             }
-            if (!bundlePublisher.acknowledgeReplacement(batch.ownerModelId, artifacts)) {
-                throw ReplacementCleanupException()
-            }
+            AppLogger.i("Download") { "stage=finalization boundary=$stage outcome=failed reason=$reason elapsedMs=${started.elapsedNow().inWholeMilliseconds}" }
+            throw failure
         }
     }
 
-    private fun validateEvidence(batch: DownloadBatchSnapshot): EncodedModelEvidence {
+    private fun validateEvidence(batch: DownloadBatchSnapshot, setStage: (String) -> Unit): EncodedModelEvidence {
+        setStage("EVIDENCE_DECODE")
         val decoded = try {
             evidenceCodec.decode(batch.evidence)
         } catch (_: IllegalArgumentException) {
             throw ArtifactVerificationException()
         }
+        setStage("PRIMARY_OWNERSHIP")
         val primary = batch.artifacts.filter { it.request.primary }
         if (primary.isEmpty() || primary.any { it.request.metadata.artifact.repositoryId != batch.ownerModelId } ||
             decoded.descriptor?.repositoryId?.let { it != batch.ownerModelId } == true
         ) {
             throw ArtifactVerificationException()
         }
+        setStage("ARTIFACT_IDENTITY")
         val expected = decoded.artifactIdentities.sortedWith(modelIdentityOrder)
         val actual = batch.artifacts
             .map { it.request.metadata.artifact }

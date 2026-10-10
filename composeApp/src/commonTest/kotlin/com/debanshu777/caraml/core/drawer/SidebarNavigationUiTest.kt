@@ -118,7 +118,7 @@ class SidebarNavigationUiTest {
             .assertIsFocused()
             .performKeyInput { pressKey(Key.Escape) }
         runOnIdle { assertFalse(controller.isOpen) }
-        onAllNodesWithContentDescription("Create, selected").assertCountEquals(0)
+        onAllNodesWithContentDescription("Chat, selected").assertCountEquals(0)
     }
 
     @Test
@@ -135,7 +135,7 @@ class SidebarNavigationUiTest {
                         modifier = Modifier.requiredSize(width = 420.dp, height = 720.dp),
                     ) {
                         Column(Modifier.fillMaxSize().testTag("route-surface")) {
-                            CaraMLPrimaryTopBar(title = "Create")
+                            CaraMLPrimaryTopBar(title = "Chat")
                             Box(Modifier.fillMaxSize())
                         }
                     }
@@ -149,7 +149,7 @@ class SidebarNavigationUiTest {
             .assertIsDisplayed()
             .assertWidthIsAtLeast(48.dp)
             .assertHeightIsAtLeast(48.dp)
-        onAllNodesWithContentDescription("Create, selected").assertCountEquals(0)
+        onAllNodesWithContentDescription("Chat, selected").assertCountEquals(0)
         onAllNodesWithContentDescription("Models").assertCountEquals(0)
         onAllNodesWithContentDescription("Settings").assertCountEquals(0)
 
@@ -159,7 +159,7 @@ class SidebarNavigationUiTest {
         val midpointPanel = onNodeWithTag("modal-sidebar-panel")
             .fetchSemanticsNode().boundsInRoot
         assertEquals(420f, midpointPanel.width, "The sidebar background/header spans the full viewport")
-        onNodeWithContentDescription("Create, selected").assertIsDisplayed()
+        onNodeWithContentDescription("Chat, selected").assertIsDisplayed()
         onNodeWithContentDescription("Models").assertIsDisplayed()
         onNodeWithContentDescription("Settings").assertIsDisplayed()
         onNodeWithContentDescription("Dismiss navigation menu").assertIsDisplayed()
@@ -172,14 +172,14 @@ class SidebarNavigationUiTest {
         mainClock.advanceTimeBy(500)
         mainClock.advanceTimeByFrame()
         assertTrue(
-            onNodeWithContentDescription("Create, selected")
+            onNodeWithContentDescription("Chat, selected")
                 .fetchSemanticsNode().boundsInRoot.left >= 0f,
         )
 
         onNodeWithContentDescription("Dismiss navigation menu").performClick()
         mainClock.advanceTimeBy(600)
         mainClock.advanceTimeByFrame()
-        onAllNodesWithContentDescription("Create, selected").assertCountEquals(0)
+        onAllNodesWithContentDescription("Chat, selected").assertCountEquals(0)
         assertEquals(AppScreen.Home, backStack.last())
         assertEquals(
             closedBounds,
@@ -206,7 +206,7 @@ class SidebarNavigationUiTest {
         }
 
         runOnIdle { assertEquals(AppNavigationLayout.Sidebar, observedLayout) }
-        onNodeWithContentDescription("Create, selected").assertIsDisplayed()
+        onNodeWithContentDescription("Chat, selected").assertIsDisplayed()
     }
 
     @Test
@@ -220,7 +220,7 @@ class SidebarNavigationUiTest {
                 Box(Modifier.width(width).height(720.dp)) {
                     AppDrawerShell(backStack = backStack, modifier = Modifier.fillMaxSize()) {
                         controller = LocalDrawerController.current
-                        CaraMLPrimaryTopBar(title = "Create")
+                        CaraMLPrimaryTopBar(title = "Chat")
                     }
                 }
             }
@@ -236,7 +236,7 @@ class SidebarNavigationUiTest {
         runOnIdle { width = 599.dp }
         waitForIdle()
         onNodeWithContentDescription("Open navigation menu").assertIsDisplayed()
-        onAllNodesWithContentDescription("Create, selected").assertCountEquals(0)
+        onAllNodesWithContentDescription("Chat, selected").assertCountEquals(0)
     }
 
     @Test
@@ -251,7 +251,7 @@ class SidebarNavigationUiTest {
                     Box(Modifier.width(width).height(720.dp)) {
                         AppDrawerShell(backStack = backStack, modifier = Modifier.fillMaxSize()) {
                             controller = LocalDrawerController.current
-                            CaraMLPrimaryTopBar(title = "Create")
+                            CaraMLPrimaryTopBar(title = "Chat")
                         }
                     }
                 }
@@ -262,7 +262,7 @@ class SidebarNavigationUiTest {
             val narrowPanel = onNodeWithTag("modal-sidebar-panel")
                 .fetchSemanticsNode().boundsInRoot
             assertEquals(320f, narrowPanel.width)
-            val narrowItem = onNodeWithContentDescription("Create, selected").fetchSemanticsNode().boundsInRoot
+            val narrowItem = onNodeWithContentDescription("Chat, selected").fetchSemanticsNode().boundsInRoot
             assertEquals(19f, narrowItem.left)
             assertEquals(176.12f, narrowItem.width, absoluteTolerance = 1f)
 
@@ -272,7 +272,7 @@ class SidebarNavigationUiTest {
             val widePanel = onNodeWithTag("modal-sidebar-panel")
                 .fetchSemanticsNode().boundsInRoot
             assertEquals(500f, widePanel.width)
-            val wideItem = onNodeWithContentDescription("Create, selected").fetchSemanticsNode().boundsInRoot
+            val wideItem = onNodeWithContentDescription("Chat, selected").fetchSemanticsNode().boundsInRoot
             assertEquals(19f, wideItem.left)
             assertEquals(294.92f, wideItem.width, absoluteTolerance = 1f)
         }
@@ -349,7 +349,7 @@ class SidebarNavigationUiTest {
             }
         }
 
-        val railItem = onNodeWithContentDescription("Create, selected")
+        val railItem = onNodeWithContentDescription("Chat, selected")
             .fetchSemanticsNode().boundsInRoot
         val railContent = onNodeWithTag("safe-route-content")
             .fetchSemanticsNode().boundsInRoot
@@ -357,7 +357,7 @@ class SidebarNavigationUiTest {
         assertEquals(112f, railContent.left)
 
         runOnIdle { navigation = AppNavigationLayout.Sidebar }
-        val sidebarItem = onNodeWithContentDescription("Create, selected")
+        val sidebarItem = onNodeWithContentDescription("Chat, selected")
             .fetchSemanticsNode().boundsInRoot
         val sidebarContent = onNodeWithTag("safe-route-content")
             .fetchSemanticsNode().boundsInRoot
@@ -435,19 +435,19 @@ class SidebarNavigationUiTest {
 
             runOnIdle { controller.open() }
             mainClock.advanceTimeByFrame()
-            val enteringLeft = onNodeWithContentDescription("Create, selected")
+            val enteringLeft = onNodeWithContentDescription("Chat, selected")
                 .fetchSemanticsNode().boundsInRoot.left
             mainClock.advanceTimeBy(45)
-            val midpointLeft = onNodeWithContentDescription("Create, selected")
+            val midpointLeft = onNodeWithContentDescription("Chat, selected")
                 .fetchSemanticsNode().boundsInRoot.left
             assertTrue(enteringLeft >= 0f)
             assertEquals(enteringLeft, midpointLeft)
 
             mainClock.advanceTimeBy(46)
             mainClock.advanceTimeByFrame()
-            onNodeWithContentDescription("Create, selected").assertIsDisplayed()
+            onNodeWithContentDescription("Chat, selected").assertIsDisplayed()
             assertTrue(
-                onNodeWithContentDescription("Create, selected")
+                onNodeWithContentDescription("Chat, selected")
                     .fetchSemanticsNode().boundsInRoot.left >= 0f,
             )
 
@@ -459,7 +459,7 @@ class SidebarNavigationUiTest {
 }
 
 private fun sidebarPrimaryItems() = listOf(
-    DrawerItem("create", "Create", Icons.Default.ChatBubbleOutline),
+    DrawerItem("create", "Chat", Icons.Default.ChatBubbleOutline),
     DrawerItem("models", "Models", Icons.Default.Storage),
     DrawerItem("settings", "Settings", Icons.Default.Settings),
 )

@@ -39,6 +39,31 @@ import kotlin.test.assertIs
 import kotlin.test.assertSame
 
 class InstalledModelLoadingTest {
+
+    @Test
+    fun unsupportedTextFormatOffersGgufActionWithoutReleasingOrInvokingRunners() = runTest {
+        for (mode in GenerationMode.entries) {
+            val result = loadInstalledModel(
+                model = model, mode = mode,
+                prepare = { _, _ -> InstalledModelLoadPreparation.Terminal(
+                    InstalledModelLoadResolution.NotAdmissible(AssessmentReason.UNSUPPORTED_FORMAT),
+                ) },
+                releaseRunners = { error("Unsupported format must not release runners") },
+                assess = { error("Unsupported format must not be assessed") },
+                loadText = { error("Unsupported format must not invoke text runner") },
+                loadDiffusion = { error("Unsupported format must not invoke diffusion runner") },
+            )
+            assertEquals(
+                ModelLoadResult.Error(if (mode == GenerationMode.Text) {
+                    "This text model's file format is not supported by this engine. Choose a GGUF text model."
+                } else {
+                    "This model is not supported by the installed inference engine."
+                }),
+                result,
+            )
+        }
+    }
+
     @Test
     fun immutablePreparationPrecedesSingleReleaseAndPostReleaseAssessment() = runTest {
         val calls = mutableListOf<String>()

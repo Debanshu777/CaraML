@@ -132,6 +132,14 @@ The native `.so`/`.a`/`.dylib` is built by `:nativeEngine`, not this module. Thi
 
 ## Recent Changes
 
+- Generation profiling separates sampling, decode submission, synchronization and parsing. Dense repetition penalties preserve pinned sampler selection and history semantics with upstream fallback for unsupported candidate layouts. See the [paired device measurements](../docs/model-validation/2026-10-08/report.md).
+
+- Native loading/inference diagnostics now record scoped stage outcomes, monotonic timings and bounded upstream reason codes; raw parser/upstream exception text is excluded. See the [multi-architecture validation report](../docs/model-validation/2026-10-07/report.md).
+
+- Templated generation shares exact prompt/parser parameters and uses llama.cpp reasoning budgets with model delimiters to reserve answer space; context exhaustion takes precedence over the clamped output allowance.
+
+- Native preflight identifies Gemma assistant models that require a target context; chat reports the actual admission reason instead of labeling every temporary failure as memory/thermal pressure.
+
 <!-- Updated at end of each Claude Code session -->
 
 - Parameter audit validates cache types/CPU affinity and load paths, honors partial GPU requests, bounds single-sequence logits, and preserves multi-turn KV and final stream state; [Pixel 9 audit](../docs/benchmarks/pixel9-minicpm5-2026-09-30/parameter-audit.md)

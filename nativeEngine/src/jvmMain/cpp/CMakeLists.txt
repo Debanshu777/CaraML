@@ -125,6 +125,8 @@ target_include_directories(llama_chat_history_test PRIVATE ${LLAMA_RUNNER_INCLUD
 add_executable(llama_stream_finalization_test
     "${CMAKE_CURRENT_LIST_DIR}/../../../../runner/src/nativeTest/cpp/llama_stream_finalization_test.cpp")
 target_include_directories(llama_stream_finalization_test PRIVATE ${LLAMA_RUNNER_INCLUDE_DIRS})
+target_compile_definitions(llama_stream_finalization_test PRIVATE
+    CARAML_TEST_TEMPLATE_DIR="${CMAKE_CURRENT_LIST_DIR}/../../../../libraries/llama.cpp/models/templates")
 target_link_libraries(llama_stream_finalization_test PRIVATE llama llama-common Threads::Threads)
 add_executable(llama_fit_memory_test
     "${CMAKE_CURRENT_LIST_DIR}/../../../../runner/src/nativeTest/cpp/llama_fit_memory_test.cpp")

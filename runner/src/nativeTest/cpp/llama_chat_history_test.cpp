@@ -81,5 +81,21 @@ int main() {
         "nonpositive answer limit must fail");
     expect(llama_runner_response_budget(0, 4, 128) == 0,
         "tiny context cannot reserve termination headroom");
+    expect(llama_runner_response_budget(40, 512, 4096) == 468,
+        "small contexts must use remaining space rather than a quarter-context cap");
+    expect(llama_runner_reasoning_budget(468, 3) == 153,
+        "reasoning must leave most of the budget for the final answer and its delimiter");
+    expect(llama_runner_reasoning_budget(4096, 3) == 1024,
+        "long contexts must keep reasoning bounded");
+    expect(llama_runner_reasoning_budget(8, 6) == 0,
+        "tiny budgets must close reasoning immediately");
+    expect(llama_runner_reasoning_budget(0, 3) == 0,
+        "no output space must not grant a reasoning budget");
+    expect(llama_runner_generation_limit(508, 512, 0) == LlamaGenerationLimit::Context,
+        "exhausting the native-clamped allowance must report context full, not length limit");
+    expect(llama_runner_generation_limit(128, 512, 0) == LlamaGenerationLimit::Output,
+        "an independent output cap must remain a length limit");
+    expect(llama_runner_generation_limit(128, 512, 10) == LlamaGenerationLimit::None,
+        "generation with remaining space must continue");
     return 0;
 }

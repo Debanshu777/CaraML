@@ -3,12 +3,60 @@ package com.debanshu777.caraml.core.recommendation
 import okio.Buffer
 import okio.BufferedSink
 import okio.FileSystem
+import okio.ForwardingFileSystem
+import okio.ForwardingSource
+import okio.Path
+import okio.Source
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class GgufMetadataInspectorTest {
+    @Test
+    fun containerProbeSeparatesWrongFormatFromUnreadableOrIncompleteData() {
+        val path = FileSystem.SYSTEM_TEMPORARY_DIRECTORY / "caraml-container-${Random.nextLong()}.gguf"
+        val inspector = GgufMetadataInspector(FileSystem.SYSTEM)
+        try {
+            assertEquals(GgufContainerRecognition.UNKNOWN, inspector.recognizeContainer(path.toString()))
+            for (bytes in listOf(byteArrayOf(), "O".encodeToByteArray(), "GGU".encodeToByteArray())) {
+                FileSystem.SYSTEM.write(path) { write(bytes) }
+                assertEquals(GgufContainerRecognition.UNKNOWN, inspector.recognizeContainer(path.toString()))
+            }
+            for (prefix in listOf("ONNX", "gguf", "NOPE")) {
+                FileSystem.SYSTEM.write(path) { writeUtf8(prefix) }
+                assertEquals(GgufContainerRecognition.NON_GGUF, inspector.recognizeContainer(path.toString()))
+            }
+            FileSystem.SYSTEM.write(path) { writeUtf8("GGUF") }
+            assertEquals(GgufContainerRecognition.GGUF, inspector.recognizeContainer(path.toString()))
+            assertNull(inspector.inspect(path.toString()), "Signature alone must not establish valid GGUF metadata")
+        } finally {
+            FileSystem.SYSTEM.delete(path, mustExist = false)
+        }
+    }
+
+    @Test
+    fun containerProbeReadsOnlyFourBytesEvenWithShortReadsAndLargeTrailingData() {
+        val path = FileSystem.SYSTEM_TEMPORARY_DIRECTORY / "caraml-container-${Random.nextLong()}.onnx"
+        var bytesRead = 0L
+        val tracking = object : ForwardingFileSystem(FileSystem.SYSTEM) {
+            override fun source(file: Path): Source = object : ForwardingSource(super.source(file)) {
+                override fun read(sink: Buffer, byteCount: Long): Long {
+                    assertTrue(byteCount in 1L..4L, "Probe must bound every underlying read")
+                    return super.read(sink, minOf(1L, byteCount)).also { if (it > 0) bytesRead += it }
+                }
+            }
+        }
+        try {
+            FileSystem.SYSTEM.write(path) { writeUtf8("GGUF"); write(ByteArray(1_048_576)) }
+            assertEquals(GgufContainerRecognition.GGUF, GgufMetadataInspector(tracking).recognizeContainer(path.toString()))
+            assertEquals(4L, bytesRead)
+        } finally {
+            FileSystem.SYSTEM.delete(path, mustExist = false)
+        }
+    }
+
     @Test
     fun readsVersionAndArchitectureFromBoundedLocalHeader() {
         val path = (FileSystem.SYSTEM_TEMPORARY_DIRECTORY / "caraml-gguf-${Random.nextLong()}.gguf")
@@ -165,21 +213,45 @@ class GgufMetadataInspectorTest {
     }
 
     @Test
-    fun rejectsExplicitHeadDimensionThatConflictsWithDerivedShape() {
-        val path = (FileSystem.SYSTEM_TEMPORARY_DIRECTORY / "caraml-gguf-${Random.nextLong()}.gguf")
+    fun explicitHeadDimensionOverridesEmbeddingHeadRatioInGemma3AndQwen3Headers() {
+        // Scalar metadata observed from the immutable validation matrix artifacts.
+        listOf(
+            "gemma3" to TransformerShape(18, 1, 4, 640, 256),
+            "qwen3" to TransformerShape(28, 8, 16, 1024, 128),
+        ).forEach { (architecture, expected) ->
+            val path = FileSystem.SYSTEM_TEMPORARY_DIRECTORY / "caraml-gguf-${Random.nextLong()}.gguf"
+            try {
+                FileSystem.SYSTEM.write(path) {
+                    write(ggufWithUnsignedMetadata(architecture, linkedMapOf(
+                        "$architecture.block_count" to expected.layerCount!!.toLong(),
+                        "$architecture.embedding_length" to expected.hiddenSize!!.toLong(),
+                        "$architecture.attention.head_count" to expected.attentionHeadCount!!.toLong(),
+                        "$architecture.attention.head_count_kv" to expected.kvHeadCount!!.toLong(),
+                        "$architecture.attention.key_length" to expected.headDim!!.toLong(),
+                    )))
+                }
+                assertEquals(expected, GgufMetadataInspector(FileSystem.SYSTEM).inspect(path.toString())?.transformerShape)
+            } finally {
+                FileSystem.SYSTEM.delete(path, mustExist = false)
+            }
+        }
+    }
+
+    @Test
+    fun omittedKvHeadCountDefaultsToAttentionHeadCount() {
+        val path = FileSystem.SYSTEM_TEMPORARY_DIRECTORY / "caraml-gguf-${Random.nextLong()}.gguf"
         try {
             FileSystem.SYSTEM.write(path) {
-                write(
-                    ggufWithEntries(
-                        GgufTestEntry.Text("general.architecture", "llama"),
-                        GgufTestEntry.Unsigned("llama.embedding_length", 3_072L),
-                        GgufTestEntry.Unsigned("llama.attention.head_count", 24L),
-                        GgufTestEntry.Unsigned("llama.attention.key_length", 64L),
-                    ),
-                )
+                write(ggufWithEntries(
+                    GgufTestEntry.Text("general.architecture", "llama"),
+                    GgufTestEntry.Unsigned("llama.context_length", 2048L),
+                    GgufTestEntry.Unsigned("llama.block_count", 12L),
+                    GgufTestEntry.Unsigned("llama.embedding_length", 768L),
+                    GgufTestEntry.Unsigned("llama.attention.head_count", 12L),
+                ))
             }
-
-            assertNull(GgufMetadataInspector(FileSystem.SYSTEM).inspect(path.toString()))
+            assertEquals(TransformerShape(12, 12, 12, 768, 64),
+                GgufMetadataInspector(FileSystem.SYSTEM).inspect(path.toString())?.transformerShape)
         } finally {
             FileSystem.SYSTEM.delete(path, mustExist = false)
         }

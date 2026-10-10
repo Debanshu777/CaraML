@@ -18,6 +18,15 @@ import kotlin.test.assertTrue
 
 class LoadAdmissionControllerTest {
     @Test
+    fun assistantModelCannotBeAdmittedWithoutItsTargetContext() = runTest {
+        val controller = controller(preflight = { NativeLoadPreflight.RequiresTargetModel }) { _, _ ->
+            recommendation(RecommendationCategory.RECOMMENDED, requestedPlan)
+        }
+        val blocked = assertIs<LoadAdmission.Blocked>(controller.evaluate(request(), null))
+        assertEquals(LoadAdmissionReason.NATIVE_TARGET_MODEL_REQUIRED, blocked.reason)
+    }
+
+    @Test
     fun riskyLoadRequiresAcknowledgementAndNoFitOffersOneAlternative() = runTest {
         val fallback = plan(context = 2_048)
         var recommendation = recommendation(

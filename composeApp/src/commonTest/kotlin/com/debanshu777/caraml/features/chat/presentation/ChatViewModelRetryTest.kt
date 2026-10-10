@@ -70,6 +70,52 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChatViewModelRetryTest {
     @Test
+    fun tokenAndContextLimitsPreserveTextAndNeverReportAnEmptyAnswerAsComplete() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val model = textModel()
+            val request = loadRequest(model, "fresh-cpu", BackendKind.CPU)
+            val inference = RecordingInferenceRepository(request).apply { aboveThreshold = false }
+            val localModels = LocalModelRepository(StaticLocalModelDao(model))
+            val viewModel = ChatViewModel(
+                getAvailableModels = GetAvailableModelsUseCase(localModels, ChatConfig()),
+                generateResponse = GenerateResponseUseCase(inference),
+                manageContext = ManageContextUseCase(inference, ChatConfig()),
+                trackModelUsage = TrackModelUsageUseCase(localModels),
+                inferenceRepository = inference,
+                diffusionRepository = DiffusionInferenceRepository(DiffusionRunner(), DeviceCapabilities(), StaticSettingsRepository()),
+                generatedMediaStore = GeneratedMediaStore(baseDirectory = "/tmp", sessionId = "reply-limit"),
+                installedModelLoadRequestResolver = RecordingResolver(ArrayDeque(listOf(InstalledModelLoadResolution.Ready(request)))),
+                modelLoadDispatcher = dispatcher,
+                releaseDiffusionModel = {},
+            )
+            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.uiState.collect() }
+            advanceUntilIdle()
+            val cases = listOf(
+                Triple(StopReason.MAX_TOKENS, "", "TokenLimit"),
+                Triple(StopReason.MAX_TOKENS, "Partial answer", "TokenLimit"),
+                Triple(StopReason.CONTEXT_FULL, "Partial answer", "ContextLimit"),
+                Triple(StopReason.EOG, "", "NoAnswer"),
+                Triple(StopReason.EOG, "  ", "NoAnswer"),
+                Triple(StopReason.EOG, "Complete answer", "Complete"),
+            )
+            var messageCount = 0
+            for ((stop, answer, expected) in cases) {
+                inference.responseStopReason = stop
+                inference.response = flow { emit(InferenceChunk(reasoningDelta = "Model reasoning", contentDelta = answer)) }
+                viewModel.sendMessage("Explain dark matter")
+                messageCount += 2
+                val terminal = assertIs<ChatUiState.Ready>(viewModel.uiState.first { it is ChatUiState.Ready && !it.isGenerating && it.messages.size == messageCount }).messages.last()
+                assertEquals(expected, terminal.delivery?.name)
+                assertEquals(answer, terminal.text)
+                assertEquals("Model reasoning", terminal.thinking)
+            }
+        } finally { Dispatchers.resetMain() }
+    }
+
+
+    @Test
     fun compressionOwnsTheTurnBeforeSuspendingAndPreservesTheSubmittedPrompt() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
@@ -433,7 +479,7 @@ private class RecordingInferenceRepository(
     var aboveThreshold = true
     var responseStopReason = 0
     var resetStarted = CompletableDeferred<Unit>()
-    var response: Flow<InferenceChunk> = emptyFlow()
+    var response: Flow<InferenceChunk> = flow { emit(InferenceChunk(reasoningDelta = "", contentDelta = "A complete answer")) }
     val prompts = mutableListOf<String>()
 
     override suspend fun loadModel(request: LoadRequest): ModelLoadResult {

@@ -35,6 +35,7 @@ import com.debanshu777.caraml.core.download.DownloadArtifactSnapshot
 import com.debanshu777.caraml.core.download.DownloadArtifactState
 import com.debanshu777.caraml.core.download.DownloadBatchSnapshot
 import com.debanshu777.caraml.core.download.DownloadBatchState
+import com.debanshu777.caraml.core.download.DownloadUserIntent
 
 @Composable
 fun ModelDownloadQueueEntry(
@@ -140,7 +141,7 @@ internal fun ModelDownloadQueueRow(
         DownloadArtifactState.RUNNING -> "Downloading"
         DownloadArtifactState.PAUSED -> "Paused"
         DownloadArtifactState.WAITING_FOR_NETWORK -> "Waiting for network"
-        DownloadArtifactState.VERIFYING -> "Verifying"
+        DownloadArtifactState.VERIFYING -> if (batch.userIntent == DownloadUserIntent.PAUSE) "Verification paused" else "Verifying"
         DownloadArtifactState.FAILED_RETRYABLE -> "Download failed · retry available"
         DownloadArtifactState.FAILED_TERMINAL -> "Download failed"
         DownloadArtifactState.CANCELLED -> "Cancelled"
@@ -190,6 +191,9 @@ internal fun ModelDownloadBatchControls(
                 DownloadBatchState.RUNNING, DownloadBatchState.QUEUED,
                 DownloadBatchState.WAITING_FOR_NETWORK -> ModelHubAction(label = "Pause download", onClick = onPause)
                 DownloadBatchState.PAUSED -> ModelHubAction(label = "Resume download", onClick = onResume)
+                DownloadBatchState.VERIFYING -> if (batch.userIntent == DownloadUserIntent.PAUSE) {
+                    ModelHubAction(label = "Resume download", onClick = onResume)
+                }
                 DownloadBatchState.FAILED_RETRYABLE -> ModelHubAction(label = "Retry download", onClick = onRetry)
                 else -> Unit
             }
