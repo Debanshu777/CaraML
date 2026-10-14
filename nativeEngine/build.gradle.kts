@@ -60,8 +60,23 @@ fun Project.findTool(name: String): String {
     )
 }
 
+/** Resolve native tools only when a native task is actually executed. */
+fun nativeTool(name: String) = providers.provider { findTool(name) }
+
 val hostOsName = System.getProperty("os.name").lowercase()
 val isMacHost = hostOsName.contains("mac")
+val selectedNativeEngines = providers.gradleProperty("caramlNativeEngines")
+    .orElse("llama,diffusion")
+    .map { raw ->
+        val engines = raw.split(',').map(String::trim).filter(String::isNotEmpty).toSet()
+        if (engines.isEmpty() || engines.any { it !in setOf("llama", "diffusion") }) {
+            throw GradleException("caramlNativeEngines must select llama, diffusion, or both")
+        }
+        engines
+    }
+val androidNativeBackend = providers.gradleProperty("caramlAndroidBackend").orElse("cpu")
+val desktopNativeBackend = providers.gradleProperty("caramlDesktopBackend")
+    .orElse(if (isMacHost) "metal" else "cpu")
 
 // ----------------------------------------------------------------------------
 // Build-owned llama.cpp patching
@@ -213,8 +228,8 @@ fun resolveJavaHomeForJni(logger: org.gradle.api.logging.Logger): String {
 }
 
 if (isMacHost) {
-    val cmakePath = findTool("cmake")
-    val libtoolPath = findTool("libtool")
+    val cmakePath = nativeTool("cmake")
+    val libtoolPath = nativeTool("libtool")
 
     listOf(
         Triple("iosArm64", "arm64", "iPhoneOS"),
@@ -244,7 +259,7 @@ if (isMacHost) {
                 environment("PATH", "/opt/homebrew/bin:" + System.getenv("PATH"))
 
                 val args = mutableListOf(
-                    cmakePath,
+                    cmakePath.get(),
                     "-S", sourceDir.absolutePath,
                     "-B", cmakeBuildDir.absolutePath,
                     "-DCMAKE_SYSTEM_NAME=$systemName",
@@ -256,6 +271,9 @@ if (isMacHost) {
                     "-DBUILD_SHARED_LIBS=OFF",
                     "-DGGML_OPENMP=OFF",
                     "-DLLAMA_CURL=OFF",
+                    "-DCARAML_NATIVE_BACKEND=metal",
+                    "-DCARAML_ENABLE_LLAMA=ON",
+                    "-DCARAML_ENABLE_DIFFUSION=ON",
                 )
                 args.addPinnedLlamaSourceArguments()
                 commandLine(args)
@@ -268,13 +286,14 @@ if (isMacHost) {
         ) {
             dependsOn(buildTaskName)
             environment("PATH", "/opt/homebrew/bin:" + System.getenv("PATH"))
-            commandLine(
-                cmakePath,
-                "--build", cmakeBuildDir.absolutePath,
-                "--target", "llama_runner",
-                "--target", "diffusion_runner",
-                "--verbose"
-            )
+            doFirst {
+                commandLine(
+                    cmakePath.get(),
+                    "--build", cmakeBuildDir.absolutePath,
+                    "--target", "llama_runner", "diffusion_runner",
+                    "--verbose",
+                )
+            }
         }
 
         val libPath = cmakeBuildDir.absolutePath
@@ -342,7 +361,7 @@ if (isMacHost) {
                 }
 
                 val args = mutableListOf(
-                    libtoolPath, "-static",
+                    libtoolPath.get(), "-static",
                     "-o", "$libPath/libllama_runner_merged.a"
                 ) + libs.map { it.absolutePath }
                 commandLine(args)
@@ -360,23 +379,28 @@ val desktopPlatform = when {
     else -> error("Unsupported desktop OS: $hostOsName")
 }
 
+val desktopEngineSelection = selectedNativeEngines.get().sorted()
+val defaultDesktopBackend = if (isMacHost) "metal" else "cpu"
+val configuredDesktopBackend = desktopNativeBackend.get()
+val desktopProfileIsDefault = desktopEngineSelection == listOf("diffusion", "llama") &&
+    configuredDesktopBackend == defaultDesktopBackend
+val desktopProfilePath = if (desktopProfileIsDefault) "" else
+    "/profiles/${desktopEngineSelection.joinToString("-")}-$configuredDesktopBackend"
 val desktopJniBuildDir = layout.buildDirectory
-    .dir("${CaramlNativeLayout.DESKTOP_SUBDIR}/$desktopPlatform")
+    .dir("${CaramlNativeLayout.DESKTOP_SUBDIR}/$desktopPlatform$desktopProfilePath")
     .get()
     .asFile
 
 val desktopJniSourceDir = projectDir.resolve("src/jvmMain/cpp")
-val desktopCmakePath = findTool("cmake")
+val desktopCmakePath = nativeTool("cmake")
 
 val buildLlamaRunnerDesktop by tasks.registering(Exec::class) {
     group = "llama-native"
     description = "Configure CMake for desktop ($desktopPlatform) llama_runner"
     dependsOn(preparePatchedLlamaSource)
 
-    val javaHome = resolveJavaHomeForJni(logger)
-    environment("JAVA_HOME", javaHome)
-
     doFirst {
+        environment("JAVA_HOME", resolveJavaHomeForJni(logger))
         if (desktopPlatform == "macos") {
             delete(
                 desktopJniBuildDir.resolve(
@@ -392,10 +416,13 @@ val buildLlamaRunnerDesktop by tasks.registering(Exec::class) {
         desktopJniBuildDir.mkdirs()
 
         val args = mutableListOf(
-            desktopCmakePath,
+            desktopCmakePath.get(),
             "-S", desktopJniSourceDir.absolutePath,
             "-B", desktopJniBuildDir.absolutePath,
             "-DCMAKE_BUILD_TYPE=Release",
+            "-DCARAML_NATIVE_BACKEND=${desktopNativeBackend.get()}",
+            "-DCARAML_ENABLE_LLAMA=${selectedNativeEngines.get().contains("llama").toString().uppercase()}",
+            "-DCARAML_ENABLE_DIFFUSION=${selectedNativeEngines.get().contains("diffusion").toString().uppercase()}",
         )
         args.addPinnedLlamaSourceArguments()
         if (desktopPlatform == "macos") {
@@ -410,34 +437,64 @@ val compileLlamaRunnerDesktop by tasks.registering(Exec::class) {
     description = "Build desktop ($desktopPlatform) llama_runner native library"
     dependsOn(buildLlamaRunnerDesktop)
 
-    commandLine(
-        desktopCmakePath,
-        "--build", desktopJniBuildDir.absolutePath,
-        "--config", "Release"
-    )
+    doFirst {
+        commandLine(listOf(
+            desktopCmakePath.get(),
+            "--build", desktopJniBuildDir.absolutePath,
+            "--target",
+        ) + selectedNativeEngines.get().map { "${it}_runner" } + listOf("--config", "Release"))
+    }
 }
 
 val compileLlamaRunnerHardeningTestDesktop by tasks.registering(Exec::class) {
     group = "verification"
     description = "Build native parameter, memory, conversation, and ownership regressions"
     dependsOn(buildLlamaRunnerDesktop)
-    commandLine(
-        desktopCmakePath,
-        "--build", desktopJniBuildDir.absolutePath,
-        "--target", "llama_runner_hardening_test", "llama_chat_history_test", "llama_stream_finalization_test", "llama_fit_memory_test",
-        "--config", "Release",
-    )
+    doFirst {
+        commandLine(
+            desktopCmakePath.get(),
+            "--build", desktopJniBuildDir.absolutePath,
+            "--target", "llama_runner_hardening_test", "llama_chat_history_test", "llama_stream_finalization_test", "llama_fit_memory_test",
+            "--config", "Release",
+        )
+    }
+}
+
+val compileJniUtf8TestDesktop by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Build the deterministic JNI UTF-8 conversion regression"
+    dependsOn(buildLlamaRunnerDesktop)
+    doFirst {
+        commandLine(
+            desktopCmakePath.get(), "--build", desktopJniBuildDir.absolutePath,
+            "--target", "jni_utf8_test", "--config", "Release",
+        )
+    }
+}
+
+val testJniUtf8Desktop by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Run the deterministic JNI UTF-8 conversion regression"
+    dependsOn(compileJniUtf8TestDesktop)
+    doFirst {
+        commandLine(
+            nativeTool("ctest").get(), "--test-dir", desktopJniBuildDir.absolutePath,
+            "--build-config", "Release", "--output-on-failure", "-R", "^jni_utf8_test$",
+        )
+    }
 }
 
 val testLlamaRunnerNativeDesktop by tasks.registering(Exec::class) {
     group = "verification"
     description = "Run native parameter, memory, conversation, and ownership regressions"
     dependsOn(compileLlamaRunnerHardeningTestDesktop)
-    commandLine(
-        findTool("ctest"), "--test-dir", desktopJniBuildDir.absolutePath,
-        "--build-config", "Release", "--output-on-failure",
-        "-R", "^llama_(runner_hardening|chat_history|stream_finalization|fit_memory)_test$",
-    )
+    doFirst {
+        commandLine(
+            nativeTool("ctest").get(), "--test-dir", desktopJniBuildDir.absolutePath,
+            "--build-config", "Release", "--output-on-failure",
+            "-R", "^llama_(runner_hardening|chat_history|stream_finalization|fit_memory)_test$",
+        )
+    }
 }
 
 val diffusionNativeTestTargets = listOf(
@@ -452,44 +509,50 @@ val compileDiffusionRunnerNativeTestsDesktop by tasks.registering(Exec::class) {
     group = "verification"
     description = "Build deterministic stable-diffusion preflight regressions"
     dependsOn(buildLlamaRunnerDesktop)
-    commandLine(
-        listOf(
-            desktopCmakePath,
+    doFirst {
+        commandLine(
+            listOf(
+            desktopCmakePath.get(),
             "--build",
             desktopJniBuildDir.absolutePath,
             "--config",
             "Release",
             "--target",
-        ) + diffusionNativeTestTargets,
-    )
+            ) + diffusionNativeTestTargets,
+        )
+    }
 }
 
 val testDiffusionRunnerNativeDesktop by tasks.registering(Exec::class) {
     group = "verification"
     description = "Run deterministic stable-diffusion preflight regressions"
     dependsOn(compileDiffusionRunnerNativeTestsDesktop)
-    commandLine(
-        findTool("ctest"),
-        "--test-dir",
-        desktopJniBuildDir.absolutePath,
-        "--build-config",
-        "Release",
-        "--output-on-failure",
-        "--tests-regex",
-        "^diffusion_(bundled_components|runtime_backend|max_vram|segmented_compute|context_publication)_test$",
-    )
+    doFirst {
+        commandLine(
+            nativeTool("ctest").get(),
+            "--test-dir",
+            desktopJniBuildDir.absolutePath,
+            "--build-config",
+            "Release",
+            "--output-on-failure",
+            "--tests-regex",
+            "^diffusion_(bundled_components|runtime_backend|max_vram|segmented_compute|context_publication)_test$",
+        )
+    }
 }
 
 val compileArtifactFsDesktop by tasks.registering(Exec::class) {
     group = "llama-native"
     description = "Build the bounded secure artifact filesystem JNI library for desktop ($desktopPlatform)"
     dependsOn(buildLlamaRunnerDesktop)
-    commandLine(
-        desktopCmakePath,
-        "--build", desktopJniBuildDir.absolutePath,
-        "--target", "artifact_fs",
-        "--config", "Release",
-    )
+    doFirst {
+        commandLine(
+            desktopCmakePath.get(),
+            "--build", desktopJniBuildDir.absolutePath,
+            "--target", "artifact_fs",
+            "--config", "Release",
+        )
+    }
 }
 
 val artifactFsDesktopLibraryName = when (desktopPlatform) {
@@ -498,9 +561,9 @@ val artifactFsDesktopLibraryName = when (desktopPlatform) {
     "windows" -> "artifact_fs.dll"
     else -> throw GradleException("Unsupported desktop platform: $desktopPlatform")
 }
-val artifactFsDesktopLibrary = layout.buildDirectory.file(
-    "${CaramlNativeLayout.DESKTOP_SUBDIR}/$desktopPlatform/$artifactFsDesktopLibraryName",
-)
+val artifactFsDesktopLibrary = layout.file(providers.provider {
+    desktopJniBuildDir.resolve(artifactFsDesktopLibraryName)
+})
 
 val verifyArtifactFsDesktopLibrary by tasks.registering {
     group = "verification"
@@ -519,50 +582,58 @@ val compileArtifactFsAndroidRootTestDesktop by tasks.registering(Exec::class) {
     group = "verification"
     description = "Build the Android-safe artifact root regression"
     dependsOn(buildLlamaRunnerDesktop)
-    commandLine(
-        desktopCmakePath,
-        "--build", desktopJniBuildDir.absolutePath,
-        "--target", "artifact_fs_android_root_test",
-        "--config", "Release",
-    )
+    doFirst {
+        commandLine(
+            desktopCmakePath.get(),
+            "--build", desktopJniBuildDir.absolutePath,
+            "--target", "artifact_fs_android_root_test",
+            "--config", "Release",
+        )
+    }
 }
 
 val testArtifactFsAndroidRootDesktop by tasks.registering(Exec::class) {
     group = "verification"
     description = "Run the Android-safe artifact root regression"
     dependsOn(compileArtifactFsAndroidRootTestDesktop)
-    commandLine(
-        findTool("ctest"),
-        "--test-dir", desktopJniBuildDir.absolutePath,
-        "--build-config", "Release",
-        "--output-on-failure",
-        "--tests-regex", "^artifact_fs_android_root_test$",
-    )
+    doFirst {
+        commandLine(
+            nativeTool("ctest").get(),
+            "--test-dir", desktopJniBuildDir.absolutePath,
+            "--build-config", "Release",
+            "--output-on-failure",
+            "--tests-regex", "^artifact_fs_android_root_test$",
+        )
+    }
 }
 
 val compileArtifactFsAppendTestDesktop by tasks.registering(Exec::class) {
     group = "verification"
     description = "Build the secure artifact append regression"
     dependsOn(buildLlamaRunnerDesktop)
-    commandLine(
-        desktopCmakePath,
-        "--build", desktopJniBuildDir.absolutePath,
-        "--target", "artifact_fs_append_test",
-        "--config", "Release",
-    )
+    doFirst {
+        commandLine(
+            desktopCmakePath.get(),
+            "--build", desktopJniBuildDir.absolutePath,
+            "--target", "artifact_fs_append_test",
+            "--config", "Release",
+        )
+    }
 }
 
 val testArtifactFsAppendDesktop by tasks.registering(Exec::class) {
     group = "verification"
     description = "Run the secure artifact append regression"
     dependsOn(compileArtifactFsAppendTestDesktop)
-    commandLine(
-        findTool("ctest"),
-        "--test-dir", desktopJniBuildDir.absolutePath,
-        "--build-config", "Release",
-        "--output-on-failure",
-        "--tests-regex", "^artifact_fs_append_test$",
-    )
+    doFirst {
+        commandLine(
+            nativeTool("ctest").get(),
+            "--test-dir", desktopJniBuildDir.absolutePath,
+            "--build-config", "Release",
+            "--output-on-failure",
+            "--tests-regex", "^artifact_fs_append_test$",
+        )
+    }
 }
 
 // ----------------------------------------------------------------------------
@@ -859,6 +930,12 @@ android {
                 // Required so every .so packaged into the APK supports Android
                 // 16 KB page-size devices (Google Play requirement, 2025-11-01).
                 arguments += "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384"
+                arguments += "-DCARAML_NATIVE_BACKEND=${androidNativeBackend.get()}"
+                arguments += "-DCARAML_ENABLE_LLAMA=${selectedNativeEngines.get().contains("llama").toString().uppercase()}"
+                arguments += "-DCARAML_ENABLE_DIFFUSION=${selectedNativeEngines.get().contains("diffusion").toString().uppercase()}"
+                // CMake already excludes unselected engines. Leave AGP's runtime
+                // inventory intact: artifact_fs and dlopen-only GGML backends
+                // are required even though the runners do not link to them.
             }
         }
     }

@@ -1,6 +1,6 @@
 # nativeEngine
 
-Central native build orchestration module for CaraML. One CMake graph per platform builds **GGML** (from `libraries/llama.cpp`), **llama.cpp**, and **stable-diffusion.cpp**, producing shared or static libraries consumed by `:runner` and `:diffusionRunner`.
+Central native build orchestration module for CaraML. One CMake graph per platform builds **GGML** (from `libraries/llama.cpp`), **llama.cpp**, and **stable-diffusion.cpp**, producing shared or static libraries consumed by `:plugin-llama` and `:plugin-diffusion`.
 
 ---
 
@@ -9,7 +9,7 @@ Central native build orchestration module for CaraML. One CMake graph per platfo
 1. **Prepares a patched copy** of llama.cpp without mutating the pinned submodule (`preparePatchedLlamaSource`)
 2. **Invokes CMake** per platform with the right toolchain and flags
 3. **Merges static libs** for iOS (single `libllama_runner_merged.a` per arch)
-4. **Exports layout constants** (`CaramlNativeLayout`) so `:composeApp` and `:runner` know where to find the built libraries
+4. **Exports layout constants** (`CaramlNativeLayout`) so `:composeApp` and `:plugin-llama` know where to find the built libraries
 
 This module has **no Kotlin source code**. All functionality is in `build.gradle.kts` and CMake files.
 
@@ -23,8 +23,9 @@ nativeEngine/build/
 │   ├── iosArm64/Release/           libllama_runner_merged.a
 │   └── iosSimulatorArm64/Release/  libllama_runner_merged.a
 └── llama-runner-desktop/
-    ├── macos/                       libllama_runner.dylib, libdiffusion_runner.dylib
-    └── linux/                       libllama_runner.so, libdiffusion_runner.so
+    ├── <platform>/                   Default combined profile shared libraries
+    └── <platform>/profiles/
+        └── <engines>-<backend>/      Opt-in non-default profile shared libraries
 
 # Android: output via AGP externalNativeBuild → androidApp APK
 composeApp/src/androidMain/jniLibs/arm64-v8a/
@@ -33,6 +34,14 @@ composeApp/src/androidMain/jniLibs/arm64-v8a/
 ```
 
 If you change these paths, update `:composeApp` linker flags and `java.library.path` accordingly.
+
+The default combined desktop profile keeps its historical output directory. Opt-in engine/backend
+profiles use their own directory so a later compose/package step cannot pick up a runner left by a
+previous profile. CMake also records the selected system, ABI/architecture, engine set and backend
+in its cache and fails if a build directory is reconfigured with a different profile; use a separate
+directory or explicitly remove that build directory's CMake cache to switch it. Target inventory and
+standalone configuration prove graph selection, but package exclusion has not yet been verified in
+an external selected-engine consumer.
 
 ---
 
@@ -132,6 +141,14 @@ Create a **separate** Gradle module + CMake project. Do not add here unless it m
 ---
 
 ## Recent Changes
+
+- Artifact filesystem JNI callers and recovery tests now live in `composeApp`; native entry-point names remain unchanged after removing the legacy Hugging Face Gradle project.
+
+- CMake reads bridge sources from the engine plugins. Android packages artifact filesystem and dynamically loaded GGML CPU backends; Unicode regression checks execute in Release builds.
+
+
+- Native CMake configuration now resolves host tools only when native tasks run, selects llama/diffusion targets explicitly, and accepts reproducible CPU, Vulkan, or Metal profiles instead of inferring accelerators from installed host tools. Diffusion-only desktop builds use the pinned GGML tree without adding llama inference targets.
+- Opt-in desktop engine/backend profiles now have isolated output directories; CMake rejects profile changes that would reuse a cache containing stale runner outputs. Selected package contents remain an external-consumer gate.
 
 - Native hardening tests cover bounded private logging, exact dense-penalty parity and upstream fallback. CTest and platform build evidence, with device inference limits, are recorded in the [validation report](../docs/model-validation/2026-10-08/report.md).
 

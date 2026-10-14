@@ -193,7 +193,7 @@ Verification commands:
 ```bash
 ./gradlew :composeApp:jvmTest --tests '*Recommendation*' --tests '*ModelFitFixture*'
 ./gradlew :composeApp:jvmTest --tests '*RecommendationPerformanceTest*'
-CARAML_NATIVE_PARITY=true ./gradlew :runner:jvmTest :diffusionRunner:jvmTest
+CARAML_NATIVE_PARITY=true ./gradlew :plugin-llama:jvmTest :plugin-diffusion:jvmTest
 ```
 
 The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATION_PERF=true` and the documented bounded `CARAML_BENCHMARK_RUNNER_ID` are supplied on the pinned runner. Ordinary JVM runs report timing but are not release evidence.
@@ -201,6 +201,12 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 ---
 
 ## Recent Changes
+
+- Owns the icon generator at `tools/generate_app_icons.py`; the repository no longer needs a root `scripts/` folder.
+
+- Uses `model-discovery` for the retained Hub API and now owns the former manager's platform downloads, secure artifact filesystem integration and curated diffusion install rules, including their regression tests. Existing packages, JNI symbols and persisted identities are preserved.
+
+- Uses the engine plugins directly; their merged bridge sources preserve existing runner imports and native entry points.
 
 - Model hub search stays fixed across viewport changes to preserve focus and cursor position; title and tabs scroll with results in short viewports.
 
@@ -222,7 +228,7 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 
 - Fixed app bars and composers sample the actual scrolling backdrop and fade continuously into the content. Bottom safe areas now use scroll padding instead of clipping the backdrop above the gesture bar; final actions scroll clear of the glass. Rendered checks cover both edges and touch targets.
 
-- Added shared sticky headers with full-width frosted edges, removed redundant result/file dividers, rebuilt Device info around storage/memory/compute, and corrected the drawer preview crop. SVG action assets now generate one shared icon set (`python3 scripts/generate_app_icons.py`). Layout evidence: `build/reports/layout-qa-2026-10-06/`.
+- Added shared sticky headers with full-width frosted edges, removed redundant result/file dividers, rebuilt Device info around storage/memory/compute, and corrected the drawer preview crop. SVG action assets now generate one shared icon set (`python3 tools/generate_app_icons.py` from this module). Layout evidence: `build/reports/layout-qa-2026-10-06/`.
 
 - Rebalanced typography through shared semantic roles, retaining the bundled fonts while reducing title weight/size and increasing supporting-text readability; local chat and mode-label size overrides now use shared roles. Evidence: `build/reports/typography-qa-2026-10-06/`.
 

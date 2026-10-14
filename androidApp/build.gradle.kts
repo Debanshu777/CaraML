@@ -43,7 +43,7 @@ android {
 }
 
 dependencies {
-    debugImplementation(project(":huggingFaceManager"))
+    debugImplementation(project(":model-discovery"))
     implementation(project(":composeApp"))
     implementation(libs.androidx.activity.compose)
     implementation(project.dependencies.platform(libs.koin.bom))
@@ -54,6 +54,6 @@ dependencies {
     debugImplementation(libs.compose.material3)
     debugImplementation(libs.navigation3.compose.ui)
     debugImplementation(libs.kotlinx.collections.immutable)
-    debugImplementation(project(":runner"))
+    debugImplementation(project(":plugin-llama"))
     debugImplementation(libs.kotlinx.coroutinesCore)
 }

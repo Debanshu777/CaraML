@@ -1,0 +1,169 @@
+# runner
+
+Kotlin Multiplatform wrapper for **llama.cpp** LLM inference. Provides a common `LlamaRunner` interface backed by platform-specific JNI (Android/JVM) and cinterop (iOS) bindings.
+
+---
+
+## Platforms
+
+| Platform | Binding | Native Library |
+|----------|---------|---------------|
+| Android | JNI via `System.loadLibrary("llama_runner")` | `llama_runner.so` (built by `:nativeEngine`) |
+| JVM Desktop | JNI via `System.loadLibrary("llama_runner")` | `libllama_runner.dylib/.so` |
+| iOS arm64 | Kotlin/Native cinterop | `libllama_runner_merged.a` (merged static) |
+| iOS Simulator | Kotlin/Native cinterop | `libllama_runner_merged.a` (sim build) |
+
+---
+
+## Package Structure
+
+```
+com.debanshu777.runner/
+├── LlamaRunner.kt               # expect class — core interface
+├── LlamaRunner.android.kt       # actual: JNI wrapper
+├── LlamaRunner.jvm.kt           # actual: JNI wrapper (same JNI, different lib path)
+├── LlamaRunner.ios.kt           # actual: cinterop wrapper
+├── NativeRunnerConfig.kt        # Inference parameters (threads, GPU layers, context, KV quant)
+├── InferenceState.kt            # IDLE / LOADING / GENERATING / ERROR
+├── StopReason.kt                # EOS / LENGTH / STOP_TOKEN / CANCELLED / ERROR
+├── StructuredOutputGrammar.kt   # GBNF grammar definitions for constrained output
+├── StructuredOutputParser.kt    # Parse grammar from JSON Schema
+├── LlamaRunnerExt.kt            # Extension functions (convenience wrappers)
+└── LlamaRunnerValidation.kt     # Config validation (throws on invalid params)
+```
+
+**C++ Sources:**
+```
+src/commonCpp/
+├── llama_runner_core.h          # C++ class header
+├── llama_runner_core.cpp        # Core llama.cpp wrapper (model load, generate, stop)
+├── llama_runner_jni.cpp         # JNI bridge (Android + JVM)
+└── LlamaRunnerCommon.cmake      # CMake source list (included by :nativeEngine)
+
+src/iosMain/cpp/
+├── llama_runner.h               # C function declarations (for cinterop)
+├── llama_runner.cpp             # C wrapper over llama_runner_core
+└── llama_runner.def             # Kotlin cinterop definition file
+```
+
+---
+
+## Usage
+
+```kotlin
+val config = NativeRunnerConfig(
+    modelPath = "/path/to/model.gguf",
+    contextSize = 4096,
+    threads = 4,
+    gpuLayers = 32,          // 0 = CPU only
+    kvCacheType = "q8_0",    // KV cache quantization
+)
+
+val runner = LlamaRunner()
+
+// Load model
+runner.load(config)
+
+// Streaming generation
+runner.generate(
+    prompt = "<|user|>\nHello<|end|>\n<|assistant|>\n",
+    config = config
+).collect { token ->
+    print(token)  // Flow<String>
+}
+
+// Stop generation
+runner.stop()
+
+// Unload (free VRAM/RAM)
+runner.unload()
+```
+
+---
+
+## NativeRunnerConfig
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `modelPath` | String | Absolute path to `.gguf` file |
+| `contextSize` | Int | Token context window (max sequence length) |
+| `threads` | Int | CPU threads for inference |
+| `gpuLayers` | Int | Layers offloaded to GPU (0 = CPU only) |
+| `kvCacheType` | String | KV cache quant: `"f16"`, `"q8_0"`, `"q4_0"` |
+| `batchSize` | Int | Prompt processing batch size |
+| `useMmap` | Boolean | Memory-map model file |
+| `useMlock` | Boolean | Lock model in RAM (prevent swap) |
+
+`DeviceCapabilities` (in `:composeApp`) builds the appropriate config per platform.
+
+---
+
+## Structured Output
+
+`StructuredOutputGrammar` provides GBNF grammar strings for constrained decoding (JSON, boolean, number, etc.). `StructuredOutputParser` converts JSON Schema to GBNF for arbitrary structured output.
+
+---
+
+## Inference State Machine
+
+```
+IDLE → LOADING → GENERATING → IDLE
+                      ↓
+                   ERROR / CANCELLED
+```
+
+`StopReason` indicates why generation ended: `EOS` (natural end), `LENGTH` (context limit), `STOP_TOKEN` (stop string match), `CANCELLED` (user stopped), `ERROR`.
+
+---
+
+## Building Native Library
+
+The native `.so`/`.a`/`.dylib` is built by `:nativeEngine`, not this module. This module only contains the JNI/cinterop glue that calls into those libraries.
+
+```bash
+# Desktop
+./gradlew :nativeEngine:compileLlamaRunnerDesktop
+
+# iOS arm64
+./gradlew :nativeEngine:mergeLlamaRunnerStaticIosArm64
+```
+
+---
+
+## Recent Changes
+
+- Bridge implementation moved from `runner` into `plugin-llama`; platform package names and native symbols remain compatible. Consumer rules preserve JNI descriptor classes.
+
+
+- JNI now converts Kotlin UTF-16 to standard UTF-8, validates malformed input/NULs, and decodes streamed output across split UTF-8 bytes; the Android consumer rules preserve JNI-reflected config fields and the wrapper floor matches the native engine at API 28. Native `const char*` token output remains NUL-terminated, so embedded NUL bytes cannot be represented as token text.
+
+- Preflight error paths return fresh, empty results without the aggregate assignment that crashes GCC 13; native regression checks cover cleared plan and pool evidence.
+
+- Generation profiling separates sampling, decode submission, synchronization and parsing. Dense repetition penalties preserve pinned sampler selection and history semantics with upstream fallback for unsupported candidate layouts. See the [paired device measurements](../../docs/model-validation/2026-10-08/report.md).
+
+- Native loading/inference diagnostics now record scoped stage outcomes, monotonic timings and bounded upstream reason codes; raw parser/upstream exception text is excluded. See the [multi-architecture validation report](../../docs/model-validation/2026-10-07/report.md).
+
+- Templated generation shares exact prompt/parser parameters and uses llama.cpp reasoning budgets with model delimiters to reserve answer space; context exhaustion takes precedence over the clamped output allowance.
+
+- Native preflight identifies Gemma assistant models that require a target context; chat reports the actual admission reason instead of labeling every temporary failure as memory/thermal pressure.
+
+<!-- Updated at end of each Claude Code session -->
+
+- Parameter audit validates cache types/CPU affinity and load paths, honors partial GPU requests, bounds single-sequence logits, and preserves multi-turn KV and final stream state; [Pixel 9 audit](../../docs/benchmarks/pixel9-minicpm5-2026-09-30/parameter-audit.md)
+- Automatic fitting preserves llama.cpp's `-1` full-offload sentinel, fits the requested context, and reports resolved nonnegative GPU layer counts across preflight/JNI/FFI; Pixel 9 debug chat verified 43 GPU layers and 10.4 tok/s through 1,024 tokens
+- The runner now targets llama.cpp `f46bc30`, supports bounded lazy tensor loading and automatic integrated-GPU load mode, and exposes a sanitized bounded engine version across JNI and iOS
+- Preflight and load use the same exact admitted budget and placement; rebased ownership, bounds, logger, and Vulkan shader-capability patches are applied only to the build-owned source copy
+- Opt-in native parity verifies a digest-pinned tiny GGUF can preflight successfully and a bounded corrupt GGUF fails safely; run `CARAML_NATIVE_PARITY=true ./gradlew :plugin-llama:jvmTest`, while ordinary JVM tests remain fixture- and native-build-free
+- Calibration now uses typed memory-copy/GEMM windows, pre-reserved exact-token cancellation, bounded caller timeouts, and permanent fail-closed operation quarantine if an in-process native probe becomes unresponsive; LLM chunks expose native decode-only timing
+- Bounded llama.cpp preflight now shares a thread-independent stream session lease across prompt, token, and finalization calls, keeps cancellation lock-free, recognizes only exact pinned quantization labels, and releases transient native state on every exit
+- Backend capability records now carry bounded canonical device identity and type so cross-engine aggregation cannot combine different devices merely because their backend kinds match
+- User prompts are admitted before KV/history mutation, reserve response capacity without tail truncation, and return a dedicated context-full result with failure cleanup
+- Native operations now fail through controlled fallbacks when the shared library is unavailable; JNI and iOS C boundaries catch allocation/native exceptions instead of allowing C++ unwinding to terminate the process
+- Structured streaming emits token deltas plus explicit resync flags and distinguishes parser-finalization events from generated tokens for accurate metrics
+- Coroutines use the shared 1.11.0 dependency catalog version across modules
+- Added native delta accessors `getReasoningDelta`/`getContentDelta` (with `\x01` resync sentinel); `structuredChunkFlow` now accumulates O(n) deltas in Kotlin instead of copying full native accumulators per token
+- Added native reasoning/content accessors + `supportsThinking`; new `InferenceChunk` + `generateStructuredChunks`; removed `StructuredOutputGrammar`/`StructuredOutputParser`; `processUserPrompt` no longer takes a grammar
+- GPU layer offloading via `NativeRunnerConfig.gpuLayers`
+- KV cache quantization support (`kvCacheType`)
+- Improved chat template handling in core.cpp
+- Numbered llama.cpp patches are applied to a build-owned source copy by `:nativeEngine`; the pinned submodule remains immutable

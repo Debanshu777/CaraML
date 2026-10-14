@@ -86,9 +86,11 @@ kotlin {
             implementation(libs.koin.compose.viewmodel)
             implementation(libs.androidx.datastore)
             implementation(libs.androidx.datastore.preferences)
-            implementation(project(":huggingFaceManager"))
-            implementation(project(":runner"))
-            implementation(project(":diffusionRunner"))
+            implementation(project(":model-discovery"))
+            implementation(project.dependencies.platform(libs.ktor))
+            implementation(libs.ktor.client.core)
+            implementation(project(":plugin-llama"))
+            implementation(project(":plugin-diffusion"))
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.material3)
@@ -113,10 +115,12 @@ kotlin {
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutinesTest)
             implementation(libs.compose.ui.test)
+            implementation(project.dependencies.platform(libs.ktor))
+            implementation("io.ktor:ktor-client-mock")
+            implementation(libs.okio.fakefilesystem)
         }
         jvmTest.dependencies {
             implementation(project.dependencies.platform(libs.ktor))
-            implementation("io.ktor:ktor-client-mock")
             implementation(libs.ktor.serialization.kotlinx.json)
         }
         jvmMain.dependencies {

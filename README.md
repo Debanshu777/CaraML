@@ -32,10 +32,15 @@ CaraML runs large language models and image generation models entirely on-device
 
 ```
 CaraML/
+├── core-api/            # Experimental neutral SDK contracts
+├── core/                # SDK lifecycle and resource admission
+├── storage/             # Optional SDK storage implementations
+├── model-discovery/     # Provider-neutral discovery + built-in Hugging Face
+├── plugin-llama/        # llama SDK + Kotlin/JNI/cinterop bridge
+├── plugin-diffusion/    # Diffusion SDK + Kotlin/JNI/cinterop bridge
+├── native-runtime/      # Internal SDK native ownership guard
 ├── composeApp/          # Shared Compose UI + MVVM features
-├── runner/              # Kotlin wrapper for llama.cpp (LLM inference)
-├── diffusionRunner/     # Kotlin wrapper for stable-diffusion.cpp
-├── huggingFaceManager/  # HuggingFace API client + download manager
+├── androidApp/          # Android entry point and APK packaging
 ├── nativeEngine/        # CMake build orchestration for all native libs
 ├── libraries/
 │   ├── llama.cpp/       # Git submodule: ggerganov/llama.cpp
@@ -43,6 +48,15 @@ CaraML/
 │   └── patches/         # Applied patches to vendored libraries
 └── iosApp/              # Native iOS Xcode project (SwiftUI wrapper)
 ```
+
+Each engine plugin owns its bridge as ordinary source packages; there are no separate
+`runner` or `diffusionRunner` Gradle projects. The native CMake producer stays shared
+so both engines use one GGML implementation. API contracts, core orchestration,
+optional storage/discovery, and the process-wide native gate retain separate boundaries.
+The former `huggingFaceManager` project is also removed: Hub APIs live in discovery,
+while the existing native storage, background download and curated install integrations
+live in the app. Ten Gradle projects remain. Other providers implement `ModelProvider`
+and optionally `ArtifactSource`; they do not need a separate Gradle project.
 
 See each module's own README for details.
 
@@ -217,6 +231,16 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 
 ## Recent Changes
 
+- Removed the unused root sample/cache folders and moved icon generation into `composeApp/tools/`.
+
+- Consolidated the Hugging Face API into `model-discovery`; kept existing platform download/storage and diffusion install integrations in the app. Updated app/CI dependencies and preserved source/JNI identities, with custom-provider isolation coverage.
+
+- Merged `runner` into `plugin-llama` and `diffusionRunner` into `plugin-diffusion`, including native sources, platform bindings, tests and consumer keep rules; updated app dependencies and CI commands.
+- Fixed scoped HTTP streaming, redirect credentials, failed-load ownership, concurrent shutdown, closed-stage cleanup, Android runtime library packaging and Release Unicode checks. [Corrective evidence](docs/sdk/implementation-evidence.md#corrective-implementation--2026-10-14) separates these checks from pending release acceptance.
+
+
+- Started the [generic SDK extraction](architecture-plan.md): experimental core, discovery and storage modules, SDK-only verification, optional engine adapters and native feasibility hardening. [Evidence and remaining gates](docs/sdk/implementation-evidence.md) distinguish prototypes from release acceptance; CaraML migration is not complete.
+
 - CI fixes preserve model-search focus across viewport changes and avoid a GCC 13 compiler crash in native preflight error handling.
 
 - Xcode’s Kotlin framework build phase locates JDK 21 and Homebrew native tools directly; no separate build helper script is required.
@@ -237,7 +261,7 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 
 - Fixed app bars and composers sample the actual scrolling backdrop and fade continuously into the content. Bottom safe areas now use scroll padding instead of clipping the backdrop above the gesture bar; final actions scroll clear of the glass. Rendered checks cover both edges and touch targets.
 
-- Added shared sticky headers with full-width frosted edges, removed redundant result/file dividers, rebuilt Device info around storage/memory/compute, and corrected the drawer preview crop. SVG action assets now generate one shared icon set (`python3 scripts/generate_app_icons.py`). Layout evidence: `composeApp/build/reports/layout-qa-2026-10-06/`.
+- Added shared sticky headers with full-width frosted edges, removed redundant result/file dividers, rebuilt Device info around storage/memory/compute, and corrected the drawer preview crop. SVG action assets now generate one shared icon set (`python3 composeApp/tools/generate_app_icons.py`). Layout evidence: `composeApp/build/reports/layout-qa-2026-10-06/`.
 
 - Rebalanced the shared typography hierarchy: calmer 24sp page titles, 18sp item titles, readable 14sp descriptions, and consistent chat/Settings roles. Typography before/after evidence is under `composeApp/build/reports/typography-qa-2026-10-06/`.
 
