@@ -56,7 +56,19 @@ class AssessedPlan internal constructor(
     }
 }
 
-/** Builder-created, immutable facade over the host's selected engine providers and stores. */
+/**
+ * Builder-created facade over the host's selected engine providers and artifact access.
+ * Building a client performs no I/O. The host supplies configuration, artifacts and resource
+ * readings; application preferences, dependency injection and scheduling remain host concerns.
+ *
+ * The client owns its assessed plans and sessions. Closing it awaits their cleanup without
+ * closing the supplied providers, artifact access or resource source. Capacity arbitration is
+ * shared within one linked core runtime, not across independent SDK copies or classloaders.
+ *
+ * If native teardown fails, unresolved native ownership, the artifact lease and admission
+ * reservations remain quarantined for the process lifetime. Retrying close reports the failure;
+ * it does not make that capacity reusable. A recovery API is not currently provided.
+ */
 @OptIn(ExperimentalCaraMLApi::class)
 class InferenceClient private constructor(
     providers: List<EngineProvider>,

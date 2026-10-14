@@ -9,7 +9,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 option(CARAML_ENABLE_LLAMA "Build the llama inference engine" ON)
 option(CARAML_ENABLE_DIFFUSION "Build the diffusion inference engine" ON)
 
-set(CARAML_NATIVE_BACKEND "cpu" CACHE STRING "Android backend profile: cpu or vulkan")
+set(_CARAML_DEFAULT_BACKEND "cpu")
+if(CARAML_ENABLE_LLAMA)
+    set(_CARAML_DEFAULT_BACKEND "vulkan")
+endif()
+set(CARAML_NATIVE_BACKEND "${_CARAML_DEFAULT_BACKEND}" CACHE STRING "Android backend profile: cpu or vulkan")
 set_property(CACHE CARAML_NATIVE_BACKEND PROPERTY STRINGS cpu vulkan)
 if(NOT CARAML_NATIVE_BACKEND STREQUAL "cpu" AND NOT CARAML_NATIVE_BACKEND STREQUAL "vulkan")
     message(FATAL_ERROR "Android CARAML_NATIVE_BACKEND must be cpu or vulkan")
@@ -37,11 +41,8 @@ if(DEFINED ANDROID_ABI)
         set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
     endif()
 
-    if(CARAML_NATIVE_BACKEND STREQUAL "vulkan")
-        if(NOT ANDROID_ABI STREQUAL "arm64-v8a")
-            message(FATAL_ERROR "The Android Vulkan profile supports arm64-v8a only")
-        endif()
-        # Vulkan is opt-in. Its tool and host headers must exist for this profile.
+    if(CARAML_NATIVE_BACKEND STREQUAL "vulkan" AND ANDROID_ABI STREQUAL "arm64-v8a")
+        # Vulkan tools and host headers are required for the arm64 llama profile.
         if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
             set(_NDK_HOST "darwin-x86_64")
         elseif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
@@ -89,9 +90,19 @@ if(DEFINED ANDROID_ABI)
             else()
                 # Linux: apt install libvulkan-dev spirv-headers
                 foreach(_sys_prefix "/usr" "/usr/local")
-                    if(EXISTS "${_sys_prefix}/include/vulkan/vulkan.hpp")
-                        include_directories("${_sys_prefix}/include")
-                        message(STATUS "Vulkan/SPIRV C++ headers: ${_sys_prefix}/include")
+                    if(EXISTS "${_sys_prefix}/include/vulkan/vulkan.hpp" AND
+                       EXISTS "${_sys_prefix}/include/spirv/unified1/spirv.hpp")
+                        # Never add host /usr/include to an Android cross-build:
+                        # glibc headers would shadow the NDK's Bionic headers.
+                        set(_ANDROID_VULKAN_HEADERS "${CMAKE_CURRENT_BINARY_DIR}/vulkan-host-headers")
+                        file(MAKE_DIRECTORY "${_ANDROID_VULKAN_HEADERS}")
+                        file(COPY "${_sys_prefix}/include/vulkan" "${_sys_prefix}/include/spirv"
+                             DESTINATION "${_ANDROID_VULKAN_HEADERS}")
+                        if(EXISTS "${_sys_prefix}/include/vk_video")
+                            file(COPY "${_sys_prefix}/include/vk_video" DESTINATION "${_ANDROID_VULKAN_HEADERS}")
+                        endif()
+                        include_directories("${_ANDROID_VULKAN_HEADERS}")
+                        message(STATUS "Vulkan/SPIRV C++ headers: ${_ANDROID_VULKAN_HEADERS}")
                         set(_VULKAN_HPP_FOUND TRUE)
                         set(_SPIRV_HPP_FOUND TRUE)
                         break()
@@ -115,6 +126,10 @@ if(DEFINED ANDROID_ABI)
             message(FATAL_ERROR "Selected Vulkan profile requires NDK glslc at ${_NDK_GLSLC}")
         endif()
         set(GGML_VULKAN ON CACHE BOOL "" FORCE)
+    elseif(CARAML_NATIVE_BACKEND STREQUAL "vulkan")
+        # Keep the emulator ABI in universal APKs without enabling an untested
+        # Vulkan backend there. arm64 devices still receive the GPU module.
+        message(STATUS "Android ${ANDROID_ABI}: retaining CPU backend in the Vulkan profile")
     endif()
 endif()
 

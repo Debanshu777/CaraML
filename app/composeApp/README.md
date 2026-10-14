@@ -202,6 +202,16 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 
 ## Recent Changes
 
+- Android keeps diffusion on CPU even when the shared native registry exposes llama Vulkan; desktop and iOS retain their engine policies.
+
+- Per-layer signed/unsigned GGUF head-count arrays preserve validated architecture/context without fabricating a uniform transformer shape. Known architectures can use exclusive verified Vulkan on unified memory after exact native footprint checks; CPU-only and unknown architectures keep the CPU fallback.
+
+- Device validation covers production download publication, pinned artifact verification, model admission/load, streamed text, cancellation and reload for five LLM families. Remaining observations include answer-quality limits, the chat picker's three-file inventory limit and unresolved Android network-change/native warnings.
+
+- A real chat Stop check exposed native finalization retaining `NONE` after coroutine cancellation; the shared bridge now settles that pending cancellation as `CANCELLED`.
+
+- Removed references to retired reports; SDK boundaries and current validation limits are documented in the [root README](../../README.md#sdk-boundaries-and-ownership).
+
 - Moved legacy manager packages into `core.download.transfer` and `core.download.diffusion`; updated all imports and generated resource accessors.
 
 - Moved under `app/` as `:app:composeApp`. Desktop startup, hot reload and distribution tasks now belong to `:app:desktopApp`; shared platform implementations and tests remain here. The `ComposeApp` framework name stays stable.
@@ -214,9 +224,9 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 
 - Model hub search stays fixed across viewport changes to preserve focus and cursor position; title and tabs scroll with results in short viewports.
 
-- Installed text loading reuses an operation-local verified artifact only when the complete catalog snapshot matches, retaining fresh final load verification. Verified unsupported containers receive GGUF guidance; paused verification can resume, and startup reconciliation fairly repairs stale download rows only after exact published-artifact proof. See the [validation and performance report](../../docs/model-validation/2026-10-08/report.md).
+- Installed text loading reuses an operation-local verified artifact only when the complete catalog snapshot matches, retaining fresh final load verification. Verified unsupported containers receive GGUF guidance; paused verification can resume, and startup reconciliation fairly repairs stale download rows only after exact published-artifact proof.
 
-- GGUF evidence honors explicit key dimensions and omitted KV-head defaults; loading, generation and transfer failures emit static reasons and timings without model text or paths. The debug matrix uses exact published identities and preserves user settings. See the [validation report](../../docs/model-validation/2026-10-07/report.md).
+- GGUF evidence honors explicit key dimensions and omitted KV-head defaults; loading, generation and transfer failures emit static reasons and timings without model text or paths. The debug matrix uses exact published identities and preserves user settings.
 
 - Move creation modes into separate drawer destinations, preserve the chosen mode across restoration, and restore separate model and Send/Stop controls.
 
@@ -224,7 +234,7 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 
 - Native preflight identifies Gemma assistant models that require a target context; chat reports the actual admission reason instead of labeling every temporary failure as memory/thermal pressure.
 
-- Installed GGUF models with incomplete app metadata now use a bounded CPU plan and native model/memory preflight, retaining exact artifact verification and load recovery.
+- Installed GGUF models with incomplete app metadata use bounded native model/memory preflight, retaining exact artifact verification and load recovery. Known architectures can use verified unified-memory Vulkan; unknown or CPU-only architectures retain CPU loading.
 
 - Persistent rail/sidebar navigation now paints through the landscape leading safe area while keeping controls and route content at their prior safe positions.
 
@@ -247,8 +257,6 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 - Model Hub uses flat model rows, inline filters and queue controls, a dedicated device panel, and recoverable search/library/download states; memory estimates remain distinct from unverified compatibility.
 - Create follows the approved mobile layout with an inline empty composer; conversations show sender identity, real generation phases, and recovery actions. Keyboard resizing and large-text drafts preserve reachable controls and visible replies.
 - Appearance settings persist Keep things still and Soft glass. The character currently uses shared Compose; authored Rive playback remains pending a `.riv` asset and platform adapters.
-- [Implementation plan](../../docs/superpowers/plans/2026-10-05-pocket-pal-brand.md) and [Rive asset contract](../../docs/brand/rive-character-contract.md).
-- [Pixel fidelity audit](../../docs/brand/pixel-fidelity-audit.md) records actual model loading/chat/search/device/library checks separately from labelled debug states and JVM renders.
 
 - Xcode’s Kotlin framework build phase locates JDK 21 and Homebrew native tools directly; no separate build helper script is required.
 
@@ -262,7 +270,6 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 - Generated-media stores coordinate per cache root across the process, protect every active session, evict expired/LRU abandoned sessions, and enforce one aggregate 1 GiB write limit
 - Native admission carries the selected plan through load; diffusion fitting is disabled, while LLM plans without an explicit GPU-layer count permit native fitting at the admitted context
 - Low-risk September engine policy enables bounded llama lazy loading and trusted discrete-GPU diffusion segmentation/prefetch, while unknown native failures fail closed without an untyped OOM retry
-- Expanded the documented [CaraML Prism design system](../../docs/caraml-design-system.md) with information hierarchy, progressive disclosure, consistent rounded surfaces, compact reflow, and data-heavy toolbar guidance
 - Artifact now puts device-fit and download decisions ahead of collapsed technical metadata, with rounded focal/file surfaces and 360–412dp production previews including 200% text
 - Model Hub now uses one flat compact registry hierarchy, while Details integrates model identity into the route canvas and preserves exact durable artifact controls without sacrificing compact or large-text reachability
 - Android uses UIDT/foreground WorkManager notifications, iOS reconnects to a stable background URLSession, and Desktop recovers persisted download checkpoints at startup

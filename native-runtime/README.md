@@ -11,9 +11,12 @@ capacity limit alone cannot protect those cross-engine globals.
 
 The guard covers one linked Kotlin runtime. Legacy direct runner calls and multiple
 JVM classloaders are not coordinated; coexistence with other native SDKs still needs
-the lower-level binary and runtime work in the architecture plan.
+native ownership coordination, isolated binary/export identities and restricted
+backend discovery. Those guarantees are not supplied by this Kotlin gate.
 
 ## Recent Changes
+
+- Documented native ownership and coexistence limits directly, without relying on a separate plan.
 
 - Standardized runtime ownership declarations and tests on `com.debanshu777.caraml.sdk.runtime`.
 

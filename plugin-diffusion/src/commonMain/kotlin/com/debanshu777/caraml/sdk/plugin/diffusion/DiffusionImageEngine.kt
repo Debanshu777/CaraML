@@ -185,8 +185,14 @@ private class RunnerRuntime(private val runner: DiffusionRunner) : DiffusionRunt
 }
 
 /**
- * Optional image engine implementation. The output sink is borrowed and must
- * be safe to use for the lifetime of each generated operation.
+ * Image engine adapter for one local model file and one PNG output per operation.
+ * Multi-file model bundles and video generation are not exposed by this SDK adapter.
+ * Resource estimates are admission inputs, not measured device memory guarantees.
+ *
+ * The output sink is borrowed and must remain usable for each operation's lifetime.
+ * A committed output belongs to the sink even if cancellation races with publication;
+ * the host must retain a way to find it by operation ID. Native sessions share
+ * [NativeRuntimeGate] and retain ownership if teardown cannot be confirmed.
  */
 class DiffusionEngineProvider internal constructor(
     private val outputSink: GeneratedOutputSink,

@@ -4,9 +4,13 @@ Optional Kotlin Multiplatform implementations of the neutral catalog, task, and 
 
 The module provides an in-memory reference implementation and an injectable Okio file-backed artifact store. The file store uses opaque hashed names, bounded staged writes, SHA-256 and size validation, atomic final publication, generation-fenced writes, immutable committed content, and leases that prevent removal while open. It returns a `LocalFile` location suitable for local inference engines when supplied the host's system filesystem. Filesystem work defaults to `Dispatchers.IO` and can use an injected dispatcher for host control and testing.
 
-The file store's maps and locks are scoped to one instance. Its root must be a dedicated directory exclusively controlled by the host; external mutation can invalidate file and lease guarantees. It rejects simultaneous staged writers for an artifact within that instance, but it does not coordinate with another instance/process and does not recover orphaned staging files after restart. If cancellation races with a commit after the atomic move, the artifact may be committed without returning a lease; callers can reacquire it by reference. It must not be presented as process-safe or as durable download recovery. Database task persistence/migration, crash reconciliation, backup/restore, platform import, and external consumer verification remain release gates in `evalutaion.md`. A task store and artifact store supplied independently cannot guarantee an atomic cross-store commit; callers requiring production recovery must provide a coordinated implementation or a stronger transaction contract.
+The file store's maps and locks are scoped to one instance. Its root must be a dedicated directory exclusively controlled by the host; external mutation can invalidate file and lease guarantees. It rejects simultaneous staged writers for an artifact within that instance, but it does not coordinate with another instance/process and does not recover orphaned staging files after restart. If cancellation races with a commit after the atomic move, the artifact may be committed without returning a lease; callers can reacquire it by reference.
+
+Database task persistence/migration, crash reconciliation, backup/restore, platform import and external consumer verification remain unfinished release requirements. A task store and artifact store supplied independently cannot guarantee an atomic cross-store commit; callers requiring production recovery must provide a coordinated implementation or a stronger transaction contract. See [current SDK limits](../README.md#current-sdk-limits).
 
 ## Recent Changes
+
+- Made persistence and recovery limits self-contained and documented the file store's exclusive-root requirement in KDoc.
 
 - Standardized storage implementation and tests on `com.debanshu777.caraml.sdk.storage`.
 

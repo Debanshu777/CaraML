@@ -147,6 +147,12 @@ void upstream_diagnostics_are_classified_bounded_and_private() {
     llama_log_get(&callback, &user_data);
     expect(callback != nullptr, "safe upstream logger was not installed");
     diagnostic_messages.clear();
+    // CONT has a larger enum value than ERROR, but model-load progress dots
+    // are informational. They must not exhaust the warning/error budget.
+    for (int index = 0; index < 32; ++index) {
+        callback(GGML_LOG_LEVEL_CONT, ".", user_data);
+    }
+    expect(diagnostic_messages.empty(), "upstream progress was reported as an error");
     callback(GGML_LOG_LEVEL_WARN,
         "FaIlEd To OpEn /private/sentinel-path prompt=sentinel-prompt template=sentinel-template", user_data);
     for (int index = 0; index < 32; ++index) {

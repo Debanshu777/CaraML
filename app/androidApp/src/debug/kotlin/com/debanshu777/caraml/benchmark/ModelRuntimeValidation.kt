@@ -480,16 +480,26 @@ class ModelRuntimeValidation : Instrumentation() {
             val started = SystemClock.elapsedRealtime()
             val content = StringBuilder(); val reasoning = StringBuilder()
             var tokens = 0; var first = -1L
-            inference.generateResponse(prompt).collect { chunk ->
-                if (chunk.contentResync) content.clear()
-                if (chunk.reasoningResync) reasoning.clear()
-                content.append(chunk.contentDelta); reasoning.append(chunk.reasoningDelta)
-                if (chunk.isTokenEvent) {
-                    tokens++
-                    if (first < 0) { first = SystemClock.elapsedRealtime() - started; report(id, "first_token", "turn" to turn, "elapsedMs" to first) }
-                    if (tokens == cancelAt || tokens == 512) inference.cancelGeneration()
+            coroutineScope {
+                val collector = launch {
+                    inference.generateResponse(prompt).collect { chunk ->
+                        if (chunk.contentResync) content.clear()
+                        if (chunk.reasoningResync) reasoning.clear()
+                        content.append(chunk.contentDelta); reasoning.append(chunk.reasoningDelta)
+                        if (chunk.isTokenEvent) {
+                            tokens++
+                            if (first < 0) { first = SystemClock.elapsedRealtime() - started; report(id, "first_token", "turn" to turn, "elapsedMs" to first) }
+                            if (tokens == cancelAt) {
+                                // Match ChatViewModel's Stop path: signal native, then
+                                // cancel the collector instead of waiting for nextToken.
+                                inference.cancelGeneration()
+                                currentCoroutineContext().cancel()
+                            } else if (tokens == 512) inference.cancelGeneration()
+                        }
+                        check(content.length + reasoning.length <= 262_144)
+                    }
                 }
-                check(content.length + reasoning.length <= 262_144)
+                collector.join()
             }
             Turn(content.toString(), reasoning.toString(), tokens, SystemClock.elapsedRealtime() - started, first)
         }

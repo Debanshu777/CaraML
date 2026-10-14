@@ -6,6 +6,8 @@ The default arbiter shares loaded-engine capacity and resource reservations acro
 
 ## Recent Changes
 
+- Documented host resource ownership, shared-runtime scope and failed-teardown quarantine in `InferenceClient` KDoc.
+
 - Standardized lifecycle implementation and tests on `com.debanshu777.caraml.sdk.core`.
 
 - Failed partial loads retain native ownership, artifacts and admission capacity. Concurrent/repeated client and session shutdown calls await cleanup and report the same failure outcome.

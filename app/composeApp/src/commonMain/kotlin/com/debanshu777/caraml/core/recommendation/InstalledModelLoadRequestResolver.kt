@@ -2,6 +2,8 @@ package com.debanshu777.caraml.core.recommendation
 
 import com.debanshu777.caraml.core.data.settings.SettingsRepository
 import com.debanshu777.caraml.core.platform.BackendKind
+import com.debanshu777.caraml.core.platform.BackendStatus
+import com.debanshu777.caraml.core.platform.MemoryTopology
 import com.debanshu777.caraml.core.platform.DeviceSnapshot
 import com.debanshu777.caraml.core.platform.HardwareProfile
 import com.debanshu777.caraml.core.settings.AppSettings
@@ -76,6 +78,7 @@ class InstalledModelLoadRequestResolver internal constructor(
         ModelAssessment,
         PersonalizedRecommendation,
     ) -> LoadRequestResolution,
+    private val cpuOnlyDiffusion: Boolean = platformRequiresCpuDiffusion(),
 ) : InstalledModelLoadResolver {
     constructor(
         componentRepository: ComponentRepository,
@@ -235,7 +238,8 @@ class InstalledModelLoadRequestResolver internal constructor(
         }
         val cpuRequired =
             !settings.useGpu ||
-            descriptor is LlmModelDescriptor && descriptor.architecture.requiresCpuOnlyLlmExecution()
+            descriptor is LlmModelDescriptor && descriptor.architecture.requiresCpuOnlyLlmExecution() ||
+            descriptor is DiffusionModelDescriptor && cpuOnlyDiffusion
         val assessmentSnapshot = if (cpuRequired) {
             capturedSnapshot.cpuOnly()
         } else {
@@ -395,6 +399,13 @@ class InstalledModelLoadRequestResolver internal constructor(
         val workload = workloadFactory.create(descriptor, GenerationMode.Text, settings) as? LlmWorkloadConfig
             ?: return InstalledModelLoadResolution.NotAdmissible(AssessmentReason.INVALID_WORKLOAD)
         val cache = workload.kvCacheSelection as? KvCacheSelection.Explicit
+        val useVulkan = settings.useGpu && descriptor.architecture != null &&
+            !descriptor.architecture.requiresCpuOnlyLlmExecution() &&
+            snapshot.hardwareProfile.memoryTopology == MemoryTopology.UNIFIED &&
+            snapshot.hardwareProfile.backends.filter { it.kind != BackendKind.CPU &&
+                it.status == BackendStatus.AVAILABLE }.singleOrNull()?.let {
+                it.kind == BackendKind.VULKAN && it.availabilityConfidence == Confidence.HIGH
+            } == true
         val plan = LlmRunPlan(
             contextTokens = workload.contextTokens,
             batchSize = workload.batchSize,
@@ -402,9 +413,9 @@ class InstalledModelLoadRequestResolver internal constructor(
             sequenceCount = 1,
             keyCacheType = cache?.keyType ?: KvCacheType.F16,
             valueCacheType = cache?.valueType ?: KvCacheType.F16,
-            backend = BackendKind.CPU,
+            backend = if (useVulkan) BackendKind.VULKAN else BackendKind.CPU,
             memoryTopology = snapshot.hardwareProfile.memoryTopology,
-            gpuLayerCount = 0,
+            gpuLayerCount = if (useVulkan) null else 0,
             compromises = emptyList(),
         )
         val observation = ObservationModelIdentity.fromDescriptor(descriptor)

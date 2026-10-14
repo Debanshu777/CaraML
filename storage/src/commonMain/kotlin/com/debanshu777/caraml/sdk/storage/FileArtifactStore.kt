@@ -32,6 +32,11 @@ import okio.use
  * Artifact and task IDs are hashed before they become path components. Staging metadata and
  * writer fences are process-local: this implementation does not recover orphaned stages after a
  * process restart and does not coordinate with other store instances or processes.
+ *
+ * The host must dedicate and exclusively control the root; external mutation can invalidate
+ * file and lease guarantees. Atomic file publication does not make task records durable or
+ * provide an atomic commit with an independently supplied task store. Hosts requiring download
+ * recovery across process death must provide coordinated persistence and reconciliation.
  */
 @OptIn(ExperimentalCaraMLApi::class)
 class FileArtifactStore(

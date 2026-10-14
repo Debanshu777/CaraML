@@ -125,7 +125,15 @@ data class LlamaRequest(
     }
 }
 
-/** Local GGUF adapter. It has no dependency on discovery, storage, UI, or preferences. */
+/**
+ * Local GGUF adapter with no dependency on discovery, storage, UI or preferences.
+ * The host packages the matching native binaries and supplies an [ArtifactLocation.LocalFile]
+ * lease. Native initialization is deferred until preflight or load.
+ *
+ * Loaded sessions retain native conversation state; context repair and resumable turns after
+ * process death are not provided. Preflight and loaded sessions use [NativeRuntimeGate], so
+ * callers must follow the SDK lifecycle rather than mix it with direct runner operations.
+ */
 @ExperimentalCaraMLApi
 class LlamaPlugin private constructor(
     private val nativeLibraryDirectory: String,

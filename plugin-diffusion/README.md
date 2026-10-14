@@ -16,7 +16,7 @@ symbols, iOS cinterop and consumer keep rules use the same package hierarchy. Se
 
 - Standardized adapter and bridge packages under `com.debanshu777.caraml.sdk.plugin.diffusion`; updated JNI symbols, metadata lookup, cinterop and shrinker rules together.
 
-- Validated Android arm64 packaging, iOS device/simulator compilation, and opt-in desktop JNI fixtures with CheckJNI; see [corrective evidence](../docs/sdk/implementation-evidence.md#corrective-implementation--2026-10-14).
+- Documented single-model/image scope and output ownership in KDoc; [verification status](../README.md#verification-status) records the scope of platform and JNI checks.
 
 - Absorbed the former `diffusionRunner` Gradle module, including Android keep rules and iOS bindings; native parity runs through `plugin-diffusion`.
 - Preserve the runtime-backend enum descriptor through R8 and retain partial-load ownership when native release fails.

@@ -132,16 +132,16 @@ The native `.so`/`.a`/`.dylib` is built by `:nativeEngine`, not this module. Thi
 
 ## Recent Changes
 
-- Bridge implementation moved from `runner` into `plugin-llama`; platform package names and native symbols remain compatible. Consumer rules preserve JNI descriptor classes.
+- Bridge implementation moved from `runner` into `plugin-llama`; Kotlin packages, JNI symbols and cinterop bindings now use `com.debanshu777.caraml.sdk.plugin.llama.bridge`. Rebuild Kotlin and native binaries together. Consumer rules preserve JNI descriptor classes.
 
 
 - JNI now converts Kotlin UTF-16 to standard UTF-8, validates malformed input/NULs, and decodes streamed output across split UTF-8 bytes; the Android consumer rules preserve JNI-reflected config fields and the wrapper floor matches the native engine at API 28. Native `const char*` token output remains NUL-terminated, so embedded NUL bytes cannot be represented as token text.
 
 - Preflight error paths return fresh, empty results without the aggregate assignment that crashes GCC 13; native regression checks cover cleared plan and pool evidence.
 
-- Generation profiling separates sampling, decode submission, synchronization and parsing. Dense repetition penalties preserve pinned sampler selection and history semantics with upstream fallback for unsupported candidate layouts. See the [paired device measurements](../../docs/model-validation/2026-10-08/report.md).
+- Generation profiling separates sampling, decode submission, synchronization and parsing. Dense repetition penalties preserve pinned sampler selection and history semantics with upstream fallback for unsupported candidate layouts.
 
-- Native loading/inference diagnostics now record scoped stage outcomes, monotonic timings and bounded upstream reason codes; raw parser/upstream exception text is excluded. See the [multi-architecture validation report](../../docs/model-validation/2026-10-07/report.md).
+- Native loading/inference diagnostics now record scoped stage outcomes, monotonic timings and bounded upstream reason codes; raw parser/upstream exception text is excluded.
 
 - Templated generation shares exact prompt/parser parameters and uses llama.cpp reasoning budgets with model delimiters to reserve answer space; context exhaustion takes precedence over the clamped output allowance.
 
@@ -149,7 +149,7 @@ The native `.so`/`.a`/`.dylib` is built by `:nativeEngine`, not this module. Thi
 
 <!-- Updated at end of each Claude Code session -->
 
-- Parameter audit validates cache types/CPU affinity and load paths, honors partial GPU requests, bounds single-sequence logits, and preserves multi-turn KV and final stream state; [Pixel 9 audit](../../docs/benchmarks/pixel9-minicpm5-2026-09-30/parameter-audit.md)
+- Parameter audit validates cache types/CPU affinity and load paths, honors partial GPU requests, bounds single-sequence logits, and preserves multi-turn KV and final stream state.
 - Automatic fitting preserves llama.cpp's `-1` full-offload sentinel, fits the requested context, and reports resolved nonnegative GPU layer counts across preflight/JNI/FFI; Pixel 9 debug chat verified 43 GPU layers and 10.4 tok/s through 1,024 tokens
 - The runner now targets llama.cpp `f46bc30`, supports bounded lazy tensor loading and automatic integrated-GPU load mode, and exposes a sanitized bounded engine version across JNI and iOS
 - Preflight and load use the same exact admitted budget and placement; rebased ownership, bounds, logger, and Vulkan shader-capability patches are applied only to the build-owned source copy

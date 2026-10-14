@@ -72,6 +72,7 @@ class GgufMetadataInspector(
             val numericCandidates = mutableMapOf<String, Long?>()
             val duplicateNumericCandidates = mutableSetOf<String>()
             val unsupportedShapeCandidates = mutableSetOf<String>()
+            val perLayerShapeCandidates = mutableSetOf<String>()
             repeat(metadataCount.toInt()) {
                 val key = reader.readString(MAX_KEY_BYTES) ?: return rejectHeader(reader.rejection ?: GgufHeaderRejection.MALFORMED_HEADER)
                 val type = reader.readUnsignedIntLe()?.toInt() ?: return rejectHeader(reader.rejection ?: GgufHeaderRejection.MALFORMED_HEADER)
@@ -86,6 +87,10 @@ class GgufMetadataInspector(
                     if (numericCandidates.containsKey(key)) duplicateNumericCandidates += key
                     numericCandidates[key] = if (type == GGUF_TYPE_UINT32 || type == GGUF_TYPE_UINT64) {
                         reader.readUnsignedMetadata(type) ?: return rejectHeader(reader.rejection ?: GgufHeaderRejection.NUMERIC_BOUNDS)
+                    } else if (type == 9 && key.endsWithAnyHeadCount()) {
+                        if (!reader.skipIntegerShapeArray(MAX_TRANSFORMER_FIELD)) return rejectHeader(GgufHeaderRejection.UNSUPPORTED_SHAPE_ENCODING)
+                        perLayerShapeCandidates += key
+                        null
                     } else {
                         if (!reader.skipValue(type)) return rejectHeader(reader.rejection ?: GgufHeaderRejection.MALFORMED_HEADER)
                         unsupportedShapeCandidates += key
@@ -101,6 +106,7 @@ class GgufMetadataInspector(
                 val key = "$exactArchitecture$suffix"
                 if (key in duplicateNumericCandidates) return rejectHeader(GgufHeaderRejection.DUPLICATE_KEY)
                 if (key in unsupportedShapeCandidates) return rejectHeader(GgufHeaderRejection.UNSUPPORTED_SHAPE_ENCODING)
+                if (key in perLayerShapeCandidates) return@forEach
                 if (numericCandidates.containsKey(key)) {
                     val value = numericCandidates[key]
                         ?.takeIf { it in 1..MAX_TRANSFORMER_FIELD }
@@ -109,7 +115,7 @@ class GgufMetadataInspector(
                     numericMetadata[key] = value
                 }
             }
-            metadata(version, exactArchitecture, numericMetadata)
+            metadata(version, exactArchitecture, numericMetadata, NUMERIC_SUFFIXES.any { "$exactArchitecture$it" in perLayerShapeCandidates })
         }
     } catch (_: Exception) {
         rejectHeader(GgufHeaderRejection.READ_UNAVAILABLE)
@@ -166,6 +172,9 @@ class GgufMetadataInspector(
         )
     }
 
+    private fun String.endsWithAnyHeadCount(): Boolean =
+        endsWith(ATTENTION_HEAD_COUNT_SUFFIX) || endsWith(ATTENTION_HEAD_COUNT_KV_SUFFIX)
+
     private fun isSafeArchitecture(value: String): Boolean =
         value.isNotEmpty() && value.length <= MAX_ARCHITECTURE_BYTES &&
             value.all { it.isLetterOrDigit() || it == '_' || it == '-' || it == '.' }
@@ -174,11 +183,18 @@ class GgufMetadataInspector(
         version: Int,
         architecture: String,
         numericMetadata: Map<String, Int>,
+        perLayerShape: Boolean = false,
     ): GgufLocalMetadata? {
         fun value(suffix: String): Int? = numericMetadata["$architecture$suffix"]
         val contextLimit = value(CONTEXT_LENGTH_SUFFIX)
             ?.takeIf { it <= DescriptorLimits.MAX_CONTEXT_TOKENS }
             ?: if (numericMetadata.containsKey("$architecture$CONTEXT_LENGTH_SUFFIX")) return rejectHeader(GgufHeaderRejection.NUMERIC_BOUNDS) else null
+        if (perLayerShape) {
+            // Hybrid models may have different head counts per layer. Preserve
+            // verified identity/context, but require native footprint probing.
+            AppLogger.i("ModelLoad") { "stage=gguf-shape outcome=PER_LAYER_NATIVE_REQUIRED" }
+            return GgufLocalMetadata(version, architecture, contextLimit, null)
+        }
         val hiddenSize = value(EMBEDDING_LENGTH_SUFFIX)
         val attentionHeads = value(ATTENTION_HEAD_COUNT_SUFFIX)
         val explicitHeadDim = value(ATTENTION_KEY_LENGTH_SUFFIX)
@@ -330,6 +346,21 @@ private class BoundedGgufReader(
     private fun skipString(): Boolean {
         val byteCount = readNonNegativeLongLe() ?: return false
         return skip(byteCount)
+    }
+
+    fun skipIntegerShapeArray(maxElement: Long): Boolean {
+        val elementType = readUnsignedIntLe()?.toInt() ?: return false
+        if (elementType !in setOf(4, 5, 10, 11)) return false
+        val count = readNonNegativeLongLe() ?: return false
+        if (count !in 1..MAX_ARRAY_ELEMENTS) return false
+        return repeatSafely(count) {
+            val value = when (elementType) {
+                5 -> take(Int.SIZE_BYTES.toLong()) { source.readIntLe().toLong() }
+                11 -> readNonNegativeLongLe()
+                else -> readUnsignedMetadata(elementType)
+            }
+            value?.let { it in 0..maxElement } == true
+        }
     }
 
     private fun skipArray(): Boolean {

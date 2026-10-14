@@ -74,7 +74,9 @@ val selectedNativeEngines = providers.gradleProperty("caramlNativeEngines")
         }
         engines
     }
-val androidNativeBackend = providers.gradleProperty("caramlAndroidBackend").orElse("cpu")
+val androidNativeBackend = providers.gradleProperty("caramlAndroidBackend").orElse(
+    selectedNativeEngines.map { if ("llama" in it) "vulkan" else "cpu" },
+)
 val desktopNativeBackend = providers.gradleProperty("caramlDesktopBackend")
     .orElse(if (isMacHost) "metal" else "cpu")
 

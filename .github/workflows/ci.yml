@@ -87,6 +87,11 @@ jobs:
           android_sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:?Android SDK root is unavailable}}"
           "${android_sdk}/cmdline-tools/latest/bin/sdkmanager" --install "cmake;3.31.1"
 
+      - name: Install Android Vulkan build headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libvulkan-dev spirv-headers
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:

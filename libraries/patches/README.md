@@ -67,3 +67,9 @@ If `preparePatchedLlamaSource` fails after a bump, the upstream change touched t
 **What:** Classifies fit-probe memory by host-buffer status or CPU device ownership, including CPU repack buffers. Counts model, context and compute memory once; unknown ownership fails the operational probe.
 
 **Why:** CPU repack buffers use a nonstandard tensor layout and therefore do not advertise `is_host`. Ignoring their CPU ownership omitted most model weights from CPU-only admission estimates. Native classifier tests and Pixel 9 preflight cover the correction.
+
+### `0006-vulkan-forward-host-build-tool.patch`
+
+**What:** Passes the parent CMake build-tool path to the host Vulkan shader generator's external project.
+
+**Why:** Android Gradle locates its bundled Ninja through an absolute path. The shader generator inherits the Ninja generator but otherwise searches `PATH` again, failing on hosts without a separate Ninja installation.

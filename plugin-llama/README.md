@@ -8,9 +8,15 @@ iOS cinterop and consumer keep rules use the same package hierarchy. See [native
 
 ## Recent Changes
 
+- Native load diagnostics report actual weight-buffer backend, device type, byte count and host accessibility, making GPU allocation distinguishable from requested offload settings.
+
+- Ignore upstream continuation/progress log fragments in the bounded native warning/error sink; regression coverage verifies they neither become false errors nor consume the diagnostic budget.
+
+- Settle pending caller cancellation as `CANCELLED` during finalization when collection stops before the next native token call, preserving terminal reasons and partial replies.
+
 - Standardized adapter and bridge packages under `com.debanshu777.caraml.sdk.plugin.llama`; updated JNI symbols, field descriptors, cinterop and shrinker rules together.
 
-- Validated Android arm64 packaging, iOS device/simulator compilation, and opt-in desktop JNI fixtures with CheckJNI; see [corrective evidence](../docs/sdk/implementation-evidence.md#corrective-implementation--2026-10-14).
+- Documented adapter ownership and context/recovery limits in KDoc; [verification status](../README.md#verification-status) records the scope of platform and JNI checks.
 
 - Absorbed the former `runner` Gradle module; app consumers and native parity tasks now depend on `plugin-llama`.
 - Preserve JNI enum descriptors through R8 and propagate unresolved partial-load ownership to core, retaining artifact leases and resource reservations.
@@ -22,4 +28,4 @@ iOS cinterop and consumer keep rules use the same package hierarchy. See [native
 
 - Requires a local GGUF file and the host-packaged llama native artifact. Discovery and storage are separate optional modules.
 - The shared gate coordinates modules using this SDK runtime. Legacy direct calls to `LlamaRunner`, duplicate classloaders, and unrelated native copies remain outside its ownership.
-- Native model history remains owned by llama.cpp. Context repair, summarization, resumable turns, and measured P5 device/native parity are not implemented or claimed by this adapter.
+- Native model history remains owned by llama.cpp. Context repair, summarization, resumable turns, and comprehensive measured device/native parity are not implemented or claimed by this adapter.

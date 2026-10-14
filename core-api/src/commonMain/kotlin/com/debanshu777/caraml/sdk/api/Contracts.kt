@@ -5,6 +5,11 @@ package com.debanshu777.caraml.sdk.api
 import kotlinx.coroutines.flow.Flow
 import kotlin.jvm.JvmInline
 
+/**
+ * Marks evolving SDK contracts for hosts, engine plugins, providers and stores.
+ * Opting in acknowledges possible source and binary changes before a stable release;
+ * it does not imply platform certification or persistence compatibility.
+ */
 @RequiresOptIn("This SDK surface is experimental and may change before the first stable release.")
 @Target(AnnotationTarget.CLASS, AnnotationTarget.FUNCTION, AnnotationTarget.PROPERTY, AnnotationTarget.CONSTRUCTOR)
 @Retention(AnnotationRetention.BINARY)
@@ -72,9 +77,16 @@ data class InstalledModel(
     val installedAtEpochMillis: Long,
 )
 
+/**
+ * Staged artifact publication with owner/generation fencing and leased access.
+ *
+ * Implementations must document their durability, restart recovery and coordination scope.
+ * This contract does not provide an atomic transaction with an independently supplied
+ * [DownloadTaskStore]; hosts requiring coordinated recovery must supply that guarantee.
+ */
 @ExperimentalCaraMLApi
 interface ArtifactStore : ArtifactAccess {
-    /** Opens or resumes the durable stage for this task and advances its write fence. */
+    /** Opens or resumes a stage for this task and advances its write fence. */
     suspend fun stage(descriptor: ArtifactDescriptor, taskId: TaskId, owner: String, generation: Long): StagedArtifact
     suspend fun commit(stage: StagedArtifact, owner: String, generation: Long): ArtifactLease
     suspend fun abort(stage: StagedArtifact)

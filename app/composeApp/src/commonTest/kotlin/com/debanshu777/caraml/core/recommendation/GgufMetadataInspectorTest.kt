@@ -15,6 +15,32 @@ import kotlin.test.assertTrue
 
 class GgufMetadataInspectorTest {
     @Test
+    fun perLayerHeadArraysRetainArchitectureAndContextWithoutInventingUniformShape() {
+        val path = FileSystem.SYSTEM_TEMPORARY_DIRECTORY / "caraml-per-layer-${Random.nextLong()}.gguf"
+        try {
+            for (arrayType in listOf(4, 5, 10, 11)) for (invalidElement in listOf(false, true)) {
+                FileSystem.SYSTEM.write(path) {
+                    writeUtf8("GGUF"); writeIntLe(3); writeLongLe(0); writeLongLe(4)
+                    writeGgufString("general.architecture"); writeIntLe(8); writeGgufString("lfm2")
+                    writeGgufString("lfm2.context_length"); writeIntLe(4); writeIntLe(32_768)
+                    for (key in listOf("lfm2.attention.head_count", "lfm2.attention.head_count_kv")) {
+                        writeGgufString(key); writeIntLe(9); writeIntLe(arrayType); writeLongLe(4)
+                        for (value in listOf(0, 16, 0, if (invalidElement) -1 else 16)) {
+                            if (arrayType >= 10) writeLongLe(value.toLong()) else writeIntLe(value)
+                        }
+                    }
+                }
+                val metadata = GgufMetadataInspector().inspect(path.toString())
+                if (invalidElement) assertNull(metadata) else {
+                    assertEquals("lfm2", metadata?.architecture)
+                    assertEquals(32_768, metadata?.contextLimit)
+                    assertNull(metadata?.transformerShape)
+                }
+            }
+        } finally { FileSystem.SYSTEM.delete(path, mustExist = false) }
+    }
+
+    @Test
     fun containerProbeSeparatesWrongFormatFromUnreadableOrIncompleteData() {
         val path = FileSystem.SYSTEM_TEMPORARY_DIRECTORY / "caraml-container-${Random.nextLong()}.gguf"
         val inspector = GgufMetadataInspector(FileSystem.SYSTEM)

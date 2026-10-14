@@ -8,6 +8,10 @@ import kotlinx.coroutines.sync.withLock
  * lease until native teardown completes. Preflight also needs a lease. This
  * deliberately serializes both engines because GGML initialization and logging
  * are shared. It does not coordinate legacy direct runner calls or classloaders.
+ *
+ * This Kotlin gate does not isolate native symbols, C++ runtimes or backend discovery.
+ * Callers must retain the lease when native teardown fails and ownership remains unresolved;
+ * releasing it would allow another engine to enter the still-owned runtime.
  */
 object NativeRuntimeGate {
     private val gate = Mutex()

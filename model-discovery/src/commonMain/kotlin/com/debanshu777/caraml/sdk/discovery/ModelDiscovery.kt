@@ -36,7 +36,15 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.collect
 
-/** Optional provider-neutral browse and transfer facade. Building it performs no I/O. */
+/**
+ * Optional provider-neutral browse and transfer facade for one selected provider.
+ * Building it performs no I/O. Downloads require host-supplied task and artifact stores;
+ * browsing alone does not require storage. Use separate facades for multiple providers.
+ *
+ * The host owns OS scheduling and durable recovery. Transfer validators are checked within
+ * an operation but are not persisted for continuity after restart. Independently supplied
+ * task and artifact stores do not gain an atomic publication transaction through this facade.
+ */
 @OptIn(ExperimentalCaraMLApi::class)
 class ModelDiscovery private constructor(
     private val provider: ModelProvider,
@@ -191,7 +199,11 @@ class ModelDiscovery private constructor(
         }
     }
 
-    /** Cancels this discovery instance's active operations and closes only its owned client. */
+    /**
+     * Cancels and awaits active operations, then closes owned provider and transport resources.
+     * Borrowed resources remain host-owned. Concurrent calls await cleanup; repeated calls
+     * report the same cleanup failure, if any.
+     */
     suspend fun close(): Unit = withContext(NonCancellable) {
         shutdown.withLock {
             val jobs = lifecycleMutex.withLock {
@@ -239,13 +251,17 @@ class ModelDiscovery private constructor(
         private var ownedProvider: SuspendCloseable? = null
         private var built = false
 
+        /** Selects a borrowed provider; the host remains responsible for its lifetime. */
         fun provider(provider: ModelProvider) = apply {
             ensureConfigurable()
             require(this.provider == null) { "Choose one provider" }
             this.provider = provider
         }
 
-        /** Configures the built-in Hub provider. The client is borrowed unless [owned] is true. */
+        /**
+         * Configures an owned Hub provider and its derived request client.
+         * The supplied base [client] is borrowed unless [owned] is true.
+         */
         fun huggingFace(
             client: HttpClient,
             token: String? = null,
@@ -260,6 +276,10 @@ class ModelDiscovery private constructor(
             if (owned) ownedClient = client
         }
 
+        /**
+         * Enables transfers using borrowed stores and an optional borrowed [artifactSource].
+         * Without an explicit source, the selected provider must also implement [ArtifactSource].
+         */
         fun enableDownloads(
             taskStore: DownloadTaskStore,
             artifactStore: ArtifactStore,

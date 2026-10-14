@@ -498,6 +498,28 @@ class InstalledModelLoadRequestResolverTest {
     }
 
     @Test
+    fun knownPerLayerArchitectureCanUseVerifiedUnifiedVulkanButUnknownOrCpuOnlyCannot() = runTest {
+        for (architecture in listOf("lfm2", "mamba", null)) {
+            val fixture = Fixture().apply {
+                descriptor = descriptor.copyForResolverTest(architecture = architecture)
+                evidenceResult = EvidenceRepairResult.Ready(descriptor)
+                snapshots += task6Snapshot(sharedBudget = 8_000, topology = MemoryTopology.UNIFIED,
+                    backends = listOf(task6Backend(BackendKind.VULKAN), task6Backend(BackendKind.CPU)))
+                settings += AppSettings(useGpu = true)
+                recommendationForSnapshot = {
+                    RecommendationFixture(category = RecommendationCategory.NEEDS_INFORMATION,
+                        reasons = listOf(AssessmentReason.INVALID_METADATA), selectPlan = false)
+                }
+            }
+            val request = assertIs<InstalledModelLoadResolution.Ready>(fixture.resolve()).request
+            assertTrue(request.nativeMetadataFallback)
+            val plan = assertIs<LlmRunPlan>(request.plan)
+            assertEquals(if (architecture == "lfm2") BackendKind.VULKAN else BackendKind.CPU, plan.backend)
+            assertEquals(if (architecture == "lfm2") null else 0, plan.gpuLayerCount)
+        }
+    }
+
+    @Test
     fun engineIncompatibilityNeverTriggersCpuFallback() = runTest {
         val fixture = Fixture().apply {
             snapshots += acceleratedSnapshot()
@@ -559,6 +581,15 @@ class InstalledModelLoadRequestResolverTest {
 
     @Test
     fun diffusionGpuNoFitOffersAnExactCpuAlternative() = runTest {
+        verifyDiffusionPolicy(cpuOnly = false)
+    }
+
+    @Test
+    fun platformCpuDiffusionPolicyDoesNotMistakeSharedGpuRegistryForEngineSupport() = runTest {
+        verifyDiffusionPolicy(cpuOnly = true)
+    }
+
+    private suspend fun verifyDiffusionPolicy(cpuOnly: Boolean) {
         val descriptor = task6DiffusionDescriptor()
         val model = diffusionModel(descriptor)
         val artifact = diffusionArtifact(model, descriptor)
@@ -571,6 +602,7 @@ class InstalledModelLoadRequestResolverTest {
             captureSnapshot = { acceleratedSnapshot() },
             currentSettings = { AppSettings(useGpu = true) },
             workloadFactory = InstalledModelWorkloadFactory(),
+            cpuOnlyDiffusion = cpuOnly,
             assess = { _, snapshot, _ ->
                 assessmentSnapshots += snapshot
                 val plan = installedDiffusionPlan(
@@ -621,15 +653,16 @@ class InstalledModelLoadRequestResolverTest {
             },
         )
 
-        val alternative = assertIs<InstalledModelLoadResolution.SafeAlternative>(
-            resolver.resolve(model, GenerationMode.Image),
-        )
+        val resolution = resolver.resolve(model, GenerationMode.Image)
+        val selected = if (cpuOnly) assertIs<InstalledModelLoadResolution.Ready>(resolution).request
+            else assertIs<InstalledModelLoadResolution.SafeAlternative>(resolution).saferRequest
 
-        assertEquals(BackendKind.CPU, alternative.saferRequest.plan.backend)
-        assertEquals(model, alternative.saferRequest.model)
-        assertEquals(artifact.identity, alternative.saferRequest.identity)
-        assertSame(artifact, alternative.saferRequest.artifact)
-        assertEquals(2, assessmentSnapshots.size)
+        assertEquals(BackendKind.CPU, selected.plan.backend)
+        assertEquals(model, selected.model)
+        assertEquals(artifact.identity, selected.identity)
+        assertSame(artifact, selected.artifact)
+        assertEquals(if (cpuOnly) 1 else 2, assessmentSnapshots.size)
+        if (cpuOnly) assertTrue(assessmentSnapshots.none { it.hasAccelerator() })
         assertEquals(1, strictRequestCalls)
     }
 

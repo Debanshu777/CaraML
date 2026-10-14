@@ -248,7 +248,11 @@ class LoadAdmissionController(
         val target = verified.loadTarget as? VerifiedArtifactLoadTarget.File ?: return false
         return verified.identity == identity && identity.repositoryId == model.modelId &&
             target.repositoryId == model.modelId && target.path.endsWith(".gguf", ignoreCase = true) &&
-            llm.backend == BackendKind.CPU && llm.gpuLayerCount == 0 &&
+            (llm.backend == BackendKind.CPU && llm.gpuLayerCount == 0 ||
+                llm.backend == BackendKind.VULKAN && llm.gpuLayerCount == null &&
+                llm.memoryTopology == com.debanshu777.caraml.core.platform.MemoryTopology.UNIFIED &&
+                observationIdentity.architectureFamily != null &&
+                !observationIdentity.architectureFamily.requiresCpuOnlyLlmExecution()) &&
             llm.contextTokens in 1..4_096 && llm.batchSize in 1..256 && llm.microBatchSize in 1..64 &&
             llm.sequenceCount == 1 && llm.useMmap && assessedPlans == null && backendAlternative == null
     }

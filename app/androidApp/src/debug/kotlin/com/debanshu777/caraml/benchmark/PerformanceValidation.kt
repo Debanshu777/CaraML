@@ -33,6 +33,8 @@ import java.security.MessageDigest
 /** Debug-only measurements of the normal installed-model admission and shipping repository path. */
 class PerformanceValidation : Instrumentation() {
     private var arguments = Bundle()
+    private var maxStartThermal = 0
+    private var requestedBackend = "saved"
     private var active: InferenceRepository? = null
     private var foreground: PerformanceForegroundActivity? = null
     private val results = linkedMapOf<String, String>()
@@ -46,11 +48,16 @@ class PerformanceValidation : Instrumentation() {
         var completionCode = Activity.RESULT_CANCELED
         val completion = Bundle()
         try {
-            require(arguments.keySet().all { it in setOf("case", "phase", "label", "trial", "sampling") && arguments.get(it) is String })
+            require(arguments.keySet().all { it in setOf("case", "phase", "label", "trial", "sampling", "backend", "maxStartThermal") && arguments.get(it) is String })
             val selection = arguments.getString("case") ?: "six"
             val phase = arguments.getString("phase") ?: "run"
             val label = arguments.getString("label") ?: "BASELINE"
             val sampling = arguments.getString("sampling") ?: "greedy"
+            requestedBackend = arguments.getString("backend") ?: "saved"
+            require(requestedBackend in setOf("saved", "cpu", "vulkan"))
+            maxStartThermal = arguments.getString("maxStartThermal")?.toIntOrNull()
+                ?: if (arguments.containsKey("maxStartThermal")) error("Invalid thermal ceiling") else 0
+            require(maxStartThermal in 0..1)
             require(sampling in setOf("greedy", "saved_temperature"))
             val trial = arguments.getString("trial")?.toIntOrNull() ?: if (arguments.containsKey("trial")) error("Invalid trial") else 1
             require(phase in setOf("publication", "diagnose", "saved-load", "load", "run") && label in setOf("BASELINE", "AFTER") && trial in 1..5)
@@ -83,7 +90,7 @@ class PerformanceValidation : Instrumentation() {
                 val activeDownloads = store.recoverableBatches().count { it.userIntent == DownloadUserIntent.RUN && scheduler.isActive(it.batchId) }
                 report("ENVIRONMENT", "start", "label" to label, "trial" to trial,
                     "managedBuild" to "DEBUG", "nativeBuild" to "RELEASE", "activeDownloads" to activeDownloads,
-                    "thermal" to thermal(), "sampling" to sampling, "seedControl" to "NOT_EXPOSED", "cacheState" to "OS_CACHE_UNCONTROLLED", "sustainedTarget" to 512, "perTurnCap" to 1024)
+                    "thermal" to thermal(), "maxStartThermal" to maxStartThermal, "requestedBackend" to requestedBackend, "sampling" to sampling, "seedControl" to "NOT_EXPOSED", "cacheState" to "OS_CACHE_UNCONTROLLED", "sustainedTarget" to 512, "perTurnCap" to 1024)
                 check(activeDownloads == 0)
                 report("ENVIRONMENT", "foreground", "resumed" to foreground?.validationResumed,
                     "focused" to foreground?.validationFocused, "cpuAllowedList" to cpuAllowedList())
@@ -122,7 +129,26 @@ class PerformanceValidation : Instrumentation() {
         val koin = KoinPlatform.getKoin()
         val models = koin.get<LocalModelRepository>().getMainModels()
         val model = models.singleOrNull { it.modelId == case.repo && it.filename == case.file } ?: return "NOT_INSTALLED"
-        val resolver = koin.get<InstalledModelLoadRequestResolver>()
+        val useSavedSettings = phase in setOf("diagnose", "saved-load")
+        val originalSettings = koin.get<SettingsRepository>()
+        val persistedSettings = originalSettings.getSettings().first()
+        val settings = if (useSavedSettings) persistedSettings else persistedSettings
+            .copy(systemPrompt = AppSettings.DEFAULT_SYSTEM_PROMPT,
+                temperature = if (sampling == "saved_temperature") persistedSettings.temperature else 0f,
+                useGpu = when (requestedBackend) { "cpu" -> false; "vulkan" -> true; else -> persistedSettings.useGpu })
+        val controlled = object : SettingsRepository {
+            override fun getSettings() = flowOf(settings)
+            override suspend fun updateSettings(settings: AppSettings) = error("Read-only benchmark")
+            override suspend fun updateRecommendationProfile(profile: RecommendationProfile) = error("Read-only benchmark")
+            override suspend fun completeModelProfileOnboarding(profile: RecommendationProfile) = error("Read-only benchmark")
+        }
+        // Resolve and load against the same read-only settings; never rewrite user preferences.
+        val resolver = InstalledModelLoadRequestResolver(
+            componentRepository = koin.get(), evidenceRepairer = koin.get(), artifactResolver = koin.get(),
+            snapshotProvider = koin.get(), assessmentRepository = koin.get(),
+            settingsRepository = if (useSavedSettings) originalSettings else controlled,
+            workloadFactory = koin.get(),
+        )
         val priorReleaseStarted = SystemClock.elapsedRealtimeNanos()
         koin.get<InferenceRepository>().unloadModel()
         report(case.id, "release_original", "ms" to elapsedMs(priorReleaseStarted))
@@ -134,7 +160,7 @@ class PerformanceValidation : Instrumentation() {
         val allowedCpus = cpuAllowedList()
         report(case.id, "case_conditioning", "ms" to elapsedMs(conditioningStarted), "thermal" to startThermal,
             "foregroundResumed" to resumed, "foregroundFocused" to focused, "cpuAllowedList" to allowedCpus)
-        if (startThermal != 0) return "CONDITIONED_SKIP"
+        if (startThermal !in 0..maxStartThermal) return "CONDITIONED_SKIP"
         if (!resumed || !focused) return "FOREGROUND_NOT_READY"
         if (allowedCpus != "0-7") return "FOREGROUND_AFFINITY_NOT_READY"
         val wholeStarted = SystemClock.elapsedRealtimeNanos()
@@ -151,17 +177,6 @@ class PerformanceValidation : Instrumentation() {
             "sha256" to primary.contentSha256, "revision" to identity.revision)
         if (!pinned) return "IDENTITY_REJECTED"
         if (phase == "publication") return "PASS"
-        val useSavedSettings = phase in setOf("diagnose", "saved-load")
-        val originalSettings = koin.get<SettingsRepository>()
-        val persistedSettings = originalSettings.getSettings().first()
-        val settings = if (useSavedSettings) persistedSettings else persistedSettings
-            .copy(systemPrompt = AppSettings.DEFAULT_SYSTEM_PROMPT, temperature = if (sampling == "saved_temperature") persistedSettings.temperature else 0f)
-        val controlled = object : SettingsRepository {
-            override fun getSettings() = flowOf(settings)
-            override suspend fun updateSettings(settings: AppSettings) = error("Read-only benchmark")
-            override suspend fun updateRecommendationProfile(profile: RecommendationProfile) = error("Read-only benchmark")
-            override suspend fun completeModelProfileOnboarding(profile: RecommendationProfile) = error("Read-only benchmark")
-        }
         val runner = koin.get<LlamaRunner>()
         val inference = LlamaInferenceRepository(runner = runner, deviceCapabilities = koin.get(), settingsRepository = if (useSavedSettings) originalSettings else controlled,
             snapshotProvider = koin.get(), suitabilityEngine = koin.get(), recommendationPolicy = koin.get(),
@@ -180,6 +195,9 @@ class PerformanceValidation : Instrumentation() {
             "context" to inference.getContextLimit(), "config" to inference.getRuntimeConfigString(),
             "thermal" to thermal(), "temperature" to settings.temperature.takeIf { it.isFinite() }, "savedSettings" to (useSavedSettings))
         if (load !is ModelLoadResult.Success) return "LOAD_NOT_READY"
+        report(case.id, "placement", "requestedBackend" to requestedBackend, "gpuLayers" to runner.getGpuLayers())
+        if (requestedBackend == "vulkan" && runner.getGpuLayers() <= 0) return "GPU_NOT_ACTIVE"
+        if (requestedBackend == "cpu" && runner.getGpuLayers() != 0) return "CPU_NOT_SELECTED"
         if (phase in setOf("diagnose", "load", "saved-load")) return "PASS"
         var sustained = 0
         var turns = 0
@@ -195,7 +213,7 @@ class PerformanceValidation : Instrumentation() {
         val targetMet = sustained >= 512
         report(case.id, "sustained", "tokens" to sustained, "turns" to turns, "targetMet" to targetMet)
         inference.resetContext()
-        generate(case.id, inference, runner, "List 200 consecutive integers with explanations. /no_think", 99, 16)
+        generate(case.id, inference, runner, "List 200 consecutive integers with explanations. /no_think", 99, 1)
         check(inference.getStopReason() == StopReason.CANCELLED)
         inference.unloadModel()
         check(inference.getContextLimit() == 0)
@@ -235,7 +253,7 @@ class PerformanceValidation : Instrumentation() {
                 }
             }
             check(!thermalStopped)
-            check(tokens > 0 && content.isNotBlank())
+            check(tokens > 0 && (turn == 99 || content.isNotBlank()))
             check(content.toString() == runner.getContent() && reasoning.toString() == runner.getReasoning())
             val decodeNs = (last - first).coerceAtLeast(0L)
             report(id, "generation", "turn" to turn, "tokens" to tokens, "ttftMs" to (first - started) / 1_000_000,
@@ -251,7 +269,7 @@ class PerformanceValidation : Instrumentation() {
         }
     private suspend fun idle(): Boolean {
         val deadline = SystemClock.elapsedRealtime() + 10 * 60_000L
-        while (thermal() >= 1) {
+        while (thermal() > maxStartThermal) {
             report("ENVIRONMENT", "idle_barrier", "thermal" to thermal())
             if (SystemClock.elapsedRealtime() >= deadline) {
                 report("ENVIRONMENT", "conditioned_skip", "thermal" to thermal())

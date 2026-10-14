@@ -167,7 +167,7 @@ Network categories are `NoInternet`, `Unauthorized`, `RequestTimeout`, `RateLimi
 
 - Retired the standalone Gradle module; provider code is owned by `model-discovery`, while legacy download, native filesystem and curated install code is owned by the app.
 
-- Startup reconciliation fairly completes stale full-byte download rows only after exact published-artifact proof, preserving paused/cancelled intent and using final compare-and-set guards. Streaming deadlines, validator checkpoints, leases and bundle publication retain their integrity boundaries. See the [download and model validation report](../../docs/model-validation/2026-10-08/report.md).
+- App-owned startup reconciliation fairly completes stale full-byte download rows only after exact published-artifact proof, preserving paused/cancelled intent and using final compare-and-set guards. Streaming deadlines, validator checkpoints, leases and bundle publication remain in the application's download pipeline.
 
 
 <!-- Updated at end of each Claude Code session -->

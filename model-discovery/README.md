@@ -46,6 +46,8 @@ See the [compatibility API reference](docs/huggingface-compatibility.md).
 
 ## Recent Changes
 
+- Documented provider/client ownership, shutdown behavior and restart limits alongside the facade and builder APIs.
+
 - Standardized neutral discovery under `sdk.discovery` and Hugging Face implementation under `sdk.discovery.huggingface`, using the common `com.debanshu777.caraml` root.
 
 - Removed `huggingFaceManager` as a Gradle module. Moved its Hub API/metadata/client code here and its existing host storage/download/diffusion integrations to `composeApp`.

@@ -28,6 +28,42 @@ CaraML runs large language models and image generation models entirely on-device
 
 ---
 
+## Current Android Benchmarks
+
+Measured on a **Google Pixel 9 running Android 17**, on **October 15, 2026**.
+All inference runs locally through llama.cpp. Native placement logs verified
+Vulkan GPU offload for every model below.
+
+| Model | Quantization | CPU (tokens/sec) | Vulkan (tokens/sec) | GPU layers |
+|-------|--------------|----------------:|-------------------:|-----------:|
+| SmolLM2 135M Instruct | Q4_K_M | 62.50–64.57 | **73.18–73.40** | 31 |
+| Gemma 3 270M IT | Q4_K_M | 41.64–42.65 | **42.96–43.20** | 19 |
+| Qwen3 0.6B | Q8_0 | 18.91–26.31 | **22.74–22.81** | 29 |
+| LFM2 350M | Q4_K_M | 44.68–70.04 | **54.84–57.98** | 17 |
+| Qwen2.5 0.5B Instruct | Q4_K_M | 24.57–28.59 | **35.99–36.33** | 25 |
+
+These are sustained **decode** rates, excluding prompt processing and the first
+token, shown as the range across two passing runs per backend. Each run generated
+at least 512 tokens using matching prompts and settings: greedy sampling,
+4,096-token context, 4 generation / 4 batch threads, batch 256, microbatch 64,
+and F16 KV cache. The app ran in the foreground with no active downloads;
+runs started at nominal or mild thermal status. The debug APK used release-built
+native code.
+
+All five models passed load, generation, cancellation, unload, reload, and recovery
+checks on the final installed build. GPU acceleration helps some models more than
+others; thermal state and OS caching affect the results. These measurements are
+the current project baseline, rather than a maximum-throughput claim or a measure
+of answer quality. They cover the PR #17 working tree with local fixes and existing
+edits; they are not a clean release-build certification.
+
+Earlier failed or inactive-GPU trials are excluded from these ranges. Remaining
+observations include generic native warnings, a three-model chat picker limit,
+and context-dependent answer errors on small models. Raw device captures and
+benchmark logs are kept outside the repository.
+
+---
+
 ## Module Structure
 
 ```
@@ -129,17 +165,72 @@ git submodule update --init
 # iOS — open app/iosApp/ in Xcode
 ```
 
-### Android with Vulkan GPU (experimental)
+### Android Vulkan GPU build
 
 ```bash
-./gradlew :app:androidApp:assembleDebug -PENABLE_VULKAN_ANDROID=true
+./gradlew :app:androidApp:assembleDebug
+
+# Explicit CPU-only build
+./gradlew :app:androidApp:assembleDebug -PcaramlAndroidBackend=cpu
 ```
 
-Requires Vulkan SDK and `glslc` in PATH. Expected 5–8× token-per-second improvement on compatible GPUs (Mali, Adreno). See [`docs/vulkan-android-build-strategy.md`](./docs/vulkan-android-build-strategy.md).
+Llama builds include Vulkan on arm64 and CPU support on x86_64. The build requires
+the NDK `glslc` plus Vulkan/SPIR-V headers (`brew install vulkan-headers spirv-headers`
+on macOS; `apt-get install libvulkan-dev spirv-headers` on Linux). Device performance
+depends on the model and GPU; CPU remains selectable at runtime. See
+[native build configuration](nativeEngine/README.md#android-cmakeliststxt).
 
 ---
 
 ## Architecture
+
+### SDK Boundaries and Ownership
+
+The SDK is an experimental Kotlin Multiplatform implementation. Extension contracts
+are marked `ExperimentalCaraMLApi`; source and binary compatibility are not yet
+stable. CaraML still uses its app-owned inference repositories and durable download
+pipeline, so reorganizing modules has not completed its migration to the SDK facades.
+
+| Module | Production project dependencies | Responsibility |
+|--------|---------------------------------|----------------|
+| `core-api` | None | Neutral engine, artifact, storage, resource and provider contracts |
+| `core` | `core-api` | `InferenceClient`, assessment, admission and session lifecycle |
+| `storage` | `core-api` | Optional in-memory and Okio artifact stores |
+| `model-discovery` | `core-api` | Provider-neutral browsing/transfers and Hugging Face implementation |
+| `native-runtime` | None | Shared ownership gate for the two native adapters |
+| `plugin-llama`, `plugin-diffusion` | `core-api`, `native-runtime` | Engine adapters and their own JNI/cinterop bridges |
+
+The portable API, core and runtime have no Compose, Koin, Room, DataStore or HTTP
+dependency. SDK modules must not depend on `app/`. Hosts supply configuration,
+artifact access and resource readings, and retain ownership of UI, preferences,
+application schemas, migrations, OS scheduling, permissions and notifications.
+Custom engines, providers and stores implement the neutral contracts; discovery
+and default storage are optional for local-file inference. `nativeEngine` builds
+the selected native code, with GGML shared by both engines.
+
+### Current SDK Limits
+
+- **Storage and downloads:** the file store coordinates one instance, with no
+  cross-process locking or orphan-stage recovery. Independently supplied task and
+  artifact stores do not provide an atomic publication transaction. Durable task
+  persistence, restart reconciliation and scheduling migration remain unfinished.
+- **Inference and resources:** context repair, resumable turns, recovery outcome
+  persistence and an iOS resource-source factory remain unfinished. The diffusion
+  adapter supports one local model file and a single PNG result; bundle/video
+  support and measured media budgets are not established for the SDK adapter.
+- **Native integration:** the Kotlin runtime gate covers one linked runtime, not
+  direct runner callers or separate classloaders. Independent engine packaging,
+  coexistence with other native SDKs, optimized R8/AAB consumers and complete
+  installed-device behavior/performance still require release validation.
+- **Consumer migration and release:** CaraML upgrade/data-preservation checks,
+  extension conformance, API evolution and the supported target matrix remain
+  release work. Publication and standalone artifact consumers are deferred.
+
+Module-specific contracts and limits live in the [core API](core-api/README.md),
+[core](core/README.md), [storage](storage/README.md),
+[discovery](model-discovery/README.md), [native runtime](native-runtime/README.md),
+[llama](plugin-llama/README.md) and [diffusion](plugin-diffusion/README.md) READMEs
+and API KDocs. The following data flows describe the current CaraML application.
 
 ### Data Flow — LLM Inference
 
@@ -225,6 +316,7 @@ Three features: **chat**, **modelhub**, **settings**.
 
 ```bash
 ./gradlew verifyProject          # Preferred local/CI JVM gate
+./gradlew verifySdk -PsdkOnly=true   # Portable SDK without app/native producers
 ./gradlew :app:composeApp:allTests    # All platform tests
 ./gradlew :app:composeApp:jvmTest     # JVM tests only
 ```
@@ -232,6 +324,33 @@ Three features: **chat**, **modelhub**, **settings**.
 GitHub Actions runs `verifyProject` for pull requests and pushes to `main`.
 
 Test coverage includes benchmark helpers, model-generation classification, suitability ratings, architecture detection, and diffusion step policy.
+
+`verifySdk` checks portable JVM tests, common metadata compilation and dependency
+boundaries. `verifyProject` adds engine/app JVM suites, desktop launcher compilation,
+native pin verification and selected CTests. Android assembly, iOS compilation,
+packaging and real-model/device checks remain separate.
+
+```bash
+# Opt-in engine JNI fixtures; downloads and verifies fixtures when needed
+CARAML_NATIVE_PARITY=true ./gradlew :plugin-llama:jvmTest :plugin-diffusion:jvmTest
+
+# Platform and packaged filesystem checks
+./gradlew :app:androidApp:assembleDebug
+./gradlew :app:composeApp:compileKotlinIosArm64 :app:composeApp:compileKotlinIosSimulatorArm64
+./gradlew :app:desktopApp:artifactFsInstalledImageSmoke
+```
+
+### Verification Status
+
+The 2026-10-14 package migration passed 1,492 JVM tests, seven native CTests,
+SDK-only verification, desktop JNI fixtures with CheckJNI, Android assembly for
+arm64-v8a/x86_64, both iOS Kotlin targets and the packaged desktop filesystem smoke
+check. Packaged Android and desktop JNI exports matched the renamed classes.
+The iOS checks reused existing engine archives and did not run an installed app.
+
+That run's full `verifyProject` gate failed only at the pre-existing llama.cpp
+remote allowlist check. The checkout remote and guard were left unchanged. These
+checks do not establish SDK release readiness; the limits above remain open.
 
 ---
 
@@ -257,6 +376,14 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 
 ## Recent Changes
 
+- Published the current Pixel 9 CPU/Vulkan generation benchmark for five LLMs, with quantization, sustained decode ranges and test conditions. Raw validation artifacts are excluded from the repository.
+
+- Enabled and verified the Android Vulkan profile on Pixel 9, repaired shader-generator/universal-ABI builds, and removed the per-layer GGUF metadata path's forced CPU fallback under guarded native memory admission. See [current Android benchmarks](#current-android-benchmarks) for measured performance.
+
+- Validated five LLM families on a connected Pixel 9 through verified downloads, text generation, cancellation and reload; corrected false native progress errors and missing cancellation stop flags. The initial run used a debug CPU build with existing local edits.
+
+- Retired the standalone architecture, evaluation and implementation-evidence documents after consolidating SDK boundaries, current limits and verification guidance into the READMEs and API KDocs. Removed stale report links and aligned the Android Vulkan command with Gradle.
+
 - Standardized first-party packages under `com.debanshu777.caraml`, with reusable libraries under `.sdk`; aligned source directories, imports, JNI symbols, iOS bindings and generated resources.
 
 - Grouped the application under `app/` with conventional `composeApp`, `androidApp`, `desktopApp` and `iosApp` names. Extracted the desktop launcher/packaging and updated Gradle, Xcode, CI and source-path checks. See [app structure and commands](app/README.md).
@@ -266,16 +393,16 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 - Consolidated the Hugging Face API into `model-discovery`; kept existing platform download/storage and diffusion install integrations in the app. Updated app/CI dependencies with custom-provider isolation coverage; the subsequent package cleanup aligns source and JNI names with their owners.
 
 - Merged `runner` into `plugin-llama` and `diffusionRunner` into `plugin-diffusion`, including native sources, platform bindings, tests and consumer keep rules; updated app dependencies and CI commands.
-- Fixed scoped HTTP streaming, redirect credentials, failed-load ownership, concurrent shutdown, closed-stage cleanup, Android runtime library packaging and Release Unicode checks. [Corrective evidence](docs/sdk/implementation-evidence.md#corrective-implementation--2026-10-14) separates these checks from pending release acceptance.
+- Fixed scoped HTTP streaming, redirect credentials, failed-load ownership, concurrent shutdown, closed-stage cleanup, Android runtime library packaging and Release Unicode checks. See [verification status](#verification-status) for the scope of validation.
 
 
-- Started the [generic SDK extraction](architecture-plan.md): experimental core, discovery and storage modules, SDK-only verification, optional engine adapters and native feasibility hardening. [Evidence and remaining gates](docs/sdk/implementation-evidence.md) distinguish prototypes from release acceptance; CaraML migration is not complete.
+- Added experimental core, discovery and storage modules, SDK-only verification, optional engine adapters and native feasibility hardening. [Current SDK limits](#current-sdk-limits) track unfinished work; CaraML migration is not complete.
 
 - CI fixes preserve model-search focus across viewport changes and avoid a GCC 13 compiler crash in native preflight error handling.
 
 - Xcode’s Kotlin framework build phase locates JDK 21 and Homebrew native tools directly; no separate build helper script is required.
 
-- Text model validation covers 22 pinned artifacts across 16 architectures, with download-state repairs, verified loading, guarded native sampling and paired Pixel 9 measurements. The [detailed report](docs/model-validation/2026-10-08/report.md) retains failures, unsupported artifacts and measurement limits.
+- Text model loading includes download-state repairs, verified artifacts and guarded native sampling.
 
 - Chat, Images, and Videos now have separate drawer destinations; chat restores its model picker and labeled Send/Stop without inline mode tabs.
 
@@ -283,7 +410,7 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 
 - Native preflight identifies Gemma assistant models that require a target context; chat reports the actual admission reason instead of labeling every temporary failure as memory/thermal pressure.
 
-- Installed GGUF models with incomplete app metadata now use a bounded CPU plan and native model/memory preflight, retaining exact artifact verification and load recovery.
+- Installed GGUF models with incomplete app metadata use bounded native model/memory preflight, retaining exact artifact verification and load recovery. Known architectures can use verified unified-memory Vulkan; unknown or CPU-only architectures retain CPU loading.
 
 - Persistent rail/sidebar navigation now paints through the landscape leading safe area while keeping controls and route content at their prior safe positions.
 
@@ -306,13 +433,11 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 - Model Hub uses flat model rows, inline filters and queue controls, a dedicated device panel, and recoverable search/library/download states; memory estimates remain distinct from unverified compatibility.
 - Create follows the approved mobile layout with an inline empty composer; conversations show sender identity, real generation phases, and recovery actions. Keyboard resizing and large-text drafts preserve reachable controls and visible replies.
 - Appearance settings persist Keep things still and Soft glass. The character currently uses shared Compose; authored Rive playback remains pending a `.riv` asset and platform adapters.
-- [Implementation plan](docs/superpowers/plans/2026-10-05-pocket-pal-brand.md) and [Rive asset contract](docs/brand/rive-character-contract.md).
-- [Pixel fidelity audit](docs/brand/pixel-fidelity-audit.md) records actual model loading/chat/search/device/library checks separately from labelled debug states and JVM renders.
 
 <!-- This section is updated at the end of each AI-assisted development session -->
 
-- Audited llama.cpp parameter mappings, corrected CPU placement/affinity, cache validation and conversation finalization, and reduced single-output GPU scratch allocation; [audit and tuning evidence](docs/benchmarks/pixel9-minicpm5-2026-09-30/parameter-audit.md)
-- Automatic llama.cpp fitting now accepts full GPU offload and fits the requested context; Pixel 9 debug chat sustained 10.4 tok/s through 1,024 MiniCPM5 tokens. [Benchmark and reproduction](docs/benchmarks/pixel9-minicpm5-2026-09-30/README.md)
+- Audited llama.cpp parameter mappings, corrected CPU placement/affinity, cache validation and conversation finalization, and reduced single-output GPU scratch allocation.
+- Automatic llama.cpp fitting now accepts full GPU offload and fits the requested context.
 - Installed GGUF inspection now accepts tokenizer metadata through a bounded 8 MiB header scan, allowing the existing MiniCPM5 Q4_K_M model to load on Pixel 9
 - Model Hub keeps a shared device profile, shows download status below Discover filters, debounces search, and applies draft size limits, auto-loads nearby Paging 3 results, and puts GGUF download controls directly in file rows; verified local GGUF headers can repair installed Text evidence offline
 - Model browsing now separates projector, adapter, primary, and unverified GGUF files, shows provisional resource guidance when GGUF compatibility metadata is missing, supports exact grouped downloads for selected shards, and keeps transfer separate from strict load admission
@@ -322,7 +447,6 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 - Generated-media stores now coordinate active sessions and writes process-wide, evict expired/LRU abandoned sessions, and enforce one aggregate 1 GiB cap; CI also assembles the Android app
 - Native engines now use the exact 23 September pair (`llama.cpp` `f46bc30`, stable-diffusion.cpp `c92d73c`) with one shared patched GGML, exact admitted/effective plan checks, and version-namespaced persistence
 - Android packages both runners for arm64-v8a/x86_64, while iOS device and simulator archives merge both engines with exactly one GGML implementation
-- Expanded the documented [CaraML Prism design system](docs/caraml-design-system.md) with app-wide information hierarchy, progressive-disclosure, rounded-surface, compact reflow, and data-heavy toolbar guidance
 - Artifact now presents identity and the download decision before collapsed technical metadata, with rounded focal/file surfaces and production-component previews at 360–412dp including 200% text
 - Flattened Model Hub into a compact registry and integrated Details into the route canvas while preserving exact artifact actions and durable pause/resume/cancel/retry state
 - Model downloads now use a persistent resumable queue with exact-artifact verification; Android uses UIDT/foreground notifications, iOS reconnects to a background URLSession, and Desktop resumes on relaunch

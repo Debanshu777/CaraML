@@ -212,7 +212,9 @@ static const char *upstream_reason(ggml_log_level level, const char *text) {
 }
 
 static void sanitized_upstream_log(ggml_log_level level, const char *text, void * /*user_data*/) {
-    if (!g_logger || level < GGML_LOG_LEVEL_WARN) return;
+    // CONT is numerically above ERROR, but carries informational progress
+    // fragments. Only actual warnings/errors belong in this diagnostic budget.
+    if (!g_logger || (level != GGML_LOG_LEVEL_WARN && level != GGML_LOG_LEVEL_ERROR)) return;
     // Cap repeated warnings for each operation rather than flooding production logs.
     if (g_upstream_diagnostic_count.fetch_add(1, std::memory_order_relaxed) >= 8) return;
     log_line(level >= GGML_LOG_LEVEL_ERROR ? LLAMA_LOG_ERROR : LLAMA_LOG_WARN,
@@ -1453,6 +1455,16 @@ bool llama_runner_core_load_model(const char *model_path, const LlamaRunnerConfi
         }
         g_actual_gpu_layers = llama_runner_resolved_gpu_layers(
             plan.model_params.n_gpu_layers, g_model->hparams.n_layer_all, !g_model->devices.empty());
+        // Report allocated weight buffers, not just the requested layer count.
+        // Numeric backend/device codes and byte counts contain no model text.
+        for (const auto &entry : g_model->memory_breakdown()) {
+            const auto device = ggml_backend_buft_get_device(entry.first);
+            log_line(LLAMA_LOG_INFO,
+                "native stage=MODEL_PLACEMENT backend=%d device_type=%d bytes=%zu host_accessible=%d",
+                device ? backend_kind(device) : LLAMA_BACKEND_CPU,
+                device ? backend_device_type(device) : LLAMA_BACKEND_DEVICE_CPU,
+                entry.second, ggml_backend_buft_is_host(entry.first) ? 1 : 0);
+        }
 
         ScopedNativeDiagnostic context_diagnostic("CONTEXT_ALLOCATION");
         g_context = llama_init_from_model(g_model, plan.context_params);
@@ -1776,6 +1788,12 @@ void llama_runner_core_finalize_generation() {
     }
     ScopedSessionEnd session(g_operation_gate);
     ScopedNativeDiagnostic diagnostic("FINALIZE");
+    // A cancelled coroutine can stop collecting before next_token observes the
+    // atomic flag. Settle that pending cancellation under the session lock,
+    // preserving any terminal boundary already reached by decoding.
+    if (g_stop_reason == STOP_NONE && g_cancel_flag) {
+        g_stop_reason = STOP_CANCELLED;
+    }
     // Persist assistant content into templated chat history when generation
     // is ended by caller rather than EOG/cancel/max-token boundary. A stop
     // boundary already parsed and cleared the raw buffer; reparsing that empty

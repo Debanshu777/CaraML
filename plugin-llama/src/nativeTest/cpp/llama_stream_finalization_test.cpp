@@ -14,6 +14,28 @@ void expect(bool condition, const char *message) {
 }
 
 int main() {
+    // UI cancellation stops the Kotlin collector before another next_token()
+    // call can observe the flag. Finalization must settle the native reason,
+    // while a late cancel must preserve an already reached terminal boundary.
+    for (const int reason : {STOP_NONE, STOP_EOG, STOP_MAX_TOKENS, STOP_CONTEXT_FULL, STOP_ERROR}) {
+        auto admission = g_operation_gate.begin_session();
+        expect(admission.has_value(), "cancel finalization session did not begin");
+        admission.reset();
+        g_assistant_buffer.clear();
+        g_chat_msgs.clear();
+        g_reasoning_accum.clear();
+        g_content_accum = "partial";
+        g_stop_reason = reason;
+        llama_runner_core_cancel_generate();
+        llama_runner_core_finalize_generation();
+        const int expected = reason == STOP_NONE ? STOP_CANCELLED : reason;
+        expect(g_stop_reason == expected, "caller cancellation lost the native stop reason");
+        llama_runner_core_finalize_generation();
+        expect(g_stop_reason == expected, "repeated finalization changed the stop reason");
+        expect(g_content_accum == "partial", "cancel finalization erased the partial reply");
+        g_cancel_flag = false;
+    }
+
     g_chat_templates = common_chat_templates_init(nullptr,
         "{% for message in messages %}{{ message['role'] + ':' + message['content'] + '\\n' }}{% endfor %}"
         "{% if add_generation_prompt %}assistant:{% endif %}");
