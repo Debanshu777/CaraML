@@ -110,7 +110,7 @@ kotlin {
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.materialkolor)
             implementation(libs.okio)
-            implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.27.0")
+            implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.45.0")
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
