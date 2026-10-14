@@ -82,19 +82,19 @@ class ShellGutterContractUiTest {
         }
 
         val cases = listOf(
-            GutterCase(AppContentKind.ModelHub, 599.dp, 16f),
+            GutterCase(AppContentKind.ModelHub, 599.dp, 18f),
             GutterCase(AppContentKind.ModelHub, 600.dp, 104f),
             GutterCase(AppContentKind.ModelHub, 839.dp, 104f),
             GutterCase(AppContentKind.ModelHub, 840.dp, 280f),
             GutterCase(AppContentKind.ModelHub, 1199.dp, 280f),
             GutterCase(AppContentKind.ModelHub, 1200.dp, 280f),
-            GutterCase(AppContentKind.Settings, 599.dp, 16f),
+            GutterCase(AppContentKind.Settings, 599.dp, 18f),
             GutterCase(AppContentKind.Settings, 600.dp, 104f),
             GutterCase(AppContentKind.Settings, 839.dp, 104f),
             GutterCase(AppContentKind.Settings, 840.dp, 280f),
             GutterCase(AppContentKind.Settings, 1199.dp, 371.5f),
             GutterCase(AppContentKind.Settings, 1200.dp, 372f),
-            GutterCase(AppContentKind.Details, 599.dp, 16f),
+            GutterCase(AppContentKind.Details, 599.dp, 18f),
             GutterCase(AppContentKind.Details, 600.dp, 104f),
             GutterCase(AppContentKind.Details, 839.dp, 104f),
             GutterCase(AppContentKind.Details, 840.dp, 280f),

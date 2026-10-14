@@ -9,6 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.rating.SuitabilityRating
 
 /**
@@ -20,7 +21,7 @@ import com.debanshu777.caraml.core.rating.SuitabilityRating
 fun SuitabilityDot(
     rating: SuitabilityRating,
     modifier: Modifier = Modifier,
-    size: Dp = 8.dp,
+    size: Dp = AppTheme.spacing.spacing8,
 ) {
     Box(
         modifier = modifier

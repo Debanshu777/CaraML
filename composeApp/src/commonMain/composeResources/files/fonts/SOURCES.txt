@@ -1,0 +1,26 @@
+CaraML bundled fonts
+
+Source: official Google Fonts repository, retrieved 2026-10-05.
+Both families are licensed under SIL Open Font License 1.1. Full copyright
+notices and license terms are included beside this file and in the font metadata.
+
+Bricolage Grotesque:
+https://github.com/google/fonts/tree/main/ofl/bricolagegrotesque
+Original file: BricolageGrotesque[opsz,wdth,wght].ttf
+SHA-256: 413e7357809ddd12fd80a96a8a396de0e401638d4acd3cb3e37532f0472ac682
+
+DM Sans:
+https://github.com/google/fonts/tree/main/ofl/dmsans
+Original file: DMSans[opsz,wght].ttf
+SHA-256: 8cd08d97e89c24d0aa92edd2f0f4c8ee6195eee9b7c9f154865a58b02f0c1c0d
+Original file: DMSans-Italic[opsz,wght].ttf
+SHA-256: 22259c0cc8237221b80f44c76ba8d36e6bce3cda72779f5b2773643d499720ae
+
+The app bundles static TTF instances to give Android, iOS and Desktop the same
+weights without depending on platform variable-axis selection. Generated with
+FontTools 4.60.2 varLib.instancer.instantiateVariableFont:
+- Bricolage Grotesque: opsz=32, wdth=100, wght=600/700/800.
+- DM Sans: opsz=14, wght=400/500/600/700; italic opsz=14, wght=400.
+Family/subfamily/full/PostScript name records identify the static instance.
+Glyph coverage and all copyright/license metadata are retained; no subsetting.
+The fonts are bundled at build time. No font network requests occur at runtime.

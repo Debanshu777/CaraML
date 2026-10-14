@@ -22,12 +22,12 @@ import com.debanshu777.caraml.core.drawer.GenerationModeController
 import com.debanshu777.caraml.core.drawer.LocalDrawerController
 import com.debanshu777.caraml.core.drawer.LocalGenerationModeController
 import kotlin.test.Test
-import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 
 class ChatBackdropLayeringUiTest {
 
     @Test
-    fun destinationScaffoldLeavesBodyGapTransparent() = runComposeUiTest {
+    fun destinationOwnsTheBackdropCapturedByItsChrome() = runComposeUiTest {
         val backdropColor = Color.Magenta
 
         setContent {
@@ -61,6 +61,6 @@ class ChatBackdropLayeringUiTest {
         val image = onNodeWithTag("chat-backdrop-layer").captureToImage()
         val bottomLeftBodyPixel = image.toPixelMap()[1, image.height - 1]
 
-        assertEquals(backdropColor, bottomLeftBodyPixel)
+        assertNotEquals(backdropColor, bottomLeftBodyPixel)
     }
 }

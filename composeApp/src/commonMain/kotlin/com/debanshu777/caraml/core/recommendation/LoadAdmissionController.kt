@@ -16,6 +16,8 @@ data class LoadRequest(
     val profile: RecommendationProfile = RecommendationProfile(),
     val riskAcknowledgement: RiskAcknowledgement? = null,
     val backendAlternative: LoadRequest? = null,
+    // A verified GGUF with incomplete app metadata must pass native validity and fit checks.
+    val nativeMetadataFallback: Boolean = false,
 )
 
 data class RiskAcknowledgement(
@@ -35,6 +37,7 @@ enum class LoadAdmissionReason {
     NATIVE_PREFLIGHT_INVALID,
     NATIVE_BACKEND_INCOMPATIBLE,
     NATIVE_PREFLIGHT_UNAVAILABLE,
+    NATIVE_TARGET_MODEL_REQUIRED,
     RISK_ACKNOWLEDGEMENT_REQUIRED,
     SUSPECTED_PREVIOUS_CRASH,
     KNOWN_UNSTABLE_CONFIGURATION,
@@ -89,6 +92,7 @@ sealed interface NativeLoadPreflight {
     data object Fit : NativeLoadPreflight
     data object NoFit : NativeLoadPreflight
     data class BackendIncompatible(val saferRequest: LoadRequest) : NativeLoadPreflight
+    data object RequiresTargetModel : NativeLoadPreflight
     data object Invalid : NativeLoadPreflight
     data object Unavailable : NativeLoadPreflight
 }
@@ -146,7 +150,20 @@ class LoadAdmissionController(
             return LoadAdmission.TemporarilyUnavailable(request, LoadAdmissionReason.CURRENT_THERMAL_PRESSURE)
         }
 
-        val recommendation = recommendationSource(request, snapshot)
+        if (request.nativeMetadataFallback && !request.hasBoundedNativeMetadataPlan()) {
+            return LoadAdmission.Blocked(request, LoadAdmissionReason.INVALID_MODEL)
+        }
+        val recommendation = if (request.nativeMetadataFallback) {
+            PersonalizedRecommendation(
+                assessmentKey = request.assessmentKey,
+                category = RecommendationCategory.USABLE,
+                selectedPlan = request.plan,
+                reasons = emptyList(),
+                profile = request.profile,
+            )
+        } else {
+            recommendationSource(request, snapshot)
+        }
         val fallback = recommendation.fallbackPlan as? RunPlan
         val selected = recommendation.selectedPlan as? RunPlan
         when (recommendation.category) {
@@ -210,6 +227,10 @@ class LoadAdmissionController(
                 preflight.saferRequest,
                 LoadAdmissionReason.NATIVE_BACKEND_INCOMPATIBLE,
             )
+            NativeLoadPreflight.RequiresTargetModel -> LoadAdmission.Blocked(
+                request,
+                LoadAdmissionReason.NATIVE_TARGET_MODEL_REQUIRED,
+            )
             NativeLoadPreflight.Invalid -> LoadAdmission.Blocked(
                 request,
                 LoadAdmissionReason.NATIVE_PREFLIGHT_INVALID,
@@ -219,6 +240,17 @@ class LoadAdmissionController(
                 LoadAdmissionReason.NATIVE_PREFLIGHT_UNAVAILABLE,
             )
         }
+    }
+
+    private fun LoadRequest.hasBoundedNativeMetadataPlan(): Boolean {
+        val llm = plan as? LlmRunPlan ?: return false
+        val verified = artifact ?: return false
+        val target = verified.loadTarget as? VerifiedArtifactLoadTarget.File ?: return false
+        return verified.identity == identity && identity.repositoryId == model.modelId &&
+            target.repositoryId == model.modelId && target.path.endsWith(".gguf", ignoreCase = true) &&
+            llm.backend == BackendKind.CPU && llm.gpuLayerCount == 0 &&
+            llm.contextTokens in 1..4_096 && llm.batchSize in 1..256 && llm.microBatchSize in 1..64 &&
+            llm.sequenceCount == 1 && llm.useMmap && assessedPlans == null && backendAlternative == null
     }
 
     private suspend fun classifyNativePreflight(

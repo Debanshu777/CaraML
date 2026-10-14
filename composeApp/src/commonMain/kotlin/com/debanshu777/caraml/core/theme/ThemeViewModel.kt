@@ -7,7 +7,10 @@ import com.debanshu777.caraml.core.data.theme.ThemeRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Single source of truth for the in-memory [ThemePreferences] state.
@@ -18,6 +21,7 @@ import kotlinx.coroutines.launch
 class ThemeViewModel(
     private val repository: ThemeRepository,
 ) : ViewModel() {
+    private val preferenceUpdates = Mutex()
 
     val preferences: StateFlow<ThemePreferences> = repository.getPreferences()
         .stateIn(
@@ -27,20 +31,31 @@ class ThemeViewModel(
         )
 
     fun updateSeedColor(color: Color) {
-        viewModelScope.launch {
-            repository.updatePreferences(preferences.value.copy(seedColor = color))
-        }
+        updatePreferences { it.copy(seedColor = color) }
     }
 
     fun updateThemeMode(mode: ThemeMode) {
-        viewModelScope.launch {
-            repository.updatePreferences(preferences.value.copy(themeMode = mode))
-        }
+        updatePreferences { it.copy(themeMode = mode) }
     }
 
     fun updatePaletteStyle(style: ThemePaletteStyle) {
+        updatePreferences { it.copy(paletteStyle = style) }
+    }
+
+    fun updateReduceMotion(reduceMotion: Boolean) {
+        updatePreferences { it.copy(reduceMotion = reduceMotion) }
+    }
+
+    fun updateSoftEffects(softEffects: Boolean) {
+        updatePreferences { it.copy(softEffects = softEffects) }
+    }
+
+    private fun updatePreferences(transform: (ThemePreferences) -> ThemePreferences) {
         viewModelScope.launch {
-            repository.updatePreferences(preferences.value.copy(paletteStyle = style))
+            // Read after the previous write so fast successive controls cannot undo each other.
+            preferenceUpdates.withLock {
+                repository.updatePreferences(transform(repository.getPreferences().first()))
+            }
         }
     }
 }

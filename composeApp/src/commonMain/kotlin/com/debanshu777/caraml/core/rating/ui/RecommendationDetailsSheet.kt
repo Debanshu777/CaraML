@@ -15,6 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.recommendation.AssessmentReason
 import com.debanshu777.caraml.core.recommendation.Confidence
 import com.debanshu777.caraml.core.recommendation.DiffusionRunPlan
@@ -28,7 +29,6 @@ import com.debanshu777.caraml.core.recommendation.RecommendationCategory
 import com.debanshu777.caraml.core.recommendation.RiskTolerance
 import com.debanshu777.caraml.core.recommendation.WorkloadConfig
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
-import com.debanshu777.caraml.core.theme.prismShapes
 
 data class RecommendationPresentation(
     val selectedVariant: String,
@@ -99,21 +99,21 @@ fun RecommendationDetailsContent(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .widthIn(max = 840.dp)
+            .widthIn(max = AppTheme.dimensions.size840)
             .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .padding(AppTheme.dimensions.size20),
+        verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing12),
     ) {
-        Text("Recommendation details", style = MaterialTheme.typography.titleLarge)
-        Text(modelId, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Recommendation details", style = AppTheme.typography.headingBase)
+        Text(modelId, style = AppTheme.typography.bodySmall, color = AppTheme.colors.onSurfaceVariant)
         SuitabilityChip(recommendation = recommendation)
         if (recommendation.profile.riskTolerance == RiskTolerance.EXPERIMENTAL &&
             AssessmentReason.TIGHT_MEMORY_FIT in recommendation.reasons
         ) {
             Text(
                 "Experimental tight fit: memory headroom may be small.",
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodyMedium,
+                color = AppTheme.colors.error,
+                style = AppTheme.typography.bodyBase,
             )
         }
         HorizontalDivider()
@@ -125,8 +125,8 @@ fun RecommendationDetailsContent(
         DetailLine("Confidence", presentation.confidence)
         DetailLine("Selected plan", presentation.selectedPlan)
         DetailLine("Fallback plan", presentation.fallbackPlan)
-        Text("Reasons", style = MaterialTheme.typography.titleSmall)
-        presentation.reasons.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
+        Text("Reasons", style = AppTheme.typography.headingXSmall)
+        presentation.reasons.forEach { Text(it, style = AppTheme.typography.bodyBase) }
     }
 }
 
@@ -142,8 +142,8 @@ fun RecommendationDetailsSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         modifier = modifier,
-        shape = MaterialTheme.prismShapes.modal,
-        containerColor = AuroraSurfaceLevel.Floating.containerColor(MaterialTheme.colorScheme),
+        shape = AppTheme.shapes.extraLarge,
+        containerColor = AuroraSurfaceLevel.Floating.containerColor(AppTheme.colors),
     ) {
         RecommendationDetailsContent(modelId, recommendation, presentation)
     }
@@ -152,8 +152,8 @@ fun RecommendationDetailsSheet(
 @Composable
 private fun DetailLine(label: String, value: String) {
     Column {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.bodyMedium)
+        Text(label, style = AppTheme.typography.labelBase, color = AppTheme.colors.onSurfaceVariant)
+        Text(value, style = AppTheme.typography.bodyBase)
     }
 }
 

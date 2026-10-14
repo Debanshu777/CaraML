@@ -7,13 +7,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
-import com.debanshu777.caraml.core.theme.prism
+import com.debanshu777.caraml.core.theme.AppTheme
+import com.debanshu777.caraml.core.ui.components.BrandButton
+import com.debanshu777.caraml.core.ui.components.BrandButtonStyle
 
 @Composable
 fun ModelHubHeader(
@@ -26,34 +28,47 @@ fun ModelHubHeader(
     require((actionLabel == null) == (onAction == null)) {
         "actionLabel and onAction must either both be provided or both be null"
     }
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .testTag("model-summary"),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
+    val heading: @Composable (Modifier) -> Unit = { headingModifier ->
+        Column(modifier = headingModifier) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.prism.sectionTitle,
-                color = MaterialTheme.colorScheme.onSurface,
+                style = AppTheme.typography.heading16,
+                color = AppTheme.colors.onSurface,
             )
             summary?.let {
                 Text(
                     text = it,
-                    style = MaterialTheme.typography.prism.denseMetadata,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = AppTheme.typography.body14,
+                    color = AppTheme.colors.onSurfaceVariant,
                 )
             }
         }
+    }
+    val action: @Composable () -> Unit = {
         if (actionLabel != null && onAction != null) {
-            TextButton(
+            BrandButton(
+                style = BrandButtonStyle.Secondary,
                 onClick = onAction,
-                modifier = Modifier.heightIn(min = 48.dp),
+                modifier = Modifier.heightIn(min = AppTheme.spacing.spacing48),
             ) {
                 Text(actionLabel)
             }
+        }
+    }
+    val containerModifier = modifier.fillMaxWidth().testTag("model-summary")
+    if (LocalDensity.current.fontScale >= 1.4f) {
+        Column(modifier = containerModifier) {
+            heading(Modifier.fillMaxWidth())
+            action()
+        }
+    } else {
+        Row(
+            modifier = containerModifier,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            heading(Modifier.weight(1f))
+            action()
         }
     }
 }

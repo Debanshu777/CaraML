@@ -179,14 +179,17 @@ private class DescriptorSink(private val root: Long, private var descriptor: Lon
 }
 
 private class DescriptorSource(private val root: Long, private var descriptor: Long) : Source {
+    private var bytes: ByteArray? = null
+
     override fun read(sink: Buffer, byteCount: Long): Long {
         require(byteCount >= 0)
         if (byteCount == 0L) return 0
-        val bytes = ByteArray(minOf(64L * 1024L, byteCount).toInt())
-        val count = NativeArtifactFs.read(descriptor, bytes, 0, bytes.size)
+        val requested = minOf(64L * 1024L, byteCount).toInt()
+        val scratch = bytes?.takeIf { it.size >= requested } ?: ByteArray(requested).also { bytes = it }
+        val count = NativeArtifactFs.read(descriptor, scratch, 0, requested)
         if (count < 0) throw ArtifactFileAccessException()
         if (count == 0) return -1
-        sink.write(bytes, 0, count)
+        sink.write(scratch, 0, count)
         return count.toLong()
     }
 
@@ -194,6 +197,7 @@ private class DescriptorSource(private val root: Long, private var descriptor: L
     override fun close() {
         val current = descriptor
         descriptor = -1
+        bytes = null
         if (current >= 0 && (!NativeArtifactFs.closeFile(current) || !NativeArtifactFs.revalidate(root))) {
             throw ArtifactFileAccessException()
         }

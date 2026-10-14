@@ -8,10 +8,14 @@ internal suspend fun publishArtifactBundle(
     pathProvider: StoragePathProvider,
     ownerModelId: String,
     artifacts: List<DownloadMetadataDTO>,
+    diagnostics: BundlePublicationDiagnostics? = null,
 ): Boolean {
-    if (artifacts.any { !it.usesImmutableStorageLayout }) return false
-    return withBundleStore(pathProvider, ownerModelId, artifacts) { store, entries ->
-        store.publish(entries)
+    if (artifacts.any { !it.usesImmutableStorageLayout }) {
+        diagnostics.emit(BundlePublicationStage.VALIDATE_INPUT, BundlePublicationReason.INVALID_INPUT)
+        return false
+    }
+    return withBundleStore(pathProvider, ownerModelId, artifacts, diagnostics) { store, entries ->
+        store.publish(entries, diagnostics)
         store.readValidated()?.bundleDigest == ArtifactManifest.create(entries)?.bundleDigest
     }
 }
@@ -204,57 +208,86 @@ private suspend fun withBundleStore(
     pathProvider: StoragePathProvider,
     ownerModelId: String,
     artifacts: List<DownloadMetadataDTO>,
+    diagnostics: BundlePublicationDiagnostics? = null,
     block: (ArtifactBundleManifestStore, List<ArtifactManifestEntry>) -> Boolean,
-): Boolean = try {
-    val ownerId = validateModelId(ownerModelId)
-    if (artifacts.isEmpty() || artifacts.size > 64 || artifacts.map { it.bundleId }.toSet().size != 1) return false
-    val ownerRoot = artifactMetadataRoot(pathProvider, ownerId)
-    val previousCandidates = readOwnerManifestCandidates(ownerRoot)
-    val roots = (
-        artifacts.map { artifactMetadataRoot(pathProvider, it.artifact.repositoryId) } +
-            previousCandidates.flatMap { candidate ->
-                candidate.entries.map { artifactMetadataRoot(pathProvider, it.identity.repositoryId) }
-            } + ownerRoot
-    ).distinct()
-    if (roots.size > MAX_BUNDLE_ROOTS) return false
-    val allowedRoots = roots.mapTo(mutableSetOf(), ::artifactRootKey)
-    ArtifactRootLockCoordinator.withRoots(allowedRoots) {
-        if (!recoverArtifactStores(roots)) return@withRoots false
-        val store = artifactBundleStore(pathProvider, ownerRoot, allowedRoots)
-        try {
-            if (store.readRecoveryCandidates() != previousCandidates) return@withRoots false
-            store.recover()
-            val entries = artifacts.map { metadata ->
-                val artifactStore = ArtifactManifestStore(
-                    artifactMetadataRoot(pathProvider, metadata.artifact.repositoryId),
-                )
-                try {
-                    val installed = artifactStore.readValidated()?.entries?.singleOrNull { entry ->
-                        entry.logicalRole == metadata.logicalRole && entry.identity == metadata.artifact &&
-                            entry.localRelativePath == metadata.destinationRelativePath
-                    } ?: return@withRoots false
-                    ArtifactManifestEntry.create(
-                        logicalRole = installed.logicalRole,
-                        identity = installed.identity,
-                        byteCount = installed.byteCount,
-                        contentSha256 = installed.contentSha256,
-                        bundleId = metadata.bundleId,
-                        localRelativePath = installed.localRelativePath,
-                        layoutRelativePath = installed.layoutRelativePath,
-                    ) ?: return@withRoots false
-                } finally {
-                    artifactStore.close()
-                }
-            }
-            block(store, entries)
-        } finally {
-            store.close()
+): Boolean {
+    var stage = BundlePublicationStage.READ_ROOTS
+    fun enter(next: BundlePublicationStage) { stage = next; diagnostics.emit(next, BundlePublicationReason.STARTED) }
+    try {
+        enter(BundlePublicationStage.READ_ROOTS)
+        val ownerId = validateModelId(ownerModelId)
+        if (artifacts.isEmpty() || artifacts.size > 64 || artifacts.map { it.bundleId }.toSet().size != 1) {
+            diagnostics.emit(BundlePublicationStage.VALIDATE_INPUT, BundlePublicationReason.INVALID_INPUT)
+            return false
         }
+        val ownerRoot = artifactMetadataRoot(pathProvider, ownerId)
+        val previousCandidates = readOwnerManifestCandidates(ownerRoot)
+        val roots = (
+            artifacts.map { artifactMetadataRoot(pathProvider, it.artifact.repositoryId) } +
+                previousCandidates.flatMap { candidate ->
+                    candidate.entries.map { artifactMetadataRoot(pathProvider, it.identity.repositoryId) }
+                } + ownerRoot
+        ).distinct()
+        if (roots.size > MAX_BUNDLE_ROOTS) {
+            diagnostics.emit(BundlePublicationStage.READ_ROOTS, BundlePublicationReason.INVALID_INPUT)
+            return false
+        }
+        val allowedRoots = roots.mapTo(mutableSetOf(), ::artifactRootKey)
+        return ArtifactRootLockCoordinator.withRoots(allowedRoots) {
+            enter(BundlePublicationStage.RECOVER_ARTIFACTS)
+            if (!recoverArtifactStores(roots)) {
+                diagnostics.emit(stage, BundlePublicationReason.INTEGRITY)
+                return@withRoots false
+            }
+            val store = artifactBundleStore(pathProvider, ownerRoot, allowedRoots)
+            try {
+                enter(BundlePublicationStage.ROOTS_CHANGED)
+                if (store.readRecoveryCandidates() != previousCandidates) {
+                    diagnostics.emit(stage, BundlePublicationReason.ROOTS_CHANGED)
+                    return@withRoots false
+                }
+                enter(BundlePublicationStage.RECOVER_BUNDLE)
+                store.recover()
+                enter(BundlePublicationStage.ENTRY_LOOKUP)
+                val entries = artifacts.map { metadata ->
+                    val artifactStore = ArtifactManifestStore(
+                        artifactMetadataRoot(pathProvider, metadata.artifact.repositoryId),
+                    )
+                    try {
+                        val installed = artifactStore.readValidated()?.entries?.singleOrNull { entry ->
+                            entry.logicalRole == metadata.logicalRole && entry.identity == metadata.artifact &&
+                                entry.localRelativePath == metadata.destinationRelativePath
+                        } ?: run {
+                            diagnostics.emit(stage, BundlePublicationReason.ENTRY_MISSING)
+                            return@withRoots false
+                        }
+                        ArtifactManifestEntry.create(
+                            logicalRole = installed.logicalRole,
+                            identity = installed.identity,
+                            byteCount = installed.byteCount,
+                            contentSha256 = installed.contentSha256,
+                            bundleId = metadata.bundleId,
+                            localRelativePath = installed.localRelativePath,
+                            layoutRelativePath = installed.layoutRelativePath,
+                        ) ?: run {
+                            diagnostics.emit(stage, BundlePublicationReason.INTEGRITY)
+                            return@withRoots false
+                        }
+                    } finally {
+                        artifactStore.close()
+                    }
+                }
+                block(store, entries)
+            } finally {
+                store.close()
+            }
+        }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        diagnostics.emit(stage, bundlePublicationFailure(error))
+        return false
     }
-} catch (cancelled: CancellationException) {
-    throw cancelled
-} catch (_: Exception) {
-    false
 }
 
 internal fun readOwnerManifestCandidates(ownerRoot: Path): List<ArtifactManifest> {

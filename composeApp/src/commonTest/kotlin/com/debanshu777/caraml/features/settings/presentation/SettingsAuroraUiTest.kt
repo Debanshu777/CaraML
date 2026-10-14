@@ -55,10 +55,14 @@ import kotlin.test.assertEquals
 
 class SettingsAuroraUiTest {
     @Test
-    fun appearancePreviewIsIdentifiableWithoutDependingOnColor() = runComposeUiTest {
-        setContent { MaterialTheme { AuroraThemePreview() } }
-
-        onNodeWithContentDescription("Current Aurora theme preview").assertIsDisplayed()
+    fun appearanceChoicesAreIdentifiableWithoutDependingOnColor() = runComposeUiTest {
+        val viewModel = ThemeViewModel(FakeThemeRepository())
+        setContent { MaterialTheme { AppearanceSection(viewModel) } }
+        onNodeWithContentDescription("Choose appearance").assertIsDisplayed()
+        onNodeWithText("A little color").assertHasClickAction()
+        onNodeWithContentDescription("Keep things still").assertIsDisplayed()
+        onNodeWithContentDescription("Soft glass").assertIsDisplayed()
+        onNodeWithContentDescription("Current Aurora theme preview").assertDoesNotExist()
     }
 
     @Test
@@ -137,6 +141,7 @@ class SettingsAuroraUiTest {
             }
         }
 
+        onNodeWithText("A little color").performClick()
         onNodeWithContentDescription("Palette Vibrant, not selected")
             .assertIsNotSelected()
             .assertHeightIsAtLeast(48.dp)
@@ -273,6 +278,7 @@ class SettingsAuroraUiTest {
             }
         }
 
+        onNodeWithText("A little color").performClick()
         listOf(false, true).forEach { useDarkTheme ->
             runOnIdle { darkTheme = useDarkTheme }
             mainClock.advanceTimeByFrame()

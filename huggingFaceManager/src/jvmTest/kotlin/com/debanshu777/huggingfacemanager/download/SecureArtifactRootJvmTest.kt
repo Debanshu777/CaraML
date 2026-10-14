@@ -10,6 +10,7 @@ import kotlin.io.path.exists
 import kotlin.test.Test
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -48,6 +49,20 @@ class SecureArtifactRootJvmTest {
         val secure = SecureArtifactRoot(root.toOkioPath())
 
         assertNull(secure.readBounded("manifest", 256 * 1024))
+
+        secure.close()
+    }
+
+    @Test
+    fun secureReadsPreservePartialChunksAndExactContentAtEof() = withRoots { root, _ ->
+        val payload = ByteArray(3 * 64 * 1024 + 7) { (it % 251).toByte() }
+        Files.write(root.resolve("artifact.gguf"), payload)
+        Files.write(root.resolve("manifest"), payload.copyOfRange(0, 8_193))
+        val secure = SecureArtifactRoot(root.toOkioPath())
+
+        assertEquals(payload.sha256HexForSecureRootTest(), secure.sha256("artifact.gguf", payload.size.toLong()))
+        assertTrue(secure.readBounded("manifest", 8_193)!!.contentEquals(payload.copyOfRange(0, 8_193)))
+        assertNull(secure.readBounded("manifest", 8_192))
 
         secure.close()
     }

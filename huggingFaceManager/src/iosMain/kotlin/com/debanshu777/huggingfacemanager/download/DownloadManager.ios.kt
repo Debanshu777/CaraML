@@ -1,7 +1,6 @@
 package com.debanshu777.huggingfacemanager.download
 
 import com.debanshu777.huggingfacemanager.createPlatformHttpClient
-import io.ktor.client.plugins.HttpTimeout
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
@@ -13,11 +12,7 @@ actual class DownloadManager actual constructor(
     private val baseUrl: String
 ) {
     private val httpClient = createPlatformHttpClient {
-        install(HttpTimeout) {
-            requestTimeoutMillis = 300_000L
-            connectTimeoutMillis = 30_000L
-            socketTimeoutMillis = 300_000L
-        }
+        configureArtifactDownloadTimeouts()
     }
 
     actual fun download(
@@ -45,8 +40,9 @@ actual class DownloadManager actual constructor(
         ).flowOn(Dispatchers.Default)
     }
 
-    actual suspend fun publishBundle(ownerModelId: String, artifacts: List<DownloadMetadataDTO>): Boolean =
-        publishArtifactBundle(pathProvider, ownerModelId, artifacts)
+    actual suspend fun publishBundle(ownerModelId: String, artifacts: List<DownloadMetadataDTO>,
+        diagnostics: BundlePublicationDiagnostics?): Boolean =
+        publishArtifactBundle(pathProvider, ownerModelId, artifacts, diagnostics)
 
     actual suspend fun validateBundle(ownerModelId: String, artifacts: List<DownloadMetadataDTO>): Boolean =
         validateArtifactBundle(pathProvider, ownerModelId, artifacts)

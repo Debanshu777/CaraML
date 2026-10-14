@@ -27,6 +27,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalDensity
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.features.chat.data.ChatMessage
 import com.debanshu777.caraml.features.chat.presentation.StreamingState
@@ -81,11 +82,12 @@ fun ChatMessageList(
     loadMedia: suspend (String) -> ByteArray? = { null },
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(),
+    footer: (@Composable () -> Unit)? = null,
 ) {
     val initialMessageIds = remember { messages.mapTo(mutableSetOf()) { it.id } }
     val completedEntryIds = remember { mutableStateMapOf<String, Boolean>() }
     val motion = LocalAuroraMotionPolicy.current
-    val insertionOffset = with(LocalDensity.current) { 8.dp.roundToPx() }
+    val insertionOffset = with(LocalDensity.current) { AppTheme.spacing.spacing8.roundToPx() }
 
     LaunchedEffect(messages) {
         val currentMessageIds = messages.mapTo(mutableSetOf()) { it.id }
@@ -98,7 +100,7 @@ fun ChatMessageList(
         modifier = modifier.fillMaxWidth(),
         state = listState,
         contentPadding = contentPadding,
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing12)
     ) {
             items(
                 items = messages,
@@ -160,6 +162,7 @@ fun ChatMessageList(
                     }
                 }
             }
+            if (footer != null) item(key = "reply-recovery-actions") { footer() }
     }
 }
 
@@ -171,6 +174,7 @@ private fun ChatMessageListItem(
     loadMedia: suspend (String) -> ByteArray?,
 ) {
     if (message.id == streamingMessageId && streamingState != null) {
+        if (streamingState.isCompacting) return
         StreamingMessageBubble(
             message = message,
             streamingState = streamingState,

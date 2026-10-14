@@ -1,5 +1,7 @@
 package com.debanshu777.caraml.core.recommendation
 
+import com.debanshu777.caraml.core.platform.AppLogger
+import kotlin.time.TimeSource
 import com.debanshu777.caraml.core.data.inference.NATIVE_DIFFUSERS_CONSUMED_PATHS
 import com.debanshu777.caraml.core.data.inference.VerifiedDiffusionLoadTarget
 import com.debanshu777.caraml.core.data.inference.isCompleteDiffusionInstallation
@@ -449,6 +451,7 @@ class LocalArtifactIdentityResolver(
         val before = storagePathProvider.inspectDownloadedArtifact(storageOwner, localPath)
             ?.takeIf { it.kind == StoredArtifactKind.REGULAR_FILE && it.byteCount == expectedBytes }
             ?: return null
+        val hashStarted = TimeSource.Monotonic.markNow()
         val actual = try {
             hashOnTrustedDispatcher(localPath, expectedBytes)
         } catch (cancelled: CancellationException) {
@@ -457,7 +460,12 @@ class LocalArtifactIdentityResolver(
             return null
         }
         val after = storagePathProvider.inspectDownloadedArtifact(storageOwner, localPath)
-        return before.takeIf { after == before && actual.equals(expectedSha256, ignoreCase = true) }
+        val unchanged = after == before && actual.equals(expectedSha256, ignoreCase = true)
+        AppLogger.i("ModelLoad") {
+            "stage=artifact-hash bytes=$expectedBytes outcome=${if (unchanged) "VERIFIED" else "REJECTED"} " +
+                "elapsedMs=${hashStarted.elapsedNow().inWholeMilliseconds}"
+        }
+        return before.takeIf { unchanged }
     }
 
     private suspend fun hashOnTrustedDispatcher(path: String, expectedBytes: Long): String {

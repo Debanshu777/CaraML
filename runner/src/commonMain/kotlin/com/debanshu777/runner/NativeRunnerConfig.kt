@@ -6,6 +6,12 @@ enum class LlamaLazyMode(val nativeValue: Int) {
     ON(2),
 }
 
+/**
+ * Single-sequence inference settings. Context and batch sizes are token counts;
+ * KV types are independent of the GGUF weight quantization. Positive GPU layer
+ * counts remain explicit when fitting; -1 requests full offload. CPU affinity
+ * uses decimal indices/ranges/lists, not upstream hexadecimal masks.
+ */
 data class NativeRunnerConfig(
     val nCtx: Int = 0,
     val nCtxMin: Int = 512,
@@ -13,7 +19,7 @@ data class NativeRunnerConfig(
     val nThreadsBatch: Int = 0,
     val nBatch: Int = 512,
     val nUbatch: Int = 512,
-    val nOutputsMaxPerSequence: Int = 0,
+    val nOutputsMaxPerSequence: Int = 1,
     val flashAttn: Int = -1,
     val offloadKqv: Boolean = true,
     val typeK: Int = 1,

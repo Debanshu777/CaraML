@@ -17,6 +17,8 @@ import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
 import com.debanshu777.huggingfacemanager.download.ArtifactVerificationException
 import com.debanshu777.huggingfacemanager.download.ArtifactManifest
 import com.debanshu777.huggingfacemanager.download.ArtifactManifestEntry
+import com.debanshu777.huggingfacemanager.download.ArtifactBundleManifestStore
+import com.debanshu777.huggingfacemanager.download.DownloadManager
 import com.debanshu777.huggingfacemanager.download.ArtifactManifestStore
 import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
 import com.debanshu777.huggingfacemanager.download.StoragePathProvider
@@ -36,11 +38,50 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import okio.ByteString.Companion.toByteString
 import okio.Path.Companion.toOkioPath
 
 class ModelDownloadFinalizerTest {
+    @Test
+    fun exactPublishedBundleWithInvalidPlanCanCompleteReadyCatalogWithoutDeletingPriorData() = runTest {
+        val root = Files.createTempDirectory("caraml-idempotent-catalog").toRealPath().toFile()
+        val database = getRoomDatabase(getDatabaseBuilder(File(root, "caraml.db").path))
+        val paths = TempFinalizerStoragePathProvider(root)
+        val batch = finalizerBatch()
+        val originals = batch.artifacts.associate { artifact ->
+            val metadata = artifact.request.metadata
+            val bytes = ByteArray(metadata.artifact.expectedBytes.toInt()) { metadata.logicalRole.first().code.toByte() }
+            val entry = requireNotNull(ArtifactManifestEntry.create(metadata.logicalRole, metadata.artifact,
+                bytes.size.toLong(), bytes.toByteString().sha256().hex(), metadata.bundleId,
+                metadata.destinationRelativePath, metadata.layoutRelativePath))
+            val artifactRoot = File(paths.getModelsStorageDirectory(metadata.artifact.repositoryId))
+            val staged = File(artifactRoot, metadata.destinationRelativePath + ".part")
+            staged.parentFile.mkdirs()
+            staged.writeBytes(bytes)
+            ArtifactManifestStore(artifactRoot.toOkioPath()).commit(metadata.destinationRelativePath, entry)
+            File(artifactRoot, metadata.destinationRelativePath) to bytes
+        }
+        try {
+            val manager = DownloadManager(paths)
+            val metadata = batch.artifacts.map { it.request.metadata }
+            assertTrue(manager.publishBundle(batch.ownerModelId, metadata))
+            val plan = File(paths.getModelsStorageDirectory(batch.ownerModelId), ArtifactBundleManifestStore.REPLACEMENT_PLAN_FILE_NAME)
+            plan.writeText("synthetic-invalid-plan")
+            assertNull(database.installedModelCatalogDao().snapshotReady(batch.ownerModelId))
+            ModelDownloadFinalizer(FinalizerStore(batch), DownloadManagerBundlePublisher(manager),
+                RepositoryModelCatalogPublisher(database.installedModelCatalogDao(), paths),
+                InstalledModelPublicationCoordinator()).finalize(batch.batchId)
+            val ready = requireNotNull(database.installedModelCatalogDao().snapshotReady(batch.ownerModelId))
+            assertEquals(LocalModelEntity.STATUS_READY, ready.model.componentStatus)
+            assertEquals(batch.evidence.sha256, ready.evidence?.sha256)
+            assertTrue(manager.validateBundle(batch.ownerModelId, metadata))
+            assertEquals("synthetic-invalid-plan", plan.readText())
+            originals.forEach { (file, bytes) -> assertTrue(bytes.contentEquals(file.readBytes())) }
+        } finally { database.close() }
+    }
+
     @Test
     fun replacementCleanupRetainsAnExternalComponentStillReferencedByAnotherCatalog() = runTest {
         val storageRoot = Files.createTempDirectory("caraml-shared-replacement")

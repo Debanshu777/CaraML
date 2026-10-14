@@ -7,8 +7,8 @@ import androidx.compose.ui.graphics.Color
  * in the Appearance settings picker.
  */
 object ThemeDefaults {
-    /** Baseline yellow — the first-launch anchor for the CaraML focal workspace. */
-    val DEFAULT_SEED_COLOR: Color = Color(0xFFEFD04B)
+    /** Warm orange — the first-launch action accent for the Pocket pal identity. */
+    val DEFAULT_SEED_COLOR: Color = Color(0xFFFF7854)
 
     val DEFAULT_THEME_MODE: ThemeMode = ThemeMode.SYSTEM
 
@@ -19,14 +19,14 @@ object ThemeDefaults {
      * so the picker grid layout doesn't shuffle between releases.
      */
     val PRESET_SEEDS: List<Color> = listOf(
-        Color(0xFF6750A4), // Material You purple (default)
+        DEFAULT_SEED_COLOR, // CaraML orange
+        Color(0xFF6750A4), // Purple
         Color(0xFF1565C0), // Indigo
         Color(0xFF0288D1), // Cerulean
         Color(0xFF00897B), // Teal
         Color(0xFF2E7D32), // Forest
         Color(0xFFAFB42B), // Chartreuse
         Color(0xFFEFD04B), // Baseline yellow
-        Color(0xFFEF6C00), // Burnt orange
         Color(0xFFD81B60), // Magenta
         Color(0xFFC62828), // Crimson
         Color(0xFF5D4037), // Cocoa

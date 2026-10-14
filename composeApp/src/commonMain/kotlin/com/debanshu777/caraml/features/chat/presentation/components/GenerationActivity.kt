@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.features.chat.presentation.components
 
+import com.debanshu777.caraml.core.ui.icons.AppIcons
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
@@ -7,10 +8,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccessTime
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.DataUsage
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -24,16 +21,18 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
-import com.debanshu777.caraml.core.theme.LocalSpacing
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
+import com.debanshu777.caraml.core.ui.components.BrandPal
+import com.debanshu777.caraml.core.ui.components.BrandPalState
 
 enum class GenerationActivityPhase(
     val description: String,
     val icon: ImageVector,
 ) {
-    Preparing("Preparing", Icons.Default.AccessTime),
-    Generating("Generating", Icons.Default.AutoAwesome),
-    Finalizing("Finalizing", Icons.Default.DataUsage),
+    Preparing("Preparing", AppIcons.Clock),
+    Generating("Generating", AppIcons.Spark),
+    Finalizing("Finalizing", AppIcons.Memory),
 }
 
 /**
@@ -50,6 +49,7 @@ fun GenerationActivity(
     } else {
         GenerationActivityPhase.Generating
     },
+    showPhaseHeader: Boolean = true,
 ) {
     val motion = LocalAuroraMotionPolicy.current
     val reportedProgress = progress?.coerceIn(0f, 1f)
@@ -70,42 +70,47 @@ fun GenerationActivity(
         modifier = modifier.semantics {
             stateDescription = phase.description
         },
-        verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.s),
+        verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
     ) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.s),
+        if (showPhaseHeader) Row(
+            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
-                imageVector = phase.icon,
-                contentDescription = null,
+            BrandPal(
+                state = when (phase) {
+                    GenerationActivityPhase.Preparing -> BrandPalState.Loading
+                    GenerationActivityPhase.Generating -> BrandPalState.Replying
+                    GenerationActivityPhase.Finalizing -> BrandPalState.Thinking
+                },
                 modifier = Modifier
-                    .size(20.dp)
+                    .size(40.dp)
                     .testTag("generation-activity-signal"),
-                tint = MaterialTheme.colorScheme.primary,
             )
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.xxs),
+                verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing2),
             ) {
                 Text(
                     text = phase.description,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    style = AppTheme.typography.labelBase,
+                    color = AppTheme.colors.onSurface,
                 )
                 Text(
                     text = label,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = AppTheme.typography.bodySmall,
+                    color = AppTheme.colors.onSurfaceVariant,
                 )
             }
+        }
+        else {
+            Text(label, style = AppTheme.typography.bodySmall, color = AppTheme.colors.onSurfaceVariant)
         }
         if (progress != null) {
             LinearProgressIndicator(
                 progress = { displayedProgress },
                 modifier = Modifier.fillMaxWidth(),
             )
-        } else {
+        } else if (motion.pulseEnabled) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
     }

@@ -9,9 +9,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.theme.AuroraSurfaceLevel
-import com.debanshu777.caraml.core.theme.auroraColors
-import com.debanshu777.caraml.core.theme.prismShapes
 
 /**
  * A meaningful tonal group. Prism panes are borderless by default; [showBorder]
@@ -21,17 +20,24 @@ import com.debanshu777.caraml.core.theme.prismShapes
 fun CaraMLPane(
     modifier: Modifier = Modifier,
     level: AuroraSurfaceLevel = AuroraSurfaceLevel.Pane,
-    shape: Shape = MaterialTheme.prismShapes.pane,
+    shape: Shape = AppTheme.shapes.medium,
     showBorder: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Surface(
         modifier = modifier,
         shape = shape,
-        color = level.containerColor(MaterialTheme.colorScheme).copy(alpha = level.containerAlpha),
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        border = if (showBorder) BorderStroke(1.dp, MaterialTheme.auroraColors.paneBorder) else null,
-        shadowElevation = if (level == AuroraSurfaceLevel.Floating) 3.dp else 0.dp,
+        color = level.containerColor(AppTheme.colors)
+            .copy(alpha = if (AppTheme.softEffects) level.containerAlpha else 1f),
+        contentColor = AppTheme.colors.onSurface,
+        border = if (showBorder) BorderStroke(
+            AppTheme.dimensions.size1,
+            AppTheme.auroraColors.paneBorder
+        ) else null,
+        shadowElevation = if (AppTheme.softEffects && level == AuroraSurfaceLevel.Floating)
+            AppTheme.dimensions.size3
+        else
+            AppTheme.dimensions.size0,
     ) {
         Column(content = content)
     }

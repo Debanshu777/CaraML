@@ -76,6 +76,102 @@ class SuitabilityEngineTest {
     }
 
     @Test
+    fun browseAssessmentKeepsUnknownCompatibilityButStillEstimatesKnownFileResources() {
+        val engine = engine(SupportEvidence.Supported)
+        val descriptor = unknownGgufVersionDescriptor()
+
+        val assessed = engine.assessBrowsePlans(
+            descriptor = descriptor,
+            hardwareProfile = task6Hardware(topology = MemoryTopology.UNIFIED),
+            workload = task6LlmWorkload(),
+        )
+        val estimate = assessed.values.first()
+        val snapshot = task6Snapshot(
+            sharedBudget = 20_000_000_000L,
+            storageBudget = 20_000_000_000L,
+            topology = MemoryTopology.UNIFIED,
+        )
+        val strictSelection = RunPlanOptimizer().select(
+            engine.assemble(assessed, snapshot),
+            snapshot,
+            RecommendationProfile(),
+        )
+        val browseFit = BrowseFitEstimator(engine).estimate(descriptor, snapshot, task6LlmWorkload())
+
+        assertEquals(AssessmentReason.GGUF_VERSION_UNKNOWN, assertIs<Compatibility.Unknown>(assessed.compatibility).reasons.single())
+        assertTrue(estimate.hostMemoryBytes != null || estimate.gpuMemoryBytes != null || estimate.sharedMemoryBytes != null)
+        assertTrue(estimate.evidence.any { it.reason == AssessmentReason.MISSING_MODEL_SHAPE })
+        assertIs<Compatibility.Unknown>(browseFit.compatibility)
+        assertEquals(1_073_741_824L, browseFit.downloadBytes)
+        assertEquals(1_073_741_824L, browseFit.storageBytes?.highBytes)
+        assertTrue(browseFit.memory != null)
+        assertTrue(browseFit.resourceSnapshotFresh)
+        assertEquals(RecommendationCategory.NEEDS_INFORMATION, strictSelection.category)
+        assertEquals(null, strictSelection.plan)
+    }
+
+    @Test
+    fun browseCpuOnDiscreteMemoryUsesHostPoolWithoutRequiringGpuBudget() {
+        val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
+        val snapshot = task6Snapshot(
+            hostBudget = 20_000_000_000L,
+            gpuBudget = null,
+            storageBudget = 20_000_000_000L,
+            topology = MemoryTopology.DISCRETE,
+            capturedAtEpochMs = now,
+        )
+
+        val result = BrowseFitEstimator(engine(SupportEvidence.Supported), clock = { now }).estimate(
+            descriptor = unknownGgufVersionDescriptor(),
+            snapshot = snapshot,
+            workload = task6LlmWorkload(),
+        )
+
+        assertEquals(BrowseResourceFit.LIKELY_FIT, result.memoryFit)
+        assertEquals(1_073_741_824L, result.downloadBytes)
+    }
+
+    @Test
+    fun staleBrowseResourcesKeepKnownDownloadSizeButDoNotClaimCurrentFit() {
+        val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
+        val snapshot = task6Snapshot(
+            sharedBudget = 20_000_000_000L,
+            storageBudget = 20_000_000_000L,
+            topology = MemoryTopology.UNIFIED,
+            capturedAtEpochMs = now - RecommendationPolicyV1.RESOURCE_SNAPSHOT_MAX_AGE_MS - 1L,
+        )
+
+        val result = BrowseFitEstimator(engine(SupportEvidence.Supported), clock = { now }).estimate(
+            descriptor = unknownGgufVersionDescriptor(),
+            snapshot = snapshot,
+            workload = task6LlmWorkload(),
+        )
+
+        assertEquals(false, result.resourceSnapshotFresh)
+        assertEquals(BrowseResourceFit.UNKNOWN, result.memoryFit)
+        assertEquals(BrowseResourceFit.UNKNOWN, result.storageFit)
+        assertEquals(1_073_741_824L, result.downloadBytes)
+        assertTrue(result.reasons.contains(AssessmentReason.RESOURCE_SNAPSHOT_STALE))
+    }
+
+    private fun unknownGgufVersionDescriptor(): LlmModelDescriptor {
+        val complete = task6LlmDescriptor()
+        return LlmModelDescriptor(
+            repositoryId = complete.repositoryId,
+            revision = complete.revision,
+            file = complete.file,
+            architecture = complete.architecture,
+            quantization = complete.quantization,
+            parameterCount = complete.parameterCount,
+            contextLimit = complete.contextLimit,
+            transformerShape = null,
+            ggufVersion = null,
+            requiredEngineFeatures = complete.requiredEngineFeatures,
+            evidence = complete.evidence,
+        )
+    }
+
+    @Test
     fun supportedDescriptorEstimatesEveryBoundedCandidateWithoutAProfile() {
         val assessed = engine(SupportEvidence.Supported).assessPlans(
             task6LlmDescriptor(),

@@ -31,7 +31,7 @@ class CalibrationRepositoryTest {
         repository.initialize()
         repeat(5) { repository.record(sample(observedRatio = 1.25)) }
 
-        assertEquals("caraml-native-20260923-f46bc30-c92d73c", repository.engineVersion())
+        assertEquals("caraml-native-20260930-f46bc30-c92d73c-params1", repository.engineVersion())
         assertNull(repository.correctionFor(memoryKey().copy(engineVersion = "native-engine-v1")))
         assertNull(repository.correctionFor(memoryKey().copy(estimatorVersion = 2)))
         assertNull(repository.correctionFor(memoryKey().copy(memoryPool = MemoryPool.SHARED.stableName)))

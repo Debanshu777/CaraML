@@ -26,6 +26,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
@@ -35,12 +36,12 @@ import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.captureToImage
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -63,6 +64,27 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class SettingsWorkbenchUiTest {
+    @Test
+    fun largeTextPreferencesGiveTheDescriptionFullWidthAboveTheControl() = runComposeUiTest {
+        setContent {
+            FixedDensity(fontScale = 2f) {
+                MaterialTheme {
+                    Surface(Modifier.width(320.dp).height(700.dp)) {
+                        SettingsPreferenceRow("Downloaded models", "Models saved on this device.") {
+                            com.debanshu777.caraml.core.ui.components.BrandButton(onClick = {}) {
+                                androidx.compose.material3.Text("Open library")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        val description = onNodeWithText("Models saved on this device.").fetchSemanticsNode().boundsInRoot
+        val control = onNodeWithText("Open library").fetchSemanticsNode().boundsInRoot
+        assertTrue(description.width >= 280f, "Large text must not be squeezed beside an action: $description")
+        assertTrue(control.top >= description.bottom, "The action must follow its description")
+    }
+
     @Test
     fun settingsUsesSectionLabelsAndDividerRowsInsteadOfOutlinedPanePerGroup() =
         runComposeUiTest {
@@ -96,37 +118,61 @@ class SettingsWorkbenchUiTest {
         }
 
     @Test
-    fun appearancePreviewUsesSharedGradientAndGrainTreatment() = runComposeUiTest {
+    fun compactSettingsKeepsTheOverviewVisibleAndOpensTheShelf() = runComposeUiTest {
         val fixture = SettingsFixture()
         setContent {
             FixedDensity {
-                MaterialTheme(colorScheme = darkColorScheme()) {
-                    Surface(Modifier.width(760.dp).height(900.dp)) {
-                        fixture.Screen()
-                    }
+                MaterialTheme {
+                    Surface(Modifier.width(390.dp).height(900.dp)) { fixture.Screen() }
                 }
             }
         }
+        onNodeWithText("Settings").assertIsDisplayed()
+        onNodeWithContentDescription("Current Aurora theme preview").assertDoesNotExist()
+        listOf("Appearance", "A little color", "Keep things still", "Soft glass", "Downloaded models")
+            .forEach { onNodeWithText(it).assertIsDisplayed() }
+        onNodeWithText("Seed color").assertDoesNotExist()
+        onNodeWithText("Open library").assertIsDisplayed().performClick()
+        runOnIdle { assertEquals(1, fixture.shelfOpenCount) }
+        onNodeWithText("A little color").performClick()
+        onNodeWithText("Seed color").performScrollTo().assertIsDisplayed()
+        onNodeWithText("Palette style").performScrollTo().assertIsDisplayed()
+    }
 
-        val previewNode = onNodeWithContentDescription("Current Aurora theme preview")
-            .assertIsDisplayed()
-        val pixels = previewNode.captureToImage().toPixelMap()
-        val firstWash = pixels[pixels.width / 5, pixels.height / 4]
-        val opposingWash = pixels[pixels.width * 4 / 5, pixels.height * 3 / 4]
-        assertTrue(
-            firstWash.rgbDistance(opposingWash) > 0.05f,
-            "Appearance preview must visibly render the contextual gradient",
+    @Test
+    fun appearanceMenuChangesThemeAndKeepsTheSavedChoiceVisible() = runComposeUiTest {
+        val fixture = SettingsFixture()
+        setContent { MaterialTheme { Surface(Modifier.width(390.dp).height(900.dp)) { fixture.Screen() } } }
+        onNodeWithContentDescription("Choose appearance").performClick()
+        onNodeWithContentDescription("Theme System, selected").assertIsDisplayed()
+        onNodeWithContentDescription("Theme Dark, not selected").performClick()
+        onNodeWithContentDescription("Choose appearance").assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Dark"),
         )
-        assertTrue(
-            pixels.highFrequencyEnergy(bottom = pixels.height / 2) >= 0.0025f,
-            "Appearance preview must render the shared deterministic grain",
+        onNodeWithContentDescription("Choose appearance").performClick()
+        onNodeWithContentDescription("Theme Dark, selected").assertIsDisplayed()
+        onNodeWithContentDescription("Theme Light, not selected").performClick()
+        onNodeWithContentDescription("Choose appearance").assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Light"),
         )
-        onAllNodes(
-            SemanticsMatcher.expectValue(
-                SemanticsProperties.ContentDescription,
-                listOf("Current Aurora theme preview"),
-            ),
-        ).assertCountEquals(1)
+    }
+
+    @Test
+    fun appearanceTogglesAndPaletteChangesSurviveClosingTheDisclosure() = runComposeUiTest {
+        val fixture = SettingsFixture()
+        setContent { MaterialTheme { Surface(Modifier.width(390.dp).height(900.dp)) { fixture.Screen() } } }
+        onNodeWithContentDescription("Keep things still").assertIsOff().performClick().assertIsOn()
+        onNodeWithContentDescription("Soft glass").assertIsOn().performClick().assertIsOff()
+        onNodeWithText("A little color").performScrollTo().performClick()
+        onNodeWithContentDescription("Seed color 2").performScrollTo().performClick().assertIsSelected()
+        onNodeWithContentDescription("Palette Vibrant, not selected").performScrollTo().performClick()
+        onNodeWithText("A little color").performScrollTo().performClick()
+        onNodeWithText("Seed color").assertDoesNotExist()
+        onNodeWithText("A little color").performClick()
+        onNodeWithContentDescription("Seed color 2").performScrollTo().assertIsSelected()
+        onNodeWithContentDescription("Palette Vibrant, selected").performScrollTo().assertIsSelected()
+        onNodeWithContentDescription("Keep things still").performScrollTo().assertIsOn()
+        onNodeWithContentDescription("Soft glass").performScrollTo().assertIsOff()
     }
 
     @Test
@@ -158,7 +204,8 @@ class SettingsWorkbenchUiTest {
                 }
             }
 
-            listOf("Theme", "Seed color", "Palette style").forEach { title ->
+            onNodeWithText("A little color").performClick()
+            listOf("Appearance", "Seed color", "Palette style").forEach { title ->
                 val contrast = onNodeWithText(title)
                     .assertIsDisplayed()
                     .captureToImage()
@@ -183,22 +230,15 @@ class SettingsWorkbenchUiTest {
                 }
             }
 
-            onNodeWithContentDescription("Theme System, selected").performScrollTo()
+            onNodeWithContentDescription("Choose appearance").assertIsDisplayed()
+            onNodeWithText("A little color").performScrollTo().performClick()
+            onNodeWithContentDescription("Seed color 1").performScrollTo()
             onNodeWithTag(
-                "Selected theme System",
+                "Selected seed color 1",
                 useUnmergedTree = true,
             ).assertIsDisplayed()
             onNodeWithContentDescription(
-                "Selected theme System",
-                useUnmergedTree = true,
-            ).assertDoesNotExist()
-            onNodeWithContentDescription("Seed color 7").performScrollTo()
-            onNodeWithTag(
-                "Selected seed color 7",
-                useUnmergedTree = true,
-            ).assertIsDisplayed()
-            onNodeWithContentDescription(
-                "Selected seed color 7",
+                "Selected seed color 1",
                 useUnmergedTree = true,
             ).assertDoesNotExist()
             onNodeWithContentDescription("Palette Expressive, selected").performScrollTo()
@@ -242,15 +282,14 @@ class SettingsWorkbenchUiTest {
                 }
             }
 
+            onNodeWithText("A little color").performScrollTo().performClick()
             onAllNodes(
                 SemanticsMatcher.keyIsDefined(SemanticsProperties.SelectableGroup),
                 useUnmergedTree = true,
-            ).assertCountEquals(6)
+            ).assertCountEquals(5)
 
             listOf(
-                "Theme System, selected" to true,
-                "Theme Light, not selected" to false,
-                "Seed color 7" to true,
+                "Seed color 1" to true,
                 "Seed color 2" to false,
                 "Palette Expressive, selected" to true,
                 "Palette Vibrant, not selected" to false,
@@ -283,8 +322,23 @@ class SettingsWorkbenchUiTest {
                 )
             }
 
+            fun selectVisibleChoice(description: String) {
+                val choice = onNodeWithContentDescription(description)
+                    .performScrollTo()
+                // performScrollTo uses the entire scroller bounds, including the glass
+                // underlap. Move the target below the fixed header before a real tap.
+                val headerBottom = onNodeWithTag("page-sticky-chrome")
+                    .fetchSemanticsNode().boundsInRoot.bottom
+                val choiceTop = choice.fetchSemanticsNode().boundsInRoot.top
+                if (choiceTop < headerBottom) {
+                    onNodeWithTag("settings-scroll").performSemanticsAction(SemanticsActions.ScrollBy) {
+                        it(0f, choiceTop - headerBottom - 8f)
+                    }
+                }
+                choice.assertIsDisplayed().performClick()
+            }
+
             listOf(
-                "Theme Light" to listOf("Theme System", "Theme Light", "Theme Dark"),
                 "Palette Vibrant" to listOf(
                     "Palette Tonal Spot",
                     "Palette Neutral",
@@ -313,9 +367,7 @@ class SettingsWorkbenchUiTest {
                     "KV cache F16/F16",
                 ),
             ).forEach { (nextSelection, group) ->
-                onNodeWithContentDescription("$nextSelection, not selected")
-                    .performScrollTo()
-                    .performClick()
+                selectVisibleChoice("$nextSelection, not selected")
                 group.forEach { option ->
                     if (option == nextSelection) {
                         onNodeWithContentDescription("$option, selected").assertIsSelected()
@@ -325,18 +377,16 @@ class SettingsWorkbenchUiTest {
                 }
             }
 
-            onNodeWithContentDescription("Seed color 2")
-                .performScrollTo()
-                .performClick()
-                .assertIsSelected()
-            onNodeWithContentDescription("Seed color 7").assertIsNotSelected()
+            selectVisibleChoice("Seed color 2")
+            onNodeWithContentDescription("Seed color 2").assertIsSelected()
+            onNodeWithContentDescription("Seed color 1").assertIsNotSelected()
             onAllNodes(
                 SemanticsMatcher.expectValue(SemanticsProperties.Selected, true) and
                     SemanticsMatcher.expectValue(
                         SemanticsProperties.Role,
                         Role.RadioButton,
                     ),
-            ).assertCountEquals(6)
+            ).assertCountEquals(5)
         }
 
     @Test
@@ -352,9 +402,10 @@ class SettingsWorkbenchUiTest {
             }
         }
 
+        onNodeWithText("A little color").performScrollTo().performClick()
         listOf(
-            "theme" to onNodeWithContentDescription("Theme System, selected"),
-            "seed" to onNodeWithContentDescription("Seed color 7"),
+            "theme" to onNodeWithContentDescription("Choose appearance"),
+            "seed" to onNodeWithContentDescription("Seed color 1"),
             "palette" to onNodeWithContentDescription("Palette Expressive, selected"),
             "recommendation" to
                 onNodeWithContentDescription("Risk tolerance Balanced, selected"),
@@ -477,36 +528,10 @@ class SettingsWorkbenchUiTest {
                 }
             }
 
-            val preview = onNodeWithContentDescription("Current Aurora theme preview")
-                .performScrollTo()
-                .assertIsDisplayed()
-                .fetchSemanticsNode()
-            val previewLeft = preview.positionInRoot.x
-            val previewTop = preview.positionInRoot.y
-            val previewRight = previewLeft + preview.size.width
-            val previewBottom = previewTop + preview.size.height
-            val previewContentInset = 15.5f
-            assertTrue(
-                preview.size.height >= 113.5f,
-                "200% text preview must grow beyond the 104dp normal-density minimum",
-            )
-
-            onAllNodesWithText("Prism workbench").assertCountEquals(0)
-            listOf("CaraML workspace", "Seed color, atmosphere, and grain").forEach { label ->
-                val labelNode = onNodeWithText(label, useUnmergedTree = true)
-                    .fetchSemanticsNode()
-                val labelLeft = labelNode.positionInRoot.x
-                val labelTop = labelNode.positionInRoot.y
-                val labelRight = labelLeft + labelNode.size.width
-                val labelBottom = labelTop + labelNode.size.height
-                assertTrue(
-                    labelLeft >= previewLeft + previewContentInset &&
-                        labelTop >= previewTop + previewContentInset &&
-                        labelRight <= previewRight - previewContentInset &&
-                        labelBottom <= previewBottom - previewContentInset,
-                    "$label bounds must stay inside the 200% text preview safe inset",
-                )
-            }
+            onNodeWithContentDescription("Current Aurora theme preview").assertDoesNotExist()
+            onNodeWithContentDescription("Choose appearance").performScrollTo()
+                .assertIsDisplayed().assertHeightIsAtLeast(48.dp)
+            onNodeWithText("Open library").performScrollTo().assertIsDisplayed().assertHeightIsAtLeast(48.dp)
 
             onNodeWithContentDescription("GPU acceleration (Vulkan)")
                 .performScrollTo()
@@ -520,6 +545,8 @@ class SettingsWorkbenchUiTest {
 }
 
 private class SettingsFixture {
+    var shelfOpenCount = 0
+        private set
     private val settingsRepository = FakeSettingsRepository()
     private val themeRepository = WorkbenchThemeRepository()
     private val settingsViewModel = SettingsViewModel(settingsRepository)
@@ -534,6 +561,7 @@ private class SettingsFixture {
             viewModel = settingsViewModel,
             themeViewModel = themeViewModel,
             rolloutModeSource = rolloutModeSource,
+            onOpenShelf = { shelfOpenCount += 1 },
         )
     }
 }
@@ -600,23 +628,6 @@ private fun PixelMap.differsFrom(other: PixelMap): Boolean {
     return false
 }
 
-private fun PixelMap.highFrequencyEnergy(
-    top: Int = 1,
-    bottom: Int = height - 1,
-): Float {
-    var total = 0f
-    var count = 0
-    for (y in top.coerceAtLeast(1) until bottom.coerceAtMost(height - 1)) {
-        for (x in 1 until width - 1) {
-            val center = this[x, y].signal()
-            total += abs((2f * center) - this[x - 1, y].signal() - this[x + 1, y].signal())
-            total += abs((2f * center) - this[x, y - 1].signal() - this[x, y + 1].signal())
-            count += 1
-        }
-    }
-    return total / count
-}
-
 private fun PixelMap.internalContrast(): Float {
     var minimum = 1f
     var maximum = 0f
@@ -629,5 +640,3 @@ private fun PixelMap.internalContrast(): Float {
     }
     return (maximum + 0.05f) / (minimum + 0.05f)
 }
-
-private fun Color.signal(): Float = (red + green + blue) / 3f

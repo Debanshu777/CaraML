@@ -61,3 +61,9 @@ If `preparePatchedLlamaSource` fails after a bump, the upstream change touched t
 **What:** Builds and references the Intel Xe cooperative-matrix flash-attention decode shaders only when the selected `glslc` supports `GL_KHR_cooperative_matrix`.
 
 **Why:** Android NDK shader toolchains can legitimately omit that extension. The pinned upstream generator detected the missing capability but still compiled the two extension-only shaders, which prevented Vulkan Android packaging instead of retaining the scalar flash-attention path.
+
+### `0005-fit-account-cpu-repack-memory.patch`
+
+**What:** Classifies fit-probe memory by host-buffer status or CPU device ownership, including CPU repack buffers. Counts model, context and compute memory once; unknown ownership fails the operational probe.
+
+**Why:** CPU repack buffers use a nonstandard tensor layout and therefore do not advertise `is_host`. Ignoring their CPU ownership omitted most model weights from CPU-only admission estimates. Native classifier tests and Pixel 9 preflight cover the correction.

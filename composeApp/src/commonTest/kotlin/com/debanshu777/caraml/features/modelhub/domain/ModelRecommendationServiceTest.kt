@@ -14,6 +14,9 @@ import com.debanshu777.caraml.core.recommendation.AssessedPlans
 import com.debanshu777.caraml.core.recommendation.AssessmentConfidence
 import com.debanshu777.caraml.core.recommendation.AssessmentReason
 import com.debanshu777.caraml.core.recommendation.Compatibility
+import com.debanshu777.caraml.core.recommendation.BrowseFitEstimate
+import com.debanshu777.caraml.core.recommendation.BrowseResourceFit
+import com.debanshu777.caraml.core.recommendation.PerformanceEstimate
 import com.debanshu777.caraml.core.recommendation.CompatibilityChecker
 import com.debanshu777.caraml.core.recommendation.Confidence
 import com.debanshu777.caraml.core.recommendation.DescriptorBuildResult
@@ -67,6 +70,90 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalCoroutinesApi::class)
 class ModelRecommendationServiceTest {
     @Test
+    fun unknownCompatibilityPublishesPerVariantBrowseEvidenceWithoutSelectingLoadDescriptor() = runTest {
+        val metadata = ModelMetadataSource { repositoryId, _ ->
+            RepositoryVariantSet.Ready(
+                listOf(
+                    variant(repositoryId, "model-Q4_K_M.gguf", 1_000L),
+                    variant(repositoryId, "model-Q8_0.gguf", 8_000L),
+                ),
+            )
+        }
+        val evaluator = FakeVariantEvaluator(
+            compatibility = { Compatibility.Unknown(listOf(AssessmentReason.GGUF_VERSION_UNKNOWN)) },
+            browseEstimate = { descriptor ->
+                val llm = descriptor as LlmModelDescriptor
+                BrowseFitEstimate(
+                    compatibility = Compatibility.Unknown(listOf(AssessmentReason.GGUF_VERSION_UNKNOWN)),
+                    memoryFit = if (llm.file.path.contains("Q4")) BrowseResourceFit.LIKELY_FIT else BrowseResourceFit.TOO_LARGE,
+                    storageFit = BrowseResourceFit.UNKNOWN,
+                    memory = null,
+                    storageBytes = null,
+                    downloadBytes = llm.file.sizeBytes,
+                    performance = PerformanceEstimate.Unknown(AssessmentReason.SPEED_NOT_VERIFIED),
+                    resourceSnapshotFresh = true,
+                    resourceTimestampEpochMs = 1_000L,
+                    reasons = emptyList(),
+                    evidence = emptyList(),
+                )
+            },
+        )
+        val service = ModelRecommendationService(
+            metadataSource = metadata,
+            snapshotSource = FakeSnapshotSource(snapshot(1_000L)),
+            variantEvaluator = evaluator,
+            evaluationDispatcher = StandardTestDispatcher(testScheduler),
+            clock = { 1_000L },
+        )
+        val session = service.startQuery("sparse-guidance", models(1), workload())
+
+        service.evaluateInitial(session, RecommendationProfile())
+
+        val state = session.state.value.single()
+        assertEquals(DescriptorState.NEEDS_INFORMATION, state.descriptorState)
+        assertEquals(null, state.selectedDescriptor)
+        assertEquals(2, state.browseVariants.size)
+        assertEquals("model-Q4_K_M.gguf", state.browseVariants.first().filePaths.single())
+        assertEquals(BrowseResourceFit.LIKELY_FIT, state.browseVariants.first().estimate.memoryFit)
+        assertEquals("model-Q4_K_M.gguf", state.provisionalVariantName)
+    }
+
+    @Test
+    fun provisionalBrowseFitOrdersLikelyBeforeTooLargeWithoutClaimingCompatibility() = runTest {
+        val service = ModelRecommendationService(
+            metadataSource = ModelMetadataSource { repositoryId, _ -> readyVariant(repositoryId) },
+            snapshotSource = FakeSnapshotSource(snapshot(1_000L)),
+            variantEvaluator = FakeVariantEvaluator(
+                compatibility = { Compatibility.Unknown(listOf(AssessmentReason.GGUF_VERSION_UNKNOWN)) },
+                browseEstimate = { descriptor ->
+                    BrowseFitEstimate(
+                        compatibility = Compatibility.Unknown(listOf(AssessmentReason.GGUF_VERSION_UNKNOWN)),
+                        memoryFit = if (descriptor.repositoryId == "org/likely") BrowseResourceFit.LIKELY_FIT
+                            else BrowseResourceFit.TOO_LARGE,
+                        storageFit = BrowseResourceFit.LIKELY_FIT,
+                        memory = null,
+                        storageBytes = null,
+                        downloadBytes = null,
+                        performance = PerformanceEstimate.Unknown(AssessmentReason.SPEED_NOT_VERIFIED),
+                        resourceSnapshotFresh = true,
+                        resourceTimestampEpochMs = 1_000L,
+                        reasons = emptyList(),
+                        evidence = emptyList(),
+                    )
+                },
+            ),
+            evaluationDispatcher = StandardTestDispatcher(testScheduler),
+            clock = { 1_000L },
+        )
+        val session = service.startQuery("fit-order", listOf(model("org/too-large"), model("org/likely")), workload())
+        service.evaluateInitial(session, RecommendationProfile())
+        service.setOrdering(session, RecommendationOrdering.PERSONALIZED)
+
+        assertEquals(listOf("org/likely", "org/too-large"), session.state.value.map { it.repositoryId })
+        assertTrue(session.state.value.all { it.descriptorState == DescriptorState.NEEDS_INFORMATION })
+    }
+
+    @Test
     fun evaluatesBoundedWindowsWithGlobalConcurrencyAndStableTies() = runTest {
         val metadata = CountingMetadataSource(delayMillis = 1L)
         val evaluator = FakeVariantEvaluator()
@@ -90,10 +177,7 @@ class ModelRecommendationServiceTest {
         assertTrue(session.state.value.take(48).all { it.selectedDescriptor != null })
         assertTrue(session.state.value.take(48).all { it.workload == session.workload })
         assertTrue(metadata.maxConcurrent <= 4)
-        assertEquals(
-            session.state.value.take(48).sortedBy { it.stableModelId },
-            session.state.value.take(48),
-        )
+        assertEquals(48, session.state.value.take(48).count { it.descriptorState == DescriptorState.ASSESSED })
         assertEquals((48 until 100).toList(), session.state.value.drop(48).map { it.sourceIndex })
 
         service.evaluateMore(session, RecommendationProfile())
@@ -102,6 +186,30 @@ class ModelRecommendationServiceTest {
         assertEquals(96, metadata.requestCount)
         service.evaluateMore(session, RecommendationProfile())
         assertEquals(96, metadata.requestCount)
+    }
+
+    @Test
+    fun appendedCandidatesKeepPriorAssessmentsAndEvaluateOnlyNewRows() = runTest {
+        val metadata = CountingMetadataSource()
+        val service = ModelRecommendationService(
+            metadataSource = metadata,
+            snapshotSource = FakeSnapshotSource(snapshot(1_000L)),
+            variantEvaluator = FakeVariantEvaluator(),
+            evaluationDispatcher = StandardTestDispatcher(testScheduler),
+            clock = { 1_000L },
+        )
+        val session = service.startQuery("append", models(2), workload())
+        service.evaluateInitial(session, RecommendationProfile())
+        val initial = session.state.value.associateBy { it.repositoryId }
+
+        assertEquals(1, service.appendCandidates(session, listOf(models(2).first(), model("org/new"))))
+        assertEquals(listOf(0, 1, 2), session.state.value.map { it.sourceIndex })
+        assertEquals(2, metadata.requestCount)
+        assertEquals(initial[models(2).first().id], session.state.value.first { it.repositoryId == models(2).first().id })
+
+        service.evaluateMore(session, RecommendationProfile())
+        assertEquals(3, metadata.requestCount)
+        assertEquals(3, session.state.value.count { it.descriptorState == DescriptorState.ASSESSED })
     }
 
     @Test
@@ -468,13 +576,13 @@ class ModelRecommendationServiceTest {
                 },
             )
         }
-        val evaluator = FakeVariantEvaluator { descriptor ->
+        val evaluator = FakeVariantEvaluator(category = { descriptor ->
             when {
                 descriptor.stablePath().contains("Q8_0") -> RecommendationCategory.RECOMMENDED
                 descriptor.stablePath().contains("Q5_K_M") -> RecommendationCategory.USABLE
                 else -> RecommendationCategory.INCOMPATIBLE
             }
-        }
+        })
         val service = ModelRecommendationService(
             metadataSource = metadata,
             snapshotSource = FakeSnapshotSource(snapshot(1_000L)),
@@ -572,7 +680,7 @@ class ModelRecommendationServiceTest {
         assertTrue(gateway.treeRevisions.all { it.second != "main" && it.second == sha })
 
         gateway.trees[repositoryId] = listOf(file("model-Q4_K_M-00001-of-00002.gguf", 100L, "oid-1"))
-        assertIs<RepositoryVariantSet.NeedsInformation>(
+        assertIs<RepositoryVariantSet.SelectVariant>(
             source.describeVariants(repositoryId, ModelHubBrowseMode.LanguageModels),
         )
     }
@@ -726,6 +834,8 @@ private class FakeSnapshotSource(
 
 private class FakeVariantEvaluator(
     private val category: (ModelDescriptor) -> RecommendationCategory = { RecommendationCategory.RECOMMENDED },
+    private val compatibility: (ModelDescriptor) -> Compatibility = { Compatibility.Compatible },
+    private val browseEstimate: (ModelDescriptor) -> BrowseFitEstimate? = { null },
 ) : RecommendationVariantEvaluator {
     var assessmentCount: Int = 0
     var reassessmentCount: Int = 0
@@ -737,7 +847,7 @@ private class FakeVariantEvaluator(
         workload: WorkloadConfig,
     ): ModelAssessment {
         assessmentCount += 1
-        return assessment(descriptor.stablePath())
+        return assessment(descriptor.stablePath(), compatibility(descriptor))
     }
 
     override fun rebuild(assessment: ModelAssessment, snapshot: DeviceSnapshot): ModelAssessment {
@@ -780,6 +890,12 @@ private class FakeVariantEvaluator(
         worstNormalizedHeadroom = 1.0,
         stableId = descriptor.stablePath(),
     )
+
+    override fun browseFit(
+        descriptor: LlmModelDescriptor,
+        snapshot: DeviceSnapshot,
+        workload: WorkloadConfig,
+    ): BrowseFitEstimate? = browseEstimate(descriptor)
 }
 
 private class FakeMetadataGateway : HuggingFaceMetadataGateway {
@@ -878,10 +994,13 @@ private fun workload(userRequestedContextTokens: Int = 2_048) = LlmWorkloadConfi
     evidence = emptyList(),
 )
 
-private fun assessment(key: String) = ModelAssessment(
+private fun assessment(
+    key: String,
+    compatibility: Compatibility = Compatibility.Compatible,
+) = ModelAssessment(
     assessmentKey = key,
-    compatibility = Compatibility.Compatible,
-    planAssessments = AssessedPlans(emptyList(), assessmentKey = key),
+    compatibility = compatibility,
+    planAssessments = AssessedPlans(emptyList(), assessmentKey = key, compatibility = compatibility),
     baseHostBudgetBytes = 1_000_000L,
     baseGpuBudgetBytes = null,
     baseSharedBudgetBytes = null,

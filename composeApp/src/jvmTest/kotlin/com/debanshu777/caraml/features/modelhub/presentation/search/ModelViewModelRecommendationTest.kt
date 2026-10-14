@@ -83,6 +83,7 @@ import com.debanshu777.huggingfacemanager.repository.HuggingFaceRepository
 import com.debanshu777.huggingfacemanager.usecase.GetModelConfigUseCase
 import com.debanshu777.huggingfacemanager.usecase.GetModelDetailUseCase
 import com.debanshu777.huggingfacemanager.usecase.GetModelFileTreeUseCase
+import com.debanshu777.huggingfacemanager.usecase.GetModelPageUseCase
 import com.debanshu777.huggingfacemanager.usecase.GetRecommendationModelDetailUseCase
 import com.debanshu777.huggingfacemanager.usecase.ListModelsUseCase
 import com.debanshu777.huggingfacemanager.usecase.ListRecommendationModelsUseCase
@@ -104,6 +105,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
@@ -1449,6 +1451,51 @@ class ModelViewModelRecommendationTest {
     }
 
     @Test
+    fun searchDebouncesLatestDraftAndImeDoesNotDuplicateRequest() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val searches = mutableListOf<String?>()
+        val engine = object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler { request ->
+                val query = request.url.parameters["search"]
+                searches += query
+                respondPage(pageResponse("org/${query ?: "browse"}"))
+            }
+        }) { override val dispatcher: CoroutineDispatcher = dispatcher }
+        val client = HttpClient(engine)
+        try {
+            val vm = viewModel(client, dispatcher)
+            vm.updateSearchQuery("fir")
+            advanceTimeBy(200)
+            vm.updateSearchQuery("first")
+            advanceTimeBy(499)
+            runCurrent()
+            assertTrue(searches.isEmpty())
+            advanceTimeBy(1)
+            advanceUntilIdle()
+            assertEquals(listOf<String?>("first"), searches)
+
+            vm.performSearch()
+            advanceUntilIdle()
+            assertEquals(listOf<String?>("first"), searches)
+
+            vm.updateSearchQuery("")
+            advanceUntilIdle()
+            assertEquals(listOf("first", null), searches)
+
+            vm.updateSearchQuery("pending")
+            advanceTimeBy(200)
+            vm.setBrowseMode(ModelHubBrowseMode.DiffusionImage)
+            advanceUntilIdle()
+            assertEquals(listOf("first", null), searches)
+        } finally {
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
     fun laterSearchIntentWinsWhenEarlierResponseCompletesLast() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
@@ -1458,12 +1505,12 @@ class ModelViewModelRecommendationTest {
         val engine = object : MockEngine(MockEngineConfig().apply {
             reuseHandlers = true
             addHandler { request ->
-                val query = request.url.parameters["q"]
+                val query = request.url.parameters["search"]
                 if (query == "first") {
                     firstStarted.complete(Unit)
                     releaseFirst.await()
                 }
-                respondJson(searchResponse(query.orEmpty(), "org/$query"))
+                respondJson(pageResponse("org/$query"))
             }
         }) {
             override val dispatcher: CoroutineDispatcher = requestDispatcher
@@ -1494,6 +1541,364 @@ class ModelViewModelRecommendationTest {
     }
 
     @Test
+    fun lateOldSearchErrorCannotReplaceCurrentSuccess() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val firstStarted = CompletableDeferred<Unit>()
+        val releaseFirst = CompletableDeferred<Unit>()
+        val engine = object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler { request ->
+                if (request.url.parameters["search"] == "first") {
+                    firstStarted.complete(Unit)
+                    releaseFirst.await()
+                    respond("unavailable", HttpStatusCode.InternalServerError)
+                } else respondPage(pageResponse("org/current"))
+            }
+        }) { override val dispatcher: CoroutineDispatcher = dispatcher }
+        val client = HttpClient(engine)
+        try {
+            val vm = viewModel(client, dispatcher)
+            vm.updateSearchQuery("first")
+            vm.performSearch()
+            firstStarted.await()
+            vm.updateSearchQuery("second")
+            vm.performSearch()
+            advanceUntilIdle()
+            releaseFirst.complete(Unit)
+            advanceUntilIdle()
+
+            assertEquals("second", vm.results.value.key?.committedSearch)
+            assertEquals(listOf("org/current"), vm.results.value.models.map { it.id })
+            assertNull(vm.results.value.initialError)
+            assertFalse(vm.results.value.initialLoading)
+        } finally {
+            releaseFirst.complete(Unit)
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun nextPageDeduplicatesAndRetryKeepsLoadedRows() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        var secondAttempts = 0
+        var assessments = 0
+        val engine = object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler { request ->
+                if (request.url.parameters["cursor"] == null) {
+                    respondPage(pageResponse("org/first", "org/second"),
+                        "<${request.url}&cursor=next-1>; rel=\"next\"")
+                } else {
+                    secondAttempts++
+                    if (secondAttempts == 1) respond("oops", HttpStatusCode.InternalServerError)
+                    else respondPage(pageResponse("org/second", "org/third"))
+                }
+            }
+        }) { override val dispatcher: CoroutineDispatcher = dispatcher }
+        val client = HttpClient(engine)
+        try {
+            val vm = viewModel(client, dispatcher,
+                recommendationService = recommendationService(dispatcher, onAssess = { assessments++ }))
+            vm.loadModels()
+            advanceUntilIdle()
+            assertEquals(listOf("org/first", "org/second"), vm.results.value.models.map { it.id })
+            assertTrue(vm.results.value.canLoadMore)
+            assertEquals(2, assessments)
+
+            vm.autoLoadNextPage()
+            vm.autoLoadNextPage()
+            advanceUntilIdle()
+            assertEquals(listOf("org/first", "org/second"), vm.results.value.models.map { it.id })
+            assertNotNull(vm.results.value.moreError)
+            assertTrue(vm.results.value.canLoadMore)
+            assertEquals(2, assessments)
+            assertEquals(1, secondAttempts)
+
+            vm.autoLoadNextPage()
+            advanceUntilIdle()
+            assertEquals(1, secondAttempts, "Automatic paging must not retry a failed append")
+
+            vm.loadNextPage()
+            advanceUntilIdle()
+            assertEquals(listOf("org/first", "org/second", "org/third"), vm.results.value.models.map { it.id })
+            assertNull(vm.results.value.moreError)
+            assertFalse(vm.results.value.hasMore)
+            assertEquals(2, secondAttempts)
+            assertEquals(3, assessments)
+        } finally {
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun localOrderingDoesNotRefetchButRemoteSortResetsQuery() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val sorts = mutableListOf<String?>()
+        val engine = object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler { request ->
+                sorts += request.url.parameters["sort"]
+                respondPage(pageResponse("org/first"))
+            }
+        }) { override val dispatcher: CoroutineDispatcher = dispatcher }
+        val client = HttpClient(engine)
+        try {
+            val vm = viewModel(client, dispatcher)
+            vm.loadModels()
+            advanceUntilIdle()
+            vm.setModelOrdering(ModelOrdering.Personalized)
+            advanceUntilIdle()
+            assertEquals(listOf<String?>("trendingScore"), sorts)
+
+            vm.setModelOrdering(ModelOrdering.Server(com.debanshu777.huggingfacemanager.model.ModelSort.DOWNLOADS))
+            advanceUntilIdle()
+            assertEquals(listOf<String?>("trendingScore", "downloads"), sorts)
+            assertEquals(1, vm.results.value.models.size)
+        } finally {
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun visibleDiscoverStartsFirstPageExactlyOnceWithoutSearchSubmit() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        var requests = 0
+        val engine = object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler { request ->
+                assertEquals("/api/models", request.url.encodedPath)
+                requests++
+                respondPage(pageResponse("org/startup-result"))
+            }
+        }) { override val dispatcher: CoroutineDispatcher = dispatcher }
+        val client = HttpClient(engine)
+        try {
+            val vm = viewModel(client, dispatcher)
+            assertEquals(0, requests)
+            vm.ensureDiscoverLoaded()
+            vm.ensureDiscoverLoaded()
+            advanceUntilIdle()
+
+            assertEquals(1, requests)
+            assertEquals(listOf("org/startup-result"), vm.results.value.models.map { it.id })
+            assertNull(vm.results.value.initialError)
+            vm.ensureDiscoverLoaded()
+            advanceUntilIdle()
+            assertEquals(1, requests)
+        } finally {
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun pausedVerificationResumeUsesCurrentIntentAndKeepsVerificationCheckpoint() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val store = ObservingDownloadTaskStore()
+        val intents = mutableListOf<DownloadUserIntent>()
+        val transitions = mutableListOf<DownloadArtifactState>()
+        val observedStore = object : DownloadTaskStore by store {
+            override suspend fun setUserIntent(batchId: String, intent: DownloadUserIntent, nowEpochMs: Long): Boolean {
+                intents += intent
+                return store.setUserIntent(batchId, intent, nowEpochMs)
+            }
+            override suspend fun transitionArtifact(artifactId: String, state: DownloadArtifactState,
+                failureCode: DownloadFailureCode?, nowEpochMs: Long): Boolean {
+                transitions += state
+                return store.transitionArtifact(artifactId, state, failureCode, nowEpochMs)
+            }
+        }
+        val scheduler = RecordingPlatformDownloadScheduler()
+        val artifact = requireNotNull(DownloadArtifactIdentity.create(
+            repositoryId = "org/verification",
+            immutableRevision = "a".repeat(40),
+            relativePath = "model.gguf",
+            remoteObjectId = "sha256:${"b".repeat(64)}",
+            expectedBytes = 100L,
+        ))
+        val verifying = durableSnapshot("verification-batch", artifact, DownloadArtifactState.VERIFYING,
+            DownloadBatchState.VERIFYING, 100L)
+        val engine = object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler { error("Resuming verification must not fetch model metadata") }
+        }) { override val dispatcher: CoroutineDispatcher = dispatcher }
+        val client = HttpClient(engine)
+        try {
+            val vm = viewModel(client, dispatcher,
+                downloadCoordinator = observingDownloadCoordinator(observedStore, scheduler))
+            for (intent in listOf(DownloadUserIntent.RUN, DownloadUserIntent.CANCEL)) {
+                store.snapshots.value = listOf(verifying.copy(userIntent = intent,
+                    artifacts = verifying.artifacts.map { it.copy(userIntent = intent) }))
+                advanceUntilIdle()
+                vm.resumeDownload(verifying.batchId, verifying.artifacts.single().artifactId)
+                advanceUntilIdle()
+                assertEquals(emptyList(), scheduler.enqueuedBatchIds)
+                assertEquals(emptyList(), intents)
+            }
+            store.snapshots.value = listOf(verifying.copy(userIntent = DownloadUserIntent.PAUSE,
+                artifacts = verifying.artifacts.map { it.copy(userIntent = DownloadUserIntent.PAUSE) }))
+            advanceUntilIdle()
+            assertEquals(emptyList(), scheduler.enqueuedBatchIds)
+            vm.resumeDownload(verifying.batchId, verifying.artifacts.single().artifactId)
+            advanceUntilIdle()
+            assertEquals(listOf(verifying.batchId), scheduler.enqueuedBatchIds)
+            assertEquals(listOf(DownloadUserIntent.RUN), intents)
+            assertEquals(emptyList(), transitions)
+            assertEquals(DownloadArtifactState.VERIFYING, store.getBatch(verifying.batchId)!!.artifacts.single().state)
+            assertEquals(100L, store.getBatch(verifying.batchId)!!.bytesReceived)
+        } finally {
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun globalDownloadQueueSurvivesSearchChangesAndControlsExactBatch() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val store = ObservingDownloadTaskStore()
+        val scheduler = RecordingPlatformDownloadScheduler()
+        val artifact = requireNotNull(DownloadArtifactIdentity.create(
+            repositoryId = "org/downloaded",
+            immutableRevision = "a".repeat(40),
+            relativePath = "model.gguf",
+            remoteObjectId = "sha256:${"b".repeat(64)}",
+            expectedBytes = 100L,
+        ))
+        val snapshot = durableSnapshot(
+            batchId = "persistent-batch",
+            artifact = artifact,
+            artifactState = DownloadArtifactState.RUNNING,
+            batchState = DownloadBatchState.RUNNING,
+            bytesReceived = 25L,
+        )
+        val engine = object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler { respondPage(pageResponse("org/search-result")) }
+        }) { override val dispatcher: CoroutineDispatcher = dispatcher }
+        val client = HttpClient(engine)
+        try {
+            val vm = viewModel(client, dispatcher,
+                downloadCoordinator = observingDownloadCoordinator(store, scheduler))
+            store.snapshots.value = listOf(snapshot)
+            vm.updateSearchQuery("one")
+            vm.performSearch()
+            advanceUntilIdle()
+            vm.updateSearchQuery("two")
+            vm.performSearch()
+            advanceUntilIdle()
+            assertEquals(listOf("persistent-batch"), vm.downloadQueue.value.map { it.batchId })
+
+            vm.pauseDownload(snapshot.batchId, snapshot.artifacts.single().artifactId)
+            advanceUntilIdle()
+            assertEquals(listOf(snapshot.batchId), scheduler.pausedBatchIds)
+        } finally {
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun duplicateOnlyPagesStopWithRestartStateInsteadOfDeadRetry() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val engine = object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler { request ->
+                val cursor = request.url.parameters["cursor"]
+                val next = when (cursor) {
+                    null -> "next-1"
+                    "next-1" -> "next-2"
+                    else -> "next-3"
+                }
+                val base = request.url.toString().substringBefore("&cursor=")
+                respondPage(pageResponse("org/duplicate"), "<$base&cursor=$next>; rel=\"next\"")
+            }
+        }) { override val dispatcher: CoroutineDispatcher = dispatcher }
+        val client = HttpClient(engine)
+        try {
+            val vm = viewModel(client, dispatcher)
+            vm.loadModels()
+            advanceUntilIdle()
+            vm.loadNextPage()
+            advanceUntilIdle()
+            repeat(2) {
+                if (vm.results.value.canLoadMore) {
+                    vm.loadNextPage()
+                    advanceUntilIdle()
+                }
+            }
+            assertEquals(listOf("org/duplicate"), vm.results.value.models.map { it.id })
+            assertTrue(vm.results.value.paginationStopped)
+            assertFalse(vm.results.value.canLoadMore)
+            vm.restartCurrentQuery()
+            advanceUntilIdle()
+            assertNull(vm.results.value.moreError)
+            assertTrue(vm.results.value.hasMore)
+        } finally {
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun loadedSessionStopsAt256WithoutInvalidatingEarlierAssessments() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        var requests = 0
+        var assessments = 0
+        val engine = object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler { request ->
+                requests++
+                val index = request.url.parameters["cursor"]?.removePrefix("page-")?.toInt() ?: 0
+                val ids = (index * 24 until index * 24 + 24).map { "org/model-$it" }.toTypedArray()
+                val base = request.url.toString().substringBefore("&cursor=")
+                respondPage(pageResponse(*ids), "<$base&cursor=page-${index + 1}>; rel=\"next\"")
+            }
+        }) { override val dispatcher: CoroutineDispatcher = dispatcher }
+        val client = HttpClient(engine)
+        try {
+            val vm = viewModel(client, dispatcher,
+                recommendationService = recommendationService(dispatcher, onAssess = { assessments++ }))
+            vm.loadModels()
+            advanceUntilIdle()
+            val firstAssessment = vm.recommendedModels.value.first { it.repositoryId == "org/model-0" }
+            assertNotNull(firstAssessment.selectedDescriptor)
+
+            repeat(14) {
+                if (vm.results.value.canLoadMore) {
+                    vm.loadNextPage()
+                    advanceUntilIdle()
+                }
+            }
+            assertEquals(256, vm.results.value.models.size)
+            assertEquals(256, vm.results.value.recommendations.size)
+            assertTrue(vm.results.value.sessionLimitReached)
+            assertFalse(vm.results.value.hasMore)
+            assertFalse(vm.results.value.canLoadMore)
+            assertEquals(firstAssessment, vm.recommendedModels.value.first { it.repositoryId == "org/model-0" })
+            assertEquals(96, assessments)
+            assertEquals(11, requests)
+
+            vm.loadNextPage()
+            advanceUntilIdle()
+            assertEquals(11, requests)
+        } finally {
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
     fun browseModeSwitchRejectsLateLanguageModelListResponse() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
@@ -1503,10 +1908,10 @@ class ModelViewModelRecommendationTest {
         val engine = object : MockEngine(MockEngineConfig().apply {
             reuseHandlers = true
             addHandler { request ->
-                if (request.url.encodedPath == "/models-json") {
+                if (request.url.encodedPath == "/api/models") {
                     listStarted.complete(Unit)
                     releaseList.await()
-                    respondJson(listResponse("org/stale-language-model"))
+                    respondJson(pageResponse("org/stale-language-model"))
                 } else {
                     respondJson(searchResponse("unused", "org/unused"))
                 }
@@ -1553,7 +1958,7 @@ class ModelViewModelRecommendationTest {
             reuseHandlers = true
             addHandler { request ->
                 requests++
-                respondJson(searchResponse(request.url.parameters["q"].orEmpty(), "org/calibrated"))
+                respondJson(pageResponse("org/calibrated"))
             }
         }) {
             override val dispatcher: CoroutineDispatcher = requestDispatcher
@@ -1623,6 +2028,7 @@ private class ObservingDownloadTaskStore : DownloadTaskStore {
         return "created-${createdRequests.size}"
     }
     override fun observeForModel(modelId: String): Flow<List<DownloadBatchSnapshot>> = snapshots
+    override fun observeQueue(): Flow<List<DownloadBatchSnapshot>> = snapshots
     override suspend fun getBatch(batchId: String): DownloadBatchSnapshot? =
         snapshots.value.singleOrNull { it.batchId == batchId }
     override suspend fun recoverableBatches(): List<DownloadBatchSnapshot> = snapshots.value
@@ -1768,11 +2174,21 @@ private fun MockRequestHandleScope.respondJson(value: String) = respond(
     headers = headersOf(HttpHeaders.ContentType, "application/json"),
 )
 
+private fun MockRequestHandleScope.respondPage(value: String, link: String? = null) = respond(
+    content = value,
+    status = HttpStatusCode.OK,
+    headers = if (link == null) headersOf(HttpHeaders.ContentType, "application/json")
+        else headersOf(HttpHeaders.Link, link),
+)
+
 private fun searchResponse(query: String, repositoryId: String): String =
     """{"models":[{"_id":"$repositoryId","id":"$repositoryId","private":false}],"modelsCount":1,"q":"$query"}"""
 
 private fun listResponse(repositoryId: String): String =
     """{"models":[{"id":"$repositoryId","private":false}],"numItemsPerPage":1,"numTotalItems":1,"pageIndex":0}"""
+
+private fun pageResponse(vararg repositoryIds: String): String =
+    repositoryIds.joinToString(prefix = "[", postfix = "]") { id -> """{"id":"$id","private":false}""" }
 
 private fun writeVerifiedBundle(
     storage: StoragePathProvider,
@@ -1827,6 +2243,7 @@ private fun huggingFaceApi(client: HttpClient): HuggingFaceApi {
     )
     return object : HuggingFaceApi {
         override val listModels = ListModelsUseCase(repository)
+        override val getModelPage = GetModelPageUseCase(repository)
         override val listRecommendationModels = ListRecommendationModelsUseCase(repository)
         override val searchModels = SearchModelsUseCase(repository)
         override val getModelDetail = GetModelDetailUseCase(repository)

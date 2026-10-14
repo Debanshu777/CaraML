@@ -5,6 +5,7 @@ import com.debanshu777.huggingfacemanager.repository.HuggingFaceRepository
 import com.debanshu777.huggingfacemanager.usecase.GetModelDetailUseCase
 import com.debanshu777.huggingfacemanager.usecase.GetModelConfigUseCase
 import com.debanshu777.huggingfacemanager.usecase.GetModelFileTreeUseCase
+import com.debanshu777.huggingfacemanager.usecase.GetModelPageUseCase
 import com.debanshu777.huggingfacemanager.usecase.GetRecommendationModelDetailUseCase
 import com.debanshu777.huggingfacemanager.usecase.ListModelsUseCase
 import com.debanshu777.huggingfacemanager.usecase.ListRecommendationModelsUseCase
@@ -18,6 +19,7 @@ import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 
 interface HuggingFaceApi {
+    val getModelPage: GetModelPageUseCase
     val listModels: ListModelsUseCase
     val listRecommendationModels: ListRecommendationModelsUseCase
     val searchModels: SearchModelsUseCase
@@ -65,6 +67,7 @@ fun createHuggingFaceApi(baseUrl: String = HuggingFaceConstants.DEFAULT_BASE_URL
     val api = RemoteHuggingFaceApiService(httpClient, json, baseUrl)
     val repository = HuggingFaceRepository(api)
     return DefaultHuggingFaceApi(
+        getModelPage = GetModelPageUseCase(repository),
         listModels = ListModelsUseCase(repository),
         listRecommendationModels = ListRecommendationModelsUseCase(repository),
         searchModels = SearchModelsUseCase(repository),
@@ -76,6 +79,7 @@ fun createHuggingFaceApi(baseUrl: String = HuggingFaceConstants.DEFAULT_BASE_URL
 }
 
 private class DefaultHuggingFaceApi(
+    override val getModelPage: GetModelPageUseCase,
     override val listModels: ListModelsUseCase,
     override val listRecommendationModels: ListRecommendationModelsUseCase,
     override val searchModels: SearchModelsUseCase,

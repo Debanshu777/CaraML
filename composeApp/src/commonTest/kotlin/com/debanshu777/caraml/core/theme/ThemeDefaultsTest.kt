@@ -6,10 +6,10 @@ import kotlin.test.assertEquals
 
 class ThemeDefaultsTest {
     @Test
-    fun firstLaunchUsesTheExactBaselineYellowWithExpressiveHarmonies() {
+    fun firstLaunchUsesThePocketPalOrangeWithExpressiveHarmonies() {
         val preferences = ThemePreferences()
 
-        assertEquals(Color(0xFFEFD04B), preferences.seedColor)
+        assertEquals(Color(0xFFFF7854), preferences.seedColor)
         assertEquals(ThemePaletteStyle.EXPRESSIVE, preferences.paletteStyle)
     }
 }

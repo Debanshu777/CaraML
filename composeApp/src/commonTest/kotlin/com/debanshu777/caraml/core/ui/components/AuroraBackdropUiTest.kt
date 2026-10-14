@@ -25,6 +25,10 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.LocalAuroraColors
+import com.debanshu777.caraml.core.theme.LocalSoftEffects
+import com.debanshu777.caraml.core.theme.toAuroraColors
+import com.debanshu777.caraml.core.theme.withBrandSurfaces
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.core.ui.motion.auroraMotionPolicy
 import kotlin.math.max
@@ -112,17 +116,14 @@ class AuroraBackdropUiTest {
         }
 
     @Test
-    fun ambientMeshKeepsThreeRestrainedColorRegionsAtCompactAndWideAspectRatios() =
+    fun ambientMeshKeepsThreeFullStrengthColorRegionsAtCompactAndWideAspectRatios() =
         runComposeUiTest {
             setContent {
                 CompositionLocalProvider(LocalDensity provides Density(1f)) {
                     MaterialTheme(
                         colorScheme = darkColorScheme(
-                            surface = Color(0xFF0E1018),
-                            primary = Color(0xFF276BFF),
-                            secondary = Color(0xFF00D59C),
-                            tertiary = Color(0xFFFF3F92),
-                        ),
+                            primary = Color(0xFFFF7854),
+                        ).withBrandSurfaces(isDark = true),
                     ) {
                         Column {
                             BackdropFixture(
@@ -147,25 +148,25 @@ class AuroraBackdropUiTest {
                 val tertiary = pixels.averagePatch(xFraction = 0.78f, yFraction = 0.84f)
 
                 assertTrue(
-                    primary.blue - max(primary.red, primary.green) >= 0.004f,
-                    "$tag must keep a blue primary region; sampled $primary",
+                    primary.red - max(primary.blue, primary.green) >= 0.004f,
+                    "$tag must keep the orange accent region; sampled $primary",
                 )
                 assertTrue(
-                    secondary.green > primary.green && secondary.green > tertiary.green,
-                    "$tag secondary anchor must lift green relative to the other regions; " +
+                    secondary.blue > secondary.green,
+                    "$tag secondary anchor must keep its lilac tint; " +
                         "primary=$primary secondary=$secondary tertiary=$tertiary",
                 )
                 assertTrue(
-                    tertiary.red - tertiary.green >= 0.004f,
-                    "$tag must keep a magenta tertiary region; sampled $tertiary",
+                    tertiary.green - tertiary.red >= 0.004f && tertiary.green > tertiary.blue,
+                    "$tag must keep the mint tertiary region; sampled $tertiary",
                 )
 
                 val separation = primary.distanceTo(secondary) +
                     secondary.distanceTo(tertiary) +
                     tertiary.distanceTo(primary)
                 assertTrue(
-                    separation in 0.05f..0.22f,
-                    "$tag ambient mesh must read as faint atmosphere rather than a full-screen gradient; delta was $separation",
+                    separation >= 0.20f,
+                    "$tag full-strength mesh must retain distinct bounded color regions; delta was $separation",
                 )
             }
         }
@@ -178,6 +179,7 @@ class AuroraBackdropUiTest {
                 MaterialTheme(
                     colorScheme = darkColorScheme(
                         surface = neutral,
+                        background = neutral,
                         primary = neutral,
                         secondary = neutral,
                         tertiary = neutral,
@@ -186,6 +188,11 @@ class AuroraBackdropUiTest {
                     Column {
                         BackdropFixture(tag = "grain-a", width = 192, height = 192)
                         BackdropFixture(tag = "grain-b", width = 192, height = 192)
+                        CompositionLocalProvider(
+                            LocalAuroraColors provides MaterialTheme.colorScheme.toAuroraColors().copy(grainTint = Color.Transparent),
+                        ) {
+                            BackdropFixture(tag = "grain-none", width = 192, height = 192)
+                        }
                     }
                 }
             }
@@ -193,6 +200,7 @@ class AuroraBackdropUiTest {
 
         val first = onNodeWithTag("grain-a").captureToImage().toPixelMap()
         val second = onNodeWithTag("grain-b").captureToImage().toPixelMap()
+        val withoutGrain = onNodeWithTag("grain-none").captureToImage().toPixelMap()
         val energy = first.highFrequencyEnergy()
 
         assertTrue(
@@ -200,8 +208,12 @@ class AuroraBackdropUiTest {
             "ambient grain must remain perceptible at close inspection; energy was $energy",
         )
         assertTrue(
-            energy <= 0.012f,
-            "ambient grain must stay quieter than the focal treatment; energy was $energy",
+            energy > withoutGrain.highFrequencyEnergy() + 0.001f,
+            "grain must add subtle texture to the same underlying gradient",
+        )
+        assertTrue(
+            first.maxChannelDifference(withoutGrain) <= 0.022f + (1f / 255f),
+            "grain must respect the approved 2.2% opacity, including one quantization step",
         )
         assertTrue(
             first.maxChannelDifference(second) <= (1f / 255f) + 0.0001f,
@@ -212,8 +224,17 @@ class AuroraBackdropUiTest {
     @Test
     fun vignetteAddsControlledEdgeDepthWithoutCrushingTheCanvas() = runComposeUiTest {
         val neutral = Color(0xFF707070)
+        val vignetteColors = darkColorScheme(background = neutral).toAuroraColors(isDark = true).copy(
+            primaryGlow = Color.Transparent,
+            secondaryGlow = Color.Transparent,
+            tertiaryGlow = Color.Transparent,
+            grainTint = Color.Transparent,
+        )
         setContent {
-            CompositionLocalProvider(LocalDensity provides Density(1f)) {
+            CompositionLocalProvider(
+                LocalDensity provides Density(1f),
+                LocalAuroraColors provides vignetteColors,
+            ) {
                 MaterialTheme(
                     colorScheme = darkColorScheme(
                         surface = neutral,
@@ -267,6 +288,41 @@ class AuroraBackdropUiTest {
             first.maxChannelDifference(second) <= (1f / 255f) + 0.0001f,
             "ambient mesh and grain must not shimmer while idle",
         )
+    }
+
+    @Test
+    fun turningOffSoftEffectsKeepsTheAuroraVisibleAndPixelStable() = runComposeUiTest {
+        var effects by mutableStateOf(true)
+        setContent {
+            CompositionLocalProvider(LocalDensity provides Density(1f), LocalSoftEffects provides effects) {
+                MaterialTheme(colorScheme = lightColorScheme(primary = Color(0xFFFF7854)).withBrandSurfaces(false)) {
+                    BackdropFixture("soft-effects-backdrop", width = 240, height = 360)
+                }
+            }
+        }
+        val enabled = onNodeWithTag("soft-effects-backdrop").captureToImage().toPixelMap()
+        runOnIdle { effects = false }
+        val disabled = onNodeWithTag("soft-effects-backdrop").captureToImage().toPixelMap()
+        assertTrue(enabled.maxChannelDifference(disabled) <= 1f / 255f)
+        assertTrue(disabled.averagePatch(.1f, .1f).distanceTo(disabled.averagePatch(.8f, .8f)) > .08f)
+    }
+
+    @Test
+    fun normalTextRemainsReadableAcrossTheActualBrandBackdropInBothAppearances() = runComposeUiTest {
+        val light = lightColorScheme(primary = Color(0xFFFF7854)).withBrandSurfaces(false)
+        val dark = darkColorScheme(primary = Color(0xFFFF7854)).withBrandSurfaces(true)
+        setContent {
+            CompositionLocalProvider(LocalDensity provides Density(1f)) {
+                Column {
+                    MaterialTheme(colorScheme = light) { BackdropFixture("brand-light", 360, 360) }
+                    MaterialTheme(colorScheme = dark) { BackdropFixture("brand-dark", 360, 360) }
+                }
+            }
+        }
+        listOf("brand-light" to light.onSurface, "brand-dark" to dark.onSurface).forEach { (tag, foreground) ->
+            val contrast = onNodeWithTag(tag).captureToImage().toPixelMap().minimumContrastAgainst(foreground)
+            assertTrue(contrast >= 4.5f, "$tag must retain readable text throughout the actual Aurora: $contrast")
+        }
     }
 
     @Test

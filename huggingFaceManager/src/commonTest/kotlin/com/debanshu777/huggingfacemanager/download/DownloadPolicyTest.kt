@@ -60,7 +60,7 @@ class DownloadPolicyTest {
     }
 
     @Test
-    fun knownLengthProgressPublishesAtMostOncePerIntegerPercent() {
+    fun knownLengthProgressSuppressesDuplicatePercentageWithinHeartbeatInterval() {
         val tracker = DownloadProgressTracker(contentLength = 1_000L)
 
         val first = tracker.next(bytesReceived = 1L)
@@ -74,6 +74,19 @@ class DownloadPolicyTest {
         assertNotNull(nextBucket)
         assertEquals(1f, nextBucket.percentage)
         assertNull(preCommitComplete)
+    }
+
+    @Test
+    fun slowContinuousBytesPublishHeartbeatWithoutAChangedPercentage() {
+        var now = 0L
+        val tracker = DownloadProgressTracker(contentLength = 1_000_000_000L, clockMillis = { now })
+        assertNotNull(tracker.next(1L))
+        now = 999L
+        assertNull(tracker.next(2L))
+        now = 1_000L
+        assertEquals(3L, assertNotNull(tracker.next(3L)).bytesReceived)
+        now = 2_000L
+        assertEquals(4L, assertNotNull(tracker.next(4L)).bytesReceived)
     }
 
     @Test

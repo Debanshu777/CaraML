@@ -1,117 +1,143 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.debanshu777.caraml.core.drawer.LocalNavigationMenuAction
 import com.debanshu777.caraml.core.platform.DeviceHints
-import com.debanshu777.caraml.core.rating.ui.RecommendationStatusChip
 import com.debanshu777.caraml.core.recommendation.RecommendationProfile
 import com.debanshu777.caraml.core.theme.CaraMLTheme
 import com.debanshu777.caraml.core.theme.ThemePreferences
 import com.debanshu777.caraml.core.ui.components.AuroraBackdrop
-import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubContextStrip
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubHeader
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubStateKind
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubStateView
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubToolbar
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelResultCard
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchListItem
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchBar
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelDownloadQueueRow
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelDownloadBatchControls
+import com.debanshu777.caraml.core.download.DownloadArtifactRequest
+import com.debanshu777.caraml.core.download.DownloadArtifactSnapshot
+import com.debanshu777.caraml.core.download.DownloadArtifactState
+import com.debanshu777.caraml.core.download.DownloadBatchSnapshot
+import com.debanshu777.caraml.core.download.DownloadBatchState
+import com.debanshu777.caraml.core.download.DownloadUserIntent
+import com.debanshu777.caraml.core.recommendation.storage.EncodedModelEvidence
+import com.debanshu777.caraml.core.recommendation.storage.InstalledEvidenceState
+import com.debanshu777.huggingfacemanager.download.DownloadArtifactIdentity
+import com.debanshu777.huggingfacemanager.download.DownloadMetadataDTO
 import com.debanshu777.huggingfacemanager.model.ModelSort
 import com.debanshu777.huggingfacemanager.model.ParameterRange
+import com.debanshu777.huggingfacemanager.model.ListModelsResponse
 import androidx.compose.ui.tooling.preview.Preview
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubInlineFilters
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubDeviceInfo
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelDownloadQueueEntry
 
-@Preview(name = "Models compact - populated", widthDp = 412, heightDp = 915)
+@Preview(name = "Download queue - unknown progress 200%", widthDp = 360, heightDp = 480, fontScale = 2f)
 @Composable
-private fun ModelHubPopulatedPreview() {
-    ModelHubDevicePreview(populated = true)
+internal fun ModelDownloadQueueLargeTextPreview() {
+    ModelDownloadQueueStatePreview(DownloadArtifactState.RUNNING, DownloadBatchState.RUNNING)
 }
 
-@Preview(name = "Models compact - empty", widthDp = 412, heightDp = 915)
+@Preview(name = "Download queue - retry", widthDp = 320, heightDp = 400)
 @Composable
-private fun ModelHubEmptyPreview() {
-    ModelHubDevicePreview(populated = false)
+private fun ModelDownloadQueueErrorPreview() {
+    ModelDownloadQueueStatePreview(DownloadArtifactState.FAILED_RETRYABLE, DownloadBatchState.FAILED_RETRYABLE)
 }
 
-@Preview(
-    name = "Models compact - populated 200%",
-    widthDp = 360,
-    heightDp = 800,
-    fontScale = 2f,
-)
+@Preview(name = "Download queue - paused", widthDp = 320, heightDp = 400)
 @Composable
-private fun ModelHubPopulatedLargeTextPreview() {
-    ModelHubDevicePreview(populated = true)
+private fun ModelDownloadQueuePausedPreview() {
+    ModelDownloadQueueStatePreview(DownloadArtifactState.PAUSED, DownloadBatchState.PAUSED)
+}
+
+@Composable
+private fun ModelDownloadQueueStatePreview(
+    artifactState: DownloadArtifactState,
+    batchState: DownloadBatchState,
+) {
+    val artifact = requireNotNull(DownloadArtifactIdentity.create(
+        repositoryId = "sample/Long-Model-Name-GGUF",
+        immutableRevision = "a".repeat(40),
+        relativePath = "Long-Model-Name-Q4_K_M.gguf",
+        remoteObjectId = null,
+        expectedBytes = 4_000_000_000L,
+    ))
+    val request = DownloadArtifactRequest(
+        metadata = DownloadMetadataDTO(artifact, "model", artifact.expectedBytes, null, null, null),
+        primary = true,
+    )
+    val snapshot = DownloadArtifactSnapshot(
+        artifactId = "preview-artifact",
+        batchId = "preview-batch",
+        request = request,
+        state = artifactState,
+        userIntent = DownloadUserIntent.RUN,
+        bytesReceived = 24_000_000L,
+        expectedBytes = 0L,
+    )
+    val batch = DownloadBatchSnapshot(
+        batchId = "preview-batch",
+        ownerModelId = artifact.repositoryId,
+        modelType = "LLM",
+        displayName = "Long Model Name GGUF",
+        state = batchState,
+        userIntent = DownloadUserIntent.RUN,
+        artifacts = listOf(snapshot),
+        evidence = EncodedModelEvidence(InstalledEvidenceState.REQUIRES_ENRICHMENT, 1, "", ""),
+    )
+    CaraMLTheme(ThemePreferences()) {
+        Surface {
+            ModelDownloadQueueEntry(listOf(batch), {}, { _, _ -> }, { _, _ -> }, { _, _ -> }, { _, _ -> })
+        }
+    }
 }
 
 /** Device-state preview used to review the same dense and empty cases exercised by UI tests. */
 @Composable
-private fun ModelHubDevicePreview(populated: Boolean) {
+internal fun ModelHubDevicePreview(populated: Boolean) {
     CaraMLTheme(ThemePreferences()) {
         CompositionLocalProvider(LocalNavigationMenuAction provides {}) {
             AuroraBackdrop {
                 ModelHubScreenLayout(
                     selectedTabIndex = 0,
                     onTabSelected = {},
+                    sharedContext = {
+                        ModelHubContextStrip(
+                            storageInfo = previewStorageInfo(),
+                            profile = RecommendationProfile(),
+                            onOpenProfile = {},
+                            onOpenDevice = {},
+                        )
+                    },
                     modifier = Modifier.fillMaxSize(),
                     discoverContent = {
                         ModelHubTabLayout(
                             modifier = Modifier.fillMaxSize(),
-                            command = {
-                                SearchBar(
-                                    query = "",
-                                    onQueryChange = {},
-                                    onSearch = {},
-                                )
-                            },
-                            context = {
-                                ModelHubContextStrip(
-                                    storageInfo = previewStorageInfo(),
-                                    profile = RecommendationProfile(),
-                                    onOpenProfile = {},
-                                )
-                            },
-                            toolbar = {
-                                ModelHubToolbar(
-                                    browseMode = ModelHubBrowseMode.LanguageModels,
-                                    onBrowseModeChange = {},
-                                    showSortFilters = true,
-                                    ordering = ModelOrdering.Server(ModelSort.TRENDING),
-                                    sort = ModelSort.TRENDING,
-                                    minParams = ParameterRange.ZERO,
-                                    maxParams = ParameterRange.THREE_B,
-                                    onSortChange = {},
-                                    onOrderingChange = {},
-                                    onMinParamsChange = {},
-                                    onMaxParamsChange = {},
-                                )
-                            },
+                            command = { SearchBar(query = "", onQueryChange = {}, onSearch = {}) },
+                            context = {},
+                            toolbar = {},
                             summary = {
-                                ModelHubHeader(
-                                    title = if (populated) "44,359 models" else "0 models",
-                                    summary = if (populated) "1 filter active" else null,
-                                    actionLabel = if (populated) "Reset filters" else null,
-                                    onAction = if (populated) ({}) else null,
+                                ModelHubInlineFilters(
+                                    resultLabel = if (populated) "3 models loaded" else "0 models loaded",
+                                    mode = ModelHubBrowseMode.LanguageModels,
+                                    ordering = ModelOrdering.Server(ModelSort.TRENDING),
+                                    minParams = ParameterRange.ZERO, maxParams = ParameterRange.SIX_B,
+                                    onApply = { _, _, _, _ -> },
                                 )
                             },
                             results = {
                                 if (populated) {
-                                    previewModels.forEach { (owner, title, metadata) ->
-                                        item(key = title) {
-                                            ModelResultCard(
-                                                title = "$owner/$title",
-                                                author = owner,
-                                                metadata = metadata,
-                                                status = {
-                                                    RecommendationStatusChip(
-                                                        state = DescriptorState.NEEDS_INFORMATION,
-                                                        recommendation = null,
-                                                    )
-                                                },
-                                                onClick = {},
-                                            )
+                                    previewModels.forEach { model ->
+                                        item(key = requireNotNull(model.id)) {
+                                            SearchListItem(model = model, onClick = {})
                                         }
                                     }
                                 } else {
@@ -145,19 +171,42 @@ private fun previewStorageInfo() = StorageInfoUiState(
 )
 
 private val previewModels = listOf(
-    Triple(
-        "HauhauCS",
-        "Qwen3.8-27B-Uncensored-HauhauCS-Aggressive-MTP-GGUF",
-        "image-text-to-text · 2.2M downloads",
+    ListModelsResponse.Model(
+        author = "HauhauCS",
+        id = "HauhauCS/Qwen3.8-27B-Uncensored-HauhauCS-Aggressive-MTP-GGUF",
+        pipelineTag = "image-text-to-text",
+        downloads = 2_200_000,
     ),
-    Triple(
-        "openbmb",
-        "MiniCPM5-2B-GGUF",
-        "text-generation · 180.6K downloads",
+    ListModelsResponse.Model(
+        author = "openbmb",
+        id = "openbmb/MiniCPM5-2B-GGUF",
+        pipelineTag = "text-generation",
+        downloads = 180_600,
     ),
-    Triple(
-        "tencent",
-        "Hy-MT2-1.8B-GGUF",
-        "text-generation · 375.4K downloads",
+    ListModelsResponse.Model(
+        author = "tencent",
+        id = "tencent/Hy-MT2-1.8B-GGUF",
+        pipelineTag = "text-generation",
+        downloads = 375_400,
     ),
 )
+
+@Preview(name = "Device info - sampled", widthDp = 390, heightDp = 800)
+@Composable
+private fun ModelHubDeviceInfoPreview() {
+    CaraMLTheme(ThemePreferences()) {
+        AuroraBackdrop {
+            ModelHubDeviceInfo(previewStorageInfo(), RecommendationProfile(), {}, {}, {})
+        }
+    }
+}
+
+@Preview(name = "Device info - unavailable 200%", widthDp = 320, heightDp = 800, fontScale = 2f)
+@Composable
+private fun ModelHubDeviceUnavailablePreview() {
+    CaraMLTheme(ThemePreferences()) {
+        AuroraBackdrop {
+            ModelHubDeviceInfo(StorageInfoUiState(hasSampled = true), null, {}, {}, null)
+        }
+    }
+}

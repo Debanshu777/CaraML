@@ -12,4 +12,6 @@ data class ThemePreferences(
     val seedColor: Color = ThemeDefaults.DEFAULT_SEED_COLOR,
     val themeMode: ThemeMode = ThemeDefaults.DEFAULT_THEME_MODE,
     val paletteStyle: ThemePaletteStyle = ThemeDefaults.DEFAULT_PALETTE_STYLE,
+    val reduceMotion: Boolean = false,
+    val softEffects: Boolean = true,
 )

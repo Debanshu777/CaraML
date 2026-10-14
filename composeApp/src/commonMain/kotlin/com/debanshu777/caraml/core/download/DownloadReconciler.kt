@@ -5,12 +5,14 @@ class DownloadReconciler(
     private val store: DownloadTaskStore,
     private val scheduler: PlatformDownloadScheduler,
     private val clock: () -> Long,
+    private val publishedDownloads: PublishedDownloadReconciler? = null,
 ) {
     suspend fun reconcile() {
         val discovered = store.recoverableBatches()
         scheduler.reconcile(discovered.mapTo(mutableSetOf(), DownloadBatchSnapshot::batchId))
         // Platform reconciliation can consume a crash-durable stop marker and
         // update Room, so use a fresh snapshot before deciding to re-enqueue.
+        publishedDownloads?.reconcile()
         val batches = store.recoverableBatches()
         batches.forEach { batch ->
             when (batch.userIntent) {

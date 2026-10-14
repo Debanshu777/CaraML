@@ -5,6 +5,7 @@ import com.debanshu777.caraml.core.platform.AppLogger
 import com.debanshu777.caraml.core.platform.BackendKind
 import com.debanshu777.caraml.core.platform.DeviceCapabilities
 import com.debanshu777.caraml.core.platform.PlatformPaths
+import com.debanshu777.caraml.core.recommendation.classifyNativeMetadataPreflight
 import com.debanshu777.caraml.core.recommendation.DeviceSnapshotProvider
 import com.debanshu777.caraml.core.recommendation.InferenceObservationPhase
 import com.debanshu777.caraml.core.recommendation.InferenceObservationPlan
@@ -12,6 +13,7 @@ import com.debanshu777.caraml.core.recommendation.InferenceObservationRecorder
 import com.debanshu777.caraml.core.recommendation.MeasuredResult
 import com.debanshu777.caraml.core.recommendation.ObservationOutcome
 import com.debanshu777.caraml.core.recommendation.CoordinatedLoadResult
+import com.debanshu777.caraml.core.recommendation.LoadAdmission
 import com.debanshu777.caraml.core.recommendation.LoadAdmissionController
 import com.debanshu777.caraml.core.recommendation.LoadRecoveryRepository
 import com.debanshu777.caraml.core.recommendation.LoadRequest
@@ -36,6 +38,7 @@ import com.debanshu777.caraml.core.data.settings.SettingsRepository
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.runner.InferenceChunk
 import com.debanshu777.runner.LlamaRunner
+import com.debanshu777.runner.LlamaPreflightReason
 import com.debanshu777.runner.LlamaPreflightResult
 import com.debanshu777.runner.NativeRunnerConfig
 import com.debanshu777.runner.PromptProcessingResult
@@ -50,6 +53,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlin.concurrent.Volatile
+import kotlin.time.TimeSource
 
 class LlamaInferenceRepository(
     private val runner: LlamaRunner,
@@ -69,7 +73,7 @@ class LlamaInferenceRepository(
         private const val TAG = "Inference"
         const val CONTEXT_THRESHOLD = 0.85f
         private const val FALLBACK_SYSTEM_PROMPT = "You are a helpful assistant."
-        private const val MAX_RESPONSE_TOKENS = 1024
+        private const val MAX_RESPONSE_TOKENS = 4096
 
         /**
          * Upper bound for auto-fit context when the user hasn't set a preference.
@@ -119,24 +123,33 @@ class LlamaInferenceRepository(
 
     @Volatile private var generationObservation: InferenceObservationPlan? = null
 
-    override suspend fun loadModel(request: LoadRequest): ModelLoadResult =
-        nativeSession.exclusive {
+    override suspend fun loadModel(request: LoadRequest): ModelLoadResult {
+        val started = TimeSource.Monotonic.markNow()
+        AppLogger.i(TAG) {
+            "load stage=request fallback=${request.nativeMetadataFallback} " +
+                "plan=${request.plan::class.simpleName} artifactPresent=${request.artifact != null}"
+        }
+        fun error(reason: String, message: String): ModelLoadResult.Error {
+            AppLogger.i(TAG) { "load stage=rejected reason=$reason" }
+            return ModelLoadResult.Error(message)
+        }
+        return nativeSession.exclusive {
             val artifact = request.artifact
-                ?: return@exclusive ModelLoadResult.Error("The installed model could not be verified.")
+                ?: return@exclusive error("unverified_artifact", "The installed model could not be verified.")
             if (artifact.identity != request.identity) {
-                return@exclusive ModelLoadResult.Error("The installed model identity is invalid.")
+                return@exclusive error("identity_mismatch", "The installed model identity is invalid.")
             }
             val plan = request.plan as? LlmRunPlan
-                ?: return@exclusive ModelLoadResult.Error("The selected model configuration is invalid.")
+                ?: return@exclusive error("invalid_config", "The selected model configuration is invalid.")
             val resolver = artifactIdentityResolver
-                ?: return@exclusive ModelLoadResult.Error("Load admission is unavailable.")
+                ?: return@exclusive error("admission_unavailable", "Load admission is unavailable.")
             val coordinator = loadSessionCoordinator
-                ?: return@exclusive ModelLoadResult.Error("Load recovery is unavailable.")
+                ?: return@exclusive error("recovery_unavailable", "Load recovery is unavailable.")
             val modelPath = (artifact.loadTarget as? VerifiedArtifactLoadTarget.File)?.path
-                ?: return@exclusive ModelLoadResult.Error("The installed model could not be verified.")
+                ?: return@exclusive error("unverified_artifact", "The installed model could not be verified.")
             val nativeLibDir = PlatformPaths.getNativeLibDir()
             if (nativeLibDir.isBlank()) {
-                return@exclusive ModelLoadResult.Error("Failed to initialize. Please restart the app.")
+                return@exclusive error("initialization_failure", "Failed to initialize. Please restart the app.")
             }
             val settings = currentSettings()
             val architecture = request.observationIdentity.architectureFamily
@@ -144,8 +157,14 @@ class LlamaInferenceRepository(
             val exactConfig = runCatching {
                 exactLlamaRunnerConfig(architecture, plan, base)
             }
-                .getOrElse { return@exclusive ModelLoadResult.Error("The selected model configuration is invalid.") }
-                ?: return@exclusive ModelLoadResult.Error("The selected model configuration is invalid.")
+                .getOrElse { return@exclusive error("invalid_config", "The selected model configuration is invalid.") }
+                ?: return@exclusive error("invalid_config", "The selected model configuration is invalid.")
+            AppLogger.i(TAG) {
+                "load stage=config ctx=${exactConfig.nCtx} batch=${exactConfig.nBatch} " +
+                    "ubatch=${exactConfig.nUbatch} threads=${exactConfig.nThreads} " +
+                    "gpuLayers=${exactConfig.nGpuLayers} kv=${exactConfig.typeK}/${exactConfig.typeV} " +
+                    "flash=${exactConfig.flashAttn} autoFit=${exactConfig.autoFit}"
+            }
             val loadObservation = request.toInferenceObservationPlan(engineVersion, InferenceObservationPhase.LOAD)
             val nextGenerationObservation =
                 request.toInferenceObservationPlan(engineVersion, InferenceObservationPhase.GENERATION)
@@ -155,17 +174,18 @@ class LlamaInferenceRepository(
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Throwable) {
-                    return@exclusive ModelLoadResult.Error("The previous model could not be released safely.")
+                    return@exclusive error("release_failure", "The previous model could not be released safely.")
                 }
                 nativeLoaded = false
                 resetNativeSnapshots()
             }
+            AppLogger.i(TAG) { "load stage=initialize" }
             try {
                 runner.initialize(nativeLibDir)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Throwable) {
-                return@exclusive ModelLoadResult.Error("Failed to initialize. Please restart the app.")
+                return@exclusive error("initialization_failure", "Failed to initialize. Please restart the app.")
             }
             val controller = admissionController { candidate ->
                 val candidatePlan = candidate.plan as? LlmRunPlan
@@ -177,19 +197,48 @@ class LlamaInferenceRepository(
                 }
                     .getOrElse { return@admissionController NativeLoadPreflight.Invalid }
                     ?: return@admissionController NativeLoadPreflight.Invalid
-                when (val preflight = runner.preflightModel(candidatePath, config)) {
-                    is LlamaPreflightResult.Fit -> NativeLoadPreflight.Fit
+                val preflightStarted = TimeSource.Monotonic.markNow()
+                val preflight = runner.preflightModel(candidatePath, config)
+                AppLogger.i(TAG) {
+                    "load stage=preflight outcome=${preflight::class.simpleName} " +
+                        "elapsedMs=${preflightStarted.elapsedNow().inWholeMilliseconds}"
+                }
+                if (preflight is LlamaPreflightResult.Fit) {
+                    AppLogger.i(TAG) {
+                        "preflight ctx=${preflight.report.fittedContextTokens} " +
+                            "gpuLayers=${preflight.report.fittedGpuLayers} pools=${preflight.report.memoryPools.size}"
+                    }
+                    preflight.report.memoryPools.forEach { pool ->
+                        AppLogger.i(TAG) {
+                            "preflight pool=${pool.kind} ordinal=${pool.ordinal} " +
+                                "modelBytes=${pool.modelBytes} contextBytes=${pool.contextBytes} " +
+                                "computeBytes=${pool.computeBytes} freeBytes=${pool.freeBytes}"
+                        }
+                    }
+                }
+                when (preflight) {
+                    is LlamaPreflightResult.Fit -> if (candidate.nativeMetadataFallback) {
+                        val snapshot = snapshotProvider?.capture()
+                            ?: return@admissionController NativeLoadPreflight.Unavailable
+                        classifyNativeMetadataPreflight(preflight.report, candidatePlan, snapshot)
+                    } else {
+                        NativeLoadPreflight.Fit
+                    }
                     is LlamaPreflightResult.NoFit -> NativeLoadPreflight.NoFit
                     is LlamaPreflightResult.InvalidModel -> {
                         AppLogger.i(TAG) { "preflight: invalid (${preflight.reason})" }
-                        NativeLoadPreflight.Invalid
+                        if (preflight.reason == LlamaPreflightReason.REQUIRES_TARGET_MODEL) {
+                            NativeLoadPreflight.RequiresTargetModel
+                        } else {
+                            NativeLoadPreflight.Invalid
+                        }
                     }
                     is LlamaPreflightResult.Unavailable -> {
                         AppLogger.i(TAG) { "preflight: unavailable (${preflight.reason})" }
                         NativeLoadPreflight.Unavailable
                     }
                 }
-            } ?: return@exclusive ModelLoadResult.Error("Load admission is unavailable.")
+            } ?: return@exclusive error("admission_unavailable", "Load admission is unavailable.")
             try {
                 when (val result = coordinator.execute(
                     request = request,
@@ -203,6 +252,7 @@ class LlamaInferenceRepository(
                         resetNativeSnapshots()
                     },
                     nativeLoad = {
+                        AppLogger.i(TAG) { "load stage=native_allocation" }
                         val loaded = loadObservation?.let { observation ->
                             observationRecorder?.measureLoad(observation.key, observation.prediction) {
                                 val succeeded = runner.loadModel(modelPath, exactConfig)
@@ -219,15 +269,17 @@ class LlamaInferenceRepository(
                         } ?: runner.loadModel(modelPath, exactConfig)
                         if (!loaded) {
                             return@execute NativeLoadOutcome.Failed(
-                                ModelLoadResult.Error("The model could not be loaded with this configuration."),
+                                error("allocation_failure", "The model could not be loaded with this configuration."),
                                 StableLoadFailure.ALLOCATION,
                             )
                         }
                         nativeLoaded = true
                         val systemPrompt = settings.systemPrompt.ifBlank { FALLBACK_SYSTEM_PROMPT }
-                        if (runner.processSystemPrompt(systemPrompt) != 0) {
+                        val systemResult = runner.processSystemPrompt(systemPrompt)
+                        AppLogger.i(TAG) { "load stage=system_prompt code=$systemResult" }
+                        if (systemResult != 0) {
                             return@execute NativeLoadOutcome.Failed(
-                                ModelLoadResult.Error("The model could not initialize a conversation."),
+                                error("conversation_initialization_failure", "The model could not initialize a conversation."),
                                 StableLoadFailure.UNSUPPORTED_CONFIGURATION,
                             )
                         }
@@ -247,23 +299,41 @@ class LlamaInferenceRepository(
                         NativeLoadOutcome.Succeeded(ModelLoadResult.Success(contextSize))
                     },
                 )) {
-                    is CoordinatedLoadResult.AdmissionRequired ->
+                    is CoordinatedLoadResult.AdmissionRequired -> {
+                        val reason = when (val admission = result.admission) {
+                            is LoadAdmission.Ready -> "ready"
+                            is LoadAdmission.Blocked -> admission.reason.name
+                            is LoadAdmission.TemporarilyUnavailable -> admission.reason.name
+                            is LoadAdmission.ConfirmationRequired -> admission.reason.name
+                            is LoadAdmission.AlternativeAvailable -> admission.reason.name
+                            is LoadAdmission.SafeAlternativeAvailable -> admission.reason.name
+                        }
+                        AppLogger.i(TAG) { "load stage=admission_required reason=$reason" }
                         ModelLoadResult.AdmissionRequired(result.admission)
+                    }
                     is CoordinatedLoadResult.ArtifactChanged ->
-                        ModelLoadResult.Error("The installed model changed and could not be verified.")
+                        error("artifact_changed", "The installed model changed and could not be verified.")
                     is CoordinatedLoadResult.Completed -> result.value
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (_: Throwable) {
+            } catch (failure: Throwable) {
+                AppLogger.i(TAG) { "load stage=exception kind=${failure::class.simpleName}" }
                 if (nativeLoaded) {
                     runCatching { runner.unloadModel() }
                     nativeLoaded = false
                     resetNativeSnapshots()
                 }
-                ModelLoadResult.Error("Load admission is temporarily unavailable.")
+                error("admission_failure", "Load admission is temporarily unavailable.")
+            }
+        }.also { result ->
+            AppLogger.i(TAG) {
+                "load stage=complete outcome=${result::class.simpleName} " +
+                    "elapsedMs=${started.elapsedNow().inWholeMilliseconds} " +
+                    "context=$contextUsedSnapshot/$contextLimitSnapshot"
             }
         }
+    }
 
     private fun admissionController(
         nativePreflight: suspend (LoadRequest) -> NativeLoadPreflight,
@@ -336,7 +406,7 @@ class LlamaInferenceRepository(
 
         // Phase 08: per-architecture adaptive batch size and flash attention.
         val archFam = archFamily(architecture)
-        AppLogger.i(TAG) { "buildRunnerConfig: arch='$architecture', family=$archFam" }
+        AppLogger.i(TAG) { "buildRunnerConfig: family=$archFam" }
         val batchSize = when (archFam) {
             ArchFamily.DENSE -> if (hints.memoryBudgetMB >= 4096) 512 else 256
             ArchFamily.MOE -> 256
@@ -400,20 +470,26 @@ class LlamaInferenceRepository(
     override fun generateResponse(userPrompt: String): Flow<InferenceChunk> = flow {
         if (!isPromptLengthSupported(userPrompt)) throw PromptContextFullException()
         nativeSession.exclusive {
-            val contextLimit = runner.getContextLimit()
-            val remainingCtx = (contextLimit - runner.getContextUsed()).coerceAtLeast(1)
-            val responseBudget = minOf(
-                MAX_RESPONSE_TOKENS,
-                (contextLimit / 4).coerceAtLeast(1),
-                remainingCtx,
-            )
+            // Native admission applies the full template and clamps this upper bound
+            // to the actual free context. Reasoning and answer share this allowance.
+            val responseBudget = MAX_RESPONSE_TOKENS
             AppLogger.i(TAG) {
-                "generate: promptLen=${userPrompt.length}, remainingCtx=$remainingCtx, " +
+                "generate: promptLen=${userPrompt.length}, " +
                     "context=${runner.getContextUsed()}/${runner.getContextLimit()}"
             }
+            val generationStarted = TimeSource.Monotonic.markNow()
+            var tokenEvents = 0
+            var firstTokenMs: Long? = null
+            var outcome = "failed"
             try {
+                val prefillStarted = TimeSource.Monotonic.markNow()
+                val promptResult = runner.processUserPrompt(userPrompt, responseBudget)
+                AppLogger.i(TAG) {
+                    "generate stage=prefill code=$promptResult " +
+                        "elapsedMs=${prefillStarted.elapsedNow().inWholeMilliseconds} budget=$responseBudget"
+                }
                 when (PromptProcessingResult.fromNativeCode(
-                    runner.processUserPrompt(userPrompt, responseBudget)
+                    promptResult
                 )) {
                     PromptProcessingResult.Success -> Unit
                     PromptProcessingResult.ContextFull -> throw PromptContextFullException()
@@ -422,13 +498,38 @@ class LlamaInferenceRepository(
                 }
                 runner.generateStructuredChunks().collect { chunk ->
                     if (chunk.isTokenEvent) {
+                        tokenEvents++
+                        if (firstTokenMs == null) {
+                            firstTokenMs = generationStarted.elapsedNow().inWholeMilliseconds
+                            AppLogger.i(TAG) { "generate stage=first_token elapsedMs=$firstTokenMs" }
+                        }
                         contextUsedSnapshot = runner.getContextUsed()
                     }
                     emit(chunk)
                 }
+                outcome = when (runner.getStopReason()) {
+                    4 -> "cancelled"
+                    5 -> "native_error"
+                    else -> "completed"
+                }
+            } catch (cancelled: CancellationException) {
+                outcome = "cancelled"
+                throw cancelled
+            } catch (failure: Throwable) {
+                AppLogger.i(TAG) { "generate stage=exception kind=${failure::class.simpleName}" }
+                throw failure
             } finally {
-                runner.finalizeGeneration()
-                updateNativeSnapshots()
+                try {
+                    runner.finalizeGeneration()
+                    updateNativeSnapshots()
+                } finally {
+                    AppLogger.i(TAG) {
+                        "generate stage=complete outcome=$outcome tokens=$tokenEvents " +
+                            "elapsedMs=${generationStarted.elapsedNow().inWholeMilliseconds} " +
+                            "firstTokenMs=${firstTokenMs ?: -1} stop=$stopReasonSnapshot " +
+                            "context=$contextUsedSnapshot/$contextLimitSnapshot"
+                    }
+                }
             }
         }
     }

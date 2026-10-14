@@ -17,8 +17,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Shape
-import com.debanshu777.caraml.core.theme.auroraColors
-import com.debanshu777.caraml.core.theme.prismShapes
+import androidx.compose.ui.tooling.preview.Preview
+import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 
 enum class FocalEntrance {
@@ -27,14 +27,15 @@ enum class FocalEntrance {
 }
 
 /** The single deliberate gradient treatment a destination may use above the ambient backdrop. */
+@Preview(widthDp = 412, heightDp = 780)
 @Composable
 fun AuroraFocalSurface(
     modifier: Modifier = Modifier,
-    shape: Shape = MaterialTheme.prismShapes.focal,
+    shape: Shape = AppTheme.shapes.extraSmall,
     entrance: FocalEntrance = FocalEntrance.None,
-    content: @Composable BoxScope.() -> Unit,
+    content: @Composable BoxScope.() -> Unit = {},
 ) {
-    val colors = MaterialTheme.auroraColors
+    val colors = AppTheme.auroraColors
     val grain = rememberAuroraGrainBrush(colors.grainTint)
     val motion = LocalAuroraMotionPolicy.current
     val startsSettled = entrance == FocalEntrance.None || !motion.spatialTransitionsEnabled
@@ -61,7 +62,7 @@ fun AuroraFocalSurface(
             .drawWithCache {
                 val primary = Brush.radialGradient(
                     colors = listOf(
-                        colors.focusPrimary.copy(alpha = 0.36f * revealProgress),
+                        colors.focusPrimary.copy(alpha = AppTheme.effects.focalPrimary * revealProgress),
                         Color.Transparent,
                     ),
                     center = Offset(size.width * -0.06f, size.height * 0.04f),
@@ -69,7 +70,7 @@ fun AuroraFocalSurface(
                 )
                 val secondary = Brush.radialGradient(
                     colors = listOf(
-                        colors.focusSecondary.copy(alpha = 0.38f * revealProgress),
+                        colors.focusSecondary.copy(alpha = AppTheme.effects.focalSecondary * revealProgress),
                         Color.Transparent,
                     ),
                     center = Offset(size.width * 0.94f, size.height * 0.18f),
@@ -77,7 +78,7 @@ fun AuroraFocalSurface(
                 )
                 val tertiary = Brush.radialGradient(
                     colors = listOf(
-                        colors.focusTertiary.copy(alpha = 0.32f * revealProgress),
+                        colors.focusTertiary.copy(alpha = AppTheme.effects.focalTertiary * revealProgress),
                         Color.Transparent,
                     ),
                     center = Offset(size.width * 0.72f, size.height * 0.96f),
@@ -86,12 +87,12 @@ fun AuroraFocalSurface(
                 val vignette = Brush.radialGradient(
                     0f to Color.Transparent,
                     0.58f to Color.Transparent,
-                    1f to colors.edgeVignette.copy(alpha = colors.edgeVignette.alpha * 0.65f),
+                    1f to colors.edgeVignette.copy(alpha = colors.edgeVignette.alpha * AppTheme.effects.focalVignette),
                     center = Offset(size.width * 0.5f, size.height * 0.5f),
                     radius = size.maxDimension * 0.62f,
                 )
                 val grainAlpha = colors.grainTint.alpha
-                val grainFilter = ColorFilter.tint(colors.grainTint.copy(alpha = 1f))
+                val grainFilter = ColorFilter.tint(colors.grainTint.copy(alpha = AppTheme.effects.opaque))
                 onDrawBehind {
                     drawRect(colors.canvas)
                     drawRect(primary)

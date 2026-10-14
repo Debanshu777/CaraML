@@ -2,26 +2,32 @@ package com.debanshu777.caraml.core.theme
 
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Shapes
+import androidx.compose.runtime.Immutable
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
-/**
- * App-wide [Shapes] that layer the Prism vocabulary onto Material 3 roles.
- *
- * | Token            | Radius | Typical components                         |
- * |------------------|--------|--------------------------------------------|
- * | `extraSmall`     | 8dp    | Status marks and compact indicators        |
- * | `small`          | 12dp   | Inputs, buttons, selectable controls       |
- * | `medium`         | 18dp   | Command surfaces and meaningful panels     |
- * | `large`          | 24dp   | Sheets and large surfaces                  |
- * | `extraLarge`     | 24dp   | Dialogs, modal bottom sheets               |
- *
- * Material 3 still receives these base tokens, while feature code selects the
- * semantic roles exposed by [AppPrismShapes] instead of a size name or literal radius.
- */
+/** Corner radius tokens named by their value in dp. */
+@Immutable
+data class CornerRadii(
+    val radius8: Dp = 8.dp,
+    val radius12: Dp = 12.dp,
+    val radius18: Dp = 18.dp,
+    val radius24: Dp = 24.dp,
+)
+
+val AppCornerRadii = CornerRadii()
+
+/** One-sided rounding for the navigation drawer panel. */
+val AppDrawerPanelShape = RoundedCornerShape(
+    topEnd = AppCornerRadii.radius24,
+    bottomEnd = AppCornerRadii.radius24,
+)
+
+/** Material shape roles backed by the shared corner scale. */
 val AppShapes: Shapes = Shapes(
-    extraSmall = RoundedCornerShape(8.dp),
-    small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(18.dp),
-    large = RoundedCornerShape(24.dp),
-    extraLarge = RoundedCornerShape(24.dp),
+    extraSmall = RoundedCornerShape(AppCornerRadii.radius8),
+    small = RoundedCornerShape(AppCornerRadii.radius12),
+    medium = RoundedCornerShape(AppCornerRadii.radius18),
+    large = RoundedCornerShape(AppCornerRadii.radius24),
+    extraLarge = RoundedCornerShape(AppCornerRadii.radius24),
 )

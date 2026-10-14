@@ -14,6 +14,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PixelMap
@@ -33,12 +34,19 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import com.debanshu777.caraml.core.theme.AppTheme
+import com.debanshu777.caraml.core.drawer.FocusModeController
+import com.debanshu777.caraml.core.drawer.LocalFocusModeController
+import com.debanshu777.caraml.core.drawer.LocalNavigationMenuAction
 import com.debanshu777.caraml.core.ui.layout.AppNavigationLayout
 import com.debanshu777.caraml.core.ui.layout.LocalAppNavigationLayout
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
@@ -58,6 +66,47 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class ChatFinalAuditUiTest {
+
+    @Test
+    fun focusedConversationKeepsDrawerAndSeparateComposerControlsAvailable() = runComposeUiTest {
+        val focusController = FocusModeController()
+        var mode by mutableStateOf(GenerationMode.Text)
+        setContent {
+            CompositionLocalProvider(
+                LocalFocusModeController provides focusController,
+                LocalNavigationMenuAction provides {},
+                LocalAppNavigationLayout provides AppNavigationLayout.ModalSidebar,
+                LocalDensity provides Density(1f, fontScale = 2f),
+                LocalCreateSafeDrawingInsetsOverride provides WindowInsets(0),
+            ) {
+                MaterialTheme {
+                    ChatScreenContent(
+                        uiState = readyState(
+                            messages = persistentListOf(
+                                ChatMessage(id = "first-turn", role = MessageRole.User, text = "Hello"),
+                            ),
+                        ).copy(generationMode = mode),
+                        streamingState = StreamingState(),
+                        onSelectModel = {},
+                        onSendMessage = {},
+                        onCancelGeneration = {},
+                        onNavigateToSearch = {},
+
+                        modifier = Modifier.requiredSize(width = 320.dp, height = 780.dp),
+                    )
+                }
+            }
+        }
+
+        runOnIdle { assertTrue(focusController.isActive) }
+        onNodeWithTag("chat-model-picker").assertIsDisplayed()
+        onNodeWithText("Send").assertIsDisplayed()
+        onAllNodesWithText("Write").assertCountEquals(0)
+        onAllNodesWithText("Imagine").assertCountEquals(0)
+        onAllNodesWithText("Animate").assertCountEquals(0)
+        onNodeWithTag("focus-navigation-action").assertIsDisplayed()
+        onNode(hasSetTextAction()).assertIsDisplayed()
+    }
 
     @Test
     fun notchedLandscapeConversationConsumesScaffoldStartAndEndInsets() = runComposeUiTest {
@@ -99,13 +148,10 @@ class ChatFinalAuditUiTest {
             composer.left >= 96f && composer.right <= 820f,
             "Composer must remain inside the injected horizontal cutouts: $composer",
         )
-        val headerStart = onNodeWithText("Create").fetchSemanticsNode().boundsInRoot
-        val headerEnd = onNodeWithText("Video").fetchSemanticsNode().boundsInRoot
-        assertTrue(
-            headerStart.left >= 96f && headerEnd.right <= 820f,
-            "Header must remain inside the injected horizontal cutouts: " +
-                "start=$headerStart end=$headerEnd",
-        )
+        val options = onNodeWithTag("chat-model-picker").fetchSemanticsNode().boundsInRoot
+        assertTrue(options.left >= 96f && options.right <= 820f,
+            "Conversation options must remain inside injected cutouts: $options")
+
     }
 
     @Test
@@ -148,25 +194,20 @@ class ChatFinalAuditUiTest {
                 }
             }
 
-            onNode(hasSetTextAction()).performTextInput("Line one\nLine two\nLine three\nLine four")
+            val completeDraft = "Line one\nLine two\nLine three\nLine four"
+            onNode(hasSetTextAction()).performTextInput(completeDraft)
             runOnIdle { generating = true }
+            // Capping the visible editor must preserve the complete, scrollable draft.
+            onNodeWithText(completeDraft).assertExists()
 
             val terminal = onNodeWithText("Terminal response").assertIsDisplayed()
                 .fetchSemanticsNode().boundsInRoot
-            val stats = onNodeWithText("Live output").assertIsDisplayed()
-                .fetchSemanticsNode().boundsInRoot
-            val statsEnd = onNodeWithText("12.5 tok/s").assertIsDisplayed()
-                .fetchSemanticsNode().boundsInRoot
-            assertTrue(
-                stats.left >= 96f && statsEnd.right <= 820f,
-                "Stats must remain inside the injected horizontal cutouts: " +
-                    "start=$stats end=$statsEnd",
-            )
-            assertTrue(
-                terminal.bottom <= stats.top,
-                "The final message must clear the measured stats/composer region; " +
-                    "message=$terminal stats=$stats",
-            )
+            val composer = onNodeWithTag("create-command").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            assertTrue(composer.left >= 96f && composer.right <= 820f,
+                "Composer must remain inside the injected cutouts: $composer")
+            assertTrue(terminal.bottom <= composer.top,
+                "The last message must clear the measured composer: message=$terminal composer=$composer")
+            onNodeWithText("Live output").assertDoesNotExist()
             onAllNodes(hasScrollToIndexAction()).assertCountEquals(1)
         }
 
@@ -236,7 +277,7 @@ class ChatFinalAuditUiTest {
                         Box(
                             Modifier
                                 .requiredSize(width = 320.dp, height = 96.dp)
-                                .background(MaterialTheme.colorScheme.surface)
+                                .background(AppTheme.colors.surface)
                                 .testTag("context-host"),
                         ) {
                             ContextProgressIndicator(
