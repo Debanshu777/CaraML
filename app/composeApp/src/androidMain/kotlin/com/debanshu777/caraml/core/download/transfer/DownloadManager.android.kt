@@ -1,0 +1,71 @@
+package com.debanshu777.caraml.core.download.transfer
+
+import com.debanshu777.caraml.sdk.discovery.huggingface.createPlatformHttpClient
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOn
+import okio.Path.Companion.toOkioPath
+import java.io.File
+
+actual class DownloadManager actual constructor(
+    private val pathProvider: StoragePathProvider,
+    private val baseUrl: String
+) {
+    private val httpClient = createPlatformHttpClient {
+        configureArtifactDownloadTimeouts()
+    }
+
+    actual fun download(
+        modelId: String,
+        path: String,
+        metadata: DownloadMetadataDTO,
+        resumeMetadata: DownloadResumeMetadata?,
+    ): Flow<DownloadProgressDTO> {
+        requireImmutableArtifactWriteMetadata(metadata)
+        val request = validateDownloadArguments(modelId, path, metadata)
+        val dirPath = pathProvider.getModelsStorageDirectory(request.modelId)
+        val root = File(dirPath).toPath().toAbsolutePath().normalize()
+        val file = root.resolve(metadata.destinationRelativePath).normalize()
+        require(file != root && file.startsWith(root)) { "Invalid model file path" }
+        return downloadArtifact(
+            httpClient,
+            pathProvider,
+            baseUrl,
+            modelId,
+            path,
+            metadata,
+            root.toOkioPath(),
+            file.toOkioPath(),
+            file.toString(),
+            resumeMetadata,
+        ).flowOn(Dispatchers.IO)
+    }
+
+    actual suspend fun publishBundle(ownerModelId: String, artifacts: List<DownloadMetadataDTO>,
+        diagnostics: BundlePublicationDiagnostics?): Boolean =
+        publishArtifactBundle(pathProvider, ownerModelId, artifacts, diagnostics)
+
+    actual suspend fun validateBundle(ownerModelId: String, artifacts: List<DownloadMetadataDTO>): Boolean =
+        validateArtifactBundle(pathProvider, ownerModelId, artifacts)
+
+    actual suspend fun validatedBundle(ownerModelId: String): ArtifactManifest? =
+        readValidatedArtifactBundle(pathProvider, ownerModelId)
+
+    actual suspend fun validatedArtifacts(modelId: String): ArtifactManifest? =
+        readValidatedArtifactManifest(pathProvider, modelId)
+
+    actual suspend fun discardCheckpoint(metadata: DownloadMetadataDTO) =
+        discardArtifactCheckpoint(pathProvider, metadata)
+
+    actual suspend fun isPublished(metadata: DownloadMetadataDTO): Boolean =
+        isArtifactPublished(pathProvider, metadata)
+
+    actual suspend fun inspectStorage(artifacts: List<DownloadMetadataDTO>): List<DownloadArtifactStorageSnapshot>? =
+        inspectArtifactStorage(pathProvider, artifacts)
+
+    actual suspend fun pendingBundleReplacement(ownerModelId: String, artifacts: List<DownloadMetadataDTO>) =
+        pendingArtifactBundleReplacement(pathProvider, ownerModelId, artifacts)
+
+    actual suspend fun acknowledgeBundleReplacement(ownerModelId: String, artifacts: List<DownloadMetadataDTO>) =
+        acknowledgeArtifactBundleReplacement(pathProvider, ownerModelId, artifacts)
+}

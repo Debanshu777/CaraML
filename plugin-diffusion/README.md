@@ -8,10 +8,13 @@ Callers supply a `GeneratedOutputSink`, native library directory, and optionally
 
 If native release fails, the process gate stays held because shared GGML state may still be live. Failed partial loads explicitly transfer unresolved ownership to core so the artifact lease and resource reservation stay held too. This intentionally quarantines further native engine use in the process instead of admitting another engine into uncertain state.
 
-Bridge sources and tests live in this module, preserving the existing
-`com.debanshu777.diffusionrunner` package/JNI names. See [native bridge details](docs/native-bridge.md).
+The adapter lives in `com.debanshu777.caraml.sdk.plugin.diffusion`; its native
+bridge and tests live in the `.bridge` subpackage. Kotlin declarations, JNI
+symbols, iOS cinterop and consumer keep rules use the same package hierarchy. See [native bridge details](docs/native-bridge.md).
 
 ## Recent Changes
+
+- Standardized adapter and bridge packages under `com.debanshu777.caraml.sdk.plugin.diffusion`; updated JNI symbols, metadata lookup, cinterop and shrinker rules together.
 
 - Validated Android arm64 packaging, iOS device/simulator compilation, and opt-in desktop JNI fixtures with CheckJNI; see [corrective evidence](../docs/sdk/implementation-evidence.md#corrective-implementation--2026-10-14).
 

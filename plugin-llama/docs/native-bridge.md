@@ -18,7 +18,7 @@ Kotlin Multiplatform wrapper for **llama.cpp** LLM inference. Provides a common 
 ## Package Structure
 
 ```
-com.debanshu777.runner/
+com.debanshu777.caraml.sdk.plugin.llama.bridge/
 ├── LlamaRunner.kt               # expect class — core interface
 ├── LlamaRunner.android.kt       # actual: JNI wrapper
 ├── LlamaRunner.jvm.kt           # actual: JNI wrapper (same JNI, different lib path)
@@ -94,7 +94,7 @@ runner.unload()
 | `useMmap` | Boolean | Memory-map model file |
 | `useMlock` | Boolean | Lock model in RAM (prevent swap) |
 
-`DeviceCapabilities` (in `:composeApp`) builds the appropriate config per platform.
+`DeviceCapabilities` (in `:app:composeApp`) builds the appropriate config per platform.
 
 ---
 

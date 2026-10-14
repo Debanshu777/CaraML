@@ -48,7 +48,7 @@ tasks.matching { it.name == "jvmTest" }.configureEach {
 
 kotlin {
     android {
-        namespace = "com.debanshu777.diffusionrunner"
+        namespace = "com.debanshu777.caraml.sdk.plugin.diffusion"
         compileSdk = 37
         minSdk = 28
         optimization {
@@ -101,7 +101,7 @@ kotlin {
             arch.compilations.getByName("main").cinterops {
                 create("diffusionRunner") {
                     defFile("src/iosMain/cpp/diffusion_runner.def")
-                    packageName("com.debanshu777.diffusionrunner.cpp")
+                    packageName("com.debanshu777.caraml.sdk.plugin.diffusion.bridge.cpp")
                     compilerOpts("-I${projectDir}/src/iosMain/cpp")
                     extraOpts("-libraryPath", libPath)
                     tasks.named(interopProcessingTaskName).configure {
@@ -132,7 +132,7 @@ kotlin {
             arch.compilations.getByName("main").cinterops {
                 create("diffusionRunner") {
                     defFile("src/iosMain/cpp/diffusion_runner.def")
-                    packageName("com.debanshu777.diffusionrunner.cpp")
+                    packageName("com.debanshu777.caraml.sdk.plugin.diffusion.bridge.cpp")
                     compilerOpts("-I${projectDir}/src/iosMain/cpp")
                 }
             }

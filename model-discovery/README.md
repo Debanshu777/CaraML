@@ -22,19 +22,20 @@ val discovery = ModelDiscovery.Builder()
 Omit `enableDownloads` for browsing only. Each facade selects one provider; use
 separate facades for multiple sources. Artifact identities include `ProviderId`,
 so providers can use the same remote model/file IDs safely. The executable
-[provider isolation test](src/commonTest/kotlin/io/github/debanshu777/caraml/discovery/ProviderIsolationTest.kt)
+[provider isolation test](src/commonTest/kotlin/com/debanshu777/caraml/sdk/discovery/ProviderIsolationTest.kt)
 covers two custom providers browsing, resolving and downloading into shared storage.
 A federated search/registry layer is not needed for this extension point.
 
 ## Implementation layout
 
-- `io.github.debanshu777.caraml.discovery`: provider-neutral facade, scoped transfers,
-  and the built-in `HuggingFaceProvider` adapter.
-- `com.debanshu777.huggingfacemanager`: compatibility Hub API, HTTP factory,
-  metadata DTOs, repositories and use cases moved from the removed Gradle module.
-  Existing app imports stay compatible; new consumers use neutral SDK contracts.
+- `com.debanshu777.caraml.sdk.discovery`: provider-neutral facade, scoped transfers,
+  and download lifecycle handling.
+- `com.debanshu777.caraml.sdk.discovery.huggingface`: compatibility Hub API, HTTP factory,
+  the built-in `HuggingFaceProvider` adapter, metadata DTOs, repositories and use
+  cases. New consumers use neutral SDK contracts.
 - Legacy download/storage platform integrations and curated diffusion installation
-  rules now live in `composeApp`, with their packages and native JNI names intact.
+  rules live in `composeApp` under `core.download.transfer` and
+  `core.download.diffusion`.
   Discovery has no app, storage implementation, engine or native-build dependency.
 
 The compatibility factory uses OkHttp (Android), Darwin (iOS arm64/simulator), and
@@ -44,6 +45,8 @@ separate provider artifacts are deferred until dependency isolation warrants the
 See the [compatibility API reference](docs/huggingface-compatibility.md).
 
 ## Recent Changes
+
+- Standardized neutral discovery under `sdk.discovery` and Hugging Face implementation under `sdk.discovery.huggingface`, using the common `com.debanshu777.caraml` root.
 
 - Removed `huggingFaceManager` as a Gradle module. Moved its Hub API/metadata/client code here and its existing host storage/download/diffusion integrations to `composeApp`.
 - Preserved provider-neutral extension contracts and added shared-storage isolation coverage for two custom providers. SDK-only verification still excludes native producers.

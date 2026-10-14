@@ -2,10 +2,13 @@
 
 `plugin-llama` implements the text-generation capability using its own Kotlin/JNI/cinterop bridge. A host registers `LlamaPlugin(nativeLibraryDirectory)` with `InferenceClient`, supplies a local-file `ArtifactAccess`, and creates typed `LlamaRequest` values with `LlamaSessionOptions`. The runner is created lazily, so registering a plugin does not load a native library.
 
-The bridge sources and tests now live in this module, preserving their existing
-`com.debanshu777.runner` package/JNI names for the app. See [native bridge details](docs/native-bridge.md).
+The adapter lives in `com.debanshu777.caraml.sdk.plugin.llama`; its native bridge
+and tests live in the `.bridge` subpackage. Kotlin declarations, JNI symbols,
+iOS cinterop and consumer keep rules use the same package hierarchy. See [native bridge details](docs/native-bridge.md).
 
 ## Recent Changes
+
+- Standardized adapter and bridge packages under `com.debanshu777.caraml.sdk.plugin.llama`; updated JNI symbols, field descriptors, cinterop and shrinker rules together.
 
 - Validated Android arm64 packaging, iOS device/simulator compilation, and opt-in desktop JNI fixtures with CheckJNI; see [corrective evidence](../docs/sdk/implementation-evidence.md#corrective-implementation--2026-10-14).
 

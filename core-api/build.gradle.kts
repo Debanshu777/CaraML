@@ -7,7 +7,7 @@ plugins {
 
 kotlin {
     android {
-        namespace = "io.github.debanshu777.caraml.core.api"
+        namespace = "com.debanshu777.caraml.sdk.api"
         compileSdk = 37
         minSdk = 28
         compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }

@@ -1,5 +1,5 @@
 # JNI looks up these fields by their source names and descriptors.
--keepclassmembers,includedescriptorclasses class com.debanshu777.runner.NativeRunnerConfig {
+-keepclassmembers,includedescriptorclasses class com.debanshu777.caraml.sdk.plugin.llama.bridge.NativeRunnerConfig {
     int nCtx;
     int nCtxMin;
     int nThreads;
@@ -16,11 +16,11 @@
     boolean useMlock;
     float temperature;
     boolean autoFit;
-    com.debanshu777.runner.LlamaLazyMode lazyMode;
+    com.debanshu777.caraml.sdk.plugin.llama.bridge.LlamaLazyMode lazyMode;
     java.lang.String cpuMask;
     java.lang.String cpuMaskBatch;
 }
 
--keepclassmembers enum com.debanshu777.runner.LlamaLazyMode {
+-keepclassmembers enum com.debanshu777.caraml.sdk.plugin.llama.bridge.LlamaLazyMode {
     int nativeValue;
 }

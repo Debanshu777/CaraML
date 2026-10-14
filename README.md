@@ -39,14 +39,16 @@ CaraML/
 ├── plugin-llama/        # llama SDK + Kotlin/JNI/cinterop bridge
 ├── plugin-diffusion/    # Diffusion SDK + Kotlin/JNI/cinterop bridge
 ├── native-runtime/      # Internal SDK native ownership guard
-├── composeApp/          # Shared Compose UI + MVVM features
-├── androidApp/          # Android entry point and APK packaging
+├── app/                # CaraML app consumers, separate from the SDK
+│   ├── composeApp/     # Shared UI, app logic and platform implementations
+│   ├── androidApp/     # Android launcher and APK packaging
+│   ├── desktopApp/     # Desktop launcher, hot reload and packaging
+│   └── iosApp/         # Xcode host consuming the ComposeApp framework
 ├── nativeEngine/        # CMake build orchestration for all native libs
-├── libraries/
-│   ├── llama.cpp/       # Git submodule: ggerganov/llama.cpp
-│   ├── stable-diffusion.cpp/ # Git submodule: leejet/stable-diffusion.cpp
-│   └── patches/         # Applied patches to vendored libraries
-└── iosApp/              # Native iOS Xcode project (SwiftUI wrapper)
+└── libraries/
+    ├── llama.cpp/       # Git submodule: ggerganov/llama.cpp
+    ├── stable-diffusion.cpp/ # Git submodule: leejet/stable-diffusion.cpp
+    └── patches/         # Applied patches to vendored libraries
 ```
 
 Each engine plugin owns its bridge as ordinary source packages; there are no separate
@@ -55,10 +57,34 @@ so both engines use one GGML implementation. API contracts, core orchestration,
 optional storage/discovery, and the process-wide native gate retain separate boundaries.
 The former `huggingFaceManager` project is also removed: Hub APIs live in discovery,
 while the existing native storage, background download and curated install integrations
-live in the app. Ten Gradle projects remain. Other providers implement `ModelProvider`
+live in the app. The application projects are grouped under `app/`; `composeApp`
+holds shared app code and the platform hosts own their launchers and packaging.
+Other providers implement `ModelProvider`
 and optionally `ArtifactSource`; they do not need a separate Gradle project.
 
 See each module's own README for details.
+
+## Package Conventions
+
+First-party Kotlin packages use `com.debanshu777.caraml` as their common root.
+Source directories mirror package declarations in every source set.
+
+| Owner | Package below the common root |
+|-------|-------------------------------|
+| Shared app and launchers | `core.*`, `features.*` and app entry points |
+| App transfer / diffusion installation | `core.download.transfer`, `core.download.diffusion` |
+| Generated Compose resources | `generated.resources` |
+| SDK contracts / lifecycle | `sdk.api`, `sdk.core` |
+| SDK storage / native ownership | `sdk.storage`, `sdk.runtime` |
+| Discovery / Hugging Face implementation | `sdk.discovery`, `sdk.discovery.huggingface` |
+| Engine adapters / native bridges | `sdk.plugin.llama`, `sdk.plugin.diffusion`, each with a `bridge` subpackage |
+
+Android library namespaces follow their owning module's package. The native
+producer uses `com.debanshu777.caraml.nativeengine`; the shared UI library uses
+`com.debanshu777.caraml.shared` to keep its generated Android classes distinct
+from the launcher. Application IDs, bundle IDs, engine IDs and persisted formats
+are stable identifiers and do not change when source packages move. Rebuild
+native binaries with their Kotlin bridges when JNI packages change.
 
 ---
 
@@ -95,18 +121,18 @@ git submodule update --init
 
 ```bash
 # Android (debug APK)
-./gradlew :androidApp:assembleDebug
+./gradlew :app:androidApp:assembleDebug
 
 # Desktop — build and run directly
-./gradlew :composeApp:run
+./gradlew :app:desktopApp:run
 
-# iOS — open iosApp/ in Xcode
+# iOS — open app/iosApp/ in Xcode
 ```
 
 ### Android with Vulkan GPU (experimental)
 
 ```bash
-./gradlew :androidApp:assembleDebug -PENABLE_VULKAN_ANDROID=true
+./gradlew :app:androidApp:assembleDebug -PENABLE_VULKAN_ANDROID=true
 ```
 
 Requires Vulkan SDK and `glslc` in PATH. Expected 5–8× token-per-second improvement on compatible GPUs (Mali, Adreno). See [`docs/vulkan-android-build-strategy.md`](./docs/vulkan-android-build-strategy.md).
@@ -199,8 +225,8 @@ Three features: **chat**, **modelhub**, **settings**.
 
 ```bash
 ./gradlew verifyProject          # Preferred local/CI JVM gate
-./gradlew :composeApp:allTests    # All platform tests
-./gradlew :composeApp:jvmTest     # JVM tests only
+./gradlew :app:composeApp:allTests    # All platform tests
+./gradlew :app:composeApp:jvmTest     # JVM tests only
 ```
 
 GitHub Actions runs `verifyProject` for pull requests and pushes to `main`.
@@ -231,9 +257,13 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 
 ## Recent Changes
 
-- Removed the unused root sample/cache folders and moved icon generation into `composeApp/tools/`.
+- Standardized first-party packages under `com.debanshu777.caraml`, with reusable libraries under `.sdk`; aligned source directories, imports, JNI symbols, iOS bindings and generated resources.
 
-- Consolidated the Hugging Face API into `model-discovery`; kept existing platform download/storage and diffusion install integrations in the app. Updated app/CI dependencies and preserved source/JNI identities, with custom-provider isolation coverage.
+- Grouped the application under `app/` with conventional `composeApp`, `androidApp`, `desktopApp` and `iosApp` names. Extracted the desktop launcher/packaging and updated Gradle, Xcode, CI and source-path checks. See [app structure and commands](app/README.md).
+
+- Removed the unused root sample/cache folders and moved icon generation into `app/composeApp/tools/`.
+
+- Consolidated the Hugging Face API into `model-discovery`; kept existing platform download/storage and diffusion install integrations in the app. Updated app/CI dependencies with custom-provider isolation coverage; the subsequent package cleanup aligns source and JNI names with their owners.
 
 - Merged `runner` into `plugin-llama` and `diffusionRunner` into `plugin-diffusion`, including native sources, platform bindings, tests and consumer keep rules; updated app dependencies and CI commands.
 - Fixed scoped HTTP streaming, redirect credentials, failed-load ownership, concurrent shutdown, closed-stage cleanup, Android runtime library packaging and Release Unicode checks. [Corrective evidence](docs/sdk/implementation-evidence.md#corrective-implementation--2026-10-14) separates these checks from pending release acceptance.
@@ -261,11 +291,11 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 
 - Fixed app bars and composers sample the actual scrolling backdrop and fade continuously into the content. Bottom safe areas now use scroll padding instead of clipping the backdrop above the gesture bar; final actions scroll clear of the glass. Rendered checks cover both edges and touch targets.
 
-- Added shared sticky headers with full-width frosted edges, removed redundant result/file dividers, rebuilt Device info around storage/memory/compute, and corrected the drawer preview crop. SVG action assets now generate one shared icon set (`python3 composeApp/tools/generate_app_icons.py`). Layout evidence: `composeApp/build/reports/layout-qa-2026-10-06/`.
+- Added shared sticky headers with full-width frosted edges, removed redundant result/file dividers, rebuilt Device info around storage/memory/compute, and corrected the drawer preview crop. SVG action assets now generate one shared icon set (`python3 app/composeApp/tools/generate_app_icons.py`). Layout evidence: `app/composeApp/build/reports/layout-qa-2026-10-06/`.
 
-- Rebalanced the shared typography hierarchy: calmer 24sp page titles, 18sp item titles, readable 14sp descriptions, and consistent chat/Settings roles. Typography before/after evidence is under `composeApp/build/reports/typography-qa-2026-10-06/`.
+- Rebalanced the shared typography hierarchy: calmer 24sp page titles, 18sp item titles, readable 14sp descriptions, and consistent chat/Settings roles. Typography before/after evidence is under `app/composeApp/build/reports/typography-qa-2026-10-06/`.
 
-- Design QA simplified Settings and device headers, removed repeated loading/error/generation labels, clarified model browsing actions, and made file selection and 200% text settings easier to use. Before/after Pixel and Compose evidence is generated under `composeApp/build/reports/design-qa-2026-10-06/`.
+- Design QA simplified Settings and device headers, removed repeated loading/error/generation labels, clarified model browsing actions, and made file selection and 200% text settings easier to use. Before/after Pixel and Compose evidence is generated under `app/composeApp/build/reports/design-qa-2026-10-06/`.
 
 - Unified action buttons around the raised Pocket pal style, with visible quick-tap press-depth motion, disabled and reduced-motion feedback, and matching compact/icon variants across Create, Models, and Settings.
 

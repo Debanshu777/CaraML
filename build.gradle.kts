@@ -7,6 +7,7 @@ plugins {
     alias(libs.plugins.composeMultiplatform) apply false
     alias(libs.plugins.composeCompiler) apply false
     alias(libs.plugins.kotlinMultiplatform) apply false
+    alias(libs.plugins.kotlinJvm) apply false
     alias(libs.plugins.androidMultiplatformLibrary) apply false
 }
 
@@ -72,7 +73,8 @@ tasks.register("verifyProject") {
         "verifyEngineBoundaries",
         ":plugin-llama:jvmTest",
         ":plugin-diffusion:jvmTest",
-        ":composeApp:jvmTest",
+        ":app:composeApp:jvmTest",
+        ":app:desktopApp:classes",
         ":nativeEngine:verifyNativeSubmodulePins",
         ":nativeEngine:testJniUtf8Desktop",
         ":nativeEngine:testDiffusionRunnerNativeDesktop",

@@ -8,6 +8,8 @@ The file store's maps and locks are scoped to one instance. Its root must be a d
 
 ## Recent Changes
 
+- Standardized storage implementation and tests on `com.debanshu777.caraml.sdk.storage`.
+
 - Closed stages can be aborted while owner/generation fencing prevents stale handles from deleting resumed work.
 
 - Added in-memory neutral catalog/task/artifact stores plus an injectable Okio file artifact store with bounded writes, hashed confined names, digest checks, atomic publication, and leased local-file locations.

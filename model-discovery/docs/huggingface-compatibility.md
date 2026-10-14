@@ -3,12 +3,13 @@
 Reference for the existing app API previously shipped in `huggingFaceManager`.
 The Hub API, metadata and HTTP factories now live in `model-discovery`. The
 `download/`, `sdcpp/` and `DiffusersModelSupport` source packages described below
-now live in `composeApp` as existing host integrations. Package and JNI names are
-preserved; this move does not replace persistent download formats or background
-session identities. New provider implementations use `ModelProvider` and
+live in `composeApp` under `com.debanshu777.caraml.core.download.transfer` and
+`com.debanshu777.caraml.core.download.diffusion`. The Hub API lives under
+`com.debanshu777.caraml.sdk.discovery.huggingface`. Persistent download formats
+and background session identities are unchanged. New provider implementations use `ModelProvider` and
 `ArtifactSource` instead of extending these Hugging Face DTOs.
 
-Used by `:composeApp` to discover and download GGUF models and stable-diffusion component files.
+Used by `:app:composeApp` to discover and download GGUF models and stable-diffusion component files.
 
 ---
 
@@ -26,7 +27,7 @@ HTTP clients:
 ## Package Structure
 
 ```
-com.debanshu777.huggingfacemanager/
+com.debanshu777.caraml.sdk.discovery.huggingface/
 ├── HuggingFaceApi.kt                  # Public API facade (entry point)
 ├── api/
 │   ├── RemoteHuggingFaceApiService.kt # Ktor HTTP calls to HuggingFace REST API
@@ -139,7 +140,7 @@ data class DownloadProgressDTO(
 
 ## Stable Diffusion Support
 
-`SdCppCuratedCatalog` — hardcoded catalog of known working SD model bundles (model + VAE + CLIP + scheduler config). Used in the "Smart Install" flow in `:composeApp`.
+`SdCppCuratedCatalog` — hardcoded catalog of known working SD model bundles (model + VAE + CLIP + scheduler config). Used in the "Smart Install" flow in `:app:composeApp`.
 
 `SdCppModelSetup` — orchestrates downloading all required components for a given SD model entry.
 

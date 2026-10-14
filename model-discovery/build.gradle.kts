@@ -8,10 +8,10 @@ plugins {
 
 kotlin {
     compilerOptions {
-        optIn.add("io.github.debanshu777.caraml.core.api.ExperimentalCaraMLApi")
+        optIn.add("com.debanshu777.caraml.sdk.api.ExperimentalCaraMLApi")
     }
     android {
-        namespace = "io.github.debanshu777.caraml.discovery"
+        namespace = "com.debanshu777.caraml.sdk.discovery"
         compileSdk = 37
         minSdk = 28
         compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }

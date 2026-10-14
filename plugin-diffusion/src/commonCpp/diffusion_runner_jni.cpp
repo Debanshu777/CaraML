@@ -149,7 +149,7 @@ struct OwnedDiffusionModelConfig {
         const jfieldID runtimeBackend = env->GetFieldID(
             clazz,
             "runtimeBackend",
-            "Lcom/debanshu777/diffusionrunner/DiffusionRuntimeBackend;");
+            "Lcom/debanshu777/caraml/sdk/plugin/diffusion/bridge/DiffusionRuntimeBackend;");
         const jfieldID offloadToCpu = env->GetFieldID(clazz, "offloadToCpu", "Z");
         const jfieldID keepClipOnCpu = env->GetFieldID(clazz, "keepClipOnCpu", "Z");
         const jfieldID keepVaeOnCpu = env->GetFieldID(clazz, "keepVaeOnCpu", "Z");
@@ -246,7 +246,7 @@ jlongArray make_long_array(JNIEnv *env, const std::vector<int64_t> &values) {
 extern "C" {
 
 JNIEXPORT void JNICALL
-Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeInit(JNIEnv *env, jobject thiz, jstring libDir) {
+Java_com_debanshu777_caraml_sdk_plugin_diffusion_bridge_DiffusionRunner_nativeInit(JNIEnv *env, jobject thiz, jstring libDir) {
     try {
         std::string lib_dir = jstring_to_string(env, libDir);
         diffusion_runner_core_set_logger(jni_log_callback);
@@ -257,7 +257,7 @@ Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeInit(JNIEnv *env, job
 }
 
 JNIEXPORT jlong JNICALL
-Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeLoadModel(JNIEnv *env, jobject thiz, jobject config) {
+Java_com_debanshu777_caraml_sdk_plugin_diffusion_bridge_DiffusionRunner_nativeLoadModel(JNIEnv *env, jobject thiz, jobject config) {
     try {
         OwnedDiffusionModelConfig owned_config;
         if (!owned_config.read(env, config)) {
@@ -278,7 +278,7 @@ Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeLoadModel(JNIEnv *env
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativePreflightModel(
+Java_com_debanshu777_caraml_sdk_plugin_diffusion_bridge_DiffusionRunner_nativePreflightModel(
         JNIEnv *env, jobject /* thiz */, jobject config) {
     try {
         OwnedDiffusionModelConfig owned_config;
@@ -336,7 +336,7 @@ Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativePreflightModel(
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeBackendCapabilities(
+Java_com_debanshu777_caraml_sdk_plugin_diffusion_bridge_DiffusionRunner_nativeBackendCapabilities(
         JNIEnv *env, jobject /* thiz */) {
     try {
         const DiffusionBackendCapabilitiesNative native =
@@ -366,7 +366,7 @@ Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeBackendCapabilities(
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeProbeModelFeatures(
+Java_com_debanshu777_caraml_sdk_plugin_diffusion_bridge_DiffusionRunner_nativeProbeModelFeatures(
         JNIEnv *env,
         jobject /* thiz */,
         jstring architecture,
@@ -394,7 +394,7 @@ Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeProbeModelFeatures(
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeEngineVersion(
+Java_com_debanshu777_caraml_sdk_plugin_diffusion_bridge_DiffusionRunner_nativeEngineVersion(
         JNIEnv *env, jobject /* thiz */) {
     try {
         const std::string version = diffusion_runner_core_engine_version();
@@ -407,7 +407,7 @@ Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeEngineVersion(
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeModelVersion(
+Java_com_debanshu777_caraml_sdk_plugin_diffusion_bridge_DiffusionRunner_nativeModelVersion(
         JNIEnv *env, jobject /* thiz */, jlong handle) {
     try {
         const std::string version = diffusion_runner_core_model_version(handle);
@@ -420,7 +420,7 @@ Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeModelVersion(
 }
 
 JNIEXPORT jbyteArray JNICALL
-Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeTxt2Img(JNIEnv *env, jobject thiz,
+Java_com_debanshu777_caraml_sdk_plugin_diffusion_bridge_DiffusionRunner_nativeTxt2Img(JNIEnv *env, jobject thiz,
         jlong handle,
         jstring prompt,
         jstring negative,
@@ -512,7 +512,7 @@ Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeTxt2Img(JNIEnv *env, 
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeVideoGen(JNIEnv *env, jobject thiz,
+Java_com_debanshu777_caraml_sdk_plugin_diffusion_bridge_DiffusionRunner_nativeVideoGen(JNIEnv *env, jobject thiz,
         jlong handle,
         jstring prompt,
         jstring negative,
@@ -645,7 +645,7 @@ Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeVideoGen(JNIEnv *env,
 }
 
 JNIEXPORT void JNICALL
-Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeRelease(JNIEnv *env, jobject thiz, jlong handle) {
+Java_com_debanshu777_caraml_sdk_plugin_diffusion_bridge_DiffusionRunner_nativeRelease(JNIEnv *env, jobject thiz, jlong handle) {
     try {
         diffusion_runner_core_release(handle);
     } catch (...) {
@@ -654,7 +654,7 @@ Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeRelease(JNIEnv *env, 
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeCancelGeneration(
+Java_com_debanshu777_caraml_sdk_plugin_diffusion_bridge_DiffusionRunner_nativeCancelGeneration(
         JNIEnv * /* env */, jobject /* thiz */, jlong handle) {
     try {
         return diffusion_runner_core_cancel_generation(handle) ? JNI_TRUE : JNI_FALSE;
@@ -665,7 +665,7 @@ Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeCancelGeneration(
 }
 
 JNIEXPORT jintArray JNICALL
-Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeGetStepProgress(JNIEnv *env, jobject thiz) {
+Java_com_debanshu777_caraml_sdk_plugin_diffusion_bridge_DiffusionRunner_nativeGetStepProgress(JNIEnv *env, jobject thiz) {
     int step = 0, total = 0;
     try {
         diffusion_runner_get_step_progress(&step, &total);
@@ -684,7 +684,7 @@ Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeGetStepProgress(JNIEn
 }
 
 JNIEXPORT jobject JNICALL
-Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeGetDiffusionModelMetadata(
+Java_com_debanshu777_caraml_sdk_plugin_diffusion_bridge_DiffusionRunner_nativeGetDiffusionModelMetadata(
         JNIEnv* env, jobject /* thiz */, jstring modelPath) {
     try {
 
@@ -693,7 +693,7 @@ Java_com_debanshu777_diffusionrunner_DiffusionRunner_nativeGetDiffusionModelMeta
 
     if (!meta.success) return nullptr;
 
-    jclass clazz = env->FindClass("com/debanshu777/diffusionrunner/DiffusionModelMetadata");
+    jclass clazz = env->FindClass("com/debanshu777/caraml/sdk/plugin/diffusion/bridge/DiffusionModelMetadata");
     if (!clazz || env->ExceptionCheck()) return nullptr;
 
     jmethodID ctor = env->GetMethodID(clazz, "<init>",

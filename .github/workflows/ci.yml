@@ -93,7 +93,7 @@ jobs:
           cache-provider: basic
 
       - name: Assemble Android application and both supported ABIs
-        run: ./gradlew :androidApp:assembleDebug --no-daemon --stacktrace
+        run: ./gradlew :app:androidApp:assembleDebug --no-daemon --stacktrace
 
   desktop-artifact-fs:
     name: Desktop artifact filesystem (${{ matrix.os }})
@@ -126,7 +126,7 @@ jobs:
         run: ./gradlew :nativeEngine:verifyArtifactFsDesktopLibrary --stacktrace
 
       - name: Verify packaged native filesystem and recovery
-        run: ./gradlew :composeApp:packageDistributionForCurrentOS :composeApp:artifactFsInstalledImageSmoke :composeApp:jvmTest --tests "com.debanshu777.huggingfacemanager.download.*" --stacktrace
+        run: ./gradlew :app:desktopApp:packageDistributionForCurrentOS :app:desktopApp:artifactFsInstalledImageSmoke :app:composeApp:jvmTest --tests "com.debanshu777.caraml.core.download.transfer.*" --stacktrace
 
   native-preflight-linux:
     name: Native preflight parity (Linux)
@@ -180,7 +180,7 @@ jobs:
           cache-provider: basic
 
       - name: Compile iOS native preflight integration
-        run: ./gradlew :nativeEngine:compileLlamaRunnerCMakeIosSimulatorArm64 :composeApp:compileKotlinIosSimulatorArm64 --no-daemon --max-workers=1 --stacktrace
+        run: ./gradlew :nativeEngine:compileLlamaRunnerCMakeIosSimulatorArm64 :app:composeApp:compileKotlinIosSimulatorArm64 --no-daemon --max-workers=1 --stacktrace
 
   recommendation-performance:
     name: Recommendation performance (pinned runner)
@@ -209,4 +209,4 @@ jobs:
           cache-provider: basic
 
       - name: Enforce recommendation latency budgets
-        run: ./gradlew :composeApp:jvmTest --tests '*RecommendationPerformanceTest*' --no-daemon --max-workers=1 --stacktrace
+        run: ./gradlew :app:composeApp:jvmTest --tests '*RecommendationPerformanceTest*' --no-daemon --max-workers=1 --stacktrace

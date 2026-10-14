@@ -6,6 +6,8 @@ Most extension interfaces are marked `ExperimentalCaraMLApi`. They are an initia
 
 ## Recent Changes
 
+- Standardized API declarations and consumer opt-ins on `com.debanshu777.caraml.sdk.api`.
+
 - Artifact transfers use a scoped `withTransfer` callback so response bodies cannot outlive their transport scope. `UnreleasedEngineLoad` carries uncertain native ownership to core.
 
 - Added provider-neutral model/artifact identities, artifact access and staged storage contracts, fenced task records, discovery provider/transfer contracts, and typed engine capability/session contracts.

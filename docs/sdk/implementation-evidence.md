@@ -357,3 +357,97 @@ produces identical icons apart from the updated provenance comment. Documentatio
 now uses the new path; the stale reference to a nonexistent shader-generation
 script was replaced with the actual CMake/NDK build mechanism. The native module's
 own pin-check script remains in place and wired into verification.
+
+
+## Application grouping — 2026-10-14
+
+CaraML's app code now lives under `app/`, following the recommended Compose
+Multiplatform separation of shared code and platform launchers:
+
+- `:app:composeApp`: shared UI/app logic plus Android, iOS and JVM implementations.
+- `:app:androidApp`: Android launcher and APK packaging.
+- `:app:desktopApp`: JVM launcher, hot reload and distribution/native staging.
+- `app/iosApp`: Xcode host consuming the unchanged `ComposeApp` framework.
+
+The `:app` project is a namespace without a build script or runtime artifact.
+Seven SDK projects and the native producer remain outside it. A separate desktop
+launcher adds one small build module; this is a grouping and ownership change,
+not a claim that the number of build targets decreased. Shared UI and app logic
+remain together because all three platforms use them.
+
+All 590 original application files have destinations in the new layout. The
+launcher source itself is unchanged. Source packages, Android application IDs,
+Compose resource package identity, framework name, JNI symbols and persisted
+identities are preserved. Updated files are limited to build/CI/documentation
+wiring, repository-relative source-test paths and icon-generator provenance.
+
+The Xcode build phase now climbs two directories to the root wrapper and invokes
+`:app:composeApp:embedAndSignAppleFrameworkForXcode`; the framework remains in a
+sibling directory. Xcode recognizes the relocated project and `iosApp` scheme,
+and the project file and build-phase shell syntax validate. The relocated icon
+generator produces identical output.
+
+Validation:
+
+- The full `verifyProject --continue` run passed all 1,492 JVM tests (1,346 app,
+  50 discovery, 14 core, 13 storage, 1 native runtime and 68 engine/bridge tests),
+  with no failures, errors or skips. All seven native CTests passed.
+- The new desktop launcher compiled, and
+  `:app:desktopApp:artifactFsInstalledImageSmoke` passed from its generated
+  application image.
+- Android debug assembly passed for `arm64-v8a`. The APK contains the secure
+  filesystem, inference bridges, all seven GGML CPU variants and OpenMP runtime.
+- Shared Kotlin compilation passed for both iOS arm64 and simulator arm64,
+  reusing the previously built native engine archives. Xcode project discovery
+  and build-phase syntax checks passed; an installed iOS application was not run.
+- `verifySdk -PsdkOnly=true` passed, confirming the portable SDK still builds
+  independently of the grouped application projects. `git diff --check HEAD`
+  passed, and the move inventory confirms all 590 original files are present.
+- The full gate still fails only at the existing llama.cpp remote allowlist
+  check. Neither the remote nor its guard was changed.
+
+Earlier sections retain their original module names as historical evidence.
+
+## Package normalization — 2026-10-14
+
+First-party Kotlin declarations now share the `com.debanshu777.caraml` root.
+Reusable contracts and implementations live under `.sdk`: `.api`, `.core`,
+`.storage`, `.runtime`, `.discovery` and `.plugin.{llama,diffusion}`. The built-in
+Hugging Face provider and compatibility API use `.sdk.discovery.huggingface`;
+engine bridges use each plugin's `.bridge` subpackage. App-owned transfers and
+diffusion installation helpers use `.core.download.transfer` and
+`.core.download.diffusion`. Generated Compose resources use `.generated.resources`.
+
+The rename includes source/test directories, imports and qualified references,
+Android namespaces, compiler opt-ins, CI test filters, native JNI exports and
+reflected descriptors, consumer keep rules and iOS cinterop definitions. All
+601 Kotlin files have matching package directories. Android application IDs,
+iOS bundle IDs, engine/provider IDs, database names and persistent download
+formats remain unchanged. In particular, the llama engine ID retains its
+historical value independently of its implementation package.
+
+This intentionally changes SDK/bridge source imports and JNI binary names;
+consumers must rebuild native binaries and Kotlin bridges together. The current
+layout and convention are documented in the root README and AGENTS.md. Prior
+sections describe the package names used at the time of those checks.
+
+Validation:
+
+- All 1,492 JVM tests and seven native CTests passed. The full `verifyProject`
+  gate still fails only at the pre-existing llama.cpp remote allowlist check.
+- Both engine suites passed with `CARAML_NATIVE_PARITY=true` and `-Xcheck:jni`
+  (40 llama tests and 28 diffusion tests). The tiny GGUF preflight/load and
+  corrupt-input fixtures exercised the rebuilt JNI bridges.
+- Desktop symbol inspection verified all 30 llama, 13 diffusion and 13 secure
+  filesystem JNI exports under the new package names. The installed desktop
+  filesystem smoke check also passed after its package and native exports moved.
+- Android debug assembly passed for both `arm64-v8a` and `x86_64`. Inspection of
+  the packaged APK verified those same 56 JNI exports in each ABI, with no old
+  runner/manager JNI names remaining.
+- Kotlin compilation passed for both iOS arm64 and simulator arm64, including
+  regenerated cinterop bindings. The unchanged iOS C/C++ engine archives were
+  reused; this check did not run an installed iOS application.
+- `verifySdk -PsdkOnly=true` passed after the provider package move. Current
+  SDK/shared-app JARs and the generated desktop application contain no legacy
+  package class files. Final project verification again passed all 1,492 JVM
+  tests with no failures, errors or skips; only the existing remote guard failed.

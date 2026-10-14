@@ -10,12 +10,12 @@ Shared guidance for AI coding agents working in this repository.
 
 ```bash
 # Android
-./gradlew :composeApp:assembleDebug
+./gradlew :app:androidApp:assembleDebug
 
 # Desktop (JVM) - run directly
-./gradlew :composeApp:run
+./gradlew :app:desktopApp:run
 
-# iOS - open iosApp/ in Xcode, or build via Gradle
+# iOS - open app/iosApp/ in Xcode, or build via Gradle
 
 # Native engine builds (required before first run)
 ./gradlew :nativeEngine:compileLlamaRunnerDesktop          # Desktop native libs
@@ -23,22 +23,32 @@ Shared guidance for AI coding agents working in this repository.
 
 # Tests
 ./gradlew verifyProject                                   # Preferred local/CI JVM gate
-./gradlew :composeApp:allTests                             # All platform tests
-./gradlew :composeApp:jvmTest                              # JVM tests only
+./gradlew :app:composeApp:allTests                             # All platform tests
+./gradlew :app:composeApp:jvmTest                              # JVM tests only
 ```
 
 ## Module Structure
 
-- **`:composeApp`** - Main multiplatform Compose UI (Android, iOS arm64/simulator, JVM Desktop)
-- **`:huggingFaceManager`** - HuggingFace API client, model search/list, download manager with progress tracking
-- **`:runner`** - Kotlin wrapper around native llama.cpp inference (expect/actual + JNI/cinterop)
-- **`:diffusionRunner`** - Kotlin wrapper around native stable-diffusion.cpp (expect/actual + JNI/cinterop)
+- **`app/`** - Application group, separate from the reusable SDK
+- **`:app:composeApp`** - Shared Compose UI, app logic and platform implementations (Android, iOS arm64/simulator, JVM)
+- **`:app:androidApp`** - Android launcher and APK packaging
+- **`:app:desktopApp`** - Desktop launcher, hot reload and distribution packaging
+- **`app/iosApp`** - Xcode host consuming the shared `ComposeApp` framework
+- **`:model-discovery`** - Provider-neutral discovery and Hugging Face API; legacy platform downloads live in `:app:composeApp`
+- **`:plugin-llama`**, **`:plugin-diffusion`** - Engine adapters and their Kotlin/JNI/cinterop bridges
+- **`:core-api`**, **`:core`**, **`:storage`**, **`:native-runtime`** - SDK contracts, lifecycle, storage and native ownership
 - **`:nativeEngine`** - CMake build orchestration for native C/C++ libs; produces static libs for iOS + shared libs for JVM
 
 ## Architecture
 
 ### Source Sets
 Shared logic in `commonMain`. Platform-specific: `expect`/`actual` with `androidMain`, `iosMain`, `jvmMain`.
+
+### Packages
+Use `com.debanshu777.caraml` for all first-party Kotlin packages and mirror declarations in source directories.
+App code stays under `core`/`features`; reusable libraries use `sdk.api`, `sdk.core`, `sdk.storage`, `sdk.runtime`, `sdk.discovery`, and `sdk.plugin.{llama,diffusion}`.
+Provider implementations belong under `sdk.discovery.huggingface`; engine bridges use each plugin's `bridge` subpackage.
+Update JNI symbols/descriptors, cinterop definitions and consumer keep rules together when moving bridge packages. Preserve persisted IDs and application/bundle IDs.
 
 ### Feature Organization (composeApp)
 MVVM under `com.debanshu777.caraml.features.{feature}/`:
@@ -83,10 +93,11 @@ Three features: **chat** (LLM/diffusion inference UI), **modelhub** (browse/sear
 
 At session end, update `## Recent Changes` in:
 - `README.md` (root)
-- `composeApp/README.md`
-- `huggingFaceManager/README.md`
-- `runner/README.md`
-- `diffusionRunner/README.md`
+- `app/README.md`
+- `app/composeApp/README.md`
+- `model-discovery/README.md`
+- `plugin-llama/README.md`
+- `plugin-diffusion/README.md`
 - `nativeEngine/README.md`
 
 Update only relevant module READMEs. Keep bullets concise. Replace stale entries.

@@ -9,7 +9,7 @@ Central native build orchestration module for CaraML. One CMake graph per platfo
 1. **Prepares a patched copy** of llama.cpp without mutating the pinned submodule (`preparePatchedLlamaSource`)
 2. **Invokes CMake** per platform with the right toolchain and flags
 3. **Merges static libs** for iOS (single `libllama_runner_merged.a` per arch)
-4. **Exports layout constants** (`CaramlNativeLayout`) so `:composeApp` and `:plugin-llama` know where to find the built libraries
+4. **Exports layout constants** (`CaramlNativeLayout`) so `:app:composeApp` and `:plugin-llama` know where to find the built libraries
 
 This module has **no Kotlin source code**. All functionality is in `build.gradle.kts` and CMake files.
 
@@ -27,13 +27,13 @@ nativeEngine/build/
     └── <platform>/profiles/
         └── <engines>-<backend>/      Opt-in non-default profile shared libraries
 
-# Android: output via AGP externalNativeBuild → androidApp APK
-composeApp/src/androidMain/jniLibs/arm64-v8a/
+# Android: output via AGP externalNativeBuild → :app:androidApp APK
+nativeEngine/build/intermediates/merged_native_libs/
     llama_runner.so
     diffusion_runner.so
 ```
 
-If you change these paths, update `:composeApp` linker flags and `java.library.path` accordingly.
+If you change these paths, update `:app:composeApp` iOS linker flags and `:app:desktopApp` native resource/launcher configuration accordingly.
 
 The default combined desktop profile keeps its historical output directory. Opt-in engine/backend
 profiles use their own directory so a later compose/package step cannot pick up a runner left by a
@@ -106,7 +106,7 @@ This prevents duplicate symbol errors from linking two independent GGML builds.
 | `mergeLlamaRunnerStaticIosArm64` | Merge iOS arm64 `.a` files via `libtool -static` |
 | `mergeLlamaRunnerStaticIosSimulatorArm64` | Merge iOS simulator arm64 `.a` files |
 
-Android native build is triggered automatically by AGP `externalNativeBuild` during `:composeApp:assemble*`.
+Android native build is triggered automatically by AGP `externalNativeBuild` during `:app:androidApp:assemble*`.
 
 ---
 
@@ -141,6 +141,10 @@ Create a **separate** Gradle module + CMake project. Do not add here unless it m
 ---
 
 ## Recent Changes
+
+- Aligned the native Android namespace and both POSIX/Windows artifact filesystem JNI entry points with the common `com.debanshu777.caraml` package root.
+
+- App consumers now use nested Gradle paths under `:app`; iOS framework linking stays in `composeApp`, and desktop native staging/packaging belongs to `desktopApp`.
 
 - Artifact filesystem JNI callers and recovery tests now live in `composeApp`; native entry-point names remain unchanged after removing the legacy Hugging Face Gradle project.
 

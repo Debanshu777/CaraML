@@ -106,7 +106,7 @@ bool read_runner_config(JNIEnv *env, jobject config_obj, LlamaRunnerConfig &conf
     const jfieldID n_gpu_layers = field("nGpuLayers", "I");
     const jfieldID use_mmap = field("useMmap", "Z");
     const jfieldID use_mlock = field("useMlock", "Z");
-    const jfieldID lazy_mode = field("lazyMode", "Lcom/debanshu777/runner/LlamaLazyMode;");
+    const jfieldID lazy_mode = field("lazyMode", "Lcom/debanshu777/caraml/sdk/plugin/llama/bridge/LlamaLazyMode;");
     const jfieldID temperature = field("temperature", "F");
     const jfieldID auto_fit = field("autoFit", "Z");
     const jfieldID cpu_mask = field("cpuMask", "Ljava/lang/String;");
@@ -189,7 +189,7 @@ void jni_guard_void(const char *operation, Action &&action) noexcept {
 } // namespace
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_debanshu777_runner_LlamaRunner_nativeInit(JNIEnv *env, jobject, jstring libDir) {
+Java_com_debanshu777_caraml_sdk_plugin_llama_bridge_LlamaRunner_nativeInit(JNIEnv *env, jobject, jstring libDir) {
     jni_guard_void("nativeInit failed", [&]() {
         ScopedUtfChars path(env, libDir);
         if (!path.get()) return;
@@ -199,7 +199,7 @@ Java_com_debanshu777_runner_LlamaRunner_nativeInit(JNIEnv *env, jobject, jstring
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_debanshu777_runner_LlamaRunner_nativeEngineVersion(JNIEnv *env, jobject) {
+Java_com_debanshu777_caraml_sdk_plugin_llama_bridge_LlamaRunner_nativeEngineVersion(JNIEnv *env, jobject) {
     return jni_guard<jstring>("nativeEngineVersion failed", nullptr, [&]() {
         const std::string version = llama_runner_core_engine_version();
         return version.empty() ? nullptr : utf8_string(env, version.c_str());
@@ -207,7 +207,7 @@ Java_com_debanshu777_runner_LlamaRunner_nativeEngineVersion(JNIEnv *env, jobject
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_debanshu777_runner_LlamaRunner_nativeLoadModel(
+Java_com_debanshu777_caraml_sdk_plugin_llama_bridge_LlamaRunner_nativeLoadModel(
     JNIEnv *env,
     jobject,
     jstring modelPath,
@@ -227,7 +227,7 @@ Java_com_debanshu777_runner_LlamaRunner_nativeLoadModel(
 }
 
 extern "C" JNIEXPORT jlongArray JNICALL
-Java_com_debanshu777_runner_LlamaRunner_nativePreflightModel(
+Java_com_debanshu777_caraml_sdk_plugin_llama_bridge_LlamaRunner_nativePreflightModel(
     JNIEnv *env,
     jobject,
     jstring modelPath,
@@ -269,7 +269,7 @@ Java_com_debanshu777_runner_LlamaRunner_nativePreflightModel(
 }
 
 extern "C" JNIEXPORT jlongArray JNICALL
-Java_com_debanshu777_runner_LlamaRunner_nativeBackendCapabilities(JNIEnv *env, jobject) {
+Java_com_debanshu777_caraml_sdk_plugin_llama_bridge_LlamaRunner_nativeBackendCapabilities(JNIEnv *env, jobject) {
     return jni_guard<jlongArray>("nativeBackendCapabilities failed", nullptr, [&]() {
         const LlamaBackendCapabilitiesNative native = llama_runner_core_backend_capabilities();
         if (native.count <= 0 || native.count > LLAMA_BACKEND_MAX_DEVICES) {
@@ -300,7 +300,7 @@ Java_com_debanshu777_runner_LlamaRunner_nativeBackendCapabilities(JNIEnv *env, j
 }
 
 extern "C" JNIEXPORT jlongArray JNICALL
-Java_com_debanshu777_runner_LlamaRunner_nativeCalibrateBackend(
+Java_com_debanshu777_caraml_sdk_plugin_llama_bridge_LlamaRunner_nativeCalibrateBackend(
     JNIEnv *env,
     jobject,
     jlong probeToken,
@@ -338,7 +338,7 @@ Java_com_debanshu777_runner_LlamaRunner_nativeCalibrateBackend(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_debanshu777_runner_LlamaRunner_nativeCancelBackendCalibration(
+Java_com_debanshu777_caraml_sdk_plugin_llama_bridge_LlamaRunner_nativeCancelBackendCalibration(
     JNIEnv *, jobject, jlong probeToken) {
     jni_guard_void("nativeCancelBackendCalibration failed", [probeToken]() {
         llama_runner_core_cancel_calibration(static_cast<int64_t>(probeToken));
@@ -346,7 +346,7 @@ Java_com_debanshu777_runner_LlamaRunner_nativeCancelBackendCalibration(
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_com_debanshu777_runner_LlamaRunner_nativeReserveBackendCalibration(
+Java_com_debanshu777_caraml_sdk_plugin_llama_bridge_LlamaRunner_nativeReserveBackendCalibration(
     JNIEnv *, jobject, jlong probeToken) {
     return jni_guard<jint>("nativeReserveBackendCalibration failed", -1, [probeToken]() {
         return static_cast<jint>(
@@ -355,7 +355,7 @@ Java_com_debanshu777_runner_LlamaRunner_nativeReserveBackendCalibration(
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_com_debanshu777_runner_LlamaRunner_nativeAbandonBackendCalibration(
+Java_com_debanshu777_caraml_sdk_plugin_llama_bridge_LlamaRunner_nativeAbandonBackendCalibration(
     JNIEnv *, jobject, jlong probeToken) {
     return jni_guard<jint>("nativeAbandonBackendCalibration failed", -1, [probeToken]() {
         return static_cast<jint>(
@@ -364,7 +364,7 @@ Java_com_debanshu777_runner_LlamaRunner_nativeAbandonBackendCalibration(
 }
 
 extern "C" JNIEXPORT jlongArray JNICALL
-Java_com_debanshu777_runner_LlamaRunner_nativeProbeModelFeatures(
+Java_com_debanshu777_caraml_sdk_plugin_llama_bridge_LlamaRunner_nativeProbeModelFeatures(
     JNIEnv *env,
     jobject,
     jstring architecture,
@@ -390,7 +390,7 @@ Java_com_debanshu777_runner_LlamaRunner_nativeProbeModelFeatures(
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_debanshu777_runner_LlamaRunner_nativeGenerateText(
+Java_com_debanshu777_caraml_sdk_plugin_llama_bridge_LlamaRunner_nativeGenerateText(
     JNIEnv *env,
     jobject,
     jstring prompt,
@@ -408,7 +408,7 @@ Java_com_debanshu777_runner_LlamaRunner_nativeGenerateText(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_debanshu777_runner_LlamaRunner_nativeStartGenerate(
+Java_com_debanshu777_caraml_sdk_plugin_llama_bridge_LlamaRunner_nativeStartGenerate(
     JNIEnv *env, jobject, jstring prompt, jint maxTokens, jfloat temperature, jstring grammar) {
     return jni_guard<jboolean>(
         "nativeStartGenerate failed",
@@ -431,7 +431,7 @@ Java_com_debanshu777_runner_LlamaRunner_nativeStartGenerate(
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_debanshu777_runner_LlamaRunner_nativeNextToken(JNIEnv *env, jobject) {
+Java_com_debanshu777_caraml_sdk_plugin_llama_bridge_LlamaRunner_nativeNextToken(JNIEnv *env, jobject) {
     return jni_guard<jstring>("nativeNextToken failed", nullptr, [&]() {
         const char *tok = llama_runner_core_next_token();
         std::lock_guard<std::mutex> lock(g_utf8_decoder_mutex);
@@ -447,7 +447,7 @@ Java_com_debanshu777_runner_LlamaRunner_nativeNextToken(JNIEnv *env, jobject) {
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_debanshu777_runner_LlamaRunner_nativeGetReasoning(JNIEnv *env, jobject) {
+Java_com_debanshu777_caraml_sdk_plugin_llama_bridge_LlamaRunner_nativeGetReasoning(JNIEnv *env, jobject) {
     return jni_guard<jstring>("nativeGetReasoning failed", nullptr, [&]() {
         const char *s = llama_runner_core_get_reasoning();
         return utf8_string(env, s);
@@ -455,7 +455,7 @@ Java_com_debanshu777_runner_LlamaRunner_nativeGetReasoning(JNIEnv *env, jobject)
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_debanshu777_runner_LlamaRunner_nativeGetContent(JNIEnv *env, jobject) {
+Java_com_debanshu777_caraml_sdk_plugin_llama_bridge_LlamaRunner_nativeGetContent(JNIEnv *env, jobject) {
     return jni_guard<jstring>("nativeGetContent failed", nullptr, [&]() {
         const char *s = llama_runner_core_get_content();
         return utf8_string(env, s);
@@ -463,14 +463,14 @@ Java_com_debanshu777_runner_LlamaRunner_nativeGetContent(JNIEnv *env, jobject) {
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_com_debanshu777_runner_LlamaRunner_nativeSupportsThinking(JNIEnv *, jobject) {
+Java_com_debanshu777_caraml_sdk_plugin_llama_bridge_LlamaRunner_nativeSupportsThinking(JNIEnv *, jobject) {
     return jni_guard<jint>("nativeSupportsThinking failed", 0, []() {
         return static_cast<jint>(llama_runner_core_supports_thinking());
     });
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_debanshu777_runner_LlamaRunner_nativeGetReasoningDelta(JNIEnv *env, jobject) {
+Java_com_debanshu777_caraml_sdk_plugin_llama_bridge_LlamaRunner_nativeGetReasoningDelta(JNIEnv *env, jobject) {
     return jni_guard<jstring>("nativeGetReasoningDelta failed", nullptr, [&]() {
         const char *s = llama_runner_core_get_reasoning_delta();
         std::lock_guard<std::mutex> lock(g_utf8_decoder_mutex);
@@ -480,7 +480,7 @@ Java_com_debanshu777_runner_LlamaRunner_nativeGetReasoningDelta(JNIEnv *env, job
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_debanshu777_runner_LlamaRunner_nativeGetContentDelta(JNIEnv *env, jobject) {
+Java_com_debanshu777_caraml_sdk_plugin_llama_bridge_LlamaRunner_nativeGetContentDelta(JNIEnv *env, jobject) {
     return jni_guard<jstring>("nativeGetContentDelta failed", nullptr, [&]() {
         const char *s = llama_runner_core_get_content_delta();
         std::lock_guard<std::mutex> lock(g_utf8_decoder_mutex);
@@ -490,14 +490,14 @@ Java_com_debanshu777_runner_LlamaRunner_nativeGetContentDelta(JNIEnv *env, jobje
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_debanshu777_runner_LlamaRunner_nativeCancelGenerate(JNIEnv *, jobject) {
+Java_com_debanshu777_caraml_sdk_plugin_llama_bridge_LlamaRunner_nativeCancelGenerate(JNIEnv *, jobject) {
     jni_guard_void("nativeCancelGenerate failed", []() {
         llama_runner_core_cancel_generate();
     });
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_debanshu777_runner_LlamaRunner_nativeFinalizeGeneration(JNIEnv *, jobject) {
+Java_com_debanshu777_caraml_sdk_plugin_llama_bridge_LlamaRunner_nativeFinalizeGeneration(JNIEnv *, jobject) {
     jni_guard_void("nativeFinalizeGeneration failed", []() {
         llama_runner_core_finalize_generation();
         std::lock_guard<std::mutex> lock(g_utf8_decoder_mutex);
@@ -506,7 +506,7 @@ Java_com_debanshu777_runner_LlamaRunner_nativeFinalizeGeneration(JNIEnv *, jobje
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_com_debanshu777_runner_LlamaRunner_nativeProcessSystemPrompt(JNIEnv *env, jobject, jstring prompt) {
+Java_com_debanshu777_caraml_sdk_plugin_llama_bridge_LlamaRunner_nativeProcessSystemPrompt(JNIEnv *env, jobject, jstring prompt) {
     return jni_guard<jint>("nativeProcessSystemPrompt failed", -1, [&]() {
         ScopedUtfChars promptChars(env, prompt);
         if (!promptChars.get()) return static_cast<jint>(-1);
@@ -515,7 +515,7 @@ Java_com_debanshu777_runner_LlamaRunner_nativeProcessSystemPrompt(JNIEnv *env, j
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_com_debanshu777_runner_LlamaRunner_nativeProcessUserPrompt(
+Java_com_debanshu777_caraml_sdk_plugin_llama_bridge_LlamaRunner_nativeProcessUserPrompt(
     JNIEnv *env, jobject, jstring prompt, jint predictLength) {
     return jni_guard<jint>("nativeProcessUserPrompt failed", -1, [&]() {
         ScopedUtfChars promptChars(env, prompt);
@@ -534,50 +534,50 @@ Java_com_debanshu777_runner_LlamaRunner_nativeProcessUserPrompt(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_debanshu777_runner_LlamaRunner_nativeUnloadModel(JNIEnv *, jobject) {
+Java_com_debanshu777_caraml_sdk_plugin_llama_bridge_LlamaRunner_nativeUnloadModel(JNIEnv *, jobject) {
     jni_guard_void("nativeUnloadModel failed", []() { llama_runner_core_unload(); });
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_debanshu777_runner_LlamaRunner_nativeShutdown(JNIEnv *, jobject) {
+Java_com_debanshu777_caraml_sdk_plugin_llama_bridge_LlamaRunner_nativeShutdown(JNIEnv *, jobject) {
     jni_guard_void("nativeShutdown failed", []() { llama_runner_core_shutdown(); });
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_com_debanshu777_runner_LlamaRunner_nativeGetContextUsed(JNIEnv *, jobject) {
+Java_com_debanshu777_caraml_sdk_plugin_llama_bridge_LlamaRunner_nativeGetContextUsed(JNIEnv *, jobject) {
     return jni_guard<jint>("nativeGetContextUsed failed", 0, []() {
         return static_cast<jint>(llama_runner_core_get_context_used());
     });
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_com_debanshu777_runner_LlamaRunner_nativeGetContextLimit(JNIEnv *, jobject) {
+Java_com_debanshu777_caraml_sdk_plugin_llama_bridge_LlamaRunner_nativeGetContextLimit(JNIEnv *, jobject) {
     return jni_guard<jint>("nativeGetContextLimit failed", 0, []() {
         return static_cast<jint>(llama_runner_core_get_context_limit());
     });
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_com_debanshu777_runner_LlamaRunner_nativeGetStopReason(JNIEnv *, jobject) {
+Java_com_debanshu777_caraml_sdk_plugin_llama_bridge_LlamaRunner_nativeGetStopReason(JNIEnv *, jobject) {
     return jni_guard<jint>("nativeGetStopReason failed", 5, []() {
         return static_cast<jint>(llama_runner_core_get_stop_reason());
     });
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_com_debanshu777_runner_LlamaRunner_nativeGetGpuLayers(JNIEnv *, jobject) {
+Java_com_debanshu777_caraml_sdk_plugin_llama_bridge_LlamaRunner_nativeGetGpuLayers(JNIEnv *, jobject) {
     return jni_guard<jint>("nativeGetGpuLayers failed", 0, []() {
         return static_cast<jint>(llama_runner_core_get_gpu_layers());
     });
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_debanshu777_runner_LlamaRunner_nativeClearContext(JNIEnv *, jobject) {
+Java_com_debanshu777_caraml_sdk_plugin_llama_bridge_LlamaRunner_nativeClearContext(JNIEnv *, jobject) {
     jni_guard_void("nativeClearContext failed", []() { llama_runner_core_clear_context(); });
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_debanshu777_runner_LlamaRunner_nativeGetModelArchitecture(JNIEnv *env, jobject) {
+Java_com_debanshu777_caraml_sdk_plugin_llama_bridge_LlamaRunner_nativeGetModelArchitecture(JNIEnv *env, jobject) {
     return jni_guard<jstring>("nativeGetModelArchitecture failed", nullptr, [&]() {
         const char* arch = llama_runner_core_get_model_architecture();
         return utf8_string(env, arch);

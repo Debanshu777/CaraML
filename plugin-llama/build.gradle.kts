@@ -48,7 +48,7 @@ tasks.matching { it.name == "jvmTest" }.configureEach {
 
 kotlin {
     android {
-        namespace = "com.debanshu777.runner"
+        namespace = "com.debanshu777.caraml.sdk.plugin.llama"
         compileSdk = 37
         minSdk = 28
         optimization {
@@ -101,7 +101,7 @@ kotlin {
             arch.compilations.getByName("main").cinterops {
                 create("llamaRunner") {
                     defFile("src/iosMain/cpp/llama_runner.def")
-                    packageName("com.debanshu777.runner.cpp")
+                    packageName("com.debanshu777.caraml.sdk.plugin.llama.bridge.cpp")
                     compilerOpts("-I${projectDir}/src/iosMain/cpp")
                     extraOpts("-libraryPath", libPath)
                     tasks.named(interopProcessingTaskName).configure {
@@ -143,7 +143,7 @@ kotlin {
             arch.compilations.getByName("main").cinterops {
                 create("llamaRunner") {
                     defFile("src/iosMain/cpp/llama_runner.def")
-                    packageName("com.debanshu777.runner.cpp")
+                    packageName("com.debanshu777.caraml.sdk.plugin.llama.bridge.cpp")
                     compilerOpts("-I${projectDir}/src/iosMain/cpp")
                 }
             }

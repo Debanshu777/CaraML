@@ -20,7 +20,7 @@ Mirrors the `:plugin-llama` module structure. Native library is built and linked
 ## Package Structure
 
 ```
-com.debanshu777.diffusionrunner/
+com.debanshu777.caraml.sdk.plugin.diffusion.bridge/
 ├── DiffusionRunner.kt               # expect class — core interface
 ├── DiffusionRunner.android.kt       # actual: JNI wrapper
 ├── DiffusionRunner.jvm.kt           # actual: JNI wrapper

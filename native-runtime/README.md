@@ -15,4 +15,6 @@ the lower-level binary and runtime work in the architecture plan.
 
 ## Recent Changes
 
+- Standardized runtime ownership declarations and tests on `com.debanshu777.caraml.sdk.runtime`.
+
 - Added the shared lease and a competing-adapter/repeated-close regression test.

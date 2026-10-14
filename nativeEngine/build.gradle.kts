@@ -905,7 +905,7 @@ val verifyNativePreflightFixtures by tasks.registering {
 }
 
 android {
-    namespace = "com.debanshu777.nativeengine"
+    namespace = "com.debanshu777.caraml.nativeengine"
     compileSdk = 36
 
     defaultConfig {

@@ -6,6 +6,8 @@ The default arbiter shares loaded-engine capacity and resource reservations acro
 
 ## Recent Changes
 
+- Standardized lifecycle implementation and tests on `com.debanshu777.caraml.sdk.core`.
+
 - Failed partial loads retain native ownership, artifacts and admission capacity. Concurrent/repeated client and session shutdown calls await cleanup and report the same failure outcome.
 
 - Added builder-based provider selection, plan assessment and validation, load/session lifecycle, single-use generation streams, operation-scoped cancellation, and process-shared capacity/resource arbitration. Terminal events arrive after engine finalization and admission cleanup; text resynchronization is explicit.

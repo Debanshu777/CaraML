@@ -119,7 +119,7 @@ Implementation evidence is tracked in [docs/sdk/implementation-evidence.md](docs
 
 ```bash
 ./gradlew verifyProject
-./gradlew :androidApp:assembleDebug
+./gradlew :app:androidApp:assembleDebug
 ./gradlew :nativeEngine:compileLlamaRunnerDesktop
 ./gradlew :nativeEngine:mergeLlamaRunnerStaticIosArm64
 ./gradlew :nativeEngine:mergeLlamaRunnerStaticIosSimulatorArm64
@@ -135,7 +135,7 @@ The team can distinguish a migration regression from a pre-existing issue and ha
 
 - [ ] `:core-api` compiles for the declared target matrix without Compose, Room, DataStore, Ktor DTOs, runners, or inference native libraries.
 - [ ] Public model/load types contain no `LocalModelEntity`, native handles, or engine-specific event types.
-- [ ] SDK artifacts contain no CaraML `AppSettings`, `ChatMessage`, presentation/onboarding/theme types, UI resources or legacy app schema definitions. Dependencies point from consumers to the SDK, never back to `:composeApp` or `:androidApp`.
+- [ ] SDK artifacts contain no CaraML `AppSettings`, `ChatMessage`, presentation/onboarding/theme types, UI resources or legacy app schema definitions. Dependencies point from consumers to the SDK, never back to any `:app` project.
 - [ ] Inference accepts explicit typed session/request options and requires no preferences repository or `app.preferences_pb`. Host preference changes do not mutate an admitted operation.
 - [ ] Prototype builder-based inference and discovery clients independently. Minimal text inference requires no download/media/preference services; browsing works without download stores. Required dependencies are validated for selected capabilities only.
 - [ ] Builders snapshot configuration, reject duplicates/invalid wiring, and perform no eager I/O/native probing. Explicit borrowed-versus-owned resource semantics preserve shared caller stores when one client closes.
