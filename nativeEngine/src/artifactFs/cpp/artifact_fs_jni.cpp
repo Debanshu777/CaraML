@@ -246,7 +246,7 @@ bool sync_file_descriptor(int descriptor) {
 }  // namespace
 
 extern "C" JNIEXPORT jlong JNICALL
-Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_openRoot(
+Java_com_debanshu777_caraml_core_download_transfer_NativeArtifactFs_openRoot(
     JNIEnv* env, jobject, jbyteArray models_root_value, jbyteArray model_id_value, jboolean create) {
     std::string models_root;
     std::string model_id;
@@ -275,17 +275,17 @@ Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_openRoot(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_closeRoot(JNIEnv*, jobject, jlong value) {
+Java_com_debanshu777_caraml_core_download_transfer_NativeArtifactFs_closeRoot(JNIEnv*, jobject, jlong value) {
     delete as_root(value);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_revalidate(JNIEnv*, jobject, jlong value) {
+Java_com_debanshu777_caraml_core_download_transfer_NativeArtifactFs_revalidate(JNIEnv*, jobject, jlong value) {
     return revalidate(as_root(value)) ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_createParents(
+Java_com_debanshu777_caraml_core_download_transfer_NativeArtifactFs_createParents(
     JNIEnv* env, jobject, jlong value, jbyteArray relative_value) {
     RootHandle* root = as_root(value);
     std::string relative;
@@ -299,7 +299,7 @@ Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_createParents(
 }
 
 extern "C" JNIEXPORT jlong JNICALL
-Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_openFile(
+Java_com_debanshu777_caraml_core_download_transfer_NativeArtifactFs_openFile(
     JNIEnv* env, jobject, jlong value, jbyteArray relative_value, jint mode) {
     RootHandle* root = as_root(value);
     std::string relative;
@@ -313,7 +313,7 @@ Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_openFile(
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_read(
+Java_com_debanshu777_caraml_core_download_transfer_NativeArtifactFs_read(
     JNIEnv* env, jobject, jlong descriptor_value, jbyteArray output, jint offset, jint count) {
     if (output == nullptr || offset < 0 || count < 0 || count > 64 * 1024 ||
         offset > env->GetArrayLength(output) - count) return -1;
@@ -324,7 +324,7 @@ Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_read(
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_write(
+Java_com_debanshu777_caraml_core_download_transfer_NativeArtifactFs_write(
     JNIEnv* env, jobject, jlong descriptor_value, jbyteArray input, jint offset, jint count) {
     if (input == nullptr || offset < 0 || count < 0 || count > 64 * 1024 ||
         offset > env->GetArrayLength(input) - count) return -1;
@@ -336,13 +336,13 @@ Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_write(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_closeFile(
+Java_com_debanshu777_caraml_core_download_transfer_NativeArtifactFs_closeFile(
     JNIEnv*, jobject, jlong descriptor_value) {
     return close(as_descriptor(descriptor_value)) == 0 ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT jlong JNICALL
-Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_size(
+Java_com_debanshu777_caraml_core_download_transfer_NativeArtifactFs_size(
     JNIEnv* env, jobject, jlong value, jbyteArray relative_value) {
     std::string relative;
     if (!from_java(env, relative_value, &relative)) return -1;
@@ -355,7 +355,7 @@ Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_size(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_move(
+Java_com_debanshu777_caraml_core_download_transfer_NativeArtifactFs_move(
     JNIEnv* env, jobject, jlong value, jbyteArray source_value, jbyteArray target_value) {
     RootHandle* root = as_root(value);
     std::string source;
@@ -377,7 +377,7 @@ Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_move(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_delete(
+Java_com_debanshu777_caraml_core_download_transfer_NativeArtifactFs_delete(
     JNIEnv* env, jobject, jlong value, jbyteArray relative_value) {
     RootHandle* root = as_root(value);
     std::string relative;
@@ -390,7 +390,7 @@ Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_delete(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_syncFile(
+Java_com_debanshu777_caraml_core_download_transfer_NativeArtifactFs_syncFile(
     JNIEnv* env, jobject, jlong value, jbyteArray relative_value) {
     RootHandle* root = as_root(value);
     std::string relative;
@@ -403,7 +403,7 @@ Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_syncFile(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_debanshu777_huggingfacemanager_download_NativeArtifactFs_syncDirectory(
+Java_com_debanshu777_caraml_core_download_transfer_NativeArtifactFs_syncDirectory(
     JNIEnv* env, jobject, jlong value, jbyteArray relative_value) {
     RootHandle* root = as_root(value);
     std::string relative;

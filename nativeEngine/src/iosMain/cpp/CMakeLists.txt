@@ -8,19 +8,23 @@ set(LLAMA_BUILD_COMMON ON CACHE BOOL "Build common utils" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libraries for iOS" FORCE)
 set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(CARAML_NATIVE_BACKEND "metal" CACHE STRING "iOS backend profile" FORCE)
+set(CARAML_ENABLE_LLAMA ON CACHE BOOL "Build the llama inference engine" FORCE)
+set(CARAML_ENABLE_DIFFUSION ON CACHE BOOL "Build the diffusion inference engine" FORCE)
 
 # Stable Diffusion backend configuration
 set(SD_METAL ON CACHE BOOL "" FORCE)
 set(SD_VULKAN OFF CACHE BOOL "" FORCE)
 
 include("${CMAKE_CURRENT_LIST_DIR}/../../commonCpp/GgmlUnified.cmake")
-include("${CMAKE_CURRENT_LIST_DIR}/../../../../runner/src/commonCpp/LlamaRunnerCommon.cmake")
+caraml_lock_native_profile()
+include("${CMAKE_CURRENT_LIST_DIR}/../../../../plugin-llama/src/commonCpp/LlamaRunnerCommon.cmake")
 
 add_library(
     llama_runner
     STATIC
     ${LLAMA_RUNNER_CORE_SOURCES}
-    "${CMAKE_CURRENT_LIST_DIR}/../../../../runner/src/iosMain/cpp/llama_runner.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/../../../../plugin-llama/src/iosMain/cpp/llama_runner.cpp"
 )
 
 target_include_directories(llama_runner PRIVATE ${LLAMA_RUNNER_INCLUDE_DIRS})
@@ -32,18 +36,18 @@ if(CMAKE_BUILD_TYPE MATCHES Release)
 endif()
 
 # --- diffusion_runner (stable-diffusion.cpp wrapper) ---
-include("${CMAKE_CURRENT_LIST_DIR}/../../../../diffusionRunner/src/commonCpp/DiffusionRunnerCommon.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/../../../../plugin-diffusion/src/commonCpp/DiffusionRunnerCommon.cmake")
 
 add_library(
     diffusion_runner
     STATIC
     ${DIFFUSION_RUNNER_CORE_SOURCES}
-    "${CMAKE_CURRENT_LIST_DIR}/../../../../diffusionRunner/src/iosMain/cpp/diffusion_runner.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/../../../../plugin-diffusion/src/iosMain/cpp/diffusion_runner.cpp"
 )
 
 target_include_directories(diffusion_runner PRIVATE
     ${DIFFUSION_RUNNER_INCLUDE_DIRS}
-    "${CMAKE_CURRENT_LIST_DIR}/../../../../diffusionRunner/src/iosMain/cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/../../../../plugin-diffusion/src/iosMain/cpp"
 )
 target_link_libraries(diffusion_runner PRIVATE stable-diffusion)
 

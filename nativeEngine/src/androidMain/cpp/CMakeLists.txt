@@ -6,6 +6,24 @@ add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../../artifactFs/cpp" artifact-fs-bu
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+option(CARAML_ENABLE_LLAMA "Build the llama inference engine" ON)
+option(CARAML_ENABLE_DIFFUSION "Build the diffusion inference engine" ON)
+
+set(_CARAML_DEFAULT_BACKEND "cpu")
+if(CARAML_ENABLE_LLAMA)
+    set(_CARAML_DEFAULT_BACKEND "vulkan")
+endif()
+set(CARAML_NATIVE_BACKEND "${_CARAML_DEFAULT_BACKEND}" CACHE STRING "Android backend profile: cpu or vulkan")
+set_property(CACHE CARAML_NATIVE_BACKEND PROPERTY STRINGS cpu vulkan)
+if(NOT CARAML_NATIVE_BACKEND STREQUAL "cpu" AND NOT CARAML_NATIVE_BACKEND STREQUAL "vulkan")
+    message(FATAL_ERROR "Android CARAML_NATIVE_BACKEND must be cpu or vulkan")
+endif()
+set(GGML_VULKAN OFF CACHE BOOL "" FORCE)
+set(GGML_METAL OFF CACHE BOOL "" FORCE)
+if(CARAML_NATIVE_BACKEND STREQUAL "vulkan" AND NOT CARAML_ENABLE_LLAMA)
+    message(FATAL_ERROR "The Android Vulkan profile currently accelerates llama only")
+endif()
+
 if(DEFINED ANDROID_ABI)
     message(STATUS "Configuring llama.cpp for Android ABI: ${ANDROID_ABI}")
     if(ANDROID_ABI STREQUAL "arm64-v8a")
@@ -15,7 +33,16 @@ if(DEFINED ANDROID_ABI)
         set(GGML_CPU_ALL_VARIANTS  ON  CACHE BOOL "" FORCE)
         set(GGML_OPENMP            ON  CACHE BOOL "" FORCE)
 
-        # Phase 09: Vulkan GPU offload via NDK-bundled glslc (NDK r12+, no host Vulkan SDK needed).
+    elseif(ANDROID_ABI STREQUAL "x86_64")
+        set(GGML_SYSTEM_ARCH "x86" CACHE STRING "" FORCE)
+        set(GGML_CPU_KLEIDIAI OFF CACHE BOOL "" FORCE)
+        set(GGML_BACKEND_DL OFF CACHE BOOL "" FORCE)
+        set(GGML_CPU_ALL_VARIANTS OFF CACHE BOOL "" FORCE)
+        set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
+    endif()
+
+    if(CARAML_NATIVE_BACKEND STREQUAL "vulkan" AND ANDROID_ABI STREQUAL "arm64-v8a")
+        # Vulkan tools and host headers are required for the arm64 llama profile.
         if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
             set(_NDK_HOST "darwin-x86_64")
         elseif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
@@ -63,9 +90,19 @@ if(DEFINED ANDROID_ABI)
             else()
                 # Linux: apt install libvulkan-dev spirv-headers
                 foreach(_sys_prefix "/usr" "/usr/local")
-                    if(EXISTS "${_sys_prefix}/include/vulkan/vulkan.hpp")
-                        include_directories("${_sys_prefix}/include")
-                        message(STATUS "Vulkan/SPIRV C++ headers: ${_sys_prefix}/include")
+                    if(EXISTS "${_sys_prefix}/include/vulkan/vulkan.hpp" AND
+                       EXISTS "${_sys_prefix}/include/spirv/unified1/spirv.hpp")
+                        # Never add host /usr/include to an Android cross-build:
+                        # glibc headers would shadow the NDK's Bionic headers.
+                        set(_ANDROID_VULKAN_HEADERS "${CMAKE_CURRENT_BINARY_DIR}/vulkan-host-headers")
+                        file(MAKE_DIRECTORY "${_ANDROID_VULKAN_HEADERS}")
+                        file(COPY "${_sys_prefix}/include/vulkan" "${_sys_prefix}/include/spirv"
+                             DESTINATION "${_ANDROID_VULKAN_HEADERS}")
+                        if(EXISTS "${_sys_prefix}/include/vk_video")
+                            file(COPY "${_sys_prefix}/include/vk_video" DESTINATION "${_ANDROID_VULKAN_HEADERS}")
+                        endif()
+                        include_directories("${_ANDROID_VULKAN_HEADERS}")
+                        message(STATUS "Vulkan/SPIRV C++ headers: ${_ANDROID_VULKAN_HEADERS}")
                         set(_VULKAN_HPP_FOUND TRUE)
                         set(_SPIRV_HPP_FOUND TRUE)
                         break()
@@ -81,22 +118,18 @@ if(DEFINED ANDROID_ABI)
             endif()
 
             if(NOT _VULKAN_HPP_FOUND OR NOT _SPIRV_HPP_FOUND)
-                message(WARNING "vulkan.hpp/spirv.hpp not found. On macOS: brew install vulkan-headers spirv-headers. Disabling Vulkan.")
-                set(GGML_VULKAN OFF CACHE BOOL "" FORCE)
+                message(FATAL_ERROR "Selected Vulkan profile requires Vulkan and SPIR-V C++ headers")
             elseif(NOT _SPIRV_HEADERS_CONFIG_FOUND)
-                message(WARNING "SPIRV-Headers CMake config package not found (ggml-vulkan now requires it). "
-                                 "On macOS: brew install spirv-headers. Disabling Vulkan.")
-                set(GGML_VULKAN OFF CACHE BOOL "" FORCE)
+                message(FATAL_ERROR "Selected Vulkan profile requires the SPIRV-Headers CMake config package")
             endif()
         else()
-            set(GGML_VULKAN OFF CACHE BOOL "" FORCE)
-            message(WARNING "NDK glslc not found at ${_NDK_GLSLC}. Vulkan disabled.")
+            message(FATAL_ERROR "Selected Vulkan profile requires NDK glslc at ${_NDK_GLSLC}")
         endif()
-    elseif(ANDROID_ABI STREQUAL "x86_64")
-        set(GGML_SYSTEM_ARCH "x86" CACHE STRING "" FORCE)
-        set(GGML_CPU_KLEIDIAI OFF CACHE BOOL "" FORCE)
-        set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
-        set(GGML_VULKAN OFF CACHE BOOL "" FORCE)
+        set(GGML_VULKAN ON CACHE BOOL "" FORCE)
+    elseif(CARAML_NATIVE_BACKEND STREQUAL "vulkan")
+        # Keep the emulator ABI in universal APKs without enabling an untested
+        # Vulkan backend there. arm64 devices still receive the GPU module.
+        message(STATUS "Android ${ANDROID_ABI}: retaining CPU backend in the Vulkan profile")
     endif()
 endif()
 
@@ -109,35 +142,30 @@ set(SD_METAL OFF CACHE BOOL "" FORCE)
 # cover all pipeline gaps on mobile Vulkan drivers.
 # llama.cpp still benefits from Vulkan via GGML_VULKAN above.
 # Re-enable when ggml-vulkan matures on mobile GPUs.
-set(SD_VULKAN ON CACHE BOOL "" FORCE)
+set(SD_VULKAN OFF CACHE BOOL "" FORCE)
 
 include("${CMAKE_CURRENT_LIST_DIR}/../../commonCpp/GgmlUnified.cmake")
-include("${CMAKE_CURRENT_LIST_DIR}/../../../../runner/src/commonCpp/LlamaRunnerCommon.cmake")
+caraml_lock_native_profile()
+include("${CMAKE_CURRENT_LIST_DIR}/../../../../plugin-llama/src/commonCpp/LlamaRunnerCommon.cmake")
 
 find_library(log-lib log)
 
-add_library(
-    llama_runner
-    SHARED
-    ${LLAMA_RUNNER_CORE_SOURCES}
-    ${LLAMA_RUNNER_JNI_SOURCE}
-)
-
-target_include_directories(llama_runner PRIVATE ${LLAMA_RUNNER_INCLUDE_DIRS})
-
-target_link_libraries(llama_runner PRIVATE llama llama-common ${log-lib})
-
-if(CMAKE_BUILD_TYPE MATCHES Release)
-    if(ANDROID_ABI STREQUAL "arm64-v8a")
-        target_compile_options(llama_runner PRIVATE -O3 -mtune=cortex-x4)
-    else()
+if(CARAML_ENABLE_LLAMA)
+    add_library(llama_runner SHARED ${LLAMA_RUNNER_CORE_SOURCES} ${LLAMA_RUNNER_JNI_SOURCE})
+    target_include_directories(llama_runner PRIVATE
+        ${LLAMA_RUNNER_INCLUDE_DIRS}
+        "${CMAKE_CURRENT_LIST_DIR}/../../commonCpp"
+    )
+    target_link_libraries(llama_runner PRIVATE llama llama-common ${log-lib})
+    if(CMAKE_BUILD_TYPE MATCHES Release)
         target_compile_options(llama_runner PRIVATE -O3)
     endif()
 endif()
 
 # --- diffusion_runner (stable-diffusion.cpp wrapper) ---
-include("${CMAKE_CURRENT_LIST_DIR}/../../../../diffusionRunner/src/commonCpp/DiffusionRunnerCommon.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/../../../../plugin-diffusion/src/commonCpp/DiffusionRunnerCommon.cmake")
 
+if(CARAML_ENABLE_DIFFUSION)
 add_library(
     diffusion_runner
     SHARED
@@ -145,7 +173,10 @@ add_library(
     ${DIFFUSION_RUNNER_JNI_SOURCE}
 )
 
-target_include_directories(diffusion_runner PRIVATE ${DIFFUSION_RUNNER_INCLUDE_DIRS})
+target_include_directories(diffusion_runner PRIVATE
+    ${DIFFUSION_RUNNER_INCLUDE_DIRS}
+    "${CMAKE_CURRENT_LIST_DIR}/../../commonCpp"
+)
 # ggml-vulkan.h needed for ggml_backend_vk_get_device_count() in diffusion_runner_core.cpp
 target_include_directories(diffusion_runner PRIVATE "${LLAMA_SRC}/ggml/include")
 
@@ -190,4 +221,5 @@ endif()
 
 if(CMAKE_BUILD_TYPE MATCHES Release)
     target_compile_options(diffusion_runner PRIVATE -O3)
+endif()
 endif()

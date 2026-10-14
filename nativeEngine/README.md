@@ -1,6 +1,6 @@
 # nativeEngine
 
-Central native build orchestration module for CaraML. One CMake graph per platform builds **GGML** (from `libraries/llama.cpp`), **llama.cpp**, and **stable-diffusion.cpp**, producing shared or static libraries consumed by `:runner` and `:diffusionRunner`.
+Central native build orchestration module for CaraML. One CMake graph per platform builds **GGML** (from `libraries/llama.cpp`), **llama.cpp**, and **stable-diffusion.cpp**, producing shared or static libraries consumed by `:plugin-llama` and `:plugin-diffusion`.
 
 ---
 
@@ -9,7 +9,7 @@ Central native build orchestration module for CaraML. One CMake graph per platfo
 1. **Prepares a patched copy** of llama.cpp without mutating the pinned submodule (`preparePatchedLlamaSource`)
 2. **Invokes CMake** per platform with the right toolchain and flags
 3. **Merges static libs** for iOS (single `libllama_runner_merged.a` per arch)
-4. **Exports layout constants** (`CaramlNativeLayout`) so `:composeApp` and `:runner` know where to find the built libraries
+4. **Exports layout constants** (`CaramlNativeLayout`) so `:app:composeApp` and `:plugin-llama` know where to find the built libraries
 
 This module has **no Kotlin source code**. All functionality is in `build.gradle.kts` and CMake files.
 
@@ -23,16 +23,25 @@ nativeEngine/build/
 │   ├── iosArm64/Release/           libllama_runner_merged.a
 │   └── iosSimulatorArm64/Release/  libllama_runner_merged.a
 └── llama-runner-desktop/
-    ├── macos/                       libllama_runner.dylib, libdiffusion_runner.dylib
-    └── linux/                       libllama_runner.so, libdiffusion_runner.so
+    ├── <platform>/                   Default combined profile shared libraries
+    └── <platform>/profiles/
+        └── <engines>-<backend>/      Opt-in non-default profile shared libraries
 
-# Android: output via AGP externalNativeBuild → androidApp APK
-composeApp/src/androidMain/jniLibs/arm64-v8a/
+# Android: output via AGP externalNativeBuild → :app:androidApp APK
+nativeEngine/build/intermediates/merged_native_libs/
     llama_runner.so
     diffusion_runner.so
 ```
 
-If you change these paths, update `:composeApp` linker flags and `java.library.path` accordingly.
+If you change these paths, update `:app:composeApp` iOS linker flags and `:app:desktopApp` native resource/launcher configuration accordingly.
+
+The default combined desktop profile keeps its historical output directory. Opt-in engine/backend
+profiles use their own directory so a later compose/package step cannot pick up a runner left by a
+previous profile. CMake also records the selected system, ABI/architecture, engine set and backend
+in its cache and fails if a build directory is reconfigured with a different profile; use a separate
+directory or explicitly remove that build directory's CMake cache to switch it. Target inventory and
+standalone configuration prove graph selection, but package exclusion has not yet been verified in
+an external selected-engine consumer.
 
 ---
 
@@ -67,10 +76,11 @@ This prevents duplicate symbol errors from linking two independent GGML builds.
 
 - Detects `ANDROID_ABI` (arm64-v8a, x86_64)
 - Configures `GGML_SYSTEM_ARCH`, KleidiAI, OpenMP
-- Auto-detects Vulkan via NDK `glslc`; manages Vulkan headers
+- Uses an explicit CPU or Vulkan backend profile; Vulkan builds locate `glslc` and manage Vulkan headers
 - JNI headers from `JAVA_HOME`
 - Output: `llama_runner.so`, `diffusion_runner.so`
-- Enable Vulkan: `-PENABLE_VULKAN_ANDROID=true` Gradle flag
+- Llama builds default to Vulkan on arm64. Use `-PcaramlAndroidBackend=cpu` for an explicit CPU build; diffusion-only builds default to CPU.
+- The Vulkan profile packages arm64 GPU support alongside an x86_64 CPU fallback. It requires the NDK shader compiler plus Vulkan and SPIR-V headers (`brew install vulkan-headers spirv-headers` on macOS); its host shader generator reuses Android's bundled Ninja path.
 
 ### iOS CMakeLists.txt
 
@@ -97,7 +107,7 @@ This prevents duplicate symbol errors from linking two independent GGML builds.
 | `mergeLlamaRunnerStaticIosArm64` | Merge iOS arm64 `.a` files via `libtool -static` |
 | `mergeLlamaRunnerStaticIosSimulatorArm64` | Merge iOS simulator arm64 `.a` files |
 
-Android native build is triggered automatically by AGP `externalNativeBuild` during `:composeApp:assemble*`.
+Android native build is triggered automatically by AGP `externalNativeBuild` during `:app:androidApp:assemble*`.
 
 ---
 
@@ -133,7 +143,25 @@ Create a **separate** Gradle module + CMake project. Do not add here unless it m
 
 ## Recent Changes
 
-- Native hardening tests cover bounded private logging, exact dense-penalty parity and upstream fallback. CTest and platform build evidence, with device inference limits, are recorded in the [validation report](../docs/model-validation/2026-10-08/report.md).
+- Android llama builds include arm64 Vulkan by default, with CPU retained for x86_64 and diffusion-only builds; app admission keeps Android diffusion on CPU.
+
+- Fixed Android Vulkan host shader generation to reuse the configured Ninja executable; universal Vulkan APKs now retain an x86_64 CPU fallback instead of failing configuration. See the root README for current Pixel 9 benchmarks.
+
+- Corrected the Android backend flag and linked the current verification summary after retiring old report references.
+
+- Aligned the native Android namespace and both POSIX/Windows artifact filesystem JNI entry points with the common `com.debanshu777.caraml` package root.
+
+- App consumers now use nested Gradle paths under `:app`; iOS framework linking stays in `composeApp`, and desktop native staging/packaging belongs to `desktopApp`.
+
+- Artifact filesystem JNI callers and recovery tests now live in `composeApp`; native entry-point names remain unchanged after removing the legacy Hugging Face Gradle project.
+
+- CMake reads bridge sources from the engine plugins. Android packages artifact filesystem and dynamically loaded GGML CPU backends; Unicode regression checks execute in Release builds.
+
+
+- Native CMake configuration now resolves host tools only when native tasks run, selects llama/diffusion targets explicitly, and accepts reproducible CPU, Vulkan, or Metal profiles instead of inferring accelerators from installed host tools. Diffusion-only desktop builds use the pinned GGML tree without adding llama inference targets.
+- Opt-in desktop engine/backend profiles now have isolated output directories; CMake rejects profile changes that would reuse a cache containing stale runner outputs. Selected package contents remain an external-consumer gate.
+
+- Native hardening tests cover bounded private logging, exact dense-penalty parity and upstream fallback. See the current [verification summary](../README.md#verification-status) for CTest/platform checks and runtime validation limits.
 
 - Native chat regressions cover pinned Qwen3, MiniCPM5 and GPT-OSS reasoning/content parsing, forced delimiter emission, zero budgets, per-turn reset, and context/output-limit classification.
 
@@ -159,7 +187,7 @@ Create a **separate** Gradle module + CMake project. Do not add here unless it m
 - Stable-diffusion native config now carries stable CPU/Metal/Vulkan/CUDA integers across desktop JNI and iOS FFI; production resolution assigns that exact runtime to `sd_ctx_params_t.backend`
 - Fix: ggml-vulkan `supports_op` for `GROUP_NORM`/`NORM` now requires F32 type, preventing `GGML_ABORT` crash when SD2 models load with F16 weights on Vulkan
 - `GgmlUnified.cmake` now builds both llama.cpp and stable-diffusion.cpp from single GGML
-- Vulkan autodetect via NDK glslc (Android arm64)
+- Default Vulkan profile via NDK glslc (Android arm64 llama); CPU remains an explicit override and the x86_64 fallback.
 - GPU acceleration enabled: Vulkan (Android), Metal (iOS/macOS)
 - Numbered llama.cpp patches are applied only to a shared build-owned source copy used by Desktop, Android, and iOS builds
 - `GGML_MAX_NAME` compatibility fix patch for stable-diffusion.cpp

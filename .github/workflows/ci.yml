@@ -15,6 +15,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  sdk:
+    name: Portable SDK module isolation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out SDK sources without native submodules
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: false
+      - name: Set up JDK 21
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+      - name: Verify portable modules without native producer configuration
+        run: ./gradlew -PsdkOnly=true verifySdk --console=plain
+
   verify:
     name: JVM verification
     runs-on: ubuntu-latest
@@ -67,13 +87,18 @@ jobs:
           android_sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:?Android SDK root is unavailable}}"
           "${android_sdk}/cmdline-tools/latest/bin/sdkmanager" --install "cmake;3.31.1"
 
+      - name: Install Android Vulkan build headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libvulkan-dev spirv-headers
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:
           cache-provider: basic
 
       - name: Assemble Android application and both supported ABIs
-        run: ./gradlew :androidApp:assembleDebug --no-daemon --stacktrace
+        run: ./gradlew :app:androidApp:assembleDebug --no-daemon --stacktrace
 
   desktop-artifact-fs:
     name: Desktop artifact filesystem (${{ matrix.os }})
@@ -106,7 +131,7 @@ jobs:
         run: ./gradlew :nativeEngine:verifyArtifactFsDesktopLibrary --stacktrace
 
       - name: Verify packaged native filesystem and recovery
-        run: ./gradlew :composeApp:packageDistributionForCurrentOS :composeApp:artifactFsInstalledImageSmoke :huggingFaceManager:jvmTest --stacktrace
+        run: ./gradlew :app:desktopApp:packageDistributionForCurrentOS :app:desktopApp:artifactFsInstalledImageSmoke :app:composeApp:jvmTest --tests "com.debanshu777.caraml.core.download.transfer.*" --stacktrace
 
   native-preflight-linux:
     name: Native preflight parity (Linux)
@@ -134,7 +159,7 @@ jobs:
       - name: Verify fixtures and native parity
         env:
           CARAML_NATIVE_PARITY: "true"
-        run: ./gradlew :nativeEngine:verifyNativePreflightFixtures :nativeEngine:compileLlamaRunnerDesktop :runner:jvmTest :diffusionRunner:jvmTest --no-daemon --max-workers=1 --stacktrace
+        run: ./gradlew :nativeEngine:verifyNativePreflightFixtures :nativeEngine:compileLlamaRunnerDesktop :plugin-llama:jvmTest :plugin-diffusion:jvmTest --no-daemon --max-workers=1 --stacktrace
 
   native-preflight-macos:
     name: Native preflight compilation (macOS/iOS)
@@ -160,7 +185,7 @@ jobs:
           cache-provider: basic
 
       - name: Compile iOS native preflight integration
-        run: ./gradlew :nativeEngine:compileLlamaRunnerCMakeIosSimulatorArm64 :composeApp:compileKotlinIosSimulatorArm64 --no-daemon --max-workers=1 --stacktrace
+        run: ./gradlew :nativeEngine:compileLlamaRunnerCMakeIosSimulatorArm64 :app:composeApp:compileKotlinIosSimulatorArm64 --no-daemon --max-workers=1 --stacktrace
 
   recommendation-performance:
     name: Recommendation performance (pinned runner)
@@ -189,4 +214,4 @@ jobs:
           cache-provider: basic
 
       - name: Enforce recommendation latency budgets
-        run: ./gradlew :composeApp:jvmTest --tests '*RecommendationPerformanceTest*' --no-daemon --max-workers=1 --stacktrace
+        run: ./gradlew :app:composeApp:jvmTest --tests '*RecommendationPerformanceTest*' --no-daemon --max-workers=1 --stacktrace

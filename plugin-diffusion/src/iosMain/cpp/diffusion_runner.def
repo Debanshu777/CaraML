@@ -1,0 +1,2 @@
+headers = diffusion_runner.h
+package = com.debanshu777.caraml.sdk.plugin.diffusion.bridge.cpp

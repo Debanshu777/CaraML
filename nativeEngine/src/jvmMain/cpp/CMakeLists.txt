@@ -10,34 +10,42 @@ add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../../artifactFs/cpp" artifact-fs-bu
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+option(CARAML_ENABLE_LLAMA "Build the llama inference engine" ON)
+option(CARAML_ENABLE_DIFFUSION "Build the diffusion inference engine" ON)
+
 set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
 set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
-# Stable Diffusion backend configuration
-if(APPLE)
-    set(SD_METAL ON CACHE BOOL "" FORCE)
-    set(SD_VULKAN OFF CACHE BOOL "" FORCE)
-else()
-    set(SD_METAL OFF CACHE BOOL "" FORCE)
-    # Vulkan GPU acceleration for diffusion on Linux/Windows.
-    # Auto-detects Vulkan SDK; falls back to CPU-only if not found.
-    set(SD_VULKAN OFF CACHE BOOL "" FORCE)
-    foreach(_vk_prefix "$ENV{VULKAN_SDK}" "$ENV{VK_SDK_PATH}" "/usr" "/usr/local")
-        if(_vk_prefix AND EXISTS "${_vk_prefix}/include/vulkan/vulkan.h")
-            set(SD_VULKAN ON CACHE BOOL "" FORCE)
-            set(GGML_VULKAN ON CACHE BOOL "" FORCE)
-            message(STATUS "Vulkan found at ${_vk_prefix}/include — enabling SD_VULKAN for desktop diffusion")
-            break()
-        endif()
-    endforeach()
-    if(NOT SD_VULKAN)
-        message(STATUS "Vulkan SDK not found — desktop diffusion will run on CPU only")
+set(CARAML_NATIVE_BACKEND "cpu" CACHE STRING "Desktop backend profile: cpu, metal, or vulkan")
+set_property(CACHE CARAML_NATIVE_BACKEND PROPERTY STRINGS cpu metal vulkan)
+set(GGML_METAL OFF CACHE BOOL "" FORCE)
+set(GGML_VULKAN OFF CACHE BOOL "" FORCE)
+set(SD_METAL OFF CACHE BOOL "" FORCE)
+set(SD_VULKAN OFF CACHE BOOL "" FORCE)
+if(CARAML_NATIVE_BACKEND STREQUAL "metal")
+    if(NOT APPLE)
+        message(FATAL_ERROR "The metal profile is supported only on Apple desktop")
     endif()
+    set(GGML_METAL ON CACHE BOOL "" FORCE)
+    set(SD_METAL ON CACHE BOOL "" FORCE)
+elseif(CARAML_NATIVE_BACKEND STREQUAL "vulkan")
+    if(APPLE)
+        message(FATAL_ERROR "Choose cpu or metal for Apple desktop")
+    endif()
+    if(NOT DEFINED ENV{VULKAN_SDK} AND NOT DEFINED ENV{VK_SDK_PATH} AND
+       NOT EXISTS "/usr/include/vulkan/vulkan.hpp" AND NOT EXISTS "/usr/local/include/vulkan/vulkan.hpp")
+        message(FATAL_ERROR "The selected Vulkan profile requires an installed Vulkan SDK")
+    endif()
+    set(GGML_VULKAN ON CACHE BOOL "" FORCE)
+    set(SD_VULKAN ON CACHE BOOL "" FORCE)
+elseif(NOT CARAML_NATIVE_BACKEND STREQUAL "cpu")
+    message(FATAL_ERROR "Desktop CARAML_NATIVE_BACKEND must be cpu, metal, or vulkan")
 endif()
 
 include("${CMAKE_CURRENT_LIST_DIR}/../../commonCpp/GgmlUnified.cmake")
-include("${CMAKE_CURRENT_LIST_DIR}/../../../../runner/src/commonCpp/LlamaRunnerCommon.cmake")
+caraml_lock_native_profile()
+include("${CMAKE_CURRENT_LIST_DIR}/../../../../plugin-llama/src/commonCpp/LlamaRunnerCommon.cmake")
 
 function(caraml_assert_patched_source_contains source_path expected failure_message)
     file(READ "${source_path}" _caraml_source)
@@ -86,6 +94,9 @@ if(JNI_INCLUDE_DIRS STREQUAL "")
     )
 endif()
 
+find_package(Threads REQUIRED)
+
+if(CARAML_ENABLE_LLAMA)
 add_library(
     llama_runner
     SHARED
@@ -96,6 +107,7 @@ add_library(
 target_include_directories(llama_runner PRIVATE
     ${LLAMA_RUNNER_INCLUDE_DIRS}
     ${JNI_INCLUDE_DIRS}
+    "${CMAKE_CURRENT_LIST_DIR}/../../commonCpp"
 )
 
 target_link_libraries(llama_runner
@@ -110,26 +122,25 @@ if(CMAKE_BUILD_TYPE MATCHES Release)
     target_compile_options(llama_runner PRIVATE -O3)
 endif()
 
-find_package(Threads REQUIRED)
 add_executable(
     llama_runner_hardening_test
     ${LLAMA_RUNNER_CORE_SOURCES}
-    "${CMAKE_CURRENT_LIST_DIR}/../../../../runner/src/nativeTest/cpp/llama_runner_hardening_test.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/../../../../plugin-llama/src/nativeTest/cpp/llama_runner_hardening_test.cpp"
 )
 target_include_directories(llama_runner_hardening_test PRIVATE ${LLAMA_RUNNER_INCLUDE_DIRS})
 target_link_libraries(llama_runner_hardening_test PRIVATE llama llama-common Threads::Threads)
 
 add_executable(llama_chat_history_test
-    "${CMAKE_CURRENT_LIST_DIR}/../../../../runner/src/nativeTest/cpp/llama_chat_history_test.cpp")
+    "${CMAKE_CURRENT_LIST_DIR}/../../../../plugin-llama/src/nativeTest/cpp/llama_chat_history_test.cpp")
 target_include_directories(llama_chat_history_test PRIVATE ${LLAMA_RUNNER_INCLUDE_DIRS})
 add_executable(llama_stream_finalization_test
-    "${CMAKE_CURRENT_LIST_DIR}/../../../../runner/src/nativeTest/cpp/llama_stream_finalization_test.cpp")
+    "${CMAKE_CURRENT_LIST_DIR}/../../../../plugin-llama/src/nativeTest/cpp/llama_stream_finalization_test.cpp")
 target_include_directories(llama_stream_finalization_test PRIVATE ${LLAMA_RUNNER_INCLUDE_DIRS})
 target_compile_definitions(llama_stream_finalization_test PRIVATE
     CARAML_TEST_TEMPLATE_DIR="${CMAKE_CURRENT_LIST_DIR}/../../../../libraries/llama.cpp/models/templates")
 target_link_libraries(llama_stream_finalization_test PRIVATE llama llama-common Threads::Threads)
 add_executable(llama_fit_memory_test
-    "${CMAKE_CURRENT_LIST_DIR}/../../../../runner/src/nativeTest/cpp/llama_fit_memory_test.cpp")
+    "${CMAKE_CURRENT_LIST_DIR}/../../../../plugin-llama/src/nativeTest/cpp/llama_fit_memory_test.cpp")
 target_include_directories(llama_fit_memory_test PRIVATE ${LLAMA_RUNNER_INCLUDE_DIRS})
 target_link_libraries(llama_fit_memory_test PRIVATE ggml-base)
 enable_testing()
@@ -138,9 +149,19 @@ add_test(NAME llama_chat_history_test COMMAND llama_chat_history_test)
 add_test(NAME llama_stream_finalization_test COMMAND llama_stream_finalization_test)
 add_test(NAME llama_fit_memory_test COMMAND llama_fit_memory_test)
 
-# --- diffusion_runner (stable-diffusion.cpp wrapper) ---
-include("${CMAKE_CURRENT_LIST_DIR}/../../../../diffusionRunner/src/commonCpp/DiffusionRunnerCommon.cmake")
+add_executable(jni_utf8_test
+    "${CMAKE_CURRENT_LIST_DIR}/../../nativeTest/cpp/jni_utf8_test.cpp")
+target_include_directories(jni_utf8_test PRIVATE
+    "${CMAKE_CURRENT_LIST_DIR}/../../commonCpp"
+    ${JNI_INCLUDE_DIRS}
+)
+add_test(NAME jni_utf8_test COMMAND jni_utf8_test)
+endif()
 
+# --- diffusion_runner (stable-diffusion.cpp wrapper) ---
+include("${CMAKE_CURRENT_LIST_DIR}/../../../../plugin-diffusion/src/commonCpp/DiffusionRunnerCommon.cmake")
+
+if(CARAML_ENABLE_DIFFUSION)
 add_library(
     diffusion_runner
     SHARED
@@ -151,6 +172,7 @@ add_library(
 target_include_directories(diffusion_runner PRIVATE
     ${DIFFUSION_RUNNER_INCLUDE_DIRS}
     ${JNI_INCLUDE_DIRS}
+    "${CMAKE_CURRENT_LIST_DIR}/../../commonCpp"
 )
 
 target_link_libraries(diffusion_runner PRIVATE stable-diffusion)
@@ -179,7 +201,7 @@ foreach(_diffusion_test IN ITEMS
         diffusion_context_publication_test)
     add_executable(
         ${_diffusion_test}
-        "${CMAKE_CURRENT_LIST_DIR}/../../../../diffusionRunner/src/nativeTest/cpp/${_diffusion_test}.cpp"
+        "${CMAKE_CURRENT_LIST_DIR}/../../../../plugin-diffusion/src/nativeTest/cpp/${_diffusion_test}.cpp"
     )
     target_include_directories(${_diffusion_test} PRIVATE
         ${DIFFUSION_RUNNER_INCLUDE_DIRS}
@@ -199,7 +221,7 @@ target_link_libraries(diffusion_segmented_compute_test PRIVATE stable-diffusion 
 
 add_executable(
     diffusion_max_vram_test
-    "${CMAKE_CURRENT_LIST_DIR}/../../../../diffusionRunner/src/nativeTest/cpp/diffusion_max_vram_test.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/../../../../plugin-diffusion/src/nativeTest/cpp/diffusion_max_vram_test.cpp"
 )
 target_include_directories(diffusion_max_vram_test PRIVATE
     ${DIFFUSION_RUNNER_INCLUDE_DIRS}
@@ -208,3 +230,4 @@ target_include_directories(diffusion_max_vram_test PRIVATE
 )
 target_link_libraries(diffusion_max_vram_test PRIVATE stable-diffusion Threads::Threads)
 add_test(NAME diffusion_max_vram_test COMMAND diffusion_max_vram_test)
+endif()

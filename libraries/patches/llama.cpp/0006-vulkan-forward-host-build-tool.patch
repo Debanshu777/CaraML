@@ -1,0 +1,11 @@
+diff --git a/ggml/src/ggml-vulkan/CMakeLists.txt b/ggml/src/ggml-vulkan/CMakeLists.txt
+--- a/ggml/src/ggml-vulkan/CMakeLists.txt
++++ b/ggml/src/ggml-vulkan/CMakeLists.txt
+@@ -184,6 +184,7 @@ if (Vulkan_FOUND)
+         SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vulkan-shaders
+         CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/$<CONFIG>
+                    -DCMAKE_INSTALL_BINDIR=.
++                   "-DCMAKE_MAKE_PROGRAM:FILEPATH=${CMAKE_MAKE_PROGRAM}"
+                    -DCMAKE_BUILD_TYPE=$<CONFIG>
+                    ${VULKAN_SHADER_GEN_CMAKE_ARGS}
+ 
