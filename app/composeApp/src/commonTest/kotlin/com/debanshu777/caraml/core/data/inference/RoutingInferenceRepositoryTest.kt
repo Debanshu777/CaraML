@@ -15,6 +15,31 @@ import kotlin.test.assertEquals
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class RoutingInferenceRepositoryTest {
+    @Test fun residentReuseDoesNotCancelGenerationOrSwitchEngines() = runTest {
+        val events = mutableListOf<String>()
+        val router = RoutingInferenceRepository(FakeEngine("gguf", events), FakeEngine("onnx", events))
+        val installedRequest = request("model.gguf")
+        val artifact = ResolvedLocalArtifact(
+            installedRequest.identity, RevisionIdentity.HubCommit(emptyList()), emptyList(),
+            VerifiedArtifactLoadTarget.File(installedRequest.model.localPath, "model", installedRequest.model.modelId, installedRequest.model.filename),
+        )
+        router.loadModel(installedRequest)
+        events.clear()
+        assertEquals(ModelLoadResult.Success(2048), router.tryReuseInstalledModel(installedRequest.model, artifact))
+        assertEquals(listOf("gguf.reuse"), events)
+        val generation = launch { router.generateResponse("synthetic prompt").toList() }
+        runCurrent()
+        events.clear()
+        assertEquals(null, router.tryReuseInstalledModel(installedRequest.model, artifact))
+        assertEquals(emptyList(), events, "Reuse must not interrupt an active generation")
+        router.cancelGeneration()
+        generation.join()
+        router.loadModel(request("model.onnx"))
+        events.clear()
+        assertEquals(null, router.tryReuseInstalledModel(installedRequest.model, artifact))
+        assertEquals(emptyList(), events, "Reuse must not replace a different active engine")
+    }
+
     @Test fun switchingEnginesCancelsAndReleasesThePreviousSessionBeforeLoading() = runTest {
         val events = mutableListOf<String>()
         val llama = FakeEngine("gguf", events)
@@ -32,11 +57,40 @@ class RoutingInferenceRepositoryTest {
         assertEquals(listOf("onnx.cancel", "onnx.unload", "gguf.load"), events.takeLast(3))
     }
 
+    @Test fun onnxReuseOnlyRoutesToTheIdleActiveOnnxEngine() = runTest {
+        val events = mutableListOf<String>()
+        val router = RoutingInferenceRepository(FakeEngine("gguf", events), FakeEngine("onnx", events))
+        val installed = request("model.onnx")
+        val artifact = ResolvedLocalArtifact(installed.identity, RevisionIdentity.HubCommit(emptyList()), emptyList(),
+            VerifiedArtifactLoadTarget.File(installed.model.localPath, "model", installed.model.modelId, installed.model.filename))
+        assertEquals(null, router.tryReuseInstalledModel(installed.model, artifact))
+        assertEquals(emptyList(), events)
+        router.loadModel(installed)
+        events.clear()
+        assertEquals(ModelLoadResult.Success(2048), router.tryReuseInstalledModel(installed.model, artifact))
+        assertEquals(listOf("onnx.reuse"), events)
+        val generation = launch { router.generateResponse("synthetic prompt").toList() }
+        runCurrent()
+        events.clear()
+        assertEquals(null, router.tryReuseInstalledModel(installed.model, artifact))
+        assertEquals(emptyList(), events)
+        router.cancelGeneration()
+        generation.join()
+        router.loadModel(request("other.gguf"))
+        events.clear()
+        assertEquals(null, router.tryReuseInstalledModel(installed.model, artifact))
+        assertEquals(emptyList(), events)
+    }
+
     private class FakeEngine(private val name: String, private val events: MutableList<String>) : InferenceRepository {
         private var stopped = CompletableDeferred<Unit>()
         override suspend fun loadModel(request: LoadRequest): ModelLoadResult {
             events += "$name.load"
             stopped = CompletableDeferred()
+            return ModelLoadResult.Success(2048)
+        }
+        override suspend fun tryReuseInstalledModel(model: LocalModelEntity, artifact: ResolvedLocalArtifact): ModelLoadResult.Success {
+            events += "$name.reuse"
             return ModelLoadResult.Success(2048)
         }
         override fun generateResponse(userPrompt: String) = flow<InferenceChunk> {

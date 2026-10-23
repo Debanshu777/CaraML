@@ -1,0 +1,1023 @@
+{
+  "model": "Qwen/Qwen2.5-3B-Instruct-GGUF",
+  "device": "Pixel 9 / Android 17 API 37",
+  "sourceHead": "b1dc4169ab8918776c30f85fc468aad83628754d",
+  "workingTreeDirty": true,
+  "archive": "/Users/debanshud/Documents/Personal/CaraML/build/benchmark-results/verification-load",
+  "method": "Three sequential fresh-process full application CPU loads before and three after; same installed model and controlled runtime settings. OS caches uncontrolled; not cold-storage tests.",
+  "policy": "Content hashes verified during download publication and interrupted-write recovery. Steady-state loads check manifest/generation, path, regular file, size and native compatibility without payload hashes. Same-size post-publication content changes may be undetected.",
+  "trials": {
+    "before": [
+      {
+        "trial": 1,
+        "startBatteryC": null,
+        "events": [
+          {
+            "case": "ENVIRONMENT",
+            "stage": "installed_apk",
+            "sha256": "fc481f3c4bcf8f76526eb971cedb7f2fd0c9c28ab9d5dcbb20d46d85ec6719d9",
+            "bytes": 178861641
+          },
+          {
+            "case": "ENVIRONMENT",
+            "stage": "startup_barrier",
+            "startupBarrierMs": 0
+          },
+          {
+            "case": "ENVIRONMENT",
+            "stage": "start",
+            "label": "BASELINE",
+            "trial": 1,
+            "managedBuild": "DEBUG",
+            "nativeBuild": "RELEASE",
+            "activeDownloads": 0,
+            "thermal": 0,
+            "maxStartThermal": 0,
+            "requestedBackend": "cpu",
+            "sampling": "greedy",
+            "seedControl": "NOT_EXPOSED",
+            "cacheState": "OS_CACHE_UNCONTROLLED",
+            "sustainedTarget": 512,
+            "perTurnCap": 1024
+          },
+          {
+            "case": "ENVIRONMENT",
+            "stage": "foreground",
+            "resumed": true,
+            "focused": true,
+            "cpuAllowedList": "0-7"
+          },
+          {
+            "case": "ENVIRONMENT",
+            "stage": "persisted_numeric_settings",
+            "temperature": 0.3,
+            "useGpu": true,
+            "kvPreset": "AUTO",
+            "riskTolerance": "EXPERIMENTAL",
+            "optimizationPriority": "BALANCED"
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "release_original",
+            "ms": 3
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "case_conditioning",
+            "ms": 0,
+            "thermal": 0,
+            "foregroundResumed": true,
+            "foregroundFocused": true,
+            "cpuAllowedList": "0-7"
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "prepare",
+            "ms": 7373,
+            "state": "Ready",
+            "reason": null
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "verified_identity",
+            "pinned": true,
+            "bytes": 2104932768,
+            "sha256": "626b4a6678b86442240e33df819e00132d3ba7dddfe1cdc4fbb18e0a9615c62d",
+            "revision": "7dabda4d13d513e3e842b20f0d435c732f172cbe"
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "release_previous",
+            "ms": 0
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "resolve",
+            "ms": 2811,
+            "state": "Ready",
+            "reason": "Ready"
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "load",
+            "ms": 10378,
+            "wholeLoadMs": 20565,
+            "state": "Success",
+            "context": 4096,
+            "config": "t=4/4,b=256,ctx=4096,gpu=0,kv=1/1,fa=-1,kleidi=1",
+            "thermal": 0,
+            "temperature": 0,
+            "savedSettings": false
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "placement",
+            "requestedBackend": "cpu",
+            "gpuLayers": 0
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "outcome",
+            "result": "PASS"
+          }
+        ]
+      },
+      {
+        "trial": 2,
+        "startBatteryC": 33.1,
+        "events": [
+          {
+            "case": "ENVIRONMENT",
+            "stage": "installed_apk",
+            "sha256": "fc481f3c4bcf8f76526eb971cedb7f2fd0c9c28ab9d5dcbb20d46d85ec6719d9",
+            "bytes": 178861641
+          },
+          {
+            "case": "ENVIRONMENT",
+            "stage": "startup_barrier",
+            "startupBarrierMs": 0
+          },
+          {
+            "case": "ENVIRONMENT",
+            "stage": "start",
+            "label": "BASELINE",
+            "trial": 2,
+            "managedBuild": "DEBUG",
+            "nativeBuild": "RELEASE",
+            "activeDownloads": 0,
+            "thermal": 0,
+            "maxStartThermal": 0,
+            "requestedBackend": "cpu",
+            "sampling": "greedy",
+            "seedControl": "NOT_EXPOSED",
+            "cacheState": "OS_CACHE_UNCONTROLLED",
+            "sustainedTarget": 512,
+            "perTurnCap": 1024
+          },
+          {
+            "case": "ENVIRONMENT",
+            "stage": "foreground",
+            "resumed": true,
+            "focused": true,
+            "cpuAllowedList": "0-7"
+          },
+          {
+            "case": "ENVIRONMENT",
+            "stage": "persisted_numeric_settings",
+            "temperature": 0.3,
+            "useGpu": true,
+            "kvPreset": "AUTO",
+            "riskTolerance": "EXPERIMENTAL",
+            "optimizationPriority": "BALANCED"
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "release_original",
+            "ms": 3
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "case_conditioning",
+            "ms": 0,
+            "thermal": 0,
+            "foregroundResumed": true,
+            "foregroundFocused": true,
+            "cpuAllowedList": "0-7"
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "prepare",
+            "ms": 7151,
+            "state": "Ready",
+            "reason": null
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "verified_identity",
+            "pinned": true,
+            "bytes": 2104932768,
+            "sha256": "626b4a6678b86442240e33df819e00132d3ba7dddfe1cdc4fbb18e0a9615c62d",
+            "revision": "7dabda4d13d513e3e842b20f0d435c732f172cbe"
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "release_previous",
+            "ms": 0
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "resolve",
+            "ms": 2833,
+            "state": "Ready",
+            "reason": "Ready"
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "load",
+            "ms": 10328,
+            "wholeLoadMs": 20315,
+            "state": "Success",
+            "context": 4096,
+            "config": "t=4/4,b=256,ctx=4096,gpu=0,kv=1/1,fa=-1,kleidi=1",
+            "thermal": 0,
+            "temperature": 0,
+            "savedSettings": false
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "placement",
+            "requestedBackend": "cpu",
+            "gpuLayers": 0
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "outcome",
+            "result": "PASS"
+          }
+        ]
+      },
+      {
+        "trial": 3,
+        "startBatteryC": 33.6,
+        "events": [
+          {
+            "case": "ENVIRONMENT",
+            "stage": "installed_apk",
+            "sha256": "fc481f3c4bcf8f76526eb971cedb7f2fd0c9c28ab9d5dcbb20d46d85ec6719d9",
+            "bytes": 178861641
+          },
+          {
+            "case": "ENVIRONMENT",
+            "stage": "startup_barrier",
+            "startupBarrierMs": 0
+          },
+          {
+            "case": "ENVIRONMENT",
+            "stage": "start",
+            "label": "BASELINE",
+            "trial": 3,
+            "managedBuild": "DEBUG",
+            "nativeBuild": "RELEASE",
+            "activeDownloads": 0,
+            "thermal": 0,
+            "maxStartThermal": 0,
+            "requestedBackend": "cpu",
+            "sampling": "greedy",
+            "seedControl": "NOT_EXPOSED",
+            "cacheState": "OS_CACHE_UNCONTROLLED",
+            "sustainedTarget": 512,
+            "perTurnCap": 1024
+          },
+          {
+            "case": "ENVIRONMENT",
+            "stage": "foreground",
+            "resumed": true,
+            "focused": true,
+            "cpuAllowedList": "0-7"
+          },
+          {
+            "case": "ENVIRONMENT",
+            "stage": "persisted_numeric_settings",
+            "temperature": 0.3,
+            "useGpu": true,
+            "kvPreset": "AUTO",
+            "riskTolerance": "EXPERIMENTAL",
+            "optimizationPriority": "BALANCED"
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "release_original",
+            "ms": 3
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "case_conditioning",
+            "ms": 1,
+            "thermal": 0,
+            "foregroundResumed": true,
+            "foregroundFocused": true,
+            "cpuAllowedList": "0-7"
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "prepare",
+            "ms": 7009,
+            "state": "Ready",
+            "reason": null
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "verified_identity",
+            "pinned": true,
+            "bytes": 2104932768,
+            "sha256": "626b4a6678b86442240e33df819e00132d3ba7dddfe1cdc4fbb18e0a9615c62d",
+            "revision": "7dabda4d13d513e3e842b20f0d435c732f172cbe"
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "release_previous",
+            "ms": 0
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "resolve",
+            "ms": 2833,
+            "state": "Ready",
+            "reason": "Ready"
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "load",
+            "ms": 10268,
+            "wholeLoadMs": 20113,
+            "state": "Success",
+            "context": 4096,
+            "config": "t=4/4,b=256,ctx=4096,gpu=0,kv=1/1,fa=-1,kleidi=1",
+            "thermal": 0,
+            "temperature": 0,
+            "savedSettings": false
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "placement",
+            "requestedBackend": "cpu",
+            "gpuLayers": 0
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "outcome",
+            "result": "PASS"
+          }
+        ]
+      }
+    ],
+    "after": [
+      {
+        "trial": 1,
+        "startBatteryC": 33.3,
+        "events": [
+          {
+            "case": "ENVIRONMENT",
+            "stage": "installed_apk",
+            "sha256": "0cfccd9b7d0c03dc93215d2658070c589caa9a574fb101091b18862decc0201a",
+            "bytes": 178924645
+          },
+          {
+            "case": "ENVIRONMENT",
+            "stage": "startup_barrier",
+            "startupBarrierMs": 0
+          },
+          {
+            "case": "ENVIRONMENT",
+            "stage": "start",
+            "label": "AFTER",
+            "trial": 1,
+            "managedBuild": "DEBUG",
+            "nativeBuild": "RELEASE",
+            "activeDownloads": 0,
+            "thermal": 0,
+            "maxStartThermal": 0,
+            "requestedBackend": "cpu",
+            "sampling": "greedy",
+            "seedControl": "NOT_EXPOSED",
+            "cacheState": "OS_CACHE_UNCONTROLLED",
+            "sustainedTarget": 512,
+            "perTurnCap": 1024
+          },
+          {
+            "case": "ENVIRONMENT",
+            "stage": "foreground",
+            "resumed": true,
+            "focused": true,
+            "cpuAllowedList": "0-7"
+          },
+          {
+            "case": "ENVIRONMENT",
+            "stage": "persisted_numeric_settings",
+            "temperature": 0.3,
+            "useGpu": true,
+            "kvPreset": "AUTO",
+            "riskTolerance": "EXPERIMENTAL",
+            "optimizationPriority": "BALANCED"
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "release_original",
+            "ms": 4
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "case_conditioning",
+            "ms": 0,
+            "thermal": 0,
+            "foregroundResumed": true,
+            "foregroundFocused": true,
+            "cpuAllowedList": "0-7"
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "prepare",
+            "ms": 88,
+            "state": "Ready",
+            "reason": null
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "verified_identity",
+            "pinned": true,
+            "bytes": 2104932768,
+            "sha256": "626b4a6678b86442240e33df819e00132d3ba7dddfe1cdc4fbb18e0a9615c62d",
+            "revision": "7dabda4d13d513e3e842b20f0d435c732f172cbe"
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "release_previous",
+            "ms": 0
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "resolve",
+            "ms": 127,
+            "state": "Ready",
+            "reason": "Ready"
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "load",
+            "ms": 3067,
+            "wholeLoadMs": 3287,
+            "state": "Success",
+            "context": 4096,
+            "config": "t=4/4,b=256,ctx=4096,gpu=0,kv=1/1,fa=-1,kleidi=1",
+            "thermal": 0,
+            "temperature": 0,
+            "savedSettings": false
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "placement",
+            "requestedBackend": "cpu",
+            "gpuLayers": 0
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "outcome",
+            "result": "PASS"
+          }
+        ]
+      },
+      {
+        "trial": 2,
+        "startBatteryC": 33.3,
+        "events": [
+          {
+            "case": "ENVIRONMENT",
+            "stage": "installed_apk",
+            "sha256": "0cfccd9b7d0c03dc93215d2658070c589caa9a574fb101091b18862decc0201a",
+            "bytes": 178924645
+          },
+          {
+            "case": "ENVIRONMENT",
+            "stage": "startup_barrier",
+            "startupBarrierMs": 0
+          },
+          {
+            "case": "ENVIRONMENT",
+            "stage": "start",
+            "label": "AFTER",
+            "trial": 2,
+            "managedBuild": "DEBUG",
+            "nativeBuild": "RELEASE",
+            "activeDownloads": 0,
+            "thermal": 0,
+            "maxStartThermal": 0,
+            "requestedBackend": "cpu",
+            "sampling": "greedy",
+            "seedControl": "NOT_EXPOSED",
+            "cacheState": "OS_CACHE_UNCONTROLLED",
+            "sustainedTarget": 512,
+            "perTurnCap": 1024
+          },
+          {
+            "case": "ENVIRONMENT",
+            "stage": "foreground",
+            "resumed": true,
+            "focused": true,
+            "cpuAllowedList": "0-7"
+          },
+          {
+            "case": "ENVIRONMENT",
+            "stage": "persisted_numeric_settings",
+            "temperature": 0.3,
+            "useGpu": true,
+            "kvPreset": "AUTO",
+            "riskTolerance": "EXPERIMENTAL",
+            "optimizationPriority": "BALANCED"
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "release_original",
+            "ms": 4
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "case_conditioning",
+            "ms": 0,
+            "thermal": 0,
+            "foregroundResumed": true,
+            "foregroundFocused": true,
+            "cpuAllowedList": "0-7"
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "prepare",
+            "ms": 88,
+            "state": "Ready",
+            "reason": null
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "verified_identity",
+            "pinned": true,
+            "bytes": 2104932768,
+            "sha256": "626b4a6678b86442240e33df819e00132d3ba7dddfe1cdc4fbb18e0a9615c62d",
+            "revision": "7dabda4d13d513e3e842b20f0d435c732f172cbe"
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "release_previous",
+            "ms": 0
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "resolve",
+            "ms": 123,
+            "state": "Ready",
+            "reason": "Ready"
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "load",
+            "ms": 3208,
+            "wholeLoadMs": 3421,
+            "state": "Success",
+            "context": 4096,
+            "config": "t=4/4,b=256,ctx=4096,gpu=0,kv=1/1,fa=-1,kleidi=1",
+            "thermal": 0,
+            "temperature": 0,
+            "savedSettings": false
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "placement",
+            "requestedBackend": "cpu",
+            "gpuLayers": 0
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "outcome",
+            "result": "PASS"
+          }
+        ]
+      },
+      {
+        "trial": 3,
+        "startBatteryC": 33.6,
+        "events": [
+          {
+            "case": "ENVIRONMENT",
+            "stage": "installed_apk",
+            "sha256": "0cfccd9b7d0c03dc93215d2658070c589caa9a574fb101091b18862decc0201a",
+            "bytes": 178924645
+          },
+          {
+            "case": "ENVIRONMENT",
+            "stage": "startup_barrier",
+            "startupBarrierMs": 0
+          },
+          {
+            "case": "ENVIRONMENT",
+            "stage": "start",
+            "label": "AFTER",
+            "trial": 3,
+            "managedBuild": "DEBUG",
+            "nativeBuild": "RELEASE",
+            "activeDownloads": 0,
+            "thermal": 0,
+            "maxStartThermal": 0,
+            "requestedBackend": "cpu",
+            "sampling": "greedy",
+            "seedControl": "NOT_EXPOSED",
+            "cacheState": "OS_CACHE_UNCONTROLLED",
+            "sustainedTarget": 512,
+            "perTurnCap": 1024
+          },
+          {
+            "case": "ENVIRONMENT",
+            "stage": "foreground",
+            "resumed": true,
+            "focused": true,
+            "cpuAllowedList": "0-7"
+          },
+          {
+            "case": "ENVIRONMENT",
+            "stage": "persisted_numeric_settings",
+            "temperature": 0.3,
+            "useGpu": true,
+            "kvPreset": "AUTO",
+            "riskTolerance": "EXPERIMENTAL",
+            "optimizationPriority": "BALANCED"
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "release_original",
+            "ms": 3
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "case_conditioning",
+            "ms": 0,
+            "thermal": 0,
+            "foregroundResumed": true,
+            "foregroundFocused": true,
+            "cpuAllowedList": "0-7"
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "prepare",
+            "ms": 91,
+            "state": "Ready",
+            "reason": null
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "verified_identity",
+            "pinned": true,
+            "bytes": 2104932768,
+            "sha256": "626b4a6678b86442240e33df819e00132d3ba7dddfe1cdc4fbb18e0a9615c62d",
+            "revision": "7dabda4d13d513e3e842b20f0d435c732f172cbe"
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "release_previous",
+            "ms": 0
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "resolve",
+            "ms": 130,
+            "state": "Ready",
+            "reason": "Ready"
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "load",
+            "ms": 2952,
+            "wholeLoadMs": 3178,
+            "state": "Success",
+            "context": 4096,
+            "config": "t=4/4,b=256,ctx=4096,gpu=0,kv=1/1,fa=-1,kleidi=1",
+            "thermal": 0,
+            "temperature": 0,
+            "savedSettings": false
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "placement",
+            "requestedBackend": "cpu",
+            "gpuLayers": 0
+          },
+          {
+            "case": "qwen2.5-3b",
+            "stage": "outcome",
+            "result": "PASS"
+          }
+        ]
+      }
+    ]
+  },
+  "mediansMs": {
+    "before": {
+      "prepare": 7151,
+      "resolve": 2833,
+      "guardedLoad": 10328,
+      "total": 20315
+    },
+    "after": {
+      "prepare": 88,
+      "resolve": 127,
+      "guardedLoad": 3067,
+      "total": 3287
+    }
+  },
+  "reductionPercent": 83.82,
+  "cpuSmoke": [
+    {
+      "case": "ENVIRONMENT",
+      "stage": "installed_apk",
+      "sha256": "0cfccd9b7d0c03dc93215d2658070c589caa9a574fb101091b18862decc0201a",
+      "bytes": 178924645
+    },
+    {
+      "case": "ENVIRONMENT",
+      "stage": "startup_barrier",
+      "startupBarrierMs": 0
+    },
+    {
+      "case": "ENVIRONMENT",
+      "stage": "start",
+      "label": "AFTER",
+      "trial": 1,
+      "managedBuild": "DEBUG",
+      "nativeBuild": "RELEASE",
+      "activeDownloads": 0,
+      "thermal": 0,
+      "maxStartThermal": 0,
+      "requestedBackend": "cpu",
+      "sampling": "greedy",
+      "seedControl": "NOT_EXPOSED",
+      "cacheState": "OS_CACHE_UNCONTROLLED",
+      "sustainedTarget": 512,
+      "perTurnCap": 1024
+    },
+    {
+      "case": "ENVIRONMENT",
+      "stage": "foreground",
+      "resumed": true,
+      "focused": true,
+      "cpuAllowedList": "0-7"
+    },
+    {
+      "case": "ENVIRONMENT",
+      "stage": "persisted_numeric_settings",
+      "temperature": 0.3,
+      "useGpu": true,
+      "kvPreset": "AUTO",
+      "riskTolerance": "EXPERIMENTAL",
+      "optimizationPriority": "BALANCED"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "release_original",
+      "ms": 3
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "case_conditioning",
+      "ms": 1,
+      "thermal": 0,
+      "foregroundResumed": true,
+      "foregroundFocused": true,
+      "cpuAllowedList": "0-7"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "prepare",
+      "ms": 93,
+      "state": "Ready",
+      "reason": null
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "verified_identity",
+      "pinned": true,
+      "bytes": 2104932768,
+      "sha256": "626b4a6678b86442240e33df819e00132d3ba7dddfe1cdc4fbb18e0a9615c62d",
+      "revision": "7dabda4d13d513e3e842b20f0d435c732f172cbe"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "release_previous",
+      "ms": 0
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "resolve",
+      "ms": 118,
+      "state": "Ready",
+      "reason": "Ready"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "load",
+      "ms": 3132,
+      "wholeLoadMs": 3346,
+      "state": "Success",
+      "context": 4096,
+      "config": "t=4/4,b=256,ctx=4096,gpu=0,kv=1/1,fa=-1,kleidi=1",
+      "thermal": 0,
+      "temperature": 0,
+      "savedSettings": false
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "placement",
+      "requestedBackend": "cpu",
+      "gpuLayers": 0
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "generation",
+      "turn": 1,
+      "tokens": 8,
+      "ttftMs": 543,
+      "wallMs": 1232,
+      "decodeMs": 536,
+      "decodeTps": 13.040432987681381,
+      "nativeCallsMs": 612,
+      "stop": 1,
+      "capReached": false,
+      "naturalEog": true,
+      "thermal": 0,
+      "allocatedBytes": 32768,
+      "gcCount": 0,
+      "contentBytes": 14,
+      "reasoningBytes": 0,
+      "contentSha256": "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6",
+      "reasoningSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "deltaMatchesFinal": true
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "smoke_reply",
+      "text": "2 plus 3 is 5."
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "outcome",
+      "result": "PASS"
+    }
+  ],
+  "validation": {
+    "command": "./gradlew :app:composeApp:jvmTest :app:androidApp:assembleDebug verifyProject -x :nativeEngine:verifyNativeSubmodulePins",
+    "result": "PASS",
+    "excludedCheck": "Pre-existing llama.cpp origin is not the allowlisted public HTTPS remote. No native remotes changed.",
+    "composeAppJvmTests": {
+      "tests": 1365,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "smokeNote": "CPU and Vulkan both returned 2 plus 3 is 5. One smoke trial per backend; these first-token values are diagnostic, not a backend policy comparison."
+  },
+  "lastTrialStageDiagnostics": {
+    "before": {
+      "pid": "18933",
+      "artifactHashLines": [
+        "10-23 23:12:42.732 18933 18948 I ModelLoad: stage=artifact-hash bytes=2104932768 outcome=VERIFIED elapsedMs=2828",
+        "10-23 23:12:47.612 18933 18948 I ModelLoad: stage=artifact-hash bytes=2104932768 outcome=VERIFIED elapsedMs=2688",
+        "10-23 23:12:50.341 18933 18948 I ModelLoad: stage=artifact-hash bytes=2104932768 outcome=VERIFIED elapsedMs=2675",
+        "10-23 23:12:55.342 18933 18948 I ModelLoad: stage=artifact-hash bytes=2104932768 outcome=VERIFIED elapsedMs=2681"
+      ],
+      "nativeLoadLines": [
+        "10-23 23:12:55.391 18933 18948 I LlamaRunner: native stage=LOAD event=START",
+        "10-23 23:12:57.437 18933 18948 I LlamaRunner: native stage=LOAD event=END reason=OK elapsed_ms=2046"
+      ]
+    },
+    "after": {
+      "pid": "20282",
+      "artifactHashLines": [],
+      "nativeLoadLines": [
+        "10-23 23:15:31.224 20282 20300 I LlamaRunner: native stage=LOAD event=START",
+        "10-23 23:15:33.269 20282 20300 I LlamaRunner: native stage=LOAD event=END reason=OK elapsed_ms=2044"
+      ]
+    }
+  },
+  "vulkanSmoke": [
+    {
+      "case": "ENVIRONMENT",
+      "stage": "installed_apk",
+      "sha256": "0cfccd9b7d0c03dc93215d2658070c589caa9a574fb101091b18862decc0201a",
+      "bytes": 178924645
+    },
+    {
+      "case": "ENVIRONMENT",
+      "stage": "startup_barrier",
+      "startupBarrierMs": 0
+    },
+    {
+      "case": "ENVIRONMENT",
+      "stage": "start",
+      "label": "AFTER",
+      "trial": 1,
+      "managedBuild": "DEBUG",
+      "nativeBuild": "RELEASE",
+      "activeDownloads": 0,
+      "thermal": 0,
+      "maxStartThermal": 0,
+      "requestedBackend": "vulkan",
+      "sampling": "greedy",
+      "seedControl": "NOT_EXPOSED",
+      "cacheState": "OS_CACHE_UNCONTROLLED",
+      "sustainedTarget": 512,
+      "perTurnCap": 1024
+    },
+    {
+      "case": "ENVIRONMENT",
+      "stage": "foreground",
+      "resumed": true,
+      "focused": true,
+      "cpuAllowedList": "0-7"
+    },
+    {
+      "case": "ENVIRONMENT",
+      "stage": "persisted_numeric_settings",
+      "temperature": 0.3,
+      "useGpu": true,
+      "kvPreset": "AUTO",
+      "riskTolerance": "EXPERIMENTAL",
+      "optimizationPriority": "BALANCED"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "release_original",
+      "ms": 3
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "case_conditioning",
+      "ms": 0,
+      "thermal": 0,
+      "foregroundResumed": true,
+      "foregroundFocused": true,
+      "cpuAllowedList": "0-7"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "prepare",
+      "ms": 94,
+      "state": "Ready",
+      "reason": null
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "verified_identity",
+      "pinned": true,
+      "bytes": 2104932768,
+      "sha256": "626b4a6678b86442240e33df819e00132d3ba7dddfe1cdc4fbb18e0a9615c62d",
+      "revision": "7dabda4d13d513e3e842b20f0d435c732f172cbe"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "release_previous",
+      "ms": 0
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "resolve",
+      "ms": 173,
+      "state": "Ready",
+      "reason": "Ready"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "load",
+      "ms": 3014,
+      "wholeLoadMs": 3287,
+      "state": "Success",
+      "context": 4096,
+      "config": "t=4/4,b=256,ctx=4096,gpu=37,kv=1/1,fa=-1,kleidi=1",
+      "thermal": 0,
+      "temperature": 0,
+      "savedSettings": false
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "placement",
+      "requestedBackend": "vulkan",
+      "gpuLayers": 37
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "generation",
+      "turn": 1,
+      "tokens": 8,
+      "ttftMs": 5900,
+      "wallMs": 6795,
+      "decodeMs": 693,
+      "decodeTps": 10.09070206298897,
+      "nativeCallsMs": 3518,
+      "stop": 1,
+      "capReached": false,
+      "naturalEog": true,
+      "thermal": 0,
+      "allocatedBytes": 65536,
+      "gcCount": 0,
+      "contentBytes": 14,
+      "reasoningBytes": 0,
+      "contentSha256": "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6",
+      "reasoningSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "deltaMatchesFinal": true
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "smoke_reply",
+      "text": "2 plus 3 is 5."
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "outcome",
+      "result": "PASS"
+    }
+  ]
+}

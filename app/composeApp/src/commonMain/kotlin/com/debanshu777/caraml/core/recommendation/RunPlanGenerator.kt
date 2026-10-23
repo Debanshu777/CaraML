@@ -394,7 +394,7 @@ class RunPlanGenerator {
             settings.engineMaxMicroBatchSize in workload.microBatchSize..WorkloadLimits.MAX_BATCH_SIZE &&
             settings.engineMaxSequenceCount in workload.sequenceCount..WorkloadLimits.MAX_SEQUENCE_COUNT &&
             requestedKvAllowed(workload, settings) &&
-            validPlacement(descriptor, settings)
+            validPlacement(descriptor, workload, settings)
 
     private fun requiredContextFloor(workload: LlmWorkloadConfig): Int? {
         val reserve = checkedAdd(workload.promptTokens.toLong(), workload.generationReserveTokens.toLong())
@@ -410,7 +410,18 @@ class RunPlanGenerator {
         }
     }
 
-    private fun validPlacement(descriptor: LlmModelDescriptor, settings: PlanningSettings): Boolean = when {
+    private fun validPlacement(
+        descriptor: LlmModelDescriptor,
+        workload: LlmWorkloadConfig,
+        settings: PlanningSettings,
+    ): Boolean = when {
+        workload.requestedFullVulkanLayerCount != null ->
+            descriptor.fullVulkanLayerCount()?.let { full ->
+                workload.requestedFullVulkanLayerCount == full &&
+                    (settings.backend == BackendKind.CPU && settings.gpuLayerCount == 0 ||
+                        settings.backend == BackendKind.VULKAN && settings.memoryTopology ==
+                        com.debanshu777.caraml.core.platform.MemoryTopology.UNIFIED && settings.gpuLayerCount == full)
+            } == true
         settings.gpuLayerCount?.let { it < 0 } == true -> false
         settings.backend == BackendKind.CPU -> settings.gpuLayerCount in listOf(null, 0)
         settings.gpuLayerCount == 0 -> false

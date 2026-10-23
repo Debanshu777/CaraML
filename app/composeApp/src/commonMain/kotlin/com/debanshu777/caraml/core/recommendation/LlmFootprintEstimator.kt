@@ -130,7 +130,7 @@ class LlmFootprintEstimator {
         if (
             descriptor.contextLimit?.let { plan.contextTokens > it } == true ||
             descriptor.transformerShape?.layerCount?.let { layers ->
-                plan.gpuLayerCount?.let { it > layers }
+                plan.gpuLayerCount?.let { it > layers && !plan.matchesFixedVulkanPlacement(descriptor) }
             } == true
         ) {
             return AssessmentReason.INVALID_WORKLOAD

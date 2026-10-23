@@ -24,7 +24,7 @@ object CaramlNativeLayout {
 val minIos = "17.2"
 
 fun Project.findTool(name: String): String {
-    require(name.matches(Regex("[A-Za-z0-9._-]+"))) { "Invalid tool name" }
+    require(name.matches(Regex("[A-Za-z0-9._+-]+"))) { "Invalid tool name" }
     val windows = System.getProperty("os.name").contains("win", ignoreCase = true)
     fun validatedExecutable(rawPath: String): String? {
         val trimmed = rawPath.trim().removeSurrounding("\"")
@@ -61,7 +61,15 @@ fun Project.findTool(name: String): String {
 }
 
 /** Resolve native tools only when a native task is actually executed. */
-fun nativeTool(name: String) = providers.provider { findTool(name) }
+fun nativeTool(name: String, vararg alternatives: String) = providers.provider {
+    if (alternatives.isEmpty()) return@provider findTool(name)
+    (listOf(name) + alternatives).firstNotNullOfOrNull { candidate ->
+        try { findTool(candidate) } catch (_: GradleException) { null }
+    } ?: throw GradleException(
+        "Cannot find required tool (${(listOf(name) + alternatives).joinToString()}). " +
+            "Install it, add it to PATH, or set ${name.uppercase()}_PATH to an absolute executable path."
+    )
+}
 
 val hostOsName = System.getProperty("os.name").lowercase()
 val isMacHost = hostOsName.contains("mac")
@@ -77,6 +85,15 @@ val selectedNativeEngines = providers.gradleProperty("caramlNativeEngines")
 val androidNativeBackend = providers.gradleProperty("caramlAndroidBackend").orElse(
     selectedNativeEngines.map { if ("llama" in it) "vulkan" else "cpu" },
 )
+// Explicit host compiler experiment; omitted builds retain the bundled NDK glslc.
+val androidVulkanGlslcPath = providers.gradleProperty("caramlVulkanGlslcPath").map { raw ->
+    if (raw.isBlank()) throw GradleException("caramlVulkanGlslcPath must name a glslc executable")
+    val compiler = rootProject.file(raw).canonicalFile
+    if (!compiler.isFile || (!hostOsName.contains("win") && !compiler.canExecute())) {
+        throw GradleException("caramlVulkanGlslcPath is not an executable file: $compiler")
+    }
+    compiler.invariantSeparatorsPath
+}
 val desktopNativeBackend = providers.gradleProperty("caramlDesktopBackend")
     .orElse(if (isMacHost) "metal" else "cpu")
 
@@ -112,6 +129,27 @@ val verifyNativeSubmodulePins by tasks.registering(Exec::class) {
             .file("src/nativeTest/scripts/native_submodule_pin_test.sh")
             .asFile.absolutePath,
     )
+    outputs.upToDateWhen { false }
+}
+
+val testCpuRepackEquivalence by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Compare Q4_K/Q6_K CPU repack output against the pinned implementation"
+    workingDir(rootProject.projectDir)
+    val script = layout.projectDirectory.file("src/nativeTest/scripts/cpu_repack_equivalence_test.py")
+    inputs.file(script)
+    inputs.file(layout.projectDirectory.file("src/nativeTest/cpp/cpu_repack_equivalence_test.cpp"))
+    inputs.file(rootProject.layout.projectDirectory.file("libraries/patches/llama.cpp/0007-cpu-repack-constant-interleave.patch"))
+    inputs.dir(pinnedLlamaSourceDir.resolve("ggml"))
+    // Standalone host compilation: no full engine build, model or network access.
+    // CXX/CXX_PATH may select a GCC/Clang-compatible compiler explicitly.
+    doFirst {
+        commandLine(
+            nativeTool("python3", "python").get(), script.asFile.absolutePath,
+            "--compiler", nativeTool("cxx", "c++", "clang++", "g++").get(),
+            "--git", nativeTool("git").get(),
+        )
+    }
     outputs.upToDateWhen { false }
 }
 
@@ -933,6 +971,7 @@ android {
                 // 16 KB page-size devices (Google Play requirement, 2025-11-01).
                 arguments += "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384"
                 arguments += "-DCARAML_NATIVE_BACKEND=${androidNativeBackend.get()}"
+                arguments += "-DCARAML_VULKAN_GLSLC=${androidVulkanGlslcPath.orNull.orEmpty()}"
                 arguments += "-DCARAML_ENABLE_LLAMA=${selectedNativeEngines.get().contains("llama").toString().uppercase()}"
                 arguments += "-DCARAML_ENABLE_DIFFUSION=${selectedNativeEngines.get().contains("diffusion").toString().uppercase()}"
                 // CMake already excludes unselected engines. Leave AGP's runtime

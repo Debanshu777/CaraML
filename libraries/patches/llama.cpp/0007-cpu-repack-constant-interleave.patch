@@ -1,0 +1,97 @@
+diff --git a/ggml/src/ggml-cpu/repack.cpp b/ggml/src/ggml-cpu/repack.cpp
+--- a/ggml/src/ggml-cpu/repack.cpp
++++ b/ggml/src/ggml-cpu/repack.cpp
+@@ -3174,7 +3174,9 @@
+     return out;
+ }
+ 
+-static block_q4_Kx8 make_block_q4_Kx8(block_q4_K * in, unsigned int blck_size_interleave) {
++template <unsigned int blck_size_interleave>
++static block_q4_Kx8 make_block_q4_Kx8(block_q4_K * in) {
++    static_assert(blck_size_interleave == 4 || blck_size_interleave == 8, "invalid interleave block size");
+     block_q4_Kx8 out;
+     //Delta(scale) and dmin values of the eight Q4_K structures are copied onto the output interleaved structure
+     for (int i = 0; i < 8; i++) {
+@@ -3430,7 +3432,9 @@
+     return out;
+ }
+ 
+-static block_q6_Kx8 make_block_q6_Kx8(block_q6_K * in, unsigned int blck_size_interleave) {
++template <unsigned int blck_size_interleave>
++static block_q6_Kx8 make_block_q6_Kx8(block_q6_K * in) {
++    static_assert(blck_size_interleave == 4 || blck_size_interleave == 8, "invalid interleave block size");
+     block_q6_Kx8  out;
+     constexpr int n_blocks = 8;  // Kx8
+     for (int i = 0; i < n_blocks; i++) {
+@@ -3569,9 +3573,10 @@
+     GGML_UNUSED(data_size);
+ }
+ 
+-static int repack_q4_K_to_q4_K_8_bl(struct ggml_tensor * t, int interleave_block, const void * GGML_RESTRICT data, size_t data_size) {
++template <int interleave_block>
++static int repack_q4_K_to_q4_K_8_bl(struct ggml_tensor * t, const void * GGML_RESTRICT data, size_t data_size) {
+     GGML_ASSERT(t->type == GGML_TYPE_Q4_K);
+-    GGML_ASSERT(interleave_block == 8 || interleave_block == 4);
++    static_assert(interleave_block == 8 || interleave_block == 4, "invalid interleave block size");
+     constexpr int nrows_interleaved = 8;
+ 
+     block_q4_Kx8 * dst = (block_q4_Kx8*)t->data;
+@@ -3591,7 +3596,7 @@
+             for (int i  = 0; i < nrows_interleaved; i++ ) {
+                 dst_tmp[i] = src[x + i * nblocks];
+             }
+-            *dst++ = make_block_q4_Kx8(dst_tmp, interleave_block);
++            *dst++ = make_block_q4_Kx8<interleave_block>(dst_tmp);
+         }
+         src += nrows_interleaved * nblocks;
+     }
+@@ -3758,9 +3763,10 @@
+     return 0;
+ }
+ 
+-static int repack_q6_K_to_q6_K_8_bl(struct ggml_tensor * t, int interleave_block, const void * GGML_RESTRICT data, size_t data_size) {
++template <int interleave_block>
++static int repack_q6_K_to_q6_K_8_bl(struct ggml_tensor * t, const void * GGML_RESTRICT data, size_t data_size) {
+     GGML_ASSERT(t->type == GGML_TYPE_Q6_K);
+-    GGML_ASSERT(interleave_block == 4 || interleave_block == 8);
++    static_assert(interleave_block == 4 || interleave_block == 8, "invalid interleave block size");
+     constexpr int nrows_interleaved = 8;
+ 
+     block_q6_Kx8 * dst = (block_q6_Kx8 *)t->data;
+@@ -3780,7 +3786,7 @@
+             for (int i = 0; i < nrows_interleaved; i++) {
+                 dst_tmp[i] = src[x + i * nblocks];
+             }
+-            *dst++ = make_block_q6_Kx8(dst_tmp, interleave_block);
++            *dst++ = make_block_q6_Kx8<interleave_block>(dst_tmp);
+         }
+         src += nrows_interleaved * nblocks;
+     }
+@@ -4259,11 +4265,11 @@
+ }
+ 
+ template <> int repack<block_q4_K, 8, 8>(struct ggml_tensor * t, const void * data, size_t data_size) {
+-    return repack_q4_K_to_q4_K_8_bl(t, 8, data, data_size);
++    return repack_q4_K_to_q4_K_8_bl<8>(t, data, data_size);
+ }
+ 
+ template <> int repack<block_q4_K, 4, 8>(struct ggml_tensor * t, const void * data, size_t data_size) {
+-    return repack_q4_K_to_q4_K_8_bl(t, 4, data, data_size);
++    return repack_q4_K_to_q4_K_8_bl<4>(t, data, data_size);
+ }
+ 
+ template <> int repack<block_q2_K, 8, 8>(struct ggml_tensor * t, const void * data, size_t data_size) {
+@@ -4279,11 +4285,11 @@
+ }
+ 
+ template <> int repack<block_q6_K, 4, 8>(struct ggml_tensor * t, const void * data, size_t data_size) {
+-    return repack_q6_K_to_q6_K_8_bl(t, 4, data, data_size);
++    return repack_q6_K_to_q6_K_8_bl<4>(t, data, data_size);
+ }
+ 
+ template <> int repack<block_q6_K, 8, 8>(struct ggml_tensor * t, const void * data, size_t data_size) {
+-    return repack_q6_K_to_q6_K_8_bl(t, 8, data, data_size);
++    return repack_q6_K_to_q6_K_8_bl<8>(t, data, data_size);
+ }
+ 
+ template <> int repack<block_iq4_nl, 4, 4>(struct ggml_tensor * t, const void * data, size_t data_size) {

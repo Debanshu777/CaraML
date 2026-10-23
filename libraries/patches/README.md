@@ -73,3 +73,20 @@ If `preparePatchedLlamaSource` fails after a bump, the upstream change touched t
 **What:** Passes the parent CMake build-tool path to the host Vulkan shader generator's external project.
 
 **Why:** Android Gradle locates its bundled Ninja through an absolute path. The shader generator inherits the Ninja generator but otherwise searches `PATH` again, failing on hosts without a separate Ninja installation.
+
+### `0007-cpu-repack-constant-interleave.patch`
+
+**What:** Specializes Q4_K/Q6_K eight-row CPU repacking for the existing four/eight-byte interleave sizes. The quantized data layout and arithmetic are unchanged.
+
+**Why:** Native CPU samples attributed most model-load CPU time to repacking, particularly tiny runtime-length copies. Compile-time sizes let the compiler inline those copies. This applies to CPU-repacked tensors; it does not change Vulkan kernels or disable repacking.
+
+The standalone regression compiles the actual pinned and patched functions, compares every output byte across 6,532 deterministic random/edge cases, and checks input/sentinel preservation and invalid-row behavior:
+
+```sh
+python3 nativeEngine/src/nativeTest/scripts/cpu_repack_equivalence_test.py --sanitize
+```
+
+The unsanitized check also runs as `:nativeEngine:testCpuRepackEquivalence` through
+the normal `verifyProject` gate, using host Python/Git/C++ tools without downloads.
+
+Android armv9 compilation and assembly inspection confirm removal of the inner runtime-length copy calls. Device load and token checks are still required to establish the performance gain for a model/backend.

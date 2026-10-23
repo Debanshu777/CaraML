@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <instrumentation
+        android:name="com.debanshu777.caraml.benchmark.OnnxPerformanceValidation"
+        android:targetPackage="com.debanshu777.caraml"
+        android:label="Debug installed ONNX performance validation" />
+    <instrumentation
         android:name="com.debanshu777.caraml.benchmark.OnnxBundleValidation"
         android:targetPackage="com.debanshu777.caraml"
         android:label="Debug ONNX discovery and download validation" />
@@ -20,6 +24,10 @@
         android:name="com.debanshu777.caraml.benchmark.PerformanceValidation"
         android:targetPackage="com.debanshu777.caraml"
         android:label="Debug installed-model performance validation" />
+    <instrumentation
+        android:name="com.debanshu777.caraml.benchmark.ModelReselectionValidation"
+        android:targetPackage="com.debanshu777.caraml"
+        android:label="Debug actual UI model reselection validation" />
     <application>
         <activity
             android:name=".benchmark.PerformanceForegroundActivity"

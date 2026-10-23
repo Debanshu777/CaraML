@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "classification": "exploratory-thermal-change",
+  "note": "All three tests passed, but thermal state changed from NORMAL to LIGHT. Do not use these values as regression thresholds.",
+  "startedAtUtc": "20261023T094257.425124Z",
+  "finishedAtUtc": "2026-10-23T09:55:43.869451+00:00",
+  "sourceRevision": "b1dc4169ab8918776c30f85fc468aad83628754d",
+  "sourceWorkingTreeDirty": true,
+  "fixtureVersion": 1,
+  "appApkSha256": "f4fafbdbeeb227f112d1cb064da41394737ab4db608503132daff1f80280b335",
+  "device": {
+    "build": {
+      "brand": "google",
+      "device": "tokay",
+      "fingerprint": "google/tokay/tokay:17/CP3A.260905.009/16091614:user/release-keys",
+      "id": "CP3A.260905.009",
+      "model": "Pixel 9",
+      "type": "user",
+      "version": {
+        "codename": "REL",
+        "sdk": 37
+      }
+    },
+    "cpuCoreCount": 8,
+    "cpuLocked": false,
+    "cpuMaxFreqHz": 3105000000,
+    "memTotalBytes": 12133175296,
+    "sustainedPerformanceModeEnabled": false,
+    "artMainlineVersion": 372042580,
+    "osCodenameAbbreviated": "REL",
+    "compilationMode": "run-from-apk",
+    "payload": {}
+  },
+  "thermalStatusBefore": 0,
+  "thermalStatusAfter": 1,
+  "traceCount": 30,
+  "localArchive": "build/benchmark-results/android-ui/20261023T094257.425124Z-baseline",
+  "benchmarks": [
+    {
+      "name": "chatHistory",
+      "className": "com.debanshu777.caraml.benchmark.tests.ChatScrollBenchmark",
+      "repeatIterations": 10,
+      "thermalThrottleSleepSeconds": 0,
+      "metrics": {
+        "frameCount": {
+          "minimum": 1023.0,
+          "maximum": 1036.0,
+          "median": 1029.5,
+          "coefficientOfVariation": 0.003781827943956073
+        }
+      },
+      "sampledMetrics": {
+        "frameDurationCpuMs": {
+          "P50": 6.5327355,
+          "P90": 8.288708199999999,
+          "P95": 8.8802505,
+          "P99": 10.208027589999991
+        },
+        "frameOverrunMs": {
+          "P50": -4.332318000000001,
+          "P90": -0.6124434999999995,
+          "P95": 0.0003657000000004228,
+          "P99": 0.753393999999999
+        }
+      }
+    },
+    {
+      "name": "coldWarmupProfile",
+      "className": "com.debanshu777.caraml.benchmark.tests.StartupBenchmark",
+      "repeatIterations": 10,
+      "thermalThrottleSleepSeconds": 0,
+      "metrics": {
+        "timeToInitialDisplayMs": {
+          "minimum": 473.952963,
+          "maximum": 536.463379,
+          "median": 516.185832,
+          "coefficientOfVariation": 0.031867410065981344
+        }
+      },
+      "sampledMetrics": {}
+    },
+    {
+      "name": "coldNoCompilation",
+      "className": "com.debanshu777.caraml.benchmark.tests.StartupBenchmark",
+      "repeatIterations": 10,
+      "thermalThrottleSleepSeconds": 0,
+      "metrics": {
+        "timeToInitialDisplayMs": {
+          "minimum": 603.776123,
+          "maximum": 675.518067,
+          "median": 658.6389565,
+          "coefficientOfVariation": 0.03377104585689195
+        }
+      },
+      "sampledMetrics": {}
+    }
+  ]
+}

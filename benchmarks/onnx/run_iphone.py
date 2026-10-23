@@ -11,7 +11,7 @@ from pathlib import Path
 import subprocess
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--device', required=True)
     parser.add_argument('--bundle-id', default='com.debanshu777.caraml.CaraML')
@@ -24,7 +24,7 @@ def main():
     parser.add_argument('--gpu', type=int, choices=[0, 99])
     parser.add_argument('--skip-copy', action='store_true')
     parser.add_argument('--low-memory', action='store_true')
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     args.output.mkdir(parents=True, exist_ok=True)
     models = [args.model] if args.model else ['smollm2-135m', 'smollm2-360m', 'qwen25-05b', 'qwen3-06b', 'llama32-1b']
     failed = []

@@ -1,0 +1,735 @@
+{
+  "date": "2026-10-23",
+  "device": "Pixel 9 / Android 17",
+  "change": "Remove shared Android ui-tooling runtime; retain preview annotations and debug host tooling",
+  "apkBefore": {
+    "apkBytes": 147168128,
+    "dexBytes": 65411776,
+    "dexCount": 4
+  },
+  "apkAfter": {
+    "apkBytes": 146948113,
+    "dexBytes": 65192180,
+    "dexCount": 4
+  },
+  "interpretation": "439.19 ms overlaps prior 435.48-448.61 ms profiled medians; no demonstrated startup improvement from dependency removal.",
+  "run": {
+    "schemaVersion": 1,
+    "fixtureVersion": 1,
+    "startedAtUtc": "20261023T163218.261043Z",
+    "label": "preview-tooling-removed",
+    "serial": "48221FDAQ003AT",
+    "iterations": 10,
+    "scenario": "startup-baseline",
+    "testsPassed": true,
+    "fullTracing": false,
+    "gitRevision": "b1dc4169ab8918776c30f85fc468aad83628754d",
+    "gitStatus": "M .github/workflows/ci.yml\n M README.md\n M app/README.md\n M app/androidApp/build.gradle.kts\n M app/composeApp/README.md\n M app/composeApp/build.gradle.kts\n M app/composeApp/src/commonMain/kotlin/com/debanshu777/caraml/features/chat/presentation/components/ChatMessageList.kt\n M build.gradle.kts\n M gradle/libs.versions.toml\n M settings.gradle.kts\n?? app/androidApp/src/benchmark/\n?? app/androidApp/src/main/baseline-prof.txt\n?? benchmarks/android/",
+    "submodules": "f46bc30cb6a7f68a67e34a00061e20a4ad1eff43 libraries/llama.cpp (v0.4.1-153-gf46bc30cb)\n c92d73c408515c94beef32161bb5960764fde7a0 libraries/stable-diffusion.cpp (master-900-c92d73c)",
+    "buildType": "benchmark (release-derived, non-debuggable, current release minification)",
+    "targetPackage": "com.debanshu777.caraml.benchmark",
+    "gradleCommand": [
+      "/Users/debanshud/Documents/Personal/CaraML/gradlew",
+      "--console=plain"
+    ],
+    "screenTimeoutBefore": "1800000",
+    "appProfileSha256": "dbd6a270b0a313127a79acdf0592c52d1cc9109137bccbec931ad40a6e20e43e",
+    "apkSha256": "96148f9279b5e798607729fcb656b7c3088ae339d9b864134600ead60b5e7b67",
+    "thermalStatusBefore": 0,
+    "thermalStatusAfter": 0,
+    "measurementValid": true,
+    "resultFiles": [
+      "benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter000_2026-10-23-16-36-06.perfetto-trace",
+      "benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter005_2026-10-23-16-36-50.perfetto-trace",
+      "benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter002_2026-10-23-16-36-23.perfetto-trace",
+      "benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter003_2026-10-23-16-36-32.perfetto-trace",
+      "benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter004_2026-10-23-16-36-41.perfetto-trace",
+      "benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter001_2026-10-23-16-36-14.perfetto-trace",
+      "benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter007_2026-10-23-16-37-07.perfetto-trace",
+      "benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter009_2026-10-23-16-37-21.perfetto-trace",
+      "benchmark/connected/Pixel 9 - 17/additionaltestoutput.benchmark.message_com.debanshu777.caraml.benchmark.tests.StartupBenchmark.coldBaselineProfile.txt",
+      "benchmark/connected/Pixel 9 - 17/com.debanshu777.caraml.benchmark.tests-benchmarkData.json",
+      "benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter006_2026-10-23-16-36-58.perfetto-trace",
+      "benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter008_2026-10-23-16-37-14.perfetto-trace"
+    ],
+    "scenarioComplete": true,
+    "status": "passed",
+    "screenTimeoutRestored": true,
+    "finishedAtUtc": "2026-10-23T16:37:31.842508+00:00"
+  },
+  "benchmarks": [
+    {
+      "name": "coldBaselineProfile",
+      "params": {},
+      "className": "com.debanshu777.caraml.benchmark.tests.StartupBenchmark",
+      "totalRunTimeNs": 93611818405,
+      "metrics": {
+        "timeToInitialDisplayMs": {
+          "minimum": 416.672038,
+          "maximum": 451.786337,
+          "median": 439.1867675,
+          "coefficientOfVariation": 0.023263826231982098,
+          "runs": [
+            425.228638,
+            416.672038,
+            438.794677,
+            439.578858,
+            442.518799,
+            427.308472,
+            441.283407,
+            440.296062,
+            451.786337,
+            437.642049
+          ]
+        }
+      },
+      "sampledMetrics": {},
+      "warmupIterations": 0,
+      "repeatIterations": 10,
+      "thermalThrottleSleepSeconds": 0,
+      "profilerOutputs": [
+        {
+          "type": "PerfettoTrace",
+          "label": "Trace Iteration 0",
+          "filename": "StartupBenchmark_coldBaselineProfile_iter000_2026-10-23-16-36-06.perfetto-trace"
+        },
+        {
+          "type": "PerfettoTrace",
+          "label": "Trace Iteration 1",
+          "filename": "StartupBenchmark_coldBaselineProfile_iter001_2026-10-23-16-36-14.perfetto-trace"
+        },
+        {
+          "type": "PerfettoTrace",
+          "label": "Trace Iteration 2",
+          "filename": "StartupBenchmark_coldBaselineProfile_iter002_2026-10-23-16-36-23.perfetto-trace"
+        },
+        {
+          "type": "PerfettoTrace",
+          "label": "Trace Iteration 3",
+          "filename": "StartupBenchmark_coldBaselineProfile_iter003_2026-10-23-16-36-32.perfetto-trace"
+        },
+        {
+          "type": "PerfettoTrace",
+          "label": "Trace Iteration 4",
+          "filename": "StartupBenchmark_coldBaselineProfile_iter004_2026-10-23-16-36-41.perfetto-trace"
+        },
+        {
+          "type": "PerfettoTrace",
+          "label": "Trace Iteration 5",
+          "filename": "StartupBenchmark_coldBaselineProfile_iter005_2026-10-23-16-36-50.perfetto-trace"
+        },
+        {
+          "type": "PerfettoTrace",
+          "label": "Trace Iteration 6",
+          "filename": "StartupBenchmark_coldBaselineProfile_iter006_2026-10-23-16-36-58.perfetto-trace"
+        },
+        {
+          "type": "PerfettoTrace",
+          "label": "Trace Iteration 7",
+          "filename": "StartupBenchmark_coldBaselineProfile_iter007_2026-10-23-16-37-07.perfetto-trace"
+        },
+        {
+          "type": "PerfettoTrace",
+          "label": "Trace Iteration 8",
+          "filename": "StartupBenchmark_coldBaselineProfile_iter008_2026-10-23-16-37-14.perfetto-trace"
+        },
+        {
+          "type": "PerfettoTrace",
+          "label": "Trace Iteration 9",
+          "filename": "StartupBenchmark_coldBaselineProfile_iter009_2026-10-23-16-37-21.perfetto-trace"
+        }
+      ]
+    }
+  ],
+  "traceSummary": {
+    "StartupBenchmark_coldBaselineProfile": {
+      "AndroidOwner:onLayout": {
+        "tracesWithMetric": 10,
+        "countTotal": 10,
+        "totalMsMedian": 1.00533,
+        "totalMsMin": 0.945149,
+        "totalMsMax": 1.097046
+      },
+      "AndroidOwner:onMeasure": {
+        "tracesWithMetric": 10,
+        "countTotal": 20,
+        "totalMsMedian": 65.293478,
+        "totalMsMin": 62.167276,
+        "totalMsMax": 73.99589
+      },
+      "Compose:initializeView": {
+        "tracesWithMetric": 10,
+        "countTotal": 10,
+        "totalMsMedian": 3.5311690000000002,
+        "totalMsMin": 3.141805,
+        "totalMsMax": 6.333415
+      },
+      "Compose:recompose": {
+        "tracesWithMetric": 10,
+        "countTotal": 175,
+        "totalMsMedian": 58.734171,
+        "totalMsMin": 56.012976,
+        "totalMsMax": 66.203695
+      },
+      "CreateGraphicsPipeline-CompileAfterCacheMiss": {
+        "tracesWithMetric": 10,
+        "countTotal": 270,
+        "totalMsMedian": 118.1447515,
+        "totalMsMin": 105.761355,
+        "totalMsMax": 119.841631
+      },
+      "RenderThread:firstDraw": {
+        "tracesWithMetric": 10,
+        "countTotal": 10,
+        "totalMsMedian": 163.95235200000002,
+        "totalMsMin": 143.64803,
+        "totalMsMax": 166.598226
+      },
+      "activityResume": {
+        "tracesWithMetric": 10,
+        "countTotal": 10,
+        "totalMsMedian": 16.1428835,
+        "totalMsMin": 9.269369,
+        "totalMsMax": 21.576212
+      },
+      "activityStart": {
+        "tracesWithMetric": 10,
+        "countTotal": 10,
+        "totalMsMedian": 9.530232999999999,
+        "totalMsMin": 7.452921,
+        "totalMsMax": 14.712199
+      },
+      "bindApplication": {
+        "tracesWithMetric": 10,
+        "countTotal": 10,
+        "totalMsMedian": 84.4107665,
+        "totalMsMin": 53.636393,
+        "totalMsMax": 93.69926
+      },
+      "startup:TTID": {
+        "tracesWithMetric": 10,
+        "countTotal": 10,
+        "totalMsMedian": 441.5940355,
+        "totalMsMin": 419.276408,
+        "totalMsMax": 456.120565
+      },
+      "main:state:D": {
+        "tracesWithMetric": 10,
+        "countTotal": 2552,
+        "totalMsMedian": 58.098389,
+        "totalMsMin": 49.679201,
+        "totalMsMax": 62.365149
+      },
+      "main:state:R": {
+        "tracesWithMetric": 10,
+        "countTotal": 3433,
+        "totalMsMedian": 8.611388,
+        "totalMsMin": 6.868806,
+        "totalMsMax": 14.404458
+      },
+      "main:state:R+": {
+        "tracesWithMetric": 10,
+        "countTotal": 1913,
+        "totalMsMedian": 6.388346,
+        "totalMsMin": 4.114709,
+        "totalMsMax": 7.672323
+      },
+      "main:state:Running": {
+        "tracesWithMetric": 10,
+        "countTotal": 5438,
+        "totalMsMedian": 128.26400900000002,
+        "totalMsMin": 122.093011,
+        "totalMsMax": 135.716155
+      },
+      "main:state:S": {
+        "tracesWithMetric": 10,
+        "countTotal": 765,
+        "totalMsMedian": 193.649883,
+        "totalMsMin": 177.313351,
+        "totalMsMax": 209.52535
+      }
+    }
+  },
+  "rejectedLazyScreenExperiment": {
+    "archive": "build/benchmark-results/android-ui/20261023T164621.099772Z-lazy-screens",
+    "run": {
+      "schemaVersion": 1,
+      "fixtureVersion": 1,
+      "startedAtUtc": "20261023T164621.099772Z",
+      "label": "lazy-screens",
+      "serial": "48221FDAQ003AT",
+      "iterations": 10,
+      "scenario": "startup-baseline",
+      "testsPassed": true,
+      "fullTracing": false,
+      "gitRevision": "b1dc4169ab8918776c30f85fc468aad83628754d",
+      "gitStatus": "M .github/workflows/ci.yml\n M README.md\n M app/README.md\n M app/androidApp/build.gradle.kts\n M app/androidApp/src/debug/kotlin/com/debanshu777/caraml/benchmark/ModelRuntimeValidation.kt\n M app/androidApp/src/debug/kotlin/com/debanshu777/caraml/benchmark/OnnxGgufBenchmark.kt\n M app/androidApp/src/debug/kotlin/com/debanshu777/caraml/benchmark/PerformanceValidation.kt\n M app/composeApp/README.md\n M app/composeApp/build.gradle.kts\n M app/composeApp/src/commonMain/kotlin/com/debanshu777/caraml/core/navigation/AppNavigation.kt\n M app/composeApp/src/commonMain/kotlin/com/debanshu777/caraml/features/chat/presentation/components/ChatMessageList.kt\n M build.gradle.kts\n M gradle/libs.versions.toml\n M settings.gradle.kts\n?? app/androidApp/src/benchmark/\n?? app/androidApp/src/main/baseline-prof.txt\n?? benchmarks/android/",
+      "submodules": "f46bc30cb6a7f68a67e34a00061e20a4ad1eff43 libraries/llama.cpp (v0.4.1-153-gf46bc30cb)\n c92d73c408515c94beef32161bb5960764fde7a0 libraries/stable-diffusion.cpp (master-900-c92d73c)",
+      "buildType": "benchmark (release-derived, non-debuggable, current release minification)",
+      "targetPackage": "com.debanshu777.caraml.benchmark",
+      "gradleCommand": [
+        "/Users/debanshud/Documents/Personal/CaraML/gradlew",
+        "--console=plain"
+      ],
+      "screenTimeoutBefore": "1800000",
+      "appProfileSha256": "dbd6a270b0a313127a79acdf0592c52d1cc9109137bccbec931ad40a6e20e43e",
+      "apkSha256": "12922eb6e869b59806e6297ad7604a7bdd4dd9ea693f0286fecd5caa8d10991c",
+      "thermalStatusBefore": 0,
+      "thermalStatusAfter": 0,
+      "measurementValid": true,
+      "resultFiles": [
+        "benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter007_2026-10-23-16-48-10.perfetto-trace",
+        "benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter006_2026-10-23-16-48-01.perfetto-trace",
+        "benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter009_2026-10-23-16-48-28.perfetto-trace",
+        "benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter008_2026-10-23-16-48-19.perfetto-trace",
+        "benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter003_2026-10-23-16-47-35.perfetto-trace",
+        "benchmark/connected/Pixel 9 - 17/additionaltestoutput.benchmark.message_com.debanshu777.caraml.benchmark.tests.StartupBenchmark.coldBaselineProfile.txt",
+        "benchmark/connected/Pixel 9 - 17/com.debanshu777.caraml.benchmark.tests-benchmarkData.json",
+        "benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter000_2026-10-23-16-47-09.perfetto-trace",
+        "benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter001_2026-10-23-16-47-18.perfetto-trace",
+        "benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter002_2026-10-23-16-47-27.perfetto-trace",
+        "benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter004_2026-10-23-16-47-44.perfetto-trace",
+        "benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter005_2026-10-23-16-47-52.perfetto-trace"
+      ],
+      "scenarioComplete": true,
+      "status": "passed",
+      "screenTimeoutRestored": true,
+      "finishedAtUtc": "2026-10-23T16:48:39.032980+00:00"
+    },
+    "benchmarks": [
+      {
+        "name": "coldBaselineProfile",
+        "params": {},
+        "className": "com.debanshu777.caraml.benchmark.tests.StartupBenchmark",
+        "totalRunTimeNs": 98903680509,
+        "metrics": {
+          "timeToInitialDisplayMs": {
+            "minimum": 448.297119,
+            "maximum": 489.222331,
+            "median": 467.59783949999996,
+            "coefficientOfVariation": 0.02548336703643852,
+            "runs": [
+              463.125976,
+              467.634481,
+              489.222331,
+              466.766317,
+              467.561198,
+              474.175375,
+              448.297119,
+              460.474895,
+              479.629598,
+              483.439128
+            ]
+          }
+        },
+        "sampledMetrics": {},
+        "warmupIterations": 0,
+        "repeatIterations": 10,
+        "thermalThrottleSleepSeconds": 0,
+        "profilerOutputs": [
+          {
+            "type": "PerfettoTrace",
+            "label": "Trace Iteration 0",
+            "filename": "StartupBenchmark_coldBaselineProfile_iter000_2026-10-23-16-47-09.perfetto-trace"
+          },
+          {
+            "type": "PerfettoTrace",
+            "label": "Trace Iteration 1",
+            "filename": "StartupBenchmark_coldBaselineProfile_iter001_2026-10-23-16-47-18.perfetto-trace"
+          },
+          {
+            "type": "PerfettoTrace",
+            "label": "Trace Iteration 2",
+            "filename": "StartupBenchmark_coldBaselineProfile_iter002_2026-10-23-16-47-27.perfetto-trace"
+          },
+          {
+            "type": "PerfettoTrace",
+            "label": "Trace Iteration 3",
+            "filename": "StartupBenchmark_coldBaselineProfile_iter003_2026-10-23-16-47-35.perfetto-trace"
+          },
+          {
+            "type": "PerfettoTrace",
+            "label": "Trace Iteration 4",
+            "filename": "StartupBenchmark_coldBaselineProfile_iter004_2026-10-23-16-47-44.perfetto-trace"
+          },
+          {
+            "type": "PerfettoTrace",
+            "label": "Trace Iteration 5",
+            "filename": "StartupBenchmark_coldBaselineProfile_iter005_2026-10-23-16-47-52.perfetto-trace"
+          },
+          {
+            "type": "PerfettoTrace",
+            "label": "Trace Iteration 6",
+            "filename": "StartupBenchmark_coldBaselineProfile_iter006_2026-10-23-16-48-01.perfetto-trace"
+          },
+          {
+            "type": "PerfettoTrace",
+            "label": "Trace Iteration 7",
+            "filename": "StartupBenchmark_coldBaselineProfile_iter007_2026-10-23-16-48-10.perfetto-trace"
+          },
+          {
+            "type": "PerfettoTrace",
+            "label": "Trace Iteration 8",
+            "filename": "StartupBenchmark_coldBaselineProfile_iter008_2026-10-23-16-48-19.perfetto-trace"
+          },
+          {
+            "type": "PerfettoTrace",
+            "label": "Trace Iteration 9",
+            "filename": "StartupBenchmark_coldBaselineProfile_iter009_2026-10-23-16-48-28.perfetto-trace"
+          }
+        ]
+      }
+    ],
+    "traceSummary": {
+      "StartupBenchmark_coldBaselineProfile": {
+        "AndroidOwner:onLayout": {
+          "tracesWithMetric": 10,
+          "countTotal": 10,
+          "totalMsMedian": 0.993408,
+          "totalMsMin": 0.939535,
+          "totalMsMax": 1.561686
+        },
+        "AndroidOwner:onMeasure": {
+          "tracesWithMetric": 10,
+          "countTotal": 20,
+          "totalMsMedian": 68.0495805,
+          "totalMsMin": 65.344808,
+          "totalMsMax": 68.797811
+        },
+        "Compose:initializeView": {
+          "tracesWithMetric": 10,
+          "countTotal": 10,
+          "totalMsMedian": 3.5138145,
+          "totalMsMin": 3.085775,
+          "totalMsMax": 4.135091
+        },
+        "Compose:recompose": {
+          "tracesWithMetric": 10,
+          "countTotal": 166,
+          "totalMsMedian": 58.588155,
+          "totalMsMin": 56.758872,
+          "totalMsMax": 60.406292
+        },
+        "CreateGraphicsPipeline-CompileAfterCacheMiss": {
+          "tracesWithMetric": 10,
+          "countTotal": 270,
+          "totalMsMedian": 126.887614,
+          "totalMsMin": 122.976194,
+          "totalMsMax": 137.673911
+        },
+        "RenderThread:firstDraw": {
+          "tracesWithMetric": 10,
+          "countTotal": 10,
+          "totalMsMedian": 181.350403,
+          "totalMsMin": 175.583659,
+          "totalMsMax": 199.344401
+        },
+        "activityResume": {
+          "tracesWithMetric": 10,
+          "countTotal": 10,
+          "totalMsMedian": 13.648946500000001,
+          "totalMsMin": 9.24056,
+          "totalMsMax": 19.01949
+        },
+        "activityStart": {
+          "tracesWithMetric": 10,
+          "countTotal": 10,
+          "totalMsMedian": 10.2395835,
+          "totalMsMin": 8.661093,
+          "totalMsMax": 14.619425
+        },
+        "bindApplication": {
+          "tracesWithMetric": 10,
+          "countTotal": 10,
+          "totalMsMedian": 90.6869915,
+          "totalMsMin": 85.952921,
+          "totalMsMax": 98.007894
+        },
+        "startup:TTID": {
+          "tracesWithMetric": 10,
+          "countTotal": 10,
+          "totalMsMedian": 470.0004675,
+          "totalMsMin": 450.764934,
+          "totalMsMax": 491.503215
+        },
+        "main:state:D": {
+          "tracesWithMetric": 10,
+          "countTotal": 2731,
+          "totalMsMedian": 66.304429,
+          "totalMsMin": 62.267837,
+          "totalMsMax": 70.837082
+        },
+        "main:state:R": {
+          "tracesWithMetric": 10,
+          "countTotal": 3660,
+          "totalMsMedian": 9.157389,
+          "totalMsMin": 6.691041,
+          "totalMsMax": 14.624062
+        },
+        "main:state:R+": {
+          "tracesWithMetric": 10,
+          "countTotal": 2243,
+          "totalMsMedian": 5.7954095,
+          "totalMsMin": 2.223826,
+          "totalMsMax": 8.212395
+        },
+        "main:state:Running": {
+          "tracesWithMetric": 10,
+          "countTotal": 5939,
+          "totalMsMedian": 130.2110495,
+          "totalMsMin": 128.085246,
+          "totalMsMax": 136.428347
+        },
+        "main:state:S": {
+          "tracesWithMetric": 10,
+          "countTotal": 782,
+          "totalMsMedian": 217.56870099999998,
+          "totalMsMin": 201.575975,
+          "totalMsMax": 234.02681
+        }
+      }
+    },
+    "decision": "Reverted: composition/main-thread time did not improve. Later run started at 35.5 C vs control 32.2 C, both thermal NORMAL; TTID increase is not proof of a causal regression."
+  },
+  "unpromotedLazyNativeExperiment": {
+    "archive": "build/benchmark-results/android-ui/20261023T170634.124997Z-lazy-native",
+    "run": {
+      "schemaVersion": 1,
+      "fixtureVersion": 1,
+      "startedAtUtc": "20261023T170634.124997Z",
+      "label": "lazy-native",
+      "serial": "48221FDAQ003AT",
+      "iterations": 10,
+      "scenario": "startup-baseline",
+      "testsPassed": true,
+      "fullTracing": false,
+      "gitRevision": "b1dc4169ab8918776c30f85fc468aad83628754d",
+      "gitStatus": "M .github/workflows/ci.yml\n M README.md\n M app/README.md\n M app/androidApp/build.gradle.kts\n M app/androidApp/src/debug/kotlin/com/debanshu777/caraml/benchmark/ModelRuntimeValidation.kt\n M app/androidApp/src/debug/kotlin/com/debanshu777/caraml/benchmark/OnnxGgufBenchmark.kt\n M app/androidApp/src/debug/kotlin/com/debanshu777/caraml/benchmark/PerformanceValidation.kt\n M app/composeApp/README.md\n M app/composeApp/build.gradle.kts\n M app/composeApp/src/commonMain/kotlin/com/debanshu777/caraml/features/chat/presentation/components/ChatMessageList.kt\n M build.gradle.kts\n M gradle/libs.versions.toml\n M plugin-llama/src/androidMain/kotlin/com/debanshu777/caraml/sdk/plugin/llama/bridge/LlamaRunner.android.kt\n M settings.gradle.kts\n?? app/androidApp/src/benchmark/\n?? app/androidApp/src/main/baseline-prof.txt\n?? benchmarks/android/",
+      "submodules": "f46bc30cb6a7f68a67e34a00061e20a4ad1eff43 libraries/llama.cpp (v0.4.1-153-gf46bc30cb)\n c92d73c408515c94beef32161bb5960764fde7a0 libraries/stable-diffusion.cpp (master-900-c92d73c)",
+      "buildType": "benchmark (release-derived, non-debuggable, current release minification)",
+      "targetPackage": "com.debanshu777.caraml.benchmark",
+      "gradleCommand": [
+        "/Users/debanshud/Documents/Personal/CaraML/gradlew",
+        "--console=plain"
+      ],
+      "screenTimeoutBefore": "1800000",
+      "appProfileSha256": "dbd6a270b0a313127a79acdf0592c52d1cc9109137bccbec931ad40a6e20e43e",
+      "apkSha256": "0495ed0e956c4332108467dd4db7b627c74d74481cbb8a6265ed8a255c115b09",
+      "thermalStatusBefore": 0,
+      "thermalStatusAfter": 0,
+      "measurementValid": true,
+      "resultFiles": [
+        "benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter007_2026-10-23-17-08-31.perfetto-trace",
+        "benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter002_2026-10-23-17-07-45.perfetto-trace",
+        "benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter005_2026-10-23-17-08-14.perfetto-trace",
+        "benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter004_2026-10-23-17-08-05.perfetto-trace",
+        "benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter006_2026-10-23-17-08-23.perfetto-trace",
+        "benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter003_2026-10-23-17-07-56.perfetto-trace",
+        "benchmark/connected/Pixel 9 - 17/additionaltestoutput.benchmark.message_com.debanshu777.caraml.benchmark.tests.StartupBenchmark.coldBaselineProfile.txt",
+        "benchmark/connected/Pixel 9 - 17/com.debanshu777.caraml.benchmark.tests-benchmarkData.json",
+        "benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter008_2026-10-23-17-08-40.perfetto-trace",
+        "benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter000_2026-10-23-17-07-27.perfetto-trace",
+        "benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter001_2026-10-23-17-07-35.perfetto-trace",
+        "benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter009_2026-10-23-17-08-48.perfetto-trace"
+      ],
+      "scenarioComplete": true,
+      "status": "passed",
+      "screenTimeoutRestored": true,
+      "finishedAtUtc": "2026-10-23T17:08:59.647442+00:00"
+    },
+    "benchmarks": [
+      {
+        "name": "coldBaselineProfile",
+        "params": {},
+        "className": "com.debanshu777.caraml.benchmark.tests.StartupBenchmark",
+        "totalRunTimeNs": 103922691254,
+        "metrics": {
+          "timeToInitialDisplayMs": {
+            "minimum": 425.408813,
+            "maximum": 574.171102,
+            "median": 460.8985795,
+            "coefficientOfVariation": 0.0841311689020221,
+            "runs": [
+              425.408813,
+              574.171102,
+              455.147583,
+              454.592367,
+              456.422445,
+              462.815551,
+              458.981608,
+              478.893433,
+              464.45577,
+              492.369751
+            ]
+          }
+        },
+        "sampledMetrics": {},
+        "warmupIterations": 0,
+        "repeatIterations": 10,
+        "thermalThrottleSleepSeconds": 0,
+        "profilerOutputs": [
+          {
+            "type": "PerfettoTrace",
+            "label": "Trace Iteration 0",
+            "filename": "StartupBenchmark_coldBaselineProfile_iter000_2026-10-23-17-07-27.perfetto-trace"
+          },
+          {
+            "type": "PerfettoTrace",
+            "label": "Trace Iteration 1",
+            "filename": "StartupBenchmark_coldBaselineProfile_iter001_2026-10-23-17-07-35.perfetto-trace"
+          },
+          {
+            "type": "PerfettoTrace",
+            "label": "Trace Iteration 2",
+            "filename": "StartupBenchmark_coldBaselineProfile_iter002_2026-10-23-17-07-45.perfetto-trace"
+          },
+          {
+            "type": "PerfettoTrace",
+            "label": "Trace Iteration 3",
+            "filename": "StartupBenchmark_coldBaselineProfile_iter003_2026-10-23-17-07-56.perfetto-trace"
+          },
+          {
+            "type": "PerfettoTrace",
+            "label": "Trace Iteration 4",
+            "filename": "StartupBenchmark_coldBaselineProfile_iter004_2026-10-23-17-08-05.perfetto-trace"
+          },
+          {
+            "type": "PerfettoTrace",
+            "label": "Trace Iteration 5",
+            "filename": "StartupBenchmark_coldBaselineProfile_iter005_2026-10-23-17-08-14.perfetto-trace"
+          },
+          {
+            "type": "PerfettoTrace",
+            "label": "Trace Iteration 6",
+            "filename": "StartupBenchmark_coldBaselineProfile_iter006_2026-10-23-17-08-23.perfetto-trace"
+          },
+          {
+            "type": "PerfettoTrace",
+            "label": "Trace Iteration 7",
+            "filename": "StartupBenchmark_coldBaselineProfile_iter007_2026-10-23-17-08-31.perfetto-trace"
+          },
+          {
+            "type": "PerfettoTrace",
+            "label": "Trace Iteration 8",
+            "filename": "StartupBenchmark_coldBaselineProfile_iter008_2026-10-23-17-08-40.perfetto-trace"
+          },
+          {
+            "type": "PerfettoTrace",
+            "label": "Trace Iteration 9",
+            "filename": "StartupBenchmark_coldBaselineProfile_iter009_2026-10-23-17-08-48.perfetto-trace"
+          }
+        ]
+      }
+    ],
+    "traceSummary": {
+      "StartupBenchmark_coldBaselineProfile": {
+        "AndroidOwner:onLayout": {
+          "tracesWithMetric": 10,
+          "countTotal": 10,
+          "totalMsMedian": 1.0036420000000001,
+          "totalMsMin": 0.895345,
+          "totalMsMax": 1.308512
+        },
+        "AndroidOwner:onMeasure": {
+          "tracesWithMetric": 10,
+          "countTotal": 20,
+          "totalMsMedian": 51.9153855,
+          "totalMsMin": 49.0389,
+          "totalMsMax": 56.683146
+        },
+        "Compose:initializeView": {
+          "tracesWithMetric": 10,
+          "countTotal": 10,
+          "totalMsMedian": 3.4491984999999996,
+          "totalMsMin": 3.187826,
+          "totalMsMax": 4.702759
+        },
+        "Compose:recompose": {
+          "tracesWithMetric": 10,
+          "countTotal": 173,
+          "totalMsMedian": 39.696027,
+          "totalMsMin": 37.245849,
+          "totalMsMax": 45.007608
+        },
+        "CreateGraphicsPipeline-CompileAfterCacheMiss": {
+          "tracesWithMetric": 10,
+          "countTotal": 270,
+          "totalMsMedian": 127.45685,
+          "totalMsMin": 120.334836,
+          "totalMsMax": 129.822917
+        },
+        "RenderThread:firstDraw": {
+          "tracesWithMetric": 10,
+          "countTotal": 10,
+          "totalMsMedian": 195.823527,
+          "totalMsMin": 192.271322,
+          "totalMsMax": 200.44218
+        },
+        "activityResume": {
+          "tracesWithMetric": 10,
+          "countTotal": 10,
+          "totalMsMedian": 11.8244635,
+          "totalMsMin": 9.077352,
+          "totalMsMax": 21.401205
+        },
+        "activityStart": {
+          "tracesWithMetric": 10,
+          "countTotal": 10,
+          "totalMsMedian": 9.783976500000001,
+          "totalMsMin": 8.775065,
+          "totalMsMax": 17.724813
+        },
+        "bindApplication": {
+          "tracesWithMetric": 10,
+          "countTotal": 10,
+          "totalMsMedian": 89.9156295,
+          "totalMsMin": 53.198405,
+          "totalMsMax": 112.293823
+        },
+        "startup:TTID": {
+          "tracesWithMetric": 10,
+          "countTotal": 10,
+          "totalMsMedian": 463.27183049999996,
+          "totalMsMin": 428.059774,
+          "totalMsMax": 577.166626
+        },
+        "main:state:D": {
+          "tracesWithMetric": 10,
+          "countTotal": 2088,
+          "totalMsMedian": 54.343526,
+          "totalMsMin": 31.383749,
+          "totalMsMax": 190.632365
+        },
+        "main:state:R": {
+          "tracesWithMetric": 10,
+          "countTotal": 3039,
+          "totalMsMedian": 11.135209,
+          "totalMsMin": 6.609122,
+          "totalMsMax": 15.534338
+        },
+        "main:state:R+": {
+          "tracesWithMetric": 10,
+          "countTotal": 1750,
+          "totalMsMedian": 5.586930499999999,
+          "totalMsMin": 2.529624,
+          "totalMsMax": 7.059533
+        },
+        "main:state:Running": {
+          "tracesWithMetric": 10,
+          "countTotal": 4841,
+          "totalMsMedian": 123.495815,
+          "totalMsMin": 107.183768,
+          "totalMsMax": 137.778859
+        },
+        "main:state:S": {
+          "tracesWithMetric": 10,
+          "countTotal": 771,
+          "totalMsMedian": 226.549889,
+          "totalMsMin": 223.579062,
+          "totalMsMax": 238.276735
+        }
+      }
+    },
+    "decision": "Reverted: composition fell from 58.7 to 39.7 ms, but TTID did not improve (460.9 vs 439.2 ms). Later candidates started warmer (35.5-35.6 C vs 32.2 C) despite thermal status NORMAL. Requires a cooled, interleaved A/B test before promotion; these runs do not establish a causal regression."
+  }
+}

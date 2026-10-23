@@ -1,6 +1,8 @@
 package com.debanshu777.caraml.core.data.inference
 
 import com.debanshu777.caraml.core.recommendation.LoadRequest
+import com.debanshu777.caraml.core.recommendation.ResolvedLocalArtifact
+import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
@@ -28,6 +30,17 @@ class RoutingInferenceRepository(
         }
     }
     override suspend fun allowExplicitRetry(request: LoadRequest) = engine(request).allowExplicitRetry(request)
+    override suspend fun tryReuseInstalledModel(
+        model: LocalModelEntity,
+        artifact: ResolvedLocalArtifact,
+    ): ModelLoadResult.Success? {
+        // Reuse never interrupts generation or changes the active engine.
+        if (!session.tryLock()) return null
+        return try {
+            val expected = if (model.filename.endsWith(".onnx", true)) onnx else llama
+            if (active !== expected) null else expected.tryReuseInstalledModel(model, artifact)
+        } finally { session.unlock() }
+    }
     override fun currentGenerationObservation() = active.currentGenerationObservation()
     override suspend fun unloadModel() {
         active.cancelGeneration()

@@ -289,6 +289,7 @@ fun ChatInputBar(
                         modifier = Modifier
                             .weight(1f)
                             .heightIn(min = AppTheme.spacing.spacing48)
+                            .testTag("chat-model-picker")
                             .semantics {
                                 contentDescription = selectedModel?.modelId
                                     ?.substringAfterLast("/")

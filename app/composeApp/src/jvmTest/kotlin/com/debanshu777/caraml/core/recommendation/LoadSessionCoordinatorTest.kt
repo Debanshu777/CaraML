@@ -30,6 +30,49 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalCoroutinesApi::class)
 class LoadSessionCoordinatorTest {
     @Test
+    fun residentReuseRequiresCurrentGenerationAndDoesNotPersistRecoveryMarkers() = runTest {
+        val repository = repository()
+        val exact = scopedRequest()
+        val current = testArtifactLifetime(exact)
+        val coordinator = LoadSessionCoordinator(repository, current)
+        assertEquals("resident", coordinator.withCurrentResidentArtifact(exact) { "resident" })
+        assertEquals(null, coordinator.withCurrentResidentArtifact(exact.copy(
+            artifact = exact.artifact!!.copy(components = exact.artifact!!.components.map {
+                it.copy(contentSha256 = "f".repeat(64))
+            }),
+        )) { error("Changed installed generation must not reuse native state") })
+        assertEquals(null, repository.recoverPendingLoad())
+        assertEquals(0, repository.recoveryRecordCount())
+    }
+
+    @Test
+    fun residentReuseHoldsRootLeaseAndCancellationReleasesBothOwners() = runTest {
+        val exact = scopedRequest()
+        val lifetime = testArtifactLifetime(exact)
+        val coordinator = LoadSessionCoordinator(repository(), lifetime)
+        val entered = CompletableDeferred<Unit>()
+        val mutationEntered = CompletableDeferred<Unit>()
+        val reuse = backgroundScope.launch {
+            coordinator.withCurrentResidentArtifact(exact) {
+                entered.complete(Unit)
+                awaitCancellation()
+            }
+        }
+        entered.await()
+        val mutation = backgroundScope.launch {
+            lifetime.withRoots(listOf(exact.artifact!!.components.single().storageRoot)) {
+                mutationEntered.complete(Unit)
+            }
+        }
+        runCurrent()
+        assertFalse(mutationEntered.isCompleted)
+        reuse.cancelAndJoin()
+        mutation.join()
+        assertTrue(mutationEntered.isCompleted)
+        assertEquals("next", coordinator.withCurrentResidentArtifact(exact) { "next" })
+    }
+
+    @Test
     fun mutationAfterPreflightStopsBeforeMarkerAndNativeEntry() = runTest {
         val repository = repository()
         val lifetime = testArtifactLifetime(request)

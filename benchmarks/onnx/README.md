@@ -1,4 +1,64 @@
-# ONNX and GGUF validation — October 23, 2026
+# ONNX benchmarks
+
+See the [performance improvement report](../README.md) for the current results across Android UI, GGUF and ONNX, plus the cleanup inventory. This guide retains ONNX methods, detailed findings and historical provider validation.
+
+<!-- performance-pass-2026-10-24:start -->
+## Pixel 9 app performance pass — October 24, 2026
+
+This pass measures the installed-model app path in an **Android debug APK**, with ONNX Runtime 1.31.0, CPU, two threads, context 2,048 and F32 KV caches. It uses pinned Qwen2.5 0.5B INT8 and Llama 3.2 1B Q4 bundles. The candidate buffers protobuf metadata reads while retaining bounds and external-file validation, and adds exact-artifact resident-session reuse. [Per-trial results and provenance](results/pixel9-performance-2026-10-24.json) retain raw values, output hashes, temperatures and exclusions.
+
+| Model | Initial installed load, before → after | Repeated repository load, before → after |
+|---|---:|---:|
+| Qwen2.5 0.5B INT8 | 3.807 → 3.450 s (9.4% lower) | 3.189 → 2.684 s (15.8% lower) |
+| Llama 3.2 1B Q4 | 6.281 → 6.402 s (1.9% higher) | 5.659 → 5.441 s (3.9% lower) |
+
+Load values are medians of **three fresh processes per build**. “Initial installed load” includes prepare, resolve and repository load; it excludes Activity startup, inventory lookup and first drawn chat. “Repeated repository load” is a later explicit load request and still reconstructs the runtime; it is distinct from resident reselection. OS caches are **uncontrolled and not flushed**. These sequential pilots have small samples and differing temperatures, so percentages describe these runs rather than guaranteed gains. All 34 packaged native `.so` files have identical SHA-256 hashes between the two APKs.
+
+On the same candidate APK, Qwen2.5 0.5B prepare plus reselection took **2731.7 ms with forced reload → 240.6 ms with resident reuse** (91.2% lower; three-process medians). Every reuse record confirmed the retained session, matching runtime/context and unchanged output. This applies to an eligible model already resident in memory. Timing ends at repository completion and excludes UI/frame readiness.
+
+Qwen first-generation TTFT was 557.1 → 551.7 ms; warm TTFT was 321.8 → 318.2 ms. The latter is the median of three within-process medians, each from three measured generations after one retained warmup. Llama uses one measured generation per process after one warmup. App TTFT ends at the first nonempty stream chunk; chunk counts are not native token counts. This pilot does not establish a generation-speed improvement.
+
+Llama warm TTFT was 795.4 → 805.7 ms. Its initial-load result also shows **no established improvement**; graph-validation savings do not imply a faster whole load for every bundle.
+
+A separate same-APK memory-polling pilot (1 process per condition) measured warm TTFT 331.2 ms with polling → 337.4 ms without, and generation elapsed 979.1 → 1004.2 ms. This measures benchmark overhead, **not a production optimization**. This small pilot establishes no latency benefit from disabling polling. Use `--no-memory-sampling` for ordinary latency pilots and collect PSS in separate diagnostic runs. The runner retains polling by default for historical compatibility; keep sampled and unsampled baselines separate.
+
+Perfetto shows **no payload-checksum spans** in the app load path: installed files use publication hashes plus current path/size/manifest checks. Baseline Qwen manifest plus final-artifact checks totaled 43 ms. These operations ran on worker threads; the static harness does not test interactive chat rendering.
+
+Single-trace load phases, all in milliseconds:
+
+| Model | Graph initial, before → after | Graph repeat, before → after | Candidate tokenizer, initial / repeat | Candidate ORT session, initial / repeat |
+|---|---:|---:|---:|---:|
+| Qwen2.5 0.5B | 560 → 116 | 468 → 9.3 | 1006 / 538 | 1475 / 1550 |
+| Llama 3.2 1B | 173 → 81 | 138 → 39.9 | 1361 / 1001 | 4788 / 4353 |
+
+These are diagnostic phase comparisons, **not a traced A/B speed estimate**: Qwen uses a native-only baseline and full framework/Dalvik candidate capture; Llama uses native-only captures. Cache state and temperatures also differ. The graph-reader change reduces work, while tokenizer/session construction remains substantial; ordinary runs above measure total latency.
+
+The full Qwen trace records 249.8 ms of concurrent GC activity, but only 4.72 ms in named pause phases (maximum 1.82 ms). It does not show GC pauses dominating load or generation. Llama GC remains unmeasured. PSS calls span 38.7–68.1 ms and overlap generation; their async markers do not identify a sampler thread, so sampler CPU cost is unknown.
+
+A separate ORT operator profile using the sky-explanation runtime prompt places every recorded kernel on CPU. In its one warm generation, output-head matrix multiplication plus repeated weight dequantization consumed **53.7% of summed ORT run time**; the head materialized a 544,538,624-byte float weight output on each run. Next targets are tokenizer construction and ORT graph/session work, including an independently validated output-head export. Profile times are diagnostic, nested events are not added together, and no graph rewrite or GPU speedup is claimed.
+
+The original generation harness polls PSS every 100 ms and includes sampler shutdown in elapsed time. Loading and pre-generation reselection occur before that sampler. Native-only traces omit ART GC events; the full Qwen capture supplies GC diagnostics. RSS is sampled every 250 ms and does not establish long-run memory retention. All accepted trials require explicit instrumentation success, natural end-of-generation, nonempty output, pinned identities, foreground checks, thermal status 0 and start temperature ≤35°C. Hashes verify recorded-text integrity; the saved short math answers are checked separately from general model quality.
+
+Run against an already installed debug APK and installed pinned model:
+
+```bash
+python3 benchmarks/run.py onnx performance --serial SERIAL --mode app --case qwen25-05b --trials 3 --runs 3 --tokens 32 --no-memory-sampling --output build/benchmark-results/onnx-performance/new-pass
+# Separate experiments: --reselect reuse|reload; --no-memory-sampling; or --trace --full-trace --trials 1 --runs 1.
+python3 benchmarks/run.py onnx report
+```
+
+The runner preserves screen timeout/preferences, archives APK and source identities, retains failed trials and returns nonzero for invalid measurements. Completed diagnostic and timing captures are separate in the JSON; pending or invalid captures contribute no reported medians.
+
+Additional one-process functional smokes passed for `smollm2-135m`, `smollm2-360m`, `qwen3-06b`. Each retains one warmup and one measured math answer with natural completion, recorded text/SHA-256 and pinned artifacts; these are functional checks rather than speed comparisons.
+
+SmolLM2 135M answered “Two plus three equals four.” Its functional pass does **not** mean the answer was correct; this arithmetic error is retained in the report.
+
+The final APK was exercised on all five model cases. Host validation passed 1,571 JVM tests and 6,532 byte-identical native repack cases. `verifyProject` excluded `:nativeEngine:verifyNativeSubmodulePins` because the existing SSH remote differs from its pinned HTTPS URL; no submodule change was made. Final device evidence confirms the original 30-second screen timeout and unchanged preferences, the verified final APK installed, and the benchmark app stopped.
+<!-- performance-pass-2026-10-24:end -->
+
+## Historical ONNX and GGUF validation — October 23, 2026
+
+The remaining sections preserve the earlier runtime matrix and functional validation. Their prompts, harnesses and timing scope differ from the app performance pass above.
 
 CaraML now discovers, downloads and runs supported Hugging Face ONNX text bundles
 alongside GGUF. The implementation validates the complete bundle, pins all files
@@ -205,14 +265,14 @@ The scripts require Python 3.13, Android SDK/ADB and the repository's normal JDK
 under ignored `build/benchmarks`; weights are not checked into the repository.
 
 ```bash
-python3 benchmarks/onnx/download_matrix.py
-python3 benchmarks/onnx/generate_references.py --with-generation
+python3 benchmarks/run.py models restore
+python3 benchmarks/run.py models references --with-generation
 ./gradlew :app:androidApp:assembleDebug
 adb -s SERIAL install -r app/androidApp/build/outputs/apk/debug/androidApp-debug.apk
 adb -s SERIAL push build/benchmarks /sdcard/Android/data/com.debanshu777.caraml/files/benchmarks/
-python3 benchmarks/onnx/run_matrix.py --serial SERIAL --output build/benchmark-results/pixel-matrix
-python3 benchmarks/onnx/summarize.py build/benchmark-results/pixel-matrix
-python3 benchmarks/onnx/run_app_validation.py --serial SERIAL
+python3 benchmarks/run.py onnx matrix --serial SERIAL --output build/benchmark-results/pixel-matrix
+python3 benchmarks/run.py onnx summary android build/benchmark-results/pixel-matrix
+python3 benchmarks/run.py onnx validate --serial SERIAL
 ./gradlew :plugin-onnx:jvmTest -PonnxFixtureDir="$PWD/build/benchmarks"
 ./gradlew verifyProject
 ```
@@ -258,7 +318,7 @@ ORG_GRADLE_PROJECT_iosBenchmark=true xcodebuild \
   'OTHER_SWIFT_FLAGS=$(inherited) -DCARAML_BENCHMARK' build
 xcrun devicectl device install app --device IPHONE_UDID \
   build/ios-device/Build/Products/Debug-iphoneos/CaraML.app
-python3 benchmarks/onnx/run_iphone.py --device IPHONE_UDID
+python3 benchmarks/run.py onnx iphone --device IPHONE_UDID
 ```
 
 The harness is excluded from ordinary builds. It copies fixtures only into the

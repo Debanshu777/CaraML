@@ -1,0 +1,2683 @@
+{
+  "scope": {
+    "files": 147,
+    "parsed": 146,
+    "empty": 1,
+    "lossOrErrorFiles": 8,
+    "cpuSampleCaptures": 0,
+    "gpuSliceCaptures": 0,
+    "heapAllocationCaptures": 0
+  },
+  "archives": [
+    {
+      "archive": "20261023T092956.974405Z-smoke",
+      "files": 2,
+      "qualityFailures": 0,
+      "empty": 0
+    },
+    {
+      "archive": "20261023T094257.425124Z-baseline",
+      "files": 30,
+      "qualityFailures": 8,
+      "empty": 0
+    },
+    {
+      "archive": "20261023T155300.676388Z-startup-before",
+      "files": 20,
+      "qualityFailures": 0,
+      "empty": 0
+    },
+    {
+      "archive": "20261023T160108.472050Z-startup-profile-after",
+      "files": 10,
+      "qualityFailures": 0,
+      "empty": 0
+    },
+    {
+      "archive": "20261023T160546.848909Z-startup-profile-validated",
+      "files": 20,
+      "qualityFailures": 0,
+      "empty": 0
+    },
+    {
+      "archive": "20261023T161141.693161Z-startup-library-profile-control",
+      "files": 10,
+      "qualityFailures": 0,
+      "empty": 0
+    },
+    {
+      "archive": "20261023T161551.533050Z-startup-profile-confirmation",
+      "files": 20,
+      "qualityFailures": 0,
+      "empty": 0
+    },
+    {
+      "archive": "20261023T163218.261043Z-preview-tooling-removed",
+      "files": 10,
+      "qualityFailures": 0,
+      "empty": 0
+    },
+    {
+      "archive": "20261023T163737.502726Z-compose-diagnostic",
+      "files": 3,
+      "qualityFailures": 0,
+      "empty": 0
+    },
+    {
+      "archive": "20261023T164621.099772Z-lazy-screens",
+      "files": 10,
+      "qualityFailures": 0,
+      "empty": 0
+    },
+    {
+      "archive": "20261023T170634.124997Z-lazy-native",
+      "files": 10,
+      "qualityFailures": 0,
+      "empty": 0
+    },
+    {
+      "archive": "20261023T171639Z-gpu0-t4",
+      "files": 1,
+      "qualityFailures": 0,
+      "empty": 1
+    },
+    {
+      "archive": "20261023T172028Z-gpu0-t4",
+      "files": 1,
+      "qualityFailures": 0,
+      "empty": 0
+    }
+  ],
+  "rawAudit": "/Users/debanshud/Documents/Personal/CaraML/build/benchmark-results/perfetto-audit/audit.json",
+  "rawFrameAnalysis": "/Users/debanshud/Documents/Personal/CaraML/build/benchmark-results/perfetto-audit/deep.json",
+  "startup": {
+    "archive": "20261023T163218.261043Z-preview-tooling-removed",
+    "traceTtidMedianMs": 441.5940355,
+    "phaseMediansMs": {
+      "bindApplication": 84.4107665,
+      "OpenDexFilesFromOat": 45.663859,
+      "AppImage:Loading": 33.718567,
+      "Compose:recompose": 58.734171,
+      "AndroidOwner:onMeasure": 65.293478
+    },
+    "pipelineCompileMedianMs": 118.1447515,
+    "mainRunningMedianMs": 128.26400900000002,
+    "mainIoWaitMedianMs": 57.990949
+  },
+  "composition": {
+    "traces": [
+      {
+        "file": "build/benchmark-results/android-ui/20261023T163737.502726Z-compose-diagnostic/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter000_2026-10-23-16-38-40.perfetto-trace",
+        "navigationHost": {
+          "name": "com.debanshu777.caraml.core.navigation.NavigationHost (AppNavigation.kt:222)",
+          "calls": 1,
+          "wallMs": 48.341634,
+          "cpuMs": 22.037024
+        }
+      },
+      {
+        "file": "build/benchmark-results/android-ui/20261023T163737.502726Z-compose-diagnostic/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter001_2026-10-23-16-38-53.perfetto-trace",
+        "navigationHost": {
+          "name": "com.debanshu777.caraml.core.navigation.NavigationHost (AppNavigation.kt:222)",
+          "calls": 1,
+          "wallMs": 52.36377,
+          "cpuMs": 24.264764
+        }
+      },
+      {
+        "file": "build/benchmark-results/android-ui/20261023T163737.502726Z-compose-diagnostic/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter002_2026-10-23-16-39-06.perfetto-trace",
+        "navigationHost": {
+          "name": "com.debanshu777.caraml.core.navigation.NavigationHost (AppNavigation.kt:222)",
+          "calls": 1,
+          "wallMs": 55.628134,
+          "cpuMs": 29.74846
+        }
+      }
+    ],
+    "drill": {
+      "states": [
+        {
+          "state": "D",
+          "io": null,
+          "ms": 0.42745
+        },
+        {
+          "state": "D",
+          "io": 1,
+          "ms": 24.965297
+        },
+        {
+          "state": "R",
+          "io": null,
+          "ms": 2.372113
+        },
+        {
+          "state": "R+",
+          "io": null,
+          "ms": 0.334146
+        },
+        {
+          "state": "Running",
+          "io": null,
+          "ms": 24.264764
+        }
+      ],
+      "children": [
+        {
+          "name": "com.debanshu777.caraml.core.navigation.NavigationTransitionDisplay (AppNavigation.kt:178)",
+          "ms": 0.884114
+        },
+        {
+          "name": "androidx.navigation3.ui.NavDisplay (NavDisplay.kt:359)",
+          "ms": 0.868367
+        },
+        {
+          "name": "androidx.navigation3.ui.NavDisplay (NavDisplay.kt:536)",
+          "ms": 0.804932
+        },
+        {
+          "name": "androidx.navigation3.ui.NavDisplay (NavDisplay.kt:619)",
+          "ms": 0.718506
+        },
+        {
+          "name": "androidx.compose.animation.AnimatedContent (AnimatedContent.kt:935)",
+          "ms": 0.526693
+        },
+        {
+          "name": "androidx.compose.animation.AnimatedContentImpl (AnimatedContent.kt:1049)",
+          "ms": 0.515666
+        },
+        {
+          "name": "androidx.compose.runtime.saveable.rememberSaveableStateHolder (SaveableStateHolder.kt:57)",
+          "ms": 0.489583
+        },
+        {
+          "name": "androidx.compose.animation.AnimatedContentImpl.<anonymous>.<anonymous> (AnimatedContent.kt:1141)",
+          "ms": 0.322469
+        },
+        {
+          "name": "androidx.compose.animation.AnimatedEnterExitImpl (AnimatedVisibility.kt:802)",
+          "ms": 0.300944
+        },
+        {
+          "name": "androidx.compose.animation.AnimatedContentImpl.<anonymous>.<anonymous>.<anonymous> (AnimatedContent.kt:1222)",
+          "ms": 0.118693
+        },
+        {
+          "name": "androidx.navigation3.ui.NavDisplay.<anonymous> (NavDisplay.kt:834)",
+          "ms": 0.111287
+        },
+        {
+          "name": "androidx.compose.runtime.CompositionLocalProvider (CompositionLocal.kt:405)",
+          "ms": 0.08671
+        },
+        {
+          "name": "androidx.navigation3.ui.NavDisplay.<anonymous>.<anonymous> (NavDisplay.kt:849)",
+          "ms": 0.070883
+        },
+        {
+          "name": "androidx.navigation3.scene.SinglePaneScene.content.<anonymous> (SinglePaneScene.kt:28)",
+          "ms": 0.066609
+        },
+        {
+          "name": "androidx.navigation3.runtime.NavEntry.Content (NavEntry.kt:70)",
+          "ms": 0.062663
+        },
+        {
+          "name": "androidx.navigation3.runtime.decorateEntry.<anonymous>.<anonymous> (DecoratedNavEntries.kt:203)",
+          "ms": 0.057698
+        },
+        {
+          "name": "Ljava/util/ServiceLoader$ProviderImpl;",
+          "ms": 0.056925
+        },
+        {
+          "name": "androidx.compose.animation.createModifier (EnterExitTransition.kt:942)",
+          "ms": 0.05131
+        },
+        {
+          "name": "androidx.navigation3.runtime.NavEntry.Content (NavEntry.kt:70)",
+          "ms": 0.05127
+        },
+        {
+          "name": "androidx.navigation3.runtime.decorateEntry.<anonymous>.<anonymous>.<anonymous>.<anonymous> (DecoratedNavEntries.kt:226)",
+          "ms": 0.047974
+        },
+        {
+          "name": "androidx.navigation3.runtime.rememberDecoratedNavEntries (DecoratedNavEntries.kt:121)",
+          "ms": 0.044352
+        },
+        {
+          "name": "androidx.navigation3.scene.SceneSetupNavEntryDecorator.<init>.<anonymous> (SceneSetupNavEntryDecorator.kt:51)",
+          "ms": 0.044108
+        },
+        {
+          "name": "androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner.<get-current> (LocalViewModelStoreOwner.kt:37)",
+          "ms": 0.042887
+        },
+        {
+          "name": "androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator (ViewModelStoreNavEntryDecorator.kt:98)",
+          "ms": 0.042806
+        },
+        {
+          "name": "androidx.navigation3.scene.rememberSceneState (SceneState.kt:81)",
+          "ms": 0.041219
+        }
+      ]
+    }
+  },
+  "scroll": {
+    "observedFrameRows": 10294,
+    "jankCounts": {
+      "None": 10289,
+      "App Deadline Missed": 3,
+      "Non Animating": 2
+    },
+    "frameBudgetMsMedian": 16.6,
+    "percentiles": {
+      "mainMs": {
+        "50": 2.355306,
+        "95": 3.764567,
+        "99": 4.597778,
+        "100": 10.290528
+      },
+      "renderMs": {
+        "50": 4.331787,
+        "95": 6.223022,
+        "99": 7.201864,
+        "100": 17.063761
+      },
+      "overrunMs": {
+        "50": -4.332395,
+        "95": -4.1e-05,
+        "99": 0.75317,
+        "100": 8.829609
+      }
+    },
+    "noReportedLossSubset": {
+      "frames": 2052,
+      "jankCounts": {
+        "None": 2050,
+        "App Deadline Missed": 1,
+        "Non Animating": 1
+      }
+    },
+    "rareStall": {
+      "stall": {
+        "id": 379180,
+        "ts": 1624249423504634,
+        "wallMs": 12.6816
+      },
+      "states": [
+        {
+          "state": "Running",
+          "ms": 0.042846,
+          "blocked": null,
+          "waker": null,
+          "wakerProcess": null
+        },
+        {
+          "state": "S",
+          "ms": 10.482789,
+          "blocked": null,
+          "waker": null,
+          "wakerProcess": null
+        },
+        {
+          "state": "R",
+          "ms": 0.032145,
+          "blocked": null,
+          "waker": "binder:7746_1",
+          "wakerProcess": "com.debanshu777.caraml.benchmark"
+        },
+        {
+          "state": "Running",
+          "ms": 0.033284,
+          "blocked": null,
+          "waker": null,
+          "wakerProcess": null
+        },
+        {
+          "state": "S",
+          "ms": 2.010091,
+          "blocked": null,
+          "waker": null,
+          "wakerProcess": null
+        },
+        {
+          "state": "R",
+          "ms": 0.051229,
+          "blocked": null,
+          "waker": "binder:7746_1",
+          "wakerProcess": "com.debanshu777.caraml.benchmark"
+        },
+        {
+          "state": "Running",
+          "ms": 0.029216,
+          "blocked": null,
+          "waker": null,
+          "wakerProcess": null
+        }
+      ],
+      "children": [
+        {
+          "name": "dispatchSetFrameTimelineInfo",
+          "id": 379180,
+          "ms": 12.6816,
+          "args": null
+        },
+        {
+          "name": "setFrameTimelineInfo(VRI[ChatScrollActivity]#0) frameNumber: 646 vsyncId: 157789406",
+          "id": 379181,
+          "ms": 12.671631,
+          "args": null
+        }
+      ]
+    },
+    "refreshInterpretation": {
+      "activeDisplayAndRenderHzFromArchivedDeviceSnapshot": 120.00001,
+      "correction": "The 16.6 ms expected app frame deadline is not the display refresh period. The initial inference of approximately 60 Hz was incorrect. Validate active mode and observed cadence separately.",
+      "source": "build/benchmark-results/android-ui/20261023T094257.425124Z-baseline/device-before.json"
+    }
+  },
+  "nativeLoad": {
+    "phases": [
+      {
+        "id": 67724,
+        "name": "CaraML.engineInitialize",
+        "ts": 1651443068232573,
+        "wallMs": 42.215576
+      },
+      {
+        "id": 70823,
+        "name": "CaraML.nativeModelLoad",
+        "ts": 1651443110473662,
+        "wallMs": 2248.767823
+      }
+    ],
+    "callerStates": [
+      {
+        "phase": "CaraML.engineInitialize",
+        "state": "D",
+        "ioWait": 0,
+        "blocked": "__kthread_create_on_node",
+        "ms": 0.070516
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "state": "D",
+        "ioWait": 0,
+        "blocked": "kthread_flush_worker",
+        "ms": 0.006633
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "state": "D",
+        "ioWait": 0,
+        "blocked": "kthread_stop",
+        "ms": 0.002767
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "state": "D",
+        "ioWait": 1,
+        "blocked": "folio_wait_bit_common",
+        "ms": 8.390951
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "state": "R",
+        "ioWait": null,
+        "blocked": null,
+        "ms": 1.595543
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "state": "R+",
+        "ioWait": null,
+        "blocked": null,
+        "ms": 1.262083
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "state": "Running",
+        "ioWait": null,
+        "blocked": null,
+        "ms": 30.528643
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "state": "S",
+        "ioWait": null,
+        "blocked": null,
+        "ms": 0.35844
+      },
+      {
+        "phase": "CaraML.nativeModelLoad",
+        "state": "D",
+        "ioWait": 1,
+        "blocked": "folio_wait_bit_common",
+        "ms": 40.732484
+      },
+      {
+        "phase": "CaraML.nativeModelLoad",
+        "state": "R",
+        "ioWait": null,
+        "blocked": null,
+        "ms": 20.758655
+      },
+      {
+        "phase": "CaraML.nativeModelLoad",
+        "state": "R+",
+        "ioWait": null,
+        "blocked": null,
+        "ms": 1.929853
+      },
+      {
+        "phase": "CaraML.nativeModelLoad",
+        "state": "Running",
+        "ioWait": null,
+        "blocked": null,
+        "ms": 2185.346831
+      }
+    ],
+    "cpuByThread": [
+      {
+        "phase": "CaraML.nativeModelLoad",
+        "thread": "nxGgufBenchmark",
+        "tid": 16987,
+        "ms": 2185.346831
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "thread": "EmojiCompatInit",
+        "tid": 17024,
+        "ms": 39.63277
+      },
+      {
+        "phase": "CaraML.nativeModelLoad",
+        "thread": "EmojiCompatInit",
+        "tid": 17024,
+        "ms": 39.281941
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "thread": "nxGgufBenchmark",
+        "tid": 16987,
+        "ms": 30.528643
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "thread": "Jit thread pool",
+        "tid": 16966,
+        "ms": 25.486489
+      },
+      {
+        "phase": "CaraML.nativeModelLoad",
+        "thread": "Jit thread pool",
+        "tid": 16966,
+        "ms": 7.006104
+      },
+      {
+        "phase": "CaraML.nativeModelLoad",
+        "thread": "anshu777.caraml",
+        "tid": 16962,
+        "ms": 2.197267
+      },
+      {
+        "phase": "CaraML.nativeModelLoad",
+        "thread": "DefaultExecutor",
+        "tid": 16992,
+        "ms": 0.998372
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "thread": "binder:16962_4",
+        "tid": 17013,
+        "ms": 0.632528
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "thread": "nxGgufBenchmark",
+        "tid": 17025,
+        "ms": 0.286133
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "thread": "nxGgufBenchmark",
+        "tid": 17026,
+        "ms": 0.210734
+      },
+      {
+        "phase": "CaraML.nativeModelLoad",
+        "thread": "SurfaceSyncGrou",
+        "tid": 17011,
+        "ms": 0.152954
+      },
+      {
+        "phase": "CaraML.nativeModelLoad",
+        "thread": "HeapTaskDaemon",
+        "tid": 16967,
+        "ms": 0.134237
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "thread": "Profile Saver",
+        "tid": 16980,
+        "ms": 0.113403
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "thread": "binder:16962_4",
+        "tid": 17027,
+        "ms": 0.05542
+      },
+      {
+        "phase": "CaraML.nativeModelLoad",
+        "thread": "Profile Saver",
+        "tid": 16980,
+        "ms": 0.036092
+      }
+    ],
+    "cpuByCore": [
+      {
+        "phase": "CaraML.engineInitialize",
+        "cpu": 0,
+        "ms": 0.545206
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "cpu": 2,
+        "ms": 4.028321
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "cpu": 3,
+        "ms": 0.268636
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "cpu": 4,
+        "ms": 25.57564
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "cpu": 5,
+        "ms": 16.055745
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "cpu": 6,
+        "ms": 12.555337
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "cpu": 7,
+        "ms": 37.917235
+      },
+      {
+        "phase": "CaraML.nativeModelLoad",
+        "cpu": 0,
+        "ms": 0.452637
+      },
+      {
+        "phase": "CaraML.nativeModelLoad",
+        "cpu": 1,
+        "ms": 2.534383
+      },
+      {
+        "phase": "CaraML.nativeModelLoad",
+        "cpu": 2,
+        "ms": 0.134237
+      },
+      {
+        "phase": "CaraML.nativeModelLoad",
+        "cpu": 4,
+        "ms": 27.313152
+      },
+      {
+        "phase": "CaraML.nativeModelLoad",
+        "cpu": 5,
+        "ms": 8.731445
+      },
+      {
+        "phase": "CaraML.nativeModelLoad",
+        "cpu": 6,
+        "ms": 4.054606
+      },
+      {
+        "phase": "CaraML.nativeModelLoad",
+        "cpu": 7,
+        "ms": 2191.933338
+      }
+    ],
+    "nestedSlices": [
+      {
+        "phase": "CaraML.engineInitialize",
+        "name": "CreateInstance",
+        "n": 1,
+        "ms": 0.942993
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "name": "driver.CreateInstance",
+        "n": 1,
+        "ms": 0.82194
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "name": "VerifyClass com.debanshu777.caraml.sdk.plugin.llama.bridge.LlamaRunner",
+        "n": 1,
+        "ms": 0.707072
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "name": "EnumerateDeviceExtensionProperties",
+        "n": 6,
+        "ms": 0.610026
+      },
+      {
+        "phase": "CaraML.nativeModelLoad",
+        "name": "VerifyClass com.debanshu777.caraml.sdk.plugin.llama.bridge.NativeRunnerConfig",
+        "n": 1,
+        "ms": 0.198039
+      },
+      {
+        "phase": "CaraML.nativeModelLoad",
+        "name": "VerifyClass com.debanshu777.caraml.sdk.plugin.llama.bridge.LlamaRunnerValidationKt",
+        "n": 1,
+        "ms": 0.132487
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "name": "driver.EnumerateDeviceExtensionProperties",
+        "n": 40,
+        "ms": 0.070228
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "name": "setTargetStatsArray",
+        "n": 1,
+        "ms": 0.062215
+      },
+      {
+        "phase": "CaraML.nativeModelLoad",
+        "name": "VerifyClass com.debanshu777.caraml.sdk.plugin.llama.bridge.LlamaLazyMode",
+        "n": 1,
+        "ms": 0.036946
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "name": "Lcom/debanshu777/caraml/sdk/plugin/llama/bridge/BackendCalibrationResult$Invalid;",
+        "n": 1,
+        "ms": 0.035563
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "name": "EnumerateInstanceExtensionProperties",
+        "n": 2,
+        "ms": 0.033814
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "name": "GetPhysicalDeviceFeatures2",
+        "n": 2,
+        "ms": 0.031983
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "name": "PopulateLoaderImplementedFeatures",
+        "n": 2,
+        "ms": 0.024374
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "name": "Lcom/debanshu777/caraml/sdk/plugin/llama/bridge/NativeRuntimeUnavailableException;",
+        "n": 1,
+        "ms": 0.024292
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "name": "Lcom/debanshu777/caraml/sdk/plugin/llama/bridge/LlamaRunner$$ExternalSyntheticLambda0;",
+        "n": 1,
+        "ms": 0.021892
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "name": "Lcom/debanshu777/caraml/sdk/plugin/llama/bridge/NativeBackendKind;",
+        "n": 1,
+        "ms": 0.016113
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "name": "QueryPresentationProperties",
+        "n": 12,
+        "ms": 0.015583
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "name": "Lcom/debanshu777/caraml/sdk/plugin/llama/bridge/BackendCalibrationAbandonment;",
+        "n": 1,
+        "ms": 0.014119
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "name": "Lcom/debanshu777/caraml/sdk/plugin/llama/bridge/LlamaPreflightResultKt;",
+        "n": 1,
+        "ms": 0.011393
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "name": "GetPhysicalDeviceExternalFenceProperties",
+        "n": 12,
+        "ms": 0.010784
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "name": "Lcom/debanshu777/caraml/sdk/plugin/llama/bridge/NativeModelFeatureSupport;",
+        "n": 1,
+        "ms": 0.010661
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "name": "Lcom/debanshu777/caraml/sdk/plugin/llama/bridge/BackendCalibrationResultKt;",
+        "n": 1,
+        "ms": 0.010254
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "name": "EnumeratePhysicalDevices",
+        "n": 10,
+        "ms": 0.009644
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "name": "Lcom/debanshu777/caraml/sdk/plugin/llama/bridge/NativeBackendCapabilityKt;",
+        "n": 1,
+        "ms": 0.009074
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "name": "Lcom/debanshu777/caraml/sdk/plugin/llama/bridge/BackendCalibrationResult$Unavailable;",
+        "n": 1,
+        "ms": 0.008749
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "name": "driver.EnumerateInstanceExtensionProperties",
+        "n": 4,
+        "ms": 0.00834
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "name": "GetPhysicalDeviceProperties2",
+        "n": 3,
+        "ms": 0.00822
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "name": "Lcom/debanshu777/caraml/sdk/plugin/llama/bridge/BackendCalibrationReservation;",
+        "n": 1,
+        "ms": 0.00769
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "name": "Lcom/debanshu777/caraml/sdk/plugin/llama/bridge/NativeModelFeatureSupportKt;",
+        "n": 1,
+        "ms": 0.006673
+      },
+      {
+        "phase": "CaraML.engineInitialize",
+        "name": "Lcom/debanshu777/caraml/sdk/plugin/llama/bridge/LlamaRunner$$ExternalSyntheticLambda1;",
+        "n": 1,
+        "ms": 0.006633
+      }
+    ]
+  },
+  "qualityByFile": [
+    {
+      "file": "build/benchmark-results/android-ui/20261023T092956.974405Z-smoke/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter000_2026-10-23-09-31-50.perfetto-trace",
+      "quality": {
+        "durationMs": 18040.144703,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T092956.974405Z-smoke/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldWarmupProfile_iter000_2026-10-23-09-31-33.perfetto-trace",
+      "quality": {
+        "durationMs": 2353.332927,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T094257.425124Z-baseline/results/benchmark/connected/Pixel 9 - 17/ChatScrollBenchmark_chatHistory_iter000_2026-10-23-09-45-27.perfetto-trace",
+      "quality": {
+        "durationMs": 18550.504119,
+        "errors": [
+          {
+            "name": "slice_drop_overlapping_complete_event",
+            "index": null,
+            "value": 2,
+            "severity": "error"
+          },
+          {
+            "name": "traced_buf_sequence_packet_loss",
+            "index": 0,
+            "value": 2,
+            "severity": "data_loss"
+          }
+        ],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 1029
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T094257.425124Z-baseline/results/benchmark/connected/Pixel 9 - 17/ChatScrollBenchmark_chatHistory_iter001_2026-10-23-09-45-59.perfetto-trace",
+      "quality": {
+        "durationMs": 18607.109954,
+        "errors": [
+          {
+            "name": "traced_buf_sequence_packet_loss",
+            "index": 0,
+            "value": 2,
+            "severity": "data_loss"
+          }
+        ],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 1033
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T094257.425124Z-baseline/results/benchmark/connected/Pixel 9 - 17/ChatScrollBenchmark_chatHistory_iter002_2026-10-23-09-46-31.perfetto-trace",
+      "quality": {
+        "durationMs": 18368.6469,
+        "errors": [
+          {
+            "name": "traced_buf_sequence_packet_loss",
+            "index": 0,
+            "value": 1,
+            "severity": "data_loss"
+          }
+        ],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 1023
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T094257.425124Z-baseline/results/benchmark/connected/Pixel 9 - 17/ChatScrollBenchmark_chatHistory_iter003_2026-10-23-09-47-03.perfetto-trace",
+      "quality": {
+        "durationMs": 41078.525126,
+        "errors": [
+          {
+            "name": "slice_drop_overlapping_complete_event",
+            "index": null,
+            "value": 1,
+            "severity": "error"
+          },
+          {
+            "name": "traced_buf_sequence_packet_loss",
+            "index": 0,
+            "value": 1,
+            "severity": "data_loss"
+          }
+        ],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 1030
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T094257.425124Z-baseline/results/benchmark/connected/Pixel 9 - 17/ChatScrollBenchmark_chatHistory_iter004_2026-10-23-09-47-35.perfetto-trace",
+      "quality": {
+        "durationMs": 18633.564909,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 1028
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T094257.425124Z-baseline/results/benchmark/connected/Pixel 9 - 17/ChatScrollBenchmark_chatHistory_iter005_2026-10-23-09-48-06.perfetto-trace",
+      "quality": {
+        "durationMs": 66733.038892,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 1024
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T094257.425124Z-baseline/results/benchmark/connected/Pixel 9 - 17/ChatScrollBenchmark_chatHistory_iter006_2026-10-23-09-48-38.perfetto-trace",
+      "quality": {
+        "durationMs": 38523.344094,
+        "errors": [
+          {
+            "name": "traced_buf_sequence_packet_loss",
+            "index": 0,
+            "value": 2,
+            "severity": "data_loss"
+          }
+        ],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 1029
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T094257.425124Z-baseline/results/benchmark/connected/Pixel 9 - 17/ChatScrollBenchmark_chatHistory_iter007_2026-10-23-09-49-11.perfetto-trace",
+      "quality": {
+        "durationMs": 33256.900162,
+        "errors": [
+          {
+            "name": "traced_buf_sequence_packet_loss",
+            "index": 0,
+            "value": 1,
+            "severity": "data_loss"
+          }
+        ],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 1036
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T094257.425124Z-baseline/results/benchmark/connected/Pixel 9 - 17/ChatScrollBenchmark_chatHistory_iter008_2026-10-23-09-49-45.perfetto-trace",
+      "quality": {
+        "durationMs": 18752.848561,
+        "errors": [
+          {
+            "name": "slice_drop_overlapping_complete_event",
+            "index": null,
+            "value": 1,
+            "severity": "error"
+          },
+          {
+            "name": "traced_buf_sequence_packet_loss",
+            "index": 0,
+            "value": 1,
+            "severity": "data_loss"
+          }
+        ],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 1030
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T094257.425124Z-baseline/results/benchmark/connected/Pixel 9 - 17/ChatScrollBenchmark_chatHistory_iter009_2026-10-23-09-50-22.perfetto-trace",
+      "quality": {
+        "durationMs": 18664.077198,
+        "errors": [
+          {
+            "name": "slice_drop_overlapping_complete_event",
+            "index": null,
+            "value": 1,
+            "severity": "error"
+          },
+          {
+            "name": "traced_buf_sequence_packet_loss",
+            "index": 0,
+            "value": 1,
+            "severity": "data_loss"
+          }
+        ],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 1032
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T094257.425124Z-baseline/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter000_2026-10-23-09-53-29.perfetto-trace",
+      "quality": {
+        "durationMs": 16792.958952,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T094257.425124Z-baseline/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter001_2026-10-23-09-53-41.perfetto-trace",
+      "quality": {
+        "durationMs": 13016.542568,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T094257.425124Z-baseline/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter002_2026-10-23-09-53-53.perfetto-trace",
+      "quality": {
+        "durationMs": 12482.183641,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T094257.425124Z-baseline/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter003_2026-10-23-09-54-05.perfetto-trace",
+      "quality": {
+        "durationMs": 12770.73186,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T094257.425124Z-baseline/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter004_2026-10-23-09-54-17.perfetto-trace",
+      "quality": {
+        "durationMs": 12596.094692,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T094257.425124Z-baseline/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter005_2026-10-23-09-54-29.perfetto-trace",
+      "quality": {
+        "durationMs": 12657.640226,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T094257.425124Z-baseline/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter006_2026-10-23-09-54-41.perfetto-trace",
+      "quality": {
+        "durationMs": 12945.044029,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T094257.425124Z-baseline/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter007_2026-10-23-09-54-54.perfetto-trace",
+      "quality": {
+        "durationMs": 12991.178311,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T094257.425124Z-baseline/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter008_2026-10-23-09-55-06.perfetto-trace",
+      "quality": {
+        "durationMs": 12573.610073,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T094257.425124Z-baseline/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter009_2026-10-23-09-55-18.perfetto-trace",
+      "quality": {
+        "durationMs": 13452.106655,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T094257.425124Z-baseline/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldWarmupProfile_iter000_2026-10-23-09-51-37.perfetto-trace",
+      "quality": {
+        "durationMs": 2279.317547,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T094257.425124Z-baseline/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldWarmupProfile_iter001_2026-10-23-09-51-47.perfetto-trace",
+      "quality": {
+        "durationMs": 10711.566207,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T094257.425124Z-baseline/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldWarmupProfile_iter002_2026-10-23-09-51-57.perfetto-trace",
+      "quality": {
+        "durationMs": 10655.560837,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T094257.425124Z-baseline/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldWarmupProfile_iter003_2026-10-23-09-52-08.perfetto-trace",
+      "quality": {
+        "durationMs": 11117.023484,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T094257.425124Z-baseline/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldWarmupProfile_iter004_2026-10-23-09-52-18.perfetto-trace",
+      "quality": {
+        "durationMs": 11241.224167,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T094257.425124Z-baseline/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldWarmupProfile_iter005_2026-10-23-09-52-29.perfetto-trace",
+      "quality": {
+        "durationMs": 11761.234218,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T094257.425124Z-baseline/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldWarmupProfile_iter006_2026-10-23-09-52-40.perfetto-trace",
+      "quality": {
+        "durationMs": 11096.008794,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T094257.425124Z-baseline/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldWarmupProfile_iter007_2026-10-23-09-52-51.perfetto-trace",
+      "quality": {
+        "durationMs": 11365.318894,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T094257.425124Z-baseline/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldWarmupProfile_iter008_2026-10-23-09-53-02.perfetto-trace",
+      "quality": {
+        "durationMs": 11576.466354,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T094257.425124Z-baseline/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldWarmupProfile_iter009_2026-10-23-09-53-13.perfetto-trace",
+      "quality": {
+        "durationMs": 11554.758916,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T155300.676388Z-startup-before/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter000_2026-10-23-15-56-15.perfetto-trace",
+      "quality": {
+        "durationMs": 20886.516736,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T155300.676388Z-startup-before/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter001_2026-10-23-15-56-26.perfetto-trace",
+      "quality": {
+        "durationMs": 11016.276983,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T155300.676388Z-startup-before/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter002_2026-10-23-15-56-36.perfetto-trace",
+      "quality": {
+        "durationMs": 11433.987187,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T155300.676388Z-startup-before/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter003_2026-10-23-15-56-47.perfetto-trace",
+      "quality": {
+        "durationMs": 11129.864305,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T155300.676388Z-startup-before/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter004_2026-10-23-15-56-58.perfetto-trace",
+      "quality": {
+        "durationMs": 11481.288052,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T155300.676388Z-startup-before/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter005_2026-10-23-15-57-08.perfetto-trace",
+      "quality": {
+        "durationMs": 10340.661952,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T155300.676388Z-startup-before/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter006_2026-10-23-15-57-18.perfetto-trace",
+      "quality": {
+        "durationMs": 11530.182053,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T155300.676388Z-startup-before/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter007_2026-10-23-15-57-31.perfetto-trace",
+      "quality": {
+        "durationMs": 12984.089768,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T155300.676388Z-startup-before/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter008_2026-10-23-15-57-41.perfetto-trace",
+      "quality": {
+        "durationMs": 11089.403733,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T155300.676388Z-startup-before/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter009_2026-10-23-15-57-51.perfetto-trace",
+      "quality": {
+        "durationMs": 10567.010462,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T155300.676388Z-startup-before/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldWarmupProfile_iter000_2026-10-23-15-54-35.perfetto-trace",
+      "quality": {
+        "durationMs": 2155.340332,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T155300.676388Z-startup-before/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldWarmupProfile_iter001_2026-10-23-15-54-44.perfetto-trace",
+      "quality": {
+        "durationMs": 8762.390426,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T155300.676388Z-startup-before/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldWarmupProfile_iter002_2026-10-23-15-54-54.perfetto-trace",
+      "quality": {
+        "durationMs": 10765.457687,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T155300.676388Z-startup-before/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldWarmupProfile_iter003_2026-10-23-15-55-03.perfetto-trace",
+      "quality": {
+        "durationMs": 9353.481409,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T155300.676388Z-startup-before/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldWarmupProfile_iter004_2026-10-23-15-55-12.perfetto-trace",
+      "quality": {
+        "durationMs": 9634.166265,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T155300.676388Z-startup-before/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldWarmupProfile_iter005_2026-10-23-15-55-20.perfetto-trace",
+      "quality": {
+        "durationMs": 9292.759323,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T155300.676388Z-startup-before/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldWarmupProfile_iter006_2026-10-23-15-55-29.perfetto-trace",
+      "quality": {
+        "durationMs": 9151.471074,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T155300.676388Z-startup-before/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldWarmupProfile_iter007_2026-10-23-15-55-37.perfetto-trace",
+      "quality": {
+        "durationMs": 9007.096968,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T155300.676388Z-startup-before/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldWarmupProfile_iter008_2026-10-23-15-55-46.perfetto-trace",
+      "quality": {
+        "durationMs": 9124.45614,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T155300.676388Z-startup-before/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldWarmupProfile_iter009_2026-10-23-15-55-55.perfetto-trace",
+      "quality": {
+        "durationMs": 9478.745257,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T160108.472050Z-startup-profile-after/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter000_2026-10-23-16-01-52.perfetto-trace",
+      "quality": {
+        "durationMs": 2262.336834,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T160108.472050Z-startup-profile-after/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter001_2026-10-23-16-02-01.perfetto-trace",
+      "quality": {
+        "durationMs": 10034.761968,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T160108.472050Z-startup-profile-after/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter002_2026-10-23-16-02-12.perfetto-trace",
+      "quality": {
+        "durationMs": 11223.79562,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T160108.472050Z-startup-profile-after/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter003_2026-10-23-16-02-22.perfetto-trace",
+      "quality": {
+        "durationMs": 11155.611985,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T160108.472050Z-startup-profile-after/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter004_2026-10-23-16-02-34.perfetto-trace",
+      "quality": {
+        "durationMs": 11697.789881,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T160108.472050Z-startup-profile-after/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter005_2026-10-23-16-02-44.perfetto-trace",
+      "quality": {
+        "durationMs": 11239.96908,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T160108.472050Z-startup-profile-after/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter006_2026-10-23-16-02-55.perfetto-trace",
+      "quality": {
+        "durationMs": 11390.447648,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T160108.472050Z-startup-profile-after/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter007_2026-10-23-16-03-06.perfetto-trace",
+      "quality": {
+        "durationMs": 11697.624558,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T160108.472050Z-startup-profile-after/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter008_2026-10-23-16-03-17.perfetto-trace",
+      "quality": {
+        "durationMs": 11807.335048,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T160108.472050Z-startup-profile-after/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter009_2026-10-23-16-03-29.perfetto-trace",
+      "quality": {
+        "durationMs": 12871.751023,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T160546.848909Z-startup-profile-validated/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter000_2026-10-23-16-06-34.perfetto-trace",
+      "quality": {
+        "durationMs": 2309.85159,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T160546.848909Z-startup-profile-validated/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter001_2026-10-23-16-06-42.perfetto-trace",
+      "quality": {
+        "durationMs": 8697.474451,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T160546.848909Z-startup-profile-validated/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter002_2026-10-23-16-06-51.perfetto-trace",
+      "quality": {
+        "durationMs": 9481.721034,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T160546.848909Z-startup-profile-validated/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter003_2026-10-23-16-07-00.perfetto-trace",
+      "quality": {
+        "durationMs": 9821.895038,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T160546.848909Z-startup-profile-validated/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter004_2026-10-23-16-07-09.perfetto-trace",
+      "quality": {
+        "durationMs": 9247.03093,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T160546.848909Z-startup-profile-validated/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter005_2026-10-23-16-07-18.perfetto-trace",
+      "quality": {
+        "durationMs": 9834.287033,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T160546.848909Z-startup-profile-validated/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter006_2026-10-23-16-07-27.perfetto-trace",
+      "quality": {
+        "durationMs": 9340.239832,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T160546.848909Z-startup-profile-validated/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter007_2026-10-23-16-07-35.perfetto-trace",
+      "quality": {
+        "durationMs": 8705.687423,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 5
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T160546.848909Z-startup-profile-validated/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter008_2026-10-23-16-07-44.perfetto-trace",
+      "quality": {
+        "durationMs": 9132.75798,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T160546.848909Z-startup-profile-validated/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter009_2026-10-23-16-07-53.perfetto-trace",
+      "quality": {
+        "durationMs": 9701.313197,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T160546.848909Z-startup-profile-validated/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter000_2026-10-23-16-08-10.perfetto-trace",
+      "quality": {
+        "durationMs": 17402.736662,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T160546.848909Z-startup-profile-validated/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter001_2026-10-23-16-08-22.perfetto-trace",
+      "quality": {
+        "durationMs": 12505.387823,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T160546.848909Z-startup-profile-validated/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter002_2026-10-23-16-08-33.perfetto-trace",
+      "quality": {
+        "durationMs": 11411.398525,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T160546.848909Z-startup-profile-validated/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter003_2026-10-23-16-08-44.perfetto-trace",
+      "quality": {
+        "durationMs": 11426.558721,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T160546.848909Z-startup-profile-validated/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter004_2026-10-23-16-08-55.perfetto-trace",
+      "quality": {
+        "durationMs": 11641.257451,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T160546.848909Z-startup-profile-validated/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter005_2026-10-23-16-09-05.perfetto-trace",
+      "quality": {
+        "durationMs": 11295.808396,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T160546.848909Z-startup-profile-validated/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter006_2026-10-23-16-09-17.perfetto-trace",
+      "quality": {
+        "durationMs": 11876.532395,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T160546.848909Z-startup-profile-validated/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter007_2026-10-23-16-09-27.perfetto-trace",
+      "quality": {
+        "durationMs": 11153.495448,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T160546.848909Z-startup-profile-validated/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter008_2026-10-23-16-09-38.perfetto-trace",
+      "quality": {
+        "durationMs": 11189.100022,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T160546.848909Z-startup-profile-validated/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter009_2026-10-23-16-09-49.perfetto-trace",
+      "quality": {
+        "durationMs": 11722.302426,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T161141.693161Z-startup-library-profile-control/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter000_2026-10-23-16-12-28.perfetto-trace",
+      "quality": {
+        "durationMs": 2170.011192,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T161141.693161Z-startup-library-profile-control/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter001_2026-10-23-16-12-38.perfetto-trace",
+      "quality": {
+        "durationMs": 10506.084355,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T161141.693161Z-startup-library-profile-control/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter002_2026-10-23-16-12-47.perfetto-trace",
+      "quality": {
+        "durationMs": 9697.777593,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T161141.693161Z-startup-library-profile-control/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter003_2026-10-23-16-12-56.perfetto-trace",
+      "quality": {
+        "durationMs": 9289.103764,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T161141.693161Z-startup-library-profile-control/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter004_2026-10-23-16-13-05.perfetto-trace",
+      "quality": {
+        "durationMs": 9511.498987,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T161141.693161Z-startup-library-profile-control/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter005_2026-10-23-16-13-13.perfetto-trace",
+      "quality": {
+        "durationMs": 9463.926315,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T161141.693161Z-startup-library-profile-control/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter006_2026-10-23-16-13-22.perfetto-trace",
+      "quality": {
+        "durationMs": 9191.464034,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T161141.693161Z-startup-library-profile-control/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter007_2026-10-23-16-13-31.perfetto-trace",
+      "quality": {
+        "durationMs": 9273.860478,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T161141.693161Z-startup-library-profile-control/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter008_2026-10-23-16-13-40.perfetto-trace",
+      "quality": {
+        "durationMs": 9829.220952,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T161141.693161Z-startup-library-profile-control/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter009_2026-10-23-16-13-49.perfetto-trace",
+      "quality": {
+        "durationMs": 9453.243332,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T161551.533050Z-startup-profile-confirmation/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter000_2026-10-23-16-16-41.perfetto-trace",
+      "quality": {
+        "durationMs": 2141.557252,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T161551.533050Z-startup-profile-confirmation/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter001_2026-10-23-16-16-50.perfetto-trace",
+      "quality": {
+        "durationMs": 8747.27271,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T161551.533050Z-startup-profile-confirmation/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter002_2026-10-23-16-16-59.perfetto-trace",
+      "quality": {
+        "durationMs": 9804.118047,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T161551.533050Z-startup-profile-confirmation/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter003_2026-10-23-16-17-08.perfetto-trace",
+      "quality": {
+        "durationMs": 9659.258916,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T161551.533050Z-startup-profile-confirmation/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter004_2026-10-23-16-17-17.perfetto-trace",
+      "quality": {
+        "durationMs": 9567.190964,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T161551.533050Z-startup-profile-confirmation/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter005_2026-10-23-16-17-26.perfetto-trace",
+      "quality": {
+        "durationMs": 9310.039434,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T161551.533050Z-startup-profile-confirmation/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter006_2026-10-23-16-17-34.perfetto-trace",
+      "quality": {
+        "durationMs": 9373.985844,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T161551.533050Z-startup-profile-confirmation/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter007_2026-10-23-16-17-43.perfetto-trace",
+      "quality": {
+        "durationMs": 9423.979131,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T161551.533050Z-startup-profile-confirmation/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter008_2026-10-23-16-17-52.perfetto-trace",
+      "quality": {
+        "durationMs": 9427.536382,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T161551.533050Z-startup-profile-confirmation/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter009_2026-10-23-16-18-01.perfetto-trace",
+      "quality": {
+        "durationMs": 9600.418259,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T161551.533050Z-startup-profile-confirmation/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter000_2026-10-23-16-18-18.perfetto-trace",
+      "quality": {
+        "durationMs": 17702.959767,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T161551.533050Z-startup-profile-confirmation/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter001_2026-10-23-16-18-29.perfetto-trace",
+      "quality": {
+        "durationMs": 10910.218226,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T161551.533050Z-startup-profile-confirmation/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter002_2026-10-23-16-18-39.perfetto-trace",
+      "quality": {
+        "durationMs": 11230.199184,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T161551.533050Z-startup-profile-confirmation/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter003_2026-10-23-16-18-50.perfetto-trace",
+      "quality": {
+        "durationMs": 11267.682948,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T161551.533050Z-startup-profile-confirmation/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter004_2026-10-23-16-19-00.perfetto-trace",
+      "quality": {
+        "durationMs": 11063.06039,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T161551.533050Z-startup-profile-confirmation/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter005_2026-10-23-16-19-11.perfetto-trace",
+      "quality": {
+        "durationMs": 11218.324572,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T161551.533050Z-startup-profile-confirmation/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter006_2026-10-23-16-19-21.perfetto-trace",
+      "quality": {
+        "durationMs": 11191.137294,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T161551.533050Z-startup-profile-confirmation/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter007_2026-10-23-16-19-32.perfetto-trace",
+      "quality": {
+        "durationMs": 11416.035214,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T161551.533050Z-startup-profile-confirmation/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter008_2026-10-23-16-19-42.perfetto-trace",
+      "quality": {
+        "durationMs": 10656.935511,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T161551.533050Z-startup-profile-confirmation/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldNoCompilation_iter009_2026-10-23-16-19-53.perfetto-trace",
+      "quality": {
+        "durationMs": 11396.368781,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T163218.261043Z-preview-tooling-removed/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter000_2026-10-23-16-36-06.perfetto-trace",
+      "quality": {
+        "durationMs": 2318.244183,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T163218.261043Z-preview-tooling-removed/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter001_2026-10-23-16-36-14.perfetto-trace",
+      "quality": {
+        "durationMs": 8875.297449,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T163218.261043Z-preview-tooling-removed/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter002_2026-10-23-16-36-23.perfetto-trace",
+      "quality": {
+        "durationMs": 9720.628626,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T163218.261043Z-preview-tooling-removed/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter003_2026-10-23-16-36-32.perfetto-trace",
+      "quality": {
+        "durationMs": 9632.031499,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T163218.261043Z-preview-tooling-removed/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter004_2026-10-23-16-36-41.perfetto-trace",
+      "quality": {
+        "durationMs": 9367.366417,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T163218.261043Z-preview-tooling-removed/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter005_2026-10-23-16-36-50.perfetto-trace",
+      "quality": {
+        "durationMs": 9264.738652,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T163218.261043Z-preview-tooling-removed/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter006_2026-10-23-16-36-58.perfetto-trace",
+      "quality": {
+        "durationMs": 9107.404016,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T163218.261043Z-preview-tooling-removed/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter007_2026-10-23-16-37-07.perfetto-trace",
+      "quality": {
+        "durationMs": 9589.360601,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T163218.261043Z-preview-tooling-removed/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter008_2026-10-23-16-37-14.perfetto-trace",
+      "quality": {
+        "durationMs": 7344.51099,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T163218.261043Z-preview-tooling-removed/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter009_2026-10-23-16-37-21.perfetto-trace",
+      "quality": {
+        "durationMs": 7284.001997,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T163737.502726Z-compose-diagnostic/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter000_2026-10-23-16-38-40.perfetto-trace",
+      "quality": {
+        "durationMs": 2220.014161,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 1,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T163737.502726Z-compose-diagnostic/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter001_2026-10-23-16-38-53.perfetto-trace",
+      "quality": {
+        "durationMs": 13639.921775,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 1,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T163737.502726Z-compose-diagnostic/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter002_2026-10-23-16-39-06.perfetto-trace",
+      "quality": {
+        "durationMs": 13597.950161,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 1,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T164621.099772Z-lazy-screens/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter000_2026-10-23-16-47-09.perfetto-trace",
+      "quality": {
+        "durationMs": 2185.72872,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T164621.099772Z-lazy-screens/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter001_2026-10-23-16-47-18.perfetto-trace",
+      "quality": {
+        "durationMs": 9089.197068,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T164621.099772Z-lazy-screens/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter002_2026-10-23-16-47-27.perfetto-trace",
+      "quality": {
+        "durationMs": 9407.754805,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T164621.099772Z-lazy-screens/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter003_2026-10-23-16-47-35.perfetto-trace",
+      "quality": {
+        "durationMs": 9315.135869,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T164621.099772Z-lazy-screens/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter004_2026-10-23-16-47-44.perfetto-trace",
+      "quality": {
+        "durationMs": 9225.331629,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T164621.099772Z-lazy-screens/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter005_2026-10-23-16-47-52.perfetto-trace",
+      "quality": {
+        "durationMs": 8969.16834,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T164621.099772Z-lazy-screens/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter006_2026-10-23-16-48-01.perfetto-trace",
+      "quality": {
+        "durationMs": 9189.659388,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T164621.099772Z-lazy-screens/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter007_2026-10-23-16-48-10.perfetto-trace",
+      "quality": {
+        "durationMs": 9420.96725,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T164621.099772Z-lazy-screens/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter008_2026-10-23-16-48-19.perfetto-trace",
+      "quality": {
+        "durationMs": 9618.600224,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T164621.099772Z-lazy-screens/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter009_2026-10-23-16-48-28.perfetto-trace",
+      "quality": {
+        "durationMs": 9380.636439,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T170634.124997Z-lazy-native/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter000_2026-10-23-17-07-27.perfetto-trace",
+      "quality": {
+        "durationMs": 2250.899984,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T170634.124997Z-lazy-native/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter001_2026-10-23-17-07-35.perfetto-trace",
+      "quality": {
+        "durationMs": 9522.226852,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T170634.124997Z-lazy-native/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter002_2026-10-23-17-07-45.perfetto-trace",
+      "quality": {
+        "durationMs": 10537.06751,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T170634.124997Z-lazy-native/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter003_2026-10-23-17-07-56.perfetto-trace",
+      "quality": {
+        "durationMs": 11171.295416,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T170634.124997Z-lazy-native/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter004_2026-10-23-17-08-05.perfetto-trace",
+      "quality": {
+        "durationMs": 9701.264287,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T170634.124997Z-lazy-native/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter005_2026-10-23-17-08-14.perfetto-trace",
+      "quality": {
+        "durationMs": 9166.911015,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T170634.124997Z-lazy-native/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter006_2026-10-23-17-08-23.perfetto-trace",
+      "quality": {
+        "durationMs": 9430.757369,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T170634.124997Z-lazy-native/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter007_2026-10-23-17-08-31.perfetto-trace",
+      "quality": {
+        "durationMs": 9125.224533,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T170634.124997Z-lazy-native/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter008_2026-10-23-17-08-40.perfetto-trace",
+      "quality": {
+        "durationMs": 9196.222538,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/android-ui/20261023T170634.124997Z-lazy-native/results/benchmark/connected/Pixel 9 - 17/StartupBenchmark_coldBaselineProfile_iter009_2026-10-23-17-08-48.perfetto-trace",
+      "quality": {
+        "durationMs": 9273.213709,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 0,
+        "appFrameRows": 4
+      }
+    },
+    {
+      "file": "build/benchmark-results/model-load/20261023T171639Z-gpu0-t4/trial-1.perfetto-trace",
+      "invalid": "empty capture"
+    },
+    {
+      "file": "build/benchmark-results/model-load/20261023T172028Z-gpu0-t4/trial-1.perfetto-trace",
+      "quality": {
+        "durationMs": 19019.724904,
+        "errors": [],
+        "cpuSamples": 0,
+        "heapAllocations": 0,
+        "gpuSlices": 0,
+        "appIncompleteSlices": 3,
+        "appFrameRows": 2
+      }
+    }
+  ],
+  "limits": [
+    "The checksum before/after result is from full-app instrumentation and logs, not a pair of end-to-end Perfetto traces.",
+    "All startup slice durations overlap unless explicitly marked CPU running time.",
+    "The isolated native trace uses CPU/context 2048 and is not the production context-4096 load experiment.",
+    "Eight scrolling traces report packet loss; frame counts are observations, not a validated jank rate.",
+    "Shader cache clearing in COLD Macrobenchmark affects representativeness of repeated everyday launches.",
+    "Experiments labelled lazy-screens/lazy-native were reverted and do not describe current production code."
+  ]
+}

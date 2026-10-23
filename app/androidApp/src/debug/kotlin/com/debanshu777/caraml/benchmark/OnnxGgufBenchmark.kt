@@ -67,6 +67,8 @@ class OnnxGgufBenchmark : Instrumentation() {
             val provider = OnnxExecutionProvider.valueOf(options.getString("provider") ?: "CPU")
             val prompt = options.getString("prompt") ?: "Explain why the sky is blue in clear, simple language."
             val isOnnx = model.extension == "onnx"
+            var initializationMs = 0.0
+            var nativeModelLoadMs = 0.0
             val loadStart = SystemClock.elapsedRealtimeNanos()
             if (isOnnx) {
                 onnx.load(model.path, OnnxRuntimeConfig(
@@ -77,18 +79,32 @@ class OnnxGgufBenchmark : Instrumentation() {
                     profilePath = if (options.getString("profile") == "1") File(root, "ort-profile").path else null,
                 ))
             } else {
-                llama = LlamaRunner().also { engine ->
-                    engine.initialize(targetContext.applicationInfo.nativeLibraryDir)
-                    check(engine.loadModel(model.path, NativeRunnerConfig(
+                val initializationStart = SystemClock.elapsedRealtimeNanos()
+                Trace.beginSection("CaraML.engineInitialize")
+                try {
+                    llama = LlamaRunner().also { it.initialize(targetContext.applicationInfo.nativeLibraryDir) }
+                } finally {
+                    Trace.endSection()
+                }
+                initializationMs = (SystemClock.elapsedRealtimeNanos() - initializationStart) / 1e6
+                val nativeLoadStart = SystemClock.elapsedRealtimeNanos()
+                Trace.beginSection("CaraML.nativeModelLoad")
+                try {
+                    check(llama!!.loadModel(model.path, NativeRunnerConfig(
                         nCtx = 2048, nThreads = threads, nThreadsBatch = threads,
                         nBatch = 256, nUbatch = 64, nGpuLayers = gpu,
                         temperature = 0f, offloadKqv = gpu != 0, autoFit = false,
                     ))) { "GGUF load failed" }
+                } finally {
+                    Trace.endSection()
                 }
+                nativeModelLoadMs = (SystemClock.elapsedRealtimeNanos() - nativeLoadStart) / 1e6
             }
             val loadMs = (SystemClock.elapsedRealtimeNanos() - loadStart) / 1e6
             report(JSONObject().put("event", "load").put("model", model.relativeTo(root).path)
                 .put("load_ms", loadMs).put("pss_bytes", pss()).put("thermal", thermal())
+                .put("initialization_ms", if (isOnnx) JSONObject.NULL else initializationMs)
+                .put("native_model_load_ms", if (isOnnx) JSONObject.NULL else nativeModelLoadMs)
                 .put("battery_temperature_c", batteryTemperature())
                 .put("runtime", if (isOnnx) onnx.runtimeDescription else "llama.cpp gpuLayers=${llama!!.getGpuLayers()}; $threads threads"))
             if (isOnnx) report(JSONObject().put("event", "prompt_tokens").put("ids", JSONArray(onnx.tokenize(listOf(
@@ -154,6 +170,7 @@ class OnnxGgufBenchmark : Instrumentation() {
                 report(JSONObject().put("event", "temperature").put("iteration", iteration)
                     .put("start_c", startTemperature).put("end_c", batteryTemperature()))
             }
+            report(JSONObject().put("event", "outcome").put("stage", "outcome").put("result", "PASS"))
             resultCode = Activity.RESULT_OK
         } catch (failure: Throwable) {
             android.util.Log.e("OnnxBenchmark", "Benchmark failed", failure)

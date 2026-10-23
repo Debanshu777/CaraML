@@ -77,7 +77,6 @@ kotlin {
         }
         androidMain.dependencies {
             implementation(libs.compose.uiToolingPreview)
-            implementation(libs.compose.uiTooling)
             implementation(project.dependencies.platform(libs.koin.bom))
             implementation(libs.koin.core)
             implementation(libs.androidx.core.ktx)

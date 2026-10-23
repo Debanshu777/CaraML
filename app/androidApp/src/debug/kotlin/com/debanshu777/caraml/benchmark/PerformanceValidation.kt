@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.os.Debug
 import android.os.PowerManager
 import android.os.SystemClock
+import android.system.Os
 import com.debanshu777.caraml.core.data.inference.InferenceRepository
 import com.debanshu777.caraml.core.data.inference.LlamaInferenceRepository
 import com.debanshu777.caraml.core.data.inference.ModelLoadResult
@@ -18,6 +19,11 @@ import com.debanshu777.caraml.core.download.DownloadTaskStore
 import com.debanshu777.caraml.core.download.DownloadUserIntent
 import com.debanshu777.caraml.core.download.PlatformDownloadScheduler
 import com.debanshu777.caraml.core.recommendation.*
+import com.debanshu777.caraml.core.performance.PerformanceSpan
+import com.debanshu777.caraml.core.performance.beginPerformanceSpan
+import com.debanshu777.caraml.core.performance.tracePerformanceOperation
+import com.debanshu777.caraml.core.performance.tracePerformanceStage
+import com.debanshu777.caraml.core.settings.KvQuantPreset
 import com.debanshu777.caraml.core.settings.AppSettings
 import com.debanshu777.caraml.core.settings.initPreferencesDataStore
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
@@ -29,18 +35,48 @@ import kotlinx.coroutines.flow.*
 import org.json.JSONObject
 import org.koin.mp.KoinPlatform
 import java.security.MessageDigest
+import java.io.FileDescriptor
+import java.io.FileOutputStream
 
 /** Debug-only measurements of the normal installed-model admission and shipping repository path. */
 class PerformanceValidation : Instrumentation() {
     private var arguments = Bundle()
     private var maxStartThermal = 0
     private var requestedBackend = "saved"
+    private var requestedContext: Int? = null
+    private var requestedKv: KvQuantPreset? = null
+    private var loadToFirstToken: PerformanceSpan? = null
     private var active: InferenceRepository? = null
     private var foreground: PerformanceForegroundActivity? = null
+    private var vulkanTiming = false
+    private var timingSetupFailure: Exception? = null
+    private var timingFile: File? = null
+    private var timingOutput: FileOutputStream? = null
+    private var originalStderr: FileDescriptor? = null
+    private val timingEnvironment = linkedMapOf<String, String?>()
     private val results = linkedMapOf<String, String>()
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
         this.arguments = arguments ?: Bundle()
+        // Set the diagnostic environment before application/backend initialization.
+        // Never enable the logger for ordinary latency runs: it inserts GPU waits.
+        if (this.arguments.containsKey("vulkanTiming")) {
+            try {
+                require(this.arguments.getString("vulkanTiming") == "1" &&
+                    this.arguments.getString("phase") == "journey" &&
+                    this.arguments.getString("backend") == "vulkan")
+                timingFile = File(targetContext.filesDir, "vulkan-timings-${SystemClock.elapsedRealtimeNanos()}.txt")
+                timingOutput = FileOutputStream(checkNotNull(timingFile))
+                originalStderr = Os.dup(FileDescriptor.err)
+                Os.dup2(checkNotNull(timingOutput).fd, 2)
+                for ((key, value) in mapOf("GGML_VK_PERF_LOGGER" to "1",
+                    "GGML_VK_PERF_LOGGER_FREQUENCY" to "1", "GGML_VK_PERF_LOGGER_CONCURRENT" to null)) {
+                    timingEnvironment[key] = Os.getenv(key)
+                    if (value == null) Os.unsetenv(key) else Os.setenv(key, value, true)
+                }
+                vulkanTiming = true
+            } catch (failure: Exception) { timingSetupFailure = failure }
+        }
         start()
     }
     override fun onStart() {
@@ -48,19 +84,27 @@ class PerformanceValidation : Instrumentation() {
         var completionCode = Activity.RESULT_CANCELED
         val completion = Bundle()
         try {
-            require(arguments.keySet().all { it in setOf("case", "phase", "label", "trial", "sampling", "backend", "maxStartThermal") && arguments.get(it) is String })
+            timingSetupFailure?.let { throw it }
+            require(arguments.keySet().all { it in setOf("case", "phase", "label", "trial", "sampling", "backend", "maxStartThermal", "contextTokens", "kvPreset", "vulkanTiming") && arguments.get(it) is String })
             val selection = arguments.getString("case") ?: "six"
             val phase = arguments.getString("phase") ?: "run"
             val label = arguments.getString("label") ?: "BASELINE"
             val sampling = arguments.getString("sampling") ?: "greedy"
             requestedBackend = arguments.getString("backend") ?: "saved"
             require(requestedBackend in setOf("saved", "cpu", "vulkan"))
+            requestedContext = arguments.getString("contextTokens")?.toIntOrNull()
+                ?: if (arguments.containsKey("contextTokens")) error("Invalid context") else if (phase == "journey") 4096 else null
+            require(requestedContext?.let { it in 512..16384 } != false)
+            requestedKv = arguments.getString("kvPreset")?.let { KvQuantPreset.valueOf(it) }
+                ?: if (phase == "journey") KvQuantPreset.F16_F16 else null
+            require(phase != "journey" || requestedBackend in setOf("cpu", "vulkan"))
+            require(phase != "journey" || requestedKv == KvQuantPreset.F16_F16)
             maxStartThermal = arguments.getString("maxStartThermal")?.toIntOrNull()
                 ?: if (arguments.containsKey("maxStartThermal")) error("Invalid thermal ceiling") else 0
             require(maxStartThermal in 0..1)
             require(sampling in setOf("greedy", "saved_temperature"))
             val trial = arguments.getString("trial")?.toIntOrNull() ?: if (arguments.containsKey("trial")) error("Invalid trial") else 1
-            require(phase in setOf("publication", "diagnose", "saved-load", "load", "run") && label in setOf("BASELINE", "AFTER") && trial in 1..5)
+            require(phase in setOf("publication", "diagnose", "saved-load", "load", "smoke", "journey", "run") && label in setOf("BASELINE", "AFTER") && trial in 1..5)
             val cases = when (selection) {
                 "six" -> CASES.filter { it.id in REPRESENTATIVES }
                 "all" -> CASES
@@ -81,7 +125,7 @@ class PerformanceValidation : Instrumentation() {
                 val startupStarted = SystemClock.elapsedRealtimeNanos()
                 koin.get<DownloadRuntime>().awaitStartupReconciliation()
                 report("ENVIRONMENT", "startup_barrier", "startupBarrierMs" to elapsedMs(startupStarted))
-                if (phase in setOf("load", "run") && !idle()) {
+                if (phase in setOf("load", "smoke", "journey", "run") && !idle()) {
                     cases.forEach { results[it.id] = "CONDITIONED_SKIP"; report(it.id, "outcome", "result" to "CONDITIONED_SKIP") }
                     return@runBlocking
                 }
@@ -89,8 +133,10 @@ class PerformanceValidation : Instrumentation() {
                 val scheduler = koin.get<PlatformDownloadScheduler>()
                 val activeDownloads = store.recoverableBatches().count { it.userIntent == DownloadUserIntent.RUN && scheduler.isActive(it.batchId) }
                 report("ENVIRONMENT", "start", "label" to label, "trial" to trial,
+                    "workloadPolicy" to if (phase == "journey") "FIXED_NO_FALLBACK" else "ADAPTIVE",
+                    "diagnosticOnly" to vulkanTiming, "vulkanTiming" to vulkanTiming,
                     "managedBuild" to "DEBUG", "nativeBuild" to "RELEASE", "activeDownloads" to activeDownloads,
-                    "thermal" to thermal(), "maxStartThermal" to maxStartThermal, "requestedBackend" to requestedBackend, "sampling" to sampling, "seedControl" to "NOT_EXPOSED", "cacheState" to "OS_CACHE_UNCONTROLLED", "sustainedTarget" to 512, "perTurnCap" to 1024)
+                    "thermal" to thermal(), "maxStartThermal" to maxStartThermal, "requestedBackend" to requestedBackend, "sampling" to sampling, "requestedContext" to requestedContext, "requestedKv" to requestedKv?.name, "seedControl" to "NOT_EXPOSED", "cacheState" to "OS_CACHE_UNCONTROLLED", "sustainedTarget" to 512, "perTurnCap" to 1024)
                 check(activeDownloads == 0)
                 report("ENVIRONMENT", "foreground", "resumed" to foreground?.validationResumed,
                     "focused" to foreground?.validationFocused, "cpuAllowedList" to cpuAllowedList())
@@ -122,18 +168,40 @@ class PerformanceValidation : Instrumentation() {
         } finally {
             runOnMainSync { foreground?.finish() }
             foreground = null
+            // Restore process-local descriptors/environment even if diagnostics fail.
+            originalStderr?.let { descriptor ->
+                try { Os.dup2(descriptor, 2) } finally { Os.close(descriptor) }
+            }
+            originalStderr = null
+            timingOutput?.close()
+            timingOutput = null
+            timingEnvironment.forEach { (key, value) ->
+                if (value == null) Os.unsetenv(key) else Os.setenv(key, value, true)
+            }
+            timingFile?.let { file ->
+                report("ENVIRONMENT", "vulkan_timing_log", "diagnosticOnly" to true,
+                    "file" to file.name, "bytes" to file.length())
+            }
         }
         finish(completionCode, completion)
     }
-    private suspend fun validate(case: Case, phase: String, sampling: String): String {
+    private suspend fun validate(case: Case, phase: String, sampling: String): String =
+        tracePerformanceOperation("benchmark.case") {
+            try { validateMeasured(case, phase, sampling) }
+            finally { loadToFirstToken?.close(); loadToFirstToken = null }
+        }
+
+    private suspend fun validateMeasured(case: Case, phase: String, sampling: String): String {
         val koin = KoinPlatform.getKoin()
         val models = koin.get<LocalModelRepository>().getMainModels()
-        val model = models.singleOrNull { it.modelId == case.repo && it.filename == case.file } ?: return "NOT_INSTALLED"
+        val installed = models.singleOrNull { it.modelId == case.repo && it.filename == case.file } ?: return "NOT_INSTALLED"
+        val model = requestedContext?.let { installed.copy(contextLength = it) } ?: installed
         val useSavedSettings = phase in setOf("diagnose", "saved-load")
         val originalSettings = koin.get<SettingsRepository>()
         val persistedSettings = originalSettings.getSettings().first()
         val settings = if (useSavedSettings) persistedSettings else persistedSettings
             .copy(systemPrompt = AppSettings.DEFAULT_SYSTEM_PROMPT,
+                kvQuantPreset = requestedKv ?: persistedSettings.kvQuantPreset,
                 temperature = if (sampling == "saved_temperature") persistedSettings.temperature else 0f,
                 useGpu = when (requestedBackend) { "cpu" -> false; "vulkan" -> true; else -> persistedSettings.useGpu })
         val controlled = object : SettingsRepository {
@@ -142,12 +210,25 @@ class PerformanceValidation : Instrumentation() {
             override suspend fun updateRecommendationProfile(profile: RecommendationProfile) = error("Read-only benchmark")
             override suspend fun completeModelProfileOnboarding(profile: RecommendationProfile) = error("Read-only benchmark")
         }
+        val fixedWorkload = if (phase == "journey") LlmWorkloadConfig(
+            userRequestedContextTokens = requireNotNull(requestedContext),
+            contextTokens = requireNotNull(requestedContext),
+            minimumContextTokens = requireNotNull(requestedContext),
+            promptTokens = 256, generationReserveTokens = 256,
+            batchSize = 256, microBatchSize = 64, sequenceCount = 1,
+            kvCacheSelection = KvCacheSelection.Explicit(KvCacheType.F16, KvCacheType.F16),
+            allowContextFallback = false, allowBatchFallback = false, allowKvCacheFallback = false,
+            allowedKvCacheTypes = listOf(KvCacheType.F16), evidence = emptyList(),
+        ) else null
+        val workloadFactory = fixedWorkload?.let {
+            InstalledModelWorkloadFactory(it, requireFullVulkanPlacement = true)
+        } ?: koin.get<InstalledModelWorkloadFactory>()
         // Resolve and load against the same read-only settings; never rewrite user preferences.
         val resolver = InstalledModelLoadRequestResolver(
             componentRepository = koin.get(), evidenceRepairer = koin.get(), artifactResolver = koin.get(),
             snapshotProvider = koin.get(), assessmentRepository = koin.get(),
             settingsRepository = if (useSavedSettings) originalSettings else controlled,
-            workloadFactory = koin.get(),
+            workloadFactory = workloadFactory,
         )
         val priorReleaseStarted = SystemClock.elapsedRealtimeNanos()
         koin.get<InferenceRepository>().unloadModel()
@@ -164,10 +245,22 @@ class PerformanceValidation : Instrumentation() {
         if (!resumed || !focused) return "FOREGROUND_NOT_READY"
         if (allowedCpus != "0-7") return "FOREGROUND_AFFINITY_NOT_READY"
         val wholeStarted = SystemClock.elapsedRealtimeNanos()
+        if (phase == "journey") loadToFirstToken = beginPerformanceSpan("loadToFirstToken")
         val preparation = resolver.prepare(model, GenerationMode.Text)
         report(case.id, "prepare", "ms" to elapsedMs(wholeStarted), "state" to preparation::class.simpleName,
             "reason" to (preparation as? InstalledModelLoadPreparation.Terminal)?.resolution?.let(::resolutionReason))
         if (preparation !is InstalledModelLoadPreparation.Ready) return "ADMISSION_NOT_READY"
+        val exactWorkload = if (fixedWorkload != null) {
+            workloadFactory.create(preparation.descriptor, GenerationMode.Text, settings) as? LlmWorkloadConfig
+                ?: return "FIXED_PLACEMENT_UNSUPPORTED"
+        } else null
+        exactWorkload?.let {
+            report(case.id, "requested_workload", "policy" to "FIXED_NO_FALLBACK",
+                "context" to it.contextTokens, "batch" to it.batchSize, "microBatch" to it.microBatchSize,
+                "sequenceCount" to it.sequenceCount, "keyCacheType" to "F16", "valueCacheType" to "F16",
+                "allowContextFallback" to false, "allowBatchFallback" to false, "allowKvCacheFallback" to false,
+                "placementPolicy" to "FULL_VULKAN", "fullVulkanLayerCount" to it.requestedFullVulkanLayerCount)
+        }
         val primary = preparation.artifact.components.singleOrNull { it.logicalRole == "model" } ?: return "IDENTITY_REJECTED"
         val identity = primary.identity
         val pinned = identity.repositoryId == case.repo && identity.revision == case.revision && identity.path == case.file &&
@@ -189,16 +282,72 @@ class PerformanceValidation : Instrumentation() {
         val resolution = resolver.resolve(preparation)
         report(case.id, "resolve", "ms" to elapsedMs(resolveStarted), "state" to resolution::class.simpleName, "reason" to resolutionReason(resolution))
         if (resolution !is InstalledModelLoadResolution.Ready) return "ADMISSION_NOT_READY"
+        val admittedPlan = resolution.request.plan as? LlmRunPlan ?: return "NON_LLM_PLAN"
+        report(case.id, "resolved_plan", "backend" to admittedPlan.backend.name,
+            "context" to admittedPlan.contextTokens, "batch" to admittedPlan.batchSize,
+            "microBatch" to admittedPlan.microBatchSize, "sequenceCount" to admittedPlan.sequenceCount,
+            "keyCacheType" to admittedPlan.keyCacheType.name,
+            "valueCacheType" to admittedPlan.valueCacheType.name, "gpuLayers" to admittedPlan.gpuLayerCount,
+            "useMmap" to admittedPlan.useMmap, "nativeMetadataFallback" to resolution.request.nativeMetadataFallback)
+        if (fixedWorkload != null && (
+                admittedPlan.contextTokens != fixedWorkload.contextTokens ||
+                    admittedPlan.batchSize != fixedWorkload.batchSize ||
+                    admittedPlan.microBatchSize != fixedWorkload.microBatchSize ||
+                    admittedPlan.sequenceCount != fixedWorkload.sequenceCount ||
+                    admittedPlan.keyCacheType != KvCacheType.F16 || admittedPlan.valueCacheType != KvCacheType.F16 ||
+                    !admittedPlan.backend.name.equals(requestedBackend, ignoreCase = true) ||
+                    admittedPlan.gpuLayerCount != (if (requestedBackend == "cpu") 0 else exactWorkload?.requestedFullVulkanLayerCount) ||
+                    resolution.request.nativeMetadataFallback
+                )) {
+            report(case.id, "workload_rejected", "reason" to "RESOLVED_PLAN_DIFFERS_FROM_FIXED_REQUEST")
+            return "WORKLOAD_NOT_MATCHED"
+        }
         val loadStarted = SystemClock.elapsedRealtimeNanos()
-        val load = inference.loadModel(resolution.request)
+        val load = loadBenchmarkRequest(case.id, "INITIAL", inference, resolution.request,
+            preparation.artifact, allowRiskAcknowledgement = phase == "journey")
         report(case.id, "load", "ms" to elapsedMs(loadStarted), "wholeLoadMs" to elapsedMs(wholeStarted), "state" to load::class.simpleName,
             "context" to inference.getContextLimit(), "config" to inference.getRuntimeConfigString(),
             "thermal" to thermal(), "temperature" to settings.temperature.takeIf { it.isFinite() }, "savedSettings" to (useSavedSettings))
         if (load !is ModelLoadResult.Success) return "LOAD_NOT_READY"
+        if (fixedWorkload != null && load.contextSize != fixedWorkload.contextTokens) return "LOADED_CONTEXT_MISMATCH"
         report(case.id, "placement", "requestedBackend" to requestedBackend, "gpuLayers" to runner.getGpuLayers())
         if (requestedBackend == "vulkan" && runner.getGpuLayers() <= 0) return "GPU_NOT_ACTIVE"
         if (requestedBackend == "cpu" && runner.getGpuLayers() != 0) return "CPU_NOT_SELECTED"
+        if (fixedWorkload != null && runner.getGpuLayers() != admittedPlan.gpuLayerCount) return "LOADED_PLACEMENT_MISMATCH"
         if (phase in setOf("diagnose", "load", "saved-load")) return "PASS"
+        if (phase == "journey") {
+            val prompt = "What is 2 plus 3? Answer in one short sentence."
+            generate(case.id, inference, runner, prompt, 1, 64)
+            check(inference.getStopReason() != StopReason.ERROR)
+            tracePerformanceStage("benchmark.resetConversation") {
+                check(inference.resetContextWithSummary("", ""))
+            }
+            generate(case.id, inference, runner, prompt, 2, 64)
+            check(inference.getStopReason() != StopReason.ERROR)
+            // This measures the repository's handling of a repeated identical request.
+            // It is not a model-picker/UI reselection measurement.
+            val repeatedStarted = SystemClock.elapsedRealtimeNanos()
+            val repeated = tracePerformanceStage("benchmark.residentLoadRequest") {
+                loadBenchmarkRequest(case.id, "REPEATED", inference, resolution.request,
+                    preparation.artifact, allowRiskAcknowledgement = true)
+            }
+            report(case.id, "resident_request", "ms" to elapsedMs(repeatedStarted),
+                "state" to repeated::class.simpleName, "context" to inference.getContextLimit(),
+                "config" to inference.getRuntimeConfigString(), "gpuLayers" to runner.getGpuLayers(),
+                "thermal" to thermal(), "scope" to "REPOSITORY_REQUEST")
+            check(repeated is ModelLoadResult.Success)
+            if (repeated.contextSize != requestedContext) return "REPEATED_CONTEXT_MISMATCH"
+            if (fixedWorkload != null && runner.getGpuLayers() != admittedPlan.gpuLayerCount) return "REPEATED_PLACEMENT_MISMATCH"
+            generate(case.id, inference, runner, prompt, 3, 64)
+            check(inference.getStopReason() != StopReason.ERROR)
+            return "PASS"
+        }
+        if (phase == "smoke") {
+            generate(case.id, inference, runner, "What is 2 plus 3? Answer in one short sentence.", 1, 64)
+            check(inference.getStopReason() != StopReason.ERROR)
+            report(case.id, "smoke_reply", "text" to runner.getContent().take(512))
+            return "PASS"
+        }
         var sustained = 0
         var turns = 0
         for (prompt in PROMPTS) {
@@ -226,6 +375,68 @@ class PerformanceValidation : Instrumentation() {
         check(recovery > 0 && inference.getStopReason() != StopReason.ERROR)
         return if (targetMet) "PASS" else "INSUFFICIENT_SUSTAINED"
     }
+    /** Exercise the same one-shot confirmation used by the UI, without altering admission policy. */
+    private suspend fun loadBenchmarkRequest(
+        id: String,
+        scope: String,
+        inference: InferenceRepository,
+        request: LoadRequest,
+        preparedArtifact: ResolvedLocalArtifact,
+        allowRiskAcknowledgement: Boolean,
+    ): ModelLoadResult {
+        suspend fun attempt(candidate: LoadRequest, number: Int): ModelLoadResult {
+            val started = SystemClock.elapsedRealtimeNanos()
+            val result = inference.loadModel(candidate)
+            val admission = (result as? ModelLoadResult.AdmissionRequired)?.admission
+            report(id, "load_attempt", "scope" to scope, "attempt" to number,
+                "ms" to elapsedMs(started), "state" to result::class.simpleName,
+                "admissionType" to admission?.let { it::class.simpleName },
+                "admissionReason" to admissionReason(admission),
+                "explicitRetryRequired" to (admission as? LoadAdmission.ConfirmationRequired)?.explicitRetryRequired,
+                "riskAcknowledgementAttached" to (candidate.riskAcknowledgement != null), "thermal" to thermal())
+            return result
+        }
+
+        val first = attempt(request, 1)
+        val confirmation = (first as? ModelLoadResult.AdmissionRequired)?.admission as? LoadAdmission.ConfirmationRequired
+            ?: return first
+        val exactBinding = confirmation.request == request && request.riskAcknowledgement == null &&
+            !request.nativeMetadataFallback && request.artifact == preparedArtifact &&
+            request.identity == preparedArtifact.identity && request.assessmentKey.isNotBlank() &&
+            request.assessedPlans?.assessmentKey == request.assessmentKey
+        if (!allowRiskAcknowledgement || confirmation.reason != LoadAdmissionReason.RISK_ACKNOWLEDGEMENT_REQUIRED ||
+            confirmation.explicitRetryRequired || !exactBinding
+        ) {
+            report(id, "risk_acknowledgement", "scope" to scope, "action" to "NOT_ACKNOWLEDGED",
+                "reason" to confirmation.reason.name, "exactRequestBinding" to exactBinding,
+                "authorizedJourney" to allowRiskAcknowledgement,
+                "explicitRetryRequired" to confirmation.explicitRetryRequired)
+            return first
+        }
+        val acknowledgement = RiskAcknowledgement(
+            assessmentKey = request.assessmentKey,
+            planKey = request.plan.stableKey,
+            acknowledgedAtEpochMs = System.currentTimeMillis(),
+        )
+        report(id, "risk_acknowledgement", "scope" to scope, "action" to "ACKNOWLEDGED",
+            "reason" to confirmation.reason.name, "authorization" to "USER_REQUESTED_BENCHMARK",
+            "exactRequestBinding" to true, "assessmentKeySha256" to sha(request.assessmentKey),
+            "planKeySha256" to sha(request.plan.stableKey), "identityRevision" to request.identity.revision,
+            "identityBytes" to request.identity.sizeBytes, "acknowledgedAtEpochMs" to acknowledgement.acknowledgedAtEpochMs)
+        // Only the short-lived acknowledgement changes. The production controller rechecks the
+        // exact request, current resources, artifact, quarantine state and native preflight.
+        return attempt(request.copy(riskAcknowledgement = acknowledgement), 2)
+    }
+
+    private fun admissionReason(admission: LoadAdmission?): String? = when (admission) {
+        null, is LoadAdmission.Ready -> null
+        is LoadAdmission.ConfirmationRequired -> admission.reason.name
+        is LoadAdmission.AlternativeAvailable -> admission.reason.name
+        is LoadAdmission.SafeAlternativeAvailable -> admission.reason.name
+        is LoadAdmission.TemporarilyUnavailable -> admission.reason.name
+        is LoadAdmission.Blocked -> admission.reason.name
+    }
+
     private suspend fun generate(id: String, inference: InferenceRepository, runner: LlamaRunner, prompt: String, turn: Int, cap: Int): Int =
         withTimeout(10 * 60_000L) {
             val started = SystemClock.elapsedRealtimeNanos()
@@ -242,7 +453,11 @@ class PerformanceValidation : Instrumentation() {
                 if (chunk.isTokenEvent) {
                     val now = SystemClock.elapsedRealtimeNanos()
                     tokens++; nativeNs += chunk.nativeDecodeNanoseconds; last = now
-                    if (first == 0L) { first = now; windowStart = now }
+                    if (first == 0L) {
+                        first = now; windowStart = now
+                        loadToFirstToken?.close()
+                        loadToFirstToken = null
+                    }
                     if (tokens > 1 && (tokens - 1) % 64 == 0) {
                         report(id, "decode_window", "turn" to turn, "throughToken" to tokens, "tokens" to 64,
                             "tps" to 64e9 / (now - windowStart).coerceAtLeast(1L), "thermal" to thermal())
@@ -341,6 +556,7 @@ class PerformanceValidation : Instrumentation() {
             "Write a comprehensive tutorial on sorting algorithms in at least 20 numbered sections with examples and tradeoffs. /no_think",
         )
         private val CASES = listOf(
+            Case("qwen2.5-3b", "Qwen/Qwen2.5-3B-Instruct-GGUF", "7dabda4d13d513e3e842b20f0d435c732f172cbe", "qwen2.5-3b-instruct-q4_k_m.gguf", 2104932768L, "626b4a6678b86442240e33df819e00132d3ba7dddfe1cdc4fbb18e0a9615c62d"),
             Case("smollm2-135m", "bartowski/SmolLM2-135M-Instruct-GGUF", "09816acd5d99df7be770d85ea30822623dab342c", "SmolLM2-135M-Instruct-Q4_K_M.gguf", 105454432L, "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d"),
             Case("gemma3-270m", "bartowski/google_gemma-3-270m-it-GGUF", "d127a4e2c6ed47fdf409a956867b604c040432f9", "google_gemma-3-270m-it-Q4_K_M.gguf", 253115168L, "c866c9f113f2e9aa2225c5997ede437392b8fa844ba5db9e4c77e315ffe20800"),
             Case("qwen3-0.6b", "Qwen/Qwen3-0.6B-GGUF", "23749fefcc72300e3a2ad315e1317431b06b590a", "Qwen3-0.6B-Q8_0.gguf", 639446688L, "9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031"),

@@ -1,7 +1,7 @@
 package com.debanshu777.caraml.sdk.plugin.onnx
 
 internal fun formatOnnxPrompt(messages: List<OnnxChatMessage>, codec: HuggingFaceBpeTokenizer,
-                              template: String?, modelType: String?): String {
+                              template: String?, modelType: String?, promptDate: () -> String = ::onnxPromptDate): String {
     require(messages.isNotEmpty() && messages.all { it.role in setOf("system", "user", "assistant") })
     return when {
         codec.has("<|im_start|>") -> messages.joinToString("") {
@@ -12,7 +12,7 @@ internal fun formatOnnxPrompt(messages: List<OnnxChatMessage>, codec: HuggingFac
         codec.has("<|start_header_id|>") -> {
             val system = messages.firstOrNull()?.takeIf { it.role == "system" }
             val dated = template?.contains("Cutting Knowledge Date: December 2023") == true
-            val prefix = if (dated) "<|start_header_id|>system<|end_header_id|>\n\nCutting Knowledge Date: December 2023\nToday Date: ${onnxPromptDate()}\n\n${system?.content?.trim().orEmpty()}<|eot_id|>" else ""
+            val prefix = if (dated) "<|start_header_id|>system<|end_header_id|>\n\nCutting Knowledge Date: December 2023\nToday Date: ${promptDate()}\n\n${system?.content?.trim().orEmpty()}<|eot_id|>" else ""
             val conversation = if (dated && system != null) messages.drop(1) else messages
             "<|begin_of_text|>" + prefix + conversation.joinToString("") {
                 "<|start_header_id|>${it.role}<|end_header_id|>\n\n${it.content.trim()}<|eot_id|>"

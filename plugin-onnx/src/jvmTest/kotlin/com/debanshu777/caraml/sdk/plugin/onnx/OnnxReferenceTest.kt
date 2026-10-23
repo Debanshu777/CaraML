@@ -11,10 +11,20 @@ class OnnxReferenceTest {
     private fun fixtures(): File? = System.getProperty("caraml.onnx.fixture.dir")?.let { path ->
         File(path).let { if (File(it, "benchmark-manifest.json").isFile) it.parentFile else it }
     }
+    private fun referencePromptDate(prompt: String): String? =
+        Regex("(?m)^Today Date: ([^\\r\\n]+)$").find(prompt)?.groupValues?.get(1)
+
     @Test fun llamaInt8MatchesPythonRuntime() = runBlocking {
         val root = File(fixtures() ?: return@runBlocking, "llama32-1b-onnx")
         val reference = Json.parseToJsonElement(File(root, "quality-reference.json").readText()).jsonObject
-        val engine = createOnnxTextRuntime()
+        // The Python quality reference used the same dated prompt as the recorded chat fixtures.
+        val referenceDates = Json.parseToJsonElement(File(root, "chat-reference.json").readText()).jsonArray.map {
+            checkNotNull(referencePromptDate(it.jsonObject.getValue("prompt").jsonPrimitive.content)) {
+                "The Llama reference must record its prompt date"
+            }
+        }.distinct()
+        val referenceDate = referenceDates.single()
+        val engine = OrtTextRuntime(promptDate = { referenceDate })
         try {
             engine.load(File(root, "onnx/model_int8.onnx").path, OnnxRuntimeConfig(threads = 1))
             val ids = engine.generate(listOf(OnnxChatMessage("system", "You are a helpful assistant."),
@@ -27,11 +37,15 @@ class OnnxReferenceTest {
         val roots = base.listFiles()!!.filter { File(it, "chat-reference.json").isFile && File(it, "onnx/model_int8.onnx").isFile }
         assertTrue(roots.size >= 5, "Generate references for all five ONNX fixtures first")
         roots.forEach { root ->
-            val engine = createOnnxTextRuntime()
+            var referenceDate: String? = null
+            val engine = OrtTextRuntime(promptDate = {
+                checkNotNull(referenceDate) { "A dated template must have a date in its recorded reference prompt" }
+            })
             try {
                 engine.load(File(root, "onnx/model_int8.onnx").path, OnnxRuntimeConfig(threads = 1))
                 Json.parseToJsonElement(File(root, "chat-reference.json").readText()).jsonArray.forEach { case ->
                     val value = case.jsonObject
+                    referenceDate = referencePromptDate(value.getValue("prompt").jsonPrimitive.content)
                     val messages = value.getValue("messages").jsonArray.map { message ->
                         OnnxChatMessage(message.jsonObject.getValue("role").jsonPrimitive.content, message.jsonObject.getValue("content").jsonPrimitive.content)
                     }

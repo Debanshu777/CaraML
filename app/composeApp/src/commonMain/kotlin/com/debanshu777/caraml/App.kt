@@ -6,10 +6,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.savedstate.serialization.SavedStateConfiguration
@@ -17,6 +23,8 @@ import com.debanshu777.caraml.core.drawer.AppDrawerShell
 import com.debanshu777.caraml.core.navigation.AppScreen
 import com.debanshu777.caraml.core.navigation.NavigationHost
 import com.debanshu777.caraml.core.platform.AppLogger
+import com.debanshu777.caraml.core.performance.LocalAppStartupReporter
+import com.debanshu777.caraml.core.performance.LocalChatInventoryReporter
 import com.debanshu777.caraml.core.recommendation.LoadSessionCoordinator
 import com.debanshu777.caraml.core.theme.CaraMLTheme
 import com.debanshu777.caraml.core.theme.ThemeViewModel
@@ -44,6 +52,8 @@ private val config =
 fun App(onEffectiveDarkThemeChanged: (Boolean) -> Unit = {}) {
     val themeViewModel: ThemeViewModel = koinViewModel()
     val loadSessionCoordinator: LoadSessionCoordinator = koinInject()
+    var recoveryComplete by remember { mutableStateOf(false) }
+    var inventoryInitialized by remember { mutableStateOf(false) }
     LaunchedEffect(loadSessionCoordinator) {
         try {
             loadSessionCoordinator.recoverAbandonedLoadAtStartup()
@@ -52,8 +62,13 @@ fun App(onEffectiveDarkThemeChanged: (Boolean) -> Unit = {}) {
         } catch (_: Throwable) {
             AppLogger.e("LoadRecovery", "Startup recovery failed")
         }
+        recoveryComplete = true
     }
     val themePreferences by themeViewModel.preferences.collectAsState()
+    val preferencesInitialized by themeViewModel.preferencesInitialized.collectAsState()
+    val startupReady = recoveryComplete && inventoryInitialized && preferencesInitialized
+    val reportStartup = LocalAppStartupReporter.current
+    SideEffect { reportStartup(startupReady) }
     CaraMLTheme(
         preferences = themePreferences,
         onEffectiveDarkThemeChanged = onEffectiveDarkThemeChanged,
@@ -61,14 +76,17 @@ fun App(onEffectiveDarkThemeChanged: (Boolean) -> Unit = {}) {
         Box(
             modifier = Modifier.fillMaxSize()
                 .windowInsetsPadding(WindowInsets.ime)
+                .then(if (startupReady) Modifier.testTag("caraml-app-ready") else Modifier)
         ) {
             val backStack = rememberNavBackStack(config, AppScreen.Home)
             AppDrawerShell(backStack = backStack) {
                 // Each route captures its own backdrop beneath fixed frosted chrome.
-                NavigationHost(
-                    modifier = Modifier.fillMaxSize(),
-                    backStack = backStack,
-                )
+                CompositionLocalProvider(LocalChatInventoryReporter provides { inventoryInitialized = it }) {
+                    NavigationHost(
+                        modifier = Modifier.fillMaxSize(),
+                        backStack = backStack,
+                    )
+                }
             }
         }
     }

@@ -20,9 +20,11 @@ import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AppTheme
+import com.debanshu777.caraml.core.performance.exposeTestTagsForUiAutomation
 import com.debanshu777.caraml.core.ui.components.BrandButton
 import com.debanshu777.caraml.core.ui.components.BrandButtonStyle
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
@@ -46,6 +48,7 @@ fun ChatModelPickerSheet(
     val pickerModels = topModels.filterForMode(generationMode)
 
     ModalBottomSheet(
+        modifier = Modifier.exposeTestTagsForUiAutomation(),
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = AppTheme.shapes.extraLarge,
@@ -91,10 +94,12 @@ fun ChatModelPickerSheet(
                             )
                         }
                     },
-                    modifier = Modifier.clickable {
-                        onSelectModel(model)
-                        onDismiss()
-                    },
+                    modifier = Modifier
+                        .testTag(if (isSelected) "chat-selected-model-${model.id}" else "chat-model-option-${model.id}")
+                        .clickable {
+                            onSelectModel(model)
+                            onDismiss()
+                        },
                     colors = ListItemDefaults.colors(
                         containerColor = Color.Transparent,
                     )

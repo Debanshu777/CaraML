@@ -1,0 +1,166 @@
+{
+  "schemaVersion": 1,
+  "dateLocal": "2026-10-24",
+  "timezone": "Asia/Kolkata",
+  "completedAtUtc": "2026-10-23T20:46:33.746239+00:00",
+  "scope": "Local benchmark-generated output and superseded drafts; no application sources, fixtures or unique measured evidence removed.",
+  "removed": [
+    {
+      "path": "benchmarks/android/build",
+      "files": 589,
+      "logicalBytes": 198050683,
+      "reason": "Regenerable Gradle output; unique controller APK preserved separately; trace, metrics and test outputs already archived byte-identically."
+    },
+    {
+      "path": "build/benchmark-results/measurement-gaps/glslc-recipe-check/extracted",
+      "files": 20,
+      "logicalBytes": 32943949,
+      "reason": "Duplicate compiler extraction; canonical identical compiler remains under build/tools/shaderc-2026.4."
+    },
+    {
+      "path": "build/benchmark-results/measurement-gaps/glslc-recipe-check/shaderc-2026.4.arm64_sequoia.bottle.tar.gz",
+      "files": 1,
+      "logicalBytes": 8453842,
+      "reason": "Duplicate downloaded archive; canonical identical archive and recipe provenance remain.",
+      "sha256": "1313ffbae9ac1559f7160cc89657ecd5fc324895ff46e15a4bd198ec3bbebec0"
+    },
+    {
+      "path": "build/benchmark-results/measurement-gaps/draft_fixed_placement.py",
+      "files": 1,
+      "logicalBytes": 37999,
+      "reason": "Superseded fixed-placement experiment draft; implemented source, tests and frozen source snapshots are retained.",
+      "sha256": "6fa404295831e6454ae78cc776ba6b61766d9c6d62cafb65fd7fdf17eb82768d"
+    },
+    {
+      "path": "build/benchmark-results/measurement-gaps/refine_fixed_placement.py",
+      "files": 1,
+      "logicalBytes": 17100,
+      "reason": "Superseded fixed-placement experiment draft; implemented source, tests and frozen source snapshots are retained.",
+      "sha256": "e4a457e8355e03dc6b63bc2f901d0f8301700a9bca867adb0811a73c42b9c204"
+    },
+    {
+      "path": "build/benchmark-results/measurement-gaps/fixed-placement-draft.patch",
+      "files": 1,
+      "logicalBytes": 27976,
+      "reason": "Superseded fixed-placement experiment draft; implemented source, tests and frozen source snapshots are retained.",
+      "sha256": "91aa0446fddc33c61fa3d9f7b79b60badd244c2993194f59edcb0968a00b11f0"
+    },
+    {
+      "path": "build/benchmark-results/measurement-gaps/fixed-placement-draft-inputs.json",
+      "files": 1,
+      "logicalBytes": 1892,
+      "reason": "Superseded fixed-placement experiment draft; implemented source, tests and frozen source snapshots are retained.",
+      "sha256": "0ddc1c3434d6b48ec33c58818eda5d77745b096d93db5874f37caa3f00d543ab"
+    },
+    {
+      "path": "build/benchmark-results/measurement-gaps/repack-comparison-progress.json",
+      "files": 1,
+      "logicalBytes": 20725,
+      "reason": "Stale intermediate progress; completed fixed-workload results are retained.",
+      "sha256": "f437ce394bfe5972a1cb39a0d3a1883d41015ed227e93470fa6b6a21f26fa9d0"
+    },
+    {
+      "path": "build/benchmark-results/measurement-gaps/repack-candidate-armv9.s",
+      "files": 1,
+      "logicalBytes": 17608877,
+      "reason": "Generated assembly listings; source patch, compiler/build provenance, assembly-check summary and byte-equivalence tests remain.",
+      "sha256": "7ecade952e8708a413790957f5d2e711c119768764910a239a98959f67f7d337"
+    },
+    {
+      "path": "build/benchmark-results/measurement-gaps/repack-reference-armv9.s",
+      "files": 1,
+      "logicalBytes": 16135157,
+      "reason": "Generated assembly listings; source patch, compiler/build provenance, assembly-check summary and byte-equivalence tests remain.",
+      "sha256": "d6245ffd0b1bf11c5514f21c684277ad6c87b2f59573f0ef88454ff04b176b44"
+    },
+    {
+      "path": "build/benchmark-results/ui-measurement/scroll-row-reuse-proposal.patch",
+      "files": 1,
+      "logicalBytes": 1590,
+      "reason": "Superseded proposal including contentType experiment that was not adopted; implemented row isolation and its tests remain.",
+      "sha256": "e642c316b56c0e8d9edc53f73bd1fce7570ceed14f94fbf9555ac232655aa373"
+    },
+    {
+      "path": "build/tools/shaderc-20261021",
+      "files": 1,
+      "logicalBytes": 312,
+      "reason": "Failed HTTP404 download headers only; actual compiler cache is retained."
+    },
+    {
+      "path": "benchmarks/onnx/analysis/__pycache__",
+      "files": 2,
+      "logicalBytes": 53560,
+      "reason": "Regenerable Python bytecode cache."
+    },
+    {
+      "path": "benchmarks/onnx/__pycache__",
+      "files": 11,
+      "logicalBytes": 118729,
+      "reason": "Regenerable Python bytecode cache."
+    },
+    {
+      "path": "benchmarks/android/__pycache__",
+      "files": 17,
+      "logicalBytes": 199272,
+      "reason": "Regenerable Python bytecode cache."
+    },
+    {
+      "path": "build/benchmark-results/onnx-performance/analysis/__pycache__",
+      "files": 3,
+      "logicalBytes": 27676,
+      "reason": "Regenerable Python bytecode cache."
+    },
+    {
+      "path": "build/benchmark-results/ui-measurement/stream-v3/__pycache__",
+      "files": 1,
+      "logicalBytes": 8178,
+      "reason": "Regenerable Python bytecode cache."
+    },
+    {
+      "path": "build/benchmark-results/measurement-gaps/__pycache__",
+      "files": 1,
+      "logicalBytes": 26393,
+      "reason": "Regenerable Python bytecode cache."
+    }
+  ],
+  "deduplicated": [
+    {
+      "path": "build/benchmark-results/measurement-gaps/instrumentation-baseline-debug.apk",
+      "retainedTarget": "build/benchmark-results/measurement-gaps/simpleperf-cpu/binary_cache/data/app/~~KAIEezA5s78XwXlRHdJRyw==/com.debanshu777.caraml-rVi-3JNXUWngVj3K_0mf7w==/base.apk",
+      "sha256": "3303c77cc0a6356482919042760ba4b55065f2b8dde8d00f02ee87607d41c159",
+      "logicalBytes": 179918501,
+      "method": "Relative symlink; both original evidence paths remain readable."
+    }
+  ],
+  "preservedBeforeRemoval": [
+    {
+      "source": "benchmarks/android/build/outputs/apk/benchmark/android-benchmark.apk",
+      "destination": "build/benchmark-results/cleanup-2026-10-24/android-benchmark-controller.apk",
+      "sha256": "8668c56ed32c34995b192f80722abbc28530806a1bd33b13e12e744c238ce4dd",
+      "logicalBytes": 51091783
+    }
+  ],
+  "retained": [
+    "All unique archived APKs",
+    "Raw Perfetto and ONNX operator profiles",
+    "Exact native symbol caches and frozen source snapshots",
+    "All model fixtures required by documented optional tests",
+    "Benchmark source, tests, SQL, result JSON and compiler/trace tools"
+  ],
+  "removedFileCount": 654,
+  "removedLogicalBytes": 273733910,
+  "deduplicatedLogicalBytes": 179918501,
+  "preservedNewBytes": 51091783,
+  "netLogicalBytesRemoved": 402560628,
+  "sizeNote": "Logical file bytes, not a measurement of physical APFS free-space gain.",
+  "checks": {
+    "trackedWorkingDiffUnchangedByCleanup": true,
+    "preservedControllerHashMatches": true,
+    "deduplicatedApkHashMatches": true,
+    "removedPathsAbsent": true,
+    "onnxReportRegeneratedAfterCleanup": true,
+    "onnxFindingsAndEvidenceIdentitiesUnchanged": true,
+    "reportLocalLinksResolved": 15,
+    "gitDiffWhitespaceCheckPassed": true
+  }
+}

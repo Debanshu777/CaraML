@@ -22,6 +22,9 @@ expect class DownloadManager(
 
     suspend fun validatedBundle(ownerModelId: String): ArtifactManifest?
 
+    /** Uses publication-time checksums and current path/size checks, without rehashing payloads. */
+    suspend fun installedBundleForLoad(ownerModelId: String): ArtifactManifest?
+
     suspend fun validatedArtifacts(modelId: String): ArtifactManifest?
 
     suspend fun discardCheckpoint(metadata: DownloadMetadataDTO)

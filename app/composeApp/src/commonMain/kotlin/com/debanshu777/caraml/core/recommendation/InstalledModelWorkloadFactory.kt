@@ -5,7 +5,18 @@ import com.debanshu777.caraml.core.settings.KvQuantPreset
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 
-class InstalledModelWorkloadFactory {
+class InstalledModelWorkloadFactory(
+    private val fixedTextWorkload: LlmWorkloadConfig? = null,
+    private val requireFullVulkanPlacement: Boolean = false,
+) {
+    init {
+        require(!requireFullVulkanPlacement || fixedTextWorkload != null) { "Exact placement requires a fixed workload" }
+        require(fixedTextWorkload == null || (
+            !fixedTextWorkload.allowContextFallback && !fixedTextWorkload.allowBatchFallback &&
+                !fixedTextWorkload.allowKvCacheFallback &&
+                fixedTextWorkload.kvCacheSelection is KvCacheSelection.Explicit
+            )) { "A fixed workload must request explicit KV types and disable fallback" }
+    }
     fun create(
         descriptor: ModelDescriptor,
         expectedMode: GenerationMode,
@@ -31,6 +42,15 @@ class InstalledModelWorkloadFactory {
     private fun text(descriptor: LlmModelDescriptor, preset: KvQuantPreset): LlmWorkloadConfig? {
         val limit = descriptor.contextLimit
         if (limit != null && limit < MIN_CONTEXT_TOKENS) return null
+        fixedTextWorkload?.let { fixed ->
+            // Request exact candidates before assessment/admission, never rewrite an admitted plan.
+            val requested = if (requireFullVulkanPlacement || fixed.requestedFullVulkanLayerCount != null) {
+                val derived = descriptor.validatedFullVulkanLayerCount() ?: return null
+                if (fixed.requestedFullVulkanLayerCount != null && fixed.requestedFullVulkanLayerCount != derived) return null
+                fixed.withFullVulkanPlacement(derived)
+            } else fixed
+            return requested.takeIf { limit == null || it.contextTokens <= limit }
+        }
         return text(limit, preset, onnx = descriptor.format == ModelFormat.ONNX)
     }
 

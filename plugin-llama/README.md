@@ -8,6 +8,9 @@ iOS cinterop and consumer keep rules use the same package hierarchy. See [native
 
 ## Recent Changes
 
+- Added opt-in Android native trace boundaries for backend/model/context initialization, prompt tokenization and prefill, and first-token wait/sampling/decode. Labels contain no prompt or model text; no extra warmup or synchronization is introduced. See [capture and symbolization guidance](../benchmarks/android/native-profiling.md).
+- Pixel 9 Simpleperf attributes 80.7% of sampled CPU load work to repack buffer writes; a fixed-plan three-run-per-build pilot reduces median load 24.0%. Vulkan timestamps identify matrix prefill and a modern-compiler Q4_K decode regression. Native-only capture passes strict quality checks; Perfetto native unwinding remains unresolved. See [measured findings and exclusions](../benchmarks/android/README.md#native-follow-up--october-24-2026).
+
 - Shutdown now releases a resident model/context before the backend; physical iPhone tests caught and verified the resulting Metal exit fix across five checkpoints.
 
 - Recognize ggml's current `MTL` registry as Metal so Apple GPU capabilities and placement retain the correct backend identity.

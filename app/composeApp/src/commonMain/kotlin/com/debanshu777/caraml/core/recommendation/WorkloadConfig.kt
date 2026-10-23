@@ -127,6 +127,7 @@ data class LlmWorkloadConfig private constructor(
     val allowKvCacheFallback: Boolean,
     val allowedKvCacheTypes: List<KvCacheType>,
     override val evidence: List<Evidence>,
+    val requestedFullVulkanLayerCount: Int?,
 ) : WorkloadConfig {
     constructor(
         userRequestedContextTokens: Int,
@@ -143,6 +144,7 @@ data class LlmWorkloadConfig private constructor(
         allowKvCacheFallback: Boolean,
         allowedKvCacheTypes: Collection<KvCacheType>,
         evidence: Collection<Evidence>,
+        requestedFullVulkanLayerCount: Int? = null,
     ) : this(
         userRequestedContextTokens = userRequestedContextTokens,
         contextTokens = contextTokens,
@@ -158,7 +160,11 @@ data class LlmWorkloadConfig private constructor(
         allowKvCacheFallback = allowKvCacheFallback,
         allowedKvCacheTypes = allowedKvCacheTypes.distinct(),
         evidence = evidence.toList(),
+        requestedFullVulkanLayerCount = requestedFullVulkanLayerCount,
     )
+
+    internal fun withFullVulkanPlacement(layerCount: Int): LlmWorkloadConfig =
+        copy(requestedFullVulkanLayerCount = layerCount)
 }
 
 @ConsistentCopyVisibility

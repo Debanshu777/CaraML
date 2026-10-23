@@ -8,6 +8,8 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,6 +41,7 @@ import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrow
 import com.debanshu777.caraml.core.ui.motion.AuroraMotionPolicy
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import org.koin.compose.viewmodel.koinViewModel
+import com.debanshu777.caraml.core.performance.LocalChatInventoryReporter
 
 internal enum class NavigationTransitionFamily {
     Peer,
@@ -227,6 +230,10 @@ fun NavigationHost(
     val modelViewModel: ModelViewModel = koinViewModel()
     val downloadedModelsViewModel: DownloadedModelsViewModel = koinViewModel()
     val settingsViewModel: SettingsViewModel = koinViewModel()
+    // Read during composition so inventory changes invalidate this reporting scope.
+    val inventoryInitialized = chatViewModel.inventoryInitialized.collectAsState().value
+    val reportInventory = LocalChatInventoryReporter.current
+    SideEffect { reportInventory(inventoryInitialized) }
 
     var requestedModelHubTab by rememberSaveable { mutableStateOf(0) }
     NavigationTransitionDisplay(

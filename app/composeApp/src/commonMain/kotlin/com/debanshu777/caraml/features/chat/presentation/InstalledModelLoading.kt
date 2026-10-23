@@ -1,5 +1,7 @@
 package com.debanshu777.caraml.features.chat.presentation
 
+import com.debanshu777.caraml.core.performance.tracePerformanceStage
+
 import com.debanshu777.caraml.core.data.inference.ModelLoadResult
 import com.debanshu777.caraml.core.platform.AppLogger
 import kotlin.time.TimeSource
@@ -47,6 +49,7 @@ internal suspend fun loadInstalledModel(
     assess: suspend (InstalledModelLoadPreparation.Ready) -> InstalledModelLoadResolution,
     loadText: suspend (LoadRequest) -> ModelLoadResult,
     loadDiffusion: suspend (LoadRequest) -> ModelLoadResult,
+    tryReuse: suspend (InstalledModelLoadPreparation.Ready) -> ModelLoadResult.Success? = { null },
 ): ModelLoadResult {
     val started = TimeSource.Monotonic.markNow()
     AppLogger.i("ModelLoad") { "stage=prepare mode=$mode sizeBytes=${model.sizeBytes ?: -1}" }
@@ -57,8 +60,16 @@ internal suspend fun loadInstalledModel(
     val resolution = when (preparation) {
         is InstalledModelLoadPreparation.Terminal -> preparation.resolution
         is InstalledModelLoadPreparation.Ready -> {
+            if (mode == GenerationMode.Text) {
+                tracePerformanceStage("load.residentReuse") { tryReuse(preparation) }?.let { reused ->
+                    AppLogger.i("ModelLoad") {
+                        "stage=complete outcome=ResidentReuse elapsedMs=${started.elapsedNow().inWholeMilliseconds}"
+                    }
+                    return reused
+                }
+            }
             try {
-                releaseRunners()
+                tracePerformanceStage("load.releasePrevious") { releaseRunners() }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Throwable) {

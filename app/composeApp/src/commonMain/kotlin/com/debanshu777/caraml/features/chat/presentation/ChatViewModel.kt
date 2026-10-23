@@ -1,5 +1,11 @@
 package com.debanshu777.caraml.features.chat.presentation
 
+import com.debanshu777.caraml.core.performance.ModelLoadDiagnostics
+import com.debanshu777.caraml.core.performance.ModelLoadMeasurement
+import kotlin.time.TimeSource
+import com.debanshu777.caraml.core.performance.tracePerformanceOperation
+import com.debanshu777.caraml.core.performance.tracePerformanceStage
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.debanshu777.caraml.core.data.inference.DiffusionInferenceRepository
@@ -55,6 +61,7 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
@@ -139,6 +146,11 @@ private data class RunnerTeardownAttempt(
     val generation: Long,
 )
 
+private data class InitialModelInventory(
+    val models: ImmutableList<LocalModelEntity> = persistentListOf(),
+    val initialized: Boolean = false,
+)
+
 private sealed interface RunnerTeardownKey {
     data object NoModels : RunnerTeardownKey
     data class NoModelsForMode(val mode: GenerationMode) : RunnerTeardownKey
@@ -161,12 +173,16 @@ class ChatViewModel(
     private val loadDiffusionModel: suspend (LoadRequest) -> ModelLoadResult = diffusionRepository::loadModel,
 ) : ViewModel() {
 
-    private val _topModels: StateFlow<ImmutableList<LocalModelEntity>> =
+    private val _inventoryInitialized = MutableStateFlow(false)
+    val inventoryInitialized = _inventoryInitialized.asStateFlow()
+
+    private val _modelInventory: StateFlow<InitialModelInventory> =
         getAvailableModels()
+            .map { models -> InitialModelInventory(models, initialized = true) }
             .stateIn(
                 scope = viewModelScope,
                 started = SharingStarted.WhileSubscribed(5000),
-                initialValue = persistentListOf(),
+                initialValue = InitialModelInventory(),
             )
 
     private val _generationMode = MutableStateFlow(GenerationMode.Text)
@@ -185,10 +201,10 @@ class ChatViewModel(
         _internal,
         _messages,
         _selectedModel,
-        _topModels,
+        _modelInventory,
         _generationMode,
-    ) { internal, messages, selected, models, mode ->
-        val topImm = models.toImmutableList()
+    ) { internal, messages, selected, inventory, mode ->
+        val topImm = inventory.models
         when (internal) {
             is InternalChatState.NoModels -> ChatUiState.NoModels
             is InternalChatState.NoModelsForMode ->
@@ -249,8 +265,11 @@ class ChatViewModel(
             }
         }
 
-        combine(_topModels, _generationMode) { models, mode -> models to mode }
-            .onEach { (models, mode) -> ensureSelectionForInventory(models, mode) }
+        combine(_modelInventory, _generationMode) { inventory, mode -> inventory to mode }
+            .onEach { (inventory, mode) ->
+                ensureSelectionForInventory(inventory.models, mode)
+                if (inventory.initialized) _inventoryInitialized.value = true
+            }
             .launchIn(viewModelScope)
 
         _selectedModel
@@ -364,7 +383,7 @@ class ChatViewModel(
             return
         }
 
-        val models = _topModels.value
+        val models = _modelInventory.value.models
         val picker = models.filterForMode(mode)
         if (models.isEmpty()) {
             transitionWithoutModel(
@@ -394,8 +413,12 @@ class ChatViewModel(
 
         invalidatePendingLoadAction()
         val selectionUnchanged = _selectedModel.value?.id == model.id
+        val ready = _internal.value as? InternalChatState.ReadyCore
+        val tryResidentReuse = selectionUnchanged && _generationMode.value == GenerationMode.Text &&
+            ready != null && !ready.isGenerating && generationJob?.isActive != true &&
+            !ModelLoadDiagnostics.forceFullReloadForMeasurement
         _selectedModel.value = model
-        if (selectionUnchanged) loadSelectedModel(model)
+        if (selectionUnchanged) loadSelectedModel(model, tryResidentReuse)
         when (_generationMode.value) {
             GenerationMode.Text -> lastTextModelId = model.id
             GenerationMode.Image,
@@ -405,12 +428,17 @@ class ChatViewModel(
         viewModelScope.launch { trackModelUsage(model) }
     }
 
-    private fun loadSelectedModel(model: LocalModelEntity) {
-        startModelLoad(model) { attempt ->
+    private fun loadSelectedModel(model: LocalModelEntity, tryResidentReuse: Boolean = false) {
+        startModelLoad(model, cancelGeneration = !tryResidentReuse) { attempt ->
             loadInstalledModel(
                 model = model,
                 mode = attempt.mode,
                 prepare = installedModelLoadRequestResolver::prepare,
+                tryReuse = { preparation ->
+                    if (!tryResidentReuse) null else withCurrentModelLoad(attempt) {
+                        inferenceRepository.tryReuseInstalledModel(preparation.model, preparation.artifact)
+                    }
+                },
                 releaseRunners = { releaseRunnersForAssessment(attempt) },
                 assess = { preparation ->
                     withCurrentModelLoad(attempt) {
@@ -429,6 +457,7 @@ class ChatViewModel(
 
     private fun startModelLoad(
         model: LocalModelEntity,
+        cancelGeneration: Boolean = true,
         load: suspend (ModelLoadAttempt) -> ModelLoadResult,
     ) {
         val mode = _generationMode.value
@@ -438,7 +467,7 @@ class ChatViewModel(
         invalidatePendingLoadAction()
         val previousJob = modelLoadJob
         modelLoadJob?.cancel()
-        signalGenerationCancellation()
+        if (cancelGeneration) signalGenerationCancellation()
         generationJob?.cancel()
         _streamingState.value = StreamingState()
 
@@ -448,32 +477,54 @@ class ChatViewModel(
         lastRunnerTeardownJob = null
 
         modelLoadJob = viewModelScope.launch(modelLoadDispatcher) {
-            // Claim first, then release the ownership lock before joining. A successor is therefore
-            // current while it waits for its predecessor, without deadlocking that predecessor's exit.
-            claimModelLoad(attempt)
-            // Wait for the previous job to fully complete (including any in-progress JNI call)
-            // before we start new native operations. Without this, a cancelled job that is still
-            // inside a blocking JNI call races with our unloadModel() → double-free crash.
-            awaitPreviousModelLoad(previousJob)
-
-            val result = load(attempt)
-            withContext(Dispatchers.Main.immediate) {
-                withCurrentModelLoad(attempt) {
-                    when (result) {
-                        is ModelLoadResult.Success -> {
-                            if (mode == GenerationMode.Image || mode == GenerationMode.Video) {
-                                _currentDiffusionParams.value = diffusionRepository.getRecommendedParams(model)
+            val diagnosticObserver = ModelLoadDiagnostics.observer
+            val diagnosticStarted = diagnosticObserver?.let { TimeSource.Monotonic.markNow() }
+            var diagnosticResult: ModelLoadResult? = null
+            try {
+                // Claim first, then release the ownership lock before joining. A successor is therefore
+                // current while it waits for its predecessor, without deadlocking that predecessor's exit.
+                claimModelLoad(attempt)
+                // Wait for the previous job to fully complete (including any in-progress JNI call)
+                // before we start new native operations. Without this, a cancelled job that is still
+                // inside a blocking JNI call races with our unloadModel() → double-free crash.
+                val result = tracePerformanceOperation("modelLoad") {
+                    tracePerformanceStage("load.previousAttemptWait") { awaitPreviousModelLoad(previousJob) }
+                    load(attempt)
+                }
+                withContext(Dispatchers.Main.immediate) {
+                    withCurrentModelLoad(attempt) {
+                        when (result) {
+                            is ModelLoadResult.Success -> {
+                                if (mode == GenerationMode.Image || mode == GenerationMode.Video) {
+                                    _currentDiffusionParams.value = diffusionRepository.getRecommendedParams(model)
+                                }
+                                _internal.value = InternalChatState.ReadyCore(
+                                    contextLimit = result.contextSize,
+                                    isGenerating = false,
+                                )
                             }
-                            _internal.value = InternalChatState.ReadyCore(
-                                contextLimit = result.contextSize,
-                                isGenerating = false,
-                            )
+                            is ModelLoadResult.Error -> {
+                                _internal.value = InternalChatState.ModelError(result.message)
+                            }
+                            is ModelLoadResult.AdmissionRequired -> handleAdmission(attempt, result.admission)
                         }
-                        is ModelLoadResult.Error -> {
-                            _internal.value = InternalChatState.ModelError(result.message)
-                        }
-                        is ModelLoadResult.AdmissionRequired -> handleAdmission(attempt, result.admission)
                     }
+                }
+                diagnosticResult = result
+            } finally {
+                if (diagnosticStarted != null) {
+                    ModelLoadDiagnostics.report(diagnosticObserver, ModelLoadMeasurement(
+                        attemptId = loadGeneration,
+                        modelRowId = model.id,
+                        elapsedMs = diagnosticStarted.elapsedNow().inWholeNanoseconds / 1_000_000.0,
+                        outcome = when (diagnosticResult) {
+                            is ModelLoadResult.Success -> "SUCCESS"
+                            is ModelLoadResult.Error -> "ERROR"
+                            is ModelLoadResult.AdmissionRequired -> "ADMISSION_REQUIRED"
+                            null -> "CANCELLED_OR_STALE"
+                        },
+                        contextLimit = (diagnosticResult as? ModelLoadResult.Success)?.contextSize,
+                    ))
                 }
             }
         }

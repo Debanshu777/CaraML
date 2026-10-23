@@ -31,6 +31,8 @@ CaraML runs large language models and image generation models entirely on-device
 
 ## Current Android Benchmarks
 
+Start with the [performance improvement report](benchmarks/README.md) for the steps taken, measured gains, current bottlenecks, validation status and cleanup record across startup, scrolling, GGUF and ONNX. The dated comparisons below retain their original workloads and are not interchangeable with the latest measurements.
+
 The [October 23 ONNX/GGUF comparison](benchmarks/onnx/README.md) covers five
 matching checkpoints on Pixel 9, provider placement, thread tuning, memory and
 the Llama INT8 compatibility workaround. ONNX dynamic-cache exports use CPU by default; accelerator experiments and
@@ -384,6 +386,26 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 ---
 
 ## Recent Changes
+
+- Consolidated benchmark Python tooling from 30 files to 19 behind `python3 benchmarks/run.py`, preserving all 50 existing offline tests and adding six command/workflow checks. The [current report](benchmarks/README.md) includes commands, measured improvements and the earlier 384 MiB artifact cleanup; model fixtures, APKs and traces remain available.
+
+- Optimized ONNX graph reads and unchanged-model reuse. Pixel 9 three-process Qwen 0.5B pilots reduced median initial load from 3.81 to 3.45 s and resident reselection from 2.73 s to 241 ms. Llama 1B initial load showed no improvement. [ONNX results, traces and remaining bottlenecks](benchmarks/onnx/README.md#pixel-9-app-performance-pass--october-24-2026).
+
+- Optimized native CPU repacking without changing tensor bytes. A fixed-workload Pixel 9 Qwen 3B pilot reduced median full load from 3.337 to 2.536 s (24.0%, three runs per build); first-token time after loading was unchanged. [Controlled results and limits](benchmarks/android/results/pixel9-repack-fixed-2026-10-24.json).
+
+- Fixed startup readiness reporting and separated cache, graphics and DEX costs in clean Pixel 9 traces. Streaming-row isolation removes redundant compositions but shows no frame-time gain; visual defaults remain unchanged. [Measurements and limits](benchmarks/android/README.md#startup-readiness-and-cache-pilot--october-24-2026).
+
+- Re-selecting an unchanged ready llama model now retains its native session after current artifact checks. Same-APK Pixel 9 picker trials reduced median action-to-load-completion from 5.38 s to 177 ms (three trials per mode; warm phone, background CPU activity, no drawn-frame timing). [Raw results and limits](benchmarks/android/results/pixel9-resident-reselection-2026-10-23.json).
+
+- Added startup readiness reporting, correlated load/prefill/first-token spans, and actual picker journeys. Fixed-workload CPU/Vulkan journeys request exact context, batch and KV settings before normal assessment/admission and reject fallback or runtime drift; see the [Android benchmark guide](benchmarks/android/README.md).
+
+- Audited 147 saved Perfetto files: identified missing native/GPU attribution, packet loss in eight scroll captures, CPU-dominated native loading and first-frame graphics costs. [Findings and proposed experiments](benchmarks/android/README.md#perfetto-audit--october-23-2026).
+
+- Removed repeated whole-model hashing from installed-model loading while retaining publication checksums, lightweight file checks and native-load locking. Pixel 9 Qwen 3B full-load median fell from 20.32 s to 3.29 s (83.8%); see the [measurement and integrity tradeoff](benchmarks/android/README.md#installed-model-load-minimal-verification).
+
+- Measured Qwen2.5 3B loading and generation on Pixel 9: CPU reaches its first answer sooner than Vulkan in the fixed short-prompt test. Added full app-load timing, opt-in composition traces, and temperature checks; removed Android release preview tooling. See the [benchmark follow-up](benchmarks/android/README.md#detailed-composition-and-model-load-measurements).
+
+- Added [Android startup/scrolling benchmarks and Perfetto analysis](benchmarks/android/README.md), plus a generated startup Baseline Profile. Pixel 9 controls measure 76–90 ms faster startup than library profiles alone; archived runs record thermal validity.
 
 - Added supported ONNX text bundles to Hugging Face discovery, verified downloads and Android/JVM/iOS chat, with format routing, cancellation and memory admission.
 

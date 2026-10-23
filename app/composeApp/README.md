@@ -202,6 +202,20 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 
 ## Recent Changes
 
+- Added ONNX load/generation timing and idle resident-session reuse for an unchanged model, artifact, runtime configuration and settings. Current manifest/path/size checks remain under artifact ownership; cancellation, failures and context mutations invalidate reuse. Repository and routing tests cover lifecycle races and changed files. [Measurements](../../benchmarks/onnx/README.md#pixel-9-app-performance-pass--october-24-2026).
+
+- Fixed inventory-readiness observation during composition. Streaming state now reaches only its active chat row: diagnostic wrapper calls fall from 172 to 26, with no demonstrated frame-time improvement in the small Pixel 9 pilot.
+
+- Added resident llama reuse before runner teardown for an idle, ready same-model selection. Settings, context or artifact changes, retries, native failures and context mutations retain the full-load path; reuse checks the current manifest/path/size under existing ownership without another admission, preflight or payload hash. [Picker measurements](../../benchmarks/android/results/pixel9-resident-reselection-2026-10-23.json).
+
+- Added async-safe load/prefill/first-token spans and opt-in UI load-completion diagnostics. A fixed-workload factory constrains benchmark candidates before normal assessment/admission, while the default factory remains adaptive; lifecycle, ownership, UI replacement and workload-drift tests cover these paths.
+
+- Removed payload rehashing from installed-model preparation, request admission and native-load verification. Publication/recovery checksums, generation bindings, size/path checks and root locks remain; same-size post-publication corruption requires a full integrity check. Pixel 9 Qwen 3B full load fell from 20.32 s to 3.29 s ([details](../../benchmarks/android/README.md#installed-model-load-minimal-verification)).
+
+- Removed Android `ui-tooling` from the shared runtime; preview annotations and debug-host tooling remain. Detailed startup traces identified composition work; unproven startup experiments were reverted.
+
+- Added a stable chat-list automation tag for the [Android UI benchmark](../../benchmarks/android/README.md); the benchmark fixture renders the production chat screen and effects with fixed messages.
+
 - Added GGUF/ONNX discovery filters, complete immutable ONNX downloads, format-aware catalog evidence and a single resident text-engine router.
 - ONNX chat supports streaming reasoning, cancellation, context reset and reload with F32 KV estimates and engine-specific recovery; exact unsupported exports fail with guidance.
 

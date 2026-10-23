@@ -532,6 +532,7 @@ class ModelRuntimeValidation : Instrumentation() {
 private data class ValidationCase(val id: String, val repository: String, val revision: String, val file: String, val sha256: String, val bytes: Long)
 
 private val VALIDATION_CASES = listOf(
+    ValidationCase("qwen2.5-3b", "Qwen/Qwen2.5-3B-Instruct-GGUF", "7dabda4d13d513e3e842b20f0d435c732f172cbe", "qwen2.5-3b-instruct-q4_k_m.gguf", "626b4a6678b86442240e33df819e00132d3ba7dddfe1cdc4fbb18e0a9615c62d", 2104932768L),
     ValidationCase("smollm2-135m", "bartowski/SmolLM2-135M-Instruct-GGUF", "09816acd5d99df7be770d85ea30822623dab342c", "SmolLM2-135M-Instruct-Q4_K_M.gguf", "2e8040ceae7815abe0dcb3540b9995eaa1fa0d2ca9e797d0a635ae4433c68c2d", 105454432L),
     ValidationCase("gemma3-270m", "bartowski/google_gemma-3-270m-it-GGUF", "d127a4e2c6ed47fdf409a956867b604c040432f9", "google_gemma-3-270m-it-Q4_K_M.gguf", "c866c9f113f2e9aa2225c5997ede437392b8fa844ba5db9e4c77e315ffe20800", 253115168L),
     ValidationCase("qwen3-0.6b", "Qwen/Qwen3-0.6B-GGUF", "23749fefcc72300e3a2ad315e1317431b06b590a", "Qwen3-0.6B-Q8_0.gguf", "9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031", 639446688L),

@@ -4,6 +4,7 @@ plugins {
 }
 
 val onnxWebGpuEnabled = providers.gradleProperty("onnxWebGpu").map(String::toBoolean).getOrElse(false)
+val benchmarkR8Enabled = providers.gradleProperty("benchmarkR8").map(String::toBoolean).getOrElse(false)
 val onnxWebGpuOutput = layout.buildDirectory.dir("generated/onnxWebGpuJni")
 val buildOnnxWebGpu = tasks.register<Exec>("buildOnnxWebGpu") {
     onlyIf { onnxWebGpuEnabled }
@@ -47,6 +48,18 @@ android {
         getByName("release") {
             isMinifyEnabled = false
         }
+        create("benchmark") {
+            initWith(getByName("release"))
+            matchingFallbacks += "release"
+            signingConfig = signingConfigs.getByName("debug")
+            isDebuggable = false
+            applicationIdSuffix = ".benchmark"
+            // Opt-in experiment only. Production release settings remain unchanged.
+            optimization {
+                enable = benchmarkR8Enabled
+                keepRules { includeDefault = true }
+            }
+        }
     }
 
     compileOptions {
@@ -59,9 +72,19 @@ android {
 if (onnxWebGpuEnabled) tasks.named("preBuild").configure { dependsOn(buildOnnxWebGpu) }
 
 dependencies {
+    implementation(libs.androidx.profileinstaller)
+    if (providers.gradleProperty("benchmarkFullTracing").orNull == "true") {
+        "benchmarkImplementation"(libs.androidx.compose.tracing)
+    }
+    "benchmarkImplementation"(libs.compose.foundation)
+    "benchmarkImplementation"(libs.navigation3.compose.ui)
+    "benchmarkImplementation"(libs.kotlinx.collections.immutable)
+    "benchmarkImplementation"(libs.kotlinx.coroutinesCore)
     debugImplementation(project(":model-discovery"))
     implementation(project(":app:composeApp"))
     implementation(libs.androidx.activity.compose)
+    // MainActivity's @Preview annotation is compiled in every build variant.
+    implementation(libs.compose.uiToolingPreview)
     implementation(project.dependencies.platform(libs.koin.bom))
     implementation(libs.koin.android)
     implementation(libs.koin.core)

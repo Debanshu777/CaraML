@@ -110,7 +110,11 @@ class SuitabilityEngine(
                 else -> emptyList()
             }
         }
-        if (candidates.isEmpty()) {
+        if (candidates.isEmpty() || workload is LlmWorkloadConfig &&
+            workload.requestedFullVulkanLayerCount != null &&
+            (descriptor !is LlmModelDescriptor || descriptor.fullVulkanLayerCount() != workload.requestedFullVulkanLayerCount ||
+                candidates.any { it !is LlmRunPlan || !it.matchesFixedVulkanPlacement(descriptor) })
+        ) {
             return invalidPlans(key, compatibility, hardwareProfile.memoryTopology)
         }
 
@@ -221,6 +225,20 @@ class SuitabilityEngine(
             it.status == BackendStatus.AVAILABLE && it.kind == BackendKind.CPU
         } ?: return null
         val backend = backendCapability.kind
+        val fixedFullLayers = if (workload is LlmWorkloadConfig &&
+            workload.requestedFullVulkanLayerCount != null
+        ) {
+            if (descriptor !is LlmModelDescriptor) return null
+            val derived = descriptor.fullVulkanLayerCount() ?: return null
+            if (derived != workload.requestedFullVulkanLayerCount) return null
+            derived
+        } else null
+        val llmGpuLayers = when {
+            backend == BackendKind.CPU -> 0
+            fixedFullLayers == null -> null
+            backend == BackendKind.VULKAN && hardware.memoryTopology == MemoryTopology.UNIFIED -> fixedFullLayers
+            else -> return null
+        }
         return when {
             descriptor is LlmModelDescriptor && workload is LlmWorkloadConfig -> PlanningSettings(
                 engineMaxContextTokens = maxOf(workload.contextTokens, descriptor.contextLimit ?: workload.contextTokens),
@@ -233,7 +251,7 @@ class SuitabilityEngine(
                 allowedKvCacheTypes = workload.allowedKvCacheTypes,
                 backend = backend,
                 memoryTopology = hardware.memoryTopology,
-                gpuLayerCount = if (backend == BackendKind.CPU) 0 else null,
+                gpuLayerCount = llmGpuLayers,
             )
             descriptor is DiffusionModelDescriptor && workload is DiffusionWorkloadConfig -> {
                 val trustworthyHeadroom = backendCapability.additionalAllocatableBytes?.takeIf {

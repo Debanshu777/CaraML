@@ -3,6 +3,8 @@ package com.debanshu777.caraml.core.data.inference
 import com.debanshu777.caraml.core.recommendation.LoadAdmission
 import com.debanshu777.caraml.core.recommendation.LoadRequest
 import com.debanshu777.caraml.core.recommendation.InferenceObservationPlan
+import com.debanshu777.caraml.core.recommendation.ResolvedLocalArtifact
+import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.sdk.plugin.llama.bridge.InferenceChunk
 import kotlinx.coroutines.flow.Flow
 
@@ -14,6 +16,11 @@ sealed interface ModelLoadResult {
 
 interface InferenceRepository {
     suspend fun loadModel(request: LoadRequest): ModelLoadResult
+    /** Returns null unless the same ready native session can be retained without a new load. */
+    suspend fun tryReuseInstalledModel(
+        model: LocalModelEntity,
+        artifact: ResolvedLocalArtifact,
+    ): ModelLoadResult.Success? = null
     suspend fun allowExplicitRetry(request: LoadRequest) = Unit
     fun currentGenerationObservation(): InferenceObservationPlan? = null
     suspend fun unloadModel()

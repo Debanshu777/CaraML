@@ -1,0 +1,568 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-24",
+  "classification": "three-launch-exploratory-startup-pilot",
+  "device": "Pixel 9 / Android 17",
+  "scope": "Fresh process, initialized empty catalog, initial persisted theme/inventory and recovery complete, rendered app shell. Excludes model readiness and inference.",
+  "analysis": {
+    "processor": "Perfetto v58.2-add693d8b",
+    "windows": "android_startup_time_to_display TTID and TTFD bounds; inclusive phase durations overlap",
+    "localDirectory": "build/benchmark-results/ui-measurement/startup-v3",
+    "sql": "bounded-startup.sql"
+  },
+  "notes": [
+    "All nine launches passed trace/error/cardinality/thermal gates, using the same APK and packaged Baseline Profile, 60 Hz endpoint policy, no full Compose tracing, R8 disabled.",
+    "Runs are sequential, three per condition, at 32.8\u201333.6 C with background activity. They establish mechanisms, not regression thresholds or a robust speedup estimate.",
+    "Cache-preserving avoids explicit cache clearing but does not guarantee every shader is resident. Effects-off iteration 0 compiled 27 pipelines; retained in all raw results.",
+    "Soft-effects off improves median TTFD only 3.014 ms (1.4%); do not disable visuals from this pilot. Its startup also transitions from initial default effects-on preferences.",
+    "COLD versus cache-preserving median TTFD differs by 270.949 ms; this is cache state sensitivity, not a source-code optimization.",
+    "Cold main-thread explicit I/O wait median 52.067 ms and RenderThread pipeline compilation median 128.011 ms overlap with other phases and must not be added to nested wall timings.",
+    "Concurrent process CPU totals are summed across cores; they do not prove those processes directly blocked the app. System_server/SurfaceFlinger work also includes normal launch/render work.",
+    "App-ready was previously unobservable because an inventory State was read only inside SideEffect. Eagerly reading it during composition fixes subscription without dropping any readiness requirement."
+  ],
+  "runs": {
+    "v3-cache-off": {
+      "archive": "build/benchmark-results/android-ui/20261023T191049.421937Z-v3-cache-off",
+      "label": "v3-cache-off",
+      "scenario": "startup-cache-preserved",
+      "fixtureVersion": 3,
+      "apkSha256": "57dc49185a2cffe39ccec2f543a31a87874b687dfa6761130bab2056ca282f8d",
+      "appProfileSha256": "dbd6a270b0a313127a79acdf0592c52d1cc9109137bccbec931ad40a6e20e43e",
+      "fullTracing": false,
+      "softEffectsOverride": "off",
+      "benchmarkR8Enabled": false,
+      "requestedRefreshHz": 60,
+      "batteryTemperatureBeforeC": 33.2,
+      "batteryTemperatureAfterC": 33.2,
+      "thermalStatusBefore": 0,
+      "thermalStatusAfter": 0,
+      "measurementValid": true,
+      "ttidMs": {
+        "minimum": 174.29065,
+        "maximum": 286.070313,
+        "median": 174.798055,
+        "coefficientOfVariation": 0.3041287675937236,
+        "runs": [
+          286.070313,
+          174.798055,
+          174.29065
+        ]
+      },
+      "ttfdMs": {
+        "minimum": 205.544556,
+        "maximum": 327.640707,
+        "median": 211.018596,
+        "coefficientOfVariation": 0.2780139799885187,
+        "runs": [
+          327.640707,
+          205.544556,
+          211.018596
+        ]
+      },
+      "boundedTrace": {
+        "readyGapMs": {
+          "runs": [
+            41.57039400000002,
+            30.746500999999995,
+            36.727946
+          ],
+          "median": 36.727946
+        },
+        "mainCpuMs": {
+          "runs": [
+            102.583086,
+            96.950111,
+            101.52678
+          ],
+          "median": 101.52678,
+          "minimum": 96.950111,
+          "maximum": 102.583086
+        },
+        "mainRunnableMs": {
+          "runs": [
+            7.934886,
+            4.744265,
+            7.579468
+          ],
+          "median": 7.579468,
+          "minimum": 4.744265,
+          "maximum": 7.934886
+        },
+        "mainExplicitIoWaitMs": {
+          "runs": [
+            0,
+            0,
+            0
+          ],
+          "median": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        "bindApplicationMs": {
+          "runs": [
+            30.447509,
+            25.732788,
+            28.676921
+          ],
+          "median": 28.676921,
+          "minimum": 25.732788,
+          "maximum": 30.447509
+        },
+        "dexOpenMs": {
+          "runs": [
+            10.790975,
+            9.994019,
+            10.163371
+          ],
+          "median": 10.163371,
+          "minimum": 9.994019,
+          "maximum": 10.790975
+        },
+        "recomposeInclusiveMs": {
+          "runs": [
+            24.955241,
+            25.126258,
+            25.102578
+          ],
+          "median": 25.102578,
+          "minimum": 24.955241,
+          "maximum": 25.126258
+        },
+        "pipelineCompileMs": {
+          "runs": [
+            100.377035,
+            0,
+            0
+          ],
+          "median": 0,
+          "minimum": 0,
+          "maximum": 100.377035
+        },
+        "pipelineCompileCount": {
+          "runs": [
+            27,
+            0,
+            0
+          ],
+          "median": 0,
+          "minimum": 0,
+          "maximum": 27
+        },
+        "firstDrawMs": {
+          "runs": [
+            132.003825,
+            21.396281,
+            20.520508
+          ],
+          "median": 21.396281,
+          "minimum": 20.520508,
+          "maximum": 132.003825
+        },
+        "postTtidMainCpuMs": {
+          "runs": [
+            15.424232,
+            11.277832,
+            13.509074
+          ],
+          "median": 13.509074,
+          "minimum": 11.277832,
+          "maximum": 15.424232
+        },
+        "postTtidMainSleepMs": {
+          "runs": [
+            25.21489,
+            19.193603,
+            22.810589
+          ],
+          "median": 22.810589,
+          "minimum": 19.193603,
+          "maximum": 25.21489
+        },
+        "gmsCpuMs": {
+          "runs": [
+            0.186889,
+            5.867106,
+            0.115763
+          ],
+          "median": 0.186889,
+          "minimum": 0.115763,
+          "maximum": 5.867106
+        },
+        "playStoreCpuMs": {
+          "runs": [
+            0,
+            0,
+            0
+          ],
+          "median": 0,
+          "minimum": 0,
+          "maximum": 0
+        }
+      }
+    },
+    "v3-cache-on-fixed": {
+      "archive": "build/benchmark-results/android-ui/20261023T190859.979557Z-v3-cache-on-fixed",
+      "label": "v3-cache-on-fixed",
+      "scenario": "startup-cache-preserved",
+      "fixtureVersion": 3,
+      "apkSha256": "57dc49185a2cffe39ccec2f543a31a87874b687dfa6761130bab2056ca282f8d",
+      "appProfileSha256": "dbd6a270b0a313127a79acdf0592c52d1cc9109137bccbec931ad40a6e20e43e",
+      "fullTracing": false,
+      "softEffectsOverride": "on",
+      "benchmarkR8Enabled": false,
+      "requestedRefreshHz": 60,
+      "batteryTemperatureBeforeC": 32.8,
+      "batteryTemperatureAfterC": 33.2,
+      "thermalStatusBefore": 0,
+      "thermalStatusAfter": 0,
+      "measurementValid": true,
+      "ttidMs": {
+        "minimum": 180.351685,
+        "maximum": 186.200724,
+        "median": 183.821574,
+        "coefficientOfVariation": 0.016033211935038042,
+        "runs": [
+          186.200724,
+          180.351685,
+          183.821574
+        ]
+      },
+      "ttfdMs": {
+        "minimum": 213.497396,
+        "maximum": 215.386353,
+        "median": 214.032878,
+        "coefficientOfVariation": 0.0045428115771789035,
+        "runs": [
+          213.497396,
+          215.386353,
+          214.032878
+        ]
+      },
+      "boundedTrace": {
+        "readyGapMs": {
+          "runs": [
+            27.296672,
+            35.03466800000001,
+            30.211304000000013
+          ],
+          "median": 30.211304000000013
+        },
+        "mainCpuMs": {
+          "runs": [
+            95.262579,
+            99.400227,
+            95.965494
+          ],
+          "median": 95.965494,
+          "minimum": 95.262579,
+          "maximum": 99.400227
+        },
+        "mainRunnableMs": {
+          "runs": [
+            7.966389,
+            6.04529,
+            5.768436
+          ],
+          "median": 6.04529,
+          "minimum": 5.768436,
+          "maximum": 7.966389
+        },
+        "mainExplicitIoWaitMs": {
+          "runs": [
+            0,
+            0,
+            0
+          ],
+          "median": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        "bindApplicationMs": {
+          "runs": [
+            27.418945,
+            27.55538,
+            29.023072
+          ],
+          "median": 27.55538,
+          "minimum": 27.418945,
+          "maximum": 29.023072
+        },
+        "dexOpenMs": {
+          "runs": [
+            9.809042,
+            9.740682,
+            10.367635
+          ],
+          "median": 9.809042,
+          "minimum": 9.740682,
+          "maximum": 10.367635
+        },
+        "recomposeInclusiveMs": {
+          "runs": [
+            24.273682,
+            23.575032,
+            25.228104
+          ],
+          "median": 24.273682,
+          "minimum": 23.575032,
+          "maximum": 25.228104
+        },
+        "pipelineCompileMs": {
+          "runs": [
+            0,
+            0,
+            0
+          ],
+          "median": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        "pipelineCompileCount": {
+          "runs": [
+            0,
+            0,
+            0
+          ],
+          "median": 0,
+          "minimum": 0,
+          "maximum": 0
+        },
+        "firstDrawMs": {
+          "runs": [
+            22.789144,
+            20.160116,
+            21.088867
+          ],
+          "median": 21.088867,
+          "minimum": 20.160116,
+          "maximum": 22.789144
+        },
+        "postTtidMainCpuMs": {
+          "runs": [
+            9.094362,
+            9.80469,
+            9.447793
+          ],
+          "median": 9.447793,
+          "minimum": 9.094362,
+          "maximum": 9.80469
+        },
+        "postTtidMainSleepMs": {
+          "runs": [
+            17.255615,
+            24.911456,
+            20.168335
+          ],
+          "median": 20.168335,
+          "minimum": 17.255615,
+          "maximum": 24.911456
+        },
+        "gmsCpuMs": {
+          "runs": [
+            0.130127,
+            0.128744,
+            5.697673
+          ],
+          "median": 0.130127,
+          "minimum": 0.128744,
+          "maximum": 5.697673
+        },
+        "playStoreCpuMs": {
+          "runs": [
+            145.029021,
+            0,
+            0
+          ],
+          "median": 0,
+          "minimum": 0,
+          "maximum": 145.029021
+        }
+      }
+    },
+    "v3-cold-on": {
+      "archive": "build/benchmark-results/android-ui/20261023T191218.280647Z-v3-cold-on",
+      "label": "v3-cold-on",
+      "scenario": "startup-baseline",
+      "fixtureVersion": 3,
+      "apkSha256": "57dc49185a2cffe39ccec2f543a31a87874b687dfa6761130bab2056ca282f8d",
+      "appProfileSha256": "dbd6a270b0a313127a79acdf0592c52d1cc9109137bccbec931ad40a6e20e43e",
+      "fullTracing": false,
+      "softEffectsOverride": "on",
+      "benchmarkR8Enabled": false,
+      "requestedRefreshHz": 60,
+      "batteryTemperatureBeforeC": 33.5,
+      "batteryTemperatureAfterC": 33.6,
+      "thermalStatusBefore": 0,
+      "thermalStatusAfter": 0,
+      "measurementValid": true,
+      "ttidMs": {
+        "minimum": 422.237711,
+        "maximum": 464.656779,
+        "median": 445.986573,
+        "coefficientOfVariation": 0.04785155565233004,
+        "runs": [
+          445.986573,
+          422.237711,
+          464.656779
+        ]
+      },
+      "ttfdMs": {
+        "minimum": 457.222819,
+        "maximum": 496.488485,
+        "median": 484.981731,
+        "coefficientOfVariation": 0.04209157432089579,
+        "runs": [
+          484.981731,
+          457.222819,
+          496.488485
+        ]
+      },
+      "boundedTrace": {
+        "readyGapMs": {
+          "runs": [
+            38.995158,
+            34.985108000000025,
+            31.831706000000054
+          ],
+          "median": 34.985108000000025
+        },
+        "mainCpuMs": {
+          "runs": [
+            127.53708,
+            115.324447,
+            133.645338
+          ],
+          "median": 127.53708,
+          "minimum": 115.324447,
+          "maximum": 133.645338
+        },
+        "mainRunnableMs": {
+          "runs": [
+            11.461098,
+            12.798268,
+            12.92619
+          ],
+          "median": 12.798268,
+          "minimum": 11.461098,
+          "maximum": 12.92619
+        },
+        "mainExplicitIoWaitMs": {
+          "runs": [
+            52.06681,
+            49.768724,
+            68.536865
+          ],
+          "median": 52.06681,
+          "minimum": 49.768724,
+          "maximum": 68.536865
+        },
+        "bindApplicationMs": {
+          "runs": [
+            50.611165,
+            48.32609,
+            86.288249
+          ],
+          "median": 50.611165,
+          "minimum": 48.32609,
+          "maximum": 86.288249
+        },
+        "dexOpenMs": {
+          "runs": [
+            23.218913,
+            24.582805,
+            43.96228
+          ],
+          "median": 24.582805,
+          "minimum": 23.218913,
+          "maximum": 43.96228
+        },
+        "recomposeInclusiveMs": {
+          "runs": [
+            64.19812,
+            62.024458,
+            62.18282
+          ],
+          "median": 62.18282,
+          "minimum": 62.024458,
+          "maximum": 64.19812
+        },
+        "pipelineCompileMs": {
+          "runs": [
+            128.011152,
+            124.85706,
+            131.516235
+          ],
+          "median": 128.011152,
+          "minimum": 124.85706,
+          "maximum": 131.516235
+        },
+        "pipelineCompileCount": {
+          "runs": [
+            27,
+            27,
+            27
+          ],
+          "median": 27,
+          "minimum": 27,
+          "maximum": 27
+        },
+        "firstDrawMs": {
+          "runs": [
+            190.296305,
+            184.070841,
+            196.009277
+          ],
+          "median": 190.296305,
+          "minimum": 184.070841,
+          "maximum": 196.009277
+        },
+        "postTtidMainCpuMs": {
+          "runs": [
+            10.933924,
+            10.119018,
+            8.993246
+          ],
+          "median": 10.119018,
+          "minimum": 8.993246,
+          "maximum": 10.933924
+        },
+        "postTtidMainSleepMs": {
+          "runs": [
+            23.180989,
+            20.75525,
+            21.034586
+          ],
+          "median": 21.034586,
+          "minimum": 20.75525,
+          "maximum": 23.180989
+        },
+        "gmsCpuMs": {
+          "runs": [
+            8.102378,
+            15.043621,
+            52.926434
+          ],
+          "median": 15.043621,
+          "minimum": 8.102378,
+          "maximum": 52.926434
+        },
+        "playStoreCpuMs": {
+          "runs": [
+            0,
+            1.991333,
+            0
+          ],
+          "median": 0,
+          "minimum": 0,
+          "maximum": 1.991333
+        }
+      }
+    }
+  },
+  "excluded": [
+    {
+      "archive": "build/benchmark-results/android-ui/20261023T190035.469219Z-v3-cache-on",
+      "reason": "Setup readiness wait timed out before measured iterations; no valid startup timings."
+    }
+  ]
+}

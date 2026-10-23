@@ -2,6 +2,7 @@ import org.gradle.api.artifacts.component.ProjectComponentIdentifier
 
 plugins {
     alias(libs.plugins.androidApplication) apply false
+    alias(libs.plugins.androidTest) apply false
     alias(libs.plugins.androidLibrary) apply false
     alias(libs.plugins.composeHotReload) apply false
     alias(libs.plugins.composeMultiplatform) apply false
@@ -77,6 +78,7 @@ tasks.register("verifyProject") {
         ":app:composeApp:jvmTest",
         ":app:desktopApp:classes",
         ":nativeEngine:verifyNativeSubmodulePins",
+        ":nativeEngine:testCpuRepackEquivalence",
         ":nativeEngine:testJniUtf8Desktop",
         ":nativeEngine:testDiffusionRunnerNativeDesktop",
         ":nativeEngine:testArtifactFsAndroidRootDesktop",

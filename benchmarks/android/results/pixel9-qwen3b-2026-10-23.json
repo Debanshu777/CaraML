@@ -1,0 +1,1256 @@
+{
+  "date": "2026-10-23",
+  "modelManifest": "manifests/qwen2.5-3b-gguf.json",
+  "limitations": [
+    "Debug managed code; optimized native engine. Not release UI metrics.",
+    "OS page caches uncontrolled; host/device SHA verification reads weights before timing.",
+    "Three fresh-process loads with one warmup and one measured 64-token response per trial; not sustained throughput.",
+    "Thermal status checked before/after load and generation; battery threshold applies at trial start.",
+    "PSS is process memory and does not account for all GPU allocations."
+  ],
+  "cpu": {
+    "archive": "build/benchmark-results/model-load/20261023T164944Z-gpu0-t4",
+    "run": {
+      "serial": "48221FDAQ003AT",
+      "trials": 3,
+      "runs": 1,
+      "threads": 4,
+      "gpu": 0,
+      "cacheState": "OS_CACHE_UNCONTROLLED; verification reads weights before testing",
+      "managedBuild": "DEBUG",
+      "nativeBuild": "RELEASE",
+      "contextTokens": 2048,
+      "tokens": 64,
+      "diagnosticTracing": false,
+      "device": "google/tokay/tokay:17/CP3A.260905.009/16091614:user/release-keys",
+      "allTrialsValid": true,
+      "installedApkSha256": "0bb6228bfd6cf8e42d0e0f27ffede7a47d7f052d55c79699b5a606eaf46ada4a",
+      "gitRevision": "b1dc4169ab8918776c30f85fc468aad83628754d"
+    },
+    "trials": [
+      {
+        "trial": 1,
+        "before": {
+          "thermal": 0,
+          "batteryTemperatureC": 34.9
+        },
+        "after": {
+          "thermal": 0,
+          "batteryTemperatureC": 34.9
+        },
+        "passed": true,
+        "measurementValid": true,
+        "events": [
+          {
+            "event": "environment",
+            "foreground_resumed": true,
+            "foreground_focused": true,
+            "display_interactive": true,
+            "battery_plugged": 1
+          },
+          {
+            "event": "load",
+            "model": "load-626b4a6678b86442/qwen2.5-3b-instruct-q4_k_m.gguf",
+            "load_ms": 3001.109539,
+            "pss_bytes": 3650703360,
+            "thermal": 0,
+            "initialization_ms": 100.238282,
+            "native_model_load_ms": 2900.866375,
+            "battery_temperature_c": 35.8,
+            "runtime": "llama.cpp gpuLayers=0; 4 threads"
+          },
+          {
+            "event": "generation",
+            "model": "load-626b4a6678b86442/qwen2.5-3b-instruct-q4_k_m.gguf",
+            "warmup": true,
+            "iteration": 0,
+            "tokens": 64,
+            "ttft_ms": 1126.834635,
+            "elapsed_ms": 7021.294437,
+            "decode_tokens_per_second": 10.719975111362318,
+            "end_to_end_tokens_per_second": 9.115128353361776,
+            "peak_pss_bytes": 3526674432,
+            "foreground_verified": true,
+            "thermal_start": 0,
+            "thermal_end": 0,
+            "text": "Sure! The sky appears blue because of a phenomenon called Rayleigh scattering.\n\nWhen sunlight enters Earth's atmosphere, it hits tiny particles in the air. These particles are much smaller than the wavelength of light (which is why we don't see them). \n\nBlue light has shorter wavelengths compared to other colors like red and yellow"
+          },
+          {
+            "event": "temperature",
+            "iteration": 0,
+            "start_c": 35.8,
+            "end_c": 35.8
+          },
+          {
+            "event": "generation",
+            "model": "load-626b4a6678b86442/qwen2.5-3b-instruct-q4_k_m.gguf",
+            "warmup": false,
+            "iteration": 1,
+            "tokens": 64,
+            "ttft_ms": 1101.136271,
+            "elapsed_ms": 6639.84184,
+            "decode_tokens_per_second": 11.403356973115601,
+            "end_to_end_tokens_per_second": 9.638783805729927,
+            "peak_pss_bytes": 3527141376,
+            "foreground_verified": true,
+            "thermal_start": 0,
+            "thermal_end": 0,
+            "text": "Sure! The sky appears blue because of a phenomenon called Rayleigh scattering.\n\nWhen sunlight enters Earth's atmosphere, it hits tiny particles in the air. These particles are much smaller than the wavelength of light (which is why we don't see them). \n\nBlue light has shorter wavelengths compared to other colors like red and yellow"
+          },
+          {
+            "event": "temperature",
+            "iteration": 1,
+            "start_c": 35.8,
+            "end_c": 35.8
+          }
+        ],
+        "command": [
+          "adb",
+          "-s",
+          "48221FDAQ003AT",
+          "shell",
+          "am",
+          "instrument",
+          "-w",
+          "-e",
+          "model",
+          "load-626b4a6678b86442/qwen2.5-3b-instruct-q4_k_m.gguf",
+          "-e",
+          "threads",
+          "4",
+          "-e",
+          "gpu",
+          "0",
+          "-e",
+          "tokens",
+          "64",
+          "-e",
+          "runs",
+          "1",
+          "com.debanshu777.caraml/com.debanshu777.caraml.benchmark.OnnxGgufBenchmark"
+        ]
+      },
+      {
+        "trial": 2,
+        "before": {
+          "thermal": 0,
+          "batteryTemperatureC": 35.0
+        },
+        "after": {
+          "thermal": 0,
+          "batteryTemperatureC": 34.9
+        },
+        "passed": true,
+        "measurementValid": true,
+        "events": [
+          {
+            "event": "environment",
+            "foreground_resumed": true,
+            "foreground_focused": true,
+            "display_interactive": true,
+            "battery_plugged": 1
+          },
+          {
+            "event": "load",
+            "model": "load-626b4a6678b86442/qwen2.5-3b-instruct-q4_k_m.gguf",
+            "load_ms": 2946.829266,
+            "pss_bytes": 3645303808,
+            "thermal": 0,
+            "initialization_ms": 96.019695,
+            "native_model_load_ms": 2850.804323,
+            "battery_temperature_c": 35.8,
+            "runtime": "llama.cpp gpuLayers=0; 4 threads"
+          },
+          {
+            "event": "generation",
+            "model": "load-626b4a6678b86442/qwen2.5-3b-instruct-q4_k_m.gguf",
+            "warmup": true,
+            "iteration": 0,
+            "tokens": 64,
+            "ttft_ms": 1062.192343,
+            "elapsed_ms": 6759.113203,
+            "decode_tokens_per_second": 11.259260731899076,
+            "end_to_end_tokens_per_second": 9.468697753367099,
+            "peak_pss_bytes": 3515773952,
+            "foreground_verified": true,
+            "thermal_start": 0,
+            "thermal_end": 0,
+            "text": "Sure! The sky appears blue because of a phenomenon called Rayleigh scattering.\n\nWhen sunlight enters Earth's atmosphere, it hits tiny particles in the air. These particles are much smaller than the wavelength of light (which is why we don't see them). \n\nBlue light has shorter wavelengths compared to other colors like red and yellow"
+          },
+          {
+            "event": "temperature",
+            "iteration": 0,
+            "start_c": 35.8,
+            "end_c": 35.8
+          },
+          {
+            "event": "generation",
+            "model": "load-626b4a6678b86442/qwen2.5-3b-instruct-q4_k_m.gguf",
+            "warmup": false,
+            "iteration": 1,
+            "tokens": 64,
+            "ttft_ms": 1001.864462,
+            "elapsed_ms": 7581.164189,
+            "decode_tokens_per_second": 9.766127713664554,
+            "end_to_end_tokens_per_second": 8.441975190678725,
+            "peak_pss_bytes": 3515810816,
+            "foreground_verified": true,
+            "thermal_start": 0,
+            "thermal_end": 0,
+            "text": "Sure! The sky appears blue because of a phenomenon called Rayleigh scattering.\n\nWhen sunlight enters Earth's atmosphere, it hits tiny particles in the air. These particles are much smaller than the wavelength of light (which is why we don't see them). \n\nBlue light has shorter wavelengths compared to other colors like red and yellow"
+          },
+          {
+            "event": "temperature",
+            "iteration": 1,
+            "start_c": 35.8,
+            "end_c": 35.8
+          }
+        ],
+        "command": [
+          "adb",
+          "-s",
+          "48221FDAQ003AT",
+          "shell",
+          "am",
+          "instrument",
+          "-w",
+          "-e",
+          "model",
+          "load-626b4a6678b86442/qwen2.5-3b-instruct-q4_k_m.gguf",
+          "-e",
+          "threads",
+          "4",
+          "-e",
+          "gpu",
+          "0",
+          "-e",
+          "tokens",
+          "64",
+          "-e",
+          "runs",
+          "1",
+          "com.debanshu777.caraml/com.debanshu777.caraml.benchmark.OnnxGgufBenchmark"
+        ]
+      },
+      {
+        "trial": 3,
+        "before": {
+          "thermal": 0,
+          "batteryTemperatureC": 34.9
+        },
+        "after": {
+          "thermal": 0,
+          "batteryTemperatureC": 36.4
+        },
+        "passed": true,
+        "measurementValid": true,
+        "events": [
+          {
+            "event": "environment",
+            "foreground_resumed": true,
+            "foreground_focused": true,
+            "display_interactive": true,
+            "battery_plugged": 1
+          },
+          {
+            "event": "load",
+            "model": "load-626b4a6678b86442/qwen2.5-3b-instruct-q4_k_m.gguf",
+            "load_ms": 3096.004274,
+            "pss_bytes": 4055436288,
+            "thermal": 0,
+            "initialization_ms": 75.863811,
+            "native_model_load_ms": 3020.136029,
+            "battery_temperature_c": 35.8,
+            "runtime": "llama.cpp gpuLayers=0; 4 threads"
+          },
+          {
+            "event": "generation",
+            "model": "load-626b4a6678b86442/qwen2.5-3b-instruct-q4_k_m.gguf",
+            "warmup": true,
+            "iteration": 0,
+            "tokens": 64,
+            "ttft_ms": 1417.363607,
+            "elapsed_ms": 8258.085046,
+            "decode_tokens_per_second": 9.38766695224347,
+            "end_to_end_tokens_per_second": 7.749980733245163,
+            "peak_pss_bytes": 4055272448,
+            "foreground_verified": true,
+            "thermal_start": 0,
+            "thermal_end": 0,
+            "text": "Sure! The sky appears blue because of a phenomenon called Rayleigh scattering.\n\nWhen sunlight enters Earth's atmosphere, it hits tiny particles in the air. These particles are much smaller than the wavelength of light (which is why we don't see them). \n\nBlue light has shorter wavelengths compared to other colors like red and yellow"
+          },
+          {
+            "event": "temperature",
+            "iteration": 0,
+            "start_c": 35.8,
+            "end_c": 35.8
+          },
+          {
+            "event": "generation",
+            "model": "load-626b4a6678b86442/qwen2.5-3b-instruct-q4_k_m.gguf",
+            "warmup": false,
+            "iteration": 1,
+            "tokens": 64,
+            "ttft_ms": 1028.999391,
+            "elapsed_ms": 7804.451135,
+            "decode_tokens_per_second": 9.419222411021083,
+            "end_to_end_tokens_per_second": 8.200448550825605,
+            "peak_pss_bytes": 3993217024,
+            "foreground_verified": true,
+            "thermal_start": 0,
+            "thermal_end": 0,
+            "text": "Sure! The sky appears blue because of a phenomenon called Rayleigh scattering.\n\nWhen sunlight enters Earth's atmosphere, it hits tiny particles in the air. These particles are much smaller than the wavelength of light (which is why we don't see them). \n\nBlue light has shorter wavelengths compared to other colors like red and yellow"
+          },
+          {
+            "event": "temperature",
+            "iteration": 1,
+            "start_c": 35.8,
+            "end_c": 35.8
+          }
+        ],
+        "command": [
+          "adb",
+          "-s",
+          "48221FDAQ003AT",
+          "shell",
+          "am",
+          "instrument",
+          "-w",
+          "-e",
+          "model",
+          "load-626b4a6678b86442/qwen2.5-3b-instruct-q4_k_m.gguf",
+          "-e",
+          "threads",
+          "4",
+          "-e",
+          "gpu",
+          "0",
+          "-e",
+          "tokens",
+          "64",
+          "-e",
+          "runs",
+          "1",
+          "com.debanshu777.caraml/com.debanshu777.caraml.benchmark.OnnxGgufBenchmark"
+        ]
+      }
+    ],
+    "median": {
+      "load_ms": 3001.109539,
+      "initialization_ms": 96.019695,
+      "native_model_load_ms": 2900.866375,
+      "pss_bytes": 3650703360,
+      "ttft_ms": 1028.999391,
+      "decode_tokens_per_second": 9.766127713664554,
+      "peak_pss_bytes": 3527141376,
+      "firstPromptTtftMs": 1126.834635,
+      "loadPlusFirstPromptMs": 4127.944174
+    }
+  },
+  "appDownload": [
+    {
+      "case": "network",
+      "stage": "public_hf_head",
+      "httpStatus": 200,
+      "elapsedMs": 1305
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "start",
+      "expectedBytes": 2104932768
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_metadata",
+      "descriptor": true,
+      "variantsState": "Ready",
+      "reasons": "",
+      "candidateCount": 10,
+      "matchingFile": true,
+      "currentRevisionMatchesPinned": true
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "scheduler_snapshot",
+      "state": "QUEUED",
+      "intent": "RUN",
+      "active": false,
+      "pendingCount": 0,
+      "pendingReasons": ""
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_observed",
+      "owned": true
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_state",
+      "state": "QUEUED",
+      "failure": null
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_state",
+      "state": "RUNNING",
+      "failure": null
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_progress",
+      "bytes": 74320083,
+      "state": "RUNNING"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_progress",
+      "bytes": 135140947,
+      "state": "RUNNING"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_progress",
+      "bytes": 205794994,
+      "state": "RUNNING"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_progress",
+      "bytes": 273648916,
+      "state": "RUNNING"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_progress",
+      "bytes": 336795039,
+      "state": "RUNNING"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_progress",
+      "bytes": 410142778,
+      "state": "RUNNING"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_progress",
+      "bytes": 474230450,
+      "state": "RUNNING"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_progress",
+      "bytes": 545506756,
+      "state": "RUNNING"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_progress",
+      "bytes": 610437736,
+      "state": "RUNNING"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_progress",
+      "bytes": 672846984,
+      "state": "RUNNING"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_progress",
+      "bytes": 744147875,
+      "state": "RUNNING"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_progress",
+      "bytes": 810699962,
+      "state": "RUNNING"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_progress",
+      "bytes": 882991536,
+      "state": "RUNNING"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_progress",
+      "bytes": 947226565,
+      "state": "RUNNING"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_progress",
+      "bytes": 1007932804,
+      "state": "RUNNING"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_progress",
+      "bytes": 1084539186,
+      "state": "RUNNING"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_progress",
+      "bytes": 1147439657,
+      "state": "RUNNING"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_progress",
+      "bytes": 1210913271,
+      "state": "RUNNING"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_progress",
+      "bytes": 1281755635,
+      "state": "RUNNING"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_progress",
+      "bytes": 1347161499,
+      "state": "RUNNING"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_progress",
+      "bytes": 1410306607,
+      "state": "RUNNING"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_progress",
+      "bytes": 1484621477,
+      "state": "RUNNING"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_progress",
+      "bytes": 1547718466,
+      "state": "RUNNING"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_progress",
+      "bytes": 1620804223,
+      "state": "RUNNING"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_progress",
+      "bytes": 1683950319,
+      "state": "RUNNING"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_progress",
+      "bytes": 1747096433,
+      "state": "RUNNING"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_progress",
+      "bytes": 1819559922,
+      "state": "RUNNING"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_progress",
+      "bytes": 1882902536,
+      "state": "RUNNING"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_progress",
+      "bytes": 1948218333,
+      "state": "RUNNING"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_progress",
+      "bytes": 2020739139,
+      "state": "RUNNING"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_progress",
+      "bytes": 2083885253,
+      "state": "RUNNING"
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_state",
+      "state": "VERIFYING",
+      "failure": null
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_state",
+      "state": "COMPLETED",
+      "failure": null
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "download_terminal",
+      "state": "COMPLETED",
+      "failure": null
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "verified_identity",
+      "revision": "7dabda4d13d513e3e842b20f0d435c732f172cbe",
+      "file": "qwen2.5-3b-instruct-q4_k_m.gguf",
+      "sha256": "626b4a6678b86442240e33df819e00132d3ba7dddfe1cdc4fbb18e0a9615c62d",
+      "bytes": 2104932768
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "published",
+      "bytes": 2104932768,
+      "verifiedPinnedIdentity": true
+    },
+    {
+      "case": "qwen2.5-3b",
+      "stage": "outcome",
+      "result": "PASS"
+    }
+  ],
+  "vulkan": {
+    "archive": "build/benchmark-results/model-load/20261023T165614Z-gpu99-t4",
+    "run": {
+      "serial": "48221FDAQ003AT",
+      "trials": 3,
+      "runs": 1,
+      "threads": 4,
+      "gpu": 99,
+      "cacheState": "OS_CACHE_UNCONTROLLED; verification reads weights before testing",
+      "managedBuild": "DEBUG",
+      "nativeBuild": "RELEASE",
+      "contextTokens": 2048,
+      "tokens": 64,
+      "diagnosticTracing": false,
+      "device": "google/tokay/tokay:17/CP3A.260905.009/16091614:user/release-keys",
+      "allTrialsValid": true,
+      "installedApkSha256": "0bb6228bfd6cf8e42d0e0f27ffede7a47d7f052d55c79699b5a606eaf46ada4a",
+      "gitRevision": "b1dc4169ab8918776c30f85fc468aad83628754d"
+    },
+    "trials": [
+      {
+        "trial": 1,
+        "before": {
+          "thermal": 0,
+          "batteryTemperatureC": 34.9
+        },
+        "after": {
+          "thermal": 0,
+          "batteryTemperatureC": 34.9
+        },
+        "passed": true,
+        "measurementValid": true,
+        "events": [
+          {
+            "event": "environment",
+            "foreground_resumed": true,
+            "foreground_focused": true,
+            "display_interactive": true,
+            "battery_plugged": 1
+          },
+          {
+            "event": "load",
+            "model": "load-626b4a6678b86442/qwen2.5-3b-instruct-q4_k_m.gguf",
+            "load_ms": 1678.149008,
+            "pss_bytes": 2265554944,
+            "thermal": 0,
+            "initialization_ms": 76.743164,
+            "native_model_load_ms": 1601.402711,
+            "battery_temperature_c": 34.9,
+            "runtime": "llama.cpp gpuLayers=37; 4 threads"
+          },
+          {
+            "event": "generation",
+            "model": "load-626b4a6678b86442/qwen2.5-3b-instruct-q4_k_m.gguf",
+            "warmup": true,
+            "iteration": 0,
+            "tokens": 64,
+            "ttft_ms": 6913.239912,
+            "elapsed_ms": 13187.0138,
+            "decode_tokens_per_second": 10.067324931864105,
+            "end_to_end_tokens_per_second": 4.853259499887685,
+            "peak_pss_bytes": 2730260480,
+            "foreground_verified": true,
+            "thermal_start": 0,
+            "thermal_end": 0,
+            "text": "Sure! The sky appears blue because of a phenomenon called Rayleigh scattering.\n\nWhen sunlight enters Earth's atmosphere, it hits tiny particles in the air. These particles are so small that they scatter all colors of light equally. However, blue light is scattered more than other colors like red and green. \n\nHere\u2019s why:\n"
+          },
+          {
+            "event": "temperature",
+            "iteration": 0,
+            "start_c": 34.9,
+            "end_c": 34.9
+          },
+          {
+            "event": "generation",
+            "model": "load-626b4a6678b86442/qwen2.5-3b-instruct-q4_k_m.gguf",
+            "warmup": false,
+            "iteration": 1,
+            "tokens": 64,
+            "ttft_ms": 5904.376345,
+            "elapsed_ms": 12165.235967,
+            "decode_tokens_per_second": 10.087808391418033,
+            "end_to_end_tokens_per_second": 5.260892610189351,
+            "peak_pss_bytes": 2731897856,
+            "foreground_verified": true,
+            "thermal_start": 0,
+            "thermal_end": 0,
+            "text": "Sure! The sky appears blue because of a phenomenon called Rayleigh scattering.\n\nWhen sunlight enters Earth's atmosphere, it hits tiny particles in the air. These particles are so small that they scatter all colors of light equally. However, blue light is scattered more than other colors like red and green. \n\nHere\u2019s why:\n"
+          },
+          {
+            "event": "temperature",
+            "iteration": 1,
+            "start_c": 34.9,
+            "end_c": 34.9
+          }
+        ],
+        "command": [
+          "adb",
+          "-s",
+          "48221FDAQ003AT",
+          "shell",
+          "am",
+          "instrument",
+          "-w",
+          "-e",
+          "model",
+          "load-626b4a6678b86442/qwen2.5-3b-instruct-q4_k_m.gguf",
+          "-e",
+          "threads",
+          "4",
+          "-e",
+          "gpu",
+          "99",
+          "-e",
+          "tokens",
+          "64",
+          "-e",
+          "runs",
+          "1",
+          "com.debanshu777.caraml/com.debanshu777.caraml.benchmark.OnnxGgufBenchmark"
+        ]
+      },
+      {
+        "trial": 2,
+        "before": {
+          "thermal": 0,
+          "batteryTemperatureC": 34.9
+        },
+        "after": {
+          "thermal": 0,
+          "batteryTemperatureC": 35.9
+        },
+        "passed": true,
+        "measurementValid": true,
+        "events": [
+          {
+            "event": "environment",
+            "foreground_resumed": true,
+            "foreground_focused": true,
+            "display_interactive": true,
+            "battery_plugged": 1
+          },
+          {
+            "event": "load",
+            "model": "load-626b4a6678b86442/qwen2.5-3b-instruct-q4_k_m.gguf",
+            "load_ms": 1798.018189,
+            "pss_bytes": 2433609728,
+            "thermal": 0,
+            "initialization_ms": 43.9788,
+            "native_model_load_ms": 1754.03475,
+            "battery_temperature_c": 34.9,
+            "runtime": "llama.cpp gpuLayers=37; 4 threads"
+          },
+          {
+            "event": "generation",
+            "model": "load-626b4a6678b86442/qwen2.5-3b-instruct-q4_k_m.gguf",
+            "warmup": true,
+            "iteration": 0,
+            "tokens": 64,
+            "ttft_ms": 6809.006635,
+            "elapsed_ms": 13168.858933,
+            "decode_tokens_per_second": 9.935366351038823,
+            "end_to_end_tokens_per_second": 4.8599503059161515,
+            "peak_pss_bytes": 2872300544,
+            "foreground_verified": true,
+            "thermal_start": 0,
+            "thermal_end": 0,
+            "text": "Sure! The sky appears blue because of a phenomenon called Rayleigh scattering.\n\nWhen sunlight enters Earth's atmosphere, it hits tiny particles in the air. These particles are so small that they scatter all colors of light equally. However, blue light is scattered more than other colors like red and green. \n\nHere\u2019s why:\n"
+          },
+          {
+            "event": "temperature",
+            "iteration": 0,
+            "start_c": 34.9,
+            "end_c": 35.9
+          },
+          {
+            "event": "generation",
+            "model": "load-626b4a6678b86442/qwen2.5-3b-instruct-q4_k_m.gguf",
+            "warmup": false,
+            "iteration": 1,
+            "tokens": 64,
+            "ttft_ms": 5918.346967,
+            "elapsed_ms": 12200.552659,
+            "decode_tokens_per_second": 10.059215598835976,
+            "end_to_end_tokens_per_second": 5.245664011194528,
+            "peak_pss_bytes": 2885135360,
+            "foreground_verified": true,
+            "thermal_start": 0,
+            "thermal_end": 0,
+            "text": "Sure! The sky appears blue because of a phenomenon called Rayleigh scattering.\n\nWhen sunlight enters Earth's atmosphere, it hits tiny particles in the air. These particles are so small that they scatter all colors of light equally. However, blue light is scattered more than other colors like red and green. \n\nHere\u2019s why:\n"
+          },
+          {
+            "event": "temperature",
+            "iteration": 1,
+            "start_c": 35.9,
+            "end_c": 35.9
+          }
+        ],
+        "command": [
+          "adb",
+          "-s",
+          "48221FDAQ003AT",
+          "shell",
+          "am",
+          "instrument",
+          "-w",
+          "-e",
+          "model",
+          "load-626b4a6678b86442/qwen2.5-3b-instruct-q4_k_m.gguf",
+          "-e",
+          "threads",
+          "4",
+          "-e",
+          "gpu",
+          "99",
+          "-e",
+          "tokens",
+          "64",
+          "-e",
+          "runs",
+          "1",
+          "com.debanshu777.caraml/com.debanshu777.caraml.benchmark.OnnxGgufBenchmark"
+        ]
+      },
+      {
+        "trial": 3,
+        "before": {
+          "thermal": 0,
+          "batteryTemperatureC": 35.0
+        },
+        "after": {
+          "thermal": 0,
+          "batteryTemperatureC": 35.3
+        },
+        "passed": true,
+        "measurementValid": true,
+        "events": [
+          {
+            "event": "environment",
+            "foreground_resumed": true,
+            "foreground_focused": true,
+            "display_interactive": true,
+            "battery_plugged": 1
+          },
+          {
+            "event": "load",
+            "model": "load-626b4a6678b86442/qwen2.5-3b-instruct-q4_k_m.gguf",
+            "load_ms": 1750.938477,
+            "pss_bytes": 2267457536,
+            "thermal": 0,
+            "initialization_ms": 27.947998,
+            "native_model_load_ms": 1722.986248,
+            "battery_temperature_c": 35.8,
+            "runtime": "llama.cpp gpuLayers=37; 4 threads"
+          },
+          {
+            "event": "generation",
+            "model": "load-626b4a6678b86442/qwen2.5-3b-instruct-q4_k_m.gguf",
+            "warmup": true,
+            "iteration": 0,
+            "tokens": 64,
+            "ttft_ms": 6707.173425,
+            "elapsed_ms": 13001.685228,
+            "decode_tokens_per_second": 10.039842911014626,
+            "end_to_end_tokens_per_second": 4.922438812944934,
+            "peak_pss_bytes": 2720912384,
+            "foreground_verified": true,
+            "thermal_start": 0,
+            "thermal_end": 0,
+            "text": "Sure! The sky appears blue because of a phenomenon called Rayleigh scattering.\n\nWhen sunlight enters Earth's atmosphere, it hits tiny particles in the air. These particles are so small that they scatter all colors of light equally. However, blue light is scattered more than other colors like red and green. \n\nHere\u2019s why:\n"
+          },
+          {
+            "event": "temperature",
+            "iteration": 0,
+            "start_c": 35.8,
+            "end_c": 35.8
+          },
+          {
+            "event": "generation",
+            "model": "load-626b4a6678b86442/qwen2.5-3b-instruct-q4_k_m.gguf",
+            "warmup": false,
+            "iteration": 1,
+            "tokens": 64,
+            "ttft_ms": 5906.575239,
+            "elapsed_ms": 12190.915289,
+            "decode_tokens_per_second": 10.051207996272408,
+            "end_to_end_tokens_per_second": 5.24981090285714,
+            "peak_pss_bytes": 2731941888,
+            "foreground_verified": true,
+            "thermal_start": 0,
+            "thermal_end": 0,
+            "text": "Sure! The sky appears blue because of a phenomenon called Rayleigh scattering.\n\nWhen sunlight enters Earth's atmosphere, it hits tiny particles in the air. These particles are so small that they scatter all colors of light equally. However, blue light is scattered more than other colors like red and green. \n\nHere\u2019s why:\n"
+          },
+          {
+            "event": "temperature",
+            "iteration": 1,
+            "start_c": 35.8,
+            "end_c": 35.8
+          }
+        ],
+        "command": [
+          "adb",
+          "-s",
+          "48221FDAQ003AT",
+          "shell",
+          "am",
+          "instrument",
+          "-w",
+          "-e",
+          "model",
+          "load-626b4a6678b86442/qwen2.5-3b-instruct-q4_k_m.gguf",
+          "-e",
+          "threads",
+          "4",
+          "-e",
+          "gpu",
+          "99",
+          "-e",
+          "tokens",
+          "64",
+          "-e",
+          "runs",
+          "1",
+          "com.debanshu777.caraml/com.debanshu777.caraml.benchmark.OnnxGgufBenchmark"
+        ]
+      }
+    ],
+    "median": {
+      "load_ms": 1750.938477,
+      "initialization_ms": 43.9788,
+      "native_model_load_ms": 1722.986248,
+      "pss_bytes": 2267457536,
+      "ttft_ms": 5906.575239,
+      "decode_tokens_per_second": 10.059215598835976,
+      "peak_pss_bytes": 2731941888,
+      "firstPromptTtftMs": 6809.006635,
+      "loadPlusFirstPromptMs": 8591.38892
+    }
+  },
+  "decision": "CPU is preferred for response latency in this measured short-prompt workload: Vulkan loads faster, but first-prompt latency outweighs that gain. No persisted user preference was changed.",
+  "appLoadObservations": [
+    {
+      "archive": "build/benchmark-results/qwen3b-app/load-1.txt",
+      "events": [
+        {
+          "case": "ENVIRONMENT",
+          "stage": "installed_apk",
+          "sha256": "1312ed432611e34f817dfeae511b29ccfc9e7a82e66ab56abe860f99ad50272b",
+          "bytes": 178861641
+        },
+        {
+          "case": "ENVIRONMENT",
+          "stage": "startup_barrier",
+          "startupBarrierMs": 0
+        },
+        {
+          "case": "ENVIRONMENT",
+          "stage": "start",
+          "label": "BASELINE",
+          "trial": 1,
+          "managedBuild": "DEBUG",
+          "nativeBuild": "RELEASE",
+          "activeDownloads": 0,
+          "thermal": 0,
+          "maxStartThermal": 0,
+          "requestedBackend": "cpu",
+          "sampling": "greedy",
+          "seedControl": "NOT_EXPOSED",
+          "cacheState": "OS_CACHE_UNCONTROLLED",
+          "sustainedTarget": 512,
+          "perTurnCap": 1024
+        },
+        {
+          "case": "ENVIRONMENT",
+          "stage": "foreground",
+          "resumed": true,
+          "focused": true,
+          "cpuAllowedList": "0-7"
+        },
+        {
+          "case": "ENVIRONMENT",
+          "stage": "persisted_numeric_settings",
+          "temperature": 0.3,
+          "useGpu": true,
+          "kvPreset": "AUTO",
+          "riskTolerance": "EXPERIMENTAL",
+          "optimizationPriority": "BALANCED"
+        },
+        {
+          "case": "qwen2.5-3b",
+          "stage": "release_original",
+          "ms": 7
+        },
+        {
+          "case": "qwen2.5-3b",
+          "stage": "case_conditioning",
+          "ms": 0,
+          "thermal": 0,
+          "foregroundResumed": true,
+          "foregroundFocused": true,
+          "cpuAllowedList": "0-7"
+        },
+        {
+          "case": "qwen2.5-3b",
+          "stage": "prepare",
+          "ms": 7761,
+          "state": "Ready",
+          "reason": null
+        },
+        {
+          "case": "qwen2.5-3b",
+          "stage": "verified_identity",
+          "pinned": true,
+          "bytes": 2104932768,
+          "sha256": "626b4a6678b86442240e33df819e00132d3ba7dddfe1cdc4fbb18e0a9615c62d",
+          "revision": "7dabda4d13d513e3e842b20f0d435c732f172cbe"
+        },
+        {
+          "case": "qwen2.5-3b",
+          "stage": "release_previous",
+          "ms": 0
+        },
+        {
+          "case": "qwen2.5-3b",
+          "stage": "resolve",
+          "ms": 2850,
+          "state": "Ready",
+          "reason": "Ready"
+        },
+        {
+          "case": "qwen2.5-3b",
+          "stage": "load",
+          "ms": 11086,
+          "wholeLoadMs": 21701,
+          "state": "Success",
+          "context": 4096,
+          "config": "t=4/4,b=256,ctx=4096,gpu=0,kv=1/1,fa=-1,kleidi=1",
+          "thermal": 0,
+          "temperature": 0,
+          "savedSettings": false
+        },
+        {
+          "case": "qwen2.5-3b",
+          "stage": "placement",
+          "requestedBackend": "cpu",
+          "gpuLayers": 0
+        },
+        {
+          "case": "qwen2.5-3b",
+          "stage": "outcome",
+          "result": "PASS"
+        }
+      ]
+    },
+    {
+      "archive": "build/benchmark-results/qwen3b-app/load-final.txt",
+      "events": [
+        {
+          "case": "ENVIRONMENT",
+          "stage": "installed_apk",
+          "sha256": "fc481f3c4bcf8f76526eb971cedb7f2fd0c9c28ab9d5dcbb20d46d85ec6719d9",
+          "bytes": 178861641
+        },
+        {
+          "case": "ENVIRONMENT",
+          "stage": "startup_barrier",
+          "startupBarrierMs": 0
+        },
+        {
+          "case": "ENVIRONMENT",
+          "stage": "start",
+          "label": "BASELINE",
+          "trial": 2,
+          "managedBuild": "DEBUG",
+          "nativeBuild": "RELEASE",
+          "activeDownloads": 0,
+          "thermal": 0,
+          "maxStartThermal": 0,
+          "requestedBackend": "cpu",
+          "sampling": "greedy",
+          "seedControl": "NOT_EXPOSED",
+          "cacheState": "OS_CACHE_UNCONTROLLED",
+          "sustainedTarget": 512,
+          "perTurnCap": 1024
+        },
+        {
+          "case": "ENVIRONMENT",
+          "stage": "foreground",
+          "resumed": true,
+          "focused": true,
+          "cpuAllowedList": "0-7"
+        },
+        {
+          "case": "ENVIRONMENT",
+          "stage": "persisted_numeric_settings",
+          "temperature": 0.3,
+          "useGpu": true,
+          "kvPreset": "AUTO",
+          "riskTolerance": "EXPERIMENTAL",
+          "optimizationPriority": "BALANCED"
+        },
+        {
+          "case": "qwen2.5-3b",
+          "stage": "release_original",
+          "ms": 4
+        },
+        {
+          "case": "qwen2.5-3b",
+          "stage": "case_conditioning",
+          "ms": 0,
+          "thermal": 0,
+          "foregroundResumed": true,
+          "foregroundFocused": true,
+          "cpuAllowedList": "0-7"
+        },
+        {
+          "case": "qwen2.5-3b",
+          "stage": "prepare",
+          "ms": 8573,
+          "state": "Ready",
+          "reason": null
+        },
+        {
+          "case": "qwen2.5-3b",
+          "stage": "verified_identity",
+          "pinned": true,
+          "bytes": 2104932768,
+          "sha256": "626b4a6678b86442240e33df819e00132d3ba7dddfe1cdc4fbb18e0a9615c62d",
+          "revision": "7dabda4d13d513e3e842b20f0d435c732f172cbe"
+        },
+        {
+          "case": "qwen2.5-3b",
+          "stage": "release_previous",
+          "ms": 0
+        },
+        {
+          "case": "qwen2.5-3b",
+          "stage": "resolve",
+          "ms": 3212,
+          "state": "Ready",
+          "reason": "Ready"
+        },
+        {
+          "case": "qwen2.5-3b",
+          "stage": "load",
+          "ms": 13342,
+          "wholeLoadMs": 25130,
+          "state": "Success",
+          "context": 4096,
+          "config": "t=4/4,b=256,ctx=4096,gpu=0,kv=1/1,fa=-1,kleidi=1",
+          "thermal": 0,
+          "temperature": 0,
+          "savedSettings": false
+        },
+        {
+          "case": "qwen2.5-3b",
+          "stage": "placement",
+          "requestedBackend": "cpu",
+          "gpuLayers": 0
+        },
+        {
+          "case": "qwen2.5-3b",
+          "stage": "outcome",
+          "result": "PASS"
+        }
+      ]
+    }
+  ],
+  "appLoadNotes": "Two observed full app-path CPU loads (4096 context, AUTO KV, pinned 4/4 threads) succeeded. These are diagnostic observations from different APKs, not an A/B optimization claim. Final build restored eager native initialization.",
+  "firstAppLoadHashPassesMs": [
+    2876,
+    2699,
+    2692,
+    2721
+  ],
+  "diagnosticTrace": {
+    "archive": "build/benchmark-results/model-load/20261023T172028Z-gpu0-t4",
+    "trace": "build/benchmark-results/model-load/20261023T172028Z-gpu0-t4/trial-1.perfetto-trace",
+    "bytes": 15325851,
+    "run": {
+      "serial": "48221FDAQ003AT",
+      "trials": 1,
+      "runs": 1,
+      "threads": 4,
+      "gpu": 0,
+      "cacheState": "OS_CACHE_UNCONTROLLED; verification reads weights before testing",
+      "managedBuild": "DEBUG",
+      "nativeBuild": "RELEASE",
+      "contextTokens": 2048,
+      "tokens": 64,
+      "diagnosticTracing": true,
+      "maxStartTemperatureC": 38.0,
+      "device": "google/tokay/tokay:17/CP3A.260905.009/16091614:user/release-keys",
+      "allTrialsValid": true,
+      "installedApkSha256": "fc481f3c4bcf8f76526eb971cedb7f2fd0c9c28ab9d5dcbb20d46d85ec6719d9",
+      "gitRevision": "b1dc4169ab8918776c30f85fc468aad83628754d"
+    },
+    "phases": [
+      {
+        "phase": "CaraML.engineInitialize",
+        "thread_name": "nxGgufBenchmark",
+        "wall_ms": "42.215576"
+      },
+      {
+        "phase": "CaraML.nativeModelLoad",
+        "thread_name": "nxGgufBenchmark",
+        "wall_ms": "2248.767823"
+      }
+    ],
+    "note": "Separate instrumented diagnostic; excluded from CPU/Vulkan comparison. Confirms both load markers are present."
+  },
+  "validation": {
+    "debugAndReleaseBuild": "passed",
+    "verifyProject": "passed with previously documented :nativeEngine:verifyNativeSubmodulePins excluded",
+    "tracePhaseMarkers": [
+      "CaraML.engineInitialize",
+      "CaraML.nativeModelLoad"
+    ],
+    "startupExperiments": "Reverted; final app retains only release-tooling cleanup and benchmark instrumentation changes from this follow-up."
+  },
+  "uiSmokeTest": {
+    "selectedModel": "Qwen2.5-3B-Instruct-GGUF",
+    "prompt": "What is 2 plus 3? Answer in one short sentence.",
+    "answer": "2 plus 3 is 5.",
+    "completion": "Done",
+    "gpuLayers": 37,
+    "contextTokens": 4096,
+    "tokens": 8,
+    "firstTokenMs": 3118,
+    "totalGenerationMs": 4131,
+    "displayedDecodeIntervalMs": 811,
+    "displayedDecodeTokensPerSecond": 8.63,
+    "note": "Manual normal-app smoke test under saved preferences, not a controlled CPU/Vulkan comparison. Verified via Android UI layout and Inference logcat. Model left selected; screen timeout restored to 30000 ms."
+  }
+}

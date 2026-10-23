@@ -1,5 +1,7 @@
 package com.debanshu777.caraml.core.recommendation
 
+import com.debanshu777.caraml.core.performance.tracePerformanceStage
+
 import com.debanshu777.caraml.core.platform.AppLogger
 import kotlin.time.TimeSource
 import com.debanshu777.caraml.core.data.inference.NATIVE_DIFFUSERS_CONSUMED_PATHS
@@ -19,6 +21,8 @@ import com.debanshu777.caraml.core.download.diffusion.getModelSetup
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import okio.Buffer
 import okio.FileSystem
 import okio.HashingSource
@@ -105,6 +109,8 @@ class LocalArtifactIdentityResolver(
     private val hashFile: suspend (String, Long) -> String = { path, maxBytes ->
         hashRegularFile(fileSystem, path.toPath(), maxBytes)
     },
+    /** Installed app models were hashed at publication. Full verification remains available for diagnostics. */
+    private val verifyContent: Boolean = true,
 ) {
     suspend fun resolve(
         model: LocalModelEntity,
@@ -448,9 +454,13 @@ class LocalArtifactIdentityResolver(
         expectedBytes: Long,
         expectedSha256: String,
     ): StoredArtifactSnapshot? {
+        currentCoroutineContext().ensureActive()
         val before = storagePathProvider.inspectDownloadedArtifact(storageOwner, localPath)
             ?.takeIf { it.kind == StoredArtifactKind.REGULAR_FILE && it.byteCount == expectedBytes }
             ?: return null
+        // Paths, sizes, manifest identities and native format checks still run at each load boundary.
+        // Deliberately do not detect same-size payload edits in this mode; no mtime/hash cache is used.
+        if (!verifyContent) return before
         val hashStarted = TimeSource.Monotonic.markNow()
         val actual = try {
             hashOnTrustedDispatcher(localPath, expectedBytes)
@@ -473,7 +483,7 @@ class LocalArtifactIdentityResolver(
         return try {
             withContext(hashingDispatcher) {
                 try {
-                    hashFile(path, expectedBytes)
+                    tracePerformanceStage("artifact.payloadChecksum") { hashFile(path, expectedBytes) }
                 } catch (cancelled: CancellationException) {
                     originalCancellation = cancelled
                     throw cancelled

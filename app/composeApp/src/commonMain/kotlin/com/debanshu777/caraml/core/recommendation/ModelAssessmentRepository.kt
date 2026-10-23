@@ -470,6 +470,7 @@ private fun normalizedWorkload(value: WorkloadConfig): WorkloadConfig? = when (v
             allowKvCacheFallback = value.allowKvCacheFallback,
             allowedKvCacheTypes = value.allowedKvCacheTypes,
             evidence = emptyList(),
+            requestedFullVulkanLayerCount = value.requestedFullVulkanLayerCount,
         )
     }
     is DiffusionWorkloadConfig -> DiffusionWorkloadConfig(
