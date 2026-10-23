@@ -1,0 +1,14 @@
+CARAML_ONNX_VALIDATION {"case":"smollm2-360m","stage":"discovery","detail":"6 files, revision fe7c7db4c8921c9e3fa1c65cfd296fb3b1b1a8f9"}
+CARAML_ONNX_VALIDATION {"case":"smollm2-360m","stage":"download","detail":"QUEUED: null"}
+CARAML_ONNX_VALIDATION {"case":"smollm2-360m","stage":"download","detail":"RUNNING: null"}
+CARAML_ONNX_VALIDATION {"case":"smollm2-360m","stage":"download","detail":"VERIFYING: null"}
+CARAML_ONNX_VALIDATION {"case":"smollm2-360m","stage":"download","detail":"COMPLETED: null"}
+CARAML_ONNX_VALIDATION {"case":"smollm2-360m","stage":"publication","detail":"model_int8.onnx"}
+CARAML_ONNX_VALIDATION {"case":"smollm2-360m","stage":"prepared_metadata","detail":"format=ONNX; architecture=llama; context=8192; shape=TransformerShape(layerCount=32, kvHeadCount=5, attentionHeadCount=15, hiddenSize=960, headDim=64)"}
+CARAML_ONNX_VALIDATION {"case":"smollm2-360m","stage":"risk_acknowledged","detail":"Conservative ONNX memory estimate; llm:4096:256:64:1:F32:F32:CPU:UNIFIED:0:true"}
+CARAML_ONNX_VALIDATION {"case":"smollm2-360m","stage":"load","detail":"ONNX Runtime 1.31.0; CPU; 1 threads"}
+CARAML_ONNX_VALIDATION {"case":"smollm2-360m","stage":"turn","detail":"content=Your name is Mira.; reasoning_chars=0"}
+CARAML_ONNX_VALIDATION {"case":"smollm2-360m","stage":"turn","detail":"content=Your name is Mira.; reasoning_chars=0"}
+CARAML_ONNX_VALIDATION {"case":"smollm2-360m","stage":"risk_acknowledged","detail":"Conservative ONNX memory estimate; llm:4096:256:64:1:F32:F32:CPU:UNIFIED:0:true"}
+CARAML_ONNX_VALIDATION {"case":"smollm2-360m","stage":"complete","detail":"discovery, download, publication, two turns, cancellation and reload passed"}
+INSTRUMENTATION_CODE: -1

@@ -1,0 +1,18 @@
+{
+  "repository": "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
+  "revision": "9217f5db79a29953eb74d5343926648285ec7e67",
+  "graph": "qwen2.5-0.5b-instruct-q8_0.gguf",
+  "downloads_at_selection": 309083,
+  "files": [
+    {
+      "rfilename": "qwen2.5-0.5b-instruct-q8_0.gguf",
+      "blobId": "92271af457052afc8f1499dd480502e0bcbf87a0",
+      "size": 675710816,
+      "lfs": {
+        "sha256": "ca59ca7f13d0e15a8cfa77bd17e65d24f6844b554a7b6c12e07a5f89ff76844e",
+        "size": 675710816,
+        "pointerSize": 134
+      }
+    }
+  ]
+}

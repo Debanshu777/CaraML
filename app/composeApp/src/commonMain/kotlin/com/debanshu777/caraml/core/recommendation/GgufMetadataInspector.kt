@@ -130,7 +130,7 @@ class GgufMetadataInspector(
         descriptor: ModelDescriptor,
         artifact: ResolvedLocalArtifact,
     ): ModelDescriptor? {
-        if (descriptor !is LlmModelDescriptor) return descriptor
+        if (descriptor !is LlmModelDescriptor || descriptor.format == ModelFormat.ONNX) return descriptor
         if (descriptor.hasCompleteLocalCompatibilityMetadata()) return descriptor
         val target = artifact.loadTarget as? VerifiedArtifactLoadTarget.File ?: return null
         val local = inspect(target.path) ?: return null
@@ -270,7 +270,7 @@ class GgufMetadataInspector(
 }
 
 internal fun LlmModelDescriptor.hasCompleteLocalCompatibilityMetadata(): Boolean =
-    architecture != null && ggufVersion != null && contextLimit != null && transformerShape?.let {
+    architecture != null && (format == ModelFormat.ONNX || ggufVersion != null) && contextLimit != null && transformerShape?.let {
         it.layerCount != null && it.kvHeadCount != null && it.attentionHeadCount != null &&
             it.hiddenSize != null && it.headDim != null
     } == true

@@ -79,6 +79,7 @@ private fun BackendKind.toDiffusionRuntimeBackend(): DiffusionRuntimeBackend = w
 
 private val KvCacheType.nativeValue: Int
     get() = when (this) {
+        KvCacheType.F32 -> 0
         KvCacheType.F16 -> 1
         KvCacheType.Q8_0 -> 8
         KvCacheType.Q4_0 -> 2

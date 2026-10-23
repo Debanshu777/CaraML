@@ -127,7 +127,7 @@ fun DetailsScreen(
                             detail != null -> {
                                 val (weightHeading, weightEmpty) = when (hubBrowseMode) {
                                     ModelHubBrowseMode.LanguageModels ->
-                                        "GGUF files" to "No GGUF files found"
+                                        "Language model variants" to "No supported GGUF or ONNX bundles found"
                                     ModelHubBrowseMode.DiffusionImage,
                                     ModelHubBrowseMode.DiffusionVideo ->
                                         "Weight files" to

@@ -54,11 +54,13 @@ internal fun ModelHubInlineFilters(
     ordering: ModelOrdering,
     minParams: ParameterRange,
     maxParams: ParameterRange,
+    parametersAvailable: Boolean = true,
     onApply: (ModelHubBrowseMode, ModelOrdering, ParameterRange, ParameterRange) -> Unit,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
-    val active = mode != ModelHubBrowseMode.LanguageModels || minParams != ParameterRange.ZERO ||
-        maxParams != ParameterRange.SIX_B || ordering != ModelOrdering.Server(ModelSort.TRENDING)
+    val active = mode != ModelHubBrowseMode.LanguageModels ||
+        (parametersAvailable && (minParams != ParameterRange.ZERO || maxParams != ParameterRange.SIX_B)) ||
+        ordering != ModelOrdering.Server(ModelSort.TRENDING)
     val motion = LocalAuroraMotionPolicy.current
     Column {
         Row(Modifier.fillMaxWidth().padding(vertical = AppTheme.spacing.spacing8), verticalAlignment = Alignment.CenterVertically) {
@@ -81,7 +83,7 @@ internal fun ModelHubInlineFilters(
             enter = fadeIn(tween(motion.opacityDurationMillis)) + expandVertically(tween(if (motion.spatialTransitionsEnabled) motion.peerTransitionMillis else 0)),
             exit = fadeOut(tween(motion.opacityDurationMillis)) + shrinkVertically(tween(if (motion.spatialTransitionsEnabled) motion.peerTransitionMillis else 0)),
         ) {
-            ModelHubInlineFilterPanel(mode, ordering, minParams, maxParams) { task, sort, min, max ->
+            ModelHubInlineFilterPanel(mode, ordering, minParams, maxParams, parametersAvailable) { task, sort, min, max ->
                 onApply(task, sort, min, max)
                 expanded = false
             }
@@ -95,6 +97,7 @@ internal fun ModelHubInlineFilterPanel(
     ordering: ModelOrdering,
     minParams: ParameterRange,
     maxParams: ParameterRange,
+    parametersAvailable: Boolean = true,
     onApply: (ModelHubBrowseMode, ModelOrdering, ParameterRange, ParameterRange) -> Unit,
 ) {
     var draftMode by remember(mode) { mutableStateOf(mode) }
@@ -111,17 +114,21 @@ internal fun ModelHubInlineFilterPanel(
                 ModelHubBrowseMode.DiffusionVideo to "Video",
             )) { draftMode = it }
             if (draftMode == ModelHubBrowseMode.LanguageModels) {
-                ModelFilterChoice("Parameters", draftMax, ParameterRange.entries
-                    .filter { it != ParameterRange.ZERO || draftMax == ParameterRange.ZERO }
-                    .map { it to "Up to ${it.apiValue}" }) {
-                    draftMax = it; if (draftMin.ordinal > it.ordinal) draftMin = it
+                if (parametersAvailable) {
+                    ModelFilterChoice("Parameters", draftMax, ParameterRange.entries
+                        .filter { it != ParameterRange.ZERO || draftMax == ParameterRange.ZERO }
+                        .map { it to "Up to ${it.apiValue}" }) {
+                        draftMax = it; if (draftMin.ordinal > it.ordinal) draftMin = it
+                    }
+                    BrandButton(style = BrandButtonStyle.Secondary, onClick = { advanced = !advanced }) {
+                        Text(if (advanced) "Fewer options" else "Sort & more options")
+                    }
                 }
-                BrandButton(style = BrandButtonStyle.Secondary, onClick = { advanced = !advanced }) {
-                    Text(if (advanced) "Fewer options" else "Sort & more options")
-                }
-                if (advanced) {
-                    ModelFilterChoice("Minimum", draftMin, ParameterRange.entries.map { it to it.apiValue }) {
-                        draftMin = it; if (draftMax.ordinal < it.ordinal) draftMax = it
+                if (advanced || !parametersAvailable) {
+                    if (parametersAvailable) {
+                        ModelFilterChoice("Minimum", draftMin, ParameterRange.entries.map { it to it.apiValue }) {
+                            draftMin = it; if (draftMax.ordinal < it.ordinal) draftMax = it
+                        }
                     }
                     ModelFilterChoice("Sort", draftOrdering, listOf(
                         ModelOrdering.Server(ModelSort.TRENDING) to "Trending",

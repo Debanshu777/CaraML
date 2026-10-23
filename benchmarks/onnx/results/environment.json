@@ -1,0 +1,62 @@
+{
+  "date_local": "2026-10-23",
+  "timezone": "Asia/Kolkata",
+  "repository_base_commit": "4d6538f94f1cad03b5d22a870b7e2015e5a634c2",
+  "android": {
+    "device": "Pixel 9",
+    "soc": "Tensor G4",
+    "os": "Android 17",
+    "nominal_ram_gib": 12,
+    "ort_version": "1.31.0",
+    "llama_commit": "f46bc30cb6a7f68a67e34a00061e20a4ad1eff43",
+    "apk_scope": "Debug APK with optional ORT WebGPU library; foreground focus and display checks throughout generation; explicit fixed GGUF context and autoFit=false",
+    "apk_hash_source": "Built APK SHA-256; installed using adb install -r",
+    "provisional_apk_sha256": "a89cee746ca790e512ac8c205dc8ad78fa5507c9cb1135c45883c2e536f9d8e7",
+    "provisional_matrix_excluded_reason": "Foreground audit found lock-screen occlusion and a stopped benchmark activity. Rerun with continuous focus/display checks.",
+    "matrix_apk_sha256": "89be3613ca5c59f833c86c30b600dc5301a9aeb3f958697f0396da302e24d694",
+    "final_default_apk_sha256": "ddc146e94ee0a52207e9e6a3cdc90c0150c4e9445b118eb31879d8ac554b517e",
+    "webgpu_diagnostic_apk_sha256": "dc760a699c5b945884f3024a29ba0b8b933f190bddcef144a5444e28a7ddd60f",
+    "webgpu_validation_apk_sha256": "fe764b3a4720b24e81384d5b4d8bed48d6ecfec48801a8daa1368d8725f7c94f",
+    "validation": "All 20 foreground-verified main-matrix configurations passed. Optional WebGPU discovers Mali-G715 and executes GPU kernels, but INT8/Q4 generation fails on GPU-to-host transfer before first token; not enabled by the app."
+  },
+  "apple": {
+    "hardware_model": "Mac17,8",
+    "ram_bytes": 51539607552,
+    "execution": "arm64 iPhone simulator on host Mac",
+    "physical_iphone_available": true,
+    "ort_version": "1.30.0"
+  },
+  "physical_snapdragon_available": false,
+  "protocol": {
+    "context_tokens": 2048,
+    "max_output_tokens": 64,
+    "temperature": 0,
+    "warmups": 1,
+    "measured_repetitions": 3,
+    "max_battery_temperature_at_start_c": 35.0,
+    "thermal_status_at_start": 0,
+    "power": "External power; Android EXTRA_PLUGGED=1 (AC)",
+    "pss_sample_interval_ms": 100,
+    "page_cache_flushed": false
+  },
+  "iphone": {
+    "device": "iPhone 13",
+    "product_type": "iPhone14,5",
+    "os": "iOS 27.0.1",
+    "os_build": "24A446",
+    "cpu_count": 6,
+    "developer_mode": true,
+    "validation": "Four ONNX checkpoints passed CPU1/CPU2, cancellation and reload. All five GGUF checkpoints passed CPU2 and repaired Metal runs with clean process exits. Llama ONNX Q4 load was killed (signal 9), including low-memory settings; exact export is excluded on iPhone 13. Explicit CoreML request correctly fell back to CPU.",
+    "build_configuration": "Debug; native C++ optimized",
+    "app_sha256": "079ec45b8abbc8c1391dded27d13ddbb909ad6c80147b437d35b2c930f5cd98f",
+    "framework_sha256": "ddd51dd69a2ce5fd371c44479e2e2b0b26c8eb9a7612efe1c3c0c3adcbdb0d56",
+    "physical_memory_bytes": 3838984192,
+    "metal_smoke_actual_layers": 31,
+    "repaired_app_sha256": "c63027fa89892c8c8e64ba42f643f7d330708802c2b166de54cbfa56618a7e2c",
+    "repaired_framework_sha256": "91e87359e26a7217690b4ba6e6611f265b61ad296befa573826261a0451ecb1c",
+    "repaired_build_changes": "Shutdown releases a loaded GGUF model before backend teardown; optional ONNX low-memory experiment; ONNX discovery UI refinements.",
+    "final_app_sha256": "09b71cbc57dd1283e43bee2b6bedbcae132125c6ca63e2903600f22758b13e94",
+    "final_framework_sha256": "104b843f5f1f8196693b0c04637452909a210000b18a5c7ac04c9037aaf6cc66",
+    "final_build_validation": "Signed build succeeded; installed on iPhone 13; SmolLM2 135M ONNX CPU2 generation/cancel/reload/clean exit passed. Full matrix remains recorded under its original build hashes."
+  }
+}

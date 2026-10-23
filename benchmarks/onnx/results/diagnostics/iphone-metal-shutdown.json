@@ -1,0 +1,59 @@
+{
+  "device": "iPhone 13",
+  "issue": "Metal resources remained live at process exit after shutdown with a reloaded model",
+  "exception": {
+    "codes": "0x0000000000000000, 0x0000000000000000",
+    "rawCodes": [
+      0,
+      0
+    ],
+    "type": "EXC_CRASH",
+    "signal": "SIGABRT"
+  },
+  "termination": {
+    "flags": 0,
+    "code": 6,
+    "namespace": "SIGNAL",
+    "indicator": "Abort trap: 6",
+    "byProc": "CaraML"
+  },
+  "frames": [
+    {
+      "library": "libsystem_kernel.dylib",
+      "symbol": "__pthread_kill"
+    },
+    {
+      "library": "libsystem_pthread.dylib",
+      "symbol": "pthread_kill"
+    },
+    {
+      "library": "libsystem_c.dylib",
+      "symbol": "abort"
+    },
+    {
+      "library": "ComposeApp",
+      "symbol": "ggml_abort"
+    },
+    {
+      "library": "ComposeApp",
+      "symbol": "ggml_metal_rsets_free"
+    },
+    {
+      "library": "ComposeApp",
+      "symbol": "ggml_metal_device_free"
+    },
+    {
+      "library": "ComposeApp",
+      "symbol": "std::__1::vector<std::__1::unique_ptr<ggml_metal_device, ggml_metal_device_deleter>, std::__1::allocator<std::__1::unique_ptr<ggml_metal_device, ggml_metal_device_deleter>>>::~vector[abi:nqe220106]()"
+    },
+    {
+      "library": "libsystem_c.dylib",
+      "symbol": "__cxa_finalize_ranges"
+    },
+    {
+      "library": "libsystem_c.dylib",
+      "symbol": "exit"
+    }
+  ],
+  "repair": "llama_runner_core_shutdown unloads model/context before releasing backend; driver now requires clean process exit"
+}

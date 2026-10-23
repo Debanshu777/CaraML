@@ -49,6 +49,7 @@ class LoadSessionCoordinator(
         artifactValidator: suspend (LoadRequest) -> Boolean,
         releasePartialState: suspend () -> Unit,
         nativeLoad: suspend () -> NativeLoadOutcome<T>,
+        engineVersion: String? = null,
     ): CoordinatedLoadResult<T> = sessionMutex.withLock {
         val admission = evaluateAdmission()
         val admitted = admission as? LoadAdmission.Ready
@@ -69,7 +70,8 @@ class LoadSessionCoordinator(
             if (!artifactValidator(request)) {
                 return@withCurrentBundle CoordinatedLoadResult.ArtifactChanged(request)
             }
-            val marker = recoveryRepository.beginLoad(request.identity, request.plan)
+            val marker = if (engineVersion == null) recoveryRepository.beginLoad(request.identity, request.plan)
+                else recoveryRepository.beginLoad(request.identity, request.plan, engineVersion)
             try {
                 when (val outcome = nativeLoad()) {
                     is NativeLoadOutcome.Succeeded -> {

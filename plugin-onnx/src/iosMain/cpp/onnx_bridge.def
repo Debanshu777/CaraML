@@ -1,0 +1,4 @@
+headers = onnx_bridge.h
+package = com.debanshu777.caraml.sdk.plugin.onnx.bridge
+staticLibraries = libcaraml_onnx_apple.a
+linkerOpts = -lc++ -framework CoreML -framework CoreFoundation -framework Foundation -framework Network -framework Security -framework SystemConfiguration -framework UIKit

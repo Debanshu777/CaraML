@@ -43,7 +43,9 @@ unchanged. Package conventions are documented in [the root README](../README.md#
 
 ## Recent Changes
 
-- Debug performance validation supports read-only CPU/Vulkan selection with matching resolver/inference settings, records actual GPU layer counts and explicitly labels permitted start thermal states. Current five-model CPU/Vulkan benchmarks are published in the root README.
+- Added Android/JVM/iOS ONNX inference and format routing alongside GGUF. Debug instrumentation exercises real Hugging Face bundles, chat, cancellation and reload; [comparison and reproduction](../benchmarks/onnx/README.md).
+
+- Physical Pixel 9 and iPhone 13 benchmarks record runtime selection, throughput, first-token latency, memory and thermal state. Android measurements require continuous foreground verification; iPhone runs require a clean process exit.
 
 - Exercised the debug Android runtime matrix on Pixel 9 with SmolLM2, Gemma 3, Qwen 3, LFM2 and Qwen 2.5 through downloads, generation, cancellation and reload.
 

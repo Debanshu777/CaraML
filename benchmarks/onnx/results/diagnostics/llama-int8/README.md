@@ -1,0 +1,1 @@
+These early runs retain output-quality diagnostics only. They predate continuous foreground verification and must not be used for timing comparisons. The affected INT8 graph returns a short incorrect answer on Pixel 9 under the tested runtime/kernel options; use the working Q4 export.

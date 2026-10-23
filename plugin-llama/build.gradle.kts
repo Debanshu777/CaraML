@@ -6,6 +6,14 @@ plugins {
     alias(libs.plugins.androidMultiplatformLibrary)
 }
 
+tasks.withType<org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest>().configureEach {
+    providers.gradleProperty("iosSimulatorDevice").orNull?.let { simulator ->
+        device.set(simulator)
+        // Metal needs a booted simulator; the default standalone runner is headless.
+        standalone.set(false)
+    }
+}
+
 val nativeParityEnabled = providers.environmentVariable("CARAML_NATIVE_PARITY")
     .map { it.equals("true", ignoreCase = true) }
     .orElse(false)
@@ -106,11 +114,18 @@ kotlin {
                     extraOpts("-libraryPath", libPath)
                     tasks.named(interopProcessingTaskName).configure {
                         dependsOn(mergeTask)
+                        inputs.file("$libPath/libllama_runner_merged.a")
                     }
                 }
             }
 
             val merged = "$libPath/libllama_runner_merged.a"
+
+            arch.binaries.withType<org.jetbrains.kotlin.gradle.plugin.mpp.TestExecutable>().configureEach {
+                linkerOpts("-Wl,-force_load", merged, "-lc++", "-framework", "Metal",
+                    "-framework", "Accelerate", "-framework", "Foundation")
+                linkTaskProvider.configure { dependsOn(mergeTask) }
+            }
 
             arch.binaries.getFramework("DEBUG").apply {
                 baseName = xcfName

@@ -8,6 +8,12 @@ iOS cinterop and consumer keep rules use the same package hierarchy. See [native
 
 ## Recent Changes
 
+- Shutdown now releases a resident model/context before the backend; physical iPhone tests caught and verified the resulting Metal exit fix across five checkpoints.
+
+- Recognize ggml's current `MTL` registry as Metal so Apple GPU capabilities and placement retain the correct backend identity.
+
+- Added CPU/Metal generation and cancellation/reload checks in the iOS simulator and an opt-in physical iPhone harness; test binaries link the actual native archive, and cinterop rebuilds when that archive changes. See the [combined ONNX/GGUF report](../benchmarks/onnx/README.md).
+
 - Native load diagnostics report actual weight-buffer backend, device type, byte count and host accessibility, making GPU allocation distinguishable from requested offload settings.
 
 - Ignore upstream continuation/progress log fragments in the bounded native warning/error sink; regression coverage verifies they neither become false errors nor consume the diagnostic budget.

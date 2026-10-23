@@ -1,0 +1,20 @@
+[
+  {
+    "profile": "profile-int8-failed.json",
+    "sha256": "dd825d2e1ec047dbaf898ea225311263f1781581995df0e30ad97c4736161ab9",
+    "outcome": "Failed during GPU-to-host transfer before first token",
+    "kernel_events_by_provider": {
+      "WebGpuExecutionProvider": 20,
+      "CPUExecutionProvider": 8
+    }
+  },
+  {
+    "profile": "profile-q4-failed.json",
+    "sha256": "1dec2a10055d300a4bb16a33b8f547f4445f0d0d4768c3a6dac5887fdd40cdcf",
+    "outcome": "Failed during GPU-to-host transfer before first token",
+    "kernel_events_by_provider": {
+      "CPUExecutionProvider": 681,
+      "WebGpuExecutionProvider": 1987
+    }
+  }
+]

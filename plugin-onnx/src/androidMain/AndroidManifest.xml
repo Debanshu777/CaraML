@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+    <application>
+        <!-- On-device inference does not need the runtime's automatic network telemetry. -->
+        <provider android:name="ai.onnxruntime.TelemetryInitializer" tools:node="remove" />
+    </application>
+</manifest>

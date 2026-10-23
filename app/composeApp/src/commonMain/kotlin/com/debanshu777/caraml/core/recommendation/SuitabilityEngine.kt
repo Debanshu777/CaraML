@@ -214,8 +214,9 @@ class SuitabilityEngine(
         hardware: HardwareProfile,
         workload: WorkloadConfig,
     ): PlanningSettings? {
+        val onnx = descriptor.format == ModelFormat.ONNX
         val backendCapability = hardware.backends.firstOrNull {
-            it.status == BackendStatus.AVAILABLE && it.kind != BackendKind.CPU
+            !onnx && it.status == BackendStatus.AVAILABLE && it.kind != BackendKind.CPU
         } ?: hardware.backends.firstOrNull {
             it.status == BackendStatus.AVAILABLE && it.kind == BackendKind.CPU
         } ?: return null

@@ -3,6 +3,19 @@ plugins {
     alias(libs.plugins.composeCompiler)
 }
 
+val onnxWebGpuEnabled = providers.gradleProperty("onnxWebGpu").map(String::toBoolean).getOrElse(false)
+val onnxWebGpuOutput = layout.buildDirectory.dir("generated/onnxWebGpuJni")
+val buildOnnxWebGpu = tasks.register<Exec>("buildOnnxWebGpu") {
+    onlyIf { onnxWebGpuEnabled }
+    inputs.file(rootProject.file("plugin-onnx/tools/build_webgpu_android.py"))
+    inputs.file(rootProject.file("plugin-onnx/tools/prepare_android_gpu_discovery.py"))
+    outputs.file(onnxWebGpuOutput.map { it.file("arm64-v8a/libonnxruntime_providers_webgpu.so") })
+    val sdk = androidComponents.sdkComponents.sdkDirectory.get().asFile
+    commandLine("python3", rootProject.file("plugin-onnx/tools/build_webgpu_android.py"),
+        "--sdk", sdk, "--ndk", sdk.resolve("ndk/28.2.13676358"),
+        "--cmake", sdk.resolve("cmake/3.31.1/bin/cmake"), "--output", onnxWebGpuOutput.get().asFile)
+}
+
 android {
     namespace = "com.debanshu777.caraml"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
@@ -40,7 +53,10 @@ android {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
     }
+    if (onnxWebGpuEnabled) sourceSets.getByName("main").jniLibs.srcDir(onnxWebGpuOutput.get().asFile)
 }
+
+if (onnxWebGpuEnabled) tasks.named("preBuild").configure { dependsOn(buildOnnxWebGpu) }
 
 dependencies {
     debugImplementation(project(":model-discovery"))
@@ -55,5 +71,6 @@ dependencies {
     debugImplementation(libs.navigation3.compose.ui)
     debugImplementation(libs.kotlinx.collections.immutable)
     debugImplementation(project(":plugin-llama"))
+    debugImplementation(project(":plugin-onnx"))
     debugImplementation(libs.kotlinx.coroutinesCore)
 }

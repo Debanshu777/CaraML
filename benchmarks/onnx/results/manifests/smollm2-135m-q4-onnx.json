@@ -1,0 +1,43 @@
+{
+  "repository": "onnx-community/SmolLM2-135M-Instruct-ONNX",
+  "revision": "b8a5c0f183b78c55955a5364f610c36668b5e681",
+  "graph": "onnx/model_q4.onnx",
+  "downloads_at_selection": 6430,
+  "files": [
+    {
+      "rfilename": "config.json",
+      "blobId": "c2a0a40999a0f06e05f9137f7061410abcc1c49b",
+      "size": 976
+    },
+    {
+      "rfilename": "generation_config.json",
+      "blobId": "96ecabaa5f96198c92ddf06f504c7cbc372f46dc",
+      "size": 132
+    },
+    {
+      "rfilename": "onnx/model_q4.onnx",
+      "blobId": "bb22ba4b652945c89da7c03795584f243c9761a2",
+      "size": 180581125,
+      "lfs": {
+        "sha256": "eb0d67c7e3b7d40f42d681b5f2eff4cef78968afe3f76c954f987dd870327a2a",
+        "size": 180581125,
+        "pointerSize": 134
+      }
+    },
+    {
+      "rfilename": "special_tokens_map.json",
+      "blobId": "44719d2e365acac0637fd25a3acf46494ca45940",
+      "size": 655
+    },
+    {
+      "rfilename": "tokenizer.json",
+      "blobId": "a7d434dcaa7ae62910bed536fb292282905c9b44",
+      "size": 3522656
+    },
+    {
+      "rfilename": "tokenizer_config.json",
+      "blobId": "30da3ba280f015b5456e5a80c60b45f5acc14669",
+      "size": 3794
+    }
+  ]
+}

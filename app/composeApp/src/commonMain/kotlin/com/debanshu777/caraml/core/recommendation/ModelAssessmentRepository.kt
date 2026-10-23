@@ -397,7 +397,8 @@ private fun normalizedDescriptor(value: ModelDescriptor): ModelDescriptor? {
     return when (value) {
         is LlmModelDescriptor -> {
             if (value.files.isEmpty() || value.files.size > DescriptorLimits.MAX_COMPONENTS) return null
-            val files = value.files.map { normalizedFileIdentity(it) ?: return null }.sortedBy { it.path }
+            val files = value.files.map { normalizedFileIdentity(it) ?: return null }
+                .sortedWith(compareBy<ModelFileIdentity> { value.format == ModelFormat.ONNX && !it.path.endsWith(".onnx") }.thenBy { it.path })
             if (files.distinctBy { it.path }.size != files.size ||
                 files.any { it.repositoryId != value.repositoryId || it.revision != value.revision } ||
                 value.architecture?.length?.let { it > DescriptorLimits.MAX_METADATA_STRING_LENGTH } == true

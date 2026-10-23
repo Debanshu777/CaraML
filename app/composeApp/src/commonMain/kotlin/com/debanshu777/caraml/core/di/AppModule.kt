@@ -275,7 +275,7 @@ val appModule = module {
         )
     }
 
-    single<InferenceRepository> {
+    single {
         LlamaInferenceRepository(
             runner = get(),
             deviceCapabilities = get(),
@@ -290,6 +290,10 @@ val appModule = module {
             observationRecorder = get(),
         )
     }
+
+    single { com.debanshu777.caraml.sdk.plugin.onnx.createOnnxTextRuntime() }
+    single { com.debanshu777.caraml.core.data.inference.OnnxInferenceRepository(get(), get(), get(), get(), get(), get(), get(), get()) }
+    single<InferenceRepository> { com.debanshu777.caraml.core.data.inference.RoutingInferenceRepository(get<LlamaInferenceRepository>(), get<com.debanshu777.caraml.core.data.inference.OnnxInferenceRepository>()) }
 
     single { ChatConfig() }
 

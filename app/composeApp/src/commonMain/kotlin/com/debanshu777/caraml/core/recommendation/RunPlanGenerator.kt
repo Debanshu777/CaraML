@@ -13,13 +13,14 @@ class RunPlanGenerator {
         workload: LlmWorkloadConfig,
         settings: PlanningSettings,
     ): List<LlmRunPlan> {
+        val onnx = descriptor.format == ModelFormat.ONNX
         val contextFloor = requiredContextFloor(workload) ?: return emptyList()
         if (!validInputs(descriptor, workload, settings, contextFloor)) return emptyList()
 
-        val allowedKv = KV_PREFERENCE_ORDER.filter {
+        val allowedKv = if (onnx) listOf(KvCacheType.F32) else KV_PREFERENCE_ORDER.filter {
             it in workload.allowedKvCacheTypes && it in settings.allowedKvCacheTypes
         }
-        val requestedTypes = when (val selection = workload.kvCacheSelection) {
+        val requestedTypes = if (onnx) KvCacheType.F32 to KvCacheType.F32 else when (val selection = workload.kvCacheSelection) {
             KvCacheSelection.Auto -> allowedKv.firstOrNull()?.let { it to it } ?: return emptyList()
             is KvCacheSelection.Explicit -> selection.keyType to selection.valueType
         }
@@ -33,7 +34,7 @@ class RunPlanGenerator {
         val kvPairs = buildList {
             add(requestedTypes)
             if (
-                workload.kvCacheSelection == KvCacheSelection.Auto &&
+                !onnx && workload.kvCacheSelection == KvCacheSelection.Auto &&
                 workload.allowKvCacheFallback &&
                 settings.allowKvCacheFallback
             ) {

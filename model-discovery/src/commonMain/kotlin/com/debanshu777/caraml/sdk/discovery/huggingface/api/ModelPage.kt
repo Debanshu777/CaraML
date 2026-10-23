@@ -24,6 +24,7 @@ data class ModelPageRequest(
     val apps: List<String> = listOf("llama.cpp"),
     val limit: Int = 24,
     val cursor: ModelPageCursor? = null,
+    val pipelineTag: String? = null,
 ) {
     init {
         require(search == null || (search.isNotBlank() && search.length <= 128 &&
@@ -35,6 +36,7 @@ data class ModelPageRequest(
         require(limit in 1..100) { "Invalid page size" }
         require(filter.size <= 4 && filter.all(::safeFilter)) { "Invalid model filter" }
         require(apps.size <= 4 && apps.all(::safeFilter)) { "Invalid model app filter" }
+        require(pipelineTag == null || safeFilter(pipelineTag)) { "Invalid model pipeline" }
     }
 
     private companion object {

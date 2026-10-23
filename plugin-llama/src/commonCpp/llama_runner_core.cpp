@@ -459,7 +459,8 @@ static int backend_kind(ggml_backend_dev_t device) {
     const std::string name = lower_ascii(registry ? ggml_backend_reg_name(registry) : nullptr);
     if (name.find("cpu") != std::string::npos) return LLAMA_BACKEND_CPU;
     if (name.find("cuda") != std::string::npos || name.find("hip") != std::string::npos) return LLAMA_BACKEND_CUDA;
-    if (name.find("metal") != std::string::npos) return LLAMA_BACKEND_METAL;
+    // Current ggml registers Apple's backend as "MTL"; older builds used "Metal".
+    if (name == "mtl" || name.find("metal") != std::string::npos) return LLAMA_BACKEND_METAL;
     if (name.find("vulkan") != std::string::npos) return LLAMA_BACKEND_VULKAN;
     if (name.find("opencl") != std::string::npos) return LLAMA_BACKEND_OPENCL;
     if (name.find("sycl") != std::string::npos) return LLAMA_BACKEND_SYCL;
@@ -2014,6 +2015,9 @@ void llama_runner_core_unload() {
 void llama_runner_core_shutdown() {
     auto operation = g_operation_gate.lock_interruptible(native_operations_poisoned);
     if (!operation) return;
+    // The context/model own backend buffers (including Metal residency sets).
+    // Release those before the backend, even if callers omit a separate unload.
+    unload_model_state();
     if (!g_backend_initialized) {
         return;
     }

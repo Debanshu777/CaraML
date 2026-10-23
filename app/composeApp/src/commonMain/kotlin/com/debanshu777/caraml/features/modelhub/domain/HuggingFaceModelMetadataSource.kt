@@ -224,15 +224,15 @@ class HuggingFaceModelMetadataSource internal constructor(
         retryNetworkFailure: Boolean,
         exactIdentities: List<ModelFileIdentity>?,
     ): RepositoryVariantSet {
-        val files = gateway.getTree(repositoryId, revision, ModelFileWeightFilter.GgufOnly)
+        val files = gateway.getTree(repositoryId, revision, ModelFileWeightFilter.LanguageModelFiles)
             .successOrNull(retryNetworkFailure)
             ?: return needsInformation(repositoryId)
-        val grouped = groupGgufFiles(files) ?: return needsInformation(repositoryId)
+        val grouped = groupGgufFiles(files.filter { it.path?.endsWith(".gguf", true) == true }) ?: return needsInformation(repositoryId)
         val primaryGroups = grouped.filter { group ->
             group.all { file ->
                 ModelArtifactClassifier.classify(file.path, detail.tags.orEmpty()).recommendationEligible
             }
-        }
+        } + com.debanshu777.caraml.sdk.discovery.huggingface.model.OnnxModelBundles.resolve(files).map { it.files }
         val candidates = exactIdentities?.let { requested ->
             val requestedPaths = requested.asSequence()
                 .filter { it.repositoryId == repositoryId && it.revision.equals(revision, ignoreCase = true) }
@@ -243,7 +243,9 @@ class HuggingFaceModelMetadataSource internal constructor(
             return if (exactIdentities == null) selectVariant(repositoryId) else RepositoryVariantSet.Ready(emptyList())
         }
         if (exactIdentities == null && candidates.size > MAX_RUNNABLE_VARIANTS) return selectVariant(repositoryId)
-        val configResult = if (exactIdentities == null) {
+        // ONNX needs transformer dimensions for its float32 KV cache. Public Hub configs
+        // redirect to the same revision's resolve-cache endpoint; the exact route validates it.
+        val configResult = if (exactIdentities == null && candidates.none { files -> files.any { it.path?.endsWith(".onnx") == true } }) {
             gateway.getConfig(repositoryId, revision)
         } else {
             gateway.getExactConfig(repositoryId, revision)
@@ -258,7 +260,9 @@ class HuggingFaceModelMetadataSource internal constructor(
             when (val built = descriptorFactory.buildLlm(detail, group, config)) {
                 is DescriptorBuildResult.Ready -> variants += RepositoryVariant(
                     descriptor = built.descriptor,
-                    displayName = ggufDisplayName(group) ?: continue,
+                    displayName = if (built.descriptor.format == com.debanshu777.caraml.core.recommendation.ModelFormat.ONNX) {
+                        "ONNX · ${group.first().path?.substringAfterLast('/')} (${group.size} files)"
+                    } else ggufDisplayName(group) ?: continue,
                 )
                 is DescriptorBuildResult.NeedsVariant -> rejectedVariantReasons += built.reasons
                 is DescriptorBuildResult.Invalid -> {

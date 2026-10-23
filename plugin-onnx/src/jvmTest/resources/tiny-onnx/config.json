@@ -1,0 +1,1 @@
+{"model_type": "gpt2", "eos_token_id": 0, "max_position_embeddings": 512, "hidden_size": 2, "num_attention_heads": 1, "num_hidden_layers": 1}

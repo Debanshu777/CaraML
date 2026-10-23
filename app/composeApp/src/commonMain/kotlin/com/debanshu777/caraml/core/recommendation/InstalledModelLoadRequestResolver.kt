@@ -234,10 +234,12 @@ class InstalledModelLoadRequestResolver internal constructor(
         val capturedSnapshot = captureSnapshot()
         val settings = currentSettings()
         if (descriptor is LlmModelDescriptor && !descriptor.hasCompleteLocalCompatibilityMetadata()) {
+            if (descriptor.format == ModelFormat.ONNX) return InstalledModelLoadResolution.NotAdmissible(AssessmentReason.INVALID_METADATA)
             return nativeMetadataRequest(model, descriptor, artifact, capturedSnapshot, settings)
         }
         val cpuRequired =
             !settings.useGpu ||
+            descriptor is LlmModelDescriptor && descriptor.format == ModelFormat.ONNX ||
             descriptor is LlmModelDescriptor && descriptor.architecture.requiresCpuOnlyLlmExecution() ||
             descriptor is DiffusionModelDescriptor && cpuOnlyDiffusion
         val assessmentSnapshot = if (cpuRequired) {
@@ -349,7 +351,7 @@ class InstalledModelLoadRequestResolver internal constructor(
         if (recommendation.assessmentKey != assessment.assessmentKey) {
             return InstalledModelLoadResolution.Rejected(ArtifactIdentityRejection.INVALID_INPUT)
         }
-        if (descriptor is LlmModelDescriptor && recommendation.category == RecommendationCategory.NEEDS_INFORMATION &&
+        if (descriptor is LlmModelDescriptor && descriptor.format == ModelFormat.GGUF && recommendation.category == RecommendationCategory.NEEDS_INFORMATION &&
             recommendation.reasons.all { it in METADATA_GAP_REASONS } &&
             recommendation.reasonFrom(assessment, AssessmentReason.RECOMMENDATION_EVIDENCE_INCOMPLETE) in METADATA_GAP_REASONS
         ) {

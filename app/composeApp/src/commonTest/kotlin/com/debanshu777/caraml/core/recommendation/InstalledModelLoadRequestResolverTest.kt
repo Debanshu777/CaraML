@@ -229,7 +229,7 @@ class InstalledModelLoadRequestResolverTest {
         )
 
         assertEquals(KvCacheSelection.Auto, workload.kvCacheSelection)
-        assertEquals(KvCacheType.entries, workload.allowedKvCacheTypes)
+        assertEquals(listOf(KvCacheType.F16, KvCacheType.Q8_0, KvCacheType.Q4_0), workload.allowedKvCacheTypes)
         assertTrue(workload.allowKvCacheFallback)
     }
 

@@ -13,6 +13,7 @@ object WorkloadLimits {
 }
 
 enum class KvCacheType {
+    F32,
     F16,
     Q8_0,
     Q4_0,

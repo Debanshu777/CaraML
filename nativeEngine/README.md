@@ -143,6 +143,8 @@ Create a **separate** Gradle module + CMake project. Do not add here unless it m
 
 ## Recent Changes
 
+- Apple validation links the merged native archive into simulator tests and a physical iPhone harness. The llama bridge recognizes `MTL` as Metal and releases model/context allocations before backend shutdown; all five iPhone Metal cases pass.
+
 - Android llama builds include arm64 Vulkan by default, with CPU retained for x86_64 and diffusion-only builds; app admission keeps Android diffusion on CPU.
 
 - Fixed Android Vulkan host shader generation to reuse the configured Ninja executable; universal Vulkan APKs now retain an x86_64 CPU fallback instead of failing configuration. See the root README for current Pixel 9 benchmarks.

@@ -1,0 +1,18 @@
+{
+  "repository": "HuggingFaceTB/SmolLM2-360M-Instruct-GGUF",
+  "revision": "593b5a2e04c8f3e4ee880263f93e0bd2901ad47f",
+  "graph": "smollm2-360m-instruct-q8_0.gguf",
+  "downloads_at_selection": 17710,
+  "files": [
+    {
+      "rfilename": "smollm2-360m-instruct-q8_0.gguf",
+      "blobId": "d6fa545f014b70945b12235c0cfbd4a9df694b22",
+      "size": 386404992,
+      "lfs": {
+        "sha256": "48ab3034d0dd401fbc721eb1df3217902fee7dab9078992d66431f09b7750201",
+        "size": 386404992,
+        "pointerSize": 134
+      }
+    }
+  ]
+}

@@ -131,7 +131,7 @@ class InstalledModelEvidenceRepairer internal constructor(
 
         // The publication and every artifact identity were verified above. A complete
         // local GGUF header can supply load-critical facts without a network lookup.
-        if (mode == ModelHubBrowseMode.LanguageModels) {
+        if (mode == ModelHubBrowseMode.LanguageModels && captured.identities.none { it.path.endsWith(".onnx") }) {
             val target = captured.artifact.loadTarget as? VerifiedArtifactLoadTarget.File
                 ?: return fallbackUnlessBaselineChanged(captured, mode, invalidMetadata())
             val localHeader = ggufMetadataInspector.inspect(target.path)
@@ -274,6 +274,10 @@ class InstalledModelEvidenceRepairer internal constructor(
     ): EvidenceRepairResult.Rejected? {
         if (mode != ModelHubBrowseMode.LanguageModels) return null
         val target = artifact.loadTarget as? VerifiedArtifactLoadTarget.File ?: return null
+        if (target.path.endsWith(".onnx") && com.debanshu777.caraml.sdk.discovery.huggingface.model.OnnxModelBundles.isComplete(identities.map { it.path })) {
+            // Exact bytes and all companions were verified by captureVerified; ORT validates the graph at load.
+            return null
+        }
         return when (ggufMetadataInspector.recognizeContainer(target.path)) {
             GgufContainerRecognition.GGUF -> null
             GgufContainerRecognition.NON_GGUF ->
@@ -287,6 +291,7 @@ class InstalledModelEvidenceRepairer internal constructor(
     ): ModelDescriptor? {
         val decoded = catalog.evidence?.let(::decode) ?: return null
         val descriptor = decoded.descriptor ?: return null
+        if (descriptor is LlmModelDescriptor && descriptor.format == ModelFormat.ONNX && !descriptor.hasCompleteLocalCompatibilityMetadata()) return null
         return descriptor.takeIf {
             decoded.state == InstalledEvidenceState.COMPLETE &&
                 decoded.artifactIdentities.hasSameExactInstalledIdentities(identities) &&

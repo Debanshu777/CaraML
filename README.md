@@ -2,7 +2,7 @@
 
 **On-device AI inference for Android, iOS, and Desktop (JVM)**
 
-CaraML runs large language models and image generation models entirely on-device using [llama.cpp](https://github.com/ggerganov/llama.cpp) and [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp). Models are browsed and downloaded directly from HuggingFace Hub. No cloud backend required.
+CaraML runs large language models and image generation models entirely on-device using [llama.cpp](https://github.com/ggerganov/llama.cpp), [ONNX Runtime](https://onnxruntime.ai/) and [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp). Models are browsed and downloaded directly from HuggingFace Hub. No cloud backend required.
 
 ---
 
@@ -10,8 +10,9 @@ CaraML runs large language models and image generation models entirely on-device
 
 - **LLM Chat** — streaming token generation with structured reasoning support (thinking blocks), markdown rendering, context tracking
 - **Image Generation** — Stable Diffusion via stable-diffusion.cpp (text-to-image, configurable sampling)
-- **Model Hub** — browse, search, filter, and download GGUF models from HuggingFace; smart install bundles for diffusion models
-- **GPU Acceleration** — Vulkan (Android), Metal (iOS/macOS)
+- **Model Hub** — browse, search, filter, and download GGUF and supported ONNX text bundles from HuggingFace; smart install bundles for diffusion models
+- **ONNX Text** — Android/JVM/iOS streaming inference for supported SmolLM2, Qwen and Llama exports; [supported layouts and limits](plugin-onnx/README.md)
+- **GGUF GPU Acceleration** — Vulkan (Android), Metal (iOS/macOS)
 - **Dynamic Theming** — Material You / Material 3 with materialKolor
 - **Fully Offline** — all inference runs on-device after download
 
@@ -29,6 +30,13 @@ CaraML runs large language models and image generation models entirely on-device
 ---
 
 ## Current Android Benchmarks
+
+The [October 23 ONNX/GGUF comparison](benchmarks/onnx/README.md) covers five
+matching checkpoints on Pixel 9, provider placement, thread tuning, memory and
+the Llama INT8 compatibility workaround. ONNX dynamic-cache exports use CPU by default; accelerator experiments and
+iPhone measurements and iOS simulator regression checks are reported separately. The earlier GGUF-only baseline below used different
+quantizations and a longer generation workload, so its numbers are not directly
+comparable to that report.
 
 Measured on a **Google Pixel 9 running Android 17**, on **October 15, 2026**.
 All inference runs locally through llama.cpp. Native placement logs verified
@@ -53,7 +61,7 @@ native code.
 All five models passed load, generation, cancellation, unload, reload, and recovery
 checks on the final installed build. GPU acceleration helps some models more than
 others; thermal state and OS caching affect the results. These measurements are
-the current project baseline, rather than a maximum-throughput claim or a measure
+an earlier project baseline, rather than a maximum-throughput claim or a measure
 of answer quality. They cover the PR #17 working tree with local fixes and existing
 edits; they are not a clean release-build certification.
 
@@ -73,6 +81,7 @@ CaraML/
 ├── storage/             # Optional SDK storage implementations
 ├── model-discovery/     # Provider-neutral discovery + built-in Hugging Face
 ├── plugin-llama/        # llama SDK + Kotlin/JNI/cinterop bridge
+├── plugin-onnx/         # Android/JVM/iOS ONNX causal text runtime
 ├── plugin-diffusion/    # Diffusion SDK + Kotlin/JNI/cinterop bridge
 ├── native-runtime/      # Internal SDK native ownership guard
 ├── app/                # CaraML app consumers, separate from the SDK
@@ -308,7 +317,7 @@ Three features: **chat**, **modelhub**, **settings**.
 | Android SDK | minSdk 28, compileSdk 36 |
 | iOS | min 17.2 |
 | Android bytecode | 21 (`composeApp`), 17 (supporting KMP libraries) |
-| Inference | llama.cpp (latest), stable-diffusion.cpp (latest) |
+| Inference | pinned llama.cpp, pinned stable-diffusion.cpp, ONNX Runtime 1.31.0 (Android/JVM), 1.30.0 (Apple) |
 
 ---
 
@@ -376,7 +385,9 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 
 ## Recent Changes
 
-- Published the current Pixel 9 CPU/Vulkan generation benchmark for five LLMs, with quantization, sustained decode ranges and test conditions. Raw validation artifacts are excluded from the repository.
+- Added supported ONNX text bundles to Hugging Face discovery, verified downloads and Android/JVM/iOS chat, with format routing, cancellation and memory admission.
+
+- Added a reproducible [five-model ONNX/GGUF comparison](benchmarks/onnx/README.md) on Pixel 9 and physical iPhone 13, with raw results, measured thread settings and exact-export exclusions. Fixed Metal shutdown after physical iPhone testing.
 
 - Enabled and verified the Android Vulkan profile on Pixel 9, repaired shader-generator/universal-ABI builds, and removed the per-layer GGUF metadata path's forced CPU fallback under guarded native memory admission. See [current Android benchmarks](#current-android-benchmarks) for measured performance.
 

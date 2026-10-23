@@ -31,12 +31,13 @@ class InstalledModelWorkloadFactory {
     private fun text(descriptor: LlmModelDescriptor, preset: KvQuantPreset): LlmWorkloadConfig? {
         val limit = descriptor.contextLimit
         if (limit != null && limit < MIN_CONTEXT_TOKENS) return null
-        return text(limit, preset)
+        return text(limit, preset, onnx = descriptor.format == ModelFormat.ONNX)
     }
 
-    private fun text(contextLimit: Int?, preset: KvQuantPreset): LlmWorkloadConfig {
+    private fun text(contextLimit: Int?, preset: KvQuantPreset, onnx: Boolean = false): LlmWorkloadConfig {
         val contextTokens = minOf(contextLimit ?: DEFAULT_CONTEXT_TOKENS, DEFAULT_CONTEXT_TOKENS)
-        val kv = preset.toKvPolicy()
+        val kv = if (onnx) KvPolicy(KvCacheSelection.Explicit(KvCacheType.F32, KvCacheType.F32), listOf(KvCacheType.F32), false)
+            else preset.toKvPolicy()
         return LlmWorkloadConfig(
             userRequestedContextTokens = contextTokens,
             contextTokens = contextTokens,
@@ -82,7 +83,7 @@ class InstalledModelWorkloadFactory {
     private fun KvQuantPreset.toKvPolicy(): KvPolicy = when (this) {
         KvQuantPreset.AUTO -> KvPolicy(
             selection = KvCacheSelection.Auto,
-            allowedTypes = KvCacheType.entries,
+            allowedTypes = listOf(KvCacheType.F16, KvCacheType.Q8_0, KvCacheType.Q4_0),
             allowFallback = true,
         )
         KvQuantPreset.Q4_F16 -> KvPolicy(

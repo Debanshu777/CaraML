@@ -54,7 +54,7 @@ if (!providers.gradleProperty("sdkOnly").map(String::toBoolean).getOrElse(false)
         group = "verification"
         description = "Verify each plugin resolves only its own bridge and the shared runtime guard."
         doLast {
-            listOf(":plugin-llama", ":plugin-diffusion").forEach { module ->
+            listOf(":plugin-llama", ":plugin-diffusion", ":plugin-onnx").forEach { module ->
                 val projects = project(module).configurations.getByName("jvmRuntimeClasspath")
                     .incoming.resolutionResult.allComponents
                     .mapNotNull { (it.id as? ProjectComponentIdentifier)?.projectPath }.toSet()
@@ -73,6 +73,7 @@ tasks.register("verifyProject") {
         "verifyEngineBoundaries",
         ":plugin-llama:jvmTest",
         ":plugin-diffusion:jvmTest",
+        ":plugin-onnx:jvmTest",
         ":app:composeApp:jvmTest",
         ":app:desktopApp:classes",
         ":nativeEngine:verifyNativeSubmodulePins",

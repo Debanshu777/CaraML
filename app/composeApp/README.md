@@ -89,7 +89,7 @@ HuggingFace Hub integration for model discovery and download.
 - `ModelViewModel.kt` — search, filter (pipeline tag, sort), download orchestration
 - `DownloadedModelsViewModel.kt` — locally stored model management
 - `SearchScreen.kt` — search bar + model list
-- `DetailsScreen.kt` — model detail + GGUF file picker
+- `DetailsScreen.kt` — model detail + GGUF files / complete ONNX bundle variants
 - `InstallBundleCard.kt` — smart install for diffusion model component bundles
 - `GgufFileListItem.kt` — per-file download with live progress
 - `ModelHubBrowseMode.kt` — LLM vs diffusion browse mode
@@ -201,6 +201,9 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 ---
 
 ## Recent Changes
+
+- Added GGUF/ONNX discovery filters, complete immutable ONNX downloads, format-aware catalog evidence and a single resident text-engine router.
+- ONNX chat supports streaming reasoning, cancellation, context reset and reload with F32 KV estimates and engine-specific recovery; exact unsupported exports fail with guidance.
 
 - Android keeps diffusion on CPU even when the shared native registry exposes llama Vulkan; desktop and iOS retain their engine policies.
 

@@ -1,0 +1,11 @@
+CARAML_ONNX_VALIDATION {"case":"llama32-1b","stage":"discovery","detail":"7 files, revision 14007543b6dc92de88daf96a9aa85d2f95ace6ef"}
+CARAML_ONNX_VALIDATION {"case":"llama32-1b","stage":"download","detail":"COMPLETED: null"}
+CARAML_ONNX_VALIDATION {"case":"llama32-1b","stage":"publication","detail":"model_q4.onnx"}
+CARAML_ONNX_VALIDATION {"case":"llama32-1b","stage":"prepared_metadata","detail":"format=ONNX; architecture=llama; context=131072; shape=TransformerShape(layerCount=16, kvHeadCount=8, attentionHeadCount=32, hiddenSize=2048, headDim=64)"}
+CARAML_ONNX_VALIDATION {"case":"llama32-1b","stage":"risk_acknowledged","detail":"Conservative ONNX memory estimate; llm:4096:256:64:1:F32:F32:CPU:UNIFIED:0:true"}
+CARAML_ONNX_VALIDATION {"case":"llama32-1b","stage":"load","detail":"ONNX Runtime 1.31.0; CPU; 2 threads"}
+CARAML_ONNX_VALIDATION {"case":"llama32-1b","stage":"turn","detail":"content=Your name is Mira.; reasoning_chars=0"}
+CARAML_ONNX_VALIDATION {"case":"llama32-1b","stage":"turn","detail":"content=Mira is my name.; reasoning_chars=0"}
+CARAML_ONNX_VALIDATION {"case":"llama32-1b","stage":"risk_acknowledged","detail":"Conservative ONNX memory estimate; llm:4096:256:64:1:F32:F32:CPU:UNIFIED:0:true"}
+CARAML_ONNX_VALIDATION {"case":"llama32-1b","stage":"complete","detail":"discovery, download, publication, two turns, cancellation and reload passed"}
+INSTRUMENTATION_CODE: -1
