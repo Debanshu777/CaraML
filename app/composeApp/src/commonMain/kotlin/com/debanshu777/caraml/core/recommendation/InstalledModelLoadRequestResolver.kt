@@ -80,7 +80,7 @@ class InstalledModelLoadRequestResolver internal constructor(
         ModelAssessment,
         PersonalizedRecommendation,
     ) -> LoadRequestResolution,
-    private val cpuOnlyDiffusion: Boolean = platformRequiresCpuDiffusion(),
+    private val cpuOnlyDiffusion: Boolean = false,
 ) : InstalledModelLoadResolver {
     constructor(
         componentRepository: ComponentRepository,
@@ -243,7 +243,7 @@ class InstalledModelLoadRequestResolver internal constructor(
             !settings.useGpu ||
             descriptor is LlmModelDescriptor && descriptor.format == ModelFormat.ONNX ||
             descriptor is LlmModelDescriptor && descriptor.architecture.requiresCpuOnlyLlmExecution() ||
-            descriptor is DiffusionModelDescriptor && cpuOnlyDiffusion
+            descriptor is DiffusionModelDescriptor && (cpuOnlyDiffusion || platformRequiresCpuDiffusion(descriptor.mode))
         val assessmentSnapshot = if (cpuRequired) {
             capturedSnapshot.cpuOnly()
         } else {

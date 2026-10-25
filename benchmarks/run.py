@@ -15,6 +15,12 @@ ROOT = Path(__file__).resolve().parent
 # Imports are lazy: downloading or viewing help does not require ORT, tokenizers,
 # Android tools or Apple's tools. Each leaf keeps its workload's existing flags.
 COMMANDS = {
+    "diffusion": {
+        "download": ("diffusion/download_models.py", "main", "Fetch five pinned image-model bundles"),
+        "android": ("diffusion/run_android.py", "main", "Foreground image generation through production JNI"),
+        "matrix": ("diffusion/run_matrix.py", "main", "Serial image CPU/Vulkan comparisons with thermal records"),
+        "summary": ("diffusion/summary.py", "main", "Export compact image-generation results"),
+    },
     "android": {
         "ui": ("android/ui.py", "main", "Startup, scrolling and Baseline Profile benchmarks"),
         "load": ("android/model_load.py", "main", "Fresh-process GGUF engine loads"),
@@ -50,7 +56,7 @@ def run_tests(argv):
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
-    for directory in (ROOT, ROOT / "android", ROOT / "onnx", ROOT / "onnx/analysis"):
+    for directory in (ROOT, ROOT / "android", ROOT / "onnx", ROOT / "onnx/analysis", ROOT / "diffusion"):
         command = [sys.executable, "-m", "unittest", "discover", "-s", str(directory), "-p", "test_*.py"]
         if args.verbose:
             command.append("-v")

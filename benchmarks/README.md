@@ -1,10 +1,16 @@
 # CaraML performance improvement report
 
-Updated October 24, 2026, Asia/Kolkata.
+Updated October 26, 2026, Asia/Kolkata.
 
 The largest loading improvements came from removing repeated whole-model hashing and retaining an unchanged model's resident session. Native CPU repacking and buffered ONNX metadata reads reduced additional loading work. Startup profiling helped first display; the scrolling change reduced redundant composition without demonstrating faster frames. Generation speed remains a separate optimization target.
 
 This report covers the Android startup, scrolling, GGUF and ONNX work completed on the Pixel 9. It is the current overview; the [Android guide](android/README.md) and [ONNX guide](onnx/README.md) retain detailed methods, historical experiments, commands and per-trial evidence. Earlier iPhone results remain in the ONNX guide and were not rerun during this Android pass.
+
+The [image-generation suite](diffusion/README.md) adds pinned image-model downloads, foreground JNI measurements, backend attribution, and sampling-step comparisons. Its results use separate timing boundaries from the text-model loading results below.
+
+## Recent Changes
+
+- Consolidated diffusion benchmarks from 19 files to 12: one named-suite configuration, one model manifest, one supporting-evidence record and one Python test module. Generated trial results remain separate; trial arguments, checksums and recorded evidence are preserved.
 
 ## Measured improvements
 

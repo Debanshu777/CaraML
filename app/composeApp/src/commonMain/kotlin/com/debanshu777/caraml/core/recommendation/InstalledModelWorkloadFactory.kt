@@ -2,6 +2,11 @@ package com.debanshu777.caraml.core.recommendation
 
 import com.debanshu777.caraml.core.settings.AppSettings
 import com.debanshu777.caraml.core.settings.KvQuantPreset
+import com.debanshu777.caraml.core.download.diffusion.getModelSetup
+import com.debanshu777.caraml.core.rating.DiffusionStepPolicy
+import com.debanshu777.caraml.core.rating.DistilledHint
+import com.debanshu777.caraml.core.rating.SdArchitectureClassifier
+import com.debanshu777.caraml.sdk.plugin.diffusion.bridge.SampleMethod
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 
@@ -26,7 +31,7 @@ class InstalledModelWorkloadFactory(
             text(descriptor, settings.kvQuantPreset)
         descriptor is DiffusionModelDescriptor &&
             descriptor.mode == DiffusionMode.IMAGE && expectedMode == GenerationMode.Image ->
-            diffusion(DiffusionMode.IMAGE)
+            installedImage(descriptor, settings.optimizationPriority)
         descriptor is DiffusionModelDescriptor &&
             descriptor.mode == DiffusionMode.VIDEO && expectedMode == GenerationMode.Video ->
             diffusion(DiffusionMode.VIDEO)
@@ -76,20 +81,56 @@ class InstalledModelWorkloadFactory(
         )
     }
 
-    private fun diffusion(mode: DiffusionMode): DiffusionWorkloadConfig = DiffusionWorkloadConfig(
+    private fun installedImage(
+        descriptor: DiffusionModelDescriptor,
+        priority: OptimizationPriority,
+    ): DiffusionWorkloadConfig {
+        val params = getModelSetup(descriptor.repositoryId)?.recommendedParams
+        val architecture = descriptor.architecture
+            ?: SdArchitectureClassifier.classify(emptyList(), descriptor.repositoryId)
+        val distilled = if (SdArchitectureClassifier.isDistilled(descriptor.repositoryId))
+            DistilledHint.YES else DistilledHint.UNKNOWN
+        val defaultSteps = params?.steps ?: DiffusionStepPolicy.recommend(
+            architecture, SampleMethod.fromName(params?.samplingMethod), distilled,
+        ).steps
+        // Resolve model defaults before admission so the admitted workload and execution agree.
+        return diffusion(
+            DiffusionMode.IMAGE,
+            width = params?.width ?: 512,
+            height = params?.height ?: 512,
+            steps = when (priority) {
+                OptimizationPriority.SPEED_EFFICIENCY -> params?.speedSteps ?: defaultSteps
+                OptimizationPriority.BALANCED -> params?.balancedSteps ?: defaultSteps
+                else -> defaultSteps
+            },
+            offloadToCpu = params?.offloadToCpu ?: false,
+            keepClipOnCpu = params?.clipOnCpu ?: false,
+            keepVaeOnCpu = params?.keepVaeOnCpu ?: false,
+        )
+    }
+
+    private fun diffusion(
+        mode: DiffusionMode,
+        width: Int = IMAGE_WIDTH,
+        height: Int = if (mode == DiffusionMode.VIDEO) VIDEO_HEIGHT else IMAGE_HEIGHT,
+        steps: Int = DIFFUSION_STEPS,
+        offloadToCpu: Boolean = false,
+        keepClipOnCpu: Boolean = false,
+        keepVaeOnCpu: Boolean = false,
+    ): DiffusionWorkloadConfig = DiffusionWorkloadConfig(
         mode = mode,
-        width = IMAGE_WIDTH,
-        height = if (mode == DiffusionMode.VIDEO) VIDEO_HEIGHT else IMAGE_HEIGHT,
+        width = width,
+        height = height,
         minimumWidth = MIN_DIFFUSION_DIMENSION,
         minimumHeight = MIN_DIFFUSION_DIMENSION,
         frameCount = if (mode == DiffusionMode.VIDEO) VIDEO_FRAMES else 1,
         minimumFrameCount = 1,
         batchSize = 1,
-        steps = DIFFUSION_STEPS,
+        steps = steps,
         vaeTiling = false,
-        offloadToCpu = false,
-        keepClipOnCpu = false,
-        keepVaeOnCpu = false,
+        offloadToCpu = offloadToCpu,
+        keepClipOnCpu = keepClipOnCpu,
+        keepVaeOnCpu = keepVaeOnCpu,
         maxVramBytes = null,
         layerStreaming = false,
         allowResolutionFallback = true,

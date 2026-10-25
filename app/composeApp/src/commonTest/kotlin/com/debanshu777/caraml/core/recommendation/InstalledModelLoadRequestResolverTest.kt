@@ -662,10 +662,12 @@ class InstalledModelLoadRequestResolverTest {
             currentSettings = { AppSettings(useGpu = true) },
             workloadFactory = InstalledModelWorkloadFactory(),
             cpuOnlyDiffusion = cpuOnly,
-            assess = { _, snapshot, _ ->
+            assess = { _, snapshot, workload ->
                 assessmentSnapshots += snapshot
+                val imageWorkload = assertIs<DiffusionWorkloadConfig>(workload)
                 val plan = installedDiffusionPlan(
                     backend = if (snapshot.hasAccelerator()) BackendKind.METAL else BackendKind.CPU,
+                    workload = imageWorkload,
                 )
                 task6Assessment(
                     plans = listOf(task6PlanAssessment(plan = plan)),
@@ -1138,13 +1140,13 @@ private fun diffusionArtifact(
     )
 }
 
-private fun installedDiffusionPlan(backend: BackendKind) = DiffusionRunPlan(
+private fun installedDiffusionPlan(backend: BackendKind, workload: DiffusionWorkloadConfig) = DiffusionRunPlan(
     mode = DiffusionMode.IMAGE,
-    width = 1_024,
-    height = 1_024,
+    width = workload.width,
+    height = workload.height,
     frameCount = 1,
     batchSize = 1,
-    steps = 20,
+    steps = workload.steps,
     vaeTiling = false,
     offloadToCpu = backend == BackendKind.CPU,
     keepClipOnCpu = backend == BackendKind.CPU,

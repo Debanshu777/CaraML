@@ -154,13 +154,9 @@ endif()
 
 # Stable Diffusion backend configuration
 set(SD_METAL OFF CACHE BOOL "" FORCE)
-# Vulkan for stable-diffusion.cpp is disabled on Android.
-# Mali-G715 / Adreno mobile GPUs trigger SIGABRT (ggml_abort) inside
-# libggml-vulkan.so ~2s into the first UNet denoising step.
-# The 0002-vulkan-norm-require-f32 patch guards norm ops but does not
-# cover all pipeline gaps on mobile Vulkan drivers.
-# llama.cpp still benefits from Vulkan via GGML_VULKAN above.
-# Re-enable when ggml-vulkan matures on mobile GPUs.
+# Use the shared llama GGML backend registry and packaged Vulkan module.
+# SD_VULKAN controls sd.cpp's standalone backend setup, not runtime placement.
+# The bridge selects explicit per-component backends after admission/preflight.
 set(SD_VULKAN OFF CACHE BOOL "" FORCE)
 
 include("${CMAKE_CURRENT_LIST_DIR}/../../commonCpp/GgmlUnified.cmake")
@@ -229,10 +225,8 @@ if(GGML_BACKEND_DL)
     endif()
 endif()
 
-# SD_VULKAN=OFF means diffusion_runner is compiled without SD_USE_VULKAN, so
-# ggml-vulkan is NOT linked into diffusion_runner and no Vulkan paths are taken.
-# GGML_VULKAN=ON is still used by llama_runner (LLM inference).
-# This block is intentionally guarded by SD_VULKAN, not GGML_VULKAN.
+# Optional static linkage for standalone SD configurations. Android loads the
+# packaged shared ggml-vulkan through the registry when SD_VULKAN is off.
 if(SD_VULKAN AND TARGET ggml-vulkan)
     target_link_libraries(diffusion_runner PRIVATE $<TARGET_FILE:ggml-vulkan>)
     add_dependencies(diffusion_runner ggml-vulkan)

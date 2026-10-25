@@ -6,6 +6,7 @@
 #include "core/backend_fit.h"
 #include "core/ggml_graph_cut.h"
 #include "diffusion_runner_preflight_internal.h"
+#include "diffusion_sampling_progress.h"
 #include "scoped_context_publication.h"
 #include "ggml.h"
 #include "ggml-backend.h"
@@ -29,6 +30,9 @@
 #include <cstdio>
 #include <cstdarg>
 
+static_assert(DISCRETE_SCHEDULER == 0 && SGM_UNIFORM_SCHEDULER == 5 && SIMPLE_SCHEDULER == 6,
+              "Update the Kotlin scheduler contract when upstream enum values change");
+
 // Define STB_IMAGE_WRITE_IMPLEMENTATION for PNG encoding
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 
@@ -42,6 +46,7 @@ struct SdHandle {
     float flow_shift = 0.0f;
     bool flow_shift_is_set = false;
     bool vae_tiling = false;
+    int sampling_scheduler = -1;
     std::string model_version;
 };
 
@@ -59,8 +64,7 @@ static std::string g_backend_path;
 
 // Step-progress tracking (updated by the C callback on the generation thread;
 // read from the Kotlin polling coroutine on a different thread — atomics are sufficient).
-static std::atomic<int> g_progress_step(0);
-static std::atomic<int> g_progress_total(0);
+static caraml::diffusion::SamplingProgress g_sampling_progress;
 
 static std::shared_ptr<SdHandle> lookup_handle(int64_t handle_id) {
     std::lock_guard<std::mutex> lock(g_handles_mutex);
@@ -93,14 +97,58 @@ struct SdImagesOwner {
 };
 
 static void step_progress_callback(int step, int steps, float /*time*/, void* /*data*/) {
-    g_progress_step.store(step,  std::memory_order_relaxed);
-    g_progress_total.store(steps, std::memory_order_relaxed);
+    g_sampling_progress.observe(step, steps);
 }
 
 void diffusion_runner_get_step_progress(int* step, int* total) {
-    *step  = g_progress_step.load(std::memory_order_relaxed);
-    *total = g_progress_total.load(std::memory_order_relaxed);
+    const auto progress = g_sampling_progress.read();
+    *step = progress.first;
+    *total = progress.second;
 }
+
+static void dr_logf(DiffusionLogLevel level, const char *fmt, ...);
+
+class ScopedSamplingProgress {
+public:
+    explicit ScopedSamplingProgress(int steps, bool exact_step_budget = true) {
+        g_sampling_progress.begin(steps, exact_step_budget);
+        sd_set_progress_callback(step_progress_callback, nullptr);
+        sd_set_backend_eval_callback(observe_backend, this);
+    }
+    ~ScopedSamplingProgress() {
+        sd_set_backend_eval_callback(nullptr, nullptr);
+        sd_set_progress_callback(nullptr, nullptr);
+        g_sampling_progress.end();
+        // Counts describe scheduled graph nodes, not GPU utilization or kernel time.
+        // Emit only backend categories; never log tensor contents, names or prompts.
+        dr_logf(DIFFUSION_LOG_INFO,
+                "generation_graph_nodes cpu=%llu vulkan=%llu metal=%llu cuda=%llu other=%llu",
+                count(0), count(1), count(2), count(3), count(4));
+    }
+private:
+    std::array<std::atomic<uint64_t>, 5> nodes_{};
+
+    unsigned long long count(size_t index) const {
+        return static_cast<unsigned long long>(nodes_[index].load(std::memory_order_relaxed));
+    }
+
+    static bool observe_backend(ggml_tensor *tensor, bool ask, void *data) {
+        if (!ask) return true;
+        auto buffer = tensor->buffer;
+        if (!buffer && tensor->view_src) buffer = tensor->view_src->buffer;
+        auto device = buffer ? ggml_backend_buft_get_device(ggml_backend_buffer_get_type(buffer)) : nullptr;
+        size_t index = 4;
+        if (device) {
+            const char *name = ggml_backend_dev_name(device);
+            if (ggml_backend_dev_type(device) == GGML_BACKEND_DEVICE_TYPE_CPU) index = 0;
+            else if (name && std::strncmp(name, "Vulkan", 6) == 0) index = 1;
+            else if (name && std::strncmp(name, "Metal", 5) == 0) index = 2;
+            else if (name && std::strncmp(name, "CUDA", 4) == 0) index = 3;
+        }
+        static_cast<ScopedSamplingProgress *>(data)->nodes_[index].fetch_add(1, std::memory_order_relaxed);
+        return false; // Do not request tensor copies or synchronize individual GPU nodes.
+    }
+};
 
 // PNG encoding callback
 struct PngWriteContext {
@@ -289,6 +337,8 @@ static bool valid_model_config_native(const DiffusionModelConfig &config) {
         (config.n_threads == -1 || (config.n_threads >= 1 && config.n_threads <= 1024)) &&
         valid_sd_weight_type(config.wtype) &&
         config.prediction >= -1 && config.prediction < PREDICTION_COUNT &&
+        (config.sampling_scheduler == -1 || config.sampling_scheduler == DISCRETE_SCHEDULER ||
+            config.sampling_scheduler == SGM_UNIFORM_SCHEDULER || config.sampling_scheduler == SIMPLE_SCHEDULER) &&
         (!config.prefetch || config.segmented_compute) &&
         (!config.flow_shift_is_set || (std::isfinite(config.flow_shift) &&
             config.flow_shift >= -1000.0f && config.flow_shift <= 1000.0f));
@@ -735,9 +785,6 @@ int64_t diffusion_runner_core_load_model(const DiffusionModelConfig &config) {
                     total_mem / (1024.0 * 1024.0));
         }
     }
-#else
-    dr_logf(DIFFUSION_LOG_WARN,
-            "load_model: diffusion runner was built without SD_USE_VULKAN");
 #endif
 
     // Determine model path - if any of the component paths are set, use diffusion_model_path
@@ -761,7 +808,7 @@ int64_t diffusion_runner_core_load_model(const DiffusionModelConfig &config) {
     // (see libraries/stable-diffusion.cpp/docs/backend.md, "Compatibility flags"). free_params_immediately
     // has no direct successor; params_backend=disk covers "reload+release" but that's a heavier
     // behavior change than "free after first use" so it is intentionally not auto-mapped here.
-    // resolve_model_plan already encoded caller overrides and Vulkan's CLIP/VAE CPU
+    // resolve_model_plan already encoded caller overrides and Vulkan's text-encoder CPU
     // safety into this exact assignment. An unrelated registered Vulkan device does
     // not mutate an explicit CUDA or Metal plan.
     params.diffusion_flash_attn = config.diffusion_flash_attn;
@@ -818,6 +865,7 @@ int64_t diffusion_runner_core_load_model(const DiffusionModelConfig &config) {
             handle->flow_shift = config.flow_shift;
             handle->flow_shift_is_set = config.flow_shift_is_set;
             handle->vae_tiling = config.vae_tiling;
+            handle->sampling_scheduler = config.sampling_scheduler;
             const char *model_version = sd_get_model_version_name(context);
             if (safe_feature_label(model_version, 72)) {
                 handle->model_version = model_version;
@@ -886,6 +934,9 @@ PngResult diffusion_runner_core_txt2img(int64_t handle_id, const ImageGenConfig 
     sd_sample_params_t sample_params = {};
     sd_sample_params_init(&sample_params);
     sample_params.sample_steps = config.steps;
+    if (handle->sampling_scheduler >= 0) {
+        sample_params.scheduler = static_cast<scheduler_t>(handle->sampling_scheduler);
+    }
     sample_params.guidance.txt_cfg = config.cfg_scale;
     sample_params.sample_method = static_cast<sample_method_t>(config.sample_method);
     if (config.flow_shift_is_set) {
@@ -920,9 +971,7 @@ PngResult diffusion_runner_core_txt2img(int64_t handle_id, const ImageGenConfig 
     // total when the sampling loop actually starts. Pre-sampling work (text encoding, latent
     // prep) doesn't fire the callback, so leaving total=0 lets the UI show "Preparing…" rather
     // than misleadingly claiming "Step 0 / 20".
-    g_progress_step.store(0, std::memory_order_relaxed);
-    g_progress_total.store(0, std::memory_order_relaxed);
-    sd_set_progress_callback(step_progress_callback, nullptr);
+    ScopedSamplingProgress sampling_progress(config.steps);
 
     // Generate image
     dr_logf(DIFFUSION_LOG_INFO, "txt2img: → calling generate_image (this is where Vulkan CLIP crashes if mis-configured)");
@@ -991,6 +1040,9 @@ VideoGenResultNative diffusion_runner_core_video_gen(int64_t handle_id, const Vi
     sd_sample_params_t sample_params = {};
     sd_sample_params_init(&sample_params);
     sample_params.sample_steps = config.steps;
+    if (handle->sampling_scheduler >= 0) {
+        sample_params.scheduler = static_cast<scheduler_t>(handle->sampling_scheduler);
+    }
     sample_params.guidance.txt_cfg = config.cfg_scale;
     sample_params.sample_method = static_cast<sample_method_t>(config.sample_method);
     if (config.flow_shift_is_set) {
@@ -1020,11 +1072,9 @@ VideoGenResultNative diffusion_runner_core_video_gen(int64_t handle_id, const Vi
         gen_params.lora_count = config.lora_count;
     }
 
-    // Register step-progress callback. Reset to (0,0); the sampler fills in the real total
-    // once it starts. See txt2img comment above.
-    g_progress_step.store(0, std::memory_order_relaxed);
-    g_progress_total.store(0, std::memory_order_relaxed);
-    sd_set_progress_callback(step_progress_callback, nullptr);
+    // Video can split its budget between high- and low-noise sampling stages.
+    // Preserve upstream stage progress; the exact-budget filter is image-only.
+    ScopedSamplingProgress sampling_progress(config.steps, false);
 
     // Generate video frames
     int num_frames_out = 0;

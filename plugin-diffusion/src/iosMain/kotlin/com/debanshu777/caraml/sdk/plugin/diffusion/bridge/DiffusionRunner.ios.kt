@@ -67,6 +67,7 @@ actual class DiffusionRunner {
                 flow_shift_is_set = if (config.flowShift.isFinite()) 1 else 0
                 n_threads = config.nThreads
                 prediction = config.prediction
+                sampling_scheduler = config.samplingScheduler
                 taesd_path = config.taesdPath.cstr.ptr
                 vae_tiling = if (config.vaeTiling) 1 else 0
                 max_vram = config.maxVram.cstr.ptr
@@ -249,6 +250,7 @@ actual class DiffusionRunner {
             flow_shift_is_set = if (config.flowShift.isFinite()) 1 else 0
             n_threads = config.nThreads
             prediction = config.prediction
+            sampling_scheduler = config.samplingScheduler
             taesd_path = config.taesdPath.cstr.ptr
             vae_tiling = if (config.vaeTiling) 1 else 0
             max_vram = config.maxVram.cstr.ptr

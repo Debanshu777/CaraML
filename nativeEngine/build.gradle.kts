@@ -542,6 +542,7 @@ val diffusionNativeTestTargets = listOf(
     "diffusion_runtime_backend_test",
     "diffusion_max_vram_test",
     "diffusion_segmented_compute_test",
+    "diffusion_sampling_progress_test",
     "diffusion_context_publication_test",
 )
 
@@ -576,7 +577,7 @@ val testDiffusionRunnerNativeDesktop by tasks.registering(Exec::class) {
             "Release",
             "--output-on-failure",
             "--tests-regex",
-            "^diffusion_(bundled_components|runtime_backend|max_vram|segmented_compute|context_publication)_test$",
+            "^diffusion_(bundled_components|runtime_backend|max_vram|segmented_compute|sampling_progress|context_publication)_test$",
         )
     }
 }

@@ -202,6 +202,8 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 
 ## Recent Changes
 
+- Image admission preserves model-specific workloads, enables Android Vulkan image plans with GPU VAE decoding, and accounts for decoder workspace. Fixed SD-Turbo epsilon/Euler/trailing scheduling with 1/2/4-step presets and image mmap; Z-Image-Turbo has eight-step defaults but still lacks typed app admission. [Pixel 9 evidence](../../benchmarks/diffusion/README.md).
+
 - Added ONNX load/generation timing and idle resident-session reuse for an unchanged model, artifact, runtime configuration and settings. Current manifest/path/size checks remain under artifact ownership; cancellation, failures and context mutations invalidate reuse. Repository and routing tests cover lifecycle races and changed files. [Measurements](../../benchmarks/onnx/README.md#pixel-9-app-performance-pass--october-24-2026).
 
 - Fixed inventory-readiness observation during composition. Streaming state now reaches only its active chat row: diagnostic wrapper calls fall from 172 to 26, with no demonstrated frame-time improvement in the small Pixel 9 pilot.
@@ -219,7 +221,7 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 - Added GGUF/ONNX discovery filters, complete immutable ONNX downloads, format-aware catalog evidence and a single resident text-engine router.
 - ONNX chat supports streaming reasoning, cancellation, context reset and reload with F32 KV estimates and engine-specific recovery; exact unsupported exports fail with guidance.
 
-- Android keeps diffusion on CPU even when the shared native registry exposes llama Vulkan; desktop and iOS retain their engine policies.
+- Android retains CPU-only video policy; image plans use discovered backends subject to normal admission and exact native placement checks.
 
 - Per-layer signed/unsigned GGUF head-count arrays preserve validated architecture/context without fabricating a uniform transformer shape. Known architectures can use exclusive verified Vulkan on unified memory after exact native footprint checks; CPU-only and unknown architectures keep the CPU fallback.
 

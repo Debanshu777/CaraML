@@ -123,7 +123,8 @@ class RunPlanGenerator {
         if (!validDiffusionInputs(descriptor, workload, settings)) return emptyList()
         val effectiveOffloadToCpu = settings.backend == BackendKind.CPU || workload.offloadToCpu
         val effectiveKeepClipOnCpu = settings.backend == BackendKind.VULKAN || workload.keepClipOnCpu
-        val effectiveKeepVaeOnCpu = settings.backend == BackendKind.VULKAN || workload.keepVaeOnCpu
+        val effectiveKeepVaeOnCpu = workload.keepVaeOnCpu ||
+            (settings.backend == BackendKind.VULKAN && workload.mode == DiffusionMode.VIDEO)
 
         val candidates = LinkedHashSet<DiffusionRunPlan>(RecommendationPolicyV1.MAX_DIFFUSION_CANDIDATES)
         fun add(

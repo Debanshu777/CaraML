@@ -7,6 +7,17 @@ import kotlin.test.assertFailsWith
 
 class DiffusionRunnerValidationTest {
     @Test
+    fun schedulerAllowsOnlyDocumentedStableValues() {
+        for (scheduler in listOf(-1, 0, 5, 6)) {
+            validateModelConfig(DiffusionModelConfig(modelPath = "/models/model.gguf", samplingScheduler = scheduler))
+        }
+        for (scheduler in listOf(-2, 1, 4, 7, Int.MAX_VALUE)) {
+            assertFailsWith<IllegalArgumentException> {
+                validateModelConfig(DiffusionModelConfig(modelPath = "/models/model.gguf", samplingScheduler = scheduler))
+            }
+        }
+    }
+    @Test
     fun segmentedExecutionDefaultsAreConservativeAndVideoReportsEffectiveFps() {
         val config = DiffusionModelConfig(modelPath = "/models/model.gguf")
 

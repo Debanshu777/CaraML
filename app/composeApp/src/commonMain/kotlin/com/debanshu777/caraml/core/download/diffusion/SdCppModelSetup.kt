@@ -33,7 +33,13 @@ data class SdCppComponent(
 data class SdCppRecommendedParams(
     val cfgScale: Float? = null,
     val steps: Int? = null,
+    /** Model-supported lower-latency budget for the app's Speed/Efficiency preference. */
+    val speedSteps: Int? = null,
+    /** Optional middle sampling budget for models with validated few-step inference. */
+    val balancedSteps: Int? = null,
     val samplingMethod: String? = null,
+    /** Native scheduler: null=model default, 0=discrete, 5=SGM uniform, 6=simple. */
+    val samplingScheduler: Int? = null,
     val offloadToCpu: Boolean = false,
     val clipOnCpu: Boolean = false,
     val keepVaeOnCpu: Boolean = false,
@@ -396,9 +402,9 @@ private val SETUP_REGISTRY: Map<String, SdCppModelSetup> = buildMap {
     put("QuantStack/Qwen-Image-Edit-2509-GGUF", qwenImageEditSetup)
     put("unsloth/Qwen-Image-Edit-2511-GGUF", qwenImageEditSetup)
 
-    // Z-Image - requires FLUX VAE and Qwen3-4B LLM
+    // Z-Image and Turbo share components, but not their sampling regime.
     val zImageSetup = SdCppModelSetup(
-        familyLabel = "Z-Image",
+        familyLabel = "Z-Image-Turbo",
         description = "Compact image generation model optimized for 4GB VRAM.",
         components = listOf(
             SdCppComponent(
@@ -415,6 +421,7 @@ private val SETUP_REGISTRY: Map<String, SdCppModelSetup> = buildMap {
             )
         ),
         recommendedParams = SdCppRecommendedParams(
+            steps = 8,
             cfgScale = 1.0f,
             samplingMethod = "euler",
             offloadToCpu = true,
@@ -425,7 +432,12 @@ private val SETUP_REGISTRY: Map<String, SdCppModelSetup> = buildMap {
     )
     put("Comfy-Org/z_image_turbo", zImageSetup)
     put("leejet/Z-Image-Turbo-GGUF", zImageSetup)
-    put("unsloth/Z-Image-GGUF", zImageSetup)
+    put("unsloth/Z-Image-Turbo-GGUF", zImageSetup)
+    put("Tongyi-MAI/Z-Image-Turbo", zImageSetup)
+    put("unsloth/Z-Image-GGUF", zImageSetup.copy(
+        familyLabel = "Z-Image",
+        recommendedParams = zImageSetup.recommendedParams!!.copy(steps = null, cfgScale = 5.0f),
+    ))
 
     // Ovis-Image - requires FLUX VAE and Ovis 2.5 LLM
     val ovisImageSetup = SdCppModelSetup(
@@ -574,30 +586,25 @@ private val SETUP_REGISTRY: Map<String, SdCppModelSetup> = buildMap {
         recommendedParams = SdCppRecommendedParams(prediction = 1) // V_PRED — skip Vulkan v-param test
     ))
 
-    // SDXL models — diffusers format requires text_encoder_2 (OpenCLIP-G) as a separate component.
-    // sd-turbo and sdxl-turbo are SDXL-based; without text_encoder_2 stable-diffusion.cpp falls
-    // back to SD-2.x mode and feeds wrong-shaped conditioning to the UNet → crash.
-    put("stabilityai/sd-turbo", SdCppModelSetup(
+    // SD-Turbo is distilled SD 2.1 and has one text encoder; it has no CLIP-G download.
+    val sdTurboSetup = selfContainedSetup.copy(
         familyLabel = "SD-Turbo",
-        description = "Distilled SDXL model. Fast 1–4 step generation at 512×512.",
-        components = listOf(
-            SdCppComponent(
-                role = ComponentRole.CLIP_G,
-                repoId = "stabilityai/sd-turbo",
-                filePath = "text_encoder_2/model.safetensors",
-                required = true,
-                sizeHint = "~1.4 GB",
-            )
-        ),
+        description = "Distilled SD 2.1 model. Fast 1–4 step generation at 512×512.",
         recommendedParams = SdCppRecommendedParams(
-            prediction = 1, // V_PRED — skip Vulkan v-param test
+            prediction = 0, // SD-Turbo's scheduler uses epsilon, unlike SD 2.1's V_PRED.
+            speedSteps = 1,
+            balancedSteps = 2,
+            samplingScheduler = 6,
             steps = 4,
             cfgScale = 1.0f,
-            samplingMethod = "euler_a",
+            samplingMethod = "euler",
             width = 512,
             height = 512,
         )
-    ))
+    )
+    put("stabilityai/sd-turbo", sdTurboSetup)
+    put("Green-Sky/SD-Turbo-GGUF", sdTurboSetup)
+    // SDXL diffusers bundles require the second text encoder (OpenCLIP-G).
     put("stabilityai/stable-diffusion-xl-base-1.0", SdCppModelSetup(
         familyLabel = "SDXL Base 1.0",
         description = "Full-quality SDXL base model. Standard 1024×1024 generation.",
@@ -628,6 +635,8 @@ private val SETUP_REGISTRY: Map<String, SdCppModelSetup> = buildMap {
             )
         ),
         recommendedParams = SdCppRecommendedParams(
+            samplingScheduler = 6,
+            speedSteps = 1,
             steps = 4,
             cfgScale = 1.0f,
             samplingMethod = "euler_a",

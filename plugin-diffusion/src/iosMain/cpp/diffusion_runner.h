@@ -25,6 +25,7 @@ struct DiffusionModelConfigFFI {
     int n_threads;
     /** -1=auto-detect, 0=EPS, 1=V_PRED, 2=EDM_V_PRED, 3=FLOW, 4=FLUX_FLOW, 5=FLUX2_FLOW */
     int prediction;
+    int sampling_scheduler;
     /** Optional path to TAESD safetensors. Empty string = disabled. */
     const char *taesd_path;
     /** Enable VAE tiling (1=on, 0=off). Library auto-picks tile sizes when on. */

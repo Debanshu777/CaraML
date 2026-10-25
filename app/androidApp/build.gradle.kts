@@ -76,20 +76,21 @@ dependencies {
     if (providers.gradleProperty("benchmarkFullTracing").orNull == "true") {
         "benchmarkImplementation"(libs.androidx.compose.tracing)
     }
-    "benchmarkImplementation"(libs.compose.foundation)
     "benchmarkImplementation"(libs.navigation3.compose.ui)
     "benchmarkImplementation"(libs.kotlinx.collections.immutable)
     "benchmarkImplementation"(libs.kotlinx.coroutinesCore)
     debugImplementation(project(":model-discovery"))
+    debugImplementation(project(":plugin-diffusion"))
     implementation(project(":app:composeApp"))
     implementation(libs.androidx.activity.compose)
+    // MainActivity uses Box/fillMaxSize in every build variant.
+    implementation(libs.compose.foundation)
     // MainActivity's @Preview annotation is compiled in every build variant.
     implementation(libs.compose.uiToolingPreview)
     implementation(project.dependencies.platform(libs.koin.bom))
     implementation(libs.koin.android)
     implementation(libs.koin.core)
     debugImplementation(libs.compose.uiTooling)
-    debugImplementation(libs.compose.foundation)
     debugImplementation(libs.compose.material3)
     debugImplementation(libs.navigation3.compose.ui)
     debugImplementation(libs.kotlinx.collections.immutable)

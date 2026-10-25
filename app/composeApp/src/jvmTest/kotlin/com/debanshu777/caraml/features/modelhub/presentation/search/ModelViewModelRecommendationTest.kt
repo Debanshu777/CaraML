@@ -427,7 +427,7 @@ class ModelViewModelRecommendationTest {
     fun diffusionDownloadEnqueuesCompletePrimaryAndComponentEvidence() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
-        val repositoryId = "stabilityai/sd-turbo"
+        val repositoryId = "stabilityai/sdxl-turbo"
         val revision = "a".repeat(40)
         val primaryPath = "model.safetensors"
         val componentPath = "text_encoder_2/model.safetensors"
@@ -1236,10 +1236,10 @@ class ModelViewModelRecommendationTest {
                             """[{"path":"$componentPath","type":"file","size":4,"lfs":{"oid":"$componentSha","size":4}},{"path":"$primaryPath","type":"file","size":4,"lfs":{"oid":"$primarySha","size":4}}]""",
                         )
                     }
-                    request.url.encodedPath.endsWith("/stabilityai/sd-turbo") -> {
+                    request.url.encodedPath.endsWith("/stabilityai/sdxl-turbo") -> {
                         detailRequests += 1
                         respondJson(
-                            """{"id":"stabilityai/sd-turbo","modelId":"stabilityai/sd-turbo","sha":"$revision","private":false}""",
+                            """{"id":"stabilityai/sdxl-turbo","modelId":"stabilityai/sdxl-turbo","sha":"$revision","private":false}""",
                         )
                     }
                     else -> error("Unexpected request")
@@ -1254,7 +1254,7 @@ class ModelViewModelRecommendationTest {
         try {
             val corruptBundleId = writeVerifiedBundle(
                 storage = storage,
-                repositoryId = "stabilityai/sd-turbo",
+                repositoryId = "stabilityai/sdxl-turbo",
                 revision = revision,
                 files = listOf(
                     Triple(primaryPath, "model", primaryBytes),
@@ -1263,7 +1263,7 @@ class ModelViewModelRecommendationTest {
             )
             val installed = viewModel(client, dispatcher, storagePathProvider = storage)
             backgroundScope.launch { installed.installBundleState.collect {} }
-            installed.loadDetail("stabilityai/sd-turbo", ModelHubBrowseMode.DiffusionImage)
+            installed.loadDetail("stabilityai/sdxl-turbo", ModelHubBrowseMode.DiffusionImage)
             advanceUntilIdle()
 
             assertTrue(
@@ -1276,12 +1276,12 @@ class ModelViewModelRecommendationTest {
             assertEquals(1, treeRequests)
 
             File(
-                storage.getModelsStorageDirectory("stabilityai/sd-turbo"),
+                storage.getModelsStorageDirectory("stabilityai/sdxl-turbo"),
                 ArtifactBundleManifestStore.MANIFEST_FILE_NAME,
             ).delete()
             val interrupted = viewModel(client, dispatcher, storagePathProvider = storage)
             backgroundScope.launch { interrupted.installBundleState.collect {} }
-            interrupted.loadDetail("stabilityai/sd-turbo", ModelHubBrowseMode.DiffusionImage)
+            interrupted.loadDetail("stabilityai/sdxl-turbo", ModelHubBrowseMode.DiffusionImage)
             advanceUntilIdle()
             assertFalse(interrupted.installBundleState.value.isReady)
             assertTrue(interrupted.ggufFiles.value.single { it.path == primaryPath }.isDownloaded)
@@ -1291,7 +1291,7 @@ class ModelViewModelRecommendationTest {
 
             writeVerifiedBundle(
                 storage = storage,
-                repositoryId = "stabilityai/sd-turbo",
+                repositoryId = "stabilityai/sdxl-turbo",
                 revision = revision,
                 files = listOf(
                     Triple(primaryPath, "model", primaryBytes),
@@ -1300,7 +1300,7 @@ class ModelViewModelRecommendationTest {
             )
             val corruptComponentIdentity = requireNotNull(
                 DownloadArtifactIdentity.create(
-                    repositoryId = "stabilityai/sd-turbo",
+                    repositoryId = "stabilityai/sdxl-turbo",
                     immutableRevision = revision,
                     relativePath = componentPath,
                     remoteObjectId = "sha256:$componentSha",
@@ -1308,13 +1308,13 @@ class ModelViewModelRecommendationTest {
                 ),
             )
             File(
-                storage.getModelsStorageDirectory("stabilityai/sd-turbo"),
+                storage.getModelsStorageDirectory("stabilityai/sdxl-turbo"),
                 immutableArtifactStorageLocation(corruptComponentIdentity, corruptBundleId).localRelativePath,
             )
                 .writeBytes("evil".encodeToByteArray())
             val corrupted = viewModel(client, dispatcher, storagePathProvider = storage)
             backgroundScope.launch { corrupted.installBundleState.collect {} }
-            corrupted.loadDetail("stabilityai/sd-turbo", ModelHubBrowseMode.DiffusionImage)
+            corrupted.loadDetail("stabilityai/sdxl-turbo", ModelHubBrowseMode.DiffusionImage)
             advanceUntilIdle()
 
             assertFalse(corrupted.installBundleState.value.isReady)

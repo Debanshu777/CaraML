@@ -156,13 +156,15 @@ Create a **separate** Gradle module + CMake project. Do not add here unless it m
 
 ## Recent Changes
 
+- Added native sampling-progress and GPU VAE placement regressions. Android diffusion uses the packaged shared Vulkan registry; the standalone SD_VULKAN build flag does not determine runtime placement. See the [image benchmark suite](../benchmarks/diffusion/README.md).
+
 - Android llama links native ATrace spans for model load, context, prompt prefill and first-token waits; the disabled tracing path adds no synchronization. Native captures preserve matching unstripped libraries for symbol attribution.
 - Build-owned patch `0007` specializes Q4_K/Q6_K CPU repack copies; all 6,532 equivalence cases pass, including standalone sanitizers. A fixed-plan pilot with three runs per build reduces full-app CPU median load from 3,337 to 2,536 ms (24.0%); settings and build inputs match, but order/caches remain uncontrolled. Earlier exploratory runs and exclusions remain in the [native results and limits](../benchmarks/android/README.md#native-follow-up--october-24-2026).
 - Added an opt-in host `glslc` override with compiler identity records. Shaderc 2026.4 builds both ABIs and improves GPU prefill about 10% but regresses decode about 38% in timestamp diagnostics. It is not promoted pending the MMVQ follow-up and controlled untraced validation; the NDK compiler remains the default.
 
 - Apple validation links the merged native archive into simulator tests and a physical iPhone harness. The llama bridge recognizes `MTL` as Metal and releases model/context allocations before backend shutdown; all five iPhone Metal cases pass.
 
-- Android llama builds include arm64 Vulkan by default, with CPU retained for x86_64 and diffusion-only builds; app admission keeps Android diffusion on CPU.
+- Android arm64 app builds package a shared Vulkan backend for llama and diffusion image graphs. CPU remains available, including x86_64 and diffusion-only build profiles.
 
 - Fixed Android Vulkan host shader generation to reuse the configured Ninja executable; universal Vulkan APKs now retain an x86_64 CPU fallback instead of failing configuration. See the root README for current Pixel 9 benchmarks.
 
@@ -196,7 +198,7 @@ Create a **separate** Gradle module + CMake project. Do not add here unless it m
 - Android `artifact_fs` now opens the trusted app-owned models root directly instead of traversing `/`; a host regression covers search-only ancestors and final-root symlink rejection
 - Added a strict versioned native-fixture manifest, fixed-host HTTPS acquisition with redirect/size/digest enforcement, generated corrupt fixtures, and isolated opt-in runner parity CI; normal JVM verification performs no fixture download
 - Desktop native hardening now verifies bounded typed calibration inputs, token-owned lock-free cancellation, and timed operation admission; iOS builds export the same calibrated backend bridge
-- `verifyProject` now builds and executes all five stable-diffusion native preflight regressions through CTest, including the production `sd_ctx_params_t.backend` assignment path, source-bound bundle subdivisions, external TAESD placement, and component-selected Vulkan safety
+- `verifyProject` now builds and executes all six stable-diffusion native regressions through CTest, including the production `sd_ctx_params_t.backend` assignment path, source-bound bundle subdivisions, external TAESD placement, and component-selected Vulkan safety
 - Stable-diffusion native builds now expose bounded metadata-only preflight and use the same pinned backend-fit resolver for preflight and actual context creation
 - Desktop native tests cover bundled-role placement, pinned max-VRAM assignment, effective streaming constraints, and failure-atomic context publication
 - Desktop native verification now covers stream-scoped unload exclusion, cross-thread token calls, lock-free cancellation, exact quantization labels, and transient-handle cleanup

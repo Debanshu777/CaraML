@@ -43,6 +43,8 @@ unchanged. Package conventions are documented in [the root README](../README.md#
 
 ## Recent Changes
 
+- Added foreground Android image-generation instrumentation with fixed seeds, per-step timing, thermal records, PNG validation, and CPU/Vulkan comparisons. Completed five-model and tuning runs, verified the installed optimized APK, and restored release-build foundation dependencies. [Results](../benchmarks/diffusion/README.md).
+
 - Added installed-bundle ONNX performance instrumentation with exact artifact/runtime checks, process trials, separate Perfetto captures, resident-session reuse controls and optional memory sampling. [Pixel 9 results](../benchmarks/onnx/README.md#pixel-9-app-performance-pass--october-24-2026) distinguish model-load gains from generation and benchmark overhead.
 
 - Startup benchmarks now wait for persisted inventory, preferences and recovery readiness. Clean cache-controlled runs distinguish first display from usable UI; synthetic streaming captures also separate activation, sustained scrolling and completion transitions. [Results](../benchmarks/android/README.md).
