@@ -35,6 +35,7 @@ import com.debanshu777.caraml.core.settings.AppSettings
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelDao
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
+import com.debanshu777.caraml.core.storage.localmodel.ModelType
 import com.debanshu777.caraml.features.chat.domain.ChatConfig
 import com.debanshu777.caraml.features.chat.data.MessageDelivery
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
@@ -71,6 +72,22 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChatViewModelRetryTest {
+    @Test
+    fun frequentChatModelsDoNotHideImageAndVideoInventory() = runTest {
+        val textModels = (1L..4L).map { id -> textModel().copy(id = id, modelType = ModelType.TEXT) }
+        val image = textModel().copy(id = 5, modelType = ModelType.IMAGE)
+        val video = textModel().copy(id = 6, modelType = ModelType.VIDEO)
+        val inventory = MutableStateFlow(textModels + image + video)
+        val dao = object : LocalModelDao by StaticLocalModelDao(textModels.first()) {
+            override fun getAllDownloadedFiles(): Flow<List<LocalModelEntity>> = inventory
+        }
+        val available = GetAvailableModelsUseCase(LocalModelRepository(dao), ChatConfig())
+
+        assertEquals(textModels.take(3) + image + video, available().first())
+        inventory.value = listOf(image, video) + textModels.reversed()
+        assertEquals(listOf(image, video) + textModels.reversed().take(3), available().first())
+    }
+
     @Test
     fun emptyInventoryReadinessRequiresPersistedEmissionAndSettledSelection() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
