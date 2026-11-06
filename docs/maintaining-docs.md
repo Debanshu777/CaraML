@@ -47,6 +47,16 @@ Upload `docs/assets/social-preview.png` in **Settings → General → Social pre
 
 ## Demo and evidence
 
+Flow is CaraML's blue wave avatar. Its vector source is `docs/assets/flow.svg`; the README banner uses the bundled Bricolage Grotesque and DM Sans fonts. After installing `tools/docs/media-requirements.txt`, run `python tools/docs/render_readme.py` to regenerate the banner. Keep the README focused on the product, first run, and links into these guides.
+
+Regenerate the store-style product screenshots with:
+
+```bash
+python tools/docs/render_product_shots.py
+```
+
+The renderer composes SVG layouts around the original PNG captures, then exports 1080 × 1920 RGB PNGs and 540 × 960 WebP previews into `docs/assets/product/`. Editable layout code lives in `tools/docs/render_product_shots.py`; intermediate SVGs stay in ignored `build/product/`. CairoSVG needs a system Cairo library (`brew install cairo` on macOS or `sudo apt install libcairo2` on Debian/Ubuntu). If macOS cannot locate it, prefix the rendering command with `DYLD_FALLBACK_LIBRARY_PATH="$(brew --prefix)/lib"`. Review all four cards after editing copy or replacing captures; keep app pixels and feature claims faithful to the source screens.
+
 Keep the [demo transcript and capture notes](demo.md) synchronized with the media. Use actual app captures and public sample prompts. Clearly identify edited pacing; do not use launch-video timing as a throughput claim. Keep large raw recordings and model weights out of Git.
 
 The presentation takes inspiration from [FileKit's quickstart and documentation links](https://github.com/vinceglb/FileKit), [XCalendar's platform captures](https://github.com/Debanshu777/XCalendar), and [Brag's short product-video structure](https://github.com/latent-spaces/brag). The implementation and assets remain specific to CaraML.

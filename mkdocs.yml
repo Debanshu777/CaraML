@@ -9,19 +9,19 @@ strict: true
 theme:
   name: material
   custom_dir: tools/docs/overrides
-  logo: assets/pal.svg
-  favicon: assets/pal.svg
+  logo: assets/flow.svg
+  favicon: assets/flow.svg
   font: false
   palette:
     - scheme: default
       primary: custom
-      accent: deep orange
+      accent: blue
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
     - scheme: slate
       primary: custom
-      accent: deep orange
+      accent: blue
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode

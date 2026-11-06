@@ -1,130 +1,148 @@
 <p align="center">
-  <img src="docs/assets/pal.svg" alt="CaraML Pocket pal" width="88" height="88">
+  <img src="docs/assets/readme-banner.svg" alt="CaraML — local AI for Kotlin Multiplatform. Your models. Your device." width="100%">
 </p>
 
-# CaraML — local AI for Kotlin Multiplatform
+<p align="center">
+  <strong>Chat with language models and generate images on your own hardware.<br>
+  Built with Kotlin Multiplatform for Android, iOS, and desktop.</strong>
+</p>
 
-**Run language models and image generation on Android, iOS, and desktop.**
+<p align="center">
+  <a href="https://kotlinlang.org/multiplatform/"><img src="https://img.shields.io/badge/Kotlin-Multiplatform-245edb?style=flat&amp;logo=kotlin&amp;logoColor=white" alt="Kotlin Multiplatform"></a>
+  <a href="#platforms"><img src="https://img.shields.io/badge/platforms-Android%20%C2%B7%20iOS%20%C2%B7%20Desktop-245edb?style=flat" alt="Platforms: Android, iOS, desktop"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-245edb?style=flat" alt="License: PolyForm Noncommercial"></a>
+</p>
 
-CaraML is a **Kotlin Multiplatform / Compose Multiplatform AI app** powered by **llama.cpp**, **ONNX Runtime**, and **stable-diffusion.cpp**. Discover models on **Hugging Face**, download a supported model, and run inference locally. No cloud inference backend is required.
+<p align="center">
+  <a href="docs/index.md"><strong>Documentation</strong></a> &nbsp;·&nbsp;
+  <a href="#get-started"><strong>Get started</strong></a> &nbsp;·&nbsp;
+  <a href="docs/demo.md"><strong>Watch the demo</strong></a> &nbsp;·&nbsp;
+  <a href="CONTRIBUTING.md"><strong>Contribute</strong></a>
+</p>
 
-[![CI](https://github.com/Debanshu777/CaraML/actions/workflows/ci.yml/badge.svg)](https://github.com/Debanshu777/CaraML/actions/workflows/ci.yml)
-[![Docs](https://github.com/Debanshu777/CaraML/actions/workflows/docs.yml/badge.svg)](https://github.com/Debanshu777/CaraML/actions/workflows/docs.yml)
-[![Kotlin Multiplatform](https://img.shields.io/badge/Kotlin-Multiplatform-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org/multiplatform/)
-[![License: PolyForm Noncommercial](https://img.shields.io/badge/License-PolyForm_Noncommercial-43332d)](LICENSE)
+<br>
 
-[**Get started**](docs/getting-started.md) · [**Documentation**](docs/index.md) · [**Demo**](docs/demo.md) · [**Contribute**](CONTRIBUTING.md) · [**Benchmarks**](benchmarks/README.md)
+## At a glance
 
-## See CaraML in action
+- **Chat locally.** Stream answers, render reasoning and markdown, and stop a response at any time.
+- **Find your model.** Explore Hugging Face, download supported models, and manage your library.
+- **Create images.** Run supported diffusion models with model-specific settings on your device.
+- **Build with shared Kotlin.** Explore Compose Multiplatform UI and native inference across three platforms.
 
-[![CaraML demo: local AI chat on a real Pixel 9](docs/assets/demo-poster.jpg)](docs/assets/caraml-demo.mp4)
+| Engine | What you can run |
+| --- | --- |
+| **llama.cpp** | Local chat with GGUF language models |
+| **ONNX Runtime** | Text generation with supported ONNX bundles |
+| **stable-diffusion.cpp** | Image generation with supported diffusion models |
 
-**[Watch the demo](docs/assets/caraml-demo.mp4)** · [Transcript and capture details](docs/demo.md)
+Model discovery and downloads need a connection; inference runs locally once the model is downloaded. [Formats and compatibility →](docs/models.md)
 
-| Android · local chat | Android · model library | iPhone 13 · start |
-| :---: | :---: | :---: |
-| <img src="docs/assets/screenshots/chat.webp" width="240" alt="CaraML running Qwen2.5 3B locally on Android"> | <img src="docs/assets/screenshots/models.webp" width="240" alt="CaraML Android library of downloaded AI models"> | <img src="docs/assets/screenshots/ios.webp" width="240" alt="CaraML running on a physical iPhone 13"> |
+## See it in action
 
-Actual Pixel 9 and iPhone 13 app captures. The demo is an edited product walkthrough, not a performance benchmark.
+<p align="center">
+  <a href="docs/assets/product/01-local-chat.png"><img src="docs/assets/product/01-local-chat.webp" width="24%" alt="Ideas in. Answers out. Real local Qwen2.5 chat on Pixel 9."></a>
+  <a href="docs/assets/product/02-model-library.png"><img src="docs/assets/product/02-model-library.webp" width="24%" alt="Your models. Your choice. GGUF and ONNX model library on Pixel 9."></a>
+  <a href="docs/assets/product/03-image-generation.png"><img src="docs/assets/product/03-image-generation.webp" width="24%" alt="Picture it. Create it. Real SD-Turbo image generation on Pixel 9."></a>
+  <a href="docs/assets/product/04-iphone.png"><img src="docs/assets/product/04-iphone.webp" width="24%" alt="Feels at home. On iPhone. CaraML start screen on iPhone 13."></a>
+</p>
 
-## What you can do
+[**Watch the 32-second walkthrough →**](docs/demo.md) &nbsp; Local chat and image generation on a Pixel 9, with captions and a transcript.
 
-- **Chat locally:** stream responses, render markdown and reasoning blocks, and stop generation.
-- **Choose your models:** browse/search Hugging Face, filter files, and manage durable downloads with pause, resume, and recovery.
-- **Generate images:** run supported diffusion models with model-specific settings and install plans.
-- **Use native compute:** GGUF uses Vulkan on supported Android devices and Metal on Apple platforms; supported ONNX text exports currently use CPU in the app.
-- **Explore shared Kotlin:** learn from Compose UI, coroutines, platform bridges, and an experimental modular inference SDK.
+<details>
+<summary>About these screenshots</summary>
 
-Model browsing and downloads need network access. Inference runs locally after download; gated models may require a Hugging Face token and acceptance of model terms. [Supported formats and memory considerations](docs/models.md).
+Store-style layouts around actual Pixel 9 and iPhone 13 captures. Select a card for its full-size PNG. The iPhone capture shows the initial chat screen; [capture notes and original screenshots](docs/demo.md#product-screenshots) provide the details. The app retains its current appearance in these captures.
 
-## Quick start
+The video is edited for readability; measured performance lives in the [benchmark reports](benchmarks/README.md).
 
-CaraML currently ships as source. There are **no published binary releases or Maven Central SDK coordinates**. The SDK API is experimental.
+</details>
 
-Install a full **JDK 21**, a C/C++ compiler and CMake, and the Android SDK required by the full Gradle project. See [platform setup](docs/getting-started.md) for exact SDK/NDK versions.
+## Get started
+
+CaraML is currently distributed as source. Set up **JDK 21**, the Android SDK, CMake, and a C/C++ compiler using the [platform setup guide](docs/getting-started.md), then:
 
 ```bash
 git clone https://github.com/Debanshu777/CaraML.git
 cd CaraML
 git submodule update --init
 
-# macOS/Linux desktop; builds native engines automatically
+# Run on macOS or Linux; native engines build automatically
 ./gradlew :app:desktopApp:run
+```
 
-# Android: CPU build for the first run
+For Android, start with a CPU build:
+
+```bash
 ./gradlew :app:androidApp:assembleDebug -PcaramlAndroidBackend=cpu
 ```
 
-For Android Vulkan or iOS, follow [Build and run](docs/getting-started.md). Open **Models**, download a supported instruct model, then select it in **Chat**.
+Open **Models**, download a supported instruct model, and select it in **Chat**. The [build guide](docs/getting-started.md) covers Android Vulkan, iOS signing, and the first conversation.
 
 ## Platforms
 
-| Target | Current scope |
+| Platform | Available today |
 | --- | --- |
-| Android API 28+ | arm64-v8a and x86_64; physical Pixel 9 measurements; Vulkan/CPU GGUF |
-| iOS 17.2+ | arm64 device and Apple Silicon simulator; Metal GGUF; documented iPhone 13 measurements |
-| macOS JVM | Desktop app and native Metal path |
-| Linux JVM | CPU desktop path; JVM/native checks in CI |
-| Windows JVM | Packaging configured; installed release validation remains outstanding |
+| **Android 9+** | arm64 and x86_64 · Vulkan / CPU GGUF |
+| **iOS 17.2+** | arm64 devices and Apple Silicon simulators · Metal GGUF |
+| **Desktop JVM** | macOS Metal · Linux CPU · Windows packaging awaits release validation |
 
-ONNX support is limited to [specific causal text bundles](plugin-onnx/README.md). Video generation is not presented as a validated feature. Platform targets are not a guarantee that every Hub model works.
+Supported ONNX text bundles currently use CPU in the app. See [model compatibility](docs/models.md) for export requirements and [device benchmarks](docs/benchmarks.md) for measured workloads.
 
-## Developer guide
+## For developers
 
-| Goal | Documentation |
-| --- | --- |
-| Build and have your first conversation | [Getting started](docs/getting-started.md) |
-| Select a compatible model | [Model guide](docs/models.md) |
-| Understand modules and native bridges | [Architecture](docs/architecture.md) |
-| Explore SDK contracts | [core-api](core-api/README.md), [core](core/README.md), [storage](storage/README.md) |
-| Work on model discovery | [model-discovery](model-discovery/README.md) |
-| Work on inference engines | [llama](plugin-llama/README.md), [ONNX](plugin-onnx/README.md), [diffusion](plugin-diffusion/README.md), [native builds](nativeEngine/README.md) |
-| Change shared UI or platform hosts | [App](app/README.md), [shared Compose app](app/composeApp/README.md) |
-| Fix an issue or add a feature | [Contributing](CONTRIBUTING.md), [testing](docs/development.md), [troubleshooting](docs/troubleshooting.md) |
+Start with the [architecture guide](docs/architecture.md), [contributing guide](CONTRIBUTING.md), or [troubleshooting](docs/troubleshooting.md). The SDK is experimental; standalone Maven artifacts and binary app releases are not published yet.
 
 ```bash
-# Preferred full local/CI JVM gate
-./gradlew verifyProject
-
-# Portable SDK tests without app/native producer configuration
-./gradlew -PsdkOnly=true verifySdk
+./gradlew verifyProject                  # Full local/CI JVM gate
+./gradlew -PsdkOnly=true verifySdk       # Portable SDK checks
 ```
 
-Android assembly, iOS compilation, packaging, and real-model journeys are separate checks. [Validation scope](docs/development.md).
+<details>
+<summary>Explore the modules and SDK boundaries</summary>
 
-## Current Android Benchmarks
+### Architecture
 
-Read the [current performance report](benchmarks/README.md), [ONNX/GGUF comparison](benchmarks/onnx/README.md), and [diffusion results](benchmarks/diffusion/README.md) for exact devices, model files, workloads, raw results, and limitations. The [earlier GGUF baseline](docs/benchmarks.md) is retained with its original measurement conditions. Decode rate, model load, and time to first token are different measurements.
-
-## Architecture
-
-Application code lives under `app/`; reusable contracts, orchestration, discovery, storage, and engine adapters are root modules. Both C++ engines share one GGML build. [Module map and data flows](docs/architecture.md).
+| Area | Modules |
+| --- | --- |
+| App and shared UI | [App](app/README.md) · [Compose app](app/composeApp/README.md) |
+| SDK contracts and lifecycle | [core-api](core-api/README.md) · [core](core/README.md) · [storage](storage/README.md) |
+| Models and native engines | [discovery](model-discovery/README.md) · [llama](plugin-llama/README.md) · [ONNX](plugin-onnx/README.md) · [diffusion](plugin-diffusion/README.md) · [native builds](nativeEngine/README.md) |
 
 ### Package Conventions
 
-First-party packages use `com.debanshu777.caraml`, with reusable libraries under `sdk.*`. Source paths mirror package names. [Full conventions](docs/architecture.md#package-conventions).
+First-party packages use `com.debanshu777.caraml`; reusable libraries live under `sdk.*`. [Full conventions](docs/architecture.md#package-conventions).
 
 ### SDK Boundaries and Ownership
 
-Hosts own UI, persistence, permissions, and scheduling. The experimental SDK separates neutral contracts, resource admission, storage, discovery, and engine adapters. [Ownership and dependencies](docs/architecture.md#sdk-boundaries-and-ownership).
+Hosts own UI, persistence, permissions, and scheduling. The SDK separates contracts, admission, storage, discovery, and engine adapters. [Ownership guide](docs/architecture.md#sdk-boundaries-and-ownership).
 
 ### Current SDK Limits
 
-The SDK is experimental, not a published stable dependency. Durable storage/recovery, iOS resource factories, complete app migration, independent native packaging, and release conformance remain unfinished. [Detailed limits](docs/architecture.md#current-sdk-limits).
+The SDK does not promise stable APIs. Durable recovery, full app migration, standalone packaging, and release conformance remain in progress. [Detailed limits](docs/architecture.md#current-sdk-limits).
 
 ### Verification Status
 
-Historical benchmark/device results do not certify a release. Check [CI](https://github.com/Debanshu777/CaraML/actions), [test scope](docs/development.md), and the conditions in each benchmark report before drawing platform or performance conclusions.
+The JVM gate does not replace Android, iOS, packaging, or real-device checks. See [CI](https://github.com/Debanshu777/CaraML/actions) and the [testing guide](docs/development.md) for scope.
+
+### Current Android Benchmarks
+
+[Performance overview](benchmarks/README.md) · [ONNX / GGUF](benchmarks/onnx/README.md) · [Diffusion](benchmarks/diffusion/README.md). Each report records its workload, hardware, and limitations.
+
+</details>
 
 ## License
 
-**Source-available under [PolyForm Noncommercial 1.0.0](LICENSE).** Noncommercial use, modification, and sharing are permitted under its terms. Commercial use requires separate written permission. [License details and permission requests](docs/licensing.md).
+Source-available under [**PolyForm Noncommercial 1.0.0**](LICENSE). Noncommercial use is permitted under its terms; commercial use requires separate written permission. [License details and permission requests](docs/licensing.md).
 
-Dependencies and model weights retain their own licenses; see [third-party notices](THIRD_PARTY_NOTICES.md). This project is not licensed as OSI-approved open source.
+Dependencies and model weights keep their own licenses. See [third-party notices](THIRD_PARTY_NOTICES.md).
 
 ## Recent Changes
 
-- Added a visual project overview, real-device demo, searchable documentation, platform setup, contribution templates, and documentation checks.
-- Added PolyForm Noncommercial licensing and an explicit commercial-permission route.
-- Enabled Android Vulkan image generation and model-specific sampling; [results and limits](benchmarks/diffusion/README.md).
-- Added supported ONNX text bundles and measured model-loading improvements; [performance report](benchmarks/README.md).
+- Introduced **Flow**, a blue palette, and store-style product screenshots in the redesigned overview.
+- Fixed nested diffusion-model installs and kept image/video models visible alongside frequently used chat models.
+- Added searchable docs, a real-device demo, contribution guides, and noncommercial licensing.
+- Added ONNX text support and Android Vulkan diffusion; [results and limits](benchmarks/README.md).
+
+---
+
+<p align="center"><sub>Built by <a href="https://github.com/Debanshu777">Debanshu Datta</a> with Kotlin &amp; Compose Multiplatform.</sub></p>

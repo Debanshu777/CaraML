@@ -1,5 +1,5 @@
 ---
-description: Build and run CaraML from source on Android, macOS, Linux, or iOS. Includes JDK, Android SDK, NDK, CMake, native submodules, and first-chat steps.
+description: Build CaraML on Android, macOS, Linux, or iOS. Set up native engines, download a model, start local chat, and generate your first image with Stable Diffusion.
 ---
 
 # Build and run CaraML
@@ -102,3 +102,12 @@ Intel iOS simulators are not configured. The Kotlin framework and Xcode target u
 5. Use **Stop** to cancel a response. After download, local inference does not need a cloud service.
 
 Model file size is not the same as working memory. If loading is refused, start with a smaller model or context; the [troubleshooting guide](troubleshooting.md) explains common failures.
+
+## 5. Generate an image
+
+1. In **Models → Discover**, open the filters, select **Image**, and apply the filter.
+2. Search for **SD-Turbo**. The **Green-Sky/SD-Turbo-GGUF** entry provides self-contained GGUF checkpoints for stable-diffusion.cpp.
+3. Review device fit, scroll through the variants, and select the recommended assessed file. Wait for the download and verification to finish.
+4. Open **Images** from the navigation menu. Once the model loads, enter a prompt such as `A tiny blue robot watering flowers in a sunny garden, clay art, soft lighting` and generate.
+
+Image models need additional memory for sampling and image decoding. A downloaded file can still exceed the device's current memory budget; use the app's assessment and [model compatibility guide](models.md). The [demo](demo.md) shows a real Pixel capture, while the [benchmark overview](benchmarks.md) links to measured diffusion workloads.

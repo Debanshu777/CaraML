@@ -15,15 +15,18 @@ hide:
 [Build and run](getting-started.md){ .md-button .md-button--primary }
 [Watch the demo](demo.md){ .md-button }
 [View the source](https://github.com/Debanshu777/CaraML){ .md-button }
+
+<p class="engine-line"><strong>llama.cpp</strong><span>GGUF chat</span><strong>ONNX Runtime</strong><span>ONNX text</span><strong>stable-diffusion.cpp</strong><span>Image generation</span></p>
 </div>
 
-<div class="showcase">
-  <figure><img src="assets/screenshots/chat.webp" alt="CaraML Android chat screen with a locally generated answer" width="540" height="1212"><figcaption>Chat with a local model</figcaption></figure>
-  <figure><img src="assets/screenshots/models.webp" alt="CaraML Android model library showing downloaded models" width="540" height="1212" loading="lazy"><figcaption>Choose your model</figcaption></figure>
-  <figure><img src="assets/screenshots/ios.webp" alt="CaraML start screen on a physical iPhone 13" width="585" height="1266" loading="lazy"><figcaption>On iPhone, too</figcaption></figure>
+<div class="showcase product-shots">
+  <a href="assets/product/01-local-chat.png"><img src="assets/product/01-local-chat.webp" alt="Ideas in. Answers out. Real local chat on Pixel 9." width="540" height="960"></a>
+  <a href="assets/product/02-model-library.png"><img src="assets/product/02-model-library.webp" alt="Your models. Your choice. GGUF and ONNX model library on Pixel 9." width="540" height="960" loading="lazy"></a>
+  <a href="assets/product/03-image-generation.png"><img src="assets/product/03-image-generation.webp" alt="Picture it. Create it. Real SD-Turbo image generation on Pixel 9." width="540" height="960" loading="lazy"></a>
+  <a href="assets/product/04-iphone.png"><img src="assets/product/04-iphone.webp" alt="Feels at home. On iPhone. CaraML start screen on iPhone 13." width="540" height="960" loading="lazy"></a>
 </div>
 
-Screens captured from CaraML on a Pixel 9 and an iPhone 13. [Capture details and demo transcript](demo.md).
+Real Pixel 9 and iPhone 13 captures in store-style layouts. Select a card for the full-size image. [Capture details and original screenshots](demo.md#product-screenshots).
 
 ## Local inference, shared Kotlin
 
