@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 104 108" role="img" aria-labelledby="title">
+  <title id="title">CaraML Pocket pal</title>
+  <!-- Static interpretation of the app's BrandPal Compose drawing and brand colors. -->
+  <g transform="translate(12 9) rotate(8 40 42)">
+    <rect y="4" width="80" height="84" rx="31" fill="#25221e"/>
+    <rect x="-5" y="43" width="13" height="22" rx="7" fill="#f6cd57" transform="rotate(25 1.5 54)"/>
+    <rect x="72" y="43" width="13" height="22" rx="7" fill="#f6cd57" transform="rotate(-25 78.5 54)"/>
+    <rect width="80" height="84" rx="31" fill="#e9b438"/>
+    <rect width="75" height="78" rx="31" fill="#f6cd57"/>
+    <g fill="#262524"><rect x="23" y="24" width="8" height="14" rx="4"/><rect x="48" y="24" width="8" height="14" rx="4"/></g>
+    <path d="M35 47a6 5 0 0 0 12 0" fill="none" stroke="#262524" stroke-width="2" stroke-linecap="round"/>
+  </g>
+</svg>

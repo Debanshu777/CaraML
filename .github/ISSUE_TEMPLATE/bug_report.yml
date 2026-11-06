@@ -1,0 +1,37 @@
+name: Bug report
+description: Report a reproducible build, UI, download, or inference problem.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: "Search existing issues first. Redact access tokens, credentials, and private prompts."
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Commit, platform, device, OS, JDK, and build command where relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include the smallest sequence that shows the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: model
+    attributes:
+      label: Model and backend
+      description: For inference/download issues, include Hub repository, revision, filenames, quantization, engine/backend, and context or image settings.
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs, screenshots, or recording
+      description: Use public sample prompts and remove private data. Include the full error, not access tokens.

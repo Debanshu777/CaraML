@@ -1,0 +1,63 @@
+site_name: CaraML
+site_description: Run local AI on Android, iOS, and desktop with Kotlin Multiplatform. GGUF chat, ONNX text inference, image generation, and Hugging Face model downloads.
+site_url: https://debanshu777.github.io/CaraML/
+repo_url: https://github.com/Debanshu777/CaraML
+repo_name: Debanshu777/CaraML
+edit_uri: edit/main/docs/
+site_dir: build/site
+strict: true
+theme:
+  name: material
+  custom_dir: tools/docs/overrides
+  logo: assets/pal.svg
+  favicon: assets/pal.svg
+  font: false
+  palette:
+    - scheme: default
+      primary: custom
+      accent: deep orange
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - scheme: slate
+      primary: custom
+      accent: deep orange
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.top
+    - navigation.footer
+    - content.code.copy
+    - search.suggest
+plugins:
+  - search
+markdown_extensions:
+  - attr_list
+  - md_in_html
+  - admonition
+  - pymdownx.superfences
+  - pymdownx.highlight
+  - toc:
+      permalink: true
+extra_css:
+  - assets/styles.css
+nav:
+  - Overview: index.md
+  - Build and run: getting-started.md
+  - Choose a model: models.md
+  - Demo: demo.md
+  - Architecture and SDK: architecture.md
+  - Contributing and testing: development.md
+  - Benchmarks: benchmarks.md
+  - Troubleshooting: troubleshooting.md
+  - License and commercial use: licensing.md
+  - Maintain the docs: maintaining-docs.md
+validation:
+  links:
+    not_found: warn
+    anchors: warn
+    unrecognized_links: warn
+extra:
+  generator: false
+copyright: Copyright © Debanshu Datta. Source-available; commercial use requires permission.
