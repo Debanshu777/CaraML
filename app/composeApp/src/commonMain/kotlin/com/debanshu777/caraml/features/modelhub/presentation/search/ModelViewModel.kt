@@ -270,6 +270,26 @@ private val diffusionDirectoryRoleByPath = mapOf(
     "text_encoder_2/model.safetensors" to "diffusers-clip-g",
 )
 
+internal fun selectDiffusionFilesToDownload(
+    pending: List<GgufFileUiState>,
+    triggeredPath: String,
+): List<GgufFileUiState> {
+    // A nested checkpoint is still one file. Only native Diffusers component
+    // paths select the coordinated UNet / VAE / text-encoder directory bundle.
+    if (normalizedDiffusersRelativePath(triggeredPath) !in NATIVE_DIFFUSERS_CONSUMED_PATHS) {
+        return pending.filter { it.path == triggeredPath }
+    }
+    val wantFp16 = triggeredPath.contains(".fp16.", ignoreCase = true)
+    return NATIVE_DIFFUSERS_CONSUMED_PATHS.sorted().mapNotNull { destination ->
+        val candidates = pending.filter {
+            normalizedDiffusersRelativePath(it.path) == destination
+        }
+        candidates.singleOrNull {
+            it.path.contains(".fp16.", ignoreCase = true) == wantFp16
+        } ?: candidates.singleOrNull()
+    }
+}
+
 internal fun buildDeterministicDiffusionBundleMetadata(
     selected: List<GgufFileUiState>,
     componentMetadata: Collection<DownloadMetadataDTO>,
@@ -1887,25 +1907,6 @@ class ModelViewModel(
             list.map { file ->
                 file.copy(isDownloaded = file.filename in downloaded || file.path in downloaded, progress = null)
             }
-        }
-    }
-
-    private fun selectDiffusionFilesToDownload(
-        pending: List<GgufFileUiState>,
-        triggeredPath: String,
-    ): List<GgufFileUiState> {
-        val isRootFile = !triggeredPath.contains('/')
-        if (isRootFile) {
-            return pending.filter { it.path == triggeredPath }
-        }
-        val wantFp16 = triggeredPath.contains(".fp16.", ignoreCase = true)
-        return NATIVE_DIFFUSERS_CONSUMED_PATHS.sorted().mapNotNull { destination ->
-            val candidates = pending.filter {
-                normalizedDiffusersRelativePath(it.path) == destination
-            }
-            candidates.singleOrNull {
-                it.path.contains(".fp16.", ignoreCase = true) == wantFp16
-            } ?: candidates.singleOrNull()
         }
     }
 

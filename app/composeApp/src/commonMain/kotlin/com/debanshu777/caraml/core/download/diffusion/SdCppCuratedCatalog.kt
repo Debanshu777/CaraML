@@ -82,6 +82,7 @@ private val SD_CPP_CATALOG_JSON_BUNDLED = """
 {"repoId":"runwayml/stable-diffusion-v-1-5","label":"Stable Diffusion v1.5","family":"SD1.x","kind":"checkpoint","docRef":"sd.md"},
 {"repoId":"stabilityai/stable-diffusion-2-1","label":"Stable Diffusion v2.1","family":"SD2.x","kind":"checkpoint","docRef":"sd.md"},
 {"repoId":"stabilityai/sd-turbo","label":"SD-Turbo","family":"SD1.x","kind":"checkpoint","docRef":"README.md"},
+{"repoId":"Green-Sky/SD-Turbo-GGUF","label":"SD-Turbo (GGUF)","family":"SD2.x","kind":"checkpoint","docRef":"README.md"},
 {"repoId":"stabilityai/stable-diffusion-xl-base-1.0","label":"SDXL Base 1.0","family":"SDXL","kind":"checkpoint","docRef":"sd.md"},
 {"repoId":"stabilityai/sdxl-turbo","label":"SDXL-Turbo","family":"SDXL","kind":"checkpoint","docRef":"README.md"},
 {"repoId":"stabilityai/stable-diffusion-3-medium","label":"SD3 Medium (2B / 3B)","family":"SD3","kind":"checkpoint","docRef":"sd.md"},

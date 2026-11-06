@@ -43,6 +43,7 @@ unchanged. Package conventions are documented in [the root README](../README.md#
 
 ## Recent Changes
 
+- Added SD-Turbo GGUF discovery and fixed installation of checkpoints stored in repository subfolders.
 - Added [platform setup](../docs/getting-started.md), [contribution guidance](../CONTRIBUTING.md), and a [real-device demo](../docs/demo.md).
 - Added Android Vulkan diffusion instrumentation and five-model measurements; see [results and limits](../benchmarks/diffusion/README.md).
 - Added Android/JVM/iOS ONNX text support, resident-session reuse, and [device comparisons](../benchmarks/onnx/README.md).

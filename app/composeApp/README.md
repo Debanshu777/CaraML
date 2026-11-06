@@ -202,6 +202,7 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 
 ## Recent Changes
 
+- Added SD-Turbo GGUF discovery and fixed installation of checkpoints stored in repository subfolders.
 - Added [platform setup](../../docs/getting-started.md), [contribution guidance](../../CONTRIBUTING.md), and a [real-device demo](../../docs/demo.md).
 - Enabled Android Vulkan image plans and model-specific sampling; see [tested models and limits](../../benchmarks/diffusion/README.md).
 - Added format-aware GGUF/ONNX discovery, downloads, routing, streaming, and cancellation, with idle same-model session reuse. [Device measurements](../../benchmarks/onnx/README.md).
