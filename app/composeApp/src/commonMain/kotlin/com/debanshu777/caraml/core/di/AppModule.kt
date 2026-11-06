@@ -110,13 +110,13 @@ val appModule = module {
     single { DownloadManager(get()) }
     single<ArtifactRootLifetime> { artifactRootLifetime(get()) }
     single { InstalledModelPublicationCoordinator() }
-    single { installedModelManifestSource(get<DownloadManager>()::validatedBundle) }
+    single { installedModelManifestSource(get<DownloadManager>()::installedBundleForLoad) }
     single {
-        val manifestSource = get<InstalledModelManifestSource>()
+        val downloadManager = get<DownloadManager>()
         InstalledModelRemovalService(
             catalog = get(),
             storagePathProvider = get(),
-            manifestSource = { ownerModelId -> manifestSource(ownerModelId) },
+            manifestSource = downloadManager::validatedBundle,
             publicationCoordinator = get(),
         )
     }
@@ -256,6 +256,7 @@ val appModule = module {
             storagePathProvider = get(),
             manifestSource = get<InstalledModelManifestSource>()::invoke,
             hashingDispatcher = Dispatchers.Default,
+            verifyContent = false,
         )
     }
 
@@ -275,7 +276,7 @@ val appModule = module {
         )
     }
 
-    single<InferenceRepository> {
+    single {
         LlamaInferenceRepository(
             runner = get(),
             deviceCapabilities = get(),
@@ -290,6 +291,10 @@ val appModule = module {
             observationRecorder = get(),
         )
     }
+
+    single { com.debanshu777.caraml.sdk.plugin.onnx.createOnnxTextRuntime() }
+    single { com.debanshu777.caraml.core.data.inference.OnnxInferenceRepository(get(), get(), get(), get(), get(), get(), get(), get()) }
+    single<InferenceRepository> { com.debanshu777.caraml.core.data.inference.RoutingInferenceRepository(get<LlamaInferenceRepository>(), get<com.debanshu777.caraml.core.data.inference.OnnxInferenceRepository>()) }
 
     single { ChatConfig() }
 

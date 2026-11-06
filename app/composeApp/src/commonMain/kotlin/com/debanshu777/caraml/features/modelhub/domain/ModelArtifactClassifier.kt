@@ -49,7 +49,7 @@ internal object ModelArtifactClassifier {
             nameTokens.take(3) == listOf("gemma", "4", "assistant")
         ) return unverified()
 
-        if (!name.endsWith(".gguf")) return unverified()
+        if (!name.endsWith(".gguf") && !com.debanshu777.caraml.sdk.discovery.huggingface.model.OnnxModelBundles.isSupportedGraph(path)) return unverified()
         return ModelArtifactClassification(
             ModelArtifactRole.PRIMARY_MODEL,
             ModelArtifactRoleEvidence.MODEL_FORMAT_ONLY,

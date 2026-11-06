@@ -1,5 +1,7 @@
 package com.debanshu777.caraml.core.recommendation
 
+import com.debanshu777.caraml.core.performance.tracePerformanceStage
+
 import com.debanshu777.caraml.core.data.settings.SettingsRepository
 import com.debanshu777.caraml.core.platform.BackendKind
 import com.debanshu777.caraml.core.platform.BackendStatus
@@ -78,7 +80,7 @@ class InstalledModelLoadRequestResolver internal constructor(
         ModelAssessment,
         PersonalizedRecommendation,
     ) -> LoadRequestResolution,
-    private val cpuOnlyDiffusion: Boolean = platformRequiresCpuDiffusion(),
+    private val cpuOnlyDiffusion: Boolean = false,
 ) : InstalledModelLoadResolver {
     constructor(
         componentRepository: ComponentRepository,
@@ -104,7 +106,7 @@ class InstalledModelLoadRequestResolver internal constructor(
         model: LocalModelEntity,
         expectedMode: GenerationMode,
     ): InstalledModelLoadPreparation = try {
-        prepareChecked(model, expectedMode)
+        tracePerformanceStage("load.prepare") { prepareChecked(model, expectedMode) }
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (_: Exception) {
@@ -114,7 +116,7 @@ class InstalledModelLoadRequestResolver internal constructor(
     override suspend fun resolve(
         preparation: InstalledModelLoadPreparation.Ready,
     ): InstalledModelLoadResolution = try {
-        resolveChecked(preparation)
+        tracePerformanceStage("load.resolve") { resolveChecked(preparation) }
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (_: Exception) {
@@ -126,7 +128,7 @@ class InstalledModelLoadRequestResolver internal constructor(
         expectedMode: GenerationMode,
     ): InstalledModelLoadPreparation {
         val components = componentsForModel(model.modelId)
-        val evidence = requireComplete(model.modelId, expectedMode)
+        val evidence = tracePerformanceStage("load.evidence") { requireComplete(model.modelId, expectedMode) }
         val descriptor = when (evidence) {
             is EvidenceRepairResult.Ready -> evidence.descriptor
             EvidenceRepairResult.NeedsNetwork -> return prepareWithNativeMetadata(
@@ -157,7 +159,7 @@ class InstalledModelLoadRequestResolver internal constructor(
 
         // Reuse only the exact catalog snapshot already verified during this
         // operation. A replacement path/component falls back to fresh resolution.
-        // Strict request creation and native load still validate current bytes.
+        // Request creation and native load still check current paths and file sizes.
         val verified = (evidence as? EvidenceRepairResult.Ready)?.verifiedArtifact
             ?.takeIf { it.model == model && it.components == components }
         val artifact = verified?.artifact ?: when (val resolution = resolveArtifact(model, components)) {
@@ -234,12 +236,14 @@ class InstalledModelLoadRequestResolver internal constructor(
         val capturedSnapshot = captureSnapshot()
         val settings = currentSettings()
         if (descriptor is LlmModelDescriptor && !descriptor.hasCompleteLocalCompatibilityMetadata()) {
+            if (descriptor.format == ModelFormat.ONNX) return InstalledModelLoadResolution.NotAdmissible(AssessmentReason.INVALID_METADATA)
             return nativeMetadataRequest(model, descriptor, artifact, capturedSnapshot, settings)
         }
         val cpuRequired =
             !settings.useGpu ||
+            descriptor is LlmModelDescriptor && descriptor.format == ModelFormat.ONNX ||
             descriptor is LlmModelDescriptor && descriptor.architecture.requiresCpuOnlyLlmExecution() ||
-            descriptor is DiffusionModelDescriptor && cpuOnlyDiffusion
+            descriptor is DiffusionModelDescriptor && (cpuOnlyDiffusion || platformRequiresCpuDiffusion(descriptor.mode))
         val assessmentSnapshot = if (cpuRequired) {
             capturedSnapshot.cpuOnly()
         } else {
@@ -349,7 +353,7 @@ class InstalledModelLoadRequestResolver internal constructor(
         if (recommendation.assessmentKey != assessment.assessmentKey) {
             return InstalledModelLoadResolution.Rejected(ArtifactIdentityRejection.INVALID_INPUT)
         }
-        if (descriptor is LlmModelDescriptor && recommendation.category == RecommendationCategory.NEEDS_INFORMATION &&
+        if (descriptor is LlmModelDescriptor && descriptor.format == ModelFormat.GGUF && recommendation.category == RecommendationCategory.NEEDS_INFORMATION &&
             recommendation.reasons.all { it in METADATA_GAP_REASONS } &&
             recommendation.reasonFrom(assessment, AssessmentReason.RECOMMENDATION_EVIDENCE_INCOMPLETE) in METADATA_GAP_REASONS
         ) {
@@ -367,6 +371,10 @@ class InstalledModelLoadRequestResolver internal constructor(
                 candidateBackend = recommendation.candidateBackendIn(assessment),
             )
         if (!selected.matches(expectedMode) || !selected.matches(workload) ||
+            workload is LlmWorkloadConfig && workload.requestedFullVulkanLayerCount != null &&
+            (selected !is LlmRunPlan || descriptor !is LlmModelDescriptor ||
+                descriptor.fullVulkanLayerCount() != workload.requestedFullVulkanLayerCount ||
+                !selected.matchesFixedVulkanPlacement(descriptor)) ||
             requireCpu && selected.backend != BackendKind.CPU
         ) {
             return InstalledModelLoadResolution.Rejected(ArtifactIdentityRejection.INVALID_INPUT)
@@ -398,6 +406,10 @@ class InstalledModelLoadRequestResolver internal constructor(
         }
         val workload = workloadFactory.create(descriptor, GenerationMode.Text, settings) as? LlmWorkloadConfig
             ?: return InstalledModelLoadResolution.NotAdmissible(AssessmentReason.INVALID_WORKLOAD)
+        // Exact placement must be assessed from trusted metadata; native fitting is adaptive.
+        if (workload.requestedFullVulkanLayerCount != null) {
+            return InstalledModelLoadResolution.NotAdmissible(AssessmentReason.INVALID_METADATA)
+        }
         val cache = workload.kvCacheSelection as? KvCacheSelection.Explicit
         val useVulkan = settings.useGpu && descriptor.architecture != null &&
             !descriptor.architecture.requiresCpuOnlyLlmExecution() &&
@@ -503,6 +515,9 @@ class InstalledModelLoadRequestResolver internal constructor(
             contextTokens in workload.minimumContextTokens..workload.contextTokens &&
                 batchSize in 1..workload.batchSize &&
                 microBatchSize in 1..minOf(workload.microBatchSize, batchSize) &&
+                (workload.allowContextFallback || contextTokens == workload.contextTokens) &&
+                (workload.allowBatchFallback ||
+                    batchSize == workload.batchSize && microBatchSize == workload.microBatchSize) &&
                 sequenceCount == workload.sequenceCount &&
                 keyCacheType in workload.allowedKvCacheTypes && valueCacheType in workload.allowedKvCacheTypes &&
                 when (val selection = workload.kvCacheSelection) {

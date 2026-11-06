@@ -32,6 +32,7 @@ internal suspend fun validateArtifactBundle(
 internal suspend fun readValidatedArtifactBundle(
     pathProvider: StoragePathProvider,
     ownerModelId: String,
+    verifyContent: Boolean = true,
 ): ArtifactManifest? = try {
     val ownerId = validateModelId(ownerModelId)
     val ownerRoot = artifactMetadataRoot(pathProvider, ownerId)
@@ -50,7 +51,9 @@ internal suspend fun readValidatedArtifactBundle(
                 return@withRoots null
             }
             store.recover()
-            store.readValidated()
+            if (verifyContent) store.readValidated() else store.readForLoad { entry ->
+                matchesInstalledEntry(pathProvider, entry, allowedRoots, verifyContent = false)
+            }
         } finally {
             store.close()
         }
@@ -305,19 +308,29 @@ internal fun artifactBundleStore(
     allowedRoots: Set<String>,
 ): ArtifactBundleManifestStore =
     ArtifactBundleManifestStore(ownerRoot) { entry ->
-        val artifactRoot = artifactMetadataRoot(pathProvider, entry.identity.repositoryId)
-        if (artifactRootKey(artifactRoot) !in allowedRoots) return@ArtifactBundleManifestStore false
-        val store = ArtifactManifestStore(artifactRoot)
-        try {
-            store.readValidated()?.entries?.any { installed ->
-                installed.logicalRole == entry.logicalRole && installed.identity == entry.identity &&
-                    installed.localRelativePath == entry.localRelativePath &&
-                    installed.byteCount == entry.byteCount && installed.contentSha256 == entry.contentSha256
-            } == true
-        } finally {
-            store.close()
-        }
+        matchesInstalledEntry(pathProvider, entry, allowedRoots, verifyContent = true)
     }
+
+internal fun matchesInstalledEntry(
+    pathProvider: StoragePathProvider,
+    entry: ArtifactManifestEntry,
+    allowedRoots: Set<String>,
+    verifyContent: Boolean,
+): Boolean {
+    val artifactRoot = artifactMetadataRoot(pathProvider, entry.identity.repositoryId)
+    if (artifactRootKey(artifactRoot) !in allowedRoots) return false
+    val store = ArtifactManifestStore(artifactRoot)
+    return try {
+        val manifest = if (verifyContent) store.readValidated() else store.readForLoad()
+        manifest?.entries?.any { installed ->
+            installed.logicalRole == entry.logicalRole && installed.identity == entry.identity &&
+                installed.localRelativePath == entry.localRelativePath &&
+                installed.byteCount == entry.byteCount && installed.contentSha256 == entry.contentSha256
+        } == true
+    } finally {
+        store.close()
+    }
+}
 
 internal fun artifactMetadataRoot(pathProvider: StoragePathProvider, modelId: String): Path =
     pathProvider.getModelsStorageDirectory(validateModelId(modelId)).toPath(normalize = true)

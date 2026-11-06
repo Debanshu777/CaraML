@@ -1,0 +1,18 @@
+{
+  "repository": "bartowski/SmolLM2-135M-Instruct-GGUF",
+  "revision": "09816acd5d99df7be770d85ea30822623dab342c",
+  "graph": "SmolLM2-135M-Instruct-Q8_0.gguf",
+  "downloads_at_selection": 50224,
+  "files": [
+    {
+      "rfilename": "SmolLM2-135M-Instruct-Q8_0.gguf",
+      "blobId": "9205e07ed1e87ab60c269bb20f4c73e4bdd194e1",
+      "size": 144811360,
+      "lfs": {
+        "sha256": "5a1395716f7913741cc51d98581b9b1228d80987a9f7d3664106742eb06bba83",
+        "size": 144811360,
+        "pointerSize": 134
+      }
+    }
+  ]
+}

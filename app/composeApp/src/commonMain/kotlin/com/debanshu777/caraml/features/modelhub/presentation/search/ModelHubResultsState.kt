@@ -13,6 +13,7 @@ data class ModelQueryKey(
     val remoteSort: ModelSort,
     val minParams: ParameterRange,
     val maxParams: ParameterRange,
+    val format: String = "gguf",
 )
 
 data class ModelHubResultsState(

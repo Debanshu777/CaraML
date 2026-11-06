@@ -20,6 +20,7 @@ object DescriptorLimits {
 
 enum class ModelFormat {
     GGUF,
+    ONNX,
     SAFETENSORS,
     CHECKPOINT,
 }
@@ -146,7 +147,7 @@ data class LlmModelDescriptor private constructor(
     override val requiredEngineFeatures: Set<String>,
     override val evidence: List<Evidence>,
 ) : ModelDescriptor {
-    override val format: ModelFormat = ModelFormat.GGUF
+    override val format: ModelFormat = if (file.path.endsWith(".onnx")) ModelFormat.ONNX else ModelFormat.GGUF
 
     constructor(
         repositoryId: String,
@@ -190,7 +191,7 @@ data class LlmModelDescriptor private constructor(
     ) : this(
         repositoryId = repositoryId,
         revision = revision,
-        file = requireNotNull(files.firstOrNull()) { "LLM descriptor requires at least one exact file" },
+        file = requireNotNull(files.singleOrNull { it.path.endsWith(".onnx") } ?: files.firstOrNull()) { "LLM descriptor requires at least one exact file" },
         files = files.toList(),
         architecture = architecture,
         quantization = quantization,
@@ -286,6 +287,7 @@ data class DiffusionModelDescriptor private constructor(
 
 internal fun modelFormatForPath(path: String): ModelFormat? = when {
     path.endsWith(".gguf", ignoreCase = true) -> ModelFormat.GGUF
+    path.endsWith(".onnx", ignoreCase = true) -> ModelFormat.ONNX
     path.endsWith(".safetensors", ignoreCase = true) -> ModelFormat.SAFETENSORS
     path.endsWith(".ckpt", ignoreCase = true) || path.endsWith(".pth", ignoreCase = true) ->
         ModelFormat.CHECKPOINT

@@ -1,0 +1,43 @@
+{
+  "repository": "onnx-community/Qwen2.5-0.5B-Instruct",
+  "revision": "22942cb7d7ba4cc81bb4673549ca4d4614469b5e",
+  "graph": "onnx/model_int8.onnx",
+  "downloads_at_selection": 43707,
+  "files": [
+    {
+      "rfilename": "config.json",
+      "blobId": "eea21cd6f7909a44509a193b7fcdac194766c904",
+      "size": 678
+    },
+    {
+      "rfilename": "generation_config.json",
+      "blobId": "f602853d6100c43666f46c67b1c354fa15fe0b93",
+      "size": 242
+    },
+    {
+      "rfilename": "onnx/model_int8.onnx",
+      "blobId": "1ae4272fd2a7a1c1b93622b27ba5c2b1f99a54fd",
+      "size": 512096557,
+      "lfs": {
+        "sha256": "41834041ab1b29eff9fc592f1a29a1844133aea35832ea9fa91682be13016100",
+        "size": 512096557,
+        "pointerSize": 134
+      }
+    },
+    {
+      "rfilename": "special_tokens_map.json",
+      "blobId": "ac23c0aaa2434523c494330aeb79c58395378103",
+      "size": 613
+    },
+    {
+      "rfilename": "tokenizer.json",
+      "blobId": "d24314ef7f0afd1b678c2e24c767e19f24f86b0e",
+      "size": 7031673
+    },
+    {
+      "rfilename": "tokenizer_config.json",
+      "blobId": "24afe3594154cfee05edda73aeadf3daae0a53ba",
+      "size": 7849
+    }
+  ]
+}

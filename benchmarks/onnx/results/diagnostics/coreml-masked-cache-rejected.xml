@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="iosSimulatorArm64Test.com.debanshu777.caraml.sdk.plugin.onnx.AppleOnnxRuntimeTest" tests="2" skipped="0" failures="0" errors="0" timestamp="2026-10-22T21:18:24.820Z" hostname="GM-G797VM7T27" time="22.477">
+  <properties/>
+  <testcase name="cpuPrefillCancellationAndReloadOwnTheirNativeResources[iosSimulatorArm64]" classname="iosSimulatorArm64Test.com.debanshu777.caraml.sdk.plugin.onnx.AppleOnnxRuntimeTest" time="0.0"/>
+  <testcase name="optionalRealModelReferencesMatchOnApple[iosSimulatorArm64]" classname="iosSimulatorArm64Test.com.debanshu777.caraml.sdk.plugin.onnx.AppleOnnxRuntimeTest" time="22.477"/>
+  <system-out><![CDATA[2026-10-23 02:48:24.431 test.kexe[39796:20731401] 2026-10-23 02:48:24.431004 [W:onnxruntime:, session_state.cc:1397 VerifyEachNodeIsAssignedToAnEp] Some nodes were not assigned to the preferred execution providers which may or may not have an negative impact on performance. e.g. ORT explicitly assigns shape related ops to CPU to improve perf.
+2026-10-23 02:48:24.431 test.kexe[39796:20731401] 2026-10-23 02:48:24.431066 [W:onnxruntime:, session_state.cc:1399 VerifyEachNodeIsAssignedToAnEp] Rerunning with verbose output on a non-minimal build will show node assignments.
+Apple ONNX reference passed: ONNX Runtime 1.30.0; CPU; 1 threads
+2026-10-23 02:48:29.576 test.kexe[39796:20731208] 2026-10-23 02:48:29.576556 [W:onnxruntime:, coreml_execution_provider.cc:137 GetCapability] CoreMLExecutionProvider::GetCapability, number of partitions supported by CoreML: 241 number of nodes in the graph: 3447 number of nodes supported by CoreML: 2513
+2026-10-23 02:48:43.230 test.kexe[39796:20731208] 2026-10-23 02:48:43.230881 [W:onnxruntime:, session_state.cc:1397 VerifyEachNodeIsAssignedToAnEp] Some nodes were not assigned to the preferred execution providers which may or may not have an negative impact on performance. e.g. ORT explicitly assigns shape related ops to CPU to improve perf.
+2026-10-23 02:48:43.231 test.kexe[39796:20731208] 2026-10-23 02:48:43.231003 [W:onnxruntime:, session_state.cc:1399 VerifyEachNodeIsAssignedToAnEp] Rerunning with verbose output on a non-minimal build will show node assignments.
+Apple CoreML teacher-forced scores: meanAbs=2.123309483171697; maxAbs=10.63571834564209; top1=26/32
+]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

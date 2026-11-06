@@ -81,6 +81,7 @@ This prevents duplicate symbol errors from linking two independent GGML builds.
 - Output: `llama_runner.so`, `diffusion_runner.so`
 - Llama builds default to Vulkan on arm64. Use `-PcaramlAndroidBackend=cpu` for an explicit CPU build; diffusion-only builds default to CPU.
 - The Vulkan profile packages arm64 GPU support alongside an x86_64 CPU fallback. It requires the NDK shader compiler plus Vulkan and SPIR-V headers (`brew install vulkan-headers spirv-headers` on macOS); its host shader generator reuses Android's bundled Ninja path.
+- For a controlled compiler comparison, pass `-PcaramlVulkanGlslcPath=PATH_TO_GLSLC` (relative to the repository root or absolute). The default remains the NDK compiler. CMake records the selected compiler path, version and SHA-256 in `caraml-vulkan-compiler.txt`; see the [pinned workspace-local acquisition and validation recipe](../benchmarks/android/native-profiling.md#vulkan-shader-compiler-experiment). Compiler capability and device support are checked independently.
 
 ### iOS CMakeLists.txt
 
@@ -102,12 +103,20 @@ This prevents duplicate symbol errors from linking two independent GGML builds.
 | Task | Description |
 |------|-------------|
 | `preparePatchedLlamaSource` | Recreate a build-owned llama.cpp source tree and apply numbered patches |
+| `testCpuRepackEquivalence` | Compare 6,532 Q4_K/Q6_K repack cases with the pinned implementation; included in `verifyProject` |
 | `compileLlamaRunnerDesktop` | Build desktop shared libs via CMake |
 | `verifyNativePreflightFixtures` | Strictly acquire/generate digest-addressed native fixtures under fixed HTTPS hosts and decoded-size caps |
 | `mergeLlamaRunnerStaticIosArm64` | Merge iOS arm64 `.a` files via `libtool -static` |
 | `mergeLlamaRunnerStaticIosSimulatorArm64` | Merge iOS simulator arm64 `.a` files |
 
 Android native build is triggered automatically by AGP `externalNativeBuild` during `:app:androidApp:assemble*`.
+
+`testCpuRepackEquivalence` needs Python 3, Git and a GCC/Clang-compatible host C++
+compiler, resolved only when the task executes. `CXX_PATH` (or an absolute `CXX`)
+selects the compiler; `PYTHON3_PATH` and `GIT_PATH` can override those tools. It
+uses temporary source copies and performs no model download or full engine build.
+For sanitizer coverage, run
+`python3 nativeEngine/src/nativeTest/scripts/cpu_repack_equivalence_test.py --sanitize`.
 
 ---
 
@@ -120,7 +129,11 @@ libraries/patches/
 └── llama.cpp/
     ├── 0001-metal-pin-shading-language-version.patch
     ├── 0002-vulkan-norm-require-f32.patch
-    └── 0003-fit-memory-probe-raii.patch
+    ├── 0003-fit-memory-probe-raii.patch
+    ├── 0004-vulkan-gate-xe-flash-attention-shaders.patch
+    ├── 0005-fit-account-cpu-repack-memory.patch
+    ├── 0006-vulkan-forward-host-build-tool.patch
+    └── 0007-cpu-repack-constant-interleave.patch
 ```
 
 `preparePatchedLlamaSource` recreates `nativeEngine/build/patched-native-sources/llama.cpp` from the pinned upstream tree, then applies each patch with `git apply`. Submodule worktrees stay immutable, so a submodule bump requires only checking that this task still succeeds.
@@ -143,7 +156,15 @@ Create a **separate** Gradle module + CMake project. Do not add here unless it m
 
 ## Recent Changes
 
-- Android llama builds include arm64 Vulkan by default, with CPU retained for x86_64 and diffusion-only builds; app admission keeps Android diffusion on CPU.
+- Added native sampling-progress and GPU VAE placement regressions. Android diffusion uses the packaged shared Vulkan registry; the standalone SD_VULKAN build flag does not determine runtime placement. See the [image benchmark suite](../benchmarks/diffusion/README.md).
+
+- Android llama links native ATrace spans for model load, context, prompt prefill and first-token waits; the disabled tracing path adds no synchronization. Native captures preserve matching unstripped libraries for symbol attribution.
+- Build-owned patch `0007` specializes Q4_K/Q6_K CPU repack copies; all 6,532 equivalence cases pass, including standalone sanitizers. A fixed-plan pilot with three runs per build reduces full-app CPU median load from 3,337 to 2,536 ms (24.0%); settings and build inputs match, but order/caches remain uncontrolled. Earlier exploratory runs and exclusions remain in the [native results and limits](../benchmarks/android/README.md#native-follow-up--october-24-2026).
+- Added an opt-in host `glslc` override with compiler identity records. Shaderc 2026.4 builds both ABIs and improves GPU prefill about 10% but regresses decode about 38% in timestamp diagnostics. It is not promoted pending the MMVQ follow-up and controlled untraced validation; the NDK compiler remains the default.
+
+- Apple validation links the merged native archive into simulator tests and a physical iPhone harness. The llama bridge recognizes `MTL` as Metal and releases model/context allocations before backend shutdown; all five iPhone Metal cases pass.
+
+- Android arm64 app builds package a shared Vulkan backend for llama and diffusion image graphs. CPU remains available, including x86_64 and diffusion-only build profiles.
 
 - Fixed Android Vulkan host shader generation to reuse the configured Ninja executable; universal Vulkan APKs now retain an x86_64 CPU fallback instead of failing configuration. See the root README for current Pixel 9 benchmarks.
 
@@ -177,7 +198,7 @@ Create a **separate** Gradle module + CMake project. Do not add here unless it m
 - Android `artifact_fs` now opens the trusted app-owned models root directly instead of traversing `/`; a host regression covers search-only ancestors and final-root symlink rejection
 - Added a strict versioned native-fixture manifest, fixed-host HTTPS acquisition with redirect/size/digest enforcement, generated corrupt fixtures, and isolated opt-in runner parity CI; normal JVM verification performs no fixture download
 - Desktop native hardening now verifies bounded typed calibration inputs, token-owned lock-free cancellation, and timed operation admission; iOS builds export the same calibrated backend bridge
-- `verifyProject` now builds and executes all five stable-diffusion native preflight regressions through CTest, including the production `sd_ctx_params_t.backend` assignment path, source-bound bundle subdivisions, external TAESD placement, and component-selected Vulkan safety
+- `verifyProject` now builds and executes all six stable-diffusion native regressions through CTest, including the production `sd_ctx_params_t.backend` assignment path, source-bound bundle subdivisions, external TAESD placement, and component-selected Vulkan safety
 - Stable-diffusion native builds now expose bounded metadata-only preflight and use the same pinned backend-fit resolver for preflight and actual context creation
 - Desktop native tests cover bundled-role placement, pinned max-VRAM assignment, effective streaming constraints, and failure-atomic context publication
 - Desktop native verification now covers stream-scoped unload exclusion, cross-thread token calls, lock-free cancellation, exact quantization labels, and transient-handle cleanup

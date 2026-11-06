@@ -97,8 +97,11 @@ jobs:
         with:
           cache-provider: basic
 
-      - name: Assemble Android application and both supported ABIs
-        run: ./gradlew :app:androidApp:assembleDebug --no-daemon --stacktrace
+      - name: Assemble Android application and benchmark APKs for both supported ABIs
+        run: >-
+          ./gradlew :app:androidApp:assembleDebug
+          :app:androidApp:assembleBenchmark :benchmarks:android:assembleBenchmark
+          --no-daemon --stacktrace
 
   desktop-artifact-fs:
     name: Desktop artifact filesystem (${{ matrix.os }})

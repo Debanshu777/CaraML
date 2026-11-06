@@ -2,7 +2,7 @@
 
 **On-device AI inference for Android, iOS, and Desktop (JVM)**
 
-CaraML runs large language models and image generation models entirely on-device using [llama.cpp](https://github.com/ggerganov/llama.cpp) and [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp). Models are browsed and downloaded directly from HuggingFace Hub. No cloud backend required.
+CaraML runs large language models and image generation models entirely on-device using [llama.cpp](https://github.com/ggerganov/llama.cpp), [ONNX Runtime](https://onnxruntime.ai/) and [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp). Models are browsed and downloaded directly from HuggingFace Hub. No cloud backend required.
 
 ---
 
@@ -10,8 +10,9 @@ CaraML runs large language models and image generation models entirely on-device
 
 - **LLM Chat** — streaming token generation with structured reasoning support (thinking blocks), markdown rendering, context tracking
 - **Image Generation** — Stable Diffusion via stable-diffusion.cpp (text-to-image, configurable sampling)
-- **Model Hub** — browse, search, filter, and download GGUF models from HuggingFace; smart install bundles for diffusion models
-- **GPU Acceleration** — Vulkan (Android), Metal (iOS/macOS)
+- **Model Hub** — browse, search, filter, and download GGUF and supported ONNX text bundles from HuggingFace; smart install bundles for diffusion models
+- **ONNX Text** — Android/JVM/iOS streaming inference for supported SmolLM2, Qwen and Llama exports; [supported layouts and limits](plugin-onnx/README.md)
+- **GGUF GPU Acceleration** — Vulkan (Android), Metal (iOS/macOS)
 - **Dynamic Theming** — Material You / Material 3 with materialKolor
 - **Fully Offline** — all inference runs on-device after download
 
@@ -29,6 +30,15 @@ CaraML runs large language models and image generation models entirely on-device
 ---
 
 ## Current Android Benchmarks
+
+Start with the [performance improvement report](benchmarks/README.md) for the steps taken, measured gains, current bottlenecks, validation status and cleanup record across startup, scrolling, GGUF and ONNX. The dated comparisons below retain their original workloads and are not interchangeable with the latest measurements.
+
+The [October 23 ONNX/GGUF comparison](benchmarks/onnx/README.md) covers five
+matching checkpoints on Pixel 9, provider placement, thread tuning, memory and
+the Llama INT8 compatibility workaround. ONNX dynamic-cache exports use CPU by default; accelerator experiments and
+iPhone measurements and iOS simulator regression checks are reported separately. The earlier GGUF-only baseline below used different
+quantizations and a longer generation workload, so its numbers are not directly
+comparable to that report.
 
 Measured on a **Google Pixel 9 running Android 17**, on **October 15, 2026**.
 All inference runs locally through llama.cpp. Native placement logs verified
@@ -53,7 +63,7 @@ native code.
 All five models passed load, generation, cancellation, unload, reload, and recovery
 checks on the final installed build. GPU acceleration helps some models more than
 others; thermal state and OS caching affect the results. These measurements are
-the current project baseline, rather than a maximum-throughput claim or a measure
+an earlier project baseline, rather than a maximum-throughput claim or a measure
 of answer quality. They cover the PR #17 working tree with local fixes and existing
 edits; they are not a clean release-build certification.
 
@@ -73,6 +83,7 @@ CaraML/
 ├── storage/             # Optional SDK storage implementations
 ├── model-discovery/     # Provider-neutral discovery + built-in Hugging Face
 ├── plugin-llama/        # llama SDK + Kotlin/JNI/cinterop bridge
+├── plugin-onnx/         # Android/JVM/iOS ONNX causal text runtime
 ├── plugin-diffusion/    # Diffusion SDK + Kotlin/JNI/cinterop bridge
 ├── native-runtime/      # Internal SDK native ownership guard
 ├── app/                # CaraML app consumers, separate from the SDK
@@ -308,7 +319,7 @@ Three features: **chat**, **modelhub**, **settings**.
 | Android SDK | minSdk 28, compileSdk 36 |
 | iOS | min 17.2 |
 | Android bytecode | 21 (`composeApp`), 17 (supporting KMP libraries) |
-| Inference | llama.cpp (latest), stable-diffusion.cpp (latest) |
+| Inference | pinned llama.cpp, pinned stable-diffusion.cpp, ONNX Runtime 1.31.0 (Android/JVM), 1.30.0 (Apple) |
 
 ---
 
@@ -376,7 +387,33 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 
 ## Recent Changes
 
-- Published the current Pixel 9 CPU/Vulkan generation benchmark for five LLMs, with quantization, sustained decode ranges and test conditions. Raw validation artifacts are excluded from the repository.
+- Consolidated the diffusion benchmark suite from 19 files to 12 by grouping trial suites, model metadata, supporting evidence and Python tests. Preserved all trial settings and recorded results.
+
+- Image generation now resolves model-specific workloads before admission, fixes SD-Turbo prediction/scheduling, and permits Android Vulkan image plans with GPU VAE decoding. SD-Turbo uses 1/2/4 steps for Speed/Balanced/Quality; the final two-step JNI trial took 58.0 s. [Five-model Pixel 9 results and limits](benchmarks/diffusion/README.md).
+
+- Consolidated benchmark Python tooling from 30 files to 19 behind `python3 benchmarks/run.py`, preserving all 50 existing offline tests and adding six command/workflow checks. The [current report](benchmarks/README.md) includes commands, measured improvements and the earlier 384 MiB artifact cleanup; model fixtures, APKs and traces remain available.
+
+- Optimized ONNX graph reads and unchanged-model reuse. Pixel 9 three-process Qwen 0.5B pilots reduced median initial load from 3.81 to 3.45 s and resident reselection from 2.73 s to 241 ms. Llama 1B initial load showed no improvement. [ONNX results, traces and remaining bottlenecks](benchmarks/onnx/README.md#pixel-9-app-performance-pass--october-24-2026).
+
+- Optimized native CPU repacking without changing tensor bytes. A fixed-workload Pixel 9 Qwen 3B pilot reduced median full load from 3.337 to 2.536 s (24.0%, three runs per build); first-token time after loading was unchanged. [Controlled results and limits](benchmarks/android/results/pixel9-repack-fixed-2026-10-24.json).
+
+- Fixed startup readiness reporting and separated cache, graphics and DEX costs in clean Pixel 9 traces. Streaming-row isolation removes redundant compositions but shows no frame-time gain; visual defaults remain unchanged. [Measurements and limits](benchmarks/android/README.md#startup-readiness-and-cache-pilot--october-24-2026).
+
+- Re-selecting an unchanged ready llama model now retains its native session after current artifact checks. Same-APK Pixel 9 picker trials reduced median action-to-load-completion from 5.38 s to 177 ms (three trials per mode; warm phone, background CPU activity, no drawn-frame timing). [Raw results and limits](benchmarks/android/results/pixel9-resident-reselection-2026-10-23.json).
+
+- Added startup readiness reporting, correlated load/prefill/first-token spans, and actual picker journeys. Fixed-workload CPU/Vulkan journeys request exact context, batch and KV settings before normal assessment/admission and reject fallback or runtime drift; see the [Android benchmark guide](benchmarks/android/README.md).
+
+- Audited 147 saved Perfetto files: identified missing native/GPU attribution, packet loss in eight scroll captures, CPU-dominated native loading and first-frame graphics costs. [Findings and proposed experiments](benchmarks/android/README.md#perfetto-audit--october-23-2026).
+
+- Removed repeated whole-model hashing from installed-model loading while retaining publication checksums, lightweight file checks and native-load locking. Pixel 9 Qwen 3B full-load median fell from 20.32 s to 3.29 s (83.8%); see the [measurement and integrity tradeoff](benchmarks/android/README.md#installed-model-load-minimal-verification).
+
+- Measured Qwen2.5 3B loading and generation on Pixel 9: CPU reaches its first answer sooner than Vulkan in the fixed short-prompt test. Added full app-load timing, opt-in composition traces, and temperature checks; removed Android release preview tooling. See the [benchmark follow-up](benchmarks/android/README.md#detailed-composition-and-model-load-measurements).
+
+- Added [Android startup/scrolling benchmarks and Perfetto analysis](benchmarks/android/README.md), plus a generated startup Baseline Profile. Pixel 9 controls measure 76–90 ms faster startup than library profiles alone; archived runs record thermal validity.
+
+- Added supported ONNX text bundles to Hugging Face discovery, verified downloads and Android/JVM/iOS chat, with format routing, cancellation and memory admission.
+
+- Added a reproducible [five-model ONNX/GGUF comparison](benchmarks/onnx/README.md) on Pixel 9 and physical iPhone 13, with raw results, measured thread settings and exact-export exclusions. Fixed Metal shutdown after physical iPhone testing.
 
 - Enabled and verified the Android Vulkan profile on Pixel 9, repaired shader-generator/universal-ABI builds, and removed the per-layer GGUF metadata path's forced CPU fallback under guarded native memory admission. See [current Android benchmarks](#current-android-benchmarks) for measured performance.
 
@@ -496,7 +533,7 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 - Fix: bk-sdm-tiny model registry now sets `prediction=0` (EPS) explicitly, preventing `is_using_v_parameterization_for_sd2()` probe
 - Fix: `DiffusionInferenceRepository` selfContained branch now propagates `offloadToCpu` from `recommendedParams`
 - Fix: Vulkan SIGABRT during UNet compute — `diffusion_conv_direct=true` now forced for all models (bypasses IM2COL path)
-- Diffusion optimization pass: SD-Turbo / SDXL-Turbo / LCM-LoRA registry entries now ship correct distilled defaults (4–6 steps, cfg=1.0–1.5, euler_a / lcm sampler), registry-pinned sampler/seed honored in ChatViewModel, flow_shift + free_params_immediately + VAE tiling + optional TAESD path wired through DiffusionModelConfig → JNI/iOS FFI → stable-diffusion.cpp
+- Diffusion registry defaults include model-specific sampler, CFG, seed and step recommendations; flow shift, VAE tiling and optional TAESD paths pass through Kotlin/JNI/iOS to stable-diffusion.cpp.
 - Fix: Vulkan crash on SD2 models — ggml-vulkan GROUP_NORM `supports_op` now requires F32, preventing SIGABRT when loading F16-weight models
 - Model suitability rating (Poor/Average/Good/Best) with color-coded chips, per-variant dots, and bottom-sheet algorithm explainer
 - GPU acceleration and inference performance optimizations (Vulkan Android, Metal iOS)

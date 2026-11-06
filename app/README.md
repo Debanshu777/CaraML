@@ -43,7 +43,25 @@ unchanged. Package conventions are documented in [the root README](../README.md#
 
 ## Recent Changes
 
-- Debug performance validation supports read-only CPU/Vulkan selection with matching resolver/inference settings, records actual GPU layer counts and explicitly labels permitted start thermal states. Current five-model CPU/Vulkan benchmarks are published in the root README.
+- Added foreground Android image-generation instrumentation with fixed seeds, per-step timing, thermal records, PNG validation, and CPU/Vulkan comparisons. Completed five-model and tuning runs, verified the installed optimized APK, and restored release-build foundation dependencies. [Results](../benchmarks/diffusion/README.md).
+
+- Added installed-bundle ONNX performance instrumentation with exact artifact/runtime checks, process trials, separate Perfetto captures, resident-session reuse controls and optional memory sampling. [Pixel 9 results](../benchmarks/onnx/README.md#pixel-9-app-performance-pass--october-24-2026) distinguish model-load gains from generation and benchmark overhead.
+
+- Startup benchmarks now wait for persisted inventory, preferences and recovery readiness. Clean cache-controlled runs distinguish first display from usable UI; synthetic streaming captures also separate activation, sustained scrolling and completion transitions. [Results](../benchmarks/android/README.md).
+
+- Added actual model-picker reselection measurements with temporary reuse on/off controls in the same APK. Pixel 9 median action-to-completion fell from 5.38 s to 177 ms across three trials per mode; these warm-device results measure logic completion, not a drawn frame. [Results and caveats](../benchmarks/android/results/pixel9-resident-reselection-2026-10-23.json).
+
+- Added correlated load-to-first-token instrumentation and fixed-workload Android journeys with explicit requested/resolved/runtime configuration, thermal checks and preference preservation. Exact workloads enter normal assessment/admission; the production planner remains adaptive.
+
+- Installed-model loads now use publication-time checksums and lightweight path/size checks. Qwen 3B CPU prepare-to-ready improved from 20.32 s to 3.29 s on Pixel 9; the debug harness also supports a short `phase smoke` generation check. See [results and limits](../benchmarks/android/README.md#installed-model-load-minimal-verification).
+
+- Added a pinned Qwen2.5 3B download/load case and reproducible CPU/Vulkan trials with separate initialization, model-load and first-token timing. The verified model is available in the Pixel's app catalog; results and trace commands are in the [Android benchmark guide](../benchmarks/android/README.md#detailed-composition-and-model-load-measurements).
+
+- Added an isolated Android [startup/scrolling suite and trace analysis](../benchmarks/android/README.md), a generated launcher Baseline Profile packaged in release, and validated profile comparisons on Pixel 9 with thermal and result-completeness checks.
+
+- Added Android/JVM/iOS ONNX inference and format routing alongside GGUF. Debug instrumentation exercises real Hugging Face bundles, chat, cancellation and reload; [comparison and reproduction](../benchmarks/onnx/README.md).
+
+- Physical Pixel 9 and iPhone 13 benchmarks record runtime selection, throughput, first-token latency, memory and thermal state. Android measurements require continuous foreground verification; iPhone runs require a clean process exit.
 
 - Exercised the debug Android runtime matrix on Pixel 9 with SmolLM2, Gemma 3, Qwen 3, LFM2 and Qwen 2.5 through downloads, generation, cancellation and reload.
 

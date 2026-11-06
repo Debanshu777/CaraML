@@ -132,6 +132,15 @@ class ArtifactBundleManifestStore(
             manifest.entries.all(artifactValidator)
     }
 
+    /** Only the committed bundle is eligible; recovery continues to use full verification. */
+    internal fun readForLoad(metadataValidator: (ArtifactManifestEntry) -> Boolean): ArtifactManifest? {
+        if (exists(journalPath)) return null
+        return readManifest(manifestPath)?.takeIf { manifest ->
+            manifest.entries.size <= MAX_BUNDLE_ENTRIES && manifest.entries.map { it.bundleId }.toSet().size == 1 &&
+                manifest.entries.all(metadataValidator)
+        }
+    }
+
     internal fun readRecoveryCandidates(): List<ArtifactManifest> =
         (sequenceOf(manifestPath, partPath, previousPath).mapNotNull(::readManifest) +
             listOfNotNull(readReplacementPlan()?.previousManifest).asSequence())

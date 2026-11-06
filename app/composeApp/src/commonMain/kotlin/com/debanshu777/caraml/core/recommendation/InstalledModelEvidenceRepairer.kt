@@ -19,7 +19,8 @@ import kotlinx.coroutines.CancellationException
 
 /** Operation-local result of verifying one exact installed catalog snapshot.
  * This is a handoff between preparation stages, never a persistent hash cache.
- * Strict request creation and the final load boundary still verify current bytes.
+ * Request creation and the final load boundary check current paths and file sizes.
+ * Content checksums are established when downloads are published.
  */
 class VerifiedInstalledModelArtifact internal constructor(
     internal val model: LocalModelEntity,
@@ -131,7 +132,7 @@ class InstalledModelEvidenceRepairer internal constructor(
 
         // The publication and every artifact identity were verified above. A complete
         // local GGUF header can supply load-critical facts without a network lookup.
-        if (mode == ModelHubBrowseMode.LanguageModels) {
+        if (mode == ModelHubBrowseMode.LanguageModels && captured.identities.none { it.path.endsWith(".onnx") }) {
             val target = captured.artifact.loadTarget as? VerifiedArtifactLoadTarget.File
                 ?: return fallbackUnlessBaselineChanged(captured, mode, invalidMetadata())
             val localHeader = ggufMetadataInspector.inspect(target.path)
@@ -274,6 +275,10 @@ class InstalledModelEvidenceRepairer internal constructor(
     ): EvidenceRepairResult.Rejected? {
         if (mode != ModelHubBrowseMode.LanguageModels) return null
         val target = artifact.loadTarget as? VerifiedArtifactLoadTarget.File ?: return null
+        if (target.path.endsWith(".onnx") && com.debanshu777.caraml.sdk.discovery.huggingface.model.OnnxModelBundles.isComplete(identities.map { it.path })) {
+            // Published identities and companions were checked above; ORT validates the graph at load.
+            return null
+        }
         return when (ggufMetadataInspector.recognizeContainer(target.path)) {
             GgufContainerRecognition.GGUF -> null
             GgufContainerRecognition.NON_GGUF ->
@@ -287,6 +292,7 @@ class InstalledModelEvidenceRepairer internal constructor(
     ): ModelDescriptor? {
         val decoded = catalog.evidence?.let(::decode) ?: return null
         val descriptor = decoded.descriptor ?: return null
+        if (descriptor is LlmModelDescriptor && descriptor.format == ModelFormat.ONNX && !descriptor.hasCompleteLocalCompatibilityMetadata()) return null
         return descriptor.takeIf {
             decoded.state == InstalledEvidenceState.COMPLETE &&
                 decoded.artifactIdentities.hasSameExactInstalledIdentities(identities) &&

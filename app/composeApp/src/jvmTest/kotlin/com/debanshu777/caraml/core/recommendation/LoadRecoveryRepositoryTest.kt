@@ -17,6 +17,16 @@ import kotlin.test.fail
 
 class LoadRecoveryRepositoryTest {
     @Test
+    fun anotherEngineRecordsAndRecoversItsOwnVersion() = runTest {
+        val repository = repository()
+        val onnx = "onnxruntime-test-v1"
+        val marker = repository.beginLoad(RecoveryFixtures.identity, RecoveryFixtures.plan, onnx)
+        assertEquals(onnx, marker.engineVersion)
+        repository.recoverPendingLoad(2_000L)
+        assertEquals(LoadQuarantine.TEMPORARY, repository.quarantine(RecoveryFixtures.identity, RecoveryFixtures.plan, onnx))
+        assertEquals(LoadQuarantine.NONE, repository.quarantine(RecoveryFixtures.identity, RecoveryFixtures.plan, ENGINE_VERSION))
+    }
+    @Test
     fun repeatedPendingMarkerQuarantinesOnlyExactConfigurationAndEngine() = runTest {
         var now = 1_000L
         val repository = repository(now = { now })

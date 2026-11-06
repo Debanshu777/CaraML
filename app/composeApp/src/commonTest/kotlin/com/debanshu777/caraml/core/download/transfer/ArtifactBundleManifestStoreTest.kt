@@ -15,6 +15,22 @@ import kotlin.test.assertTrue
 
 class ArtifactBundleManifestStoreTest {
     @Test
+    fun loadReadRequiresCommittedBundleAndValidatesEveryComponentWithoutPublicationValidator() {
+        val fixture = BundleFixture("load-read")
+        val entries = fixture.installBundle("a".repeat(40), "main", "vae")
+        fixture.bundleStore().publish(entries)
+        val loading = ArtifactBundleManifestStore(fixture.mainRoot, fixture.fs) {
+            error("Steady-state load must not run the content validator")
+        }
+        val seen = mutableListOf<ArtifactManifestEntry>()
+        assertNotNull(loading.readForLoad { seen += it; true })
+        assertEquals(entries.toSet(), seen.toSet())
+        assertNull(loading.readForLoad { it.logicalRole != "vae" })
+        fixture.fs.write(fixture.mainRoot / ArtifactBundleManifestStore.JOURNAL_FILE_NAME) { writeUtf8("pending") }
+        assertNull(loading.readForLoad { error("Pending publication must be recovered first") })
+    }
+
+    @Test
     fun diagnosticCancellationBeforeWriteRetainsAndRecoversThePreviousVerifiedBundle() {
         val fixture = BundleFixture("diagnostic-cancellation")
         val old = fixture.installBundle("a".repeat(40), "old-main", "old-vae")

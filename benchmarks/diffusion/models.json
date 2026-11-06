@@ -1,0 +1,90 @@
+{
+  "selection": "Popular mobile-compatible reference suite; not the literal five most downloaded repositories. Rankings sampled 2026-10-25.",
+  "files": [
+    {
+      "model": "sd-turbo",
+      "repo": "Green-Sky/SD-Turbo-GGUF",
+      "revision": "19a31586d02d64a73b4419bc193b3ecfaf38e1f0",
+      "file": "sd_turbo-f16-q8_0.gguf",
+      "local": "sd-turbo.gguf",
+      "size": 2023745376,
+      "sha256": "d50be7655f0a554cf8041c145d88b210bd5f3c545423119dee62ae08cae51580"
+    },
+    {
+      "model": "sd15",
+      "repo": "kostakoff/stable-diffusion-v1-5-GGUF",
+      "revision": "101ff06c98bea9ac8affe6a2c867e9762958d219",
+      "file": "v1-5-pruned_Q4_0.gguf",
+      "local": "sd15.gguf",
+      "size": 3051366272,
+      "sha256": "24bcd54c1d1f0354a1cd19d07ad9a20771d43fde8318d505d71bcd84b078f20a"
+    },
+    {
+      "model": "sdxl-base",
+      "repo": "kostakoff/stable-diffusion-xl-base-1.0-GGUF",
+      "revision": "ca58fb3aced770f3dffddabf01725b29207305ef",
+      "file": "sd_xl_base_1.0_0_Q4_0.gguf",
+      "local": "sdxl-base.gguf",
+      "size": 2709379488,
+      "sha256": "1f64d77cbd8aee3ee1a0ae6e58ea64ba39308721150f38cfaa5ee57e9d4fd106"
+    },
+    {
+      "model": "sdxl-turbo",
+      "repo": "stabilityai/sdxl-turbo",
+      "revision": "71153311d3dbb46851df1931d3ca6e939de83304",
+      "file": "sd_xl_turbo_1.0_fp16.safetensors",
+      "local": "sdxl-turbo.safetensors",
+      "size": 6938081905,
+      "sha256": "e869ac7d6942cb327d68d5ed83a40447aadf20e0c3358d98b2cc9e270db0da26"
+    },
+    {
+      "model": "z-image-turbo",
+      "repo": "leejet/Z-Image-Turbo-GGUF",
+      "revision": "c61c0e422dc8b541b7548cf33a4ef8302b0f8085",
+      "file": "z_image_turbo-Q4_0.gguf",
+      "local": "z-image-turbo.gguf",
+      "size": 3683370944,
+      "sha256": "2bc57986874c84f7ec6d02d9d7070a53b0029954a0e38a6e1342eb91095572f5"
+    },
+    {
+      "model": "z-image-turbo",
+      "repo": "unsloth/Qwen3-4B-Instruct-2507-GGUF",
+      "revision": "a06e946bb6b655725eafa393f4a9745d460374c9",
+      "file": "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+      "local": "qwen3-4b.gguf",
+      "size": 2497281120,
+      "sha256": "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597"
+    },
+    {
+      "model": "z-image-turbo",
+      "repo": "Comfy-Org/Z-Image-Turbo",
+      "revision": "6fc90a3b1b653e935a0d175e260736de25b84df5",
+      "file": "split_files/vae/ae.safetensors",
+      "local": "flux-vae.safetensors",
+      "size": 335304388,
+      "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+    }
+  ],
+  "optional_files": {
+    "preview-decoder": {
+      "model": "preview-decoder",
+      "repo": "madebyollin/taesd",
+      "revision": "614f76814bbe30edbe2e627ace1c2234c81a2c0e",
+      "local": "taesd.safetensors",
+      "size": 9793292,
+      "sha256": "db169d69145ec4ff064e49d99c95fa05d3eb04ee453de35824a6d0f325513549",
+      "file": "diffusion_pytorch_model.safetensors"
+    }
+  },
+  "derived_files": {
+    "sdxl-turbo-q4_0": {
+      "source": "sdxl-turbo.safetensors",
+      "local": "sdxl-turbo-q4_0.gguf",
+      "size": 2709381664,
+      "sha256": "f7ec24df50b6e249f762a91ee508a12e4d5b52cf574a1af01c35d68b9da4719e",
+      "conversion": "pinned stable-diffusion.cpp convert, Q4_0, no name conversion",
+      "sd_revision": "c92d73c408515c94beef32161bb5960764fde7a0",
+      "ggml_revision": "f46bc30cb6a7f68a67e34a00061e20a4ad1eff43"
+    }
+  }
+}

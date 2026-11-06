@@ -41,6 +41,51 @@ import kotlin.test.assertSame
 class InstalledModelLoadingTest {
 
     @Test
+    fun residentSelectionRetainsRunnerBeforeAssessmentOrTeardown() = runTest {
+        val calls = mutableListOf<String>()
+        val preparation = InstalledModelLoadPreparation.Ready(
+            model, GenerationMode.Text, task6LlmDescriptor(), requireNotNull(request.artifact),
+        )
+        val result = loadInstalledModel(
+            model = model, mode = GenerationMode.Text,
+            prepare = { _, _ -> calls += "prepare"; preparation },
+            tryReuse = { current ->
+                assertSame(preparation, current)
+                calls += "reuse"
+                ModelLoadResult.Success(4_096)
+            },
+            releaseRunners = { error("Resident runner must not be released") },
+            assess = { error("Resident session must not be readmitted") },
+            loadText = { error("Resident model must not be reloaded") },
+            loadDiffusion = { error("Text selection must not load diffusion") },
+        )
+        assertEquals(ModelLoadResult.Success(4_096), result)
+        assertEquals(listOf("prepare", "reuse"), calls)
+    }
+
+    @Test
+    fun residentMissPreservesReleaseBeforeAssessmentAndCancellationNeverFallsThrough() = runTest {
+        val calls = mutableListOf<String>()
+        val preparation = InstalledModelLoadPreparation.Ready(
+            model, GenerationMode.Text, task6LlmDescriptor(), requireNotNull(request.artifact),
+        )
+        suspend fun attempt(cancel: Boolean) = loadInstalledModel(
+            model = model, mode = GenerationMode.Text,
+            prepare = { _, _ -> preparation },
+            tryReuse = { calls += "reuse"; if (cancel) throw CancellationException("cancelled"); null },
+            releaseRunners = { calls += "release" },
+            assess = { calls += "assess"; InstalledModelLoadResolution.Ready(request) },
+            loadText = { calls += "load"; ModelLoadResult.Success(4_096) },
+            loadDiffusion = { error("Text selection must not load diffusion") },
+        )
+        assertIs<ModelLoadResult.Success>(attempt(cancel = false))
+        assertEquals(listOf("reuse", "release", "assess", "load"), calls)
+        calls.clear()
+        assertFailsWith<CancellationException> { attempt(cancel = true) }
+        assertEquals(listOf("reuse"), calls)
+    }
+
+    @Test
     fun unsupportedTextFormatOffersGgufActionWithoutReleasingOrInvokingRunners() = runTest {
         for (mode in GenerationMode.entries) {
             val result = loadInstalledModel(

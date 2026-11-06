@@ -73,6 +73,7 @@ static DiffusionModelConfig convert_model_config(const DiffusionModelConfigFFI &
     config.flow_shift_is_set = ffi_config.flow_shift_is_set != 0;
     config.n_threads = ffi_config.n_threads;
     config.prediction = ffi_config.prediction;
+    config.sampling_scheduler = ffi_config.sampling_scheduler;
     config.taesd_path = ffi_config.taesd_path ? ffi_config.taesd_path : "";
     config.vae_tiling = ffi_config.vae_tiling != 0;
     config.max_vram = ffi_config.max_vram ? ffi_config.max_vram : "";

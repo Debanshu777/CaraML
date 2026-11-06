@@ -19,6 +19,45 @@ import kotlin.test.assertTrue
 
 class ArtifactManifestStoreTest {
     @Test
+    fun loadReadChecksFileShapeWithoutOpeningPayloadAndFullVerificationStillDetectsEdits() = withStore { fs, root, store ->
+        stageAndCommit(fs, store, root, "model".encodeToByteArray(), "a".repeat(40))
+        val manifest = assertNotNull(store.readValidated())
+        val payload = root / manifest.entries.single().localRelativePath
+        val metadataOnlyFs = object : ForwardingFileSystem(fs) {
+            override fun source(file: Path): Source {
+                check(file != payload) { "Load metadata must not read model contents" }
+                return super.source(file)
+            }
+        }
+        val loading = ArtifactManifestStore(root, metadataOnlyFs)
+        assertEquals(manifest, loading.readForLoad())
+        fs.write(payload) { writeUtf8("other") }
+        assertEquals(manifest, loading.readForLoad())
+        assertNull(store.readValidated())
+        fs.write(payload) { writeUtf8("shorter-or-longer") }
+        assertNull(loading.readForLoad())
+        fs.delete(payload)
+        assertNull(loading.readForLoad())
+    }
+
+    @Test
+    fun loadReadRejectsPendingTransactionsAndSymlinkedArtifacts() = withStore { fs, root, store ->
+        stageAndCommit(fs, store, root, "model".encodeToByteArray(), "a".repeat(40))
+        val manifest = assertNotNull(store.readForLoad())
+        val journal = root / ArtifactManifestStore.JOURNAL_FILE_NAME
+        fs.write(journal) { writeUtf8("pending") }
+        assertNull(store.readForLoad())
+        fs.delete(journal)
+        val payload = root / manifest.entries.single().localRelativePath
+        val replacement = root / "replacement"
+        fs.write(replacement) { writeUtf8("model") }
+        fs.delete(payload)
+        fs.allowSymlinks = true
+        fs.createSymlink(payload, replacement)
+        assertNull(store.readForLoad())
+    }
+
+    @Test
     fun windowsStyleRootCommitsAndValidatesManifest() {
         val fs = FakeFileSystem()
         val root = "C:\\models\\org\\model".toPath()

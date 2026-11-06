@@ -22,6 +22,15 @@ class RunnerEngineCapabilitySource(
     }
 
     private fun llamaSupportFor(descriptor: LlmModelDescriptor): SupportEvidence {
+        if (descriptor.format == ModelFormat.ONNX) {
+            onnxExportIssue(descriptor.files)?.let { issue ->
+                return SupportEvidence.Unsupported(listOf(AssessmentReason.UNSUPPORTED_QUANTIZATION),
+                    listOf(Evidence(AssessmentReason.UNSUPPORTED_QUANTIZATION, Confidence.HIGH, issue)))
+            }
+            return if (com.debanshu777.caraml.sdk.plugin.onnx.createOnnxTextRuntime().supported &&
+                descriptor.architecture in setOf("llama", "qwen2", "qwen3")) SupportEvidence.Supported
+            else SupportEvidence.Unsupported(listOf(AssessmentReason.UNSUPPORTED_FORMAT))
+        }
         val architecture = descriptor.architecture ?: return SupportEvidence.Unknown(
             reasons = listOf(AssessmentReason.UNKNOWN_ARCHITECTURE),
             evidence = listOf(

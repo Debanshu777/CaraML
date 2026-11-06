@@ -71,9 +71,12 @@ kotlin {
     jvm()
 
     sourceSets {
+        // Opt-in physical-device harness; excluded from ordinary app/framework builds.
+        if (providers.gradleProperty("iosBenchmark").orNull == "true") {
+            iosMain { kotlin.srcDir("src/iosBenchmark/kotlin") }
+        }
         androidMain.dependencies {
             implementation(libs.compose.uiToolingPreview)
-            implementation(libs.compose.uiTooling)
             implementation(project.dependencies.platform(libs.koin.bom))
             implementation(libs.koin.core)
             implementation(libs.androidx.core.ktx)
@@ -92,6 +95,7 @@ kotlin {
             implementation(libs.ktor.client.core)
             implementation(project(":plugin-llama"))
             implementation(project(":plugin-diffusion"))
+            implementation(project(":plugin-onnx"))
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.material3)

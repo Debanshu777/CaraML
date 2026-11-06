@@ -97,7 +97,8 @@ class RepositoryModelCatalogPublisher(
                     } else {
                         localPath(metadata)
                     },
-                    sizeBytes = primary.sumOf { it.expectedBytes },
+                    sizeBytes = if (metadata.libraryName == "onnx") batch.artifacts.sumOf { it.expectedBytes }
+                        else primary.sumOf { it.expectedBytes },
                     downloadedAt = publishedAt,
                     author = metadata.author,
                     libraryName = metadata.libraryName,

@@ -236,7 +236,7 @@ class BoundedResponseTest {
     }
 
     @Test
-    fun configUsesFixedOriginImmutableRevisionStrictJsonAndOneMibLimit() = runTest {
+    fun configProjectsRealTransformerFieldsWithStrictDimensionTypes() = runTest {
         val seenPaths = mutableListOf<String>()
         var response = "{\"num_hidden_layers\":32}"
         val client = HttpClient(MockEngine { request ->
@@ -249,6 +249,9 @@ class BoundedResponseTest {
             assertEquals("/owner/model/resolve/$REVISION/config.json", seenPaths.single())
 
             response = "{\"num_hidden_layers\":32,\"unexpected\":true}"
+            assertIs<Result.Success<*, *>>(service.getModelConfig("owner/model", REVISION))
+
+            response = "{\"num_hidden_layers\":\"many\",\"torch_dtype\":\"float32\"}"
             assertEquals(
                 Result.Error(DataError.Network.Serialization),
                 service.getModelConfig("owner/model", REVISION),
@@ -258,7 +261,7 @@ class BoundedResponseTest {
                 Result.Error(DataError.Network.Unknown),
                 service.getModelConfig("owner/model", "main"),
             )
-            assertEquals(2, seenPaths.size)
+            assertEquals(3, seenPaths.size)
         } finally {
             client.close()
         }

@@ -1,0 +1,4816 @@
+{
+  "trials": [
+    {
+      "tag": "final-sdturbo-balanced-2",
+      "success": true,
+      "config": {
+        "event": "config",
+        "model": "sd-turbo",
+        "tag": "final-sdturbo-balanced-2",
+        "backend": "VULKAN",
+        "threads": -1,
+        "size": 512,
+        "steps": 2,
+        "cfg": 1,
+        "sampler": 0,
+        "flash": true,
+        "mmap": true,
+        "conv": false,
+        "offload": false,
+        "tiling": false,
+        "wtype": -1,
+        "prediction": 0,
+        "scheduler": 6,
+        "vae_cpu": false,
+        "quantized": false,
+        "preview": false,
+        "max_vram": "",
+        "segmented": false,
+        "prefetch": false,
+        "thermal": 1,
+        "foreground": true
+      },
+      "load_ms": 115.435954,
+      "generations": [
+        {
+          "event": "generation",
+          "run": 0,
+          "ms": 57977.416125,
+          "steps": 2,
+          "progress": [
+            {
+              "step": 1,
+              "total": 2,
+              "elapsed_ms": 15582.36158,
+              "thermal": 1
+            },
+            {
+              "step": 2,
+              "total": 2,
+              "elapsed_ms": 27551.815483,
+              "thermal": 1
+            }
+          ],
+          "thermal_start": 1,
+          "thermal_end": 1,
+          "png_bytes": 561977,
+          "sha256": "d6abaa3c5dfc719f7697d1e1c4f48b5346a73d3c22abf163a91ed0b8d1c09570",
+          "output": "final-sdturbo-balanced-2-0.png",
+          "pss_bytes": 2828779520,
+          "sampling_interval_ms": 11969.453902999998,
+          "after_last_step_ms": 30425.600642000005
+        }
+      ],
+      "scheduled_graph_nodes": [
+        {
+          "cpu": 0,
+          "vulkan": 5662,
+          "metal": 0,
+          "cuda": 0,
+          "other": 973
+        }
+      ],
+      "errors": [],
+      "process_exit": null,
+      "host_timeout": false,
+      "apk_sha256": [
+        "b8ce4b172f3ae052f7a4dc58b23f2093adbf70940b665428605ed20c9f6fdb38"
+      ],
+      "git_base": "dae2592a95512490b148ee9ff2bf4a43b71ad234",
+      "started_utc": "2026-10-25T11:39:15.155556+00:00",
+      "files": [
+        {
+          "model": "sd-turbo",
+          "repo": "Green-Sky/SD-Turbo-GGUF",
+          "revision": "19a31586d02d64a73b4419bc193b3ecfaf38e1f0",
+          "file": "sd_turbo-f16-q8_0.gguf",
+          "local": "sd-turbo.gguf",
+          "size": 2023745376,
+          "sha256": "d50be7655f0a554cf8041c145d88b210bd5f3c545423119dee62ae08cae51580"
+        }
+      ],
+      "thermal_conditions": {
+        "before": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 36.269,
+            "charging_therm": 40.975002,
+            "G3D": 41.000004,
+            "MID": 41.000004,
+            "LITTLE": 41.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 37.869747,
+            "thb_hda": 0.0,
+            "rfpa_therm": 40.209003,
+            "VIRTUAL-SKIN-FRONT": 38.57858,
+            "cellular-emergency": 37.830673,
+            "soc_therm": 41.387,
+            "VIRTUAL-SKIN-MODEL": 37.81314,
+            "ShutdownMode": 37.830673,
+            "VIRTUAL-SKIN-SPEAKER": 37.675335,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 37.869747,
+            "btmspkr_therm": 36.914,
+            "TPU": 40.0,
+            "VIRTUAL-SKIN-LEGACY": 38.131943,
+            "VIRTUAL-SKIN": 37.830673,
+            "usb_pwr_therm": 36.870003,
+            "quiet_therm": 39.585003,
+            "BIG": 41.000004,
+            "battery": 37.7,
+            "north_therm": 40.030003,
+            "ShutdownModeSteady": 37.830673
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 0,
+            "thermal-uclamp-4": 0,
+            "thermal-uclamp-0": 0
+          },
+          "ready": true
+        },
+        "after": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 36.157,
+            "charging_therm": 45.056004,
+            "G3D": 58.000004,
+            "MID": 66.0,
+            "LITTLE": 65.0,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 38.727604,
+            "thb_hda": 0.0,
+            "rfpa_therm": 41.800003,
+            "VIRTUAL-SKIN-FRONT": 39.274994,
+            "cellular-emergency": 38.63508,
+            "soc_therm": 45.987003,
+            "VIRTUAL-SKIN-MODEL": 38.729847,
+            "ShutdownMode": 38.63508,
+            "VIRTUAL-SKIN-SPEAKER": 38.343193,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 38.727604,
+            "btmspkr_therm": 36.714,
+            "TPU": 53.000004,
+            "VIRTUAL-SKIN-LEGACY": 39.448376,
+            "VIRTUAL-SKIN": 38.672985,
+            "usb_pwr_therm": 36.692,
+            "quiet_therm": 40.142002,
+            "BIG": 77.0,
+            "battery": 39.2,
+            "north_therm": 40.906002,
+            "ShutdownModeSteady": 38.63508
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 0,
+            "thermal-uclamp-4": 0,
+            "thermal-uclamp-0": 0
+          },
+          "ready": false
+        }
+      },
+      "device_model": "Pixel 9"
+    },
+    {
+      "tag": "matrix-sd-turbo-cpu-4",
+      "success": true,
+      "config": {
+        "event": "config",
+        "model": "sd-turbo",
+        "tag": "matrix-sd-turbo-cpu-4",
+        "backend": "CPU",
+        "threads": -1,
+        "size": 512,
+        "steps": 4,
+        "cfg": 1,
+        "sampler": 0,
+        "flash": true,
+        "mmap": false,
+        "conv": false,
+        "offload": true,
+        "tiling": false,
+        "wtype": -1,
+        "prediction": 0,
+        "scheduler": 6,
+        "vae_cpu": true,
+        "quantized": false,
+        "preview": false,
+        "thermal": 0,
+        "foreground": true
+      },
+      "load_ms": 119.132609,
+      "generations": [
+        {
+          "event": "generation",
+          "run": 0,
+          "ms": 180265.780809,
+          "steps": 4,
+          "progress": [
+            {
+              "step": 1,
+              "total": 4,
+              "elapsed_ms": 23133.546643,
+              "thermal": 0
+            },
+            {
+              "step": 2,
+              "total": 4,
+              "elapsed_ms": 47908.813012,
+              "thermal": 0
+            },
+            {
+              "step": 3,
+              "total": 4,
+              "elapsed_ms": 74800.981238,
+              "thermal": 1
+            },
+            {
+              "step": 4,
+              "total": 4,
+              "elapsed_ms": 106035.326834,
+              "thermal": 1
+            }
+          ],
+          "thermal_start": 0,
+          "thermal_end": 1,
+          "png_bytes": 613357,
+          "sha256": "f0641e13c2913a200dff4087f41a4525ba09dc690a42d4bc567412b91c91514d",
+          "output": "matrix-sd-turbo-cpu-4-0.png",
+          "pss_bytes": 2163771392,
+          "sampling_interval_ms": 27633.926730333333,
+          "after_last_step_ms": 74230.45397499998
+        }
+      ],
+      "scheduled_graph_nodes": [
+        {
+          "cpu": 0,
+          "vulkan": 0,
+          "metal": 0,
+          "cuda": 0,
+          "other": 11711
+        }
+      ],
+      "errors": [],
+      "process_exit": null,
+      "host_timeout": null,
+      "apk_sha256": [
+        "8c165e75ae55376e73a01b4f30f88080d9c363b6e2fe417b50d04e9e290d514d"
+      ],
+      "git_base": "dae2592a95512490b148ee9ff2bf4a43b71ad234",
+      "started_utc": "2026-10-25T10:02:57.295464+00:00",
+      "files": [
+        {
+          "model": "sd-turbo",
+          "repo": "Green-Sky/SD-Turbo-GGUF",
+          "revision": "19a31586d02d64a73b4419bc193b3ecfaf38e1f0",
+          "file": "sd_turbo-f16-q8_0.gguf",
+          "local": "sd-turbo.gguf",
+          "size": 2023745376,
+          "sha256": "d50be7655f0a554cf8041c145d88b210bd5f3c545423119dee62ae08cae51580"
+        }
+      ],
+      "thermal_conditions": {
+        "before": {
+          "status": 0,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 34.733,
+            "charging_therm": 42.052002,
+            "G3D": 43.000004,
+            "MID": 42.000004,
+            "LITTLE": 43.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 37.217274,
+            "thb_hda": 0.0,
+            "rfpa_therm": 40.769,
+            "VIRTUAL-SKIN-FRONT": 37.827637,
+            "cellular-emergency": 37.249237,
+            "soc_therm": 42.876003,
+            "VIRTUAL-SKIN-MODEL": 37.261154,
+            "ShutdownMode": 37.24129,
+            "VIRTUAL-SKIN-SPEAKER": 36.845314,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 37.217274,
+            "btmspkr_therm": 35.267002,
+            "TPU": 42.000004,
+            "VIRTUAL-SKIN-LEGACY": 37.66985,
+            "VIRTUAL-SKIN": 37.249237,
+            "usb_pwr_therm": 35.245003,
+            "quiet_therm": 39.185,
+            "BIG": 44.000004,
+            "battery": 37.100002,
+            "north_therm": 39.919003,
+            "ShutdownModeSteady": 37.24129
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 0,
+            "thermal-uclamp-4": 0,
+            "thermal-uclamp-0": 0
+          },
+          "ready": true
+        },
+        "after": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 35.868,
+            "charging_therm": 46.607002,
+            "G3D": 50.000004,
+            "MID": 53.000004,
+            "LITTLE": 54.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 40.139572,
+            "thb_hda": 0.0,
+            "rfpa_therm": 43.243004,
+            "VIRTUAL-SKIN-FRONT": 40.93872,
+            "cellular-emergency": 40.56989,
+            "soc_therm": 51.898003,
+            "VIRTUAL-SKIN-MODEL": 40.58828,
+            "ShutdownMode": 40.56989,
+            "VIRTUAL-SKIN-SPEAKER": 39.459812,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 40.139572,
+            "btmspkr_therm": 36.157,
+            "TPU": 49.000004,
+            "VIRTUAL-SKIN-LEGACY": 40.872166,
+            "VIRTUAL-SKIN": 40.577248,
+            "usb_pwr_therm": 36.113003,
+            "quiet_therm": 41.685,
+            "BIG": 54.000004,
+            "battery": 39.9,
+            "north_therm": 42.578003,
+            "ShutdownModeSteady": 40.56989
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 15,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 8,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 17,
+            "thermal-uclamp-4": 10,
+            "thermal-uclamp-0": 6
+          },
+          "ready": false
+        }
+      },
+      "device_model": "Pixel 9"
+    },
+    {
+      "tag": "matrix-sd-turbo-vulkan-4",
+      "success": true,
+      "config": {
+        "event": "config",
+        "model": "sd-turbo",
+        "tag": "matrix-sd-turbo-vulkan-4",
+        "backend": "VULKAN",
+        "threads": -1,
+        "size": 512,
+        "steps": 4,
+        "cfg": 1,
+        "sampler": 0,
+        "flash": true,
+        "mmap": true,
+        "conv": false,
+        "offload": true,
+        "tiling": false,
+        "wtype": -1,
+        "prediction": 0,
+        "scheduler": 6,
+        "vae_cpu": false,
+        "quantized": false,
+        "preview": false,
+        "thermal": 1,
+        "foreground": true
+      },
+      "load_ms": 125.685913,
+      "generations": [
+        {
+          "event": "generation",
+          "run": 0,
+          "ms": 82434.063965,
+          "steps": 4,
+          "progress": [
+            {
+              "step": 1,
+              "total": 4,
+              "elapsed_ms": 15988.02251,
+              "thermal": 1
+            },
+            {
+              "step": 2,
+              "total": 4,
+              "elapsed_ms": 27962.619765,
+              "thermal": 1
+            },
+            {
+              "step": 3,
+              "total": 4,
+              "elapsed_ms": 40031.096984,
+              "thermal": 1
+            },
+            {
+              "step": 4,
+              "total": 4,
+              "elapsed_ms": 52099.026759,
+              "thermal": 1
+            }
+          ],
+          "thermal_start": 1,
+          "thermal_end": 1,
+          "png_bytes": 607709,
+          "sha256": "0844df7281d59edffd482ffb9aae870135affae88cb33563aaddd3c958355a9c",
+          "output": "matrix-sd-turbo-vulkan-4-0.png",
+          "pss_bytes": 2351564800,
+          "sampling_interval_ms": 12037.001416333333,
+          "after_last_step_ms": 30335.037205999994
+        }
+      ],
+      "scheduled_graph_nodes": [
+        {
+          "cpu": 0,
+          "vulkan": 10738,
+          "metal": 0,
+          "cuda": 0,
+          "other": 973
+        }
+      ],
+      "errors": [],
+      "process_exit": null,
+      "host_timeout": null,
+      "apk_sha256": [
+        "8c165e75ae55376e73a01b4f30f88080d9c363b6e2fe417b50d04e9e290d514d"
+      ],
+      "git_base": "dae2592a95512490b148ee9ff2bf4a43b71ad234",
+      "started_utc": "2026-10-25T10:09:07.886755+00:00",
+      "files": [
+        {
+          "model": "sd-turbo",
+          "repo": "Green-Sky/SD-Turbo-GGUF",
+          "revision": "19a31586d02d64a73b4419bc193b3ecfaf38e1f0",
+          "file": "sd_turbo-f16-q8_0.gguf",
+          "local": "sd-turbo.gguf",
+          "size": 2023745376,
+          "sha256": "d50be7655f0a554cf8041c145d88b210bd5f3c545423119dee62ae08cae51580"
+        }
+      ],
+      "thermal_conditions": {
+        "before": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 35.846,
+            "charging_therm": 40.186,
+            "G3D": 40.0,
+            "MID": 40.0,
+            "LITTLE": 40.0,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 37.371517,
+            "thb_hda": 0.0,
+            "rfpa_therm": 39.474003,
+            "VIRTUAL-SKIN-FRONT": 38.08072,
+            "cellular-emergency": 37.30916,
+            "soc_therm": 40.746002,
+            "VIRTUAL-SKIN-MODEL": 37.254093,
+            "ShutdownMode": 37.30916,
+            "VIRTUAL-SKIN-SPEAKER": 37.197643,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 37.371517,
+            "btmspkr_therm": 36.424004,
+            "TPU": 40.0,
+            "VIRTUAL-SKIN-LEGACY": 37.56817,
+            "VIRTUAL-SKIN": 37.29877,
+            "usb_pwr_therm": 36.358,
+            "quiet_therm": 39.007,
+            "BIG": 40.0,
+            "battery": 37.100002,
+            "north_therm": 39.296,
+            "ShutdownModeSteady": 37.30916
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 0,
+            "thermal-uclamp-4": 0,
+            "thermal-uclamp-0": 0
+          },
+          "ready": true
+        },
+        "after": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 35.912003,
+            "charging_therm": 45.509003,
+            "G3D": 58.000004,
+            "MID": 62.000004,
+            "LITTLE": 63.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 38.85221,
+            "thb_hda": 0.0,
+            "rfpa_therm": 41.891003,
+            "VIRTUAL-SKIN-FRONT": 39.307926,
+            "cellular-emergency": 38.888416,
+            "soc_therm": 46.202003,
+            "VIRTUAL-SKIN-MODEL": 38.9672,
+            "ShutdownMode": 38.888416,
+            "VIRTUAL-SKIN-SPEAKER": 38.28635,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 38.85221,
+            "btmspkr_therm": 36.291,
+            "TPU": 54.000004,
+            "VIRTUAL-SKIN-LEGACY": 39.357857,
+            "VIRTUAL-SKIN": 38.888416,
+            "usb_pwr_therm": 36.291,
+            "quiet_therm": 40.053,
+            "BIG": 69.0,
+            "battery": 39.100002,
+            "north_therm": 40.883003,
+            "ShutdownModeSteady": 38.888416
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 0,
+            "thermal-uclamp-4": 0,
+            "thermal-uclamp-0": 0
+          },
+          "ready": false
+        }
+      },
+      "device_model": "Pixel 9"
+    },
+    {
+      "tag": "matrix-sd15-cpu-4",
+      "success": true,
+      "config": {
+        "event": "config",
+        "model": "sd15",
+        "tag": "matrix-sd15-cpu-4",
+        "backend": "CPU",
+        "threads": -1,
+        "size": 512,
+        "steps": 4,
+        "cfg": 7,
+        "sampler": 1,
+        "flash": true,
+        "mmap": false,
+        "conv": false,
+        "offload": true,
+        "tiling": false,
+        "wtype": -1,
+        "prediction": -1,
+        "scheduler": -1,
+        "vae_cpu": true,
+        "quantized": false,
+        "preview": false,
+        "thermal": 0,
+        "foreground": true
+      },
+      "load_ms": 174.68514,
+      "generations": [
+        {
+          "event": "generation",
+          "run": 0,
+          "ms": 342864.565109,
+          "steps": 4,
+          "progress": [
+            {
+              "step": 1,
+              "total": 4,
+              "elapsed_ms": 49202.805281,
+              "thermal": 1
+            },
+            {
+              "step": 2,
+              "total": 4,
+              "elapsed_ms": 126742.148011,
+              "thermal": 1
+            },
+            {
+              "step": 3,
+              "total": 4,
+              "elapsed_ms": 197589.759699,
+              "thermal": 1
+            },
+            {
+              "step": 4,
+              "total": 4,
+              "elapsed_ms": 267835.711516,
+              "thermal": 1
+            }
+          ],
+          "thermal_start": 0,
+          "thermal_end": 1,
+          "png_bytes": 334277,
+          "sha256": "41235af5b157d4710961e255e1672e33d8a27951266fd2850cb772663251d1a0",
+          "output": "matrix-sd15-cpu-4-0.png",
+          "pss_bytes": 1855102976,
+          "sampling_interval_ms": 72877.63541166666,
+          "after_last_step_ms": 75028.85359300004
+        }
+      ],
+      "scheduled_graph_nodes": [
+        {
+          "cpu": 0,
+          "vulkan": 0,
+          "metal": 0,
+          "cuda": 0,
+          "other": 21912
+        }
+      ],
+      "errors": [],
+      "process_exit": null,
+      "host_timeout": null,
+      "apk_sha256": [
+        "8c165e75ae55376e73a01b4f30f88080d9c363b6e2fe417b50d04e9e290d514d"
+      ],
+      "git_base": "dae2592a95512490b148ee9ff2bf4a43b71ad234",
+      "started_utc": "2026-10-25T10:13:23.226191+00:00",
+      "files": [
+        {
+          "model": "sd15",
+          "repo": "kostakoff/stable-diffusion-v1-5-GGUF",
+          "revision": "101ff06c98bea9ac8affe6a2c867e9762958d219",
+          "file": "v1-5-pruned_Q4_0.gguf",
+          "local": "sd15.gguf",
+          "size": 3051366272,
+          "sha256": "24bcd54c1d1f0354a1cd19d07ad9a20771d43fde8318d505d71bcd84b078f20a"
+        }
+      ],
+      "thermal_conditions": {
+        "before": {
+          "status": 0,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 35.534,
+            "charging_therm": 40.008003,
+            "G3D": 40.0,
+            "MID": 40.0,
+            "LITTLE": 39.0,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 36.98048,
+            "thb_hda": 0.0,
+            "rfpa_therm": 39.207,
+            "VIRTUAL-SKIN-FRONT": 37.69758,
+            "cellular-emergency": 36.946568,
+            "soc_therm": 40.387,
+            "VIRTUAL-SKIN-MODEL": 36.91841,
+            "ShutdownMode": 36.965336,
+            "VIRTUAL-SKIN-SPEAKER": 36.81167,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 36.98048,
+            "btmspkr_therm": 36.091003,
+            "TPU": 39.0,
+            "VIRTUAL-SKIN-LEGACY": 37.235237,
+            "VIRTUAL-SKIN": 36.946568,
+            "usb_pwr_therm": 36.024002,
+            "quiet_therm": 38.65,
+            "BIG": 40.0,
+            "battery": 36.7,
+            "north_therm": 39.029003,
+            "ShutdownModeSteady": 36.965336
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 0,
+            "thermal-uclamp-4": 0,
+            "thermal-uclamp-0": 0
+          },
+          "ready": true
+        },
+        "after": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 36.58,
+            "charging_therm": 46.058002,
+            "G3D": 51.000004,
+            "MID": 54.000004,
+            "LITTLE": 55.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 40.370323,
+            "thb_hda": 0.0,
+            "rfpa_therm": 42.922,
+            "VIRTUAL-SKIN-FRONT": 41.073277,
+            "cellular-emergency": 40.996014,
+            "soc_therm": 51.134003,
+            "VIRTUAL-SKIN-MODEL": 41.013306,
+            "ShutdownMode": 40.996014,
+            "VIRTUAL-SKIN-SPEAKER": 39.761707,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 40.370323,
+            "btmspkr_therm": 36.870003,
+            "TPU": 50.000004,
+            "VIRTUAL-SKIN-LEGACY": 41.041664,
+            "VIRTUAL-SKIN": 40.996014,
+            "usb_pwr_therm": 36.847,
+            "quiet_therm": 41.548,
+            "BIG": 57.000004,
+            "battery": 40.0,
+            "north_therm": 42.304,
+            "ShutdownModeSteady": 40.996014
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 15,
+            "thermal-cpufreq-0": 2,
+            "thermal-cpufreq-1": 8,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 17,
+            "thermal-uclamp-4": 10,
+            "thermal-uclamp-0": 6
+          },
+          "ready": false
+        }
+      },
+      "device_model": "Pixel 9"
+    },
+    {
+      "tag": "matrix-sd15-vulkan-4",
+      "success": true,
+      "config": {
+        "event": "config",
+        "model": "sd15",
+        "tag": "matrix-sd15-vulkan-4",
+        "backend": "VULKAN",
+        "threads": -1,
+        "size": 512,
+        "steps": 4,
+        "cfg": 7,
+        "sampler": 1,
+        "flash": true,
+        "mmap": true,
+        "conv": false,
+        "offload": true,
+        "tiling": false,
+        "wtype": -1,
+        "prediction": -1,
+        "scheduler": -1,
+        "vae_cpu": false,
+        "quantized": false,
+        "preview": false,
+        "thermal": 1,
+        "foreground": true
+      },
+      "load_ms": 117.525635,
+      "generations": [
+        {
+          "event": "generation",
+          "run": 0,
+          "ms": 128629.263287,
+          "steps": 4,
+          "progress": [
+            {
+              "step": 1,
+              "total": 4,
+              "elapsed_ms": 28966.837335,
+              "thermal": 1
+            },
+            {
+              "step": 2,
+              "total": 4,
+              "elapsed_ms": 52096.027125,
+              "thermal": 1
+            },
+            {
+              "step": 3,
+              "total": 4,
+              "elapsed_ms": 75314.235185,
+              "thermal": 1
+            },
+            {
+              "step": 4,
+              "total": 4,
+              "elapsed_ms": 98531.902962,
+              "thermal": 1
+            }
+          ],
+          "thermal_start": 1,
+          "thermal_end": 1,
+          "png_bytes": 335965,
+          "sha256": "0d52fa6179843f1eabe3bacde2e08f9baf9369d68de278749cbe58b31650876a",
+          "output": "matrix-sd15-vulkan-4-0.png",
+          "pss_bytes": 2430946304,
+          "sampling_interval_ms": 23188.355208999998,
+          "after_last_step_ms": 30097.360325
+        }
+      ],
+      "scheduled_graph_nodes": [
+        {
+          "cpu": 0,
+          "vulkan": 20890,
+          "metal": 0,
+          "cuda": 0,
+          "other": 1022
+        }
+      ],
+      "errors": [],
+      "process_exit": null,
+      "host_timeout": null,
+      "apk_sha256": [
+        "8c165e75ae55376e73a01b4f30f88080d9c363b6e2fe417b50d04e9e290d514d"
+      ],
+      "git_base": "dae2592a95512490b148ee9ff2bf4a43b71ad234",
+      "started_utc": "2026-10-25T10:22:12.942151+00:00",
+      "files": [
+        {
+          "model": "sd15",
+          "repo": "kostakoff/stable-diffusion-v1-5-GGUF",
+          "revision": "101ff06c98bea9ac8affe6a2c867e9762958d219",
+          "file": "v1-5-pruned_Q4_0.gguf",
+          "local": "sd15.gguf",
+          "size": 3051366272,
+          "sha256": "24bcd54c1d1f0354a1cd19d07ad9a20771d43fde8318d505d71bcd84b078f20a"
+        }
+      ],
+      "thermal_conditions": {
+        "before": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 36.068,
+            "charging_therm": 40.275,
+            "G3D": 40.0,
+            "MID": 40.0,
+            "LITTLE": 40.0,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 37.501656,
+            "thb_hda": 0.0,
+            "rfpa_therm": 39.608,
+            "VIRTUAL-SKIN-FRONT": 38.240654,
+            "cellular-emergency": 37.57717,
+            "soc_therm": 40.861,
+            "VIRTUAL-SKIN-MODEL": 37.36734,
+            "ShutdownMode": 37.57717,
+            "VIRTUAL-SKIN-SPEAKER": 37.36122,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 37.501656,
+            "btmspkr_therm": 36.714,
+            "TPU": 40.0,
+            "VIRTUAL-SKIN-LEGACY": 37.772964,
+            "VIRTUAL-SKIN": 37.57717,
+            "usb_pwr_therm": 36.669003,
+            "quiet_therm": 39.118,
+            "BIG": 40.0,
+            "battery": 37.300003,
+            "north_therm": 39.429,
+            "ShutdownModeSteady": 37.57717
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 0,
+            "thermal-uclamp-4": 0,
+            "thermal-uclamp-0": 0
+          },
+          "ready": true
+        },
+        "after": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 36.135002,
+            "charging_therm": 47.323,
+            "G3D": 55.000004,
+            "MID": 57.000004,
+            "LITTLE": 59.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 39.861065,
+            "thb_hda": 0.0,
+            "rfpa_therm": 43.311,
+            "VIRTUAL-SKIN-FRONT": 40.145054,
+            "cellular-emergency": 39.72506,
+            "soc_therm": 47.920002,
+            "VIRTUAL-SKIN-MODEL": 39.8369,
+            "ShutdownMode": 39.72506,
+            "VIRTUAL-SKIN-SPEAKER": 38.93789,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 39.861065,
+            "btmspkr_therm": 36.513,
+            "TPU": 52.000004,
+            "VIRTUAL-SKIN-LEGACY": 40.259205,
+            "VIRTUAL-SKIN": 39.72506,
+            "usb_pwr_therm": 36.491,
+            "quiet_therm": 41.204002,
+            "BIG": 58.000004,
+            "battery": 39.800003,
+            "north_therm": 42.143,
+            "ShutdownModeSteady": 39.72506
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 1,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 14,
+            "thermal-uclamp-4": 10,
+            "thermal-uclamp-0": 5
+          },
+          "ready": false
+        }
+      },
+      "device_model": "Pixel 9"
+    },
+    {
+      "tag": "matrix-sdxl-base-cpu-4",
+      "success": true,
+      "config": {
+        "event": "config",
+        "model": "sdxl-base",
+        "tag": "matrix-sdxl-base-cpu-4",
+        "backend": "CPU",
+        "threads": -1,
+        "size": 512,
+        "steps": 4,
+        "cfg": 7,
+        "sampler": 1,
+        "flash": true,
+        "mmap": false,
+        "conv": false,
+        "offload": true,
+        "tiling": false,
+        "wtype": -1,
+        "prediction": -1,
+        "scheduler": -1,
+        "vae_cpu": true,
+        "quantized": false,
+        "preview": false,
+        "thermal": 1,
+        "foreground": true
+      },
+      "load_ms": 163.363159,
+      "generations": [
+        {
+          "event": "generation",
+          "run": 0,
+          "ms": 369404.405413,
+          "steps": 4,
+          "progress": [
+            {
+              "step": 1,
+              "total": 4,
+              "elapsed_ms": 57938.459053,
+              "thermal": 1
+            },
+            {
+              "step": 2,
+              "total": 4,
+              "elapsed_ms": 139495.282376,
+              "thermal": 1
+            },
+            {
+              "step": 3,
+              "total": 4,
+              "elapsed_ms": 208828.682475,
+              "thermal": 1
+            },
+            {
+              "step": 4,
+              "total": 4,
+              "elapsed_ms": 277843.807956,
+              "thermal": 1
+            }
+          ],
+          "thermal_start": 1,
+          "thermal_end": 1,
+          "png_bytes": 235799,
+          "sha256": "ed5fe051e4abb759eedda91cfdd612116cb6ca10921e325fee3c02406ec20e8d",
+          "output": "matrix-sdxl-base-cpu-4-0.png",
+          "pss_bytes": 2838451200,
+          "sampling_interval_ms": 73301.78296766666,
+          "after_last_step_ms": 91560.597457
+        }
+      ],
+      "scheduled_graph_nodes": [
+        {
+          "cpu": 0,
+          "vulkan": 0,
+          "metal": 0,
+          "cuda": 0,
+          "other": 51336
+        }
+      ],
+      "errors": [],
+      "process_exit": null,
+      "host_timeout": null,
+      "apk_sha256": [
+        "8c165e75ae55376e73a01b4f30f88080d9c363b6e2fe417b50d04e9e290d514d"
+      ],
+      "git_base": "dae2592a95512490b148ee9ff2bf4a43b71ad234",
+      "started_utc": "2026-10-25T10:26:44.556362+00:00",
+      "files": [
+        {
+          "model": "sdxl-base",
+          "repo": "kostakoff/stable-diffusion-xl-base-1.0-GGUF",
+          "revision": "ca58fb3aced770f3dffddabf01725b29207305ef",
+          "file": "sd_xl_base_1.0_0_Q4_0.gguf",
+          "local": "sdxl-base.gguf",
+          "size": 2709379488,
+          "sha256": "1f64d77cbd8aee3ee1a0ae6e58ea64ba39308721150f38cfaa5ee57e9d4fd106"
+        }
+      ],
+      "thermal_conditions": {
+        "before": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 35.957,
+            "charging_therm": 41.227,
+            "G3D": 41.000004,
+            "MID": 41.000004,
+            "LITTLE": 41.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 37.730164,
+            "thb_hda": 0.0,
+            "rfpa_therm": 40.275,
+            "VIRTUAL-SKIN-FRONT": 38.40265,
+            "cellular-emergency": 37.79226,
+            "soc_therm": 41.639004,
+            "VIRTUAL-SKIN-MODEL": 37.763756,
+            "ShutdownMode": 37.79226,
+            "VIRTUAL-SKIN-SPEAKER": 37.486572,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 37.730164,
+            "btmspkr_therm": 36.513,
+            "TPU": 40.0,
+            "VIRTUAL-SKIN-LEGACY": 37.98047,
+            "VIRTUAL-SKIN": 37.79226,
+            "usb_pwr_therm": 36.469,
+            "quiet_therm": 39.63,
+            "BIG": 41.000004,
+            "battery": 37.5,
+            "north_therm": 40.075,
+            "ShutdownModeSteady": 37.79226
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 0,
+            "thermal-uclamp-4": 0,
+            "thermal-uclamp-0": 0
+          },
+          "ready": true
+        },
+        "after": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 37.048,
+            "charging_therm": 46.202003,
+            "G3D": 49.000004,
+            "MID": 53.000004,
+            "LITTLE": 53.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 40.56029,
+            "thb_hda": 0.0,
+            "rfpa_therm": 43.311,
+            "VIRTUAL-SKIN-FRONT": 41.280144,
+            "cellular-emergency": 40.9621,
+            "soc_therm": 50.395004,
+            "VIRTUAL-SKIN-MODEL": 40.963997,
+            "ShutdownMode": 40.9621,
+            "VIRTUAL-SKIN-SPEAKER": 40.068504,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 40.56029,
+            "btmspkr_therm": 37.426003,
+            "TPU": 49.000004,
+            "VIRTUAL-SKIN-LEGACY": 41.20569,
+            "VIRTUAL-SKIN": 40.96286,
+            "usb_pwr_therm": 37.404003,
+            "quiet_therm": 42.052002,
+            "BIG": 54.000004,
+            "battery": 40.300003,
+            "north_therm": 42.785004,
+            "ShutdownModeSteady": 40.9621
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 15,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 9,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 17,
+            "thermal-uclamp-4": 10,
+            "thermal-uclamp-0": 7
+          },
+          "ready": false
+        }
+      },
+      "device_model": "Pixel 9"
+    },
+    {
+      "tag": "matrix-sdxl-base-vulkan-4",
+      "success": true,
+      "config": {
+        "event": "config",
+        "model": "sdxl-base",
+        "tag": "matrix-sdxl-base-vulkan-4",
+        "backend": "VULKAN",
+        "threads": -1,
+        "size": 512,
+        "steps": 4,
+        "cfg": 7,
+        "sampler": 1,
+        "flash": true,
+        "mmap": true,
+        "conv": false,
+        "offload": true,
+        "tiling": false,
+        "wtype": -1,
+        "prediction": -1,
+        "scheduler": -1,
+        "vae_cpu": false,
+        "quantized": false,
+        "preview": false,
+        "thermal": 1,
+        "foreground": true
+      },
+      "load_ms": 173.807007,
+      "generations": [
+        {
+          "event": "generation",
+          "run": 0,
+          "ms": 288177.324807,
+          "steps": 4,
+          "progress": [
+            {
+              "step": 1,
+              "total": 4,
+              "elapsed_ms": 70788.904535,
+              "thermal": 1
+            },
+            {
+              "step": 2,
+              "total": 4,
+              "elapsed_ms": 132121.962629,
+              "thermal": 1
+            },
+            {
+              "step": 3,
+              "total": 4,
+              "elapsed_ms": 193867.092135,
+              "thermal": 1
+            },
+            {
+              "step": 4,
+              "total": 4,
+              "elapsed_ms": 255421.962242,
+              "thermal": 1
+            }
+          ],
+          "thermal_start": 1,
+          "thermal_end": 1,
+          "png_bytes": 252692,
+          "sha256": "b2b7d4185f144972a83bda7e24d518bc9279fd7da60c25bd07020e1afb718c1a",
+          "output": "matrix-sdxl-base-vulkan-4-0.png",
+          "pss_bytes": 978701312,
+          "sampling_interval_ms": 61544.352569,
+          "after_last_step_ms": 32755.36256499999
+        }
+      ],
+      "scheduled_graph_nodes": [
+        {
+          "cpu": 0,
+          "vulkan": 44834,
+          "metal": 0,
+          "cuda": 0,
+          "other": 6502
+        }
+      ],
+      "errors": [],
+      "process_exit": null,
+      "host_timeout": null,
+      "apk_sha256": [
+        "8c165e75ae55376e73a01b4f30f88080d9c363b6e2fe417b50d04e9e290d514d"
+      ],
+      "git_base": "dae2592a95512490b148ee9ff2bf4a43b71ad234",
+      "started_utc": "2026-10-25T10:35:49.396847+00:00",
+      "files": [
+        {
+          "model": "sdxl-base",
+          "repo": "kostakoff/stable-diffusion-xl-base-1.0-GGUF",
+          "revision": "ca58fb3aced770f3dffddabf01725b29207305ef",
+          "file": "sd_xl_base_1.0_0_Q4_0.gguf",
+          "local": "sdxl-base.gguf",
+          "size": 2709379488,
+          "sha256": "1f64d77cbd8aee3ee1a0ae6e58ea64ba39308721150f38cfaa5ee57e9d4fd106"
+        }
+      ],
+      "thermal_conditions": {
+        "before": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 36.491,
+            "charging_therm": 40.861,
+            "G3D": 41.000004,
+            "MID": 40.0,
+            "LITTLE": 41.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 37.99126,
+            "thb_hda": 0.0,
+            "rfpa_therm": 40.142002,
+            "VIRTUAL-SKIN-FRONT": 38.73524,
+            "cellular-emergency": 37.920067,
+            "soc_therm": 41.502003,
+            "VIRTUAL-SKIN-MODEL": 37.88484,
+            "ShutdownMode": 37.920067,
+            "VIRTUAL-SKIN-SPEAKER": 37.84965,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 37.99126,
+            "btmspkr_therm": 37.159,
+            "TPU": 40.0,
+            "VIRTUAL-SKIN-LEGACY": 38.267944,
+            "VIRTUAL-SKIN": 37.90598,
+            "usb_pwr_therm": 37.114002,
+            "quiet_therm": 39.63,
+            "BIG": 41.000004,
+            "battery": 37.7,
+            "north_therm": 39.986,
+            "ShutdownModeSteady": 37.920067
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 0,
+            "thermal-uclamp-4": 0,
+            "thermal-uclamp-0": 0
+          },
+          "ready": true
+        },
+        "after": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 36.959003,
+            "charging_therm": 47.991,
+            "G3D": 53.000004,
+            "MID": 55.000004,
+            "LITTLE": 56.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 40.628963,
+            "thb_hda": 0.0,
+            "rfpa_therm": 44.388,
+            "VIRTUAL-SKIN-FRONT": 40.822144,
+            "cellular-emergency": 40.702602,
+            "soc_therm": 47.968002,
+            "VIRTUAL-SKIN-MODEL": 40.701244,
+            "ShutdownMode": 40.702602,
+            "VIRTUAL-SKIN-SPEAKER": 39.665237,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 40.628963,
+            "btmspkr_therm": 37.27,
+            "TPU": 51.000004,
+            "VIRTUAL-SKIN-LEGACY": 40.985252,
+            "VIRTUAL-SKIN": 40.702602,
+            "usb_pwr_therm": 37.27,
+            "quiet_therm": 42.349003,
+            "BIG": 55.000004,
+            "battery": 40.300003,
+            "north_therm": 43.311,
+            "ShutdownModeSteady": 40.702602
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 17,
+            "thermal-uclamp-4": 10,
+            "thermal-uclamp-0": 6
+          },
+          "ready": false
+        }
+      },
+      "device_model": "Pixel 9"
+    },
+    {
+      "tag": "matrix-sdxl-turbo-cpu-4",
+      "success": true,
+      "config": {
+        "event": "config",
+        "model": "sdxl-turbo",
+        "tag": "matrix-sdxl-turbo-cpu-4",
+        "backend": "CPU",
+        "threads": -1,
+        "size": 512,
+        "steps": 4,
+        "cfg": 1,
+        "sampler": 1,
+        "flash": true,
+        "mmap": false,
+        "conv": false,
+        "offload": true,
+        "tiling": false,
+        "wtype": -1,
+        "prediction": -1,
+        "scheduler": 6,
+        "vae_cpu": true,
+        "quantized": true,
+        "preview": false,
+        "thermal": 1,
+        "foreground": true
+      },
+      "load_ms": 175.658569,
+      "generations": [
+        {
+          "event": "generation",
+          "run": 0,
+          "ms": 218887.985987,
+          "steps": 4,
+          "progress": [
+            {
+              "step": 1,
+              "total": 4,
+              "elapsed_ms": 25671.98573,
+              "thermal": 1
+            },
+            {
+              "step": 2,
+              "total": 4,
+              "elapsed_ms": 50290.401595,
+              "thermal": 1
+            },
+            {
+              "step": 3,
+              "total": 4,
+              "elapsed_ms": 82986.17045,
+              "thermal": 1
+            },
+            {
+              "step": 4,
+              "total": 4,
+              "elapsed_ms": 135596.451278,
+              "thermal": 1
+            }
+          ],
+          "thermal_start": 1,
+          "thermal_end": 1,
+          "png_bytes": 500485,
+          "sha256": "3cb9c5cad648a3eab3f0c665fbb352473de34305964808b75e10dff79487f10c",
+          "output": "matrix-sdxl-turbo-cpu-4-0.png",
+          "pss_bytes": 2808811520,
+          "sampling_interval_ms": 36641.488516,
+          "after_last_step_ms": 83291.534709
+        }
+      ],
+      "scheduled_graph_nodes": [
+        {
+          "cpu": 0,
+          "vulkan": 0,
+          "metal": 0,
+          "cuda": 0,
+          "other": 26001
+        }
+      ],
+      "errors": [],
+      "process_exit": null,
+      "host_timeout": null,
+      "apk_sha256": [
+        "8c165e75ae55376e73a01b4f30f88080d9c363b6e2fe417b50d04e9e290d514d"
+      ],
+      "git_base": "dae2592a95512490b148ee9ff2bf4a43b71ad234",
+      "started_utc": "2026-10-25T10:43:47.296086+00:00",
+      "files": [
+        {
+          "source": "sdxl-turbo.safetensors",
+          "local": "sdxl-turbo-q4_0.gguf",
+          "size": 2709381664,
+          "sha256": "f7ec24df50b6e249f762a91ee508a12e4d5b52cf574a1af01c35d68b9da4719e",
+          "conversion": "pinned stable-diffusion.cpp convert, Q4_0, no name conversion",
+          "sd_revision": "c92d73c408515c94beef32161bb5960764fde7a0",
+          "ggml_revision": "f46bc30cb6a7f68a67e34a00061e20a4ad1eff43"
+        }
+      ],
+      "thermal_conditions": {
+        "before": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 36.313004,
+            "charging_therm": 40.631,
+            "G3D": 40.0,
+            "MID": 40.0,
+            "LITTLE": 41.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 37.79492,
+            "thb_hda": 0.0,
+            "rfpa_therm": 39.941,
+            "VIRTUAL-SKIN-FRONT": 38.50439,
+            "cellular-emergency": 37.74484,
+            "soc_therm": 40.975002,
+            "VIRTUAL-SKIN-MODEL": 37.723034,
+            "ShutdownMode": 37.74484,
+            "VIRTUAL-SKIN-SPEAKER": 37.614025,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 37.79492,
+            "btmspkr_therm": 36.981003,
+            "TPU": 40.0,
+            "VIRTUAL-SKIN-LEGACY": 38.05464,
+            "VIRTUAL-SKIN": 37.73612,
+            "usb_pwr_therm": 36.959003,
+            "quiet_therm": 39.429,
+            "BIG": 40.0,
+            "battery": 37.600002,
+            "north_therm": 39.786003,
+            "ShutdownModeSteady": 37.74484
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 0,
+            "thermal-uclamp-4": 0,
+            "thermal-uclamp-0": 0
+          },
+          "ready": true
+        },
+        "after": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 36.825,
+            "charging_therm": 46.154003,
+            "G3D": 49.000004,
+            "MID": 53.000004,
+            "LITTLE": 53.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 40.40965,
+            "thb_hda": 0.0,
+            "rfpa_therm": 43.197002,
+            "VIRTUAL-SKIN-FRONT": 41.138027,
+            "cellular-emergency": 40.981358,
+            "soc_therm": 50.420002,
+            "VIRTUAL-SKIN-MODEL": 40.97772,
+            "ShutdownMode": 40.981358,
+            "VIRTUAL-SKIN-SPEAKER": 39.899525,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 40.40965,
+            "btmspkr_therm": 37.204002,
+            "TPU": 48.000004,
+            "VIRTUAL-SKIN-LEGACY": 41.06592,
+            "VIRTUAL-SKIN": 40.9799,
+            "usb_pwr_therm": 37.181004,
+            "quiet_therm": 41.868004,
+            "BIG": 52.000004,
+            "battery": 40.2,
+            "north_therm": 42.670002,
+            "ShutdownModeSteady": 40.981358
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 15,
+            "thermal-cpufreq-0": 1,
+            "thermal-cpufreq-1": 10,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 17,
+            "thermal-uclamp-4": 10,
+            "thermal-uclamp-0": 7
+          },
+          "ready": false
+        }
+      },
+      "device_model": "Pixel 9"
+    },
+    {
+      "tag": "matrix-sdxl-turbo-vulkan-4",
+      "success": true,
+      "config": {
+        "event": "config",
+        "model": "sdxl-turbo",
+        "tag": "matrix-sdxl-turbo-vulkan-4",
+        "backend": "VULKAN",
+        "threads": -1,
+        "size": 512,
+        "steps": 4,
+        "cfg": 1,
+        "sampler": 1,
+        "flash": true,
+        "mmap": true,
+        "conv": false,
+        "offload": true,
+        "tiling": false,
+        "wtype": -1,
+        "prediction": -1,
+        "scheduler": 6,
+        "vae_cpu": false,
+        "quantized": true,
+        "preview": false,
+        "thermal": 1,
+        "foreground": true
+      },
+      "load_ms": 264.806803,
+      "generations": [
+        {
+          "event": "generation",
+          "run": 0,
+          "ms": 162073.343097,
+          "steps": 4,
+          "progress": [
+            {
+              "step": 1,
+              "total": 4,
+              "elapsed_ms": 38097.531066,
+              "thermal": 1
+            },
+            {
+              "step": 2,
+              "total": 4,
+              "elapsed_ms": 68781.633782,
+              "thermal": 1
+            },
+            {
+              "step": 3,
+              "total": 4,
+              "elapsed_ms": 99250.052336,
+              "thermal": 1
+            },
+            {
+              "step": 4,
+              "total": 4,
+              "elapsed_ms": 129821.359073,
+              "thermal": 1
+            }
+          ],
+          "thermal_start": 1,
+          "thermal_end": 1,
+          "png_bytes": 500857,
+          "sha256": "858351b39ab42f40a605861e71a2548702ea5fe8fb1bae16618ec964659909d1",
+          "output": "matrix-sdxl-turbo-vulkan-4-0.png",
+          "pss_bytes": 1298354176,
+          "sampling_interval_ms": 30574.609335666668,
+          "after_last_step_ms": 32251.984024000005
+        }
+      ],
+      "scheduled_graph_nodes": [
+        {
+          "cpu": 0,
+          "vulkan": 22750,
+          "metal": 0,
+          "cuda": 0,
+          "other": 3251
+        }
+      ],
+      "errors": [],
+      "process_exit": null,
+      "host_timeout": null,
+      "apk_sha256": [
+        "8c165e75ae55376e73a01b4f30f88080d9c363b6e2fe417b50d04e9e290d514d"
+      ],
+      "git_base": "dae2592a95512490b148ee9ff2bf4a43b71ad234",
+      "started_utc": "2026-10-25T10:50:37.366161+00:00",
+      "files": [
+        {
+          "source": "sdxl-turbo.safetensors",
+          "local": "sdxl-turbo-q4_0.gguf",
+          "size": 2709381664,
+          "sha256": "f7ec24df50b6e249f762a91ee508a12e4d5b52cf574a1af01c35d68b9da4719e",
+          "conversion": "pinned stable-diffusion.cpp convert, Q4_0, no name conversion",
+          "sd_revision": "c92d73c408515c94beef32161bb5960764fde7a0",
+          "ggml_revision": "f46bc30cb6a7f68a67e34a00061e20a4ad1eff43"
+        }
+      ],
+      "thermal_conditions": {
+        "before": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 36.269,
+            "charging_therm": 41.273003,
+            "G3D": 41.000004,
+            "MID": 41.000004,
+            "LITTLE": 41.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 37.97785,
+            "thb_hda": 0.0,
+            "rfpa_therm": 40.409,
+            "VIRTUAL-SKIN-FRONT": 38.743706,
+            "cellular-emergency": 38.024143,
+            "soc_therm": 42.143,
+            "VIRTUAL-SKIN-MODEL": 37.92491,
+            "ShutdownMode": 37.98445,
+            "VIRTUAL-SKIN-SPEAKER": 37.83656,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 37.97785,
+            "btmspkr_therm": 36.914,
+            "TPU": 41.000004,
+            "VIRTUAL-SKIN-LEGACY": 38.27172,
+            "VIRTUAL-SKIN": 37.98445,
+            "usb_pwr_therm": 36.892002,
+            "quiet_therm": 39.741,
+            "BIG": 41.000004,
+            "battery": 37.800003,
+            "north_therm": 40.186,
+            "ShutdownModeSteady": 37.98445
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 0,
+            "thermal-uclamp-4": 0,
+            "thermal-uclamp-0": 0
+          },
+          "ready": true
+        },
+        "after": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 36.469,
+            "charging_therm": 47.395,
+            "G3D": 52.000004,
+            "MID": 54.000004,
+            "LITTLE": 55.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 40.077282,
+            "thb_hda": 0.0,
+            "rfpa_therm": 43.655003,
+            "VIRTUAL-SKIN-FRONT": 40.34528,
+            "cellular-emergency": 40.111137,
+            "soc_therm": 47.753002,
+            "VIRTUAL-SKIN-MODEL": 40.15196,
+            "ShutdownMode": 40.111137,
+            "VIRTUAL-SKIN-SPEAKER": 39.179478,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 40.077282,
+            "btmspkr_therm": 36.803,
+            "TPU": 51.000004,
+            "VIRTUAL-SKIN-LEGACY": 40.47477,
+            "VIRTUAL-SKIN": 40.111137,
+            "usb_pwr_therm": 36.781002,
+            "quiet_therm": 41.593002,
+            "BIG": 53.000004,
+            "battery": 39.9,
+            "north_therm": 42.578003,
+            "ShutdownModeSteady": 40.111137
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 17,
+            "thermal-uclamp-4": 10,
+            "thermal-uclamp-0": 6
+          },
+          "ready": false
+        }
+      },
+      "device_model": "Pixel 9"
+    },
+    {
+      "tag": "matrix-z-image-turbo-cpu-4",
+      "success": false,
+      "config": {
+        "event": "config",
+        "model": "z-image-turbo",
+        "tag": "matrix-z-image-turbo-cpu-4",
+        "backend": "CPU",
+        "threads": -1,
+        "size": 512,
+        "steps": 4,
+        "cfg": 1,
+        "sampler": 0,
+        "flash": true,
+        "mmap": false,
+        "conv": false,
+        "offload": true,
+        "tiling": false,
+        "wtype": -1,
+        "prediction": -1,
+        "scheduler": -1,
+        "vae_cpu": true,
+        "quantized": false,
+        "preview": false,
+        "thermal": 1,
+        "foreground": true
+      },
+      "load_ms": 306.564372,
+      "generations": [],
+      "scheduled_graph_nodes": [],
+      "errors": [],
+      "process_exit": null,
+      "host_timeout": null,
+      "apk_sha256": [
+        "8c165e75ae55376e73a01b4f30f88080d9c363b6e2fe417b50d04e9e290d514d"
+      ],
+      "git_base": "dae2592a95512490b148ee9ff2bf4a43b71ad234",
+      "started_utc": "2026-10-25T10:55:42.849605+00:00",
+      "files": [
+        {
+          "model": "z-image-turbo",
+          "repo": "leejet/Z-Image-Turbo-GGUF",
+          "revision": "c61c0e422dc8b541b7548cf33a4ef8302b0f8085",
+          "file": "z_image_turbo-Q4_0.gguf",
+          "local": "z-image-turbo.gguf",
+          "size": 3683370944,
+          "sha256": "2bc57986874c84f7ec6d02d9d7070a53b0029954a0e38a6e1342eb91095572f5"
+        },
+        {
+          "model": "z-image-turbo",
+          "repo": "unsloth/Qwen3-4B-Instruct-2507-GGUF",
+          "revision": "a06e946bb6b655725eafa393f4a9745d460374c9",
+          "file": "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+          "local": "qwen3-4b.gguf",
+          "size": 2497281120,
+          "sha256": "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597"
+        },
+        {
+          "model": "z-image-turbo",
+          "repo": "Comfy-Org/Z-Image-Turbo",
+          "revision": "6fc90a3b1b653e935a0d175e260736de25b84df5",
+          "file": "split_files/vae/ae.safetensors",
+          "local": "flux-vae.safetensors",
+          "size": 335304388,
+          "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+        }
+      ],
+      "thermal_conditions": {
+        "before": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 36.135002,
+            "charging_therm": 41.319,
+            "G3D": 41.000004,
+            "MID": 41.000004,
+            "LITTLE": 40.0,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 37.916862,
+            "thb_hda": 0.0,
+            "rfpa_therm": 40.431004,
+            "VIRTUAL-SKIN-FRONT": 38.573887,
+            "cellular-emergency": 37.90318,
+            "soc_therm": 41.708,
+            "VIRTUAL-SKIN-MODEL": 37.88116,
+            "ShutdownMode": 37.90318,
+            "VIRTUAL-SKIN-SPEAKER": 37.661526,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 37.916862,
+            "btmspkr_therm": 36.736,
+            "TPU": 40.0,
+            "VIRTUAL-SKIN-LEGACY": 38.161552,
+            "VIRTUAL-SKIN": 37.90318,
+            "usb_pwr_therm": 36.692,
+            "quiet_therm": 39.808002,
+            "BIG": 41.000004,
+            "battery": 37.7,
+            "north_therm": 40.186,
+            "ShutdownModeSteady": 37.90318
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 0,
+            "thermal-uclamp-4": 0,
+            "thermal-uclamp-0": 0
+          },
+          "ready": true
+        },
+        "after": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 36.091003,
+            "charging_therm": 41.548,
+            "G3D": 57.000004,
+            "MID": 75.0,
+            "LITTLE": 68.0,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 37.851254,
+            "thb_hda": 0.0,
+            "rfpa_therm": 40.298,
+            "VIRTUAL-SKIN-FRONT": 38.71876,
+            "cellular-emergency": 37.80805,
+            "soc_therm": 43.036003,
+            "VIRTUAL-SKIN-MODEL": 37.860622,
+            "ShutdownMode": 37.80805,
+            "VIRTUAL-SKIN-SPEAKER": 37.82563,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 37.851254,
+            "btmspkr_therm": 36.692,
+            "TPU": 54.000004,
+            "VIRTUAL-SKIN-LEGACY": 38.3164,
+            "VIRTUAL-SKIN": 37.80805,
+            "usb_pwr_therm": 36.669003,
+            "quiet_therm": 39.608,
+            "BIG": 79.0,
+            "battery": 38.100002,
+            "north_therm": 39.986,
+            "ShutdownModeSteady": 37.80805
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 2,
+            "thermal-cpufreq-0": 1,
+            "thermal-cpufreq-1": 2,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 0,
+            "thermal-uclamp-4": 0,
+            "thermal-uclamp-0": 0
+          },
+          "ready": false
+        }
+      },
+      "device_model": "Pixel 9"
+    },
+    {
+      "tag": "matrix-z-image-turbo-vulkan-4",
+      "success": false,
+      "config": {
+        "event": "config",
+        "model": "z-image-turbo",
+        "tag": "matrix-z-image-turbo-vulkan-4",
+        "backend": "VULKAN",
+        "threads": -1,
+        "size": 512,
+        "steps": 4,
+        "cfg": 1,
+        "sampler": 0,
+        "flash": true,
+        "mmap": true,
+        "conv": false,
+        "offload": true,
+        "tiling": false,
+        "wtype": -1,
+        "prediction": -1,
+        "scheduler": -1,
+        "vae_cpu": false,
+        "quantized": false,
+        "preview": false,
+        "thermal": 1,
+        "foreground": true
+      },
+      "load_ms": 357.184448,
+      "generations": [],
+      "scheduled_graph_nodes": [],
+      "errors": [],
+      "process_exit": null,
+      "host_timeout": null,
+      "apk_sha256": [
+        "8c165e75ae55376e73a01b4f30f88080d9c363b6e2fe417b50d04e9e290d514d"
+      ],
+      "git_base": "dae2592a95512490b148ee9ff2bf4a43b71ad234",
+      "started_utc": "2026-10-25T10:57:47.586690+00:00",
+      "files": [
+        {
+          "model": "z-image-turbo",
+          "repo": "leejet/Z-Image-Turbo-GGUF",
+          "revision": "c61c0e422dc8b541b7548cf33a4ef8302b0f8085",
+          "file": "z_image_turbo-Q4_0.gguf",
+          "local": "z-image-turbo.gguf",
+          "size": 3683370944,
+          "sha256": "2bc57986874c84f7ec6d02d9d7070a53b0029954a0e38a6e1342eb91095572f5"
+        },
+        {
+          "model": "z-image-turbo",
+          "repo": "unsloth/Qwen3-4B-Instruct-2507-GGUF",
+          "revision": "a06e946bb6b655725eafa393f4a9745d460374c9",
+          "file": "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+          "local": "qwen3-4b.gguf",
+          "size": 2497281120,
+          "sha256": "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597"
+        },
+        {
+          "model": "z-image-turbo",
+          "repo": "Comfy-Org/Z-Image-Turbo",
+          "revision": "6fc90a3b1b653e935a0d175e260736de25b84df5",
+          "file": "split_files/vae/ae.safetensors",
+          "local": "flux-vae.safetensors",
+          "size": 335304388,
+          "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+        }
+      ],
+      "thermal_conditions": {
+        "before": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 35.801003,
+            "charging_therm": 41.273003,
+            "G3D": 40.0,
+            "MID": 40.0,
+            "LITTLE": 40.0,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 37.654877,
+            "thb_hda": 0.0,
+            "rfpa_therm": 40.253002,
+            "VIRTUAL-SKIN-FRONT": 38.403385,
+            "cellular-emergency": 37.81154,
+            "soc_therm": 42.189003,
+            "VIRTUAL-SKIN-MODEL": 37.76868,
+            "ShutdownMode": 37.81154,
+            "VIRTUAL-SKIN-SPEAKER": 37.486607,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 37.654877,
+            "btmspkr_therm": 36.402,
+            "TPU": 40.0,
+            "VIRTUAL-SKIN-LEGACY": 37.98966,
+            "VIRTUAL-SKIN": 37.794395,
+            "usb_pwr_therm": 36.38,
+            "quiet_therm": 39.541,
+            "BIG": 40.0,
+            "battery": 37.5,
+            "north_therm": 39.986,
+            "ShutdownModeSteady": 37.81154
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 0,
+            "thermal-uclamp-4": 0,
+            "thermal-uclamp-0": 0
+          },
+          "ready": true
+        },
+        "after": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 37.827003,
+            "charging_therm": 49.686,
+            "G3D": 60.000004,
+            "MID": 56.000004,
+            "LITTLE": 56.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 41.939354,
+            "thb_hda": 0.0,
+            "rfpa_therm": 46.034,
+            "VIRTUAL-SKIN-FRONT": 41.98172,
+            "cellular-emergency": 41.98051,
+            "soc_therm": 49.280003,
+            "VIRTUAL-SKIN-MODEL": 41.965385,
+            "ShutdownMode": 41.98051,
+            "VIRTUAL-SKIN-SPEAKER": 40.749977,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 41.939354,
+            "btmspkr_therm": 38.205,
+            "TPU": 52.000004,
+            "VIRTUAL-SKIN-LEGACY": 42.213013,
+            "VIRTUAL-SKIN": 41.974464,
+            "usb_pwr_therm": 38.161003,
+            "quiet_therm": 43.93,
+            "BIG": 56.000004,
+            "battery": 41.600002,
+            "north_therm": 44.938004,
+            "ShutdownModeSteady": 41.98051
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 17,
+            "thermal-uclamp-4": 11,
+            "thermal-uclamp-0": 7
+          },
+          "ready": false
+        }
+      },
+      "device_model": "Pixel 9"
+    },
+    {
+      "tag": "sd15-baseline-512-20",
+      "success": false,
+      "config": {
+        "event": "config",
+        "model": "sd15",
+        "tag": "sd15-baseline-512-20",
+        "backend": "CPU",
+        "threads": -1,
+        "size": 512,
+        "steps": 20,
+        "cfg": 7,
+        "sampler": 1,
+        "flash": true,
+        "mmap": false,
+        "conv": false,
+        "offload": true,
+        "tiling": false,
+        "wtype": -1,
+        "thermal": 0,
+        "foreground": true
+      },
+      "load_ms": null,
+      "generations": [],
+      "scheduled_graph_nodes": [],
+      "errors": [
+        {
+          "event": "error",
+          "type": "IllegalStateException",
+          "message": "Preflight: InvalidModel"
+        }
+      ],
+      "process_exit": null,
+      "host_timeout": null,
+      "apk_sha256": [],
+      "git_base": "dae2592a95512490b148ee9ff2bf4a43b71ad234",
+      "started_utc": null,
+      "files": [
+        {
+          "model": "sd15",
+          "repo": "stable-diffusion-v1-5/stable-diffusion-v1-5",
+          "revision": "451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
+          "file": "unet/diffusion_pytorch_model.fp16.safetensors",
+          "local": "sd15-unet.safetensors",
+          "size": 1719125304,
+          "sha256": "c83908253f9a64d08c25fc90874c9c8aef9a329ce1ca5fb909d73b0c83d1ea21"
+        },
+        {
+          "model": "sd15",
+          "repo": "stable-diffusion-v1-5/stable-diffusion-v1-5",
+          "revision": "451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
+          "file": "text_encoder/model.fp16.safetensors",
+          "local": "sd15-clip.safetensors",
+          "size": 246144864,
+          "sha256": "77795e2023adcf39bc29a884661950380bd093cf0750a966d473d1718dc9ef4e"
+        },
+        {
+          "model": "sd15",
+          "repo": "stable-diffusion-v1-5/stable-diffusion-v1-5",
+          "revision": "451f4fe16113bff5a5d2269ed5ad43b0592e9a14",
+          "file": "vae/diffusion_pytorch_model.fp16.safetensors",
+          "local": "sd15-vae.safetensors",
+          "size": 167335342,
+          "sha256": "4fbcf0ebe55a0984f5a5e00d8c4521d52359af7229bb4d81890039d2aa16dd7c"
+        }
+      ],
+      "thermal_conditions": {
+        "before": {
+          "status": 0,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 29.858002,
+            "charging_therm": 35.289,
+            "G3D": 39.0,
+            "MID": 46.000004,
+            "LITTLE": 44.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 31.35013,
+            "thb_hda": 0.0,
+            "rfpa_therm": 33.353,
+            "VIRTUAL-SKIN-FRONT": 31.908453,
+            "cellular-emergency": 31.663286,
+            "soc_therm": 37.159,
+            "VIRTUAL-SKIN-MODEL": 31.724705,
+            "ShutdownMode": 31.663286,
+            "VIRTUAL-SKIN-SPEAKER": 31.069412,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 31.35013,
+            "btmspkr_therm": 29.635002,
+            "TPU": 38.0,
+            "VIRTUAL-SKIN-LEGACY": 31.6375,
+            "VIRTUAL-SKIN": 31.663286,
+            "usb_pwr_therm": 29.546001,
+            "quiet_therm": 32.106003,
+            "BIG": 63.000004,
+            "battery": 30.900002,
+            "north_therm": 32.663002,
+            "ShutdownModeSteady": 31.663286
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 0,
+            "thermal-uclamp-4": 0,
+            "thermal-uclamp-0": 0
+          },
+          "ready": false
+        },
+        "after": {
+          "status": 0,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 29.902002,
+            "charging_therm": 35.445004,
+            "G3D": 40.0,
+            "MID": 41.000004,
+            "LITTLE": 41.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 31.416986,
+            "thb_hda": 0.0,
+            "rfpa_therm": 33.508003,
+            "VIRTUAL-SKIN-FRONT": 31.98063,
+            "cellular-emergency": 31.82636,
+            "soc_therm": 37.248,
+            "VIRTUAL-SKIN-MODEL": 31.904266,
+            "ShutdownMode": 31.82636,
+            "VIRTUAL-SKIN-SPEAKER": 31.135628,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 31.416986,
+            "btmspkr_therm": 29.680002,
+            "TPU": 39.0,
+            "VIRTUAL-SKIN-LEGACY": 31.707027,
+            "VIRTUAL-SKIN": 31.82636,
+            "usb_pwr_therm": 29.591002,
+            "quiet_therm": 32.217003,
+            "BIG": 43.000004,
+            "battery": 31.000002,
+            "north_therm": 32.796,
+            "ShutdownModeSteady": 31.82636
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 0,
+            "thermal-uclamp-4": 0,
+            "thermal-uclamp-0": 0
+          },
+          "ready": true
+        }
+      },
+      "device_model": "Pixel 9"
+    },
+    {
+      "tag": "sd15-f16-gpu-4",
+      "success": true,
+      "config": {
+        "event": "config",
+        "model": "sd15",
+        "tag": "sd15-f16-gpu-4",
+        "backend": "VULKAN",
+        "threads": -1,
+        "size": 512,
+        "steps": 4,
+        "cfg": 7,
+        "sampler": 1,
+        "flash": true,
+        "mmap": true,
+        "conv": false,
+        "offload": true,
+        "tiling": false,
+        "wtype": 1,
+        "prediction": -1,
+        "scheduler": -1,
+        "vae_cpu": false,
+        "quantized": false,
+        "preview": false,
+        "max_vram": "",
+        "segmented": false,
+        "prefetch": false,
+        "thermal": 1,
+        "foreground": true
+      },
+      "load_ms": 305.046062,
+      "generations": [
+        {
+          "event": "generation",
+          "run": 0,
+          "ms": 124746.825093,
+          "steps": 4,
+          "progress": [
+            {
+              "step": 1,
+              "total": 4,
+              "elapsed_ms": 32287.133764,
+              "thermal": 1
+            },
+            {
+              "step": 2,
+              "total": 4,
+              "elapsed_ms": 52300.109563,
+              "thermal": 1
+            },
+            {
+              "step": 3,
+              "total": 4,
+              "elapsed_ms": 72414.39066,
+              "thermal": 1
+            },
+            {
+              "step": 4,
+              "total": 4,
+              "elapsed_ms": 92435.729008,
+              "thermal": 1
+            }
+          ],
+          "thermal_start": 1,
+          "thermal_end": 1,
+          "png_bytes": 335750,
+          "sha256": "34a1d2d26f47d199dcfc4284cb936efeca90c6f124d8a9bad8dda771f0a5a0c2",
+          "output": "sd15-f16-gpu-4-0.png",
+          "pss_bytes": 2842712064,
+          "sampling_interval_ms": 20049.531747999998,
+          "after_last_step_ms": 32311.096085000012
+        }
+      ],
+      "scheduled_graph_nodes": [
+        {
+          "cpu": 0,
+          "vulkan": 20890,
+          "metal": 0,
+          "cuda": 0,
+          "other": 1022
+        }
+      ],
+      "errors": [],
+      "process_exit": null,
+      "host_timeout": false,
+      "apk_sha256": [
+        "8012ee086bb90eb95e7e9dc53ecb483b62e8d583b34120d510f5eae25b712026"
+      ],
+      "git_base": "dae2592a95512490b148ee9ff2bf4a43b71ad234",
+      "started_utc": "2026-10-25T11:25:42.168137+00:00",
+      "files": [
+        {
+          "model": "sd15",
+          "repo": "kostakoff/stable-diffusion-v1-5-GGUF",
+          "revision": "101ff06c98bea9ac8affe6a2c867e9762958d219",
+          "file": "v1-5-pruned_Q4_0.gguf",
+          "local": "sd15.gguf",
+          "size": 3051366272,
+          "sha256": "24bcd54c1d1f0354a1cd19d07ad9a20771d43fde8318d505d71bcd84b078f20a"
+        }
+      ],
+      "thermal_conditions": {
+        "before": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 36.558002,
+            "charging_therm": 44.915,
+            "G3D": 43.000004,
+            "MID": 43.000004,
+            "LITTLE": 43.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 39.41917,
+            "thb_hda": 0.0,
+            "rfpa_therm": 43.036003,
+            "VIRTUAL-SKIN-FRONT": 39.89348,
+            "cellular-emergency": 39.501373,
+            "soc_therm": 45.247,
+            "VIRTUAL-SKIN-MODEL": 39.409042,
+            "ShutdownMode": 39.501373,
+            "VIRTUAL-SKIN-SPEAKER": 38.89041,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 39.41917,
+            "btmspkr_therm": 37.092003,
+            "TPU": 42.000004,
+            "VIRTUAL-SKIN-LEGACY": 39.8394,
+            "VIRTUAL-SKIN": 39.464443,
+            "usb_pwr_therm": 37.025,
+            "quiet_therm": 41.754,
+            "BIG": 43.000004,
+            "battery": 39.100002,
+            "north_therm": 42.533,
+            "ShutdownModeSteady": 39.501373
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 17,
+            "thermal-uclamp-4": 10,
+            "thermal-uclamp-0": 4
+          },
+          "ready": false
+        },
+        "after": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 36.803,
+            "charging_therm": 47.586002,
+            "G3D": 52.000004,
+            "MID": 55.000004,
+            "LITTLE": 56.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 40.354427,
+            "thb_hda": 0.0,
+            "rfpa_therm": 44.021004,
+            "VIRTUAL-SKIN-FRONT": 40.591774,
+            "cellular-emergency": 40.382572,
+            "soc_therm": 47.633003,
+            "VIRTUAL-SKIN-MODEL": 40.42723,
+            "ShutdownMode": 40.382572,
+            "VIRTUAL-SKIN-SPEAKER": 39.46034,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 40.354427,
+            "btmspkr_therm": 37.137,
+            "TPU": 50.000004,
+            "VIRTUAL-SKIN-LEGACY": 40.737225,
+            "VIRTUAL-SKIN": 40.40044,
+            "usb_pwr_therm": 37.159,
+            "quiet_therm": 42.029003,
+            "BIG": 54.000004,
+            "battery": 40.2,
+            "north_therm": 42.945004,
+            "ShutdownModeSteady": 40.382572
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 17,
+            "thermal-uclamp-4": 10,
+            "thermal-uclamp-0": 5
+          },
+          "ready": false
+        }
+      },
+      "device_model": "Pixel 9"
+    },
+    {
+      "tag": "sdturbo-baseline-512-4",
+      "success": true,
+      "config": {
+        "event": "config",
+        "model": "sd-turbo",
+        "tag": "sdturbo-baseline-512-4",
+        "backend": "CPU",
+        "threads": -1,
+        "size": 512,
+        "steps": 4,
+        "cfg": 1,
+        "sampler": 1,
+        "flash": true,
+        "mmap": false,
+        "conv": false,
+        "offload": true,
+        "tiling": false,
+        "wtype": -1,
+        "thermal": 0,
+        "foreground": true
+      },
+      "load_ms": 121.98409,
+      "generations": [
+        {
+          "event": "generation",
+          "run": 0,
+          "ms": 141359.597441,
+          "steps": 4,
+          "progress": [
+            {
+              "step": 372,
+              "total": 372,
+              "elapsed_ms": 302.239502,
+              "thermal": 0
+            },
+            {
+              "step": 262,
+              "total": 686,
+              "elapsed_ms": 906.248129,
+              "thermal": 0
+            },
+            {
+              "step": 506,
+              "total": 686,
+              "elapsed_ms": 1107.755168,
+              "thermal": 0
+            },
+            {
+              "step": 686,
+              "total": 686,
+              "elapsed_ms": 1309.140178,
+              "thermal": 0
+            },
+            {
+              "step": 2,
+              "total": 4,
+              "elapsed_ms": 38907.484191,
+              "thermal": 0
+            },
+            {
+              "step": 3,
+              "total": 4,
+              "elapsed_ms": 58326.740222,
+              "thermal": 0
+            },
+            {
+              "step": 4,
+              "total": 4,
+              "elapsed_ms": 78865.265745,
+              "thermal": 1
+            },
+            {
+              "step": 140,
+              "total": 140,
+              "elapsed_ms": 79168.950763,
+              "thermal": 1
+            }
+          ],
+          "thermal_start": 0,
+          "thermal_end": 1,
+          "png_bytes": 590886,
+          "sha256": "46034bcf07ad3c9b11f390f4b69597301b39e1ff1a127364aea23e3d4899bd14",
+          "output": "sdturbo-baseline-512-4-0.png",
+          "pss_bytes": 2132895744,
+          "sampling_interval_ms": 19978.890776999997,
+          "after_last_step_ms": 62494.331695999994
+        }
+      ],
+      "scheduled_graph_nodes": [],
+      "errors": [],
+      "process_exit": null,
+      "host_timeout": null,
+      "apk_sha256": [],
+      "git_base": "dae2592a95512490b148ee9ff2bf4a43b71ad234",
+      "started_utc": null,
+      "files": [
+        {
+          "model": "sd-turbo",
+          "repo": "Green-Sky/SD-Turbo-GGUF",
+          "revision": "19a31586d02d64a73b4419bc193b3ecfaf38e1f0",
+          "file": "sd_turbo-f16-q8_0.gguf",
+          "local": "sd-turbo.gguf",
+          "size": 2023745376,
+          "sha256": "d50be7655f0a554cf8041c145d88b210bd5f3c545423119dee62ae08cae51580"
+        }
+      ],
+      "thermal_conditions": {
+        "before": {
+          "status": 0,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 30.325,
+            "charging_therm": 34.844,
+            "G3D": 41.000004,
+            "MID": 42.000004,
+            "LITTLE": 44.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 31.413692,
+            "thb_hda": 0.0,
+            "rfpa_therm": 33.553,
+            "VIRTUAL-SKIN-FRONT": 32.12659,
+            "cellular-emergency": 31.876644,
+            "soc_therm": 36.113003,
+            "VIRTUAL-SKIN-MODEL": 31.89172,
+            "ShutdownMode": 31.876644,
+            "VIRTUAL-SKIN-SPEAKER": 31.282516,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 31.413692,
+            "btmspkr_therm": 30.103,
+            "TPU": 39.0,
+            "VIRTUAL-SKIN-LEGACY": 31.69968,
+            "VIRTUAL-SKIN": 31.876644,
+            "usb_pwr_therm": 30.036001,
+            "quiet_therm": 32.618,
+            "BIG": 45.000004,
+            "battery": 30.900002,
+            "north_therm": 33.063,
+            "ShutdownModeSteady": 31.876644
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 0,
+            "thermal-uclamp-4": 0,
+            "thermal-uclamp-0": 0
+          },
+          "ready": false
+        },
+        "after": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 31.817001,
+            "charging_therm": 45.557003,
+            "G3D": 49.000004,
+            "MID": 55.000004,
+            "LITTLE": 53.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 37.52597,
+            "thb_hda": 0.0,
+            "rfpa_therm": 40.677002,
+            "VIRTUAL-SKIN-FRONT": 38.3307,
+            "cellular-emergency": 38.642143,
+            "soc_therm": 53.606003,
+            "VIRTUAL-SKIN-MODEL": 38.39872,
+            "ShutdownMode": 38.642143,
+            "VIRTUAL-SKIN-SPEAKER": 36.32111,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 37.52597,
+            "btmspkr_therm": 31.572002,
+            "TPU": 48.000004,
+            "VIRTUAL-SKIN-LEGACY": 38.36716,
+            "VIRTUAL-SKIN": 38.544777,
+            "usb_pwr_therm": 31.461002,
+            "quiet_therm": 38.495003,
+            "BIG": 56.000004,
+            "battery": 37.2,
+            "north_therm": 39.719,
+            "ShutdownModeSteady": 38.642143
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 15,
+            "thermal-cpufreq-0": 1,
+            "thermal-cpufreq-1": 6,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 0,
+            "thermal-uclamp-4": 0,
+            "thermal-uclamp-0": 0
+          },
+          "ready": false
+        }
+      },
+      "device_model": "Pixel 9"
+    },
+    {
+      "tag": "sdturbo-cpu-eps-512-4",
+      "success": true,
+      "config": {
+        "event": "config",
+        "model": "sd-turbo",
+        "tag": "sdturbo-cpu-eps-512-4",
+        "backend": "CPU",
+        "threads": -1,
+        "size": 512,
+        "steps": 4,
+        "cfg": 1,
+        "sampler": 0,
+        "flash": true,
+        "mmap": false,
+        "conv": false,
+        "offload": true,
+        "tiling": false,
+        "wtype": -1,
+        "prediction": 0,
+        "thermal": 1,
+        "foreground": true
+      },
+      "load_ms": 153.202514,
+      "generations": [
+        {
+          "event": "generation",
+          "run": 0,
+          "ms": 192558.44911,
+          "steps": 4,
+          "progress": [
+            {
+              "step": 1,
+              "total": 372,
+              "elapsed_ms": 102.09078,
+              "thermal": 1
+            },
+            {
+              "step": 297,
+              "total": 372,
+              "elapsed_ms": 309.319581,
+              "thermal": 1
+            },
+            {
+              "step": 372,
+              "total": 372,
+              "elapsed_ms": 515.490845,
+              "thermal": 1
+            },
+            {
+              "step": 190,
+              "total": 686,
+              "elapsed_ms": 1626.470501,
+              "thermal": 1
+            },
+            {
+              "step": 286,
+              "total": 686,
+              "elapsed_ms": 1830.373536,
+              "thermal": 1
+            },
+            {
+              "step": 412,
+              "total": 686,
+              "elapsed_ms": 2032.724285,
+              "thermal": 1
+            },
+            {
+              "step": 470,
+              "total": 686,
+              "elapsed_ms": 2235.289471,
+              "thermal": 1
+            },
+            {
+              "step": 535,
+              "total": 686,
+              "elapsed_ms": 2438.847902,
+              "thermal": 1
+            },
+            {
+              "step": 686,
+              "total": 686,
+              "elapsed_ms": 2642.439699,
+              "thermal": 1
+            },
+            {
+              "step": 2,
+              "total": 4,
+              "elapsed_ms": 52278.579534,
+              "thermal": 1
+            },
+            {
+              "step": 3,
+              "total": 4,
+              "elapsed_ms": 83098.297608,
+              "thermal": 1
+            },
+            {
+              "step": 140,
+              "total": 140,
+              "elapsed_ms": 117255.225277,
+              "thermal": 1
+            }
+          ],
+          "thermal_start": 1,
+          "thermal_end": 1,
+          "png_bytes": 595954,
+          "sha256": "358db8d7218a8aa241d0ffe33c19d28e7243c153b3646e40ded7e78e10de7e74",
+          "output": "sdturbo-cpu-eps-512-4-0.png",
+          "pss_bytes": 2166762496,
+          "sampling_interval_ms": 30819.718073999997
+        }
+      ],
+      "scheduled_graph_nodes": [],
+      "errors": [],
+      "process_exit": null,
+      "host_timeout": null,
+      "apk_sha256": [],
+      "git_base": "dae2592a95512490b148ee9ff2bf4a43b71ad234",
+      "started_utc": null,
+      "files": [
+        {
+          "model": "sd-turbo",
+          "repo": "Green-Sky/SD-Turbo-GGUF",
+          "revision": "19a31586d02d64a73b4419bc193b3ecfaf38e1f0",
+          "file": "sd_turbo-f16-q8_0.gguf",
+          "local": "sd-turbo.gguf",
+          "size": 2023745376,
+          "sha256": "d50be7655f0a554cf8041c145d88b210bd5f3c545423119dee62ae08cae51580"
+        }
+      ],
+      "thermal_conditions": {
+        "before": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 34.198,
+            "charging_therm": 45.128002,
+            "G3D": 43.000004,
+            "MID": 43.000004,
+            "LITTLE": 44.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 38.21264,
+            "thb_hda": 0.0,
+            "rfpa_therm": 41.914,
+            "VIRTUAL-SKIN-FRONT": 38.86487,
+            "cellular-emergency": 38.887596,
+            "soc_therm": 48.898003,
+            "VIRTUAL-SKIN-MODEL": 38.84572,
+            "ShutdownMode": 38.887596,
+            "VIRTUAL-SKIN-SPEAKER": 37.450806,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 38.21264,
+            "btmspkr_therm": 34.176003,
+            "TPU": 42.000004,
+            "VIRTUAL-SKIN-LEGACY": 38.84466,
+            "VIRTUAL-SKIN": 38.887596,
+            "usb_pwr_therm": 34.109,
+            "quiet_therm": 40.097,
+            "BIG": 45.000004,
+            "battery": 37.9,
+            "north_therm": 41.067,
+            "ShutdownModeSteady": 38.887596
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 11,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 4,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 10,
+            "thermal-uclamp-4": 9,
+            "thermal-uclamp-0": 4
+          },
+          "ready": false
+        },
+        "after": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 35.645,
+            "charging_therm": 45.557003,
+            "G3D": 49.000004,
+            "MID": 57.000004,
+            "LITTLE": 53.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 39.549633,
+            "thb_hda": 0.0,
+            "rfpa_therm": 42.510002,
+            "VIRTUAL-SKIN-FRONT": 40.277885,
+            "cellular-emergency": 40.127743,
+            "soc_therm": 50.649002,
+            "VIRTUAL-SKIN-MODEL": 40.096302,
+            "ShutdownMode": 40.127743,
+            "VIRTUAL-SKIN-SPEAKER": 38.90993,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 39.549633,
+            "btmspkr_therm": 35.757,
+            "TPU": 49.000004,
+            "VIRTUAL-SKIN-LEGACY": 40.21058,
+            "VIRTUAL-SKIN": 40.11517,
+            "usb_pwr_therm": 35.690002,
+            "quiet_therm": 41.112003,
+            "BIG": 55.000004,
+            "battery": 39.300003,
+            "north_therm": 41.914,
+            "ShutdownModeSteady": 40.127743
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 15,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 6,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 17,
+            "thermal-uclamp-4": 10,
+            "thermal-uclamp-0": 5
+          },
+          "ready": false
+        }
+      },
+      "device_model": "Pixel 9"
+    },
+    {
+      "tag": "sdturbo-f16-gpu-1",
+      "success": true,
+      "config": {
+        "event": "config",
+        "model": "sd-turbo",
+        "tag": "sdturbo-f16-gpu-1",
+        "backend": "VULKAN",
+        "threads": -1,
+        "size": 512,
+        "steps": 1,
+        "cfg": 1,
+        "sampler": 0,
+        "flash": true,
+        "mmap": true,
+        "conv": false,
+        "offload": true,
+        "tiling": false,
+        "wtype": 1,
+        "prediction": 0,
+        "scheduler": 6,
+        "vae_cpu": false,
+        "quantized": false,
+        "preview": false,
+        "max_vram": "",
+        "segmented": false,
+        "prefetch": false,
+        "thermal": 1,
+        "foreground": true
+      },
+      "load_ms": 135.538574,
+      "generations": [
+        {
+          "event": "generation",
+          "run": 0,
+          "ms": 46780.177961,
+          "steps": 1,
+          "progress": [
+            {
+              "step": 1,
+              "total": 1,
+              "elapsed_ms": 14774.03199,
+              "thermal": 1
+            }
+          ],
+          "thermal_start": 1,
+          "thermal_end": 1,
+          "png_bytes": 574267,
+          "sha256": "1262ea0208d88e952a23020a0566b9cb8be5c5a316fead9b7a7a54a6df6e9cec",
+          "output": "sdturbo-f16-gpu-1-0.png",
+          "pss_bytes": 2631460864,
+          "after_last_step_ms": 32006.145971
+        }
+      ],
+      "scheduled_graph_nodes": [
+        {
+          "cpu": 0,
+          "vulkan": 3124,
+          "metal": 0,
+          "cuda": 0,
+          "other": 973
+        }
+      ],
+      "errors": [],
+      "process_exit": null,
+      "host_timeout": false,
+      "apk_sha256": [
+        "8012ee086bb90eb95e7e9dc53ecb483b62e8d583b34120d510f5eae25b712026"
+      ],
+      "git_base": "dae2592a95512490b148ee9ff2bf4a43b71ad234",
+      "started_utc": "2026-10-25T11:14:34.302433+00:00",
+      "files": [
+        {
+          "model": "sd-turbo",
+          "repo": "Green-Sky/SD-Turbo-GGUF",
+          "revision": "19a31586d02d64a73b4419bc193b3ecfaf38e1f0",
+          "file": "sd_turbo-f16-q8_0.gguf",
+          "local": "sd-turbo.gguf",
+          "size": 2023745376,
+          "sha256": "d50be7655f0a554cf8041c145d88b210bd5f3c545423119dee62ae08cae51580"
+        }
+      ],
+      "thermal_conditions": {
+        "before": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 37.092003,
+            "charging_therm": 43.769,
+            "G3D": 42.000004,
+            "MID": 43.000004,
+            "LITTLE": 42.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 39.2449,
+            "thb_hda": 0.0,
+            "rfpa_therm": 42.326,
+            "VIRTUAL-SKIN-FRONT": 40.024284,
+            "cellular-emergency": 39.42476,
+            "soc_therm": 44.113003,
+            "VIRTUAL-SKIN-MODEL": 39.327023,
+            "ShutdownMode": 39.48992,
+            "VIRTUAL-SKIN-SPEAKER": 38.97298,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 39.2449,
+            "btmspkr_therm": 37.649002,
+            "TPU": 42.000004,
+            "VIRTUAL-SKIN-LEGACY": 39.655396,
+            "VIRTUAL-SKIN": 39.42476,
+            "usb_pwr_therm": 37.649002,
+            "quiet_therm": 41.296,
+            "BIG": 43.000004,
+            "battery": 39.0,
+            "north_therm": 41.937,
+            "ShutdownModeSteady": 39.48992
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 17,
+            "thermal-uclamp-4": 9,
+            "thermal-uclamp-0": 3
+          },
+          "ready": false
+        },
+        "after": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 37.003002,
+            "charging_therm": 45.438004,
+            "G3D": 51.000004,
+            "MID": 54.000004,
+            "LITTLE": 56.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 39.648026,
+            "thb_hda": 0.0,
+            "rfpa_therm": 42.647003,
+            "VIRTUAL-SKIN-FRONT": 40.187317,
+            "cellular-emergency": 39.63678,
+            "soc_therm": 46.154003,
+            "VIRTUAL-SKIN-MODEL": 39.662743,
+            "ShutdownMode": 39.63678,
+            "VIRTUAL-SKIN-SPEAKER": 39.23459,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 39.648026,
+            "btmspkr_therm": 37.493,
+            "TPU": 50.000004,
+            "VIRTUAL-SKIN-LEGACY": 40.143105,
+            "VIRTUAL-SKIN": 39.63678,
+            "usb_pwr_therm": 37.515003,
+            "quiet_therm": 41.204002,
+            "BIG": 54.000004,
+            "battery": 39.7,
+            "north_therm": 41.937,
+            "ShutdownModeSteady": 39.63678
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 17,
+            "thermal-uclamp-4": 8,
+            "thermal-uclamp-0": 3
+          },
+          "ready": false
+        }
+      },
+      "device_model": "Pixel 9"
+    },
+    {
+      "tag": "sdturbo-gpu-1",
+      "success": true,
+      "config": {
+        "event": "config",
+        "model": "sd-turbo",
+        "tag": "sdturbo-gpu-1",
+        "backend": "VULKAN",
+        "threads": -1,
+        "size": 512,
+        "steps": 1,
+        "cfg": 1,
+        "sampler": 0,
+        "flash": true,
+        "mmap": true,
+        "conv": false,
+        "offload": true,
+        "tiling": false,
+        "wtype": -1,
+        "prediction": 0,
+        "scheduler": 6,
+        "vae_cpu": false,
+        "quantized": false,
+        "preview": false,
+        "max_vram": "",
+        "segmented": false,
+        "prefetch": false,
+        "thermal": 1,
+        "foreground": true
+      },
+      "load_ms": 272.367025,
+      "generations": [
+        {
+          "event": "generation",
+          "run": 0,
+          "ms": 52923.455063,
+          "steps": 1,
+          "progress": [
+            {
+              "step": 1,
+              "total": 1,
+              "elapsed_ms": 20016.95464,
+              "thermal": 1
+            }
+          ],
+          "thermal_start": 1,
+          "thermal_end": 1,
+          "png_bytes": 573443,
+          "sha256": "874553851c9c3a1360e1c655a5f6b9a5a3eadd0f012655cf756f1d72c3ec34a8",
+          "output": "sdturbo-gpu-1-0.png",
+          "pss_bytes": 2030106624,
+          "after_last_step_ms": 32906.500423000005
+        }
+      ],
+      "scheduled_graph_nodes": [
+        {
+          "cpu": 0,
+          "vulkan": 3124,
+          "metal": 0,
+          "cuda": 0,
+          "other": 973
+        }
+      ],
+      "errors": [],
+      "process_exit": null,
+      "host_timeout": false,
+      "apk_sha256": [
+        "8012ee086bb90eb95e7e9dc53ecb483b62e8d583b34120d510f5eae25b712026"
+      ],
+      "git_base": "dae2592a95512490b148ee9ff2bf4a43b71ad234",
+      "started_utc": "2026-10-25T11:10:20.401341+00:00",
+      "files": [
+        {
+          "model": "sd-turbo",
+          "repo": "Green-Sky/SD-Turbo-GGUF",
+          "revision": "19a31586d02d64a73b4419bc193b3ecfaf38e1f0",
+          "file": "sd_turbo-f16-q8_0.gguf",
+          "local": "sd-turbo.gguf",
+          "size": 2023745376,
+          "sha256": "d50be7655f0a554cf8041c145d88b210bd5f3c545423119dee62ae08cae51580"
+        }
+      ],
+      "thermal_conditions": {
+        "before": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 37.715,
+            "charging_therm": 45.414,
+            "G3D": 43.000004,
+            "MID": 44.000004,
+            "LITTLE": 44.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 40.35848,
+            "thb_hda": 0.0,
+            "rfpa_therm": 43.93,
+            "VIRTUAL-SKIN-FRONT": 40.905613,
+            "cellular-emergency": 40.496105,
+            "soc_therm": 45.653004,
+            "VIRTUAL-SKIN-MODEL": 40.324596,
+            "ShutdownMode": 40.496105,
+            "VIRTUAL-SKIN-SPEAKER": 39.907776,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 40.35848,
+            "btmspkr_therm": 38.272003,
+            "TPU": 43.000004,
+            "VIRTUAL-SKIN-LEGACY": 40.76456,
+            "VIRTUAL-SKIN": 40.496105,
+            "usb_pwr_therm": 38.227,
+            "quiet_therm": 42.807003,
+            "BIG": 44.000004,
+            "battery": 40.0,
+            "north_therm": 43.495003,
+            "ShutdownModeSteady": 40.496105
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 17,
+            "thermal-uclamp-4": 10,
+            "thermal-uclamp-0": 6
+          },
+          "ready": false
+        },
+        "after": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 37.626003,
+            "charging_therm": 46.202003,
+            "G3D": 52.000004,
+            "MID": 52.000004,
+            "LITTLE": 52.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 40.388577,
+            "thb_hda": 0.0,
+            "rfpa_therm": 43.632004,
+            "VIRTUAL-SKIN-FRONT": 40.864853,
+            "cellular-emergency": 40.362324,
+            "soc_therm": 46.488003,
+            "VIRTUAL-SKIN-MODEL": 40.408348,
+            "ShutdownMode": 40.362324,
+            "VIRTUAL-SKIN-SPEAKER": 39.892258,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 40.388577,
+            "btmspkr_therm": 38.161003,
+            "TPU": 50.000004,
+            "VIRTUAL-SKIN-LEGACY": 40.83247,
+            "VIRTUAL-SKIN": 40.362324,
+            "usb_pwr_therm": 38.161003,
+            "quiet_therm": 42.212,
+            "BIG": 52.000004,
+            "battery": 40.4,
+            "north_therm": 42.922,
+            "ShutdownModeSteady": 40.362324
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 17,
+            "thermal-uclamp-4": 10,
+            "thermal-uclamp-0": 5
+          },
+          "ready": false
+        }
+      },
+      "device_model": "Pixel 9"
+    },
+    {
+      "tag": "sdturbo-gpu-2",
+      "success": true,
+      "config": {
+        "event": "config",
+        "model": "sd-turbo",
+        "tag": "sdturbo-gpu-2",
+        "backend": "VULKAN",
+        "threads": -1,
+        "size": 512,
+        "steps": 2,
+        "cfg": 1,
+        "sampler": 0,
+        "flash": true,
+        "mmap": true,
+        "conv": false,
+        "offload": true,
+        "tiling": false,
+        "wtype": -1,
+        "prediction": 0,
+        "scheduler": 6,
+        "vae_cpu": false,
+        "quantized": false,
+        "preview": false,
+        "max_vram": "",
+        "segmented": false,
+        "prefetch": false,
+        "thermal": 1,
+        "foreground": true
+      },
+      "load_ms": 267.337403,
+      "generations": [
+        {
+          "event": "generation",
+          "run": 0,
+          "ms": 62165.061798,
+          "steps": 2,
+          "progress": [
+            {
+              "step": 1,
+              "total": 2,
+              "elapsed_ms": 18215.975229,
+              "thermal": 1
+            },
+            {
+              "step": 2,
+              "total": 2,
+              "elapsed_ms": 30284.628596,
+              "thermal": 1
+            }
+          ],
+          "thermal_start": 1,
+          "thermal_end": 1,
+          "png_bytes": 561977,
+          "sha256": "d6abaa3c5dfc719f7697d1e1c4f48b5346a73d3c22abf163a91ed0b8d1c09570",
+          "output": "sdturbo-gpu-2-0.png",
+          "pss_bytes": 2342254592,
+          "sampling_interval_ms": 12068.653366999999,
+          "after_last_step_ms": 31880.433202000004
+        }
+      ],
+      "scheduled_graph_nodes": [
+        {
+          "cpu": 0,
+          "vulkan": 5662,
+          "metal": 0,
+          "cuda": 0,
+          "other": 973
+        }
+      ],
+      "errors": [],
+      "process_exit": null,
+      "host_timeout": false,
+      "apk_sha256": [
+        "8012ee086bb90eb95e7e9dc53ecb483b62e8d583b34120d510f5eae25b712026"
+      ],
+      "git_base": "dae2592a95512490b148ee9ff2bf4a43b71ad234",
+      "started_utc": "2026-10-25T11:12:23.400683+00:00",
+      "files": [
+        {
+          "model": "sd-turbo",
+          "repo": "Green-Sky/SD-Turbo-GGUF",
+          "revision": "19a31586d02d64a73b4419bc193b3ecfaf38e1f0",
+          "file": "sd_turbo-f16-q8_0.gguf",
+          "local": "sd-turbo.gguf",
+          "size": 2023745376,
+          "sha256": "d50be7655f0a554cf8041c145d88b210bd5f3c545423119dee62ae08cae51580"
+        }
+      ],
+      "thermal_conditions": {
+        "before": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 37.448,
+            "charging_therm": 44.273003,
+            "G3D": 43.000004,
+            "MID": 44.000004,
+            "LITTLE": 43.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 39.682236,
+            "thb_hda": 0.0,
+            "rfpa_therm": 42.876003,
+            "VIRTUAL-SKIN-FRONT": 40.350113,
+            "cellular-emergency": 39.79019,
+            "soc_therm": 44.663002,
+            "VIRTUAL-SKIN-MODEL": 39.74782,
+            "ShutdownMode": 39.79019,
+            "VIRTUAL-SKIN-SPEAKER": 39.383602,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 39.682236,
+            "btmspkr_therm": 37.983,
+            "TPU": 43.000004,
+            "VIRTUAL-SKIN-LEGACY": 40.097588,
+            "VIRTUAL-SKIN": 39.773243,
+            "usb_pwr_therm": 37.983,
+            "quiet_therm": 41.823,
+            "BIG": 43.000004,
+            "battery": 39.5,
+            "north_therm": 42.464,
+            "ShutdownModeSteady": 39.79019
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 17,
+            "thermal-uclamp-4": 10,
+            "thermal-uclamp-0": 4
+          },
+          "ready": false
+        },
+        "after": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 37.359,
+            "charging_therm": 46.082,
+            "G3D": 52.000004,
+            "MID": 52.000004,
+            "LITTLE": 52.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 40.05246,
+            "thb_hda": 0.0,
+            "rfpa_therm": 43.128002,
+            "VIRTUAL-SKIN-FRONT": 40.51742,
+            "cellular-emergency": 40.001022,
+            "soc_therm": 46.297,
+            "VIRTUAL-SKIN-MODEL": 40.031807,
+            "ShutdownMode": 40.001022,
+            "VIRTUAL-SKIN-SPEAKER": 39.554485,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 40.05246,
+            "btmspkr_therm": 37.805,
+            "TPU": 50.000004,
+            "VIRTUAL-SKIN-LEGACY": 40.501038,
+            "VIRTUAL-SKIN": 40.001022,
+            "usb_pwr_therm": 37.849003,
+            "quiet_therm": 41.616,
+            "BIG": 52.000004,
+            "battery": 40.100002,
+            "north_therm": 42.372,
+            "ShutdownModeSteady": 40.001022
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 17,
+            "thermal-uclamp-4": 10,
+            "thermal-uclamp-0": 4
+          },
+          "ready": false
+        }
+      },
+      "device_model": "Pixel 9"
+    },
+    {
+      "tag": "sdturbo-no-fa-1",
+      "success": true,
+      "config": {
+        "event": "config",
+        "model": "sd-turbo",
+        "tag": "sdturbo-no-fa-1",
+        "backend": "VULKAN",
+        "threads": -1,
+        "size": 512,
+        "steps": 1,
+        "cfg": 1,
+        "sampler": 0,
+        "flash": false,
+        "mmap": true,
+        "conv": false,
+        "offload": true,
+        "tiling": false,
+        "wtype": -1,
+        "prediction": 0,
+        "scheduler": 6,
+        "vae_cpu": false,
+        "quantized": false,
+        "preview": false,
+        "max_vram": "",
+        "segmented": false,
+        "prefetch": false,
+        "thermal": 1,
+        "foreground": true
+      },
+      "load_ms": 113.321127,
+      "generations": [
+        {
+          "event": "generation",
+          "run": 0,
+          "ms": 46259.752097,
+          "steps": 1,
+          "progress": [
+            {
+              "step": 1,
+              "total": 1,
+              "elapsed_ms": 15691.82565,
+              "thermal": 1
+            }
+          ],
+          "thermal_start": 1,
+          "thermal_end": 1,
+          "png_bytes": 573331,
+          "sha256": "d222c5622fe1a4de9833d09d37017064678ff50e9b1b3ba209ede14189dbe060",
+          "output": "sdturbo-no-fa-1-0.png",
+          "pss_bytes": 1995239424,
+          "after_last_step_ms": 30567.926446999998
+        }
+      ],
+      "scheduled_graph_nodes": [
+        {
+          "cpu": 0,
+          "vulkan": 3220,
+          "metal": 0,
+          "cuda": 0,
+          "other": 973
+        }
+      ],
+      "errors": [],
+      "process_exit": null,
+      "host_timeout": false,
+      "apk_sha256": [
+        "8012ee086bb90eb95e7e9dc53ecb483b62e8d583b34120d510f5eae25b712026"
+      ],
+      "git_base": "dae2592a95512490b148ee9ff2bf4a43b71ad234",
+      "started_utc": "2026-10-25T11:16:28.172518+00:00",
+      "files": [
+        {
+          "model": "sd-turbo",
+          "repo": "Green-Sky/SD-Turbo-GGUF",
+          "revision": "19a31586d02d64a73b4419bc193b3ecfaf38e1f0",
+          "file": "sd_turbo-f16-q8_0.gguf",
+          "local": "sd-turbo.gguf",
+          "size": 2023745376,
+          "sha256": "d50be7655f0a554cf8041c145d88b210bd5f3c545423119dee62ae08cae51580"
+        }
+      ],
+      "thermal_conditions": {
+        "before": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 36.803,
+            "charging_therm": 43.724003,
+            "G3D": 43.000004,
+            "MID": 42.000004,
+            "LITTLE": 43.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 39.031258,
+            "thb_hda": 0.0,
+            "rfpa_therm": 42.166,
+            "VIRTUAL-SKIN-FRONT": 39.711872,
+            "cellular-emergency": 38.992165,
+            "soc_therm": 44.228,
+            "VIRTUAL-SKIN-MODEL": 38.931355,
+            "ShutdownMode": 38.992165,
+            "VIRTUAL-SKIN-SPEAKER": 38.755203,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 39.031258,
+            "btmspkr_therm": 37.359,
+            "TPU": 42.000004,
+            "VIRTUAL-SKIN-LEGACY": 39.47677,
+            "VIRTUAL-SKIN": 38.992165,
+            "usb_pwr_therm": 37.337,
+            "quiet_therm": 41.044003,
+            "BIG": 43.000004,
+            "battery": 38.800003,
+            "north_therm": 41.685,
+            "ShutdownModeSteady": 38.992165
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 17,
+            "thermal-uclamp-4": 8,
+            "thermal-uclamp-0": 3
+          },
+          "ready": false
+        },
+        "after": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 36.758003,
+            "charging_therm": 45.486004,
+            "G3D": 58.000004,
+            "MID": 65.0,
+            "LITTLE": 63.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 39.509163,
+            "thb_hda": 0.0,
+            "rfpa_therm": 42.533,
+            "VIRTUAL-SKIN-FRONT": 40.022606,
+            "cellular-emergency": 39.43591,
+            "soc_therm": 46.369003,
+            "VIRTUAL-SKIN-MODEL": 39.449066,
+            "ShutdownMode": 39.43591,
+            "VIRTUAL-SKIN-SPEAKER": 39.069798,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 39.509163,
+            "btmspkr_therm": 37.248,
+            "TPU": 55.000004,
+            "VIRTUAL-SKIN-LEGACY": 40.022297,
+            "VIRTUAL-SKIN": 39.43591,
+            "usb_pwr_therm": 37.248,
+            "quiet_therm": 40.975002,
+            "BIG": 67.0,
+            "battery": 39.800003,
+            "north_therm": 41.754,
+            "ShutdownModeSteady": 39.43591
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 1,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 6,
+            "thermal-uclamp-4": 6,
+            "thermal-uclamp-0": 3
+          },
+          "ready": false
+        }
+      },
+      "device_model": "Pixel 9"
+    },
+    {
+      "tag": "sdturbo-preview-1",
+      "success": true,
+      "config": {
+        "event": "config",
+        "model": "sd-turbo",
+        "tag": "sdturbo-preview-1",
+        "backend": "VULKAN",
+        "threads": -1,
+        "size": 512,
+        "steps": 1,
+        "cfg": 1,
+        "sampler": 0,
+        "flash": true,
+        "mmap": true,
+        "conv": false,
+        "offload": true,
+        "tiling": false,
+        "wtype": -1,
+        "prediction": 0,
+        "scheduler": 6,
+        "vae_cpu": false,
+        "quantized": false,
+        "preview": true,
+        "max_vram": "",
+        "segmented": false,
+        "prefetch": false,
+        "thermal": 1,
+        "foreground": true
+      },
+      "load_ms": 258.645467,
+      "generations": [
+        {
+          "event": "generation",
+          "run": 0,
+          "ms": 19519.240772,
+          "steps": 1,
+          "progress": [
+            {
+              "step": 1,
+              "total": 1,
+              "elapsed_ms": 17410.461352,
+              "thermal": 1
+            }
+          ],
+          "thermal_start": 1,
+          "thermal_end": 1,
+          "png_bytes": 523598,
+          "sha256": "299e03e05a8e62bec5f2d0f1ee2879d3afd45e1cbccb0aaf6c7e6ec379a784d2",
+          "output": "sdturbo-preview-1-0.png",
+          "pss_bytes": 2657473536,
+          "after_last_step_ms": 2108.7794200000026
+        }
+      ],
+      "scheduled_graph_nodes": [
+        {
+          "cpu": 0,
+          "vulkan": 2894,
+          "metal": 0,
+          "cuda": 0,
+          "other": 973
+        }
+      ],
+      "errors": [],
+      "process_exit": null,
+      "host_timeout": false,
+      "apk_sha256": [
+        "8012ee086bb90eb95e7e9dc53ecb483b62e8d583b34120d510f5eae25b712026"
+      ],
+      "git_base": "dae2592a95512490b148ee9ff2bf4a43b71ad234",
+      "started_utc": "2026-10-25T11:18:22.546541+00:00",
+      "files": [
+        {
+          "model": "sd-turbo",
+          "repo": "Green-Sky/SD-Turbo-GGUF",
+          "revision": "19a31586d02d64a73b4419bc193b3ecfaf38e1f0",
+          "file": "sd_turbo-f16-q8_0.gguf",
+          "local": "sd-turbo.gguf",
+          "size": 2023745376,
+          "sha256": "d50be7655f0a554cf8041c145d88b210bd5f3c545423119dee62ae08cae51580"
+        },
+        {
+          "model": "preview-decoder",
+          "repo": "madebyollin/taesd",
+          "revision": "614f76814bbe30edbe2e627ace1c2234c81a2c0e",
+          "local": "taesd.safetensors",
+          "size": 9793292,
+          "sha256": "db169d69145ec4ff064e49d99c95fa05d3eb04ee453de35824a6d0f325513549",
+          "file": "diffusion_pytorch_model.safetensors"
+        }
+      ],
+      "thermal_conditions": {
+        "before": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 36.602,
+            "charging_therm": 43.838,
+            "G3D": 42.000004,
+            "MID": 42.000004,
+            "LITTLE": 42.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 38.968647,
+            "thb_hda": 0.0,
+            "rfpa_therm": 42.166,
+            "VIRTUAL-SKIN-FRONT": 39.61709,
+            "cellular-emergency": 39.0721,
+            "soc_therm": 44.434002,
+            "VIRTUAL-SKIN-MODEL": 39.037292,
+            "ShutdownMode": 39.0721,
+            "VIRTUAL-SKIN-SPEAKER": 38.653996,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 38.968647,
+            "btmspkr_therm": 37.159,
+            "TPU": 42.000004,
+            "VIRTUAL-SKIN-LEGACY": 39.423153,
+            "VIRTUAL-SKIN": 39.0721,
+            "usb_pwr_therm": 37.114002,
+            "quiet_therm": 41.021004,
+            "BIG": 42.000004,
+            "battery": 38.800003,
+            "north_therm": 41.708,
+            "ShutdownModeSteady": 39.0721
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 17,
+            "thermal-uclamp-4": 9,
+            "thermal-uclamp-0": 4
+          },
+          "ready": false
+        },
+        "after": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 36.536003,
+            "charging_therm": 43.976,
+            "G3D": 57.000004,
+            "MID": 61.000004,
+            "LITTLE": 61.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 38.81241,
+            "thb_hda": 0.0,
+            "rfpa_therm": 41.868004,
+            "VIRTUAL-SKIN-FRONT": 39.56942,
+            "cellular-emergency": 38.83486,
+            "soc_therm": 44.823,
+            "VIRTUAL-SKIN-MODEL": 38.90418,
+            "ShutdownMode": 38.862587,
+            "VIRTUAL-SKIN-SPEAKER": 38.55154,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 38.81241,
+            "btmspkr_therm": 37.114002,
+            "TPU": 52.000004,
+            "VIRTUAL-SKIN-LEGACY": 39.405018,
+            "VIRTUAL-SKIN": 38.862587,
+            "usb_pwr_therm": 37.070004,
+            "quiet_therm": 40.723003,
+            "BIG": 62.000004,
+            "battery": 38.800003,
+            "north_therm": 41.342003,
+            "ShutdownModeSteady": 38.862587
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 0,
+            "thermal-uclamp-4": 0,
+            "thermal-uclamp-0": 0
+          },
+          "ready": false
+        }
+      },
+      "device_model": "Pixel 9"
+    },
+    {
+      "tag": "sdturbo-resident-1",
+      "success": true,
+      "config": {
+        "event": "config",
+        "model": "sd-turbo",
+        "tag": "sdturbo-resident-1",
+        "backend": "VULKAN",
+        "threads": -1,
+        "size": 512,
+        "steps": 1,
+        "cfg": 1,
+        "sampler": 0,
+        "flash": true,
+        "mmap": true,
+        "conv": false,
+        "offload": false,
+        "tiling": false,
+        "wtype": -1,
+        "prediction": 0,
+        "scheduler": 6,
+        "vae_cpu": false,
+        "quantized": false,
+        "preview": false,
+        "max_vram": "",
+        "segmented": false,
+        "prefetch": false,
+        "thermal": 1,
+        "foreground": true
+      },
+      "load_ms": 124.40804,
+      "generations": [
+        {
+          "event": "generation",
+          "run": 0,
+          "ms": 45861.368024,
+          "steps": 1,
+          "progress": [
+            {
+              "step": 1,
+              "total": 1,
+              "elapsed_ms": 14775.713142,
+              "thermal": 1
+            }
+          ],
+          "thermal_start": 1,
+          "thermal_end": 1,
+          "png_bytes": 573443,
+          "sha256": "874553851c9c3a1360e1c655a5f6b9a5a3eadd0f012655cf756f1d72c3ec34a8",
+          "output": "sdturbo-resident-1-0.png",
+          "pss_bytes": 2697583616,
+          "after_last_step_ms": 31085.654882000003
+        },
+        {
+          "event": "generation",
+          "run": 1,
+          "ms": 44119.051007,
+          "steps": 1,
+          "progress": [
+            {
+              "step": 1,
+              "total": 1,
+              "elapsed_ms": 12868.624681,
+              "thermal": 1
+            }
+          ],
+          "thermal_start": 1,
+          "thermal_end": 1,
+          "png_bytes": 573443,
+          "sha256": "874553851c9c3a1360e1c655a5f6b9a5a3eadd0f012655cf756f1d72c3ec34a8",
+          "output": "sdturbo-resident-1-1.png",
+          "pss_bytes": 2254703616,
+          "after_last_step_ms": 31250.426326
+        },
+        {
+          "event": "generation",
+          "run": 2,
+          "ms": 43997.159324,
+          "steps": 1,
+          "progress": [
+            {
+              "step": 1,
+              "total": 1,
+              "elapsed_ms": 12973.218513,
+              "thermal": 1
+            }
+          ],
+          "thermal_start": 1,
+          "thermal_end": 1,
+          "png_bytes": 573443,
+          "sha256": "874553851c9c3a1360e1c655a5f6b9a5a3eadd0f012655cf756f1d72c3ec34a8",
+          "output": "sdturbo-resident-1-2.png",
+          "pss_bytes": 2259830784,
+          "after_last_step_ms": 31023.940811
+        }
+      ],
+      "scheduled_graph_nodes": [
+        {
+          "cpu": 0,
+          "vulkan": 3124,
+          "metal": 0,
+          "cuda": 0,
+          "other": 973
+        },
+        {
+          "cpu": 0,
+          "vulkan": 3124,
+          "metal": 0,
+          "cuda": 0,
+          "other": 973
+        },
+        {
+          "cpu": 0,
+          "vulkan": 3124,
+          "metal": 0,
+          "cuda": 0,
+          "other": 973
+        }
+      ],
+      "errors": [],
+      "process_exit": null,
+      "host_timeout": false,
+      "apk_sha256": [
+        "8012ee086bb90eb95e7e9dc53ecb483b62e8d583b34120d510f5eae25b712026"
+      ],
+      "git_base": "dae2592a95512490b148ee9ff2bf4a43b71ad234",
+      "started_utc": "2026-10-25T11:22:18.949678+00:00",
+      "files": [
+        {
+          "model": "sd-turbo",
+          "repo": "Green-Sky/SD-Turbo-GGUF",
+          "revision": "19a31586d02d64a73b4419bc193b3ecfaf38e1f0",
+          "file": "sd_turbo-f16-q8_0.gguf",
+          "local": "sd-turbo.gguf",
+          "size": 2023745376,
+          "sha256": "d50be7655f0a554cf8041c145d88b210bd5f3c545423119dee62ae08cae51580"
+        }
+      ],
+      "thermal_conditions": {
+        "before": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 36.291,
+            "charging_therm": 43.838,
+            "G3D": 42.000004,
+            "MID": 42.000004,
+            "LITTLE": 42.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 38.80178,
+            "thb_hda": 0.0,
+            "rfpa_therm": 42.120003,
+            "VIRTUAL-SKIN-FRONT": 39.40018,
+            "cellular-emergency": 39.01498,
+            "soc_therm": 44.342003,
+            "VIRTUAL-SKIN-MODEL": 38.937733,
+            "ShutdownMode": 39.01498,
+            "VIRTUAL-SKIN-SPEAKER": 38.427,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 38.80178,
+            "btmspkr_therm": 36.870003,
+            "TPU": 42.000004,
+            "VIRTUAL-SKIN-LEGACY": 39.24502,
+            "VIRTUAL-SKIN": 38.98408,
+            "usb_pwr_therm": 36.803,
+            "quiet_therm": 40.929,
+            "BIG": 42.000004,
+            "battery": 38.600002,
+            "north_therm": 41.639004,
+            "ShutdownModeSteady": 39.01498
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 17,
+            "thermal-uclamp-4": 9,
+            "thermal-uclamp-0": 4
+          },
+          "ready": false
+        },
+        "after": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 36.602,
+            "charging_therm": 48.135002,
+            "G3D": 52.000004,
+            "MID": 60.000004,
+            "LITTLE": 55.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 40.532055,
+            "thb_hda": 0.0,
+            "rfpa_therm": 44.250004,
+            "VIRTUAL-SKIN-FRONT": 40.712185,
+            "cellular-emergency": 40.527534,
+            "soc_therm": 48.349003,
+            "VIRTUAL-SKIN-MODEL": 40.545715,
+            "ShutdownMode": 40.51541,
+            "VIRTUAL-SKIN-SPEAKER": 39.487175,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 40.532055,
+            "btmspkr_therm": 36.959003,
+            "TPU": 51.000004,
+            "VIRTUAL-SKIN-LEGACY": 40.871563,
+            "VIRTUAL-SKIN": 40.527534,
+            "usb_pwr_therm": 36.959003,
+            "quiet_therm": 42.166,
+            "BIG": 55.000004,
+            "battery": 40.300003,
+            "north_therm": 43.151,
+            "ShutdownModeSteady": 40.51541
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 17,
+            "thermal-uclamp-4": 10,
+            "thermal-uclamp-0": 6
+          },
+          "ready": false
+        }
+      },
+      "device_model": "Pixel 9"
+    },
+    {
+      "tag": "sdturbo-tiling-1",
+      "success": true,
+      "config": {
+        "event": "config",
+        "model": "sd-turbo",
+        "tag": "sdturbo-tiling-1",
+        "backend": "VULKAN",
+        "threads": -1,
+        "size": 512,
+        "steps": 1,
+        "cfg": 1,
+        "sampler": 0,
+        "flash": true,
+        "mmap": true,
+        "conv": false,
+        "offload": true,
+        "tiling": true,
+        "wtype": -1,
+        "prediction": 0,
+        "scheduler": 6,
+        "vae_cpu": false,
+        "quantized": false,
+        "preview": false,
+        "max_vram": "",
+        "segmented": false,
+        "prefetch": false,
+        "thermal": 1,
+        "foreground": true
+      },
+      "load_ms": 124.957154,
+      "generations": [
+        {
+          "event": "generation",
+          "run": 0,
+          "ms": 82400.165934,
+          "steps": 1,
+          "progress": [
+            {
+              "step": 1,
+              "total": 1,
+              "elapsed_ms": 14885.260221,
+              "thermal": 1
+            }
+          ],
+          "thermal_start": 1,
+          "thermal_end": 1,
+          "png_bytes": 560539,
+          "sha256": "3e722a066e6f4983790028a7077f0b41aaab34eef23fb5bb1a584588ac0fb064",
+          "output": "sdturbo-tiling-1-0.png",
+          "pss_bytes": 2878775296,
+          "after_last_step_ms": 67514.905713
+        }
+      ],
+      "scheduled_graph_nodes": [
+        {
+          "cpu": 0,
+          "vulkan": 7812,
+          "metal": 0,
+          "cuda": 0,
+          "other": 973
+        }
+      ],
+      "errors": [],
+      "process_exit": null,
+      "host_timeout": false,
+      "apk_sha256": [
+        "8012ee086bb90eb95e7e9dc53ecb483b62e8d583b34120d510f5eae25b712026"
+      ],
+      "git_base": "dae2592a95512490b148ee9ff2bf4a43b71ad234",
+      "started_utc": "2026-10-25T11:19:48.833098+00:00",
+      "files": [
+        {
+          "model": "sd-turbo",
+          "repo": "Green-Sky/SD-Turbo-GGUF",
+          "revision": "19a31586d02d64a73b4419bc193b3ecfaf38e1f0",
+          "file": "sd_turbo-f16-q8_0.gguf",
+          "local": "sd-turbo.gguf",
+          "size": 2023745376,
+          "sha256": "d50be7655f0a554cf8041c145d88b210bd5f3c545423119dee62ae08cae51580"
+        }
+      ],
+      "thermal_conditions": {
+        "before": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 36.38,
+            "charging_therm": 42.647003,
+            "G3D": 41.000004,
+            "MID": 41.000004,
+            "LITTLE": 41.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 38.41202,
+            "thb_hda": 0.0,
+            "rfpa_therm": 41.319,
+            "VIRTUAL-SKIN-FRONT": 39.128017,
+            "cellular-emergency": 38.491974,
+            "soc_therm": 43.266003,
+            "VIRTUAL-SKIN-MODEL": 38.38598,
+            "ShutdownMode": 38.449577,
+            "VIRTUAL-SKIN-SPEAKER": 38.194935,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 38.41202,
+            "btmspkr_therm": 36.981003,
+            "TPU": 41.000004,
+            "VIRTUAL-SKIN-LEGACY": 38.817238,
+            "VIRTUAL-SKIN": 38.449577,
+            "usb_pwr_therm": 36.914,
+            "quiet_therm": 40.364002,
+            "BIG": 41.000004,
+            "battery": 38.2,
+            "north_therm": 40.906002,
+            "ShutdownModeSteady": 38.449577
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 0,
+            "thermal-uclamp-4": 0,
+            "thermal-uclamp-0": 0
+          },
+          "ready": false
+        },
+        "after": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 36.402,
+            "charging_therm": 46.536003,
+            "G3D": 52.000004,
+            "MID": 53.000004,
+            "LITTLE": 53.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 39.654415,
+            "thb_hda": 0.0,
+            "rfpa_therm": 42.922,
+            "VIRTUAL-SKIN-FRONT": 40.08617,
+            "cellular-emergency": 39.50952,
+            "soc_therm": 47.275,
+            "VIRTUAL-SKIN-MODEL": 39.568233,
+            "ShutdownMode": 39.50952,
+            "VIRTUAL-SKIN-SPEAKER": 38.995495,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 39.654415,
+            "btmspkr_therm": 36.847,
+            "TPU": 51.000004,
+            "VIRTUAL-SKIN-LEGACY": 40.1538,
+            "VIRTUAL-SKIN": 39.50952,
+            "usb_pwr_therm": 36.825,
+            "quiet_therm": 41.067,
+            "BIG": 53.000004,
+            "battery": 39.800003,
+            "north_therm": 41.914,
+            "ShutdownModeSteady": 39.50952
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 8,
+            "thermal-uclamp-4": 8,
+            "thermal-uclamp-0": 4
+          },
+          "ready": false
+        }
+      },
+      "device_model": "Pixel 9"
+    },
+    {
+      "tag": "sdturbo-vulkan-eps-512-4",
+      "success": true,
+      "config": {
+        "event": "config",
+        "model": "sd-turbo",
+        "tag": "sdturbo-vulkan-eps-512-4",
+        "backend": "VULKAN",
+        "threads": -1,
+        "size": 512,
+        "steps": 4,
+        "cfg": 1,
+        "sampler": 0,
+        "flash": true,
+        "mmap": false,
+        "conv": false,
+        "offload": true,
+        "tiling": false,
+        "wtype": -1,
+        "prediction": 0,
+        "thermal": 0,
+        "foreground": true
+      },
+      "load_ms": 118.436727,
+      "generations": [
+        {
+          "event": "generation",
+          "run": 0,
+          "ms": 105502.269867,
+          "steps": 4,
+          "progress": [
+            {
+              "step": 250,
+              "total": 372,
+              "elapsed_ms": 301.936279,
+              "thermal": 0
+            },
+            {
+              "step": 372,
+              "total": 372,
+              "elapsed_ms": 506.607218,
+              "thermal": 0
+            },
+            {
+              "step": 1,
+              "total": 686,
+              "elapsed_ms": 1212.239462,
+              "thermal": 0
+            },
+            {
+              "step": 216,
+              "total": 686,
+              "elapsed_ms": 1415.556153,
+              "thermal": 0
+            },
+            {
+              "step": 316,
+              "total": 686,
+              "elapsed_ms": 1619.030437,
+              "thermal": 0
+            },
+            {
+              "step": 439,
+              "total": 686,
+              "elapsed_ms": 1822.164674,
+              "thermal": 0
+            },
+            {
+              "step": 534,
+              "total": 686,
+              "elapsed_ms": 2025.822551,
+              "thermal": 0
+            },
+            {
+              "step": 686,
+              "total": 686,
+              "elapsed_ms": 2228.727174,
+              "thermal": 0
+            },
+            {
+              "step": 2,
+              "total": 4,
+              "elapsed_ms": 29353.408868,
+              "thermal": 0
+            },
+            {
+              "step": 3,
+              "total": 4,
+              "elapsed_ms": 41321.180074,
+              "thermal": 0
+            },
+            {
+              "step": 4,
+              "total": 4,
+              "elapsed_ms": 53290.109482,
+              "thermal": 0
+            },
+            {
+              "step": 140,
+              "total": 140,
+              "elapsed_ms": 53596.268581,
+              "thermal": 0
+            }
+          ],
+          "thermal_start": 0,
+          "thermal_end": 0,
+          "png_bytes": 585467,
+          "sha256": "dfb301914e8a408adf7084305059858ca9991905303932abae274c462601065b",
+          "output": "sdturbo-vulkan-eps-512-4-0.png",
+          "pss_bytes": 2215606272,
+          "sampling_interval_ms": 11968.350307,
+          "after_last_step_ms": 52212.160384999996
+        }
+      ],
+      "scheduled_graph_nodes": [],
+      "errors": [],
+      "process_exit": null,
+      "host_timeout": null,
+      "apk_sha256": [],
+      "git_base": "dae2592a95512490b148ee9ff2bf4a43b71ad234",
+      "started_utc": null,
+      "files": [
+        {
+          "model": "sd-turbo",
+          "repo": "Green-Sky/SD-Turbo-GGUF",
+          "revision": "19a31586d02d64a73b4419bc193b3ecfaf38e1f0",
+          "file": "sd_turbo-f16-q8_0.gguf",
+          "local": "sd-turbo.gguf",
+          "size": 2023745376,
+          "sha256": "d50be7655f0a554cf8041c145d88b210bd5f3c545423119dee62ae08cae51580"
+        }
+      ],
+      "thermal_conditions": {
+        "before": {
+          "status": 0,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 32.974003,
+            "charging_therm": 40.275,
+            "G3D": 40.0,
+            "MID": 55.000004,
+            "LITTLE": 50.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 35.324356,
+            "thb_hda": 0.0,
+            "rfpa_therm": 38.65,
+            "VIRTUAL-SKIN-FRONT": 35.96895,
+            "cellular-emergency": 36.361675,
+            "soc_therm": 42.258003,
+            "VIRTUAL-SKIN-MODEL": 36.23679,
+            "ShutdownMode": 36.361675,
+            "VIRTUAL-SKIN-SPEAKER": 35.023888,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 35.324356,
+            "btmspkr_therm": 32.885002,
+            "TPU": 40.0,
+            "VIRTUAL-SKIN-LEGACY": 35.884216,
+            "VIRTUAL-SKIN": 36.361675,
+            "usb_pwr_therm": 32.752003,
+            "quiet_therm": 37.715,
+            "BIG": 45.000004,
+            "battery": 35.2,
+            "north_therm": 38.361,
+            "ShutdownModeSteady": 36.361675
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 1,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 0,
+            "thermal-uclamp-4": 0,
+            "thermal-uclamp-0": 0
+          },
+          "ready": false
+        },
+        "after": {
+          "status": 0,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 33.842003,
+            "charging_therm": 46.321003,
+            "G3D": 55.000004,
+            "MID": 61.000004,
+            "LITTLE": 59.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 38.71735,
+            "thb_hda": 0.0,
+            "rfpa_therm": 41.548,
+            "VIRTUAL-SKIN-FRONT": 39.441593,
+            "cellular-emergency": 38.90621,
+            "soc_therm": 52.484,
+            "VIRTUAL-SKIN-MODEL": 39.083202,
+            "ShutdownMode": 38.78822,
+            "VIRTUAL-SKIN-SPEAKER": 37.713665,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 38.71735,
+            "btmspkr_therm": 33.820004,
+            "TPU": 53.000004,
+            "VIRTUAL-SKIN-LEGACY": 39.462536,
+            "VIRTUAL-SKIN": 38.90621,
+            "usb_pwr_therm": 33.753002,
+            "quiet_therm": 39.429,
+            "BIG": 60.000004,
+            "battery": 38.800003,
+            "north_therm": 40.476,
+            "ShutdownModeSteady": 38.78822
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 15,
+            "thermal-cpufreq-0": 1,
+            "thermal-cpufreq-1": 6,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 0,
+            "thermal-uclamp-4": 0,
+            "thermal-uclamp-0": 0
+          },
+          "ready": false
+        }
+      },
+      "device_model": "Pixel 9"
+    },
+    {
+      "tag": "sdxl-turbo-gpu-1",
+      "success": true,
+      "config": {
+        "event": "config",
+        "model": "sdxl-turbo",
+        "tag": "sdxl-turbo-gpu-1",
+        "backend": "VULKAN",
+        "threads": -1,
+        "size": 512,
+        "steps": 1,
+        "cfg": 1,
+        "sampler": 1,
+        "flash": true,
+        "mmap": true,
+        "conv": false,
+        "offload": true,
+        "tiling": false,
+        "wtype": -1,
+        "prediction": -1,
+        "scheduler": 6,
+        "vae_cpu": false,
+        "quantized": true,
+        "preview": false,
+        "max_vram": "",
+        "segmented": false,
+        "prefetch": false,
+        "thermal": 1,
+        "foreground": true
+      },
+      "load_ms": 417.839071,
+      "generations": [
+        {
+          "event": "generation",
+          "run": 0,
+          "ms": 76298.908932,
+          "steps": 1,
+          "progress": [
+            {
+              "step": 1,
+              "total": 1,
+              "elapsed_ms": 43470.630839,
+              "thermal": 1
+            }
+          ],
+          "thermal_start": 1,
+          "thermal_end": 1,
+          "png_bytes": 495012,
+          "sha256": "93a9a58620d4f2d653dce252f52b417c93bac5d4e1ed05adbd43921ed068aea8",
+          "output": "sdxl-turbo-gpu-1-0.png",
+          "pss_bytes": 1381865472,
+          "after_last_step_ms": 32828.27809300001
+        }
+      ],
+      "scheduled_graph_nodes": [
+        {
+          "cpu": 0,
+          "vulkan": 6187,
+          "metal": 0,
+          "cuda": 0,
+          "other": 3251
+        }
+      ],
+      "errors": [],
+      "process_exit": null,
+      "host_timeout": false,
+      "apk_sha256": [
+        "8012ee086bb90eb95e7e9dc53ecb483b62e8d583b34120d510f5eae25b712026"
+      ],
+      "git_base": "dae2592a95512490b148ee9ff2bf4a43b71ad234",
+      "started_utc": "2026-10-25T11:28:58.835376+00:00",
+      "files": [
+        {
+          "source": "sdxl-turbo.safetensors",
+          "local": "sdxl-turbo-q4_0.gguf",
+          "size": 2709381664,
+          "sha256": "f7ec24df50b6e249f762a91ee508a12e4d5b52cf574a1af01c35d68b9da4719e",
+          "conversion": "pinned stable-diffusion.cpp convert, Q4_0, no name conversion",
+          "sd_revision": "c92d73c408515c94beef32161bb5960764fde7a0",
+          "ggml_revision": "f46bc30cb6a7f68a67e34a00061e20a4ad1eff43"
+        }
+      ],
+      "thermal_conditions": {
+        "before": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 36.758003,
+            "charging_therm": 44.548,
+            "G3D": 43.000004,
+            "MID": 42.000004,
+            "LITTLE": 43.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 39.35074,
+            "thb_hda": 0.0,
+            "rfpa_therm": 42.83,
+            "VIRTUAL-SKIN-FRONT": 39.887886,
+            "cellular-emergency": 39.60894,
+            "soc_therm": 44.823,
+            "VIRTUAL-SKIN-MODEL": 39.545757,
+            "ShutdownMode": 39.60894,
+            "VIRTUAL-SKIN-SPEAKER": 38.89729,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 39.35074,
+            "btmspkr_therm": 37.204002,
+            "TPU": 42.000004,
+            "VIRTUAL-SKIN-LEGACY": 39.76444,
+            "VIRTUAL-SKIN": 39.583668,
+            "usb_pwr_therm": 37.204002,
+            "quiet_therm": 41.639004,
+            "BIG": 43.000004,
+            "battery": 39.100002,
+            "north_therm": 42.326,
+            "ShutdownModeSteady": 39.60894
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 17,
+            "thermal-uclamp-4": 9,
+            "thermal-uclamp-0": 4
+          },
+          "ready": false
+        },
+        "after": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 36.781002,
+            "charging_therm": 46.082,
+            "G3D": 52.000004,
+            "MID": 53.000004,
+            "LITTLE": 55.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 39.725853,
+            "thb_hda": 0.0,
+            "rfpa_therm": 43.014004,
+            "VIRTUAL-SKIN-FRONT": 40.10359,
+            "cellular-emergency": 39.720284,
+            "soc_therm": 46.273003,
+            "VIRTUAL-SKIN-MODEL": 39.76174,
+            "ShutdownMode": 39.692642,
+            "VIRTUAL-SKIN-SPEAKER": 39.12378,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 39.725853,
+            "btmspkr_therm": 37.204002,
+            "TPU": 50.000004,
+            "VIRTUAL-SKIN-LEGACY": 40.16661,
+            "VIRTUAL-SKIN": 39.720284,
+            "usb_pwr_therm": 37.226,
+            "quiet_therm": 41.387,
+            "BIG": 55.000004,
+            "battery": 39.7,
+            "north_therm": 42.189003,
+            "ShutdownModeSteady": 39.692642
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 17,
+            "thermal-uclamp-4": 9,
+            "thermal-uclamp-0": 4
+          },
+          "ready": false
+        }
+      },
+      "device_model": "Pixel 9"
+    },
+    {
+      "tag": "z-image-turbo-bounded-256-1",
+      "success": true,
+      "config": {
+        "event": "config",
+        "model": "z-image-turbo",
+        "tag": "z-image-turbo-bounded-256-1",
+        "backend": "VULKAN",
+        "threads": -1,
+        "size": 256,
+        "steps": 1,
+        "cfg": 1,
+        "sampler": 0,
+        "flash": true,
+        "mmap": true,
+        "conv": false,
+        "offload": true,
+        "tiling": false,
+        "wtype": -1,
+        "prediction": -1,
+        "scheduler": -1,
+        "vae_cpu": false,
+        "quantized": false,
+        "preview": false,
+        "max_vram": "3.0",
+        "segmented": true,
+        "prefetch": false,
+        "thermal": 1,
+        "foreground": true
+      },
+      "load_ms": 302.623983,
+      "generations": [
+        {
+          "event": "generation",
+          "run": 0,
+          "ms": 109041.390231,
+          "steps": 1,
+          "progress": [
+            {
+              "step": 1,
+              "total": 1,
+              "elapsed_ms": 98911.863818,
+              "thermal": 1
+            }
+          ],
+          "thermal_start": 1,
+          "thermal_end": 1,
+          "png_bytes": 115273,
+          "sha256": "d75a42ad920efbeebc49b4cd07ae4d6db9a413b09f5af477247a2b0911cef9a0",
+          "output": "z-image-turbo-bounded-256-1-0.png",
+          "pss_bytes": 2824629248,
+          "after_last_step_ms": 10129.526413
+        }
+      ],
+      "scheduled_graph_nodes": [
+        {
+          "cpu": 0,
+          "vulkan": 4169,
+          "metal": 0,
+          "cuda": 0,
+          "other": 1474
+        }
+      ],
+      "errors": [],
+      "process_exit": null,
+      "host_timeout": false,
+      "apk_sha256": [
+        "8012ee086bb90eb95e7e9dc53ecb483b62e8d583b34120d510f5eae25b712026"
+      ],
+      "git_base": "dae2592a95512490b148ee9ff2bf4a43b71ad234",
+      "started_utc": "2026-10-25T11:31:24.775159+00:00",
+      "files": [
+        {
+          "model": "z-image-turbo",
+          "repo": "leejet/Z-Image-Turbo-GGUF",
+          "revision": "c61c0e422dc8b541b7548cf33a4ef8302b0f8085",
+          "file": "z_image_turbo-Q4_0.gguf",
+          "local": "z-image-turbo.gguf",
+          "size": 3683370944,
+          "sha256": "2bc57986874c84f7ec6d02d9d7070a53b0029954a0e38a6e1342eb91095572f5"
+        },
+        {
+          "model": "z-image-turbo",
+          "repo": "unsloth/Qwen3-4B-Instruct-2507-GGUF",
+          "revision": "a06e946bb6b655725eafa393f4a9745d460374c9",
+          "file": "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+          "local": "qwen3-4b.gguf",
+          "size": 2497281120,
+          "sha256": "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597"
+        },
+        {
+          "model": "z-image-turbo",
+          "repo": "Comfy-Org/Z-Image-Turbo",
+          "revision": "6fc90a3b1b653e935a0d175e260736de25b84df5",
+          "file": "split_files/vae/ae.safetensors",
+          "local": "flux-vae.safetensors",
+          "size": 335304388,
+          "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+        }
+      ],
+      "thermal_conditions": {
+        "before": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 36.602,
+            "charging_therm": 43.563004,
+            "G3D": 42.000004,
+            "MID": 42.000004,
+            "LITTLE": 42.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 38.88085,
+            "thb_hda": 0.0,
+            "rfpa_therm": 42.074,
+            "VIRTUAL-SKIN-FRONT": 39.52303,
+            "cellular-emergency": 39.064365,
+            "soc_therm": 43.884003,
+            "VIRTUAL-SKIN-MODEL": 38.956135,
+            "ShutdownMode": 39.064365,
+            "VIRTUAL-SKIN-SPEAKER": 38.56182,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 38.88085,
+            "btmspkr_therm": 37.181004,
+            "TPU": 42.000004,
+            "VIRTUAL-SKIN-LEGACY": 39.291534,
+            "VIRTUAL-SKIN": 39.064365,
+            "usb_pwr_therm": 37.114002,
+            "quiet_therm": 41.021004,
+            "BIG": 42.000004,
+            "battery": 38.7,
+            "north_therm": 41.662003,
+            "ShutdownModeSteady": 39.064365
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 17,
+            "thermal-uclamp-4": 8,
+            "thermal-uclamp-0": 3
+          },
+          "ready": false
+        },
+        "after": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 36.692,
+            "charging_therm": 47.538002,
+            "G3D": 52.000004,
+            "MID": 59.000004,
+            "LITTLE": 55.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 40.365368,
+            "thb_hda": 0.0,
+            "rfpa_therm": 43.998,
+            "VIRTUAL-SKIN-FRONT": 40.698044,
+            "cellular-emergency": 40.298813,
+            "soc_therm": 48.254,
+            "VIRTUAL-SKIN-MODEL": 40.31274,
+            "ShutdownMode": 40.298813,
+            "VIRTUAL-SKIN-SPEAKER": 39.50996,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 40.365368,
+            "btmspkr_therm": 37.092003,
+            "TPU": 50.000004,
+            "VIRTUAL-SKIN-LEGACY": 40.799694,
+            "VIRTUAL-SKIN": 40.298813,
+            "usb_pwr_therm": 37.092003,
+            "quiet_therm": 41.983,
+            "BIG": 59.000004,
+            "battery": 40.300003,
+            "north_therm": 42.945004,
+            "ShutdownModeSteady": 40.298813
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 6,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 17,
+            "thermal-uclamp-4": 10,
+            "thermal-uclamp-0": 6
+          },
+          "ready": false
+        }
+      },
+      "device_model": "Pixel 9"
+    },
+    {
+      "tag": "z-image-turbo-bounded-no-fa-256-1",
+      "success": true,
+      "config": {
+        "event": "config",
+        "model": "z-image-turbo",
+        "tag": "z-image-turbo-bounded-no-fa-256-1",
+        "backend": "VULKAN",
+        "threads": -1,
+        "size": 256,
+        "steps": 1,
+        "cfg": 1,
+        "sampler": 0,
+        "flash": false,
+        "mmap": true,
+        "conv": false,
+        "offload": true,
+        "tiling": false,
+        "wtype": -1,
+        "prediction": -1,
+        "scheduler": -1,
+        "vae_cpu": false,
+        "quantized": false,
+        "preview": false,
+        "max_vram": "3.0",
+        "segmented": true,
+        "prefetch": false,
+        "thermal": 1,
+        "foreground": true
+      },
+      "load_ms": 315.326946,
+      "generations": [
+        {
+          "event": "generation",
+          "run": 0,
+          "ms": 113020.206069,
+          "steps": 1,
+          "progress": [
+            {
+              "step": 1,
+              "total": 1,
+              "elapsed_ms": 103738.952199,
+              "thermal": 1
+            }
+          ],
+          "thermal_start": 1,
+          "thermal_end": 1,
+          "png_bytes": 115432,
+          "sha256": "8d21f7e2843c4a518f163a046120842759085eaa4205cf607963f00ec55d7f43",
+          "output": "z-image-turbo-bounded-no-fa-256-1-0.png",
+          "pss_bytes": 2905728000,
+          "after_last_step_ms": 9281.25387
+        }
+      ],
+      "scheduled_graph_nodes": [
+        {
+          "cpu": 0,
+          "vulkan": 4169,
+          "metal": 0,
+          "cuda": 0,
+          "other": 1474
+        }
+      ],
+      "errors": [],
+      "process_exit": null,
+      "host_timeout": false,
+      "apk_sha256": [
+        "8012ee086bb90eb95e7e9dc53ecb483b62e8d583b34120d510f5eae25b712026"
+      ],
+      "git_base": "dae2592a95512490b148ee9ff2bf4a43b71ad234",
+      "started_utc": "2026-10-25T11:34:21.952608+00:00",
+      "files": [
+        {
+          "model": "z-image-turbo",
+          "repo": "leejet/Z-Image-Turbo-GGUF",
+          "revision": "c61c0e422dc8b541b7548cf33a4ef8302b0f8085",
+          "file": "z_image_turbo-Q4_0.gguf",
+          "local": "z-image-turbo.gguf",
+          "size": 3683370944,
+          "sha256": "2bc57986874c84f7ec6d02d9d7070a53b0029954a0e38a6e1342eb91095572f5"
+        },
+        {
+          "model": "z-image-turbo",
+          "repo": "unsloth/Qwen3-4B-Instruct-2507-GGUF",
+          "revision": "a06e946bb6b655725eafa393f4a9745d460374c9",
+          "file": "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+          "local": "qwen3-4b.gguf",
+          "size": 2497281120,
+          "sha256": "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597"
+        },
+        {
+          "model": "z-image-turbo",
+          "repo": "Comfy-Org/Z-Image-Turbo",
+          "revision": "6fc90a3b1b653e935a0d175e260736de25b84df5",
+          "file": "split_files/vae/ae.safetensors",
+          "local": "flux-vae.safetensors",
+          "size": 335304388,
+          "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38"
+        }
+      ],
+      "thermal_conditions": {
+        "before": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 36.669003,
+            "charging_therm": 44.571003,
+            "G3D": 43.000004,
+            "MID": 42.000004,
+            "LITTLE": 43.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 39.350883,
+            "thb_hda": 0.0,
+            "rfpa_therm": 42.899002,
+            "VIRTUAL-SKIN-FRONT": 39.88416,
+            "cellular-emergency": 39.548252,
+            "soc_therm": 45.08,
+            "VIRTUAL-SKIN-MODEL": 39.488163,
+            "ShutdownMode": 39.548252,
+            "VIRTUAL-SKIN-SPEAKER": 38.891716,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 39.350883,
+            "btmspkr_therm": 37.137,
+            "TPU": 42.000004,
+            "VIRTUAL-SKIN-LEGACY": 39.783607,
+            "VIRTUAL-SKIN": 39.548252,
+            "usb_pwr_therm": 37.114002,
+            "quiet_therm": 41.662003,
+            "BIG": 43.000004,
+            "battery": 39.0,
+            "north_therm": 42.349003,
+            "ShutdownModeSteady": 39.548252
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 17,
+            "thermal-uclamp-4": 10,
+            "thermal-uclamp-0": 5
+          },
+          "ready": false
+        },
+        "after": {
+          "status": 1,
+          "temperatures_c": {
+            "BG-TASKS-THROTTLING-HINT": 0.0,
+            "disp_therm": 36.803,
+            "charging_therm": 47.013,
+            "G3D": 51.000004,
+            "MID": 54.000004,
+            "LITTLE": 54.000004,
+            "VIRTUAL-USB-UI": 0.0,
+            "VIRTUAL-USB-THROTTLING": 0.0,
+            "VIRTUAL-SKIN-CHARGE-PERSIST": 40.131516,
+            "thb_hda": 0.0,
+            "rfpa_therm": 43.815002,
+            "VIRTUAL-SKIN-FRONT": 40.495018,
+            "cellular-emergency": 40.179844,
+            "soc_therm": 47.443,
+            "VIRTUAL-SKIN-MODEL": 40.190273,
+            "ShutdownMode": 40.179844,
+            "VIRTUAL-SKIN-SPEAKER": 39.407085,
+            "VIRTUAL-SKIN-CHARGE-WIRED": 40.131516,
+            "btmspkr_therm": 37.226,
+            "TPU": 49.000004,
+            "VIRTUAL-SKIN-LEGACY": 40.632595,
+            "VIRTUAL-SKIN": 40.184017,
+            "usb_pwr_therm": 37.181004,
+            "quiet_therm": 41.960003,
+            "BIG": 57.000004,
+            "battery": 40.100002,
+            "north_therm": 42.83,
+            "ShutdownModeSteady": 40.179844
+          },
+          "compute_cooling": {
+            "thermal-cpufreq-2": 0,
+            "thermal-cpufreq-0": 0,
+            "thermal-cpufreq-1": 0,
+            "thermal-gpufreq-0": 0,
+            "thermal-uclamp-7": 17,
+            "thermal-uclamp-4": 10,
+            "thermal-uclamp-0": 5
+          },
+          "ready": false
+        }
+      },
+      "device_model": "Pixel 9"
+    }
+  ]
+}

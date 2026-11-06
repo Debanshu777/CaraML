@@ -607,6 +607,15 @@ class ModelViewModel(
 
     private val _browseMode = MutableStateFlow(ModelHubBrowseMode.LanguageModels)
     val browseMode: StateFlow<ModelHubBrowseMode> = _browseMode.asStateFlow()
+    private val _languageModelFormat = MutableStateFlow("gguf")
+    val languageModelFormat: StateFlow<String> = _languageModelFormat.asStateFlow()
+
+    fun setLanguageModelFormat(format: String) {
+        require(format in setOf("gguf", "onnx"))
+        if (_languageModelFormat.value == format) return
+        _languageModelFormat.value = format
+        startPageQuery(_results.value.key?.committedSearch)
+    }
 
     private val sdCppCatalog = loadSdCppCuratedCatalog()
 
@@ -822,6 +831,7 @@ class ModelViewModel(
     private fun startPageQuery(committedSearch: String?) {
         val params = _listParams.value
         val key = ModelQueryKey(
+            format = _languageModelFormat.value,
             mode = ModelHubBrowseMode.LanguageModels,
             committedSearch = committedSearch,
             remoteSort = params.sort,
@@ -831,9 +841,12 @@ class ModelViewModel(
         val request = try {
             ModelPageRequest(
                 search = committedSearch,
+                filter = listOf(key.format),
+                pipelineTag = if (key.format == "onnx") "text-generation" else null,
+                apps = if (key.format == "onnx") emptyList() else listOf("llama.cpp"),
                 sort = key.remoteSort,
-                minParams = key.minParams,
-                maxParams = key.maxParams,
+                minParams = if (key.format == "onnx") null else key.minParams,
+                maxParams = if (key.format == "onnx") null else key.maxParams,
             )
         } catch (_: IllegalArgumentException) {
             _searchError.value = "Search or sort is unsupported. Refine your search and try again."
@@ -1044,12 +1057,12 @@ class ModelViewModel(
                     _detailError.update { null }
 
                     val weightFilter = when (hubBrowseMode) {
-                        ModelHubBrowseMode.LanguageModels -> ModelFileWeightFilter.GgufOnly
+                        ModelHubBrowseMode.LanguageModels -> ModelFileWeightFilter.LanguageModelFiles
                         ModelHubBrowseMode.DiffusionImage,
                         ModelHubBrowseMode.DiffusionVideo ->
                             ModelFileWeightFilter.StableDiffusionCppWeights
                     }
-                    when (val treeResult = api.getModelFileTree(modelId, weightFilter)) {
+                    when (val treeResult = api.getModelFileTree(modelId, detailResult.data.sha.orEmpty(), weightFilter)) {
                         is Result.Success -> {
                             val downloaded = localModelRepository.getDownloadedFilenames(modelId)
                             _ggufFiles.update {
@@ -1270,6 +1283,12 @@ class ModelViewModel(
 
     /** Routes the selected artifact into the durable language or diffusion download flow. */
     fun startDownload(modelId: String, path: String, metadata: DownloadMetadataDTO) {
+        if (path.endsWith(".onnx")) {
+            val requests = onnxRequestsFor(path)
+            if (requests == null) { _downloadError.value = "Complete ONNX bundle metadata is not available yet."; return }
+            startLanguageBundleDownload(modelId, requests.map { it.metadata.copy(logicalRole = "model") })
+            return
+        }
         val diffusionHub = when (_browseMode.value) {
             ModelHubBrowseMode.DiffusionImage, ModelHubBrowseMode.DiffusionVideo -> true
             ModelHubBrowseMode.LanguageModels -> false
@@ -1312,10 +1331,13 @@ class ModelViewModel(
             _downloadError.update { null }
             var enqueued = false
             try {
-                val requests = metadata.map { DownloadArtifactRequest(it, primary = true) }
+                val requests = if (identities.any { it.relativePath.endsWith(".onnx") }) {
+                    com.debanshu777.caraml.core.download.onnxDownloadRequests(metadata)
+                        ?: throw ArtifactVerificationException()
+                } else metadata.map { DownloadArtifactRequest(it, primary = true) }
                 when (val admission = refreshDownloadAdmission(
                     modelId,
-                    metadata.first(),
+                    requests.first().metadata,
                     requests,
                     browseVariantIdentity = matchingBrowseVariant.stableIdentity,
                 )) {
@@ -1617,6 +1639,7 @@ class ModelViewModel(
         }.toMap()
 
     private fun expectedRequestsFor(path: String): List<DownloadArtifactRequest>? {
+        if (path.endsWith(".onnx")) return onnxRequestsFor(path)
         val detail = _modelDetail.value ?: return null
         val ownerModelId = detail.modelId ?: detail.id ?: return null
         return when (_browseMode.value) {
@@ -1664,6 +1687,18 @@ class ModelViewModel(
                 }
             }
         }
+    }
+
+    private fun onnxRequestsFor(path: String): List<DownloadArtifactRequest>? {
+        val detail = _modelDetail.value ?: return null
+        val id = detail.modelId ?: detail.id ?: return null
+        val variant = _recommendedModels.value.singleOrNull { it.repositoryId == id }
+            ?.browseVariants?.singleOrNull { path in it.filePaths } ?: return null
+        val metadata = variant.filePaths.map { member ->
+            val artifact = _ggufFiles.value.singleOrNull { it.path == member }?.artifact ?: return null
+            DownloadMetadataDTO(artifact, "model", artifact.expectedBytes, detail.author, "onnx", detail.pipelineTag)
+        }
+        return com.debanshu777.caraml.core.download.onnxDownloadRequests(metadata)
     }
 
     fun confirmDownloadForLater() {

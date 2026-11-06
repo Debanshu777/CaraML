@@ -41,7 +41,8 @@ class LoadRecoveryRepository(
         require(isValidEngineVersion(engineVersion))
     }
 
-    suspend fun beginLoad(identity: ModelFileIdentity, plan: RunPlan): PendingLoadMarker {
+    suspend fun beginLoad(identity: ModelFileIdentity, plan: RunPlan, engineVersion: String = this.engineVersion): PendingLoadMarker {
+        require(isValidEngineVersion(engineVersion))
         require(identity.hasValidExactIdentity()) { "Invalid model identity" }
         require(validateRunPlan(plan) == null) { "Invalid execution configuration" }
         val startedAt = clock()

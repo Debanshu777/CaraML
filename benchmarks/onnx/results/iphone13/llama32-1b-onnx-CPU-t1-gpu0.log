@@ -1,0 +1,4 @@
+Launched application with com.debanshu777.caraml.CaraML bundle identifier.
+Waiting for the application to terminate…
+CARAML_APPLE_DEVICE {"event":"START","model":"llama32-1b","mode":"onnx","threads":1,"requestedGpuLayers":0,"requestedProvider":"CPU","thermalState":0,"physicalMemoryBytes":3838984192,"peakResidentBytes":44204032}
+App terminated due to signal 9.

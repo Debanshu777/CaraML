@@ -11,7 +11,7 @@ data class ObservationModelIdentity private constructor(
     companion object {
         fun fromDescriptor(descriptor: ModelDescriptor): ObservationModelIdentity? {
             val architecture = when (descriptor) {
-                is LlmModelDescriptor -> descriptor.architecture ?: UNKNOWN
+                is LlmModelDescriptor -> (if (descriptor.format == ModelFormat.ONNX) "onnx/" else "") + (descriptor.architecture ?: UNKNOWN)
                 is DiffusionModelDescriptor -> descriptor.architecture?.name ?: descriptor.family
             }
             val quantization = when (descriptor) {

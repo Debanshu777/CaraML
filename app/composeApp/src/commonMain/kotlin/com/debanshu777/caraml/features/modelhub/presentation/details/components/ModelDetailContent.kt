@@ -631,14 +631,17 @@ private fun ModelFileVariantsSection(
             title = heading,
             supportingText = null,
         )
-        if (ggufFiles.isEmpty()) {
+        val visibleFiles = ggufFiles.filterNot {
+            com.debanshu777.caraml.sdk.discovery.huggingface.model.OnnxModelBundles.isBundlePath(it.path) && !it.path.endsWith(".onnx")
+        }
+        if (visibleFiles.isEmpty()) {
             Text(
                 text = emptyLabel,
                 style = AppTheme.typography.bodyBase,
                 color = AppTheme.colors.onSurfaceVariant,
             )
         } else {
-            ggufFiles.forEach { item ->
+            visibleFiles.forEach { item ->
                 val role = ModelArtifactClassifier.classify(item.path).role
                 val matchingBrowseVariant = recommendationState?.browseVariants?.singleOrNull { item.path in it.filePaths }
                 val groupMembers = matchingBrowseVariant?.takeIf { it.filePaths.size > 1 }?.filePaths
@@ -666,6 +669,7 @@ private fun ModelFileVariantsSection(
                     item.artifact == activeDownloadArtifact
                 ArtifactFileRow(
                     item = item,
+                    displaySizeBytes = if (item.path.endsWith(".onnx") && groupMetadata != null) groupMetadata.sumOf { it.artifact.expectedBytes } else item.sizeBytes,
                     recommended = isRecommendedArtifact,
                     evaluated = isEvaluatedArtifact,
                     provisional = isProvisionalSuggestion,
@@ -674,7 +678,7 @@ private fun ModelFileVariantsSection(
                             recommendationState?.browseVariants?.singleOrNull { selectedPath in it.filePaths }?.stableIdentity
                         },
                     roleLabel = matchingBrowseVariant?.takeIf { it.filePaths.size > 1 }
-                        ?.let { "Part ${it.filePaths.indexOf(item.path) + 1} of ${it.filePaths.size}" }
+                        ?.let { if (item.path.endsWith(".onnx")) "ONNX bundle · ${it.filePaths.size} files" else "Part ${it.filePaths.indexOf(item.path) + 1} of ${it.filePaths.size}" }
                         ?: role.label().takeUnless { role == ModelArtifactRole.PRIMARY_MODEL },
                     onSelect = if (isPrimary && matchingBrowseVariant != null) ({ onVariantSelected(item.path) }) else null,
                     isActiveDownload = isActiveDownload,
@@ -682,8 +686,10 @@ private fun ModelFileVariantsSection(
                         durableTask?.artifactState !in durableArtifactControlStates,
                     downloadEnabled = if (matchingBrowseVariant?.filePaths?.size?.let { it > 1 } == true) {
                         groupMetadata != null
-                    } else hasExactArtifact,
-                    downloadActionDescription = groupMembers?.let { "Download all ${it.size} parts" },
+                    } else hasExactArtifact && !item.path.endsWith(".onnx"),
+                    downloadActionDescription = groupMembers?.let {
+                        if (item.path.endsWith(".onnx")) "Download complete ONNX model" else "Download all ${it.size} parts"
+                    },
                     durableState = durableTask?.artifactState,
                     onPause = { durableTask?.let { onPauseDownload(it.batchId, it.artifactId) } },
                     onResume = { durableTask?.let { onResumeDownload(it.batchId, it.artifactId) } },
@@ -705,6 +711,7 @@ private fun ModelFileVariantsSection(
 @Composable
 private fun ArtifactFileRow(
     item: GgufFileUiState,
+    displaySizeBytes: Long?,
     recommended: Boolean,
     evaluated: Boolean,
     provisional: Boolean,
@@ -766,7 +773,7 @@ private fun ArtifactFileRow(
                 }
                 ModelDetailsDownloadableListItem(
                 filename = item.path.ifEmpty { item.filename },
-                sizeBytes = item.sizeBytes,
+                sizeBytes = displaySizeBytes,
                 isDownloaded = item.isDownloaded,
                 progress = item.progress,
                 isDownloading = isActiveDownload,

@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.core.download.transfer
 
+import com.debanshu777.caraml.core.performance.tracePerformanceBlockingStage
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -241,6 +242,23 @@ class ArtifactManifestStore(
         null
     } else {
         read()?.takeIf { validateManifest(manifestPath) }
+    }
+
+    /** Published download metadata plus current file shape; never reads model payloads. */
+    internal fun readForLoad(): ArtifactManifest? {
+        if (hasPendingTransaction() || exists(pruneJournalPath)) return null
+        return read()?.takeIf { manifest ->
+            manifest.entries.all { entry ->
+                val path = validatedTarget(entry.localRelativePath) ?: return@all false
+                if (entry.identity.expectedSha256OrNull()?.let { it != entry.contentSha256 } == true) {
+                    return@all false
+                }
+                secureRoot?.let { it.size(relativeToRoot(path)) == entry.byteCount }
+                    ?: (fileSystem.metadataOrNull(path)?.let {
+                        it.isRegularFile && it.symlinkTarget == null && it.size == entry.byteCount
+                    } == true)
+            }
+        }
     }
 
     fun containsValidated(entry: ArtifactManifestEntry): Boolean =
@@ -872,7 +890,9 @@ class ArtifactManifestStore(
         secureRoot?.let { secure ->
             val relative = relativeToRoot(path)
             return secure.size(relative) == entry.byteCount &&
-                secure.sha256(relative, entry.byteCount)?.let { digest ->
+                tracePerformanceBlockingStage("artifact.manifestPayloadChecksum") {
+                    secure.sha256(relative, entry.byteCount)
+                }?.let { digest ->
                     digest == entry.contentSha256 &&
                         entry.identity.expectedSha256OrNull()?.let { it == digest } != false
                 } == true
@@ -880,7 +900,9 @@ class ArtifactManifestStore(
         if (fileSystem.metadataOrNull(path)?.symlinkTarget != null) return false
         val size = runCatching { fileSystem.metadata(path).size }.getOrNull() ?: return false
         if (size != entry.byteCount) return false
-        val digest = runCatching { sha256(path) }.getOrNull() ?: return false
+        val digest = runCatching {
+            tracePerformanceBlockingStage("artifact.manifestPayloadChecksum") { sha256(path) }
+        }.getOrNull() ?: return false
         return digest == entry.contentSha256 &&
             entry.identity.expectedSha256OrNull()?.let { it == digest } != false
     }

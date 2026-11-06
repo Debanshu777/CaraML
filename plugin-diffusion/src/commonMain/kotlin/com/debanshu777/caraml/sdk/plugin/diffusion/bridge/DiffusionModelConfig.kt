@@ -29,6 +29,8 @@ data class DiffusionModelConfig(
     val nThreads: Int = -1,
     /** Prediction type: -1=auto-detect, 0=EPS, 1=V_PRED, 2=EDM_V_PRED, 3=FLOW, 4=FLUX_FLOW, 5=FLUX2_FLOW */
     val prediction: Int = -1,
+    /** -1=model default, 0=discrete, 5=SGM uniform, 6=simple (Turbo trailing timesteps). */
+    val samplingScheduler: Int = -1,
     /** Optional path to a TAESD safetensors file; replaces the full VAE decoder for fast preview. Empty = disabled. */
     val taesdPath: String = "",
     /** Enable VAE tiling for large images (>512×512) to avoid OOM during decode. */

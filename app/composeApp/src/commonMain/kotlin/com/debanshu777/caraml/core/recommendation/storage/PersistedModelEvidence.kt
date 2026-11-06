@@ -483,8 +483,12 @@ private fun validateLlmDescriptor(descriptor: LlmModelDescriptor) {
     }
     validateIdentities(descriptor.files)
     require(descriptor.files.all {
-        it.repositoryId == descriptor.repositoryId && it.revision == descriptor.revision && modelFormatForPath(it.path) == ModelFormat.GGUF
+        it.repositoryId == descriptor.repositoryId && it.revision == descriptor.revision &&
+            (descriptor.format == ModelFormat.ONNX || modelFormatForPath(it.path) == ModelFormat.GGUF)
     }) { "Invalid LLM artifacts" }
+    if (descriptor.format == ModelFormat.ONNX) require(
+        com.debanshu777.caraml.sdk.discovery.huggingface.model.OnnxModelBundles.isComplete(descriptor.files.map { it.path }),
+    ) { "Incomplete ONNX bundle" }
     require(descriptor.files.map { it.path }.distinct().size == descriptor.files.size) { "Duplicate LLM artifact path" }
     require(descriptor.files.sumOf { it.sizeBytes } <= DescriptorLimits.MAX_BUNDLE_BYTES) { "LLM bundle is too large" }
     require(descriptor.architecture == null || isSafeArchitecture(descriptor.architecture)) { "Invalid LLM architecture" }

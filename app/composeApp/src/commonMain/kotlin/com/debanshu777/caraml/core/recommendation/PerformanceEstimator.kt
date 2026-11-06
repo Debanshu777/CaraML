@@ -282,6 +282,9 @@ class PerformanceEstimator {
         hardware: HardwareProfile,
         calibration: CalibrationSource,
     ): PerformanceEstimate {
+        if (descriptor.format == ModelFormat.ONNX) {
+            return unknown(AssessmentReason.SPEED_NOT_VERIFIED, "onnx-runtime-not-calibrated")
+        }
         if (validateRunPlanForEstimation(plan) != null) {
             return unknown(AssessmentReason.INVALID_PERFORMANCE_EVIDENCE, "run-plan")
         }

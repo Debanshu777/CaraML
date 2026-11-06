@@ -27,6 +27,28 @@ import kotlin.test.assertIs
 
 class HuggingFaceModelMetadataSourceTest {
     @Test
+    fun onnxDiscoveryGroupsCompanionsAndUsesThePinnedConfigRedirectPolicy() = runTest {
+        val fixture = Fixture()
+        fixture.gateway.currentDetail = fixture.gateway.currentDetail.copy(config = null, gguf = null)
+        fixture.gateway.config = TransformerConfigResponse(modelType = "llama", numHiddenLayers = 30,
+            numKeyValueHeads = 3, numAttentionHeads = 9, hiddenSize = 576, headDim = 64, maxPositionEmbeddings = 8192)
+        fixture.gateway.tree = listOf("onnx/model_int8.onnx", "onnx/model_int8.onnx_data", "config.json", "tokenizer.json")
+            .map { ModelFileTreeResponse(path = it, size = 100L, oid = "c".repeat(40), type = "file") }
+        val ready = assertIs<RepositoryVariantSet.Ready>(fixture.source().describeVariants(fixture.repositoryId, ModelHubBrowseMode.LanguageModels))
+        val model = assertIs<LlmModelDescriptor>(ready.variants.single().descriptor)
+        assertEquals(com.debanshu777.caraml.core.recommendation.ModelFormat.ONNX, model.format)
+        assertEquals("onnx/model_int8.onnx", model.file.path)
+        assertEquals(4, model.files.size)
+        assertEquals("llama", model.architecture)
+        assertEquals(8192, model.contextLimit)
+        val workload = assertIs<com.debanshu777.caraml.core.recommendation.LlmWorkloadConfig>(
+            com.debanshu777.caraml.core.recommendation.InstalledModelWorkloadFactory().create(model,
+                com.debanshu777.caraml.features.chat.domain.GenerationMode.Text, com.debanshu777.caraml.core.settings.AppSettings()))
+        assertEquals(listOf(com.debanshu777.caraml.core.recommendation.KvCacheType.F32), workload.allowedKvCacheTypes)
+        assertEquals(emptyList(), fixture.gateway.configRequests)
+        assertEquals(listOf(fixture.repositoryId to fixture.identity.revision), fixture.gateway.exactConfigRequests)
+    }
+    @Test
     fun exactLookupUsesInstalledOwnerRevisionInsteadOfCurrentHead() = runTest {
         val fixture = Fixture()
         val currentHead = "b".repeat(40)
@@ -542,6 +564,7 @@ class HuggingFaceModelMetadataSourceTest {
         var detailError: DataError.Network? = null
         var treeError: DataError.Network? = null
         var configError: DataError.Network? = null
+        var config = TransformerConfigResponse()
         var detailThrowable: Throwable? = null
         val unqualifiedDetailRequests = mutableListOf<String>()
         val qualifiedDetailRequests = mutableListOf<Pair<String, String>>()
@@ -579,7 +602,7 @@ class HuggingFaceModelMetadataSourceTest {
         ): Result<TransformerConfigResponse, DataError.Network> {
             configRequests += repositoryId to revision
             return configError?.let { Result.Error(it) }
-                ?: Result.Success(TransformerConfigResponse())
+                ?: Result.Success(config)
         }
 
         override suspend fun getExactConfig(
@@ -588,7 +611,7 @@ class HuggingFaceModelMetadataSourceTest {
         ): Result<TransformerConfigResponse, DataError.Network> {
             exactConfigRequests += repositoryId to revision
             return configError?.let { Result.Error(it) }
-                ?: Result.Success(TransformerConfigResponse())
+                ?: Result.Success(config)
         }
     }
 }

@@ -21,6 +21,65 @@ import kotlin.test.assertTrue
 
 class InstalledModelLoadRequestResolverTest {
     @Test
+    fun fixedWorkloadRejectsReducedProviderPlansBeforeCreatingAnAdmittedRequest() = runTest {
+        for ((context, batch, microBatch) in listOf(Triple(2_048, 256, 64), Triple(4_096, 128, 64), Triple(4_096, 256, 32))) {
+            val fixture = Fixture().apply {
+                planForSnapshot = { LlmRunPlan(
+                    contextTokens = context, batchSize = batch, microBatchSize = microBatch,
+                    sequenceCount = 1, keyCacheType = KvCacheType.F16, valueCacheType = KvCacheType.F16,
+                    backend = BackendKind.CPU, memoryTopology = MemoryTopology.UNKNOWN,
+                    gpuLayerCount = 0, compromises = emptyList(),
+                ) }
+            }
+            val resolution = fixture.resolver(InstalledModelWorkloadFactory(fixedInstalledWorkload()))
+                .resolve(fixture.model, GenerationMode.Text)
+            assertEquals(ArtifactIdentityRejection.INVALID_INPUT,
+                assertIs<InstalledModelLoadResolution.Rejected>(resolution).reason)
+            assertEquals(0, fixture.strictRequestCalls)
+        }
+    }
+
+    @Test
+    fun fixedNativeMetadataWorkloadStillRequiresNativeFitAndCurrentArtifact() = runTest {
+        val fixture = Fixture().apply {
+            evidenceResult = EvidenceRepairResult.Rejected(listOf(AssessmentReason.INVALID_METADATA))
+        }
+        val request = assertIs<InstalledModelLoadResolution.Ready>(
+            fixture.resolver(InstalledModelWorkloadFactory(fixedInstalledWorkload()))
+                .resolve(fixture.model, GenerationMode.Text),
+        ).request
+        val plan = assertIs<LlmRunPlan>(request.plan)
+        assertEquals(4_096, plan.contextTokens)
+        assertEquals(256, plan.batchSize)
+        assertEquals(64, plan.microBatchSize)
+        assertEquals(KvCacheType.F16, plan.keyCacheType)
+        assertEquals(KvCacheType.F16, plan.valueCacheType)
+        assertTrue(request.nativeMetadataFallback)
+        var fits = true
+        var artifactCurrent = true
+        var checks = 0
+        val controller = LoadAdmissionController(
+            snapshotSource = { task6Snapshot() },
+            recommendationSource = { _, _ -> error("Native metadata path must use native fit evidence") },
+            artifactValidator = { artifactCurrent },
+            nativePreflight = { checks++; if (fits) NativeLoadPreflight.Fit else NativeLoadPreflight.NoFit },
+            recoveryState = object : LoadRecoveryState {
+                override suspend fun quarantine(identity: ModelFileIdentity, plan: RunPlan, engineVersion: String) = LoadQuarantine.NONE
+                override suspend fun allowExplicitRetry(identity: ModelFileIdentity, plan: RunPlan, engineVersion: String) = Unit
+            },
+            engineVersion = "test-engine", clock = { 1L },
+        )
+        assertIs<LoadAdmission.Ready>(controller.evaluate(request, null))
+        fits = false
+        assertEquals(LoadAdmissionReason.NO_SAFE_CONFIGURATION,
+            assertIs<LoadAdmission.Blocked>(controller.evaluate(request, null)).reason)
+        artifactCurrent = false
+        assertEquals(LoadAdmissionReason.INVALID_MODEL,
+            assertIs<LoadAdmission.Blocked>(controller.evaluate(request, null)).reason)
+        assertEquals(2, checks)
+    }
+
+    @Test
     fun readyInstalledModelProducesExactRequestAfterRestart() = runTest {
         val fixture = Fixture()
 
@@ -229,7 +288,7 @@ class InstalledModelLoadRequestResolverTest {
         )
 
         assertEquals(KvCacheSelection.Auto, workload.kvCacheSelection)
-        assertEquals(KvCacheType.entries, workload.allowedKvCacheTypes)
+        assertEquals(listOf(KvCacheType.F16, KvCacheType.Q8_0, KvCacheType.Q4_0), workload.allowedKvCacheTypes)
         assertTrue(workload.allowKvCacheFallback)
     }
 
@@ -603,10 +662,12 @@ class InstalledModelLoadRequestResolverTest {
             currentSettings = { AppSettings(useGpu = true) },
             workloadFactory = InstalledModelWorkloadFactory(),
             cpuOnlyDiffusion = cpuOnly,
-            assess = { _, snapshot, _ ->
+            assess = { _, snapshot, workload ->
                 assessmentSnapshots += snapshot
+                val imageWorkload = assertIs<DiffusionWorkloadConfig>(workload)
                 val plan = installedDiffusionPlan(
                     backend = if (snapshot.hasAccelerator()) BackendKind.METAL else BackendKind.CPU,
+                    workload = imageWorkload,
                 )
                 task6Assessment(
                     plans = listOf(task6PlanAssessment(plan = plan)),
@@ -932,7 +993,7 @@ class InstalledModelLoadRequestResolverTest {
         suspend fun resolve(): InstalledModelLoadResolution =
             resolver().resolve(model, GenerationMode.Text)
 
-        fun resolver() = InstalledModelLoadRequestResolver(
+        fun resolver(workloadFactory: InstalledModelWorkloadFactory = InstalledModelWorkloadFactory()) = InstalledModelLoadRequestResolver(
             componentsForModel = {
                 cancelAt(ResolverStage.COMPONENTS)
                 components
@@ -955,7 +1016,7 @@ class InstalledModelLoadRequestResolverTest {
                 cancelAt(ResolverStage.SETTINGS)
                 settings.removeFirstOrNull() ?: AppSettings()
             },
-            workloadFactory = InstalledModelWorkloadFactory(),
+            workloadFactory = workloadFactory,
             assess = { _, snapshot, _ ->
                 cancelAt(ResolverStage.ASSESSMENT)
                 assessmentCalls += 1
@@ -1079,13 +1140,13 @@ private fun diffusionArtifact(
     )
 }
 
-private fun installedDiffusionPlan(backend: BackendKind) = DiffusionRunPlan(
+private fun installedDiffusionPlan(backend: BackendKind, workload: DiffusionWorkloadConfig) = DiffusionRunPlan(
     mode = DiffusionMode.IMAGE,
-    width = 1_024,
-    height = 1_024,
+    width = workload.width,
+    height = workload.height,
     frameCount = 1,
     batchSize = 1,
-    steps = 20,
+    steps = workload.steps,
     vaeTiling = false,
     offloadToCpu = backend == BackendKind.CPU,
     keepClipOnCpu = backend == BackendKind.CPU,

@@ -298,7 +298,7 @@ class DiffusionRunPlanGeneratorTest {
     }
 
     @Test
-    fun vulkanPlansExplicitlyPinClipAndVaeToCpu() {
+    fun vulkanImagePlansPinClipAndHonorVaePlacement() {
         val plans = generator.diffusionCandidates(
             descriptor(),
             workload(),
@@ -307,7 +307,18 @@ class DiffusionRunPlanGeneratorTest {
 
         assertTrue(plans.isNotEmpty())
         assertTrue(plans.all { it.keepClipOnCpu })
-        assertTrue(plans.all { it.keepVaeOnCpu })
+        assertTrue(plans.none { it.keepVaeOnCpu })
+    }
+
+    @Test
+    fun vulkanVideoRetainsCpuVaePlacement() {
+        val plans = generator.diffusionCandidates(
+            descriptor(mode = DiffusionMode.VIDEO),
+            workload(mode = DiffusionMode.VIDEO),
+            settings(backend = BackendKind.VULKAN),
+        )
+        assertTrue(plans.isNotEmpty())
+        assertTrue(plans.all { it.keepClipOnCpu && it.keepVaeOnCpu })
     }
 
     @Test

@@ -8,6 +8,9 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.transform
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -22,8 +25,14 @@ class ThemeViewModel(
     private val repository: ThemeRepository,
 ) : ViewModel() {
     private val preferenceUpdates = Mutex()
+    private val _preferencesInitialized = MutableStateFlow(false)
+    val preferencesInitialized = _preferencesInitialized.asStateFlow()
 
     val preferences: StateFlow<ThemePreferences> = repository.getPreferences()
+        .transform { preferences ->
+            emit(preferences)
+            _preferencesInitialized.value = true
+        }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),

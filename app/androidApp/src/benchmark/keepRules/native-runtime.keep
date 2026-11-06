@@ -1,0 +1,8 @@
+# AGP's default optimized Android rules preserve classes/method names for native
+# entrypoints (LlamaRunner, DiffusionRunner and NativeArtifactFs). The llama and
+# diffusion modules additionally publish their JNI field/enum/constructor rules.
+#
+# ONNX Runtime 1.31.0 only bundles telemetry keep rules in its AAR. Native code
+# also constructs and inspects Java wrappers. Use the upstream consumer rule:
+# https://onnxruntime.ai/docs/build/android.html
+-keep class ai.onnxruntime.** { *; }

@@ -122,7 +122,7 @@ class DiffusionInferenceRepository(
             if (nativeLibDir.isBlank()) {
                 return@withContext ModelLoadResult.Error("Failed to initialize. Please restart the app.")
             }
-            val baseConfig = exactBaseConfig(request.model.modelId, artifact, loadTarget)
+            val baseConfig = exactBaseConfig(request.model.modelId, artifact, loadTarget, plan.mode)
             val execution = runCatching { NativeRunPlanAdapter.toDiffusionExecutionConfig(plan, baseConfig) }
                 .getOrElse { return@withContext ModelLoadResult.Error("The selected model configuration is invalid.") }
             val loadObservation = request.toInferenceObservationPlan(engineVersion, InferenceObservationPhase.LOAD)
@@ -152,7 +152,7 @@ class DiffusionInferenceRepository(
                 val candidateArtifact = candidate.artifact
                     ?: return@admissionController NativeLoadPreflight.Invalid
                 val candidateTarget = candidateArtifact.loadTarget
-                val candidateBase = exactBaseConfig(candidate.model.modelId, candidateArtifact, candidateTarget)
+                val candidateBase = exactBaseConfig(candidate.model.modelId, candidateArtifact, candidateTarget, candidatePlan.mode)
                 val candidateExecution = runCatching {
                     NativeRunPlanAdapter.toDiffusionExecutionConfig(candidatePlan, candidateBase)
                 }.getOrElse { return@admissionController NativeLoadPreflight.Invalid }
@@ -233,6 +233,7 @@ class DiffusionInferenceRepository(
         modelId: String,
         artifact: com.debanshu777.caraml.core.recommendation.ResolvedLocalArtifact,
         loadTarget: VerifiedArtifactLoadTarget,
+        mode: com.debanshu777.caraml.core.recommendation.DiffusionMode,
     ): DiffusionModelConfig {
         val paths = artifact.components.associate { it.logicalRole.lowercase() to it.localPath }
         val setup = getModelSetup(modelId)
@@ -248,9 +249,12 @@ class DiffusionInferenceRepository(
             clipGPath = paths["clip_g"].orEmpty(),
             t5xxlPath = paths["t5xxl"] ?: paths["umt5xxl"].orEmpty(),
             diffusionFlashAttn = gpuEnabled,
+            // The verified artifact lease keeps mapped image weights immutable.
+            enableMmap = mode == com.debanshu777.caraml.core.recommendation.DiffusionMode.IMAGE,
             freeParamsImmediately = false,
             flowShift = params?.flowShift ?: Float.POSITIVE_INFINITY,
             prediction = params?.prediction ?: -1,
+            samplingScheduler = params?.samplingScheduler ?: -1,
         )
     }
 

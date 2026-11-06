@@ -14,6 +14,10 @@ class PerformanceForegroundActivity : Activity() {
         private set
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Cooling can put the device on its lock screen. Keep this private,
+        // content-free benchmark surface visible without unlocking the device.
+        setShowWhenLocked(true)
+        setTurnScreenOn(true)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(TextView(this).apply {
             text = "CaraML performance validation"

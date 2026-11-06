@@ -1,0 +1,86 @@
+{
+  "verifyProject": {
+    "status": "failed",
+    "reason": "Existing SSH submodule remotes fail exact HTTPS allowlist",
+    "log": "verify-project-final.log"
+  },
+  "remainingGate": {
+    "command": "./gradlew verifyProject -x :nativeEngine:verifyNativeSubmodulePins :app:androidApp:assembleDebug",
+    "status": "passed",
+    "log": "verify-final-default-ndk.log"
+  },
+  "jvmTests": {
+    "app/composeApp": {
+      "tests": 1396,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "core": {
+      "tests": 14,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "storage": {
+      "tests": 13,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "native-runtime": {
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "model-discovery": {
+      "tests": 52,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "plugin-llama": {
+      "tests": 40,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "plugin-diffusion": {
+      "tests": 28,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "plugin-onnx": {
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "nativeRepackByteEquivalenceCases": 6532,
+  "pythonBenchmarkTests": 34,
+  "totalJvmTests": 1552,
+  "debugAdmissionHarnessBuild": {
+    "status": "passed",
+    "log": "build-final-risk-ack.log",
+    "deviceValidation": "20261023T193214.749991Z-exact-admission-validation: exact CPU and Vulkan journeys passed"
+  },
+  "nativeSourceState": "Pinned native commits and clean submodule checkouts verified; configured SSH remote spelling fails exact HTTPS URL policy.",
+  "logsBase": "build/benchmark-results/measurement-gaps",
+  "dateLocal": "2026-10-24",
+  "finalDeviceState": {
+    "installedApkSha256": "e3f0a3f047dde5a4d7b3263a249911e0ba717eb1bfd0c4dc2eb7f5ad7207cf48",
+    "apk": "build/benchmark-results/measurement-gaps/repack-fixed-candidate-build/caraml-repack-candidate.apk",
+    "compiler": "default Android NDK",
+    "preferencesPreserved": true,
+    "screenTimeoutRestoredMs": 30000,
+    "refreshPolicyRestored": true,
+    "refreshPolicy": {
+      "min_refresh_rate": "null",
+      "peak_refresh_rate": "Infinity"
+    },
+    "benchmarkTargetStopped": true
+  }
+}

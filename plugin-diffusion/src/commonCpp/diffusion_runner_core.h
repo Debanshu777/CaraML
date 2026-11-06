@@ -42,6 +42,8 @@ struct DiffusionModelConfig {
     int n_threads = -1;
     /** -1=auto-detect (PREDICTION_COUNT), 0=EPS, 1=V_PRED, 2=EDM_V_PRED, 3=FLOW, 4=FLUX_FLOW, 5=FLUX2_FLOW */
     int prediction = -1;
+    /** -1=model default, 0=discrete, 5=SGM uniform, 6=simple. */
+    int sampling_scheduler = -1;
     /** Optional path to TAESD safetensors; replaces full VAE decoder for fast decode. Empty = disabled. */
     const char *taesd_path = "";
     /** Enable VAE tiling for large-image decoding to avoid OOM. Only the enabled flag is needed; lib auto-sizes. */
