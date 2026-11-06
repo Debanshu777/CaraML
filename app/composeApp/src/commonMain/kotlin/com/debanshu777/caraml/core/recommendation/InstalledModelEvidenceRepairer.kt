@@ -1,6 +1,7 @@
 package com.debanshu777.caraml.core.recommendation
 
 import com.debanshu777.caraml.core.platform.AppLogger
+import com.debanshu777.caraml.core.rating.SdArchitecture
 import com.debanshu777.caraml.core.recommendation.storage.DecodedModelEvidence
 import com.debanshu777.caraml.core.recommendation.storage.EncodedModelEvidence
 import com.debanshu777.caraml.core.recommendation.storage.InstalledEvidenceState
@@ -293,6 +294,11 @@ class InstalledModelEvidenceRepairer internal constructor(
         val decoded = catalog.evidence?.let(::decode) ?: return null
         val descriptor = decoded.descriptor ?: return null
         if (descriptor is LlmModelDescriptor && descriptor.format == ModelFormat.ONNX && !descriptor.hasCompleteLocalCompatibilityMetadata()) return null
+        // An older catalog may have persisted an exact file before its
+        // architecture was registered. Refresh that missing compatibility fact.
+        if (descriptor is DiffusionModelDescriptor &&
+            (descriptor.architecture == null || descriptor.architecture == SdArchitecture.UNKNOWN)
+        ) return null
         return descriptor.takeIf {
             decoded.state == InstalledEvidenceState.COMPLETE &&
                 decoded.artifactIdentities.hasSameExactInstalledIdentities(identities) &&
