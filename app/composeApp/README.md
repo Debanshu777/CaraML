@@ -202,6 +202,7 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 
 ## Recent Changes
 
+- Corrected ONNX resident-session fixtures to use `<models>/owner/onnx` and clean up the whole temporary tree, fixing Linux CI loads; JVM test logs now include full failure details.
 - Added SD-Turbo GGUF discovery, fixed nested-checkpoint installation, and kept image/video models visible alongside frequently used chat models.
 - Added [platform setup](../../docs/getting-started.md), [contribution guidance](../../CONTRIBUTING.md), and a [real-device demo](../../docs/demo.md).
 - Enabled Android Vulkan image plans and model-specific sampling; see [tested models and limits](../../benchmarks/diffusion/README.md).

@@ -148,7 +148,10 @@ val nativeDir = project(":nativeEngine").layout.buildDirectory
 
 tasks.matching { it.name == "jvmTest" }.configureEach {
     dependsOn(":nativeEngine:verifyArtifactFsDesktopLibrary")
-    (this as Test).systemProperty("caraml.native.lib.dir", nativeDir)
+    (this as Test).apply {
+        systemProperty("caraml.native.lib.dir", nativeDir)
+        testLogging.exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
 }
 
 dependencies {

@@ -43,6 +43,7 @@ unchanged. Package conventions are documented in [the root README](../README.md#
 
 ## Recent Changes
 
+- Fixed ONNX resident-session fixtures to use the production owner/model directory layout across desktop hosts; JVM failures now print full assertions.
 - Added SD-Turbo GGUF discovery, fixed nested-checkpoint installation, and kept image/video models visible alongside frequently used chat models.
 - Added [platform setup](../docs/getting-started.md), [contribution guidance](../CONTRIBUTING.md), and a [real-device demo](../docs/demo.md).
 - Added Android Vulkan diffusion instrumentation and five-model measurements; see [results and limits](../benchmarks/diffusion/README.md).

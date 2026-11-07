@@ -138,6 +138,7 @@ Dependencies and model weights keep their own licenses. See [third-party notices
 
 ## Recent Changes
 
+- Fixed the ONNX resident-session test storage layout on Linux CI and enabled complete JVM test failure diagnostics.
 - Published the [documentation and demo on GitHub Pages](https://debanshu777.github.io/CaraML/), with source links pinned to each deployed revision.
 - Simplified the README and docs around a compact blue-flower masthead, project details, and direct setup links.
 - Fixed nested diffusion-model installs and kept image/video models visible alongside frequently used chat models.

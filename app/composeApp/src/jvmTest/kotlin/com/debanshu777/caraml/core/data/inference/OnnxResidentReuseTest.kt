@@ -242,7 +242,10 @@ class OnnxResidentReuseTest {
     }
 
     private suspend fun TestScope.withFixture(block: suspend (Fixture) -> Unit) {
-        val root = Files.createTempDirectory("caraml-onnx-resident-").toRealPath().toString().toPath()
+        val modelsRoot = Files.createTempDirectory("caraml-onnx-resident-").toRealPath().toString().toPath()
+        // SecureArtifactRoot expects <models>/<owner>/<model>. Using the temp directory
+        // itself accidentally worked with macOS's deeper temp path, but fails under /tmp.
+        val root = modelsRoot / "owner" / "onnx"
         val stateScope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler))
         try {
             val f = Fixture(root, stateScope, StandardTestDispatcher(testScheduler))
@@ -250,7 +253,7 @@ class OnnxResidentReuseTest {
             block(f)
         } finally {
             stateScope.coroutineContext[Job]!!.cancelAndJoin()
-            FileSystem.SYSTEM.deleteRecursively(root, mustExist = false)
+            FileSystem.SYSTEM.deleteRecursively(modelsRoot, mustExist = false)
         }
     }
 
