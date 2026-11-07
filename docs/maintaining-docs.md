@@ -47,7 +47,7 @@ Upload `docs/assets/social-preview.png` in **Settings → General → Social pre
 
 ## Demo and evidence
 
-The cover uses an original blue-flower image processed with [Paper's Lens Distortion shader](https://shaders.paper.design/lens-distortion). Midnight blue, icy typography, fine grain, and faint guide lines carry through the docs hero, product cards, and demo. Flow remains the small blue wave avatar in `docs/assets/flow.svg`. This artwork applies to the README and docs; the app retains its current branding.
+The cover uses an original blue-flower image processed with [Paper's Lens Distortion shader](https://shaders.paper.design/lens-distortion). CaraML's composition pairs a small upright wordmark and a left-aligned product introduction with a circular flower lens on a pale-blue canvas. Use navy for primary text and cobalt for emphasis. The product cards and video use the same flower texture on deeper blue backgrounds. Flow remains the small blue wave avatar in `docs/assets/flow.svg`. This artwork applies to the README and docs; the app retains its current branding.
 
 The flower was created with the built-in image-generation tool as marketing artwork, **not generated inside CaraML**. The source image, exact prompt, shader version, and exported frame live in `tools/docs/artwork/`. The image-generation demonstration in the video is a separate, real SD-Turbo app capture.
 
@@ -78,4 +78,4 @@ The renderer composes SVG layouts around the original PNG captures, then exports
 
 Keep the [demo transcript and capture notes](demo.md) synchronized with the media. Use actual app captures and public sample prompts. Clearly identify edited pacing; do not use launch-video timing as a throughput claim. Keep large raw recordings and model weights out of Git.
 
-The presentation takes inspiration from [FileKit's spacious header and documentation links](https://github.com/vinceglb/FileKit), [XCalendar's platform captures](https://github.com/Debanshu777/XCalendar), and [Brag's short product-video structure](https://github.com/latent-spaces/brag). The implementation and assets remain specific to CaraML.
+The documentation organization takes inspiration from [FileKit's clear setup and documentation links](https://github.com/vinceglb/FileKit), [XCalendar's platform captures](https://github.com/Debanshu777/XCalendar), and [Brag's short product-video structure](https://github.com/latent-spaces/brag). CaraML's visual composition is defined above; keep future artwork consistent with it.

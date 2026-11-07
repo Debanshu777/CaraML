@@ -19,14 +19,14 @@ ASSETS = ROOT / "docs/assets"
 FONTS = ROOT / "app/composeApp/src/commonMain/composeResources/font"
 
 
-def lettering(text, filename, size, baseline, color, center=600, spacing=0):
+def lettering(text, filename, size, baseline, color, center=600, spacing=0, left=None):
     with TTFont(FONTS / filename) as font:
         glyphs = font.getGlyphSet()
         mapping = font.getBestCmap()
         scale = size / font["head"].unitsPerEm
         width = sum(glyphs[mapping[ord(c)]].width * scale for c in text)
         width += spacing * (len(text) - 1)
-        cursor = center - width / 2
+        cursor = center - width / 2 if left is None else left
         paths = []
         for char in text:
             glyph = glyphs[mapping[ord(char)]]
@@ -47,27 +47,25 @@ def main():
     with Image.open(ROOT / "tools/docs/artwork/blue-flower-lens.png") as source:
         source.convert("RGB").save(ASSETS / "blue-flower-lens.webp", quality=92, method=6)
     background = base64.b64encode((ASSETS / "blue-flower-lens.webp").read_bytes()).decode("ascii")
-    wordmark = lettering("CaraML", "bricolage_grotesque_800.ttf", 162, 337, "#d7edff", center=800, spacing=-3)
     svg = f'''<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1600" height="800" viewBox="0 0 1600 800" role="img" aria-labelledby="title desc">
   <title id="title">CaraML — local AI for Kotlin Multiplatform</title>
-  <desc id="desc">CaraML over a luminous blue flower refracted through a grainy lens. Your models. Your device.</desc>
+  <desc id="desc">Your AI. Right here. An upright CaraML wordmark and local AI introduction beside a circular lens containing a luminous blue flower.</desc>
   <defs>
-    <linearGradient id="shade" x2="0" y2="1"><stop stop-color="#061329" stop-opacity=".05"/><stop offset=".48" stop-color="#061329" stop-opacity=".4"/><stop offset="1" stop-color="#061329" stop-opacity=".08"/></linearGradient>
-    <clipPath id="canvas"><rect width="1600" height="800" rx="32"/></clipPath>
+    <clipPath id="lens"><circle cx="1220" cy="385" r="300"/></clipPath>
   </defs>
-  <g clip-path="url(#canvas)">
-    <image width="1600" height="800" xlink:href="data:image/webp;base64,{background}"/>
-    <rect width="1600" height="800" fill="url(#shade)"/>
-    <g fill="none" stroke="#8abfff" stroke-opacity=".19" stroke-width="1">
-      <path d="M360 96V704M1240 96V704M112 202H1488M112 382H1488M112 548H1488" stroke-dasharray="5 8"/>
-      <circle cx="360" cy="202" r="5"/><circle cx="1240" cy="202" r="5"/>
-      <circle cx="360" cy="382" r="5"/><circle cx="1240" cy="382" r="5"/>
-      <circle cx="360" cy="548" r="5"/><circle cx="1240" cy="548" r="5"/>
-    </g>
-    <g transform="translate(49.4 0) skewX(-10)">{wordmark}</g>
-    {lettering("Your models. Your device.", "dm_sans_500.ttf", 40, 461, "#d3e9ff", center=800)}
-    {lettering("Local AI with Kotlin Multiplatform", "dm_sans_400.ttf", 27, 508, "#a8c9ef", center=800)}
+  <rect width="1600" height="800" fill="#eef3fc"/>
+  {lettering("CaraML", "bricolage_grotesque_800.ttf", 42, 119, "#172e50", left=88, spacing=-1)}
+  {lettering("Your AI.", "bricolage_grotesque_600.ttf", 116, 306, "#172e50", left=80, spacing=-4)}
+  {lettering("Right here.", "bricolage_grotesque_600.ttf", 116, 423, "#285be6", left=80, spacing=-4)}
+  {lettering("Local chat and image generation.", "dm_sans_400.ttf", 29, 502, "#47617f", left=88)}
+  {lettering("Built with Kotlin Multiplatform.", "dm_sans_400.ttf", 29, 545, "#47617f", left=88)}
+  {lettering("ANDROID  /  iOS  /  DESKTOP", "dm_sans_600.ttf", 19, 688, "#47617f", left=88, spacing=1.5)}
+  {lettering("llama.cpp  ·  ONNX Runtime  ·  stable-diffusion.cpp", "dm_sans_400.ttf", 22, 732, "#47617f", left=88)}
+  <g clip-path="url(#lens)">
+    <rect x="920" y="85" width="600" height="600" fill="#061329"/>
+    <image x="260" y="70" width="1280" height="640" xlink:href="data:image/webp;base64,{background}"/>
   </g>
+  {lettering("ON YOUR HARDWARE", "dm_sans_500.ttf", 17, 732, "#47617f", center=1220, spacing=2)}
 </svg>
 '''
     (work / "readme-banner.svg").write_text(svg, encoding="utf-8")
@@ -79,7 +77,7 @@ def main():
     # Keep the entire composition in the 1200 × 630 social card; no text cropping.
     social = svg.replace('width="1600" height="800" viewBox="0 0 1600 800"',
                          'width="1200" height="630" viewBox="0 -20 1600 840"', 1)
-    social = social.replace('<g clip-path="url(#canvas)">', '<rect x="0" y="-20" width="1600" height="840" fill="#061329"/><g clip-path="url(#canvas)">', 1)
+    social = social.replace('<rect width="1600" height="800" fill="#eef3fc"/>', '<rect y="-20" width="1600" height="840" fill="#eef3fc"/>', 1)
     cairosvg.svg2png(bytestring=social.encode(), write_to=str(ASSETS / "social-preview.png"))
     print(f"Rendered {target}")
 

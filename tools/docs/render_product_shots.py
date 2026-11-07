@@ -80,7 +80,6 @@ def render(card):
       </defs>
       <rect width="1080" height="1920" fill="url(#background)"/>
       <image x="-1850" y="0" width="3840" height="1920" opacity=".55" xlink:href="data:image/webp;base64,{flower}"/>
-      <path d="M100 150V1810M980 150V1810M45 445H1035" fill="none" stroke="#8abfff" stroke-opacity=".16" stroke-dasharray="5 8"/>
       <g transform="translate(433 56) scale(.42)">{avatar}</g>
       {''.join(text)}
       <rect x="211" y="488" width="658" height="{screen_height + 34}" rx="63" fill="#021329" opacity=".09"/>

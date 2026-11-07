@@ -6,14 +6,17 @@ hide:
 ---
 
 <div class="hero" markdown>
-<p class="eyebrow">Kotlin Multiplatform · Local AI</p>
+<div class="hero-copy" markdown>
+<p class="hero-brand">CaraML</p>
 
-# CaraML
+# Your AI.<br>Right here.
 
-<p class="lead">Your models. Your device.</p>
+<p class="lead">Local chat and image generation.<br>Built with Kotlin Multiplatform.</p>
 
 [Build and run](getting-started.md){ .md-button .md-button--primary }
 [Watch the demo](demo.md){ .md-button }
+</div>
+<div class="hero-art" role="img" aria-label="A blue flower refracted through a circular lens"></div>
 </div>
 
 Chat with a local language model. Turn a prompt into an image. Explore Hugging Face, download a supported model, and run inference on your own hardware with CaraML. [Explore the source →](https://github.com/Debanshu777/CaraML)

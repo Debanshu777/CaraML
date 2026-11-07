@@ -5,13 +5,16 @@
 body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 .md-typeset h1, .md-typeset h2 { font-weight: 750; letter-spacing: -.035em; }
 .md-typeset h1 { color: var(--md-default-fg-color); }
-.md-typeset .hero { margin: 1.4rem 0 1.5rem; padding: 2.6rem 1rem 2.1rem; text-align: center; border-radius: 1.2rem; overflow: hidden; color: #d7edff; background: linear-gradient(#06132933, #06132988), url("blue-flower-lens.webp") center / cover, #061329; }
-.md-typeset .hero h1 { position: relative; font-family: "CaraML Display", system-ui, sans-serif; font-weight: 800; font-style: oblique; font-size: clamp(3.8rem, 8vw, 6rem); line-height: 1.06; letter-spacing: -.055em; color: #d7edff; margin: 1.2rem 0 1.4rem; }
-.md-typeset .hero h1 .headerlink { position: absolute; font-size: .2em; top: 50%; transform: translateY(-50%); color: #d7edff; }
-.md-typeset .hero .lead { font-size: clamp(1rem, 2vw, 1.35rem); line-height: 1.5; color: #d7edff; margin: 0 0 1.3rem; }
-.md-typeset .hero .eyebrow { color: #b7cfee; letter-spacing: .14em; }
-.md-typeset .hero .md-button:not(.md-button--primary) { color: #d7edff; border-color: #a8c9ef88; background: #06132966; }
-.md-typeset .hero .md-button:hover, .md-typeset .hero .md-button:focus { background: #245edb; border-color: #8abfff; color: #fff; }
+.md-typeset .hero { display: grid; grid-template-columns: 1.2fr 1fr; align-items: center; gap: 1rem; margin: 1.4rem 0 1.5rem; padding: 2rem; color: #172e50; background: #eef3fc; }
+.md-typeset .hero-copy { min-width: 0; }
+.md-typeset .hero-brand { font-family: "CaraML Display", system-ui, sans-serif; font-size: 1.15rem; font-weight: 800; letter-spacing: -.04em; margin: 0 0 2rem; }
+.md-typeset .hero h1 { position: relative; font-family: "CaraML Display", system-ui, sans-serif; font-weight: 800; font-size: clamp(2.6rem, 4.6vw, 4.1rem); line-height: 1.02; letter-spacing: -.05em; color: #285be6; margin: 0 0 1.1rem; }
+.md-typeset .hero h1 .headerlink { position: absolute; font-size: .2em; top: 50%; transform: translateY(-50%); color: #285be6; }
+.md-typeset .hero .lead { font-size: .88rem; line-height: 1.65; color: #47617f; margin: 0 0 1.5rem; }
+.md-typeset .hero-art { aspect-ratio: 1; border-radius: 50%; background: url("blue-flower-lens.webp") 90% center / auto 110%, #061329; }
+.md-typeset .hero .md-button { font-size: .72rem; padding: .7em 1.1em; border-radius: .35rem; }
+.md-typeset .hero .hero-copy .md-button:not(.md-button--primary) { color: #172e50; border-color: #172e5033; background: transparent; }
+.md-typeset .hero .hero-copy .md-button:hover, .md-typeset .hero .hero-copy .md-button:focus { background: #245edb; border-color: #245edb; color: #fff; }
 .md-typeset .eyebrow { color: var(--md-accent-fg-color); font-size: .7rem; letter-spacing: .1em; font-weight: 700; text-transform: uppercase; }
 .md-typeset .engine-line { display: grid; grid-template-columns: repeat(3, 1fr); gap: .1rem 1rem; margin-top: 1.5rem; font-size: .75rem; }
 .md-typeset .engine-line strong { grid-row: 1; }
@@ -29,5 +32,5 @@ body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sa
 .md-typeset video { width: 100%; border-radius: .8rem; background: #152d4d; }
 .md-typeset :focus-visible { outline: 3px solid var(--md-accent-fg-color); outline-offset: 4px; }
 @media (max-width: 900px) { .md-typeset .product-shots { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 600px) { .md-typeset .hero { padding: 1.8rem .6rem 1.4rem; } .md-typeset .hero .md-button { font-size: .7rem; padding: .6em 1em; } .md-typeset .showcase { gap: .4rem; } .md-typeset .showcase figcaption { font-size: .6rem; } .md-typeset .product-shots { grid-template-columns: 1fr; max-width: 24rem; margin-inline: auto; gap: 1rem; } }
+@media (max-width: 600px) { .md-typeset .hero { grid-template-columns: 1fr; padding: 1.5rem; gap: 1.8rem; } .md-typeset .hero-brand { margin-bottom: 1.4rem; } .md-typeset .hero-art { width: 78%; justify-self: end; } .md-typeset .hero .md-button { font-size: .7rem; padding: .6em 1em; } .md-typeset .showcase { gap: .4rem; } .md-typeset .showcase figcaption { font-size: .6rem; } .md-typeset .product-shots { grid-template-columns: 1fr; max-width: 24rem; margin-inline: auto; gap: 1rem; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; } }

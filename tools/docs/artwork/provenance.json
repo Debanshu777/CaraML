@@ -20,5 +20,15 @@
       800
     ],
     "animation": false
+  },
+  "composition": {
+    "renderer": "../render_readme.py",
+    "layout": "Pale canvas; upright wordmark and product introduction on the left; circular flower lens on the right.",
+    "headline": "Your AI. Right here.",
+    "colors": {
+      "canvas": "#eef3fc",
+      "ink": "#172e50",
+      "accent": "#285be6"
+    }
   }
 }
