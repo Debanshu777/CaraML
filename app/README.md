@@ -43,6 +43,8 @@ unchanged. Package conventions are documented in [the root README](../README.md#
 
 ## Recent Changes
 
+- Fixed ONNX resident-session fixtures to use the production owner/model directory layout across desktop hosts; JVM failures now print full assertions.
+
 - Added foreground Android image-generation instrumentation with fixed seeds, per-step timing, thermal records, PNG validation, and CPU/Vulkan comparisons. Completed five-model and tuning runs, verified the installed optimized APK, and restored release-build foundation dependencies. [Results](../benchmarks/diffusion/README.md).
 
 - Added installed-bundle ONNX performance instrumentation with exact artifact/runtime checks, process trials, separate Perfetto captures, resident-session reuse controls and optional memory sampling. [Pixel 9 results](../benchmarks/onnx/README.md#pixel-9-app-performance-pass--october-24-2026) distinguish model-load gains from generation and benchmark overhead.

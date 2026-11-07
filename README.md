@@ -387,6 +387,8 @@ iOS requires a single merged `.a` archive (Metal, Accelerate, and GGML framework
 
 ## Recent Changes
 
+- Fixed the ONNX resident-session test storage layout on Linux CI and enabled complete JVM test failure diagnostics.
+
 - Consolidated the diffusion benchmark suite from 19 files to 12 by grouping trial suites, model metadata, supporting evidence and Python tests. Preserved all trial settings and recorded results.
 
 - Image generation now resolves model-specific workloads before admission, fixes SD-Turbo prediction/scheduling, and permits Android Vulkan image plans with GPU VAE decoding. SD-Turbo uses 1/2/4 steps for Speed/Balanced/Quality; the final two-step JNI trial took 58.0 s. [Five-model Pixel 9 results and limits](benchmarks/diffusion/README.md).

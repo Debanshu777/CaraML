@@ -202,6 +202,8 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 
 ## Recent Changes
 
+- Corrected ONNX resident-session fixtures to use `<models>/owner/onnx` and clean up the whole temporary tree, fixing Linux CI loads; JVM test logs now include full failure details.
+
 - Image admission preserves model-specific workloads, enables Android Vulkan image plans with GPU VAE decoding, and accounts for decoder workspace. Fixed SD-Turbo epsilon/Euler/trailing scheduling with 1/2/4-step presets and image mmap; Z-Image-Turbo has eight-step defaults but still lacks typed app admission. [Pixel 9 evidence](../../benchmarks/diffusion/README.md).
 
 - Added ONNX load/generation timing and idle resident-session reuse for an unchanged model, artifact, runtime configuration and settings. Current manifest/path/size checks remain under artifact ownership; cancellation, failures and context mutations invalidate reuse. Repository and routing tests cover lifecycle races and changed files. [Measurements](../../benchmarks/onnx/README.md#pixel-9-app-performance-pass--october-24-2026).
