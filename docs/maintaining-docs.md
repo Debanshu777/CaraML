@@ -47,7 +47,7 @@ Upload `docs/assets/social-preview.png` in **Settings → General → Social pre
 
 ## Demo and evidence
 
-The cover uses an original blue-flower image processed with [Paper's Lens Distortion shader](https://shaders.paper.design/lens-distortion). CaraML's composition pairs a small upright wordmark and a left-aligned product introduction with a circular flower lens on a pale-blue canvas. Use navy for primary text and cobalt for emphasis. The product cards and video use the same flower texture on deeper blue backgrounds. Flow remains the small blue wave avatar in `docs/assets/flow.svg`. This artwork applies to the README and docs; the app retains its current branding.
+The cover uses an original blue-flower image processed with [Paper's Lens Distortion shader](https://shaders.paper.design/lens-distortion). Keep the masthead compact: an upright CaraML wordmark and a factual subtitle on the left, with the flower filling the right side. The docs open into standard project documentation with direct setup links. Use the blue palette and flower texture in the product cards and video. Flow remains the small blue wave avatar in `docs/assets/flow.svg`. This artwork applies to the README and docs; the app retains its current branding.
 
 The flower was created with the built-in image-generation tool as marketing artwork, **not generated inside CaraML**. The source image, exact prompt, shader version, and exported frame live in `tools/docs/artwork/`. The image-generation demonstration in the video is a separate, real SD-Turbo app capture.
 
@@ -66,7 +66,7 @@ After installing `tools/docs/media-requirements.txt` and system Cairo, compose t
 python tools/docs/render_readme.py
 ```
 
-The renderer uses the bundled Bricolage Grotesque and DM Sans fonts as outlines and writes `readme-banner.png`, its lighter WebP preview, `blue-flower-lens.webp`, and the 1200 × 630 `social-preview.png`. The intermediate SVG stays in ignored `build/artwork/`. The README loads WebP and links to the full PNG. Published pages use a static shader export: no WebGL runtime, animation, or remote image/font request is needed. The docs wordmark uses a locally bundled copy of Bricolage Grotesque.
+The renderer uses the bundled Bricolage Grotesque and DM Sans fonts as outlines and writes the 1600 × 560 `readme-banner.png`, its lighter WebP preview, `blue-flower-lens.webp`, and the 1200 × 630 `social-preview.png`. `grain_pattern()` adds reproducible fine grain beneath the lettering; adjust its opacity and scale to tune the texture without softening text. The intermediate SVG stays in ignored `build/artwork/`. The README loads WebP and links to the full PNG. Published pages use a static shader export: no WebGL runtime, animation, or remote image/font request is needed. Documentation text uses system fonts.
 
 Regenerate the store-style product screenshots with:
 

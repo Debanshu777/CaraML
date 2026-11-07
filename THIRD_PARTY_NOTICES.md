@@ -16,4 +16,4 @@ This is a navigation guide to notable notices, not a complete binary-distributio
 | Other Kotlin/JVM/native dependencies | [Version catalog](gradle/libs.versions.toml), module build files, and each dependency's notices |
 | Downloaded model weights | The selected model repository's license and model card; not covered by CaraML's root license |
 
-The documentation uses MkDocs and Material for MkDocs under their own licenses. Paper Shaders renders the original blue-flower cover during artwork creation; published docs include the static result, not its runtime code. The docs wordmark also bundles Bricolage Grotesque under the OFL linked above. The demo's captured app UI uses CaraML's bundled resources. No third-party music or stock footage is included.
+The documentation uses MkDocs and Material for MkDocs under their own licenses. Paper Shaders renders the original blue-flower cover during artwork creation; published docs include the static result, not its runtime code. The cover lettering uses the bundled fonts under the OFLs linked above. The demo's captured app UI uses CaraML's bundled resources. No third-party music or stock footage is included.

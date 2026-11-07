@@ -5,23 +5,15 @@ hide:
   - toc
 ---
 
-<div class="hero" markdown>
-<div class="hero-copy" markdown>
-<p class="hero-brand">CaraML</p>
+<img class="project-masthead" src="assets/readme-banner.webp" alt="CaraML — on-device AI with Kotlin Multiplatform" width="1600" height="560">
 
-# Your AI.<br>Right here.
+# CaraML
 
-<p class="lead">Local chat and image generation.<br>Built with Kotlin Multiplatform.</p>
+CaraML runs language models and image generation on Android, iOS, and desktop. It is built with Kotlin and Compose Multiplatform, with model discovery and downloads through Hugging Face.
 
-[Build and run](getting-started.md){ .md-button .md-button--primary }
-[Watch the demo](demo.md){ .md-button }
-</div>
-<div class="hero-art" role="img" aria-label="A blue flower refracted through a circular lens"></div>
-</div>
+[**Build and run →**](getting-started.md) · [Supported models](models.md) · [Demo](demo.md) · [Source](https://github.com/Debanshu777/CaraML)
 
-Chat with a local language model. Turn a prompt into an image. Explore Hugging Face, download a supported model, and run inference on your own hardware with CaraML. [Explore the source →](https://github.com/Debanshu777/CaraML)
-
-<p class="engine-line"><strong>llama.cpp</strong><span>GGUF chat</span><strong>ONNX Runtime</strong><span>ONNX text</span><strong>stable-diffusion.cpp</strong><span>Image generation</span></p>
+**Engines:** llama.cpp for GGUF chat, ONNX Runtime for supported text bundles, and stable-diffusion.cpp for image generation.
 
 <div class="showcase product-shots">
   <a href="assets/product/01-local-chat.png"><img src="assets/product/01-local-chat.webp" alt="Ideas in. Answers out. Real local chat on Pixel 9." width="540" height="960"></a>

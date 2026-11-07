@@ -23,12 +23,12 @@
   },
   "composition": {
     "renderer": "../render_readme.py",
-    "layout": "Pale canvas; upright wordmark and product introduction on the left; circular flower lens on the right.",
-    "headline": "Your AI. Right here.",
+    "layout": "Compact 1600 by 560 masthead; upright CaraML wordmark and factual subtitle on the left; full-bleed flower on the right.",
+    "subtitle": "On-device AI with Kotlin Multiplatform",
     "colors": {
-      "canvas": "#eef3fc",
-      "ink": "#172e50",
-      "accent": "#285be6"
+      "canvas": "#061329",
+      "wordmark": "#e7f2ff",
+      "subtitle": "#b9d0eb"
     }
   }
 }

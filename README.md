@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="docs/assets/readme-banner.png"><img src="docs/assets/readme-banner.webp" alt="CaraML — Your AI. Right here. Local chat and image generation with Kotlin Multiplatform, beside a blue flower in a circular lens." width="100%"></a>
+  <a href="docs/assets/readme-banner.png"><img src="docs/assets/readme-banner.webp" alt="CaraML — on-device AI with Kotlin Multiplatform. Blue-flower masthead." width="100%"></a>
 </p>
 
 <p align="center">
@@ -138,7 +138,7 @@ Dependencies and model weights keep their own licenses. See [third-party notices
 
 ## Recent Changes
 
-- Gave CaraML an upright wordmark, asymmetric cover, and blue-flower lens motif across the README and docs.
+- Simplified the README and docs around a compact blue-flower masthead, project details, and direct setup links.
 - Fixed nested diffusion-model installs and kept image/video models visible alongside frequently used chat models.
 - Added searchable docs, a real-device demo, contribution guides, and noncommercial licensing.
 - Added ONNX text support and Android Vulkan diffusion; [results and limits](benchmarks/README.md).
