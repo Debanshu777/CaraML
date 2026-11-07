@@ -39,7 +39,7 @@ The `github-pages` environment allows those two exact branches. Once the stacked
 
 Published source links, license metadata, and the build guide's checkout command point to the commit used for that build. The workflow supplies `CARAML_DOCS_REVISION` and `CARAML_DOCS_BRANCH` to `tools/docs/source_revision.py`; local previews default to `main`. This keeps the public guides usable before the app changes reach the default branch.
 
-Do not advertise that URL as live until a deployment succeeds. Update `site_url` and the checker base together if moving to another host. The MkDocs output is static HTML in `build/site`, so it can also be served by another static host.
+The site is live at [debanshu777.github.io/CaraML](https://debanshu777.github.io/CaraML/). Verify the public site after deployment. Update `site_url` and the checker base together if moving to another host. The MkDocs output is static HTML in `build/site`, so it can also be served by another static host.
 
 Pages handles the repository path prefix. The site supplies canonical URLs, unique descriptions, Open Graph/Twitter metadata, a social preview, a sitemap, and a local search index. A project-level `robots.txt` cannot control the domain root, so none is added here. Submit the sitemap through the site owner's search-engine tools if desired; metadata does not guarantee indexing or ranking.
 

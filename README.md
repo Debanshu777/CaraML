@@ -14,9 +14,9 @@
 </p>
 
 <p align="center">
-  <a href="docs/index.md"><strong>Documentation</strong></a> &nbsp;·&nbsp;
+  <a href="https://debanshu777.github.io/CaraML/"><strong>Documentation</strong></a> &nbsp;·&nbsp;
   <a href="#get-started"><strong>Get started</strong></a> &nbsp;·&nbsp;
-  <a href="docs/demo.md"><strong>Watch the demo</strong></a> &nbsp;·&nbsp;
+  <a href="https://debanshu777.github.io/CaraML/demo/"><strong>Watch the demo</strong></a> &nbsp;·&nbsp;
   <a href="CONTRIBUTING.md"><strong>Contribute</strong></a>
 </p>
 
@@ -46,7 +46,7 @@ Model discovery and downloads need a connection; inference runs locally once the
   <a href="docs/assets/product/04-iphone.png"><img src="docs/assets/product/04-iphone.webp" width="24%" alt="Feels at home. On iPhone. CaraML start screen on iPhone 13."></a>
 </p>
 
-[**Watch the 32-second walkthrough →**](docs/demo.md) &nbsp; Local chat and image generation on a Pixel 9, with captions and a transcript.
+[**Watch the 32-second walkthrough →**](https://debanshu777.github.io/CaraML/demo/) &nbsp; Local chat and image generation on a Pixel 9, with captions and a transcript.
 
 <details>
 <summary>About these screenshots</summary>
@@ -138,7 +138,7 @@ Dependencies and model weights keep their own licenses. See [third-party notices
 
 ## Recent Changes
 
-- Enabled GitHub Pages publishing from the documentation branch, with source links pinned to each deployed revision.
+- Published the [documentation and demo on GitHub Pages](https://debanshu777.github.io/CaraML/), with source links pinned to each deployed revision.
 - Simplified the README and docs around a compact blue-flower masthead, project details, and direct setup links.
 - Fixed nested diffusion-model installs and kept image/video models visible alongside frequently used chat models.
 - Added searchable docs, a real-device demo, contribution guides, and noncommercial licensing.
