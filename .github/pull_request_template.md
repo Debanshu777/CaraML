@@ -11,6 +11,7 @@ Describe the problem and the resulting behavior. Link related issues if applicab
 
 ## Documentation and rights
 
-- [ ] Relevant docs and module `Recent Changes` are updated, or no documentation change is needed.
+- [ ] Every code/test/build/dependency/tooling change includes relevant `docs/` updates and a root README `Recent Changes` entry in this PR.
+- [ ] Affected module READMEs, examples, commands, and limitations match the final implementation; documentation checks are recorded above.
 - [ ] I have the right to submit this contribution under the repository license.
 - [ ] No private prompts, access tokens, credentials, model weights, or build outputs are included.

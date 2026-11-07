@@ -31,7 +31,7 @@ The [testing guide](docs/development.md) explains what these gates cover and whe
 1. Create a focused branch from `main`.
 2. Explain the problem and resulting behavior; link an existing issue when applicable.
 3. Include the checks you actually ran and any relevant limitations. Add screenshots or a short recording for UI changes.
-4. Update affected docs and concise `Recent Changes` entries. Keep dependency versions in the catalog as the source of truth.
+4. Include documentation updates in the same PR as every code, test, build, dependency, or tooling change: update the relevant `docs/` pages, the root README and its `Recent Changes`, and affected module READMEs. For internal-only changes, explain the developer impact and verification in `docs/development.md`. Follow the [shared documentation policy](AGENTS.md#documentation-and-readme-update-policy), run the [docs checks](docs/maintaining-docs.md#validate-before-publishing), and keep dependency versions in the catalog as the source of truth.
 
 Follow existing Kotlin and Compose conventions. First-party packages use `com.debanshu777.caraml`; reusable SDK packages stay under `sdk.*`. Do not introduce app/framework dependencies into portable API/core modules. Preserve native ownership, durable-download invariants, persisted IDs, and JNI/cinterop consistency.
 

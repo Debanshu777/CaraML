@@ -51,4 +51,14 @@ See the [architecture](architecture.md) for dependency boundaries. Preserve pers
 
 Describe the user-visible problem, final behavior, and checks actually run. Add screenshots or a short recording for UI changes. Report device, OS, model revision/quantization, backend, and workload when making performance claims.
 
-Do not commit downloaded models, tokens, local SDK paths, APKs, native build outputs, or benchmark traces. Update only the affected module READMEs, and replace stale `Recent Changes` entries with concise current ones.
+Do not commit downloaded models, tokens, local SDK paths, APKs, native build outputs, or benchmark traces.
+
+## Keep documentation current
+
+Every change to code, tests, build configuration, dependencies, or developer tooling must include documentation updates in the same change set. Update the relevant pages in `docs/`, the root README and its `Recent Changes`, and the affected module READMEs. Revise explanations, examples, commands, defaults, support claims, and limitations to match the final implementation; a changelog bullet alone does not replace an outdated guide.
+
+For internal refactors and test-only changes, describe the developer impact and verification here and in the affected module README. Keep unrelated module READMEs unchanged and replace stale `Recent Changes` entries with concise current ones. Record measured evidence for performance claims; use the version catalog as the dependency source of truth.
+
+Coding agents follow the same requirement through [AGENTS.md](https://github.com/Debanshu777/CaraML/blob/main/AGENTS.md#documentation-and-readme-update-policy); `CLAUDE.md` imports that shared policy. Agents must review the final diff for documentation impact, make the edits before handing off, and report which docs and checks they updated. Documentation cannot be deferred to a later session or waived for a code change. The PR template records the same expectations for contributors.
+
+Run the [strict docs build and generated-site checks](maintaining-docs.md#validate-before-publishing) after documentation edits, and review rendered pages after layout or media changes. These checks verify links and site metadata; matching the prose to code still requires reviewing the implementation.

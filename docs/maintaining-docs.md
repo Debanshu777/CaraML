@@ -6,6 +6,8 @@ description: Build, preview, validate, and publish CaraML documentation with MkD
 
 The public overview belongs in the root README. Setup and user/developer guides live here; module READMEs and benchmark reports remain the detailed source references. Avoid repeating dependency versions or performance claims across pages.
 
+Keep these sources synchronized with each code change: update the affected site pages, root README, and module READMEs in the same task and PR. The [contribution workflow](development.md#keep-documentation-current) explains the requirement, including internal refactors and test changes; the shared agent policy supplies the change-to-page map.
+
 ## Local preview
 
 From the repository root with Python 3.10 or newer:
