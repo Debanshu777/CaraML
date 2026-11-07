@@ -6,6 +6,8 @@ repo_name: Debanshu777/CaraML
 edit_uri: edit/main/docs/
 site_dir: build/site
 strict: true
+hooks:
+  - tools/docs/source_revision.py
 theme:
   name: material
   custom_dir: tools/docs/overrides

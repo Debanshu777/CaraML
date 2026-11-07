@@ -12,7 +12,8 @@ on:
       - 'LICENSE'
       - 'THIRD_PARTY_NOTICES.md'
   push:
-    branches: [main]
+    # Publish the stacked docs branch until it is merged into main.
+    branches: [main, codex/project-discovery]
     paths:
       - 'docs/**'
       - 'tools/docs/**'
@@ -35,6 +36,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      CARAML_DOCS_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+      CARAML_DOCS_BRANCH: ${{ github.head_ref || github.ref_name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -48,15 +52,18 @@ jobs:
       - run: python -m mkdocs build --strict
       - run: python tools/docs/check_site.py
       - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/project-discovery')
         with:
           path: build/site
 
   deploy:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/project-discovery')
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
     permissions:
       pages: write
       id-token: write

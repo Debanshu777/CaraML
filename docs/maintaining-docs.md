@@ -33,7 +33,11 @@ The pinned Material for MkDocs release announces maintenance through 5 May 2027.
 
 ## GitHub Pages
 
-The docs workflow builds and checks pull requests. Deployment runs only from `main`, and only after the build succeeds. In repository **Settings → Pages**, select **GitHub Actions** as the source. The configured project URL is `https://debanshu777.github.io/CaraML/`.
+The docs workflow builds and checks pull requests. It publishes successful builds from `main` and, while the documentation PR is stacked, `codex/project-discovery`. Pull-request events never deploy. In repository **Settings → Pages**, select **GitHub Actions** as the source. The configured project URL is `https://debanshu777.github.io/CaraML/`.
+
+The `github-pages` environment allows those two exact branches. Once the stacked PR is merged, remove `codex/project-discovery` from the workflow's push branches and deployment conditions, and from the environment's deployment-branch rules. Deployments share a concurrency group to avoid simultaneous publication.
+
+Published source links, license metadata, and the build guide's checkout command point to the commit used for that build. The workflow supplies `CARAML_DOCS_REVISION` and `CARAML_DOCS_BRANCH` to `tools/docs/source_revision.py`; local previews default to `main`. This keeps the public guides usable before the app changes reach the default branch.
 
 Do not advertise that URL as live until a deployment succeeds. Update `site_url` and the checker base together if moving to another host. The MkDocs output is static HTML in `build/site`, so it can also be served by another static host.
 

@@ -138,6 +138,7 @@ Dependencies and model weights keep their own licenses. See [third-party notices
 
 ## Recent Changes
 
+- Enabled GitHub Pages publishing from the documentation branch, with source links pinned to each deployed revision.
 - Simplified the README and docs around a compact blue-flower masthead, project details, and direct setup links.
 - Fixed nested diffusion-model installs and kept image/video models visible alongside frequently used chat models.
 - Added searchable docs, a real-device demo, contribution guides, and noncommercial licensing.
