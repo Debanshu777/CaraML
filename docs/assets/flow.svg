@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">Flow, the CaraML avatar</title>
+  <desc id="desc">A blue wave that curls into a friendly face, with a pale blue trailing ribbon.</desc>
+  <defs>
+    <linearGradient id="flow-blue" x1="24" y1="98" x2="93" y2="19" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1748ce"/>
+      <stop offset=".55" stop-color="#277af5"/>
+      <stop offset="1" stop-color="#60c9ff"/>
+    </linearGradient>
+  </defs>
+  <path d="M17 88C4 72 11 51 28 47C44 42 52 53 58 63C64 75 76 77 86 69C96 62 98 49 90 42C83 36 75 39 72 46C65 35 71 18 85 16C106 12 121 33 116 54C111 78 88 103 62 105C41 107 27 99 22 87L17 88Z" fill="url(#flow-blue)"/>
+  <path d="M17 88C22 75 31 73 41 79C56 92 74 91 91 80C76 101 48 111 30 98C24 94 20 91 17 88Z" fill="#a5ddff"/>
+  <path d="M18 106C35 119 56 122 76 115" fill="none" stroke="#539bff" stroke-width="5" stroke-linecap="round"/>
+  <rect x="88" y="26" width="6" height="10" rx="3" fill="#fff" transform="rotate(10 91 31)"/>
+  <rect x="102" y="31" width="6" height="10" rx="3" fill="#fff" transform="rotate(10 105 36)"/>
+  <path d="M97 46Q101 50 105 46" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,21 @@
+WEBVTT
+
+00:00.000 --> 00:04.000
+Your models. Your device.
+CaraML: local AI with Kotlin Multiplatform.
+
+00:04.000 --> 00:14.000
+A real Pixel 9 conversation with Qwen2.5 3B.
+Edited walkthrough, not a performance benchmark.
+
+00:14.000 --> 00:19.000
+Choose your engine: llama.cpp and ONNX Runtime.
+Download models, then run inference locally.
+
+00:19.000 --> 00:27.000
+Picture it. Create it. Real SD-Turbo image generation
+inside CaraML on Pixel 9, using stable-diffusion.cpp.
+
+00:27.000 --> 00:32.100
+Explore the source at github.com/Debanshu777/CaraML.
+Commercial use requires separate permission.

@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Setup and troubleshooting
+    url: https://github.com/Debanshu777/CaraML/blob/main/docs/getting-started.md
+    about: Start here for build tools, platform commands, and your first conversation.
+  - name: Model compatibility
+    url: https://github.com/Debanshu777/CaraML/blob/main/docs/models.md
+    about: Check GGUF, ONNX, and diffusion requirements before reporting an unsupported model.

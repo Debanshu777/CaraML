@@ -1,0 +1,23 @@
+:root { --md-primary-fg-color: #0c2449; --md-accent-fg-color: #1d59ce; }
+[data-md-color-scheme="default"] { --md-default-bg-color: #f8fbff; --md-default-fg-color: #152d4d; --md-typeset-a-color: #1d59ce; }
+[data-md-color-scheme="slate"] { --md-default-bg-color: #071326; --md-default-fg-color: #e3edfc; --md-default-fg-color--light: #a8bdd8; --md-primary-fg-color: #0c2449; --md-accent-fg-color: #89c5ff; --md-typeset-a-color: #89c5ff; }
+body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.md-typeset h1, .md-typeset h2 { font-weight: 750; letter-spacing: -.035em; }
+.md-typeset h1 { color: var(--md-default-fg-color); }
+.md-typeset .md-button { border-radius: .6rem; margin: .3rem .3rem .3rem 0; }
+[data-md-color-scheme="slate"] .md-typeset .md-button:not(.md-button--primary) { color: #89c5ff; border-color: #89c5ff; }
+.md-typeset .md-button--primary { background: #245edb; border-color: #245edb; color: #fff; }
+.md-typeset .showcase { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; margin: 1.5rem 0; }
+.md-typeset .showcase figure { margin: 0; min-width: 0; }
+.md-typeset .showcase img { border-radius: 1rem; display: block; border: 1px solid #6664; }
+.md-typeset .showcase figcaption { font-size: .7rem; font-style: normal; }
+.md-typeset .product-shots a { display: block; min-width: 0; }
+.md-typeset .product-shots { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .6rem; }
+.md-typeset .product-shots img { width: 100%; height: auto; border: 0; }
+.md-typeset video { width: 100%; border-radius: .8rem; background: #152d4d; }
+.md-typeset :focus-visible { outline: 3px solid var(--md-accent-fg-color); outline-offset: 4px; }
+@media (max-width: 900px) { .md-typeset .product-shots { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; } }
+
+.md-typeset .project-masthead { display: block; width: 100%; height: auto; margin: 1.2rem 0 1.8rem; }
+@media (max-width: 600px) { .md-typeset .showcase { gap: .4rem; } .md-typeset .showcase figcaption { font-size: .6rem; } .md-typeset .product-shots { grid-template-columns: 1fr; max-width: 24rem; margin-inline: auto; gap: 1rem; } }

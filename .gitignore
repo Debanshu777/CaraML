@@ -25,3 +25,7 @@ node_modules/
 graphify-out
 __pycache__/
 *.pyc
+
+# Documentation preview / Python environments
+.venv/
+site/

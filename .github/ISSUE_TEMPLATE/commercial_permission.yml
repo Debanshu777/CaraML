@@ -1,0 +1,25 @@
+name: Commercial permission request
+description: Ask about a separate written license for commercial use.
+title: "[Licensing]: Commercial permission request"
+body:
+  - type: markdown
+    attributes:
+      value: "This is a public issue. Provide only a non-confidential summary; do not post contracts, customer data, or secrets. A request or discussion does not grant permission. Commercial use needs an explicit written agreement covering your use and the applicable rights."
+  - type: input
+    id: organization
+    attributes:
+      label: Organization or project
+    validations:
+      required: true
+  - type: textarea
+    id: use
+    attributes:
+      label: Intended use
+      description: For example internal deployment, redistribution, paid application, or hosted service. Include the CaraML components/version you need.
+    validations:
+      required: true
+  - type: input
+    id: contact
+    attributes:
+      label: Preferred follow-up channel
+      description: Optional public business contact or profile; do not post a private address unless you intend to make it public.
