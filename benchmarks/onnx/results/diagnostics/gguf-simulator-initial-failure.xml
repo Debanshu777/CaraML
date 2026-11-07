@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="iosSimulatorArm64Test.com.debanshu777.caraml.sdk.plugin.llama.bridge.AppleLlamaRuntimeTest" tests="1" skipped="0" failures="1" errors="0" timestamp="2026-10-22T21:29:48.054Z" hostname="GM-G797VM7T27" time="0.012">
+  <properties/>
+  <testcase name="fiveCheckpointsExerciseCpuAndMetalLifecycle[iosSimulatorArm64]" classname="iosSimulatorArm64Test.com.debanshu777.caraml.sdk.plugin.llama.bridge.AppleLlamaRuntimeTest" time="0.012">
+    <failure message="kotlin.AssertionError: kotlin.AssertionError: smollm2-135m failed to load, requested GPU=99" type="kotlin.AssertionError">kotlin.AssertionError: smollm2-135m failed to load, requested GPU=99
+	at kotlin.Error#&lt;init&gt;(Unknown Source)
+	at kotlin.AssertionError#&lt;init&gt;(Unknown Source)
+	at kotlin.test.DefaultAsserter#fail(Unknown Source)
+	at kotlin.test.Asserter#fail(Unknown Source)
+	at kotlin.test.Asserter#assertTrue(Unknown Source)
+	at kotlin.test.Asserter#assertTrue(Unknown Source)
+	at kotlin.test.Asserter#assertTrue(Unknown Source)
+	at kotlin.test.Asserter#assertTrue(Unknown Source)
+	at kotlin.test#assertTrue(Unknown Source)
+	at com.debanshu777.caraml.sdk.plugin.llama.bridge.AppleLlamaRuntimeTest#fiveCheckpointsExerciseCpuAndMetalLifecycle(/Users/debanshud/Documents/Personal/CaraML/plugin-llama/src/iosTest/kotlin/com/debanshu777/caraml/sdk/plugin/llama/bridge/AppleLlamaRuntimeTest.kt:21)
+	at com.debanshu777.caraml.sdk.plugin.llama.bridge.$AppleLlamaRuntimeTest$test$0.$AppleLlamaRuntimeTest$test$0$$FUNCTION_REFERENCE_FOR$fiveCheckpointsExerciseCpuAndMetalLifecycle$0.invoke#internal(/Users/debanshud/Documents/Personal/CaraML/plugin-llama/src/iosTest/kotlin/com/debanshu777/caraml/sdk/plugin/llama/bridge/AppleLlamaRuntimeTest.kt:14)
+	at com.debanshu777.caraml.sdk.plugin.llama.bridge.$AppleLlamaRuntimeTest$test$0.$AppleLlamaRuntimeTest$test$0$$FUNCTION_REFERENCE_FOR$fiveCheckpointsExerciseCpuAndMetalLifecycle$0.$&lt;bridge-DNC&gt;invoke(/Users/debanshud/Documents/Personal/CaraML/plugin-llama/src/iosTest/kotlin/com/debanshu777/caraml/sdk/plugin/llama/bridge/AppleLlamaRuntimeTest.kt:14)
+	at kotlin.Function1#invoke(Unknown Source)
+	at kotlin.native.internal.test.BaseClassSuite.TestCase#doRun(Unknown Source)
+	at kotlin.native.internal.test.TestCase#doRun(Unknown Source)
+	at kotlin.native.internal.test.TestCase#run(Unknown Source)
+	at kotlin.native.internal.test.TestCase#run(Unknown Source)
+	at kotlin.native.internal.test.TestRunner.kotlin.native.internal.test.TestRunner#run__at__kotlin.native.internal.test.TestSuite(Unknown Source)
+	at kotlin.native.internal.test.TestRunner.kotlin.native.internal.test.TestRunner#runIteration(Unknown Source)
+	at kotlin.native.internal.test.TestRunner#run(Unknown Source)
+	at kotlin.native.internal.test#testLauncherEntryPoint(Unknown Source)
+	at kotlin.native.internal.test#main(Unknown Source)
+	at &lt;global&gt;.Konan_start(./entryPointOwner:1)
+	at &lt;global&gt;.Init_and_run_start(Unknown Source)
+	at &lt;global&gt;.dyld-internal(Unknown Source)
+	at &lt;global&gt;.0x0(Unknown Source)
+</failure>
+  </testcase>
+  <system-out><![CDATA[[LlamaRunner] native stage=BACKEND_INIT event=START
+[LlamaRunner] init: No backend path provided, skipping backend path load
+[LlamaRunner] init: Backend initialized
+[LlamaRunner] native stage=BACKEND_INIT event=END reason=OK elapsed_ms=88
+[LlamaRunner] load: model path supplied=1
+[LlamaRunner] native stage=LOAD event=START
+[LlamaRunner] native stage=CONFIG ctx=2048 batch=256 ubatch=64 threads=4 batch_threads=4 gpu_layers=0 flash=-1 kv_k=1 kv_v=1 auto_fit=0 mmap=1
+[LlamaRunner] unload: Releasing model and context
+[LlamaRunner] unload: Model unloaded
+[LlamaRunner] load: Final params - n_ctx=2048, n_threads=4, n_threads_batch=4, n_batch=256, n_gpu_layers=0
+[LlamaRunner] native stage=MODEL_ALLOCATION event=START
+[LlamaRunner] native stage=MODEL_ALLOCATION event=END reason=OK elapsed_ms=137
+[LlamaRunner] native stage=MODEL_PLACEMENT backend=0 device_type=0 bytes=143025408 host_accessible=1
+[LlamaRunner] native stage=MODEL_PLACEMENT backend=0 device_type=0 bytes=142884864 host_accessible=0
+[LlamaRunner] native stage=CONTEXT_ALLOCATION event=START
+[LlamaRunner] native stage=CONTEXT_ALLOCATION event=END reason=OK elapsed_ms=4
+[LlamaRunner] load: Model loaded in 141 ms
+[LlamaRunner] load: Context ready, n_ctx=2048
+[LlamaRunner] load: Resolved GPU layers=0
+[LlamaRunner] native stage=SAMPLER penalties=DENSE
+[LlamaRunner] recreate_sampler: temp=0.000 grammar_len=0
+[LlamaRunner] load: supports_thinking=0
+[LlamaRunner] load: Model ready (vocab_size=49152)
+[LlamaRunner] native stage=LOAD event=END reason=OK elapsed_ms=143
+[LlamaRunner] clear_context: Clearing KV cache and resetting state
+[LlamaRunner] clear_context: Context cleared
+[LlamaRunner] native stage=USER_PREFILL event=START
+[LlamaRunner] native stage=SAMPLER penalties=DENSE
+[LlamaRunner] recreate_sampler: temp=0.000 grammar_len=0
+[LlamaRunner] native stage=USER_PREFILL event=END reason=OK elapsed_ms=8
+[LlamaRunner] native stage=FINALIZE event=START
+[LlamaRunner] native stage=GENERATION reason=FINISHED stop=0 tokens=64 context_used=96
+[LlamaRunner] native stage=GENERATION_PROFILE sample_us=2544 decode_submit_us=105028 wait_us=14 parse_us=874 parse_calls=65 tokens=64
+[LlamaRunner] native stage=FINALIZE event=END reason=OK elapsed_ms=1
+CARAML_APPLE_GGUF {"model":"smollm2-135m","requestedGpuLayers":0,"actualGpuLayers":0,"iteration":0,"tokens":64,"loadMs":143.836334,"ttftMs":19.520666,"decodeTokensPerSecond":589.9721092090067,"outputBase64":"VGhlIHNreSBpcyBibHVlIGJlY2F1c2UgdGhlIGxpZ2h0IGZyb20gdGhlIHN1biBwYXNzZXMgdGhyb3VnaCB0aW55IHBhcnRpY2xlcyBpbiB0aGUgYWlyLCBjYWxsZWQgYXRvbXMuIFRoZXNlIGF0b21zIGFyZSBhcnJhbmdlZCBpbiBhIHdheSB0aGF0IGFsbG93cyB0aGVtIHRvIHNjYXR0ZXIgKHNjYXR0ZXIpIHN1bmxpZ2h0IGluIGFsbCBkaXJlY3Rpb25zLCBpbmNsdWRpbmcgdGhlIGJsdWUgcGFydCBvZiB0aGUgc3BlY3RydW0uCgpXaGVuIHN1bmxpZ2h0IGVudGVycyBvdXIgYXRtb3NwaGVyZSwgaXQgZW5jb3VudGVycyB0aGVzZSB0aW55IHBhcnRpY2xlcyBhbmQgZ2V0cw==","engine":"llama.cpp-0.4.1-dev"}
+[LlamaRunner] clear_context: Clearing KV cache and resetting state
+[LlamaRunner] clear_context: Context cleared
+[LlamaRunner] native stage=USER_PREFILL event=START
+[LlamaRunner] native stage=SAMPLER penalties=DENSE
+[LlamaRunner] recreate_sampler: temp=0.000 grammar_len=0
+[LlamaRunner] native stage=USER_PREFILL event=END reason=OK elapsed_ms=6
+[LlamaRunner] native stage=FINALIZE event=START
+[LlamaRunner] native stage=GENERATION reason=FINISHED stop=0 tokens=64 context_used=96
+[LlamaRunner] native stage=GENERATION_PROFILE sample_us=2479 decode_submit_us=99987 wait_us=11 parse_us=647 parse_calls=65 tokens=64
+[LlamaRunner] native stage=FINALIZE event=END reason=OK elapsed_ms=1
+CARAML_APPLE_GGUF {"model":"smollm2-135m","requestedGpuLayers":0,"actualGpuLayers":0,"iteration":1,"tokens":64,"loadMs":143.836334,"ttftMs":12.203458,"decodeTokensPerSecond":618.3740484548482,"outputBase64":"VGhlIHNreSBpcyBibHVlIGJlY2F1c2UgdGhlIGxpZ2h0IGZyb20gdGhlIHN1biBwYXNzZXMgdGhyb3VnaCB0aW55IHBhcnRpY2xlcyBpbiB0aGUgYWlyLCBjYWxsZWQgYXRvbXMuIFRoZXNlIGF0b21zIGFyZSBhcnJhbmdlZCBpbiBhIHdheSB0aGF0IGFsbG93cyB0aGVtIHRvIHNjYXR0ZXIgKHNjYXR0ZXIpIHN1bmxpZ2h0IGluIGFsbCBkaXJlY3Rpb25zLCBpbmNsdWRpbmcgdGhlIGJsdWUgcGFydCBvZiB0aGUgc3BlY3RydW0uCgpXaGVuIHN1bmxpZ2h0IGVudGVycyBvdXIgYXRtb3NwaGVyZSwgaXQgZW5jb3VudGVycyB0aGVzZSB0aW55IHBhcnRpY2xlcyBhbmQgZ2V0cw==","engine":"llama.cpp-0.4.1-dev"}
+[LlamaRunner] clear_context: Clearing KV cache and resetting state
+[LlamaRunner] clear_context: Context cleared
+[LlamaRunner] native stage=USER_PREFILL event=START
+[LlamaRunner] native stage=SAMPLER penalties=DENSE
+[LlamaRunner] recreate_sampler: temp=0.000 grammar_len=0
+[LlamaRunner] native stage=USER_PREFILL event=END reason=OK elapsed_ms=6
+[LlamaRunner] native stage=FINALIZE event=START
+[LlamaRunner] native stage=GENERATION reason=FINISHED stop=0 tokens=64 context_used=96
+[LlamaRunner] native stage=GENERATION_PROFILE sample_us=2486 decode_submit_us=100052 wait_us=12 parse_us=617 parse_calls=65 tokens=64
+[LlamaRunner] native stage=FINALIZE event=END reason=OK elapsed_ms=1
+CARAML_APPLE_GGUF {"model":"smollm2-135m","requestedGpuLayers":0,"actualGpuLayers":0,"iteration":2,"tokens":64,"loadMs":143.836334,"ttftMs":12.178708,"decodeTokensPerSecond":617.9588129862613,"outputBase64":"VGhlIHNreSBpcyBibHVlIGJlY2F1c2UgdGhlIGxpZ2h0IGZyb20gdGhlIHN1biBwYXNzZXMgdGhyb3VnaCB0aW55IHBhcnRpY2xlcyBpbiB0aGUgYWlyLCBjYWxsZWQgYXRvbXMuIFRoZXNlIGF0b21zIGFyZSBhcnJhbmdlZCBpbiBhIHdheSB0aGF0IGFsbG93cyB0aGVtIHRvIHNjYXR0ZXIgKHNjYXR0ZXIpIHN1bmxpZ2h0IGluIGFsbCBkaXJlY3Rpb25zLCBpbmNsdWRpbmcgdGhlIGJsdWUgcGFydCBvZiB0aGUgc3BlY3RydW0uCgpXaGVuIHN1bmxpZ2h0IGVudGVycyBvdXIgYXRtb3NwaGVyZSwgaXQgZW5jb3VudGVycyB0aGVzZSB0aW55IHBhcnRpY2xlcyBhbmQgZ2V0cw==","engine":"llama.cpp-0.4.1-dev"}
+[LlamaRunner] clear_context: Clearing KV cache and resetting state
+[LlamaRunner] clear_context: Context cleared
+[LlamaRunner] native stage=USER_PREFILL event=START
+[LlamaRunner] native stage=SAMPLER penalties=DENSE
+[LlamaRunner] recreate_sampler: temp=0.000 grammar_len=0
+[LlamaRunner] native stage=USER_PREFILL event=END reason=OK elapsed_ms=6
+[LlamaRunner] native stage=FINALIZE event=START
+[LlamaRunner] native stage=GENERATION reason=FINISHED stop=0 tokens=64 context_used=96
+[LlamaRunner] native stage=GENERATION_PROFILE sample_us=2415 decode_submit_us=93782 wait_us=10 parse_us=550 parse_calls=65 tokens=64
+[LlamaRunner] native stage=FINALIZE event=END reason=OK elapsed_ms=1
+CARAML_APPLE_GGUF {"model":"smollm2-135m","requestedGpuLayers":0,"actualGpuLayers":0,"iteration":3,"tokens":64,"loadMs":143.836334,"ttftMs":11.978583,"decodeTokensPerSecond":661.1526882284651,"outputBase64":"VGhlIHNreSBpcyBibHVlIGJlY2F1c2UgdGhlIGxpZ2h0IGZyb20gdGhlIHN1biBwYXNzZXMgdGhyb3VnaCB0aW55IHBhcnRpY2xlcyBpbiB0aGUgYWlyLCBjYWxsZWQgYXRvbXMuIFRoZXNlIGF0b21zIGFyZSBhcnJhbmdlZCBpbiBhIHdheSB0aGF0IGFsbG93cyB0aGVtIHRvIHNjYXR0ZXIgKHNjYXR0ZXIpIHN1bmxpZ2h0IGluIGFsbCBkaXJlY3Rpb25zLCBpbmNsdWRpbmcgdGhlIGJsdWUgcGFydCBvZiB0aGUgc3BlY3RydW0uCgpXaGVuIHN1bmxpZ2h0IGVudGVycyBvdXIgYXRtb3NwaGVyZSwgaXQgZW5jb3VudGVycyB0aGVzZSB0aW55IHBhcnRpY2xlcyBhbmQgZ2V0cw==","engine":"llama.cpp-0.4.1-dev"}
+[LlamaRunner] clear_context: Clearing KV cache and resetting state
+[LlamaRunner] clear_context: Context cleared
+[LlamaRunner] native stage=USER_PREFILL event=START
+[LlamaRunner] native stage=SAMPLER penalties=DENSE
+[LlamaRunner] recreate_sampler: temp=0.000 grammar_len=0
+[LlamaRunner] native stage=USER_PREFILL event=END reason=OK elapsed_ms=8
+[LlamaRunner] next_token: cancelled
+[LlamaRunner] native stage=FINALIZE event=START
+[LlamaRunner] native stage=GENERATION reason=FINISHED stop=4 tokens=0 context_used=31
+[LlamaRunner] native stage=GENERATION_PROFILE sample_us=0 decode_submit_us=0 wait_us=0 parse_us=0 parse_calls=1 tokens=0
+[LlamaRunner] native stage=FINALIZE event=END reason=OK elapsed_ms=0
+[LlamaRunner] clear_context: Clearing KV cache and resetting state
+[LlamaRunner] clear_context: Context cleared
+[LlamaRunner] native stage=UNLOAD event=START
+[LlamaRunner] unload: Releasing model and context
+[LlamaRunner] unload: Model unloaded
+[LlamaRunner] native stage=UNLOAD event=END reason=OK elapsed_ms=3
+[LlamaRunner] load: model path supplied=1
+[LlamaRunner] native stage=LOAD event=START
+[LlamaRunner] native stage=CONFIG ctx=2048 batch=256 ubatch=64 threads=4 batch_threads=4 gpu_layers=99 flash=-1 kv_k=1 kv_v=1 auto_fit=0 mmap=1
+[LlamaRunner] unload: Releasing model and context
+[LlamaRunner] unload: Model unloaded
+[LlamaRunner] load: Final params - n_ctx=2048, n_threads=4, n_threads_batch=4, n_batch=256, n_gpu_layers=99
+[LlamaRunner] native stage=MODEL_ALLOCATION event=START
+[LlamaRunner] native stage=MODEL_ALLOCATION event=END reason=OK elapsed_ms=102
+[LlamaRunner] native stage=MODEL_PLACEMENT backend=0 device_type=0 bytes=30081024 host_accessible=1
+[LlamaRunner] native stage=MODEL_PLACEMENT backend=0 device_type=0 bytes=142884864 host_accessible=0
+[LlamaRunner] native stage=MODEL_PLACEMENT backend=6 device_type=1 bytes=112944384 host_accessible=0
+[LlamaRunner] native stage=CONTEXT_ALLOCATION event=START
+[LlamaRunner] ERROR: native stage=CONTEXT_ALLOCATION reason=BACKEND_DIAGNOSTIC
+[LlamaRunner] ERROR: native stage=CONTEXT_ALLOCATION reason=ALLOCATION_FAILED
+[LlamaRunner] ERROR: native stage=CONTEXT_ALLOCATION reason=BACKEND_DIAGNOSTIC
+[LlamaRunner] ERROR: load: context allocation failed
+[LlamaRunner] native stage=CONTEXT_ALLOCATION event=END reason=FAILED elapsed_ms=3
+[LlamaRunner] native stage=LOAD event=END reason=FAILED elapsed_ms=105
+[LlamaRunner] shutdown: Freeing backend
+]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

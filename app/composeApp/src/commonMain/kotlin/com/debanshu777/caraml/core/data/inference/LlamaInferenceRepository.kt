@@ -1,6 +1,10 @@
 package com.debanshu777.caraml.core.data.inference
 
 import com.debanshu777.caraml.core.benchmark.BenchmarkUtils
+import com.debanshu777.caraml.core.performance.beginPerformanceSpan
+import com.debanshu777.caraml.core.performance.tracePerformanceStage
+import com.debanshu777.caraml.core.performance.tracePerformanceOperation
+import com.debanshu777.caraml.core.performance.currentPerformanceOperationId
 import com.debanshu777.caraml.core.platform.AppLogger
 import com.debanshu777.caraml.core.platform.BackendKind
 import com.debanshu777.caraml.core.platform.DeviceCapabilities
@@ -27,6 +31,7 @@ import com.debanshu777.caraml.core.recommendation.NativeRunPlanAdapter
 import com.debanshu777.caraml.core.recommendation.PersonalizedRecommendation
 import com.debanshu777.caraml.core.recommendation.RecommendationCategory
 import com.debanshu777.caraml.core.recommendation.RecommendationPolicy
+import com.debanshu777.caraml.core.recommendation.ResolvedLocalArtifact
 import com.debanshu777.caraml.core.recommendation.StableLoadFailure
 import com.debanshu777.caraml.core.recommendation.SuitabilityEngine
 import com.debanshu777.caraml.core.recommendation.VerifiedArtifactLoadTarget
@@ -121,9 +126,51 @@ class LlamaInferenceRepository(
     /** Cached runtime config string built after each successful model load. */
     @Volatile private var lastRuntimeConfig: String = ""
 
+    @Volatile private var loadTraceOperationId: Int? = null
+
     @Volatile private var generationObservation: InferenceObservationPlan? = null
 
-    override suspend fun loadModel(request: LoadRequest): ModelLoadResult {
+    // Accessed only under nativeSession. A key is published after the full load transaction succeeds.
+    private var residentRequest: LoadRequest? = null
+    private var residentReuseKey: ResidentLlamaReuseKey? = null
+
+    override suspend fun tryReuseInstalledModel(
+        model: LocalModelEntity,
+        artifact: ResolvedLocalArtifact,
+    ): ModelLoadResult.Success? = nativeSession.exclusive {
+        val resident = residentRequest ?: return@exclusive null
+        val key = residentReuseKey ?: return@exclusive null
+        if (!nativeLoaded) return@exclusive null
+        val coordinator = loadSessionCoordinator ?: return@exclusive null
+        try {
+            val candidate = resident.copy(model = model, identity = artifact.identity, artifact = artifact)
+            val settings = currentSettings()
+            // Retain the admitted plan/config. Available RAM includes this resident allocation,
+            // so rerunning allocation tuning here would spuriously invalidate a ready session.
+            val candidateKey = ResidentLlamaReuseKey.from(candidate, settings, key.config, engineVersion)
+            if (!canReuseResidentLlama(key, candidateKey, ResidentLlamaState.READY,
+                    contextLimitSnapshot, ResidentLlamaIntent.SELECT)) return@exclusive null
+            coordinator.withCurrentResidentArtifact(candidate) {
+                AppLogger.i(TAG) { "load stage=resident_reuse context=$contextLimitSnapshot" }
+                ModelLoadResult.Success(contextLimitSnapshot)
+            }
+        } catch (cancelled: CancellationException) {
+            invalidateResidentReuse()
+            throw cancelled
+        } catch (_: Exception) {
+            invalidateResidentReuse()
+            null
+        }
+    }
+
+    override suspend fun loadModel(request: LoadRequest): ModelLoadResult =
+        tracePerformanceOperation("load.repository") {
+            loadModelMeasured(request).also { result ->
+                if (result is ModelLoadResult.Success) loadTraceOperationId = currentPerformanceOperationId()
+            }
+        }
+
+    private suspend fun loadModelMeasured(request: LoadRequest): ModelLoadResult {
         val started = TimeSource.Monotonic.markNow()
         AppLogger.i(TAG) {
             "load stage=request fallback=${request.nativeMetadataFallback} " +
@@ -134,6 +181,7 @@ class LlamaInferenceRepository(
             return ModelLoadResult.Error(message)
         }
         return nativeSession.exclusive {
+            invalidateResidentReuse()
             val artifact = request.artifact
                 ?: return@exclusive error("unverified_artifact", "The installed model could not be verified.")
             if (artifact.identity != request.identity) {
@@ -163,7 +211,7 @@ class LlamaInferenceRepository(
                 "load stage=config ctx=${exactConfig.nCtx} batch=${exactConfig.nBatch} " +
                     "ubatch=${exactConfig.nUbatch} threads=${exactConfig.nThreads} " +
                     "gpuLayers=${exactConfig.nGpuLayers} kv=${exactConfig.typeK}/${exactConfig.typeV} " +
-                    "flash=${exactConfig.flashAttn} autoFit=${exactConfig.autoFit}"
+                    "flash=${exactConfig.flashAttn} offloadKqv=${exactConfig.offloadKqv} autoFit=${exactConfig.autoFit}"
             }
             val loadObservation = request.toInferenceObservationPlan(engineVersion, InferenceObservationPhase.LOAD)
             val nextGenerationObservation =
@@ -181,7 +229,7 @@ class LlamaInferenceRepository(
             }
             AppLogger.i(TAG) { "load stage=initialize" }
             try {
-                runner.initialize(nativeLibDir)
+                tracePerformanceStage("load.engineInitialize") { runner.initialize(nativeLibDir) }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Throwable) {
@@ -198,7 +246,7 @@ class LlamaInferenceRepository(
                     .getOrElse { return@admissionController NativeLoadPreflight.Invalid }
                     ?: return@admissionController NativeLoadPreflight.Invalid
                 val preflightStarted = TimeSource.Monotonic.markNow()
-                val preflight = runner.preflightModel(candidatePath, config)
+                val preflight = tracePerformanceStage("load.nativePreflight") { runner.preflightModel(candidatePath, config) }
                 AppLogger.i(TAG) {
                     "load stage=preflight outcome=${preflight::class.simpleName} " +
                         "elapsedMs=${preflightStarted.elapsedNow().inWholeMilliseconds}"
@@ -255,7 +303,7 @@ class LlamaInferenceRepository(
                         AppLogger.i(TAG) { "load stage=native_allocation" }
                         val loaded = loadObservation?.let { observation ->
                             observationRecorder?.measureLoad(observation.key, observation.prediction) {
-                                val succeeded = runner.loadModel(modelPath, exactConfig)
+                                val succeeded = tracePerformanceStage("load.nativeModel") { runner.loadModel(modelPath, exactConfig) }
                                 MeasuredResult(
                                     value = succeeded,
                                     completedUnits = 1,
@@ -266,7 +314,7 @@ class LlamaInferenceRepository(
                                     },
                                 )
                             }
-                        } ?: runner.loadModel(modelPath, exactConfig)
+                        } ?: tracePerformanceStage("load.nativeModel") { runner.loadModel(modelPath, exactConfig) }
                         if (!loaded) {
                             return@execute NativeLoadOutcome.Failed(
                                 error("allocation_failure", "The model could not be loaded with this configuration."),
@@ -275,7 +323,7 @@ class LlamaInferenceRepository(
                         }
                         nativeLoaded = true
                         val systemPrompt = settings.systemPrompt.ifBlank { FALLBACK_SYSTEM_PROMPT }
-                        val systemResult = runner.processSystemPrompt(systemPrompt)
+                        val systemResult = tracePerformanceStage("load.systemPrompt") { runner.processSystemPrompt(systemPrompt) }
                         AppLogger.i(TAG) { "load stage=system_prompt code=$systemResult" }
                         if (systemResult != 0) {
                             return@execute NativeLoadOutcome.Failed(
@@ -295,7 +343,7 @@ class LlamaInferenceRepository(
                             typeK = exactConfig.typeK,
                             typeV = exactConfig.typeV,
                             flashAttn = exactConfig.flashAttn,
-                        )
+                        ) + ",ub=${exactConfig.nUbatch},offloadKqv=${exactConfig.offloadKqv},autoFit=${exactConfig.autoFit}"
                         NativeLoadOutcome.Succeeded(ModelLoadResult.Success(contextSize))
                     },
                 )) {
@@ -313,7 +361,12 @@ class LlamaInferenceRepository(
                     }
                     is CoordinatedLoadResult.ArtifactChanged ->
                         error("artifact_changed", "The installed model changed and could not be verified.")
-                    is CoordinatedLoadResult.Completed -> result.value
+                    is CoordinatedLoadResult.Completed -> result.value.also { loaded ->
+                        if (loaded is ModelLoadResult.Success) {
+                            residentReuseKey = ResidentLlamaReuseKey.from(request, settings, exactConfig, engineVersion)
+                            residentRequest = request.takeIf { residentReuseKey != null }
+                        }
+                    }
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -477,13 +530,17 @@ class LlamaInferenceRepository(
                 "generate: promptLen=${userPrompt.length}, " +
                     "context=${runner.getContextUsed()}/${runner.getContextLimit()}"
             }
+            val generationSpan = beginPerformanceSpan("generation", loadTraceOperationId)
+            var firstTokenSpan = beginPerformanceSpan("generation.timeToFirstToken", generationSpan?.operationId)
             val generationStarted = TimeSource.Monotonic.markNow()
             var tokenEvents = 0
             var firstTokenMs: Long? = null
             var outcome = "failed"
             try {
                 val prefillStarted = TimeSource.Monotonic.markNow()
-                val promptResult = runner.processUserPrompt(userPrompt, responseBudget)
+                val prefillSpan = beginPerformanceSpan("generation.prefill", generationSpan?.operationId)
+                val promptResult = try { runner.processUserPrompt(userPrompt, responseBudget) }
+                    finally { prefillSpan?.close() }
                 AppLogger.i(TAG) {
                     "generate stage=prefill code=$promptResult " +
                         "elapsedMs=${prefillStarted.elapsedNow().inWholeMilliseconds} budget=$responseBudget"
@@ -500,6 +557,8 @@ class LlamaInferenceRepository(
                     if (chunk.isTokenEvent) {
                         tokenEvents++
                         if (firstTokenMs == null) {
+                            firstTokenSpan?.close()
+                            firstTokenSpan = null
                             firstTokenMs = generationStarted.elapsedNow().inWholeMilliseconds
                             AppLogger.i(TAG) { "generate stage=first_token elapsedMs=$firstTokenMs" }
                         }
@@ -512,17 +571,26 @@ class LlamaInferenceRepository(
                     5 -> "native_error"
                     else -> "completed"
                 }
+                if (outcome != "completed") invalidateResidentReuse()
             } catch (cancelled: CancellationException) {
+                invalidateResidentReuse()
                 outcome = "cancelled"
                 throw cancelled
             } catch (failure: Throwable) {
+                invalidateResidentReuse()
                 AppLogger.i(TAG) { "generate stage=exception kind=${failure::class.simpleName}" }
                 throw failure
             } finally {
                 try {
                     runner.finalizeGeneration()
                     updateNativeSnapshots()
+                    if (stopReasonSnapshot == 4 || stopReasonSnapshot == 5) invalidateResidentReuse()
+                } catch (failure: Throwable) {
+                    invalidateResidentReuse()
+                    throw failure
                 } finally {
+                    firstTokenSpan?.close()
+                    generationSpan?.close()
                     AppLogger.i(TAG) {
                         "generate stage=complete outcome=$outcome tokens=$tokenEvents " +
                             "elapsedMs=${generationStarted.elapsedNow().inWholeMilliseconds} " +
@@ -537,6 +605,7 @@ class LlamaInferenceRepository(
     override fun currentGenerationObservation(): InferenceObservationPlan? = generationObservation
 
     override suspend fun unloadModel() = nativeSession.exclusive {
+        invalidateResidentReuse()
         if (!nativeLoaded) return@exclusive
         runner.unloadModel()
         nativeLoaded = false
@@ -571,6 +640,8 @@ class LlamaInferenceRepository(
 
     override fun summarizeConversation(transcript: String): Flow<String> = flow {
         nativeSession.exclusive {
+            // Summarization replaces the conversation's system prompt and KV state.
+            invalidateResidentReuse()
             val systemPrompt = currentSystemPrompt()
             try {
                 runner.clearContext()
@@ -605,23 +676,40 @@ class LlamaInferenceRepository(
                 runner.generateFlowTokens().collect { token ->
                     emit(token)
                 }
+            } catch (failure: Throwable) {
+                invalidateResidentReuse()
+                throw failure
             } finally {
-                runner.finalizeGeneration()
-                updateNativeSnapshots()
+                try {
+                    runner.finalizeGeneration()
+                    updateNativeSnapshots()
+                } catch (failure: Throwable) {
+                    invalidateResidentReuse()
+                    throw failure
+                }
             }
         }
     }.flowOn(Dispatchers.IO)
 
     override suspend fun resetContext() = withContext(Dispatchers.IO) {
         nativeSession.exclusive {
-            runner.clearContext()
-            updateNativeSnapshots()
+            // clearContext also removes the system prompt; a loaded allocation alone is not Ready.
+            invalidateResidentReuse()
+            try {
+                runner.clearContext()
+                updateNativeSnapshots()
+            } catch (failure: Throwable) {
+                invalidateResidentReuse()
+                throw failure
+            }
         }
     }
 
     override suspend fun resetContextWithSummary(summary: String, lastExchange: String): Boolean =
         withContext(Dispatchers.IO) {
             nativeSession.exclusive {
+                // A full successful load is the only operation that establishes reuse eligibility.
+                invalidateResidentReuse()
                 val basePrompt = currentSystemPrompt()
                 try {
                     runner.clearContext()
@@ -645,10 +733,13 @@ class LlamaInferenceRepository(
 
                     val ret = runner.processSystemPrompt(systemPrompt)
                     updateNativeSnapshots()
+                    if (ret != 0) invalidateResidentReuse()
                     ret == 0
                 } catch (e: CancellationException) {
+                    invalidateResidentReuse()
                     throw e
                 } catch (_: Exception) {
+                    invalidateResidentReuse()
                     false
                 }
             }
@@ -661,10 +752,16 @@ class LlamaInferenceRepository(
     }
 
     private fun resetNativeSnapshots() {
+        invalidateResidentReuse()
         contextUsedSnapshot = 0
         contextLimitSnapshot = 0
         stopReasonSnapshot = 0
         generationObservation = null
+    }
+
+    private fun invalidateResidentReuse() {
+        residentRequest = null
+        residentReuseKey = null
     }
 
     private suspend fun currentSettings(): AppSettings =

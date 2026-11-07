@@ -32,7 +32,7 @@ class DiffusionFootprintEstimator {
             ?: return conservativeAssessment(plan, storage, AssessmentReason.UNKNOWN_ARCHITECTURE)
         val coefficients = DiffusionArchitectureCoefficientsV1.forArchitecture(architecture)
             ?: return conservativeAssessment(plan, storage, AssessmentReason.UNKNOWN_ARCHITECTURE)
-        val activations = when (val result = activationRanges(plan, coefficients)) {
+        val activations = when (val result = activationRanges(plan, coefficients, architecture)) {
             is DiffusionActivationResult.Invalid -> {
                 return conservativeAssessment(plan, storage, result.reason)
             }
@@ -69,6 +69,10 @@ class DiffusionFootprintEstimator {
                 ),
             )
             addAll(allocation.evidence)
+            if (usesVulkanImageVaeGuard(plan, architecture)) {
+                add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.LOW,
+                    "vulkan-sd-vae-workspace:v1:pixel9-sd2-reference"))
+            }
         }
         return PlanAssessment(
             plan = plan,
@@ -177,6 +181,7 @@ class DiffusionFootprintEstimator {
     private fun activationRanges(
         plan: DiffusionRunPlan,
         coefficients: DiffusionArchitectureCoefficients,
+        architecture: SdArchitecture,
     ): DiffusionActivationResult {
         val pixels = checkedMultiply(plan.width.toLong(), plan.height.toLong())
         if (pixels is CheckedLong.Invalid) return DiffusionActivationResult.Invalid(pixels.reason)
@@ -208,6 +213,30 @@ class DiffusionFootprintEstimator {
             )
             if (vae is DiffusionRangeResult.Invalid) return DiffusionActivationResult.Invalid(vae.reason)
         }
+        if (usesVulkanImageVaeGuard(plan, architecture)) {
+            // Pixel 9 / pinned GGML measured 1,984 MiB for the full SD2 VAE at
+            // 512². The generic pixel coefficients substantially undercount it.
+            // Reserve 2–3 GiB at that size; this is a conservative workspace
+            // estimate, not a calibration for every Vulkan driver/model.
+            // Pinned SD1/2/XL image decode tiles are 32 latent pixels (256 output).
+            val tileWidth = if (plan.vaeTiling) minOf(plan.width, 256) else plan.width
+            val tileHeight = if (plan.vaeTiling) minOf(plan.height, 256) else plan.height
+            val units = checkedMultiply(tileWidth.toLong() * tileHeight, plan.batchSize.toLong())
+            if (units is CheckedLong.Invalid) return DiffusionActivationResult.Invalid(units.reason)
+            val guard = diffusionRangeFromChecked(
+                checkedMultiply((units as CheckedLong.Value).value, 8_192L),
+                checkedMultiply(units.value, 10_240L),
+                checkedMultiply(units.value, 12_288L),
+            )
+            if (guard is DiffusionRangeResult.Invalid) return DiffusionActivationResult.Invalid(guard.reason)
+            val existing = (vae as DiffusionRangeResult.Value).range
+            val floor = (guard as DiffusionRangeResult.Value).range
+            vae = DiffusionRangeResult.Value(diffusionValidRange(
+                maxOf(existing.lowBytes, floor.lowBytes),
+                maxOf(existing.likelyBytes, floor.likelyBytes),
+                maxOf(existing.highBytes, floor.highBytes),
+            ))
+        }
         return DiffusionActivationResult.Value(
             DiffusionActivations(
                 layer = (layer as DiffusionRangeResult.Value).range,
@@ -217,6 +246,10 @@ class DiffusionFootprintEstimator {
             ),
         )
     }
+
+    private fun usesVulkanImageVaeGuard(plan: DiffusionRunPlan, architecture: SdArchitecture): Boolean =
+        plan.backend == BackendKind.VULKAN && plan.mode == DiffusionMode.IMAGE && !plan.keepVaeOnCpu &&
+            architecture in setOf(SdArchitecture.SD1, SdArchitecture.SDXL)
 
     private fun allocate(
         plan: DiffusionRunPlan,

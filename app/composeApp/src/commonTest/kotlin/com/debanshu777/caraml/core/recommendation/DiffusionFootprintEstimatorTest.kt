@@ -14,6 +14,26 @@ class DiffusionFootprintEstimatorTest {
     private val estimator = DiffusionFootprintEstimator()
 
     @Test
+    fun vulkanSdVaeReservesMeasuredWorkspaceAndTilingReducesThePeak() {
+        for (architecture in listOf(SdArchitecture.SD1, SdArchitecture.SDXL)) {
+            val model = descriptor(architecture = architecture)
+            fun estimate(tiled: Boolean) = estimator.estimate(
+                model,
+                plan(width = 512, height = 512, backend = BackendKind.VULKAN,
+                    topology = MemoryTopology.UNIFIED, vaeTiling = tiled, keepClipOnCpu = true),
+                MemoryCalibration.None,
+            )
+            val full = estimate(false)
+            val tiled = estimate(true)
+            assertTrue(assertNotNull(full.sharedMemoryBytes).lowBytes >=
+                assertNotNull(full.storageBytes).lowBytes + 2L * GIB)
+            assertTrue(assertNotNull(tiled.sharedMemoryBytes).highBytes <
+                assertNotNull(full.sharedMemoryBytes).likelyBytes)
+            assertTrue(full.evidence.any { it.detail == "vulkan-sd-vae-workspace:v1:pixel9-sd2-reference" })
+        }
+    }
+
+    @Test
     fun exactComponentWeightsAreSummedByValidatedRoleAndStorageStaysExact() {
         val descriptor = descriptor()
         val estimate = estimator.estimate(descriptor, plan(backend = BackendKind.CPU), MemoryCalibration.None)

@@ -8,6 +8,7 @@ import com.debanshu777.caraml.core.media.GeneratedMediaStore
 import com.debanshu777.caraml.core.platform.BackendKind
 import com.debanshu777.caraml.core.platform.DeviceCapabilities
 import com.debanshu777.caraml.core.platform.MemoryTopology
+import com.debanshu777.caraml.core.performance.ModelLoadDiagnostics
 import com.debanshu777.caraml.core.recommendation.AssessedPlans
 import com.debanshu777.caraml.core.recommendation.AssessmentConfidence
 import com.debanshu777.caraml.core.recommendation.Confidence
@@ -34,6 +35,7 @@ import com.debanshu777.caraml.core.settings.AppSettings
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelDao
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
+import com.debanshu777.caraml.core.storage.localmodel.ModelType
 import com.debanshu777.caraml.features.chat.domain.ChatConfig
 import com.debanshu777.caraml.features.chat.data.MessageDelivery
 import com.debanshu777.caraml.features.chat.domain.GenerationMode
@@ -64,11 +66,194 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChatViewModelRetryTest {
+    @Test
+    fun frequentChatModelsDoNotHideImageAndVideoInventory() = runTest {
+        val textModels = (1L..4L).map { id -> textModel().copy(id = id, modelType = ModelType.TEXT) }
+        val image = textModel().copy(id = 5, modelType = ModelType.IMAGE)
+        val video = textModel().copy(id = 6, modelType = ModelType.VIDEO)
+        val inventory = MutableStateFlow(textModels + image + video)
+        val dao = object : LocalModelDao by StaticLocalModelDao(textModels.first()) {
+            override fun getAllDownloadedFiles(): Flow<List<LocalModelEntity>> = inventory
+        }
+        val available = GetAvailableModelsUseCase(LocalModelRepository(dao), ChatConfig())
+
+        assertEquals(textModels.take(3) + image + video, available().first())
+        inventory.value = listOf(image, video) + textModels.reversed()
+        assertEquals(listOf(image, video) + textModels.reversed().take(3), available().first())
+    }
+
+    @Test
+    fun emptyInventoryReadinessRequiresPersistedEmissionAndSettledSelection() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val persistedInventory = CompletableDeferred<Unit>()
+            val releaseFinished = CompletableDeferred<Unit>()
+            val model = textModel()
+            val request = loadRequest(model, "unused", BackendKind.CPU)
+            val inference = RecordingInferenceRepository(request)
+            val resolver = RecordingResolver(ArrayDeque())
+            val dao = object : LocalModelDao by StaticLocalModelDao(model) {
+                override fun getAllDownloadedFiles(): Flow<List<LocalModelEntity>> = flow {
+                    persistedInventory.await()
+                    emit(emptyList())
+                }
+            }
+            val localModels = LocalModelRepository(dao)
+            val viewModel = ChatViewModel(
+                getAvailableModels = GetAvailableModelsUseCase(localModels, ChatConfig()),
+                generateResponse = GenerateResponseUseCase(inference),
+                manageContext = ManageContextUseCase(inference, ChatConfig()),
+                trackModelUsage = TrackModelUsageUseCase(localModels),
+                inferenceRepository = inference,
+                diffusionRepository = DiffusionInferenceRepository(DiffusionRunner(), DeviceCapabilities(), StaticSettingsRepository()),
+                generatedMediaStore = GeneratedMediaStore(baseDirectory = "/tmp", sessionId = "empty-inventory-readiness"),
+                installedModelLoadRequestResolver = resolver,
+                modelLoadDispatcher = dispatcher,
+                releaseDiffusionModel = { releaseFinished.await() },
+            )
+            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.uiState.collect() }
+            advanceUntilIdle()
+            assertIs<ChatUiState.NoModels>(viewModel.uiState.value)
+            assertFalse(viewModel.inventoryInitialized.value, "The placeholder empty UI is not persisted inventory readiness")
+
+            persistedInventory.complete(Unit)
+            advanceUntilIdle()
+            assertFalse(viewModel.inventoryInitialized.value, "Selection teardown has not settled")
+
+            releaseFinished.complete(Unit)
+            advanceUntilIdle()
+            assertIs<ChatUiState.NoModels>(viewModel.uiState.value)
+            assertTrue(viewModel.inventoryInitialized.value, "A persisted empty inventory is a valid ready state")
+            assertEquals(0, resolver.calls)
+            assertTrue(inference.loadedAssessmentKeys.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun readySameSelectionReusesBeforeTeardownButContextChangeLoadsNormally() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val previousForceFullReload = ModelLoadDiagnostics.forceFullReloadForMeasurement
+        Dispatchers.setMain(dispatcher)
+        try {
+            val model = textModel()
+            val request = loadRequest(model, "fresh-cpu", BackendKind.CPU)
+            val changed = model.copy(contextLength = 2_048)
+            val resolver = RecordingResolver(ArrayDeque(listOf(
+                InstalledModelLoadResolution.Ready(request),
+                InstalledModelLoadResolution.Ready(request),
+                InstalledModelLoadResolution.Ready(request.copy(model = changed)),
+            )))
+            val inference = RecordingInferenceRepository(request).apply {
+                reuse = { candidate, _ ->
+                    if (candidate.copy(usageCount = 0) == model) ModelLoadResult.Success(4_096) else null
+                }
+            }
+            val localModels = LocalModelRepository(StaticLocalModelDao(model))
+            val viewModel = ChatViewModel(
+                getAvailableModels = GetAvailableModelsUseCase(localModels, ChatConfig()),
+                generateResponse = GenerateResponseUseCase(inference),
+                manageContext = ManageContextUseCase(inference, ChatConfig()),
+                trackModelUsage = TrackModelUsageUseCase(localModels),
+                inferenceRepository = inference,
+                diffusionRepository = DiffusionInferenceRepository(DiffusionRunner(), DeviceCapabilities(), StaticSettingsRepository()),
+                generatedMediaStore = GeneratedMediaStore(baseDirectory = "/tmp", sessionId = "resident-selection"),
+                installedModelLoadRequestResolver = resolver,
+                modelLoadDispatcher = dispatcher,
+                releaseDiffusionModel = {},
+            )
+            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.uiState.collect() }
+            advanceUntilIdle()
+            assertIs<ChatUiState.Ready>(viewModel.uiState.value)
+            val priorUnloads = inference.unloadCalls
+            val priorCancels = inference.cancelCalls
+
+            viewModel.selectModel(model.copy(usageCount = 1))
+            advanceUntilIdle()
+            assertIs<ChatUiState.Ready>(viewModel.uiState.value)
+            assertEquals(1, inference.reuseCalls)
+            assertEquals(1, resolver.calls)
+            assertEquals(listOf("fresh-cpu"), inference.loadedAssessmentKeys)
+            assertEquals(priorUnloads, inference.unloadCalls)
+            assertEquals(priorCancels, inference.cancelCalls)
+
+            ModelLoadDiagnostics.forceFullReloadForMeasurement = true
+            viewModel.selectModel(model.copy(usageCount = 1))
+            advanceUntilIdle()
+            assertIs<ChatUiState.Ready>(viewModel.uiState.value)
+            assertEquals(1, inference.reuseCalls, "Measurement control must take the full original path")
+            assertEquals(2, resolver.calls)
+            assertEquals(priorUnloads + 1, inference.unloadCalls)
+            ModelLoadDiagnostics.forceFullReloadForMeasurement = false
+
+            viewModel.selectModel(changed)
+            advanceUntilIdle()
+            assertIs<ChatUiState.Ready>(viewModel.uiState.value)
+            assertEquals(2, inference.reuseCalls)
+            assertEquals(3, resolver.calls)
+            assertEquals(listOf("fresh-cpu", "fresh-cpu", "fresh-cpu"), inference.loadedAssessmentKeys)
+            assertEquals(priorUnloads + 2, inference.unloadCalls)
+        } finally {
+            ModelLoadDiagnostics.forceFullReloadForMeasurement = previousForceFullReload
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun replacementCancelsSuspendedReuseAndCannotPublishItsOldReadyResult() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val model = textModel()
+            val request = loadRequest(model, "fresh-cpu", BackendKind.CPU)
+            val changed = model.copy(contextLength = 2_048)
+            val entered = CompletableDeferred<Unit>()
+            var reuseCancelled = false
+            val inference = RecordingInferenceRepository(request).apply {
+                reuse = { _, _ ->
+                    entered.complete(Unit)
+                    try { awaitCancellation() } finally { reuseCancelled = true }
+                }
+            }
+            val resolver = RecordingResolver(ArrayDeque(listOf(
+                InstalledModelLoadResolution.Ready(request),
+                InstalledModelLoadResolution.Ready(request.copy(model = changed)),
+            )))
+            val localModels = LocalModelRepository(StaticLocalModelDao(model))
+            val viewModel = ChatViewModel(
+                getAvailableModels = GetAvailableModelsUseCase(localModels, ChatConfig()),
+                generateResponse = GenerateResponseUseCase(inference),
+                manageContext = ManageContextUseCase(inference, ChatConfig()),
+                trackModelUsage = TrackModelUsageUseCase(localModels),
+                inferenceRepository = inference,
+                diffusionRepository = DiffusionInferenceRepository(DiffusionRunner(), DeviceCapabilities(), StaticSettingsRepository()),
+                generatedMediaStore = GeneratedMediaStore(baseDirectory = "/tmp", sessionId = "resident-replacement"),
+                installedModelLoadRequestResolver = resolver,
+                modelLoadDispatcher = dispatcher,
+                releaseDiffusionModel = {},
+            )
+            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.uiState.collect() }
+            advanceUntilIdle()
+            viewModel.selectModel(model)
+            entered.await()
+            viewModel.selectModel(changed)
+            advanceUntilIdle()
+            assertTrue(reuseCancelled)
+            assertIs<ChatUiState.Ready>(viewModel.uiState.value)
+            assertEquals(1, inference.reuseCalls, "A loading attempt must not enter resident reuse")
+            assertEquals(2, resolver.calls)
+            assertEquals(listOf("fresh-cpu", "fresh-cpu"), inference.loadedAssessmentKeys)
+        } finally { Dispatchers.resetMain() }
+    }
+
     @Test
     fun tokenAndContextLimitsPreserveTextAndNeverReportAnEmptyAnswerAsComplete() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -431,6 +616,7 @@ class ChatViewModelRetryTest {
             assertEquals(1, inference.loadedAssessmentKeys.count { it == "restored" })
             assertEquals(2, resolver.calls)
             collection.cancel()
+            assertEquals(0, inference.reuseCalls, "Explicit retries must resolve and load again")
         } finally {
             Dispatchers.resetMain()
         }
@@ -474,6 +660,10 @@ private class RecordingInferenceRepository(
     private val saferRequest: LoadRequest,
 ) : InferenceRepository {
     val loadedAssessmentKeys = mutableListOf<String>()
+    var reuse: suspend (LocalModelEntity, ResolvedLocalArtifact) -> ModelLoadResult.Success? = { _, _ -> null }
+    var reuseCalls = 0
+    var unloadCalls = 0
+    var cancelCalls = 0
     var resetGate: CompletableDeferred<Unit>? = null
     var resetCalls = 0
     var aboveThreshold = true
@@ -502,12 +692,16 @@ private class RecordingInferenceRepository(
         }
     }
 
-    override suspend fun unloadModel() = Unit
+    override suspend fun tryReuseInstalledModel(model: LocalModelEntity, artifact: ResolvedLocalArtifact): ModelLoadResult.Success? {
+        reuseCalls++
+        return reuse(model, artifact)
+    }
+    override suspend fun unloadModel() { unloadCalls++ }
     override fun generateResponse(userPrompt: String): Flow<InferenceChunk> {
         prompts += userPrompt
         return response
     }
-    override fun cancelGeneration() = Unit
+    override fun cancelGeneration() { cancelCalls++ }
     override fun getContextUsed(): Int = 0
     override fun getContextLimit(): Int = 4_096
     override fun getStopReason(): Int = responseStopReason

@@ -43,6 +43,7 @@ internal fun validateModelConfig(config: DiffusionModelConfig) {
         "wtype is outside the supported range"
     }
     require(config.prediction in -1..5) { "prediction is outside the supported range" }
+    require(config.samplingScheduler in setOf(-1, 0, 5, 6)) { "Unsupported sampling scheduler" }
     require(config.flowShift == Float.POSITIVE_INFINITY ||
         config.flowShift.isFinite() && config.flowShift in -1_000f..1_000f
     ) {

@@ -108,6 +108,9 @@ inline bool component_requires_vulkan_cpu_safety(
         const std::string &runtime_spec,
         const std::string &module,
         const std::function<int(const std::string &)> &backend_kind_for_assignment) {
+    // Text encoders retain the conservative Vulkan policy. VAE placement is an
+    // explicit plan choice; current ggml supports its image decode graph.
+    if (module != "te") return false;
     if (!config.auto_fit) {
         return config.runtime_backend == DIFFUSION_RUNTIME_BACKEND_VULKAN;
     }

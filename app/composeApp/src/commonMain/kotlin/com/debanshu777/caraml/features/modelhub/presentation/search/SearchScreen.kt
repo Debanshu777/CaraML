@@ -425,6 +425,7 @@ internal fun SearchTabContent(
     downloads: (@Composable () -> Unit)? = null,
 ) {
     val browseMode by viewModel.browseMode.collectAsState()
+    val languageFormat by viewModel.languageModelFormat.collectAsState()
     LaunchedEffect(viewModel) { viewModel.ensureDiscoverLoaded() }
     val searchQuery by viewModel.searchQuery.collectAsState()
     val results by viewModel.results.collectAsState()
@@ -445,7 +446,7 @@ internal fun SearchTabContent(
         isLlmHub || curatedQuery.isBlank() ||
                 model.id.orEmpty().contains(curatedQuery.trim(), ignoreCase = true)
     }
-    val activeFilterCount = listOf(
+    val activeFilterCount = if (languageFormat == "onnx") 0 else listOf(
         listParams.minParams != ParameterRange.ZERO,
         listParams.maxParams != ParameterRange.SIX_B,
     ).count { it }
@@ -502,6 +503,17 @@ internal fun SearchTabContent(
         toolbar = {},
         summary = {
                 Column {
+                    if (isLlmHub) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8), modifier = Modifier.padding(horizontal = AppTheme.spacing.spacing12)) {
+                            listOf("gguf", "onnx").forEach { format ->
+                                androidx.compose.material3.FilterChip(
+                                    selected = languageFormat == format,
+                                    onClick = { viewModel.setLanguageModelFormat(format) },
+                                    label = { Text(format.uppercase()) },
+                                )
+                            }
+                        }
+                    }
                     ModelHubInlineFilters(
                         resultLabel = when {
                             results.initialLoading && models.isEmpty() -> "Finding little brains…"
@@ -510,6 +522,7 @@ internal fun SearchTabContent(
                         },
                         mode = browseMode, ordering = modelOrdering,
                         minParams = listParams.minParams, maxParams = listParams.maxParams,
+                        parametersAvailable = languageFormat == "gguf",
                         onApply = viewModel::applyDiscoverFilters,
                     )
                     if (isLlmHub && modelOrdering is ModelOrdering.Personalized) {

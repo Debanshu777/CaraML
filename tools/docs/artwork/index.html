@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CaraML · blue flower artwork</title>
+<style>
+  body { margin: 32px; background: #071326; color: #dcecff; font: 16px system-ui; }
+  h1 { font-size: 24px; }
+  #artwork { width: 800px; height: 400px; }
+  canvas { display: block; }
+  button { margin-top: 24px; padding: 12px 20px; font: inherit; cursor: pointer; }
+  a { color: #a0caff; }
+</style>
+<h1>CaraML · blue flower</h1>
+<p>Static artwork rendered with <a href="https://shaders.paper.design/lens-distortion">Paper Lens Distortion</a>.</p>
+<div id="artwork" role="img" aria-label="A cobalt-blue flower refracted through a grainy lens on midnight blue"></div>
+<button id="export" disabled>Export 1600 × 800 PNG</button>
+<p id="status" role="status">Loading shader…</p>
+<script type="module" src="render.js"></script>
+</html>

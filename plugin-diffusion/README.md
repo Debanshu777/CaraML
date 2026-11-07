@@ -14,6 +14,8 @@ symbols, iOS cinterop and consumer keep rules use the same package hierarchy. Se
 
 ## Recent Changes
 
+- Added explicit sampling schedules across Kotlin/JNI/iOS, coherent image sampling progress that filters tensor-loading counts, preserved video stage progress, and sanitized graph-backend counts. Vulkan image VAE placement now honors the admitted plan while text encoding retains CPU safety.
+
 - Standardized adapter and bridge packages under `com.debanshu777.caraml.sdk.plugin.diffusion`; updated JNI symbols, metadata lookup, cinterop and shrinker rules together.
 
 - Documented single-model/image scope and output ownership in KDoc; [verification status](../README.md#verification-status) records the scope of platform and JNI checks.

@@ -427,7 +427,7 @@ class ModelViewModelRecommendationTest {
     fun diffusionDownloadEnqueuesCompletePrimaryAndComponentEvidence() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
-        val repositoryId = "stabilityai/sd-turbo"
+        val repositoryId = "stabilityai/sdxl-turbo"
         val revision = "a".repeat(40)
         val primaryPath = "model.safetensors"
         val componentPath = "text_encoder_2/model.safetensors"
@@ -1236,10 +1236,10 @@ class ModelViewModelRecommendationTest {
                             """[{"path":"$componentPath","type":"file","size":4,"lfs":{"oid":"$componentSha","size":4}},{"path":"$primaryPath","type":"file","size":4,"lfs":{"oid":"$primarySha","size":4}}]""",
                         )
                     }
-                    request.url.encodedPath.endsWith("/stabilityai/sd-turbo") -> {
+                    request.url.encodedPath.endsWith("/stabilityai/sdxl-turbo") -> {
                         detailRequests += 1
                         respondJson(
-                            """{"id":"stabilityai/sd-turbo","modelId":"stabilityai/sd-turbo","sha":"$revision","private":false}""",
+                            """{"id":"stabilityai/sdxl-turbo","modelId":"stabilityai/sdxl-turbo","sha":"$revision","private":false}""",
                         )
                     }
                     else -> error("Unexpected request")
@@ -1254,7 +1254,7 @@ class ModelViewModelRecommendationTest {
         try {
             val corruptBundleId = writeVerifiedBundle(
                 storage = storage,
-                repositoryId = "stabilityai/sd-turbo",
+                repositoryId = "stabilityai/sdxl-turbo",
                 revision = revision,
                 files = listOf(
                     Triple(primaryPath, "model", primaryBytes),
@@ -1263,7 +1263,7 @@ class ModelViewModelRecommendationTest {
             )
             val installed = viewModel(client, dispatcher, storagePathProvider = storage)
             backgroundScope.launch { installed.installBundleState.collect {} }
-            installed.loadDetail("stabilityai/sd-turbo", ModelHubBrowseMode.DiffusionImage)
+            installed.loadDetail("stabilityai/sdxl-turbo", ModelHubBrowseMode.DiffusionImage)
             advanceUntilIdle()
 
             assertTrue(
@@ -1272,26 +1272,26 @@ class ModelViewModelRecommendationTest {
             )
             assertTrue(installed.ggufFiles.value.single { it.path == primaryPath }.isDownloaded)
             assertTrue(installed.setupComponents.value.single { it.filePath == componentPath }.isDownloaded)
-            assertEquals(2, detailRequests)
+            assertEquals(1, detailRequests) // Tree uses the already-resolved immutable revision.
             assertEquals(1, treeRequests)
 
             File(
-                storage.getModelsStorageDirectory("stabilityai/sd-turbo"),
+                storage.getModelsStorageDirectory("stabilityai/sdxl-turbo"),
                 ArtifactBundleManifestStore.MANIFEST_FILE_NAME,
             ).delete()
             val interrupted = viewModel(client, dispatcher, storagePathProvider = storage)
             backgroundScope.launch { interrupted.installBundleState.collect {} }
-            interrupted.loadDetail("stabilityai/sd-turbo", ModelHubBrowseMode.DiffusionImage)
+            interrupted.loadDetail("stabilityai/sdxl-turbo", ModelHubBrowseMode.DiffusionImage)
             advanceUntilIdle()
             assertFalse(interrupted.installBundleState.value.isReady)
             assertTrue(interrupted.ggufFiles.value.single { it.path == primaryPath }.isDownloaded)
             assertTrue(interrupted.setupComponents.value.single { it.filePath == componentPath }.isDownloaded)
-            assertEquals(4, detailRequests, "restart must not refetch metadata for a valid component")
+            assertEquals(2, detailRequests, "restart must not refetch metadata for a valid component")
             assertEquals(2, treeRequests, "restart must not refetch the valid component tree")
 
             writeVerifiedBundle(
                 storage = storage,
-                repositoryId = "stabilityai/sd-turbo",
+                repositoryId = "stabilityai/sdxl-turbo",
                 revision = revision,
                 files = listOf(
                     Triple(primaryPath, "model", primaryBytes),
@@ -1300,7 +1300,7 @@ class ModelViewModelRecommendationTest {
             )
             val corruptComponentIdentity = requireNotNull(
                 DownloadArtifactIdentity.create(
-                    repositoryId = "stabilityai/sd-turbo",
+                    repositoryId = "stabilityai/sdxl-turbo",
                     immutableRevision = revision,
                     relativePath = componentPath,
                     remoteObjectId = "sha256:$componentSha",
@@ -1308,19 +1308,19 @@ class ModelViewModelRecommendationTest {
                 ),
             )
             File(
-                storage.getModelsStorageDirectory("stabilityai/sd-turbo"),
+                storage.getModelsStorageDirectory("stabilityai/sdxl-turbo"),
                 immutableArtifactStorageLocation(corruptComponentIdentity, corruptBundleId).localRelativePath,
             )
                 .writeBytes("evil".encodeToByteArray())
             val corrupted = viewModel(client, dispatcher, storagePathProvider = storage)
             backgroundScope.launch { corrupted.installBundleState.collect {} }
-            corrupted.loadDetail("stabilityai/sd-turbo", ModelHubBrowseMode.DiffusionImage)
+            corrupted.loadDetail("stabilityai/sdxl-turbo", ModelHubBrowseMode.DiffusionImage)
             advanceUntilIdle()
 
             assertFalse(corrupted.installBundleState.value.isReady)
             assertTrue(corrupted.ggufFiles.value.none { it.isDownloaded })
             assertTrue(corrupted.setupComponents.value.none { it.isDownloaded })
-            assertEquals(7, detailRequests, "corrupt component metadata must be refreshed")
+            assertEquals(4, detailRequests, "corrupt component metadata must be refreshed")
             assertEquals(4, treeRequests, "corrupt component metadata must be refreshed")
         } finally {
             client.close()
@@ -1574,6 +1574,54 @@ class ModelViewModelRecommendationTest {
             assertFalse(vm.results.value.initialLoading)
         } finally {
             releaseFirst.complete(Unit)
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun switchingToOnnxDropsGgufPagingAndUsesTextGenerationDiscovery() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val appendStarted = CompletableDeferred<Unit>()
+        val releaseAppend = CompletableDeferred<Unit>()
+        val engine = object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler { request ->
+                if (request.url.parameters["filter"] == "onnx") {
+                    assertEquals("text-generation", request.url.parameters["pipeline_tag"])
+                    assertNull(request.url.parameters["apps"])
+                    assertNull(request.url.parameters["num_parameters"])
+                    assertNull(request.url.parameters["cursor"])
+                    respondPage(pageResponse("org/onnx"))
+                } else if (request.url.parameters["cursor"] != null) {
+                    appendStarted.complete(Unit)
+                    releaseAppend.await()
+                    respondPage(pageResponse("org/stale-gguf"))
+                } else {
+                    assertEquals("llama.cpp", request.url.parameters["apps"])
+                    respondPage(pageResponse("org/gguf"), "<${request.url}&cursor=gguf-next>; rel=\"next\"")
+                }
+            }
+        }) { override val dispatcher: CoroutineDispatcher = dispatcher }
+        val client = HttpClient(engine)
+        try {
+            val vm = viewModel(client, dispatcher)
+            vm.loadModels()
+            advanceUntilIdle()
+            assertTrue(vm.results.value.canLoadMore)
+            vm.loadNextPage()
+            appendStarted.await()
+            vm.setLanguageModelFormat("onnx")
+            advanceUntilIdle()
+            releaseAppend.complete(Unit)
+            advanceUntilIdle()
+            assertEquals("onnx", vm.results.value.key?.format)
+            assertEquals(listOf("org/onnx"), vm.results.value.models.map { it.id })
+            assertFalse(vm.results.value.hasMore)
+            assertNull(vm.results.value.initialError)
+        } finally {
+            releaseAppend.complete(Unit)
             client.close()
             Dispatchers.resetMain()
         }

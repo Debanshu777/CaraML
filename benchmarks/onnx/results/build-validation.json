@@ -1,0 +1,17 @@
+{
+  "date_local": "2026-10-23",
+  "jvm_gate": "verifyProject: passed, 1516 tests; see jvm-validation.json",
+  "android_default_apk": "assembleDebug: BUILD SUCCESSFUL; optional WebGPU library absent",
+  "android_experimental_apk": "assembleDebug -PonnxWebGpu=true: BUILD SUCCESSFUL; physical Mali-G715 detected and GPU kernels profiled; generation fails before first token with a GPU-to-host wait error. Experimental, not enabled.",
+  "iphone_arm64": "Signed Xcode Debug build: BUILD SUCCEEDED; final build installed and SmolLM2 ONNX smoke passed",
+  "apple_simulator": {
+    "onnx": "4 tests passed including five real-model CPU1/CPU2 cases, tokenizer references, native lifecycle and Unicode normalization",
+    "gguf": "40 tests passed including five real-model CPU/Metal cases and shutdown with a resident model",
+    "note": "Simulator timings are host-Mac regression evidence, not physical iPhone benchmarks"
+  },
+  "warnings": "Existing Gradle deprecation and Compose test API deprecation warnings remain; no compile/test errors",
+  "benchmark_tools": "Python syntax compilation passed; physical execution is recorded with each device result.",
+  "jvm_followup": "plugin-onnx:jvmTest passed after enabling full validation for optional WebGPU profiles.",
+  "android_production_path": "All five ONNX checkpoints passed on the final ordinary APK; see pixel9/end-to-end. Qwen3 reached final content after reasoning.",
+  "android_visual_ui": "Normal MainActivity launch succeeded, but the system lock screen remained foreground. Visual Model Hub inspection is unverified; no unlock credentials or bypass were used. Functional app-path and foreground benchmark checks passed separately."
+}

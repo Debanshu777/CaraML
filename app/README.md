@@ -43,14 +43,9 @@ unchanged. Package conventions are documented in [the root README](../README.md#
 
 ## Recent Changes
 
-- Debug performance validation supports read-only CPU/Vulkan selection with matching resolver/inference settings, records actual GPU layer counts and explicitly labels permitted start thermal states. Current five-model CPU/Vulkan benchmarks are published in the root README.
-
-- Exercised the debug Android runtime matrix on Pixel 9 with SmolLM2, Gemma 3, Qwen 3, LFM2 and Qwen 2.5 through downloads, generation, cancellation and reload.
-
-- The debug runtime cancellation check now signals native cancellation and cancels the collecting coroutine, matching the chat Stop path.
-
-- Aligned app-owned transfers and diffusion installation helpers with app packages; generated resources now use `com.debanshu777.caraml.generated.resources`.
-
-- Grouped app code under `app/` with conventional module names and separate platform launchers.
-- Moved desktop execution, hot reload and distribution configuration to `desktopApp`; retained shared JVM implementations and regression tests in `composeApp`.
-- Updated Xcode root-wrapper lookup, CI commands and repository-relative source checks.
+- Fixed ONNX resident-session fixtures to use the production owner/model directory layout across desktop hosts; JVM failures now print full assertions.
+- Added SD-Turbo GGUF discovery, fixed nested-checkpoint installation, and kept image/video models visible alongside frequently used chat models.
+- Added [platform setup](../docs/getting-started.md), [contribution guidance](../CONTRIBUTING.md), and a [real-device demo](../docs/demo.md).
+- Added Android Vulkan diffusion instrumentation and five-model measurements; see [results and limits](../benchmarks/diffusion/README.md).
+- Added Android/JVM/iOS ONNX text support, resident-session reuse, and [device comparisons](../benchmarks/onnx/README.md).
+- Added startup, scrolling, model-load, and reselection benchmarks; see the [Android performance report](../benchmarks/android/README.md).

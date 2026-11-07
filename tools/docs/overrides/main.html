@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block extrahead %}
+  {% set title = page.title ~ ' · ' ~ config.site_name if page and page.title else config.site_name %}
+  {% set description = page.meta.description if page and page.meta.description else config.site_description %}
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="CaraML">
+  <meta property="og:title" content="{{ title | e }}">
+  <meta property="og:description" content="{{ description | e }}">
+  <meta property="og:url" content="{{ page.canonical_url | e }}">
+  <meta property="og:image" content="{{ config.site_url }}assets/social-preview.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="CaraML — on-device AI with Kotlin Multiplatform. Blue-flower masthead.">
+  <meta name="twitter:card" content="summary_large_image">
+  {% if page and page.is_homepage %}
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareSourceCode",
+    "name": "CaraML",
+    "description": {{ config.site_description | tojson }},
+    "url": {{ config.site_url | tojson }},
+    "codeRepository": "https://github.com/Debanshu777/CaraML",
+    "programmingLanguage": ["Kotlin", "C++", "Swift"],
+    "runtimePlatform": ["Android", "iOS", "JVM"],
+    "license": {{ (config.repo_url ~ '/blob/' ~ config.extra.source_revision ~ '/LICENSE') | tojson }},
+    "author": {"@type": "Person", "name": "Debanshu Datta", "url": "https://github.com/Debanshu777"}
+  }
+  </script>
+  {% endif %}
+{% endblock %}

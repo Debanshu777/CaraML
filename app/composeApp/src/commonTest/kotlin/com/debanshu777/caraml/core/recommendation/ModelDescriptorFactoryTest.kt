@@ -309,6 +309,7 @@ class ModelDescriptorFactoryTest {
             "runwayml/stable-diffusion-v1-5" to SdArchitecture.SD1,
             "stabilityai/stable-diffusion-2-1" to SdArchitecture.SD1,
             "stabilityai/sd-turbo" to SdArchitecture.SD1,
+            "Green-Sky/SD-Turbo-GGUF" to SdArchitecture.SD1,
             "stabilityai/stable-diffusion-xl-base-1.0" to SdArchitecture.SDXL,
             "segmind/SSD-1B" to SdArchitecture.SDXL,
             "stabilityai/stable-diffusion-3-medium" to SdArchitecture.SD3,

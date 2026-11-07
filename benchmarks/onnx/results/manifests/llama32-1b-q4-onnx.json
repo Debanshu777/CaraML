@@ -1,0 +1,58 @@
+{
+  "repository": "onnx-community/Llama-3.2-1B-Instruct-ONNX",
+  "revision": "14007543b6dc92de88daf96a9aa85d2f95ace6ef",
+  "graph": "onnx/model_q4.onnx",
+  "downloads_at_selection": 2808,
+  "files": [
+    {
+      "rfilename": "config.json",
+      "blobId": "1f2f930208352e372f016259e067115c666d69e9",
+      "size": 1161
+    },
+    {
+      "rfilename": "generation_config.json",
+      "blobId": "d9719c48f5f65a83ad42295d6ef2f105202231bc",
+      "size": 188
+    },
+    {
+      "rfilename": "onnx/model_q4.onnx",
+      "blobId": "9c80e2ed7005c6e4d9a795f190d47783609ddf92",
+      "size": 149112,
+      "lfs": {
+        "sha256": "a3a6f10916f79379d15cfa9270b7be0d09be2b80fe0872bd7030eaf9001baf46",
+        "size": 149112,
+        "pointerSize": 131
+      }
+    },
+    {
+      "rfilename": "onnx/model_q4.onnx_data",
+      "blobId": "e672df91ddca340147dd60d892c5e342384e40b6",
+      "size": 1692672000,
+      "lfs": {
+        "sha256": "07cc629ef2cb7fdb18615ce2e4f3774f763e6fc840207d772a8b511eead36647",
+        "size": 1692672000,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "special_tokens_map.json",
+      "blobId": "02ee80b6196926a5ad790a004d9efd6ab1ba6542",
+      "size": 296
+    },
+    {
+      "rfilename": "tokenizer.json",
+      "blobId": "ddbe51820a8dec8bb9211dd6977f5a9a653e044c",
+      "size": 11574638,
+      "lfs": {
+        "sha256": "3a223ade375cc1d13b04e897ce1d36a04f50140e1ba3d107021ea68d4b5e614c",
+        "size": 11574638,
+        "pointerSize": 133
+      }
+    },
+    {
+      "rfilename": "tokenizer_config.json",
+      "blobId": "106a1da57f717eb138a2f79fdbfcd4aa5b19646b",
+      "size": 54557
+    }
+  ]
+}

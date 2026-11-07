@@ -51,6 +51,9 @@ actual class DownloadManager actual constructor(
     actual suspend fun validatedBundle(ownerModelId: String): ArtifactManifest? =
         readValidatedArtifactBundle(pathProvider, ownerModelId)
 
+    actual suspend fun installedBundleForLoad(ownerModelId: String): ArtifactManifest? =
+        readValidatedArtifactBundle(pathProvider, ownerModelId, verifyContent = false)
+
     actual suspend fun validatedArtifacts(modelId: String): ArtifactManifest? =
         readValidatedArtifactManifest(pathProvider, modelId)
 

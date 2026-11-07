@@ -1,0 +1,1 @@
+Earlier production-path runs retain transfer evidence. Four logs include QUEUED/RUNNING/VERIFYING/COMPLETED; SmolLM2 135M reused an already completed bundle. These are functional checks, not timing benchmarks. The parent directory contains the final APK validation.

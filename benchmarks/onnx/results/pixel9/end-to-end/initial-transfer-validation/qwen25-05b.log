@@ -1,0 +1,14 @@
+CARAML_ONNX_VALIDATION {"case":"qwen25-05b","stage":"discovery","detail":"6 files, revision 22942cb7d7ba4cc81bb4673549ca4d4614469b5e"}
+CARAML_ONNX_VALIDATION {"case":"qwen25-05b","stage":"download","detail":"QUEUED: null"}
+CARAML_ONNX_VALIDATION {"case":"qwen25-05b","stage":"download","detail":"RUNNING: null"}
+CARAML_ONNX_VALIDATION {"case":"qwen25-05b","stage":"download","detail":"VERIFYING: null"}
+CARAML_ONNX_VALIDATION {"case":"qwen25-05b","stage":"download","detail":"COMPLETED: null"}
+CARAML_ONNX_VALIDATION {"case":"qwen25-05b","stage":"publication","detail":"model_int8.onnx"}
+CARAML_ONNX_VALIDATION {"case":"qwen25-05b","stage":"prepared_metadata","detail":"format=ONNX; architecture=qwen2; context=32768; shape=TransformerShape(layerCount=24, kvHeadCount=2, attentionHeadCount=14, hiddenSize=896, headDim=64)"}
+CARAML_ONNX_VALIDATION {"case":"qwen25-05b","stage":"risk_acknowledged","detail":"Conservative ONNX memory estimate; llm:4096:256:64:1:F32:F32:CPU:UNIFIED:0:true"}
+CARAML_ONNX_VALIDATION {"case":"qwen25-05b","stage":"load","detail":"ONNX Runtime 1.31.0; CPU; 1 threads"}
+CARAML_ONNX_VALIDATION {"case":"qwen25-05b","stage":"turn","detail":"content=Your name is Mira.; reasoning_chars=0"}
+CARAML_ONNX_VALIDATION {"case":"qwen25-05b","stage":"turn","detail":"content=My name is Mira.; reasoning_chars=0"}
+CARAML_ONNX_VALIDATION {"case":"qwen25-05b","stage":"risk_acknowledged","detail":"Conservative ONNX memory estimate; llm:4096:256:64:1:F32:F32:CPU:UNIFIED:0:true"}
+CARAML_ONNX_VALIDATION {"case":"qwen25-05b","stage":"complete","detail":"discovery, download, publication, two turns, cancellation and reload passed"}
+INSTRUMENTATION_CODE: -1

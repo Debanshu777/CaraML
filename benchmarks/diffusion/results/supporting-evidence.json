@@ -1,0 +1,182 @@
+{
+  "build_provenance": {
+    "timing_apk_sha256": "8c165e75ae55376e73a01b4f30f88080d9c363b6e2fe417b50d04e9e290d514d",
+    "arm64_libraries": {
+      "lib/arm64-v8a/libggml.so": "af5443ddc7d49ceab50cf84cfc98fc691280f5681e45578568a668b13139ddaf",
+      "lib/arm64-v8a/libggml-cpu-android_armv8.0_1.so": "d2f13349b8ec3d0871c37dff4580cfac1670d2bdcbb7203e2baf05d1c2e84e6a",
+      "lib/arm64-v8a/libggml-cpu-android_armv8.2_1.so": "797480b15db3ea298f3ffb3abe1fd56e4acc6d7e73f778c9e19f4b0c799e64fb",
+      "lib/arm64-v8a/libggml-cpu-android_armv8.2_2.so": "fb1db3d9b8d42f9dd595f23e613705f49539bfe5f134d7caf19d1de11ad07e50",
+      "lib/arm64-v8a/libggml-cpu-android_armv8.6_1.so": "8751c7a1834fc0a2549f55f917fb83da4ee81e24c3c209858286b708740550e5",
+      "lib/arm64-v8a/libggml-cpu-android_armv9.0_1.so": "49b0c6482175c96b9762d30c4c3f37c9625bee7d0d55a2c817b13da80aaee474",
+      "lib/arm64-v8a/libggml-cpu-android_armv9.2_1.so": "34aaf435f735622ad057e0d3b141265e928e03210aeeb80f2c3e6163ba27a292",
+      "lib/arm64-v8a/libggml-cpu-android_armv9.2_2.so": "310b85e407a1d31bd4a05cc4d3878b39cb2e0182b1a876352d0f5673e276aafe",
+      "lib/arm64-v8a/libggml-vulkan.so": "31f6908181d82ca0de6fe5afce8b83773d5bce9fff4dc9580ecab3985a6a9006",
+      "lib/arm64-v8a/libggml-base.so": "be79f6282a20ccb0e1f8ac05e6461995b7e70516a0af024008ea28269e2d5a1a",
+      "lib/arm64-v8a/libdiffusion_runner.so": "b32596facf56d999576d786165cdf75845d46eccb3358d90f99fe62d0012bbe6"
+    },
+    "engines": {
+      "llama.cpp": "f46bc30cb6a7f68a67e34a00061e20a4ad1eff43",
+      "stable-diffusion.cpp": "c92d73c408515c94beef32161bb5960764fde7a0"
+    },
+    "final_debug_apk_sha256": "b8ce4b172f3ae052f7a4dc58b23f2093adbf70940b665428605ed20c9f6fdb38",
+    "final_native_libraries_match_timing_apk": false,
+    "validation": [
+      "GIT_CONFIG_GLOBAL=/dev/null ./gradlew verifyProject :app:androidApp:assembleDebug :app:androidApp:assembleRelease :plugin-diffusion:compileKotlinIosArm64",
+      "python3 benchmarks/run.py test (61 tests)"
+    ],
+    "tuning_apk_sha256": "8012ee086bb90eb95e7e9dc53ecb483b62e8d583b34120d510f5eae25b712026",
+    "tuning_difference": "Additional debug-only max_vram, segmented and prefetch arguments; native libraries identical to initial matrix.",
+    "final_arm64_libraries": {
+      "lib/arm64-v8a/libggml.so": "af5443ddc7d49ceab50cf84cfc98fc691280f5681e45578568a668b13139ddaf",
+      "lib/arm64-v8a/libggml-cpu-android_armv8.0_1.so": "d2f13349b8ec3d0871c37dff4580cfac1670d2bdcbb7203e2baf05d1c2e84e6a",
+      "lib/arm64-v8a/libggml-cpu-android_armv8.2_1.so": "797480b15db3ea298f3ffb3abe1fd56e4acc6d7e73f778c9e19f4b0c799e64fb",
+      "lib/arm64-v8a/libggml-cpu-android_armv8.2_2.so": "fb1db3d9b8d42f9dd595f23e613705f49539bfe5f134d7caf19d1de11ad07e50",
+      "lib/arm64-v8a/libggml-cpu-android_armv8.6_1.so": "8751c7a1834fc0a2549f55f917fb83da4ee81e24c3c209858286b708740550e5",
+      "lib/arm64-v8a/libggml-cpu-android_armv9.0_1.so": "49b0c6482175c96b9762d30c4c3f37c9625bee7d0d55a2c817b13da80aaee474",
+      "lib/arm64-v8a/libggml-cpu-android_armv9.2_1.so": "34aaf435f735622ad057e0d3b141265e928e03210aeeb80f2c3e6163ba27a292",
+      "lib/arm64-v8a/libggml-cpu-android_armv9.2_2.so": "310b85e407a1d31bd4a05cc4d3878b39cb2e0182b1a876352d0f5673e276aafe",
+      "lib/arm64-v8a/libggml-vulkan.so": "31f6908181d82ca0de6fe5afce8b83773d5bce9fff4dc9580ecab3985a6a9006",
+      "lib/arm64-v8a/libggml-base.so": "be79f6282a20ccb0e1f8ac05e6461995b7e70516a0af024008ea28269e2d5a1a",
+      "lib/arm64-v8a/libdiffusion_runner.so": "0a52049b881c87729791a311e402c356742608572c5b4b6990ca9a71f6388368"
+    },
+    "final_native_difference": "Only diffusion_runner changed: preserve legacy multi-stage video progress while retaining image step-budget filtering. All GGML GPU/CPU libraries unchanged. Final image smoke recorded separately.",
+    "final_smoke": {
+      "tag": "final-sdturbo-balanced-2",
+      "success": true,
+      "generation_ms": 57977.416125,
+      "png_sha256": "d6abaa3c5dfc719f7697d1e1c4f48b5346a73d3c22abf163a91ed0b8d1c09570",
+      "matches_reviewed_tuning_image": true
+    }
+  },
+  "failure_analysis": {
+    "matrix-z-image-turbo-cpu-4": {
+      "reason": "Android ApplicationExitInfo LOW_MEMORY (reason=3)",
+      "phase": "After lazy load, before the first sampling step",
+      "rss_at_exit_report": "3.9GB (Android formatted value, not a measured peak)",
+      "system_mem_available_before_gib": 4.288700103759766,
+      "generation_time_available": false,
+      "evidence": "Ignored raw trial exit-info.txt plus result.json system_memory snapshot"
+    },
+    "matrix-z-image-turbo-vulkan-4": {
+      "reason": "Generation exceeded 600-second cooperative deadline; host force-stopped the process at 665 seconds trial wall time",
+      "completed_sampling_steps_ms": [
+        251742.404664,
+        490111.915929
+      ],
+      "generation_time_available": false,
+      "evidence": "Ignored raw trial intervention.json, instrumentation.txt, result.json and exit-info.txt"
+    }
+  },
+  "visual_review": {
+    "method": "Manual inspection of one fixed prompt/seed; not a general quality evaluation.",
+    "trials": {
+      "sdturbo-baseline-512-4": {
+        "usable": false,
+        "note": "Visually inspected: nearly uniform brown/noise; the old V-prediction override is incorrect for this checkpoint."
+      },
+      "sdturbo-vulkan-eps-512-4": {
+        "usable": true,
+        "note": "Visually inspected: recognizable red teapot, table and window; discrete schedule, four steps."
+      },
+      "sdturbo-cpu-eps-512-4": {
+        "usable": true,
+        "note": "Visually inspected: recognizable red teapot, similar composition to matching Vulkan run; warmer device."
+      },
+      "matrix-sd-turbo-cpu-4": {
+        "usable": true,
+        "note": "Visually inspected: red teapot and cup on wooden surface by a window; trailing schedule."
+      },
+      "matrix-sd-turbo-vulkan-4": {
+        "usable": true,
+        "note": "Visually inspected: same recognizable teapot/cup/window composition as the matching CPU trailing-schedule image; minor pixel differences."
+      },
+      "matrix-sd15-cpu-4": {
+        "usable": false,
+        "quality": "underconverged",
+        "note": "Valid inference output, but four Euler-A steps are insufficient: recognizable red teapot shape is blurred and lacks detail. Do not compare this as converged quality."
+      },
+      "matrix-sd15-vulkan-4": {
+        "usable": false,
+        "quality": "underconverged",
+        "note": "Visually inspected: blurred red teapot and window, similar to matching CPU sample. Four Euler-A steps are insufficient for SD1.5 quality."
+      },
+      "matrix-sdxl-base-cpu-4": {
+        "usable": false,
+        "quality": "underconverged",
+        "note": "Visually inspected: blurred red/black teapot silhouette by a window. Four Euler-A steps at 512 square are not a converged SDXL quality sample."
+      },
+      "matrix-sdxl-base-vulkan-4": {
+        "usable": false,
+        "quality": "underconverged",
+        "note": "Visually inspected: same blurred teapot/window composition as matching CPU output. Valid inference, insufficient four-step SDXL quality."
+      },
+      "matrix-sdxl-turbo-cpu-4": {
+        "usable": true,
+        "note": "Visually inspected: detailed red teapot, cup, table and window in warm light. Stylized/painterly despite photographic prompt; no broad quality ranking inferred."
+      },
+      "matrix-sdxl-turbo-vulkan-4": {
+        "usable": true,
+        "note": "Visually inspected: detailed teapot/cup/window scene closely matching the CPU sample, with minor pixel differences; stylized rendering."
+      },
+      "sdturbo-gpu-1": {
+        "usable": true,
+        "quality": "recognizable with object-detail artifacts",
+        "note": "Visually inspected: red teapot scene by window. Composition differs from four steps; extra-spout-like detail and small pot/cup geometry show that one step is a quality/latency choice, not equivalent quality."
+      },
+      "sdturbo-gpu-2": {
+        "usable": true,
+        "note": "Visually inspected: recognizable teapot/cup/window; cleaner spout geometry than the one-step sample for this fixed prompt. Single-prompt inspection does not establish general quality equivalence to four steps."
+      },
+      "sdturbo-f16-gpu-1": {
+        "usable": true,
+        "quality": "recognizable with object-detail artifacts",
+        "note": "Visually inspected: closely matches original one-step scene including extra-spout-like artifact; precision conversion does not establish improved image quality."
+      },
+      "sdturbo-no-fa-1": {
+        "usable": true,
+        "quality": "recognizable with object-detail artifacts",
+        "note": "Visually inspected: closely matches flash-attention one-step scene, including the extra-spout-like detail; no meaningful visual improvement established."
+      },
+      "sdturbo-preview-1": {
+        "usable": true,
+        "quality": "approximate preview",
+        "note": "Visually inspected: recognizable matching teapot/window scene; changed saturation, fine texture and edge rendering versus full VAE. TAESD is a deliberate approximate-decoder tradeoff, not equivalent quality."
+      },
+      "sdturbo-tiling-1": {
+        "usable": true,
+        "quality": "recognizable with object-detail artifacts",
+        "note": "Visually inspected: matching one-step composition with softer/different texture; no obvious large tile-boundary break in this sample. Tiling quality and peak-memory savings are not generally established by one image."
+      },
+      "sdturbo-resident-1": {
+        "usable": true,
+        "quality": "recognizable with object-detail artifacts",
+        "note": "All three downloaded PNGs have the identical SHA-256 of the visually reviewed sdturbo-gpu-1 image. Same image/one-step artifacts; residency changes do not alter this fixed-seed result."
+      },
+      "sd15-f16-gpu-4": {
+        "usable": false,
+        "quality": "underconverged",
+        "note": "Visually inspected: same blurred teapot composition as original-precision four-step SD1.5; changing precision does not fix insufficient sampling."
+      },
+      "sdxl-turbo-gpu-1": {
+        "usable": false,
+        "quality": "rough one-step output",
+        "note": "Visually inspected: recognizable teapot/cup/window, but patchy geometric texture and rough detail compared with four-step Q4 output. Do not present one-step Q4 as equivalent-quality photography."
+      },
+      "z-image-turbo-bounded-256-1": {
+        "usable": false,
+        "quality": "underconverged diagnostic",
+        "note": "Visually inspected: rough blurred red teapot at 256x256. One step is a diagnostic only; Z-Image-Turbo recommends eight steps and this is not a completed quality benchmark."
+      },
+      "z-image-turbo-bounded-no-fa-256-1": {
+        "usable": false,
+        "quality": "underconverged diagnostic",
+        "note": "Visually inspected: similarly blurred 256x256 teapot to flash-attention probe; one step is insufficient for this model, and attention change does not resolve the latency limitation."
+      },
+      "final-sdturbo-balanced-2": {
+        "usable": true,
+        "quality": "recognizable two-step sample",
+        "note": "Downloaded PNG SHA-256 independently verified identical to the visually reviewed sdturbo-gpu-2 image. Final APK with GPU source-weight residency and full VAE preserves this fixed-seed two-step image."
+      }
+    }
+  }
+}

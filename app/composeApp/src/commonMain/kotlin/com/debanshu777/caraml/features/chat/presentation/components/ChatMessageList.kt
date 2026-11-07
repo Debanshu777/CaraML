@@ -27,6 +27,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.features.chat.data.ChatMessage
@@ -97,7 +98,7 @@ fun ChatMessageList(
     }
 
     LazyColumn(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().testTag("chat-message-list"),
         state = listState,
         contentPadding = contentPadding,
         verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing12)
@@ -106,6 +107,7 @@ fun ChatMessageList(
                 items = messages,
                 key = { it.id }
             ) { message ->
+                val itemStreamingState = streamingState.takeIf { message.id == streamingMessageId }
                 val shouldAnimateEntry = message.id !in initialMessageIds &&
                     completedEntryIds[message.id] != true
                 Box(
@@ -148,7 +150,7 @@ fun ChatMessageList(
                             ChatMessageListItem(
                                 message = message,
                                 streamingMessageId = streamingMessageId,
-                                streamingState = streamingState,
+                                streamingState = itemStreamingState,
                                 loadMedia = loadMedia,
                             )
                         }
@@ -156,7 +158,7 @@ fun ChatMessageList(
                         ChatMessageListItem(
                             message = message,
                             streamingMessageId = streamingMessageId,
-                            streamingState = streamingState,
+                            streamingState = itemStreamingState,
                             loadMedia = loadMedia,
                         )
                     }

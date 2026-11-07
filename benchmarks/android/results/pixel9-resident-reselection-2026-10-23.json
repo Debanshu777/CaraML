@@ -1,0 +1,425 @@
+{
+  "schemaVersion": 1,
+  "measurementDateUtc": "2026-10-23",
+  "measurement": "Actual UI same-model reselection, full reload versus resident reuse within the same APK",
+  "classification": "Warm-device functional/performance evidence; not a cool-device benchmark acceptance result",
+  "device": {
+    "model": "Pixel 9",
+    "os": "Android 17",
+    "apiLevel": 37
+  },
+  "model": {
+    "repository": "Qwen/Qwen2.5-3B-Instruct-GGUF",
+    "filename": "qwen2.5-3b-instruct-q4_k_m.gguf",
+    "localModelRowId": 13
+  },
+  "apk": {
+    "path": "build/benchmark-results/measurement-gaps/modern-reuse-debug.apk",
+    "sha256": "502a9e82557097cbe65e1fc214927bd487a1022d2767722215b2c31f2aee1594",
+    "bytes": 196482086,
+    "sameApkForBothModes": true,
+    "identityProvenance": "SHA-256 of the saved APK supplied by the coordinating run; UI event streams do not independently report installed-APK SHA.",
+    "managedBuild": "debug",
+    "nativeBuild": "release",
+    "journeyFixedWorkloadPolicyPresent": false
+  },
+  "source": {
+    "headAtConsolidation": "b1dc4169ab8918776c30f85fc468aad83628754d",
+    "workingTreeDirty": true,
+    "note": "The saved APK identifies the measured build; the current working tree also contains later fixed-workload harness changes."
+  },
+  "method": {
+    "instrumentation": "com.debanshu777.caraml/com.debanshu777.caraml.benchmark.ModelReselectionValidation",
+    "argumentsByMode": {
+      "off": [
+        "-e",
+        "case",
+        "qwen2.5-3b",
+        "-e",
+        "trials",
+        "3",
+        "-e",
+        "reuse",
+        "off"
+      ],
+      "on": [
+        "-e",
+        "case",
+        "qwen2.5-3b",
+        "-e",
+        "trials",
+        "3",
+        "-e",
+        "reuse",
+        "on"
+      ]
+    },
+    "trialOrdering": "Three sequential off trials, then three sequential on trials; not randomized or interleaved.",
+    "action": "Accessibility ACTION_CLICK on the selected row in the real model picker.",
+    "setup": "Wait for initial model readiness, select Qwen through the actual picker when needed, exclude setup load from trial timing.",
+    "loadMsBoundary": "Start of ChatViewModel model-load coroutine to completion after final internal UI state publication.",
+    "actionToCompletionMsBoundary": "Before ACTION_CLICK to receipt of the matching model-load completion observer.",
+    "drawnFrameMeasured": false,
+    "coldStorageCacheControlled": false,
+    "preferencePreservation": "Harness compared the preferences file hash before and after each run; hashes and prompt text were not emitted.",
+    "configMeaning": "Context limit and GPU layers are read back from native. Other runtime config fields describe parameters supplied to JNI.",
+    "fixedWorkloadMatrixEligible": false
+  },
+  "runs": {
+    "off": {
+      "source": "build/benchmark-results/measurement-gaps/reselection-off.txt",
+      "sourceSha256": "397701d91f572a564c7f66afc9baaa49c7d36ef197c2278cf6e29179155aa4df",
+      "sourceFileModifiedUtc": "2026-10-23T18:54:19.605158+00:00",
+      "instrumentationResultCode": -1,
+      "outcome": "PASS",
+      "trialCount": 3,
+      "startBatteryTemperatureC": 35.8,
+      "startBatteryEvidence": "build/benchmark-results/measurement-gaps/reselection-off-before-battery.txt",
+      "androidThermalStatusAtStart": 0,
+      "androidThermalStatusAllTrialCompletions": [
+        0,
+        0,
+        0
+      ],
+      "numericPreferences": {
+        "useGpu": true,
+        "kvPreset": "AUTO",
+        "temperature": 0.3
+      },
+      "preferencesFilePreserved": true,
+      "accessibilityFlagsRestored": true,
+      "androidTraceEnabled": false,
+      "runtimeConfig": "t=4/4,b=256,ctx=4096,gpu=37,kv=1/1,fa=-1,kleidi=1,ub=64,offloadKqv=true,autoFit=true",
+      "runtimeConfigFields": {
+        "t": "4/4",
+        "b": "256",
+        "ctx": "4096",
+        "gpu": "37",
+        "kv": "1/1",
+        "fa": "-1",
+        "kleidi": "1",
+        "ub": "64",
+        "offloadKqv": "true",
+        "autoFit": "true"
+      },
+      "untimedSetupSelections": [
+        {
+          "stage": "setup_selection",
+          "timed": false,
+          "fromModelRowId": 3,
+          "modelRowId": 13,
+          "loadMs": 4597.406578,
+          "outcome": "SUCCESS",
+          "scope": "REAL_MODEL_PICKER"
+        }
+      ],
+      "trials": [
+        {
+          "stage": "reselection",
+          "trial": 1,
+          "attempt": 4,
+          "reuse": "off",
+          "modelRowId": 13,
+          "loadMs": 5936.12545,
+          "actionToCompletionMs": 5944.215213,
+          "context": 4096,
+          "runtimeConfig": "t=4/4,b=256,ctx=4096,gpu=37,kv=1/1,fa=-1,kleidi=1,ub=64,offloadKqv=true,autoFit=true",
+          "outcome": "SUCCESS",
+          "thermal": 0,
+          "scope": "REAL_MODEL_PICKER"
+        },
+        {
+          "stage": "reselection",
+          "trial": 2,
+          "attempt": 5,
+          "reuse": "off",
+          "modelRowId": 13,
+          "loadMs": 4820.674644,
+          "actionToCompletionMs": 4828.800255,
+          "context": 4096,
+          "runtimeConfig": "t=4/4,b=256,ctx=4096,gpu=37,kv=1/1,fa=-1,kleidi=1,ub=64,offloadKqv=true,autoFit=true",
+          "outcome": "SUCCESS",
+          "thermal": 0,
+          "scope": "REAL_MODEL_PICKER"
+        },
+        {
+          "stage": "reselection",
+          "trial": 3,
+          "attempt": 6,
+          "reuse": "off",
+          "modelRowId": 13,
+          "loadMs": 5375.854536,
+          "actionToCompletionMs": 5382.538821,
+          "context": 4096,
+          "runtimeConfig": "t=4/4,b=256,ctx=4096,gpu=37,kv=1/1,fa=-1,kleidi=1,ub=64,offloadKqv=true,autoFit=true",
+          "outcome": "SUCCESS",
+          "thermal": 0,
+          "scope": "REAL_MODEL_PICKER"
+        }
+      ],
+      "medianLoadMs": 5375.854536,
+      "medianActionToCompletionMs": 5382.538821,
+      "rawEvents": [
+        {
+          "stage": "setup_selection",
+          "timed": false,
+          "fromModelRowId": 3,
+          "modelRowId": 13,
+          "loadMs": 4597.406578,
+          "outcome": "SUCCESS",
+          "scope": "REAL_MODEL_PICKER"
+        },
+        {
+          "stage": "start",
+          "trials": 3,
+          "scope": "REAL_MODEL_PICKER",
+          "modelRowId": 13,
+          "reuse": "off",
+          "useGpu": true,
+          "kvPreset": "AUTO",
+          "temperature": 0.3,
+          "runtimeConfig": "t=4/4,b=256,ctx=4096,gpu=37,kv=1/1,fa=-1,kleidi=1,ub=64,offloadKqv=true,autoFit=true",
+          "diagnosticTracing": false,
+          "thermal": 0
+        },
+        {
+          "stage": "reselection",
+          "trial": 1,
+          "attempt": 4,
+          "reuse": "off",
+          "modelRowId": 13,
+          "loadMs": 5936.12545,
+          "actionToCompletionMs": 5944.215213,
+          "context": 4096,
+          "runtimeConfig": "t=4/4,b=256,ctx=4096,gpu=37,kv=1/1,fa=-1,kleidi=1,ub=64,offloadKqv=true,autoFit=true",
+          "outcome": "SUCCESS",
+          "thermal": 0,
+          "scope": "REAL_MODEL_PICKER"
+        },
+        {
+          "stage": "reselection",
+          "trial": 2,
+          "attempt": 5,
+          "reuse": "off",
+          "modelRowId": 13,
+          "loadMs": 4820.674644,
+          "actionToCompletionMs": 4828.800255,
+          "context": 4096,
+          "runtimeConfig": "t=4/4,b=256,ctx=4096,gpu=37,kv=1/1,fa=-1,kleidi=1,ub=64,offloadKqv=true,autoFit=true",
+          "outcome": "SUCCESS",
+          "thermal": 0,
+          "scope": "REAL_MODEL_PICKER"
+        },
+        {
+          "stage": "reselection",
+          "trial": 3,
+          "attempt": 6,
+          "reuse": "off",
+          "modelRowId": 13,
+          "loadMs": 5375.854536,
+          "actionToCompletionMs": 5382.538821,
+          "context": 4096,
+          "runtimeConfig": "t=4/4,b=256,ctx=4096,gpu=37,kv=1/1,fa=-1,kleidi=1,ub=64,offloadKqv=true,autoFit=true",
+          "outcome": "SUCCESS",
+          "thermal": 0,
+          "scope": "REAL_MODEL_PICKER"
+        },
+        {
+          "stage": "accessibility_cleanup",
+          "restored": true
+        },
+        {
+          "stage": "preferences",
+          "preserved": true
+        },
+        {
+          "stage": "outcome",
+          "result": "PASS"
+        }
+      ]
+    },
+    "on": {
+      "source": "build/benchmark-results/measurement-gaps/reselection-on.txt",
+      "sourceSha256": "472193c28d2f0e06cb0c197594c3711644c385cf884af4c2290d7804d3dcdcee",
+      "sourceFileModifiedUtc": "2026-10-23T18:55:18.961279+00:00",
+      "instrumentationResultCode": -1,
+      "outcome": "PASS",
+      "trialCount": 3,
+      "startBatteryTemperatureC": 36.2,
+      "startBatteryEvidence": "build/benchmark-results/measurement-gaps/reselection-on-before-battery.txt",
+      "androidThermalStatusAtStart": 0,
+      "androidThermalStatusAllTrialCompletions": [
+        0,
+        0,
+        0
+      ],
+      "numericPreferences": {
+        "useGpu": true,
+        "kvPreset": "AUTO",
+        "temperature": 0.3
+      },
+      "preferencesFilePreserved": true,
+      "accessibilityFlagsRestored": true,
+      "androidTraceEnabled": false,
+      "runtimeConfig": "t=4/4,b=256,ctx=4096,gpu=37,kv=1/1,fa=-1,kleidi=1,ub=64,offloadKqv=true,autoFit=true",
+      "runtimeConfigFields": {
+        "t": "4/4",
+        "b": "256",
+        "ctx": "4096",
+        "gpu": "37",
+        "kv": "1/1",
+        "fa": "-1",
+        "kleidi": "1",
+        "ub": "64",
+        "offloadKqv": "true",
+        "autoFit": "true"
+      },
+      "untimedSetupSelections": [],
+      "trials": [
+        {
+          "stage": "reselection",
+          "trial": 1,
+          "attempt": 3,
+          "reuse": "on",
+          "modelRowId": 13,
+          "loadMs": 145.109253,
+          "actionToCompletionMs": 153.121948,
+          "context": 4096,
+          "runtimeConfig": "t=4/4,b=256,ctx=4096,gpu=37,kv=1/1,fa=-1,kleidi=1,ub=64,offloadKqv=true,autoFit=true",
+          "outcome": "SUCCESS",
+          "thermal": 0,
+          "scope": "REAL_MODEL_PICKER"
+        },
+        {
+          "stage": "reselection",
+          "trial": 2,
+          "attempt": 4,
+          "reuse": "on",
+          "modelRowId": 13,
+          "loadMs": 285.175781,
+          "actionToCompletionMs": 293.128378,
+          "context": 4096,
+          "runtimeConfig": "t=4/4,b=256,ctx=4096,gpu=37,kv=1/1,fa=-1,kleidi=1,ub=64,offloadKqv=true,autoFit=true",
+          "outcome": "SUCCESS",
+          "thermal": 0,
+          "scope": "REAL_MODEL_PICKER"
+        },
+        {
+          "stage": "reselection",
+          "trial": 3,
+          "attempt": 5,
+          "reuse": "on",
+          "modelRowId": 13,
+          "loadMs": 168.32959,
+          "actionToCompletionMs": 176.529866,
+          "context": 4096,
+          "runtimeConfig": "t=4/4,b=256,ctx=4096,gpu=37,kv=1/1,fa=-1,kleidi=1,ub=64,offloadKqv=true,autoFit=true",
+          "outcome": "SUCCESS",
+          "thermal": 0,
+          "scope": "REAL_MODEL_PICKER"
+        }
+      ],
+      "medianLoadMs": 168.32959,
+      "medianActionToCompletionMs": 176.529866,
+      "rawEvents": [
+        {
+          "stage": "start",
+          "trials": 3,
+          "scope": "REAL_MODEL_PICKER",
+          "modelRowId": 13,
+          "reuse": "on",
+          "useGpu": true,
+          "kvPreset": "AUTO",
+          "temperature": 0.3,
+          "runtimeConfig": "t=4/4,b=256,ctx=4096,gpu=37,kv=1/1,fa=-1,kleidi=1,ub=64,offloadKqv=true,autoFit=true",
+          "diagnosticTracing": false,
+          "thermal": 0
+        },
+        {
+          "stage": "reselection",
+          "trial": 1,
+          "attempt": 3,
+          "reuse": "on",
+          "modelRowId": 13,
+          "loadMs": 145.109253,
+          "actionToCompletionMs": 153.121948,
+          "context": 4096,
+          "runtimeConfig": "t=4/4,b=256,ctx=4096,gpu=37,kv=1/1,fa=-1,kleidi=1,ub=64,offloadKqv=true,autoFit=true",
+          "outcome": "SUCCESS",
+          "thermal": 0,
+          "scope": "REAL_MODEL_PICKER"
+        },
+        {
+          "stage": "reselection",
+          "trial": 2,
+          "attempt": 4,
+          "reuse": "on",
+          "modelRowId": 13,
+          "loadMs": 285.175781,
+          "actionToCompletionMs": 293.128378,
+          "context": 4096,
+          "runtimeConfig": "t=4/4,b=256,ctx=4096,gpu=37,kv=1/1,fa=-1,kleidi=1,ub=64,offloadKqv=true,autoFit=true",
+          "outcome": "SUCCESS",
+          "thermal": 0,
+          "scope": "REAL_MODEL_PICKER"
+        },
+        {
+          "stage": "reselection",
+          "trial": 3,
+          "attempt": 5,
+          "reuse": "on",
+          "modelRowId": 13,
+          "loadMs": 168.32959,
+          "actionToCompletionMs": 176.529866,
+          "context": 4096,
+          "runtimeConfig": "t=4/4,b=256,ctx=4096,gpu=37,kv=1/1,fa=-1,kleidi=1,ub=64,offloadKqv=true,autoFit=true",
+          "outcome": "SUCCESS",
+          "thermal": 0,
+          "scope": "REAL_MODEL_PICKER"
+        },
+        {
+          "stage": "accessibility_cleanup",
+          "restored": true
+        },
+        {
+          "stage": "preferences",
+          "preserved": true
+        },
+        {
+          "stage": "outcome",
+          "result": "PASS"
+        }
+      ]
+    }
+  },
+  "comparison": {
+    "medianLoadMs": {
+      "fullReload": 5375.854536,
+      "reuse": 168.32959,
+      "differenceMs": 5207.5249459999995,
+      "reductionPercent": 96.86878450909037,
+      "ratioFullReloadToReuse": 31.936479712212215
+    },
+    "medianActionToCompletionMs": {
+      "fullReload": 5382.538821,
+      "reuse": 176.529866,
+      "differenceMs": 5206.008955,
+      "reductionPercent": 96.72032340368327,
+      "ratioFullReloadToReuse": 30.49081123190792
+    }
+  },
+  "caveats": [
+    "Completion observes load logic and final internal UI state, not a rendered frame or time-to-fully-drawn measurement.",
+    "Battery temperatures started at 35.8 C (off) and 36.2 C (on), exceeding the strict matrix start ceiling of 35 C despite Android thermal status 0 throughout the logged events.",
+    "Nearby cooling diagnostics showed background CPU activity (Google Play services 61.7% and 86.0% in two top samples, where 100% represents one core); this was not recorded per reselection trial and is not quantified as a cause of timing differences.",
+    "Only three trials per mode, sequential mode ordering, uncontrolled OS/file caches and no confidence intervals; timings are evidence of eliminated reload work, not stable cross-device latency targets.",
+    "The actual UI retained user preferences (GPU enabled, AUTO KV, temperature 0.3); effective config was F16/F16, 4096 context, batch256/ubatch64, 37 GPU layers with autoFit=true. This differs from the later fixed-workload no-fallback journey protocol.",
+    "No generation or answer-quality check was part of this UI reselection capture; inference correctness is covered by separate tests and journeys.",
+    "The raw UI stream reports Android trace disabled, but does not independently enumerate external profiling sessions."
+  ],
+  "backgroundCpuEvidence": {
+    "path": "build/benchmark-results/measurement-gaps/cooling-background-cpu.txt",
+    "sha256": "b77e8acfa5cf1409b5df471b4b8251579328bdd753d9ac1570ea9197110c81c7",
+    "samplingScope": "Nearby cooling diagnostic; not per-trial"
+  }
+}

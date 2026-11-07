@@ -570,7 +570,9 @@ class ModelRecommendationService internal constructor(
                         ).any { it != null && it !in 1..MAX_METADATA_INTEGER }
                     } == true || !isValidQuantization(descriptor.quantization)
                 ) return null
-                if (files.size > 1 && !isCompleteShardSet(files.map { it.path })) return null
+                if (descriptor.format == com.debanshu777.caraml.core.recommendation.ModelFormat.ONNX) {
+                    if (!com.debanshu777.caraml.sdk.discovery.huggingface.model.OnnxModelBundles.isComplete(files.map { it.path })) return null
+                } else if (files.size > 1 && !isCompleteShardSet(files.map { it.path })) return null
                 files
             }
             is DiffusionModelDescriptor -> {

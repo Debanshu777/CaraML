@@ -13,13 +13,14 @@ class RunPlanGenerator {
         workload: LlmWorkloadConfig,
         settings: PlanningSettings,
     ): List<LlmRunPlan> {
+        val onnx = descriptor.format == ModelFormat.ONNX
         val contextFloor = requiredContextFloor(workload) ?: return emptyList()
         if (!validInputs(descriptor, workload, settings, contextFloor)) return emptyList()
 
-        val allowedKv = KV_PREFERENCE_ORDER.filter {
+        val allowedKv = if (onnx) listOf(KvCacheType.F32) else KV_PREFERENCE_ORDER.filter {
             it in workload.allowedKvCacheTypes && it in settings.allowedKvCacheTypes
         }
-        val requestedTypes = when (val selection = workload.kvCacheSelection) {
+        val requestedTypes = if (onnx) KvCacheType.F32 to KvCacheType.F32 else when (val selection = workload.kvCacheSelection) {
             KvCacheSelection.Auto -> allowedKv.firstOrNull()?.let { it to it } ?: return emptyList()
             is KvCacheSelection.Explicit -> selection.keyType to selection.valueType
         }
@@ -33,7 +34,7 @@ class RunPlanGenerator {
         val kvPairs = buildList {
             add(requestedTypes)
             if (
-                workload.kvCacheSelection == KvCacheSelection.Auto &&
+                !onnx && workload.kvCacheSelection == KvCacheSelection.Auto &&
                 workload.allowKvCacheFallback &&
                 settings.allowKvCacheFallback
             ) {
@@ -122,7 +123,8 @@ class RunPlanGenerator {
         if (!validDiffusionInputs(descriptor, workload, settings)) return emptyList()
         val effectiveOffloadToCpu = settings.backend == BackendKind.CPU || workload.offloadToCpu
         val effectiveKeepClipOnCpu = settings.backend == BackendKind.VULKAN || workload.keepClipOnCpu
-        val effectiveKeepVaeOnCpu = settings.backend == BackendKind.VULKAN || workload.keepVaeOnCpu
+        val effectiveKeepVaeOnCpu = workload.keepVaeOnCpu ||
+            (settings.backend == BackendKind.VULKAN && workload.mode == DiffusionMode.VIDEO)
 
         val candidates = LinkedHashSet<DiffusionRunPlan>(RecommendationPolicyV1.MAX_DIFFUSION_CANDIDATES)
         fun add(
@@ -393,7 +395,7 @@ class RunPlanGenerator {
             settings.engineMaxMicroBatchSize in workload.microBatchSize..WorkloadLimits.MAX_BATCH_SIZE &&
             settings.engineMaxSequenceCount in workload.sequenceCount..WorkloadLimits.MAX_SEQUENCE_COUNT &&
             requestedKvAllowed(workload, settings) &&
-            validPlacement(descriptor, settings)
+            validPlacement(descriptor, workload, settings)
 
     private fun requiredContextFloor(workload: LlmWorkloadConfig): Int? {
         val reserve = checkedAdd(workload.promptTokens.toLong(), workload.generationReserveTokens.toLong())
@@ -409,7 +411,18 @@ class RunPlanGenerator {
         }
     }
 
-    private fun validPlacement(descriptor: LlmModelDescriptor, settings: PlanningSettings): Boolean = when {
+    private fun validPlacement(
+        descriptor: LlmModelDescriptor,
+        workload: LlmWorkloadConfig,
+        settings: PlanningSettings,
+    ): Boolean = when {
+        workload.requestedFullVulkanLayerCount != null ->
+            descriptor.fullVulkanLayerCount()?.let { full ->
+                workload.requestedFullVulkanLayerCount == full &&
+                    (settings.backend == BackendKind.CPU && settings.gpuLayerCount == 0 ||
+                        settings.backend == BackendKind.VULKAN && settings.memoryTopology ==
+                        com.debanshu777.caraml.core.platform.MemoryTopology.UNIFIED && settings.gpuLayerCount == full)
+            } == true
         settings.gpuLayerCount?.let { it < 0 } == true -> false
         settings.backend == BackendKind.CPU -> settings.gpuLayerCount in listOf(null, 0)
         settings.gpuLayerCount == 0 -> false

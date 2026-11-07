@@ -38,6 +38,7 @@ class ModelPageTest {
             val request = ModelPageRequest(
                 search = "Qwen & 3B?", sort = ModelSort.DOWNLOADS,
                 minParams = ParameterRange.THREE_B, maxParams = ParameterRange.SIX_B,
+                pipelineTag = "text-generation",
                 limit = 2,
             )
             val first = assertIs<Result.Success<ModelPage, DataError.Network>>(service.getModelPage(request)).data
@@ -50,6 +51,11 @@ class ModelPageTest {
             assertNull(first.totalCount)
             assertTrue(observed[0].contains("search=Qwen"))
             assertTrue(observed[0].contains("sort=downloads"))
+            assertTrue(observed[0].contains("pipeline_tag=text-generation"))
+            assertIs<Result.Error<*, *>>(service.getModelPage(request.copy(
+                pipelineTag = "feature-extraction", cursor = first.nextCursor,
+            )))
+            assertEquals(2, observed.size, "A cursor cannot be reused for another pipeline")
             assertTrue(observed[0].contains("num_parameters=min%3A3B%2Cmax%3A6B"))
             assertTrue(observed[1].contains("cursor=next-opaque"))
         } finally { client.close() }

@@ -25,6 +25,29 @@ import kotlin.test.fail
 @OptIn(ExperimentalCoroutinesApi::class)
 class ModelAssessmentRepositoryTest {
     @Test
+    fun onnxPrimarySurvivesCanonicalSortingAndKeepsItsFormat() {
+        fun identity(path: String) = ModelFileIdentity("owner/onnx", "a".repeat(40), path, 100,
+            "b".repeat(40), null, null, emptyList())
+        val descriptor = LlmModelDescriptor("owner/onnx", "a".repeat(40),
+            listOf(identity("config.json"), identity("onnx/model_int8.onnx"), identity("tokenizer.json")),
+            "llama", QuantizationEvidence.Unknown, null, 8192, TransformerShape(30, 3, 9, 576, 64), null, emptyList(), emptyList())
+        val key = requireNotNull(assessmentCacheKey(descriptor, task7Workload(contextTokens = 4096), task6Hardware(), "ort-1", 1, 0))
+        val normalized = key.descriptor as LlmModelDescriptor
+        assertEquals(ModelFormat.ONNX, normalized.format)
+        assertEquals("onnx/model_int8.onnx", normalized.file.path)
+        assertEquals(normalized.file, normalized.files.first())
+        val workload = InstalledModelWorkloadFactory().create(normalized,
+            com.debanshu777.caraml.features.chat.domain.GenerationMode.Text,
+            com.debanshu777.caraml.core.settings.AppSettings())!!
+        val engine = SuitabilityEngine(CompatibilityChecker { SupportEvidence.Supported }, NoCalibrationSource)
+        val snapshot = task6Snapshot(hostBudget = 8L * 1024 * 1024 * 1024, storageBudget = 20L * 1024 * 1024 * 1024)
+        val plans = engine.assessPlans(normalized, snapshot.hardwareProfile, workload)
+        assertTrue(plans.values.isNotEmpty())
+        assertTrue(plans.values.all { it.gpuMemoryBytes == null && it.sharedMemoryBytes == null && it.hostMemoryBytes != null })
+        val recommendation = RecommendationPolicy().recommend(engine.assemble(plans, snapshot), snapshot, RecommendationProfile())
+        assertTrue(recommendation.category in setOf(RecommendationCategory.RECOMMENDED, RecommendationCategory.USABLE, RecommendationCategory.RISKY), recommendation.toString())
+    }
+    @Test
     fun concurrentEqualAssessmentsShareOneCalculation() = runTest {
         val gate = CompletableDeferred<Unit>()
         var invocations = 0

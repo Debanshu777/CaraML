@@ -18,6 +18,7 @@
     float flowShift;
     int nThreads;
     int prediction;
+    int samplingScheduler;
     java.lang.String taesdPath;
     boolean vaeTiling;
     java.lang.String maxVram;

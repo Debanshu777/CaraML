@@ -34,6 +34,7 @@ class LlmFootprintEstimator {
         val storage = exactRange(totalFileBytes)
         val invalidReason = validate(descriptor, plan, calibration)
         if (invalidReason != null) return invalidAssessment(plan, storage, invalidReason)
+        if (descriptor.format == ModelFormat.ONNX) return estimateOnnx(descriptor, plan, totalFileBytes, storage)
 
         val components = when (val calculated = calculateComponents(descriptor, plan, totalFileBytes)) {
             is ComponentResult.Invalid -> return invalidAssessment(plan, storage, calculated.reason)
@@ -87,6 +88,32 @@ class LlmFootprintEstimator {
         )
     }
 
+    private fun estimateOnnx(descriptor: LlmModelDescriptor, plan: LlmRunPlan, bytes: Long, storage: EstimateRange): PlanAssessment {
+        val shape = descriptor.transformerShape
+        val layers = shape?.layerCount ?: return invalidAssessment(plan, storage, AssessmentReason.MISSING_MODEL_SHAPE)
+        val heads = shape.kvHeadCount ?: shape.attentionHeadCount ?: return invalidAssessment(plan, storage, AssessmentReason.MISSING_MODEL_SHAPE)
+        val dim = shape.headDim ?: shape.hiddenSize?.let { hidden -> shape.attentionHeadCount?.let { hidden / it } }
+            ?: return invalidAssessment(plan, storage, AssessmentReason.MISSING_MODEL_SHAPE)
+        val cache = checkedProduct(layers.toLong(), heads.toLong(), dim.toLong(), plan.contextTokens.toLong(), 8L)
+        if (cache !is CheckedLong.Value || plan.backend != BackendKind.CPU ||
+            plan.keyCacheType != KvCacheType.F32 || plan.valueCacheType != KvCacheType.F32) {
+            return invalidAssessment(plan, storage, AssessmentReason.INVALID_WORKLOAD)
+        }
+        val combined = checkedAdd(bytes, cache.value)
+        if (combined !is CheckedLong.Value || combined.value > (Long.MAX_VALUE - 512L * MIB) / 3L) {
+            return invalidAssessment(plan, storage, AssessmentReason.ARITHMETIC_OVERFLOW)
+        }
+        // ORT owns unpacked weights, the current and next KV caches, and allocator arenas.
+        // GGUF mmap/quantized-cache estimates must never be reused for this runtime.
+        val range = validRange(combined.value + 128L * MIB, combined.value * 2 + 256L * MIB, combined.value * 3 + 512L * MIB)
+        return PlanAssessment(
+            plan = plan, hostMemoryBytes = range, gpuMemoryBytes = null, sharedMemoryBytes = null,
+            storageBytes = storage, confidence = confidence(Confidence.LOW, true),
+            evidence = listOf(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.LOW, "onnx:weights-f32-cache-arena-bound")),
+            rawMemoryByPhase = MemoryPhaseEstimates(load = MemoryPoolEstimates(hostMemoryBytes = range), generation = MemoryPoolEstimates(hostMemoryBytes = range)),
+        )
+    }
+
     private fun validate(
         descriptor: LlmModelDescriptor,
         plan: LlmRunPlan,
@@ -103,7 +130,7 @@ class LlmFootprintEstimator {
         if (
             descriptor.contextLimit?.let { plan.contextTokens > it } == true ||
             descriptor.transformerShape?.layerCount?.let { layers ->
-                plan.gpuLayerCount?.let { it > layers }
+                plan.gpuLayerCount?.let { it > layers && !plan.matchesFixedVulkanPlacement(descriptor) }
             } == true
         ) {
             return AssessmentReason.INVALID_WORKLOAD
@@ -615,6 +642,7 @@ private sealed interface RangeResult {
 
 private fun bytesForElements(elements: Long, type: KvCacheType): CheckedLong {
     val (numerator, denominator) = when (type) {
+        KvCacheType.F32 -> 4L to 1L
         KvCacheType.F16 -> 2L to 1L
         KvCacheType.Q8_0 -> 34L to 32L
         KvCacheType.Q4_0 -> 18L to 32L

@@ -26,6 +26,7 @@ val sdkOnly = providers.gradleProperty("sdkOnly").map(String::toBoolean).getOrEl
 include(":core-api", ":core", ":storage", ":model-discovery", ":native-runtime")
 if (!sdkOnly) {
     include(":app:composeApp", ":app:androidApp", ":app:desktopApp")
+    include(":benchmarks:android")
     include(":nativeEngine")
-    include(":plugin-llama", ":plugin-diffusion")
+    include(":plugin-llama", ":plugin-diffusion", ":plugin-onnx")
 }

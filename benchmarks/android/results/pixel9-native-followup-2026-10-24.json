@@ -1,0 +1,696 @@
+{
+  "schemaVersion": 1,
+  "dateLocal": "2026-10-24",
+  "timezone": "Asia/Kolkata",
+  "device": "Pixel 9 / Android 17 API 37 / Mali-G715",
+  "sourceHead": "b1dc4169ab8918776c30f85fc468aad83628754d",
+  "workingTreeDirty": true,
+  "managedBuild": "DEBUG",
+  "nativeBuild": "RELEASE",
+  "model": {
+    "repository": "Qwen/Qwen2.5-3B-Instruct-GGUF",
+    "revision": "7dabda4d13d513e3e842b20f0d435c732f172cbe",
+    "file": "qwen2.5-3b-instruct-q4_k_m.gguf",
+    "bytes": 2104932768,
+    "sha256": "626b4a6678b86442240e33df819e00132d3ba7dddfe1cdc4fbb18e0a9615c62d"
+  },
+  "cpuRepack": {
+    "decision": "Retain byte-identical constant-interleave specialization. Completed fixed-plan sequential pilot: 3 valid CPU runs per build, median 3337 to 2536 ms (24.0% lower); not a general statistical speedup bound. Earlier exploratory subsets below are preserved as history.",
+    "patch": "libraries/patches/llama.cpp/0007-cpu-repack-constant-interleave.patch",
+    "equivalenceCases": 6532,
+    "sanitizers": "ASan and UBSan passed on host",
+    "archives": [
+      {
+        "path": "build/benchmark-results/journey-matrix/20261023T182338.423266Z-instrumentation-baseline-valid",
+        "apkSha256": "3303c77cc0a6356482919042760ba4b55065f2b8dde8d00f02ee87607d41c159",
+        "diagnosticTracing": false,
+        "aggregateValid": false,
+        "aggregateFailure": {
+          "type": "RuntimeError",
+          "message": "Effective runtime configurations differ beyond GPU placement; matrix is not matched"
+        }
+      },
+      {
+        "path": "build/benchmark-results/journey-matrix/20261023T182947.089105Z-instrumentation-cpu-baseline",
+        "apkSha256": "3303c77cc0a6356482919042760ba4b55065f2b8dde8d00f02ee87607d41c159",
+        "diagnosticTracing": false,
+        "aggregateValid": false,
+        "aggregateFailure": {
+          "type": "RuntimeError",
+          "message": "Effective runtime configurations differ beyond GPU placement; matrix is not matched"
+        }
+      },
+      {
+        "path": "build/benchmark-results/journey-matrix/20261023T183422.084716Z-after-repack-cpu",
+        "apkSha256": "53a982bf4ed79bf284b0018c7b8d9711fdfe4bb653256d5c43e55924bedfd310",
+        "diagnosticTracing": false,
+        "aggregateValid": false,
+        "aggregateFailure": {
+          "type": "RuntimeError",
+          "message": "Invalid measurement in 03-cpu-trial-3; inspect its archived events"
+        }
+      }
+    ],
+    "trials": [
+      {
+        "source": "build/benchmark-results/journey-matrix/20261023T182338.423266Z-instrumentation-baseline-valid/01-cpu-trial-1.json",
+        "candidate": false,
+        "trial": 1,
+        "batch": 128,
+        "loggedConfig": "t=4/4,b=128,ctx=4096,gpu=0,kv=1/1,fa=-1,kleidi=1",
+        "context": 4096,
+        "valid": true,
+        "included": true,
+        "problems": [],
+        "wholeLoadMs": 3619,
+        "repositoryLoadMs": 3400,
+        "batteryBeforeC": 33.2,
+        "batteryAfterC": 33.2,
+        "thermalBefore": 0,
+        "thermalAfter": 0,
+        "ttftMs": [
+          653,
+          614,
+          575
+        ],
+        "decodeTps": [
+          11.756479468613577,
+          12.43244098345574,
+          12.168297829018696
+        ],
+        "contentSha256": [
+          "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6"
+        ],
+        "allDeltasMatch": true
+      },
+      {
+        "source": "build/benchmark-results/journey-matrix/20261023T182338.423266Z-instrumentation-baseline-valid/03-cpu-trial-2.json",
+        "candidate": false,
+        "trial": 2,
+        "batch": 256,
+        "loggedConfig": "t=4/4,b=256,ctx=4096,gpu=0,kv=1/1,fa=-1,kleidi=1",
+        "context": 4096,
+        "valid": true,
+        "included": true,
+        "problems": [],
+        "wholeLoadMs": 3613,
+        "repositoryLoadMs": 3389,
+        "batteryBeforeC": 34.3,
+        "batteryAfterC": 34.9,
+        "thermalBefore": 0,
+        "thermalAfter": 0,
+        "ttftMs": [
+          577,
+          632,
+          578
+        ],
+        "decodeTps": [
+          12.933175130300908,
+          12.444420130812935,
+          12.005306757197198
+        ],
+        "contentSha256": [
+          "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6"
+        ],
+        "allDeltasMatch": true
+      },
+      {
+        "source": "build/benchmark-results/journey-matrix/20261023T182338.423266Z-instrumentation-baseline-valid/05-cpu-trial-3.json",
+        "candidate": false,
+        "trial": 3,
+        "batch": 256,
+        "loggedConfig": "t=4/4,b=256,ctx=4096,gpu=0,kv=1/1,fa=-1,kleidi=1",
+        "context": 4096,
+        "valid": true,
+        "included": true,
+        "problems": [],
+        "wholeLoadMs": 3902,
+        "repositoryLoadMs": 3670,
+        "batteryBeforeC": 34.9,
+        "batteryAfterC": 35.9,
+        "thermalBefore": 0,
+        "thermalAfter": 0,
+        "ttftMs": [
+          549,
+          634,
+          590
+        ],
+        "decodeTps": [
+          12.724470220545154,
+          12.320066484992385,
+          12.062380913067438
+        ],
+        "contentSha256": [
+          "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6"
+        ],
+        "allDeltasMatch": true
+      },
+      {
+        "source": "build/benchmark-results/journey-matrix/20261023T182947.089105Z-instrumentation-cpu-baseline/01-cpu-trial-1.json",
+        "candidate": false,
+        "trial": 1,
+        "batch": 256,
+        "loggedConfig": "t=4/4,b=256,ctx=4096,gpu=0,kv=1/1,fa=-1,kleidi=1",
+        "context": 4096,
+        "valid": true,
+        "included": true,
+        "problems": [],
+        "wholeLoadMs": 4097,
+        "repositoryLoadMs": 3861,
+        "batteryBeforeC": 34.7,
+        "batteryAfterC": 34.7,
+        "thermalBefore": 0,
+        "thermalAfter": 0,
+        "ttftMs": [
+          549,
+          609,
+          574
+        ],
+        "decodeTps": [
+          13.215461061656853,
+          12.09703618915129,
+          12.079107364871444
+        ],
+        "contentSha256": [
+          "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6"
+        ],
+        "allDeltasMatch": true
+      },
+      {
+        "source": "build/benchmark-results/journey-matrix/20261023T182947.089105Z-instrumentation-cpu-baseline/02-cpu-trial-2.json",
+        "candidate": false,
+        "trial": 2,
+        "batch": 256,
+        "loggedConfig": "t=4/4,b=256,ctx=4096,gpu=0,kv=1/1,fa=-1,kleidi=1",
+        "context": 4096,
+        "valid": true,
+        "included": true,
+        "problems": [],
+        "wholeLoadMs": 3159,
+        "repositoryLoadMs": 2938,
+        "batteryBeforeC": 34.7,
+        "batteryAfterC": 35.5,
+        "thermalBefore": 0,
+        "thermalAfter": 0,
+        "ttftMs": [
+          592,
+          636,
+          591
+        ],
+        "decodeTps": [
+          12.432528136977986,
+          12.267955907788744,
+          12.37047126943203
+        ],
+        "contentSha256": [
+          "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6"
+        ],
+        "allDeltasMatch": true
+      },
+      {
+        "source": "build/benchmark-results/journey-matrix/20261023T182947.089105Z-instrumentation-cpu-baseline/03-cpu-trial-3.json",
+        "candidate": false,
+        "trial": 3,
+        "batch": 128,
+        "loggedConfig": "t=4/4,b=128,ctx=4096,gpu=0,kv=1/1,fa=-1,kleidi=1",
+        "context": 4096,
+        "valid": true,
+        "included": true,
+        "problems": [],
+        "wholeLoadMs": 3298,
+        "repositoryLoadMs": 3083,
+        "batteryBeforeC": 34.9,
+        "batteryAfterC": 34.9,
+        "thermalBefore": 0,
+        "thermalAfter": 0,
+        "ttftMs": [
+          578,
+          604,
+          594
+        ],
+        "decodeTps": [
+          12.930608759982032,
+          12.309998838938496,
+          12.534876166481027
+        ],
+        "contentSha256": [
+          "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6"
+        ],
+        "allDeltasMatch": true
+      },
+      {
+        "source": "build/benchmark-results/journey-matrix/20261023T183422.084716Z-after-repack-cpu/01-cpu-trial-1.json",
+        "candidate": true,
+        "trial": 1,
+        "batch": 128,
+        "loggedConfig": "t=4/4,b=128,ctx=4096,gpu=0,kv=1/1,fa=-1,kleidi=1",
+        "context": 4096,
+        "valid": true,
+        "included": true,
+        "problems": [],
+        "wholeLoadMs": 2601,
+        "repositoryLoadMs": 2391,
+        "batteryBeforeC": 35.0,
+        "batteryAfterC": 35.0,
+        "thermalBefore": 0,
+        "thermalAfter": 0,
+        "ttftMs": [
+          630,
+          629,
+          576
+        ],
+        "decodeTps": [
+          12.720909820696123,
+          12.450998694427408,
+          11.862361527582385
+        ],
+        "contentSha256": [
+          "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6"
+        ],
+        "allDeltasMatch": true
+      },
+      {
+        "source": "build/benchmark-results/journey-matrix/20261023T183422.084716Z-after-repack-cpu/02-cpu-trial-2.json",
+        "candidate": true,
+        "trial": 2,
+        "batch": 256,
+        "loggedConfig": "t=4/4,b=256,ctx=4096,gpu=0,kv=1/1,fa=-1,kleidi=1",
+        "context": 4096,
+        "valid": true,
+        "included": true,
+        "problems": [],
+        "wholeLoadMs": 2389,
+        "repositoryLoadMs": 2103,
+        "batteryBeforeC": 35.0,
+        "batteryAfterC": 35.7,
+        "thermalBefore": 0,
+        "thermalAfter": 0,
+        "ttftMs": [
+          561,
+          640,
+          597
+        ],
+        "decodeTps": [
+          12.37865240207352,
+          11.707926590276672,
+          12.479390175701703
+        ],
+        "contentSha256": [
+          "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6"
+        ],
+        "allDeltasMatch": true
+      },
+      {
+        "source": "build/benchmark-results/journey-matrix/20261023T183422.084716Z-after-repack-cpu/03-cpu-trial-3.json",
+        "candidate": true,
+        "trial": 3,
+        "batch": 128,
+        "loggedConfig": "t=4/4,b=128,ctx=2048,gpu=0,kv=1/1,fa=-1,kleidi=1",
+        "context": 2048,
+        "valid": false,
+        "included": false,
+        "problems": [
+          "Loaded context/state/temperature does not match the workload",
+          "Repeated resident repository request did not succeed"
+        ],
+        "wholeLoadMs": 2286,
+        "repositoryLoadMs": 2068,
+        "batteryBeforeC": 34.9,
+        "batteryAfterC": 34.9,
+        "thermalBefore": 0,
+        "thermalAfter": 0,
+        "ttftMs": [
+          577,
+          651,
+          612
+        ],
+        "decodeTps": [
+          12.537063993913636,
+          11.549512607103127,
+          12.288505580634338
+        ],
+        "contentSha256": [
+          "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6"
+        ],
+        "allDeltasMatch": true
+      }
+    ],
+    "subsets": [
+      {
+        "batch": 128,
+        "beforeN": 2,
+        "afterN": 1,
+        "beforeWholeLoadMs": [
+          3619,
+          3298
+        ],
+        "afterWholeLoadMs": [
+          2601
+        ],
+        "beforeMedianMs": 3458.5,
+        "afterMedianMs": 2601,
+        "reductionPercent": 24.79
+      },
+      {
+        "batch": 256,
+        "beforeN": 4,
+        "afterN": 1,
+        "beforeWholeLoadMs": [
+          3613,
+          3902,
+          4097,
+          3159
+        ],
+        "afterWholeLoadMs": [
+          2389
+        ],
+        "beforeMedianMs": 3757.5,
+        "afterMedianMs": 2389,
+        "reductionPercent": 36.42
+      }
+    ],
+    "limits": [
+      "Only one accepted candidate per batch; no statistically robust speedup bound.",
+      "Baseline archives failed aggregate matching because adaptive batch varied; results are stratified by logged configuration.",
+      "Candidate trial 3 is excluded: context resolved to 2048 instead of requested 4096 and repeated resident request failed. Its 2286 ms is not included.",
+      "Baseline logs predate explicit effective ubatch/offload/autofit fields; full effective-plan equality is unproven.",
+      "Sequential fresh-process debug app runs, uncontrolled OS file caches and background activity; thermal NORMAL does not guarantee idle or equal temperatures."
+    ],
+    "fixedPlanPilot": {
+      "result": "benchmarks/android/results/pixel9-repack-fixed-2026-10-24.json",
+      "nPerBuild": 3,
+      "allTrialsValid": true,
+      "preferencesPreserved": true,
+      "controlWholeLoadMs": [
+        4034,
+        3337,
+        3210
+      ],
+      "candidateWholeLoadMs": [
+        3257,
+        2321,
+        2536
+      ],
+      "controlSummary": {
+        "n": 3,
+        "wholeLoadMsMedian": 3337,
+        "repositoryLoadMsMedian": 3094,
+        "outsideRepositoryLoadMsMedian": 221,
+        "prepareMsMedian": 115,
+        "resolveMsMedian": 102,
+        "repeatedRequestMsMedian": 3747,
+        "ttftMsMedianByTurn": {
+          "1": 580,
+          "2": 627,
+          "3": 575
+        },
+        "decodeTpsMedianByTurn": {
+          "1": 12.054010978696768,
+          "2": 12.293082290094807,
+          "3": 11.619259333334805
+        },
+        "initialAttemptsPerTrial": [
+          2,
+          2,
+          2
+        ],
+        "repeatedAttemptsPerTrial": [
+          2,
+          1,
+          2
+        ],
+        "initialConfirmationMs": [
+          35,
+          46,
+          42
+        ],
+        "batteryTemperatureRangeC": [
+          33.7,
+          35.4
+        ],
+        "allThermalNormal": true,
+        "contentSha256": [
+          "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6"
+        ],
+        "generationCount": 9
+      },
+      "candidateSummary": {
+        "n": 3,
+        "wholeLoadMsMedian": 2536,
+        "repositoryLoadMsMedian": 2332,
+        "outsideRepositoryLoadMsMedian": 217,
+        "prepareMsMedian": 117,
+        "resolveMsMedian": 98,
+        "repeatedRequestMsMedian": 3052,
+        "ttftMsMedianByTurn": {
+          "1": 598,
+          "2": 638,
+          "3": 590
+        },
+        "decodeTpsMedianByTurn": {
+          "1": 12.197631220713944,
+          "2": 11.579135255126271,
+          "3": 12.414271761074954
+        },
+        "initialAttemptsPerTrial": [
+          2,
+          2,
+          2
+        ],
+        "repeatedAttemptsPerTrial": [
+          2,
+          1,
+          2
+        ],
+        "initialConfirmationMs": [
+          39,
+          39,
+          39
+        ],
+        "batteryTemperatureRangeC": [
+          34.7,
+          35.3
+        ],
+        "allThermalNormal": true,
+        "contentSha256": [
+          "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6"
+        ],
+        "generationCount": 9
+      },
+      "comparison": {
+        "wholeLoadMsMedian": {
+          "controlMedian": 3337,
+          "candidateMedian": 2536,
+          "reductionPercent": 24.003596044351216
+        },
+        "repositoryLoadMsMedian": {
+          "controlMedian": 3094,
+          "candidateMedian": 2332,
+          "reductionPercent": 24.628312863606983
+        },
+        "outsideRepositoryLoadMsMedian": {
+          "controlMedian": 221,
+          "candidateMedian": 217,
+          "reductionPercent": 1.8099547511312264
+        }
+      },
+      "frozenSourceInputsEqual": true,
+      "completeEffectiveRuntimeConfigsEqual": true,
+      "compiler": "Default Android NDK",
+      "controlApkSha256": "80408ea043f433893d6e58ae787c8dae6fdf99b503053424b9f315ac818770be",
+      "candidateApkSha256": "e3f0a3f047dde5a4d7b3263a249911e0ba717eb1bfd0c4dc2eb7f5ad7207cf48",
+      "managedDexByteIdentical": true,
+      "vulkanLibraryByteIdentical": false,
+      "limits": [
+        "Small sequential pilot: all control trials precede candidate trials; build order, OS caches and background activity were not randomized or fully controlled.",
+        "Only the three successful CPU-only trials per build are included; the prior mixed candidate group stopped after two valid individual trials because the phone could not cool within 120 seconds and is not pooled.",
+        "Control cooldown limit was 120 seconds; the replacement candidate CPU-only group used 180 seconds. Both retained the same thermal NORMAL and <=35 C start gate; full endpoint conditions are retained.",
+        "Initial load includes ordinary exact-request risk confirmation attempts. Repeated repository requests are separately reported and are not proof of resident reuse or model-picker latency.",
+        "Native sources and default NDK compiler are fixed, and managed DEX is byte-identical, but rebuilt Vulkan library has a separate DIAG shader constant difference. No Vulkan A/B conclusion is drawn.",
+        "Vulkan observations are individual functional validations, not a repeated distribution or a compiler comparison.",
+        "Short greedy output hashes match; this does not establish general accuracy, long-context correctness, release-model latency, cold-storage behavior or sustained throughput."
+      ],
+      "vulkanShaderRebuildDifference": {
+        "source": "libraries/llama.cpp/ggml/src/ggml-vulkan/vulkan-shaders/diag.comp",
+        "artifact": "build/benchmark-results/measurement-gaps/fixed-repack-shader-difference",
+        "library": "lib/arm64-v8a/libggml-vulkan.so",
+        "changedBytes": 22,
+        "detail": "Twenty build-ID bytes plus two embedded diag_f16_data bytes differ. OpConstant float32 result344 changes +infinity to zero; candidate zero matches the source's zero branch. Code section and remaining ELF sections match except rodata/build-ID.",
+        "interpretation": "Cause of inconsistent compiled constant is unproven. DIAG is absent in saved Qwen timestamp graphs; wider shader correctness/reproducibility is untested."
+      }
+    }
+  },
+  "nativeAttribution": {
+    "archive": "build/benchmark-results/measurement-gaps/simpleperf-cpu",
+    "method": "NDK Simpleperf task-clock at 99 Hz, DWARF stacks and matching native binary cache. Diagnostic sample counts are not elapsed-time percentages; ancestor counts overlap.",
+    "coverage": {
+      "samples": 2543,
+      "samplesWithAncestors": 2542,
+      "samplesWithLlamaOrGgml": 2167,
+      "unknownLeafSamples": 0,
+      "validNativeAttribution": true
+    },
+    "loadSamples": 296,
+    "repackBufferSetTensorSamples": 239,
+    "repackShareOfLoadSamplesPercent": 80.74,
+    "q4KRepackSamples": 162,
+    "q6KRepackSamples": 76,
+    "preflightSamples": 63,
+    "preflightVocabularySamples": 34,
+    "preflightMetadataSamples": 17,
+    "perfettoLinuxPerfLimitation": "CPU journey contains 3010 sample rows but zero call stacks, so its sampling-quality gate fails; Simpleperf supplies native attribution."
+  },
+  "checksum": {
+    "steadyPayloadChecksumSpans": {
+      "native-cpu-journey": {
+        "payloadChecksumSpans": 0,
+        "caraMLSpans": 129
+      },
+      "vulkan-timestamps": {
+        "payloadChecksumSpans": 0,
+        "caraMLSpans": 130
+      },
+      "vulkan-modern-timestamps": {
+        "payloadChecksumSpans": 0,
+        "caraMLSpans": 130
+      }
+    },
+    "sha256Samples": 15,
+    "sha256SamplesAttributedToHarnessApkIdentity": 14,
+    "unattributedSha256Samples": 1,
+    "interpretation": "No model-payload checksum spans in these steady installed-load journeys; observed SHA activity primarily hashes the APK for benchmark identity outside timed load. Absence of sampling alone is not proof; traces agree with the explicit lightweight load policy and payload-read avoidance tests.",
+    "priorMeasuredFullAppLoadBeforeMedianMs": 20315,
+    "priorMeasuredFullAppLoadAfterMedianMs": 3287,
+    "priorResult": "benchmarks/android/results/pixel9-minimal-verification-2026-10-23.json",
+    "policy": "Publication and interrupted-write recovery still verify payload checksums. Same-size post-publication corruption may be undetected by normal loading."
+  },
+  "vulkanCompiler": {
+    "decision": "Modern compiler remains opt-in and is not promoted to the default; NDK remains the default pending MMVQ follow-up and valid untraced comparisons.",
+    "modernVersion": "Shaderc 2026.4",
+    "compilerSha256": "ef6aea5364148300762b81437afd409a3b907af92fcfffce0c78995a2aa6530f",
+    "buildMetadata": "build/benchmark-results/measurement-gaps/vulkan-modern-build-metadata",
+    "featureProbesPassed": 7,
+    "featureProbesTotal": 7,
+    "arm64CompileFeatures": [
+      "GGML_VULKAN_COOPMAT_GLSLC_SUPPORT",
+      "GGML_VULKAN_INTEGER_DOT_GLSLC_SUPPORT"
+    ],
+    "x86Backend": "CPU",
+    "captures": {
+      "vulkan-timestamps": {
+        "archive": "build/benchmark-results/measurement-gaps/vulkan-timestamps",
+        "apkSha256": "53a982bf4ed79bf284b0018c7b8d9711fdfe4bb653256d5c43e55924bedfd310",
+        "diagnosticOnly": true,
+        "captureProfile": "full",
+        "traceQuality": {
+          "valid": false,
+          "errors": [
+            {
+              "name": "slice_drop_overlapping_complete_event",
+              "index": null,
+              "value": 3,
+              "severity": "error"
+            }
+          ],
+          "appNativeSpans": 78,
+          "appRssSamples": 620,
+          "incompleteCaraMLSpans": 0
+        },
+        "wholeLoadMs": 6795,
+        "loggedConfig": "t=4/4,b=256,ctx=4096,gpu=37,kv=1/1,fa=-1,kleidi=1",
+        "ttftMs": [
+          3274,
+          3245,
+          3265
+        ],
+        "decodeTps": [
+          9.154598141409684,
+          8.88473655226044,
+          8.97229344888058
+        ],
+        "contentSha256": [
+          "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6"
+        ]
+      },
+      "vulkan-modern-timestamps": {
+        "archive": "build/benchmark-results/measurement-gaps/vulkan-modern-timestamps",
+        "apkSha256": "502a9e82557097cbe65e1fc214927bd487a1022d2767722215b2c31f2aee1594",
+        "diagnosticOnly": true,
+        "captureProfile": "native-only",
+        "traceQuality": {
+          "valid": true,
+          "errors": [],
+          "appNativeSpans": 78,
+          "appRssSamples": 635,
+          "incompleteCaraMLSpans": 0
+        },
+        "wholeLoadMs": 8531,
+        "loggedConfig": "t=4/4,b=256,ctx=4096,gpu=37,kv=1/1,fa=-1,kleidi=1,ub=64,offloadKqv=true,autoFit=true",
+        "ttftMs": [
+          2975,
+          2961,
+          2956
+        ],
+        "decodeTps": [
+          6.712138142400043,
+          6.627053247600319,
+          6.781542495980934
+        ],
+        "contentSha256": [
+          "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6"
+        ]
+      }
+    },
+    "gpuGraphMedianComparison": {
+      "prefill_n11": {
+        "oldMedianMs": 3075.5,
+        "modernMedianMs": 2781.63,
+        "changePercent": -9.555194277353273
+      },
+      "prefill_n22": {
+        "oldMedianMs": 3116.17,
+        "modernMedianMs": 2784.43,
+        "changePercent": -10.645760661324644
+      },
+      "decode_n1": {
+        "oldMedianMs": 99.3674,
+        "modernMedianMs": 137.4335,
+        "changePercent": 38.308439186292496
+      }
+    },
+    "kernelInterpretation": "Old prefill MUL_MAT accounts for 99.50% of system and 98.84% of user GPU graphs. Modern prefill improves about 10%, while decode GPU duration regresses 38.31%; Q4_K vector kernels regress 56\u201365%, Q6_K remains nearly unchanged.",
+    "loadInterpretation": [
+      "Initial modelFileLoad increases from 1356 to 3360 ms: modern includes 1041 ms disk wait versus 178 ms originally, plus 2223 ms running versus 1162 ms. Reload reverses the result: 1442 ms modern versus 2291 ms original. This does not establish a persistent load regression or shader compilation as its cause.",
+      "First systemPrefill gets shorter, from 3982 to 3711 ms; contextInitialize changes from 51 to 67 ms. The first modern system GPU graph takes 3249 ms versus subsequent 2780\u20132782 ms, including a one-off ~469 ms Q4_K 2048\u00d72048 kernel slowdown. GPU timestamps do not establish the warmup mechanism."
+    ],
+    "nextExperiment": {
+      "environment": "GGML_VK_DISABLE_MMVQ=1",
+      "purpose": "Disable integer-dot vector path while preserving prefill integer-dot kernels; test on same APK before changing defaults.",
+      "status": "Not run",
+      "source": "libraries/llama.cpp/ggml/src/ggml-vulkan/ggml-vulkan.cpp:6312"
+    },
+    "loggingLimitation": "gpu-operations.txt contains only Vulkan Timings blocks, no backend initialization capability line. ggml_vk_print_gpu_info emits GGML_LOG_DEBUG, while sanitized_upstream_log drops all non-WARN/ERROR. stderr redirection does not restore these discarded messages.",
+    "limits": [
+      "Timestamp logger adds synchronization; compare timestamped runs only with timestamped runs. The old untraced ~6 s TTFT is not comparable to modern ~3 s timestamped TTFT.",
+      "Three graph repetitions share one process per compiler; not three independent performance trials.",
+      "Old full Perfetto trace failed on three overlap errors; standalone GPU operation log is independently parsed. Native-only modern trace passed without suppressing errors.",
+      "Short greedy outputs match; general model accuracy, long-context correctness and sustained decode are untested.",
+      "Runtime selected cooperative-matrix shape is not directly logged; compile-time macros and advertised device features do not prove selected kernels."
+    ],
+    "untracedFollowup": {
+      "archive": "build/benchmark-results/journey-matrix/20261023T184825.698916Z-after-modern-glslc-vulkan",
+      "accepted": false,
+      "completedTrials": 0,
+      "status": "Interrupted before any completed trial; no untraced modern-compiler latency claim."
+    }
+  },
+  "remainingAccuracyGaps": [
+    "The fixed-plan CPU pilot is complete (three valid runs per build); repeat with more trials and counterbalanced build order before treating the observed 24.0% median reduction as a general bound.",
+    "Isolate MMVQ, then integer-dot/cooperative-matrix flags if necessary; validate short and long output quality and sustained throughput.",
+    "Capture targeted safe runtime pipeline selection and compile timing before attributing load cost to shader compilation.",
+    "Perfetto native unwinding is unresolved on this device; Simpleperf is the validated fallback.",
+    "No heap-allocation attribution, continuous GPU frequency/throttle attribution, or Perfetto GPU execution source is available in these captures.",
+    "Cold-storage behavior, release performance, publication/recovery hashing and real inference plus scrolling remain separate workloads.",
+    "Investigate the default-NDK diag_f16 SPIR-V constant difference between frozen-source rebuilds; DIAG is absent in saved Qwen GPU logs, but wider shader correctness and reproducibility are untested."
+  ]
+}

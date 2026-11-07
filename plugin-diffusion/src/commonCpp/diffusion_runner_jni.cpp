@@ -161,6 +161,7 @@ struct OwnedDiffusionModelConfig {
         const jfieldID flowShift = env->GetFieldID(clazz, "flowShift", "F");
         const jfieldID nThreads = env->GetFieldID(clazz, "nThreads", "I");
         const jfieldID prediction = env->GetFieldID(clazz, "prediction", "I");
+        const jfieldID samplingScheduler = env->GetFieldID(clazz, "samplingScheduler", "I");
         const jfieldID taesdPath = env->GetFieldID(clazz, "taesdPath", "Ljava/lang/String;");
         const jfieldID vaeTiling = env->GetFieldID(clazz, "vaeTiling", "Z");
         const jfieldID maxVram = env->GetFieldID(clazz, "maxVram", "Ljava/lang/String;");
@@ -171,7 +172,7 @@ struct OwnedDiffusionModelConfig {
         const bool fields_ok = modelPath && vaePath && llmPath && clipLPath && clipGPath &&
                 t5xxlPath && runtimeBackend && offloadToCpu && keepClipOnCpu && keepVaeOnCpu &&
                 diffusionFlashAttn && enableMmap && diffusionConvDirect &&
-                freeParamsImmediately && wtype && flowShift && nThreads && prediction &&
+                freeParamsImmediately && wtype && flowShift && nThreads && prediction && samplingScheduler &&
                 taesdPath && vaeTiling && maxVram && segmentedCompute && prefetch && autoFit &&
                 !env->ExceptionCheck();
         if (!fields_ok) {
@@ -211,6 +212,7 @@ struct OwnedDiffusionModelConfig {
         values.flow_shift_is_set = !std::isinf(values.flow_shift);
         values.n_threads = env->GetIntField(source, nThreads);
         values.prediction = env->GetIntField(source, prediction);
+        values.sampling_scheduler = env->GetIntField(source, samplingScheduler);
         values.taesd_path = taesd_path.c_str();
         values.vae_tiling = env->GetBooleanField(source, vaeTiling);
         values.max_vram = max_vram.c_str();

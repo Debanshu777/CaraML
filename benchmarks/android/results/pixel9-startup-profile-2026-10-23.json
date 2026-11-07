@@ -1,0 +1,1133 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-23",
+  "classification": "local-measured-improvement-not-regression-budget",
+  "notes": [
+    "Each measured case has ten cold-process launches; thermal endpoints are normal. Thermal status was not sampled continuously.",
+    "Compare library-only Partial(Require) against app-plus-library Partial(Require) for the incremental app-profile effect.",
+    "The larger comparison against CompilationMode.None includes library profile benefits.",
+    "TTID measures first display, not fully drawn readiness or inference latency.",
+    "The first profile comparison used an intentional warmup-test assumption that AGP reported as an XML failure although measured cases passed. The confirmation uses annotation filtering and has two tests, zero failures or skips.",
+    "The incomplete startup-profile-after archive is excluded; completeness validation now rejects missing cases."
+  ],
+  "runs": {
+    "clean_before": {
+      "archive": "build/benchmark-results/android-ui/20261023T155300.676388Z-startup-before",
+      "apkSha256": "f4fafbdbeeb227f112d1cb064da41394737ab4db608503132daff1f80280b335",
+      "appProfileSha256": null,
+      "sourceRevision": "b1dc4169ab8918776c30f85fc468aad83628754d",
+      "sourceWorkingTreeDirty": true,
+      "thermalStatusBefore": 0,
+      "thermalStatusAfter": 0,
+      "measurementValid": true,
+      "benchmarks": [
+        {
+          "name": "coldWarmupProfile",
+          "params": {},
+          "className": "com.debanshu777.caraml.benchmark.tests.StartupBenchmark",
+          "totalRunTimeNs": 137860580960,
+          "metrics": {
+            "timeToInitialDisplayMs": {
+              "minimum": 409.729208,
+              "maximum": 462.255575,
+              "median": 436.8156535,
+              "coefficientOfVariation": 0.03646304994610265,
+              "runs": [
+                409.729208,
+                441.515788,
+                419.967896,
+                432.227295,
+                445.840373,
+                437.433024,
+                462.255575,
+                447.284343,
+                416.828451,
+                436.198283
+              ]
+            }
+          },
+          "sampledMetrics": {},
+          "warmupIterations": 3,
+          "repeatIterations": 10,
+          "thermalThrottleSleepSeconds": 0
+        },
+        {
+          "name": "coldNoCompilation",
+          "params": {},
+          "className": "com.debanshu777.caraml.benchmark.tests.StartupBenchmark",
+          "totalRunTimeNs": 111009233168,
+          "metrics": {
+            "timeToInitialDisplayMs": {
+              "minimum": 533.630534,
+              "maximum": 579.179525,
+              "median": 544.758159,
+              "coefficientOfVariation": 0.025431806308618816,
+              "runs": [
+                534.997926,
+                546.199667,
+                554.243856,
+                558.315348,
+                579.179525,
+                561.194418,
+                533.630534,
+                543.316651,
+                540.053589,
+                543.259929
+              ]
+            }
+          },
+          "sampledMetrics": {},
+          "warmupIterations": 0,
+          "repeatIterations": 10,
+          "thermalThrottleSleepSeconds": 0
+        }
+      ],
+      "traceSummary": {
+        "StartupBenchmark_coldNoCompilation": {
+          "AndroidOwner:onLayout": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 6.304301000000001,
+            "totalMsMin": 6.108235,
+            "totalMsMax": 6.846558
+          },
+          "AndroidOwner:onMeasure": {
+            "tracesWithMetric": 10,
+            "countTotal": 20,
+            "totalMsMedian": 124.65358499999999,
+            "totalMsMin": 122.621176,
+            "totalMsMax": 136.101684
+          },
+          "Compose:initializeView": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 10.937581,
+            "totalMsMin": 10.198283,
+            "totalMsMax": 14.435872
+          },
+          "Compose:recompose": {
+            "tracesWithMetric": 10,
+            "countTotal": 160,
+            "totalMsMedian": 118.32090249999999,
+            "totalMsMin": 117.468875,
+            "totalMsMax": 130.317869
+          },
+          "CreateGraphicsPipeline-CompileAfterCacheMiss": {
+            "tracesWithMetric": 10,
+            "countTotal": 270,
+            "totalMsMedian": 116.6975315,
+            "totalMsMin": 112.488526,
+            "totalMsMax": 119.886067
+          },
+          "RenderThread:firstDraw": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 161.4293825,
+            "totalMsMin": 150.685751,
+            "totalMsMax": 165.871338
+          },
+          "activityResume": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 11.914246,
+            "totalMsMin": 10.466797,
+            "totalMsMax": 17.943848
+          },
+          "activityStart": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 14.071655499999999,
+            "totalMsMin": 11.659505,
+            "totalMsMax": 21.510498
+          },
+          "bindApplication": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 87.121765,
+            "totalMsMin": 82.952108,
+            "totalMsMax": 91.931885
+          },
+          "startup:TTID": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 546.9025675,
+            "totalMsMin": 535.807007,
+            "totalMsMax": 581.649699
+          },
+          "main:state:D": {
+            "tracesWithMetric": 10,
+            "countTotal": 2474,
+            "totalMsMedian": 55.431838,
+            "totalMsMin": 53.019287,
+            "totalMsMax": 61.543252
+          },
+          "main:state:R": {
+            "tracesWithMetric": 10,
+            "countTotal": 3492,
+            "totalMsMedian": 11.287241999999999,
+            "totalMsMin": 6.855193,
+            "totalMsMax": 16.246705
+          },
+          "main:state:R+": {
+            "tracesWithMetric": 10,
+            "countTotal": 1555,
+            "totalMsMedian": 5.647645000000001,
+            "totalMsMin": 3.745723,
+            "totalMsMax": 8.379683
+          },
+          "main:state:Running": {
+            "tracesWithMetric": 10,
+            "countTotal": 5095,
+            "totalMsMedian": 245.348862,
+            "totalMsMin": 238.058101,
+            "totalMsMax": 257.858447
+          },
+          "main:state:S": {
+            "tracesWithMetric": 10,
+            "countTotal": 806,
+            "totalMsMedian": 185.62839400000001,
+            "totalMsMin": 172.388548,
+            "totalMsMax": 194.263595
+          }
+        },
+        "StartupBenchmark_coldWarmupProfile": {
+          "AndroidOwner:onLayout": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 0.9575805,
+            "totalMsMin": 0.853638,
+            "totalMsMax": 1.659139
+          },
+          "AndroidOwner:onMeasure": {
+            "tracesWithMetric": 10,
+            "countTotal": 20,
+            "totalMsMedian": 64.87727849999999,
+            "totalMsMin": 61.45581,
+            "totalMsMax": 68.781453
+          },
+          "Compose:initializeView": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 2.4911095,
+            "totalMsMin": 2.397094,
+            "totalMsMax": 3.505615
+          },
+          "Compose:recompose": {
+            "tracesWithMetric": 10,
+            "countTotal": 175,
+            "totalMsMedian": 58.3896465,
+            "totalMsMin": 55.810911,
+            "totalMsMax": 61.82088
+          },
+          "CreateGraphicsPipeline-CompileAfterCacheMiss": {
+            "tracesWithMetric": 10,
+            "countTotal": 270,
+            "totalMsMedian": 118.893555,
+            "totalMsMin": 112.736777,
+            "totalMsMax": 122.363606
+          },
+          "RenderThread:firstDraw": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 163.29638649999998,
+            "totalMsMin": 156.175944,
+            "totalMsMax": 173.091309
+          },
+          "activityResume": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 14.147848,
+            "totalMsMin": 12.346802,
+            "totalMsMax": 20.391968
+          },
+          "activityStart": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 9.2109175,
+            "totalMsMin": 7.047323,
+            "totalMsMax": 12.876139
+          },
+          "bindApplication": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 82.780965,
+            "totalMsMin": 75.655843,
+            "totalMsMax": 97.228272
+          },
+          "startup:TTID": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 438.905986,
+            "totalMsMin": 411.921631,
+            "totalMsMax": 464.156413
+          },
+          "main:state:D": {
+            "tracesWithMetric": 10,
+            "countTotal": 2547,
+            "totalMsMedian": 64.250467,
+            "totalMsMin": 51.518193,
+            "totalMsMax": 70.551998
+          },
+          "main:state:R": {
+            "tracesWithMetric": 10,
+            "countTotal": 3441,
+            "totalMsMedian": 10.5361935,
+            "totalMsMin": 6.430702,
+            "totalMsMax": 16.509523
+          },
+          "main:state:R+": {
+            "tracesWithMetric": 10,
+            "countTotal": 1609,
+            "totalMsMedian": 4.3111625,
+            "totalMsMin": 2.520871,
+            "totalMsMax": 6.144739
+          },
+          "main:state:Running": {
+            "tracesWithMetric": 10,
+            "countTotal": 5071,
+            "totalMsMedian": 122.4502905,
+            "totalMsMin": 118.504351,
+            "totalMsMax": 126.406808
+          },
+          "main:state:S": {
+            "tracesWithMetric": 10,
+            "countTotal": 777,
+            "totalMsMedian": 195.218499,
+            "totalMsMin": 176.149004,
+            "totalMsMax": 211.683024
+          }
+        }
+      }
+    },
+    "profile_comparison": {
+      "archive": "build/benchmark-results/android-ui/20261023T160546.848909Z-startup-profile-validated",
+      "apkSha256": "6171bfe9d7bad09d0884c4d4e6c27c82fc385cc96b901b4ef5313a62ca00df07",
+      "appProfileSha256": "dbd6a270b0a313127a79acdf0592c52d1cc9109137bccbec931ad40a6e20e43e",
+      "sourceRevision": "b1dc4169ab8918776c30f85fc468aad83628754d",
+      "sourceWorkingTreeDirty": true,
+      "thermalStatusBefore": 0,
+      "thermalStatusAfter": 0,
+      "measurementValid": true,
+      "benchmarks": [
+        {
+          "name": "coldBaselineProfile",
+          "params": {},
+          "className": "com.debanshu777.caraml.benchmark.tests.StartupBenchmark",
+          "totalRunTimeNs": 97829753059,
+          "metrics": {
+            "timeToInitialDisplayMs": {
+              "minimum": 412.02059,
+              "maximum": 473.17391,
+              "median": 435.47450749999996,
+              "coefficientOfVariation": 0.039541704337275815,
+              "runs": [
+                412.02059,
+                424.270915,
+                434.331868,
+                440.515666,
+                442.76469,
+                436.617147,
+                419.986938,
+                452.385783,
+                473.17391,
+                433.383505
+              ]
+            }
+          },
+          "sampledMetrics": {},
+          "warmupIterations": 0,
+          "repeatIterations": 10,
+          "thermalThrottleSleepSeconds": 0
+        },
+        {
+          "name": "coldNoCompilation",
+          "params": {},
+          "className": "com.debanshu777.caraml.benchmark.tests.StartupBenchmark",
+          "totalRunTimeNs": 113429325739,
+          "metrics": {
+            "timeToInitialDisplayMs": {
+              "minimum": 516.53947,
+              "maximum": 564.442668,
+              "median": 548.5080975,
+              "coefficientOfVariation": 0.03032908726495051,
+              "runs": [
+                516.53947,
+                521.008992,
+                545.141317,
+                560.99524,
+                532.899821,
+                545.553508,
+                551.462687,
+                551.469442,
+                564.442668,
+                559.434001
+              ]
+            }
+          },
+          "sampledMetrics": {},
+          "warmupIterations": 0,
+          "repeatIterations": 10,
+          "thermalThrottleSleepSeconds": 0
+        }
+      ],
+      "traceSummary": {
+        "StartupBenchmark_coldBaselineProfile": {
+          "AndroidOwner:onLayout": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 1.0147905000000002,
+            "totalMsMin": 0.965821,
+            "totalMsMax": 1.037435
+          },
+          "AndroidOwner:onMeasure": {
+            "tracesWithMetric": 10,
+            "countTotal": 20,
+            "totalMsMedian": 65.932963,
+            "totalMsMin": 62.50301,
+            "totalMsMax": 69.592488
+          },
+          "Compose:initializeView": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 3.9320885,
+            "totalMsMin": 3.244547,
+            "totalMsMax": 5.925578
+          },
+          "Compose:recompose": {
+            "tracesWithMetric": 10,
+            "countTotal": 175,
+            "totalMsMedian": 60.382731,
+            "totalMsMin": 57.193766,
+            "totalMsMax": 64.035603
+          },
+          "CreateGraphicsPipeline-CompileAfterCacheMiss": {
+            "tracesWithMetric": 10,
+            "countTotal": 270,
+            "totalMsMedian": 119.052815,
+            "totalMsMin": 110.061893,
+            "totalMsMax": 121.515011
+          },
+          "RenderThread:firstDraw": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 165.1052455,
+            "totalMsMin": 147.896566,
+            "totalMsMax": 167.194905
+          },
+          "activityResume": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 11.678548,
+            "totalMsMin": 10.205038,
+            "totalMsMax": 16.831461
+          },
+          "activityStart": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 10.898946,
+            "totalMsMin": 9.425984,
+            "totalMsMax": 13.125326
+          },
+          "bindApplication": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 76.8098145,
+            "totalMsMin": 66.147339,
+            "totalMsMax": 95.318644
+          },
+          "startup:TTID": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 437.69309499999997,
+            "totalMsMin": 414.535157,
+            "totalMsMax": 475.109253
+          },
+          "main:state:D": {
+            "tracesWithMetric": 10,
+            "countTotal": 2650,
+            "totalMsMedian": 56.489995,
+            "totalMsMin": 52.088904,
+            "totalMsMax": 61.516275
+          },
+          "main:state:R": {
+            "tracesWithMetric": 10,
+            "countTotal": 3525,
+            "totalMsMedian": 10.08004,
+            "totalMsMin": 7.769453,
+            "totalMsMax": 13.934515
+          },
+          "main:state:R+": {
+            "tracesWithMetric": 10,
+            "countTotal": 1707,
+            "totalMsMedian": 4.5396665,
+            "totalMsMin": 2.224576,
+            "totalMsMax": 8.035034
+          },
+          "main:state:Running": {
+            "tracesWithMetric": 10,
+            "countTotal": 5329,
+            "totalMsMedian": 127.0663065,
+            "totalMsMin": 122.012654,
+            "totalMsMax": 139.125772
+          },
+          "main:state:S": {
+            "tracesWithMetric": 10,
+            "countTotal": 785,
+            "totalMsMedian": 192.5860015,
+            "totalMsMin": 179.591636,
+            "totalMsMax": 201.224045
+          }
+        },
+        "StartupBenchmark_coldNoCompilation": {
+          "AndroidOwner:onLayout": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 6.503052,
+            "totalMsMin": 6.263712,
+            "totalMsMax": 8.120442
+          },
+          "AndroidOwner:onMeasure": {
+            "tracesWithMetric": 10,
+            "countTotal": 20,
+            "totalMsMedian": 127.0998535,
+            "totalMsMin": 123.270101,
+            "totalMsMax": 132.976196
+          },
+          "Compose:initializeView": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 11.2170205,
+            "totalMsMin": 10.399902,
+            "totalMsMax": 14.399943
+          },
+          "Compose:recompose": {
+            "tracesWithMetric": 10,
+            "countTotal": 160,
+            "totalMsMedian": 120.32332550000001,
+            "totalMsMin": 117.570515,
+            "totalMsMax": 130.3254
+          },
+          "CreateGraphicsPipeline-CompileAfterCacheMiss": {
+            "tracesWithMetric": 10,
+            "countTotal": 270,
+            "totalMsMedian": 115.092368,
+            "totalMsMin": 103.150349,
+            "totalMsMax": 117.341432
+          },
+          "RenderThread:firstDraw": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 159.2594605,
+            "totalMsMin": 139.009807,
+            "totalMsMax": 162.582601
+          },
+          "activityResume": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 11.734497000000001,
+            "totalMsMin": 10.396809,
+            "totalMsMax": 19.173055
+          },
+          "activityStart": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 15.018005500000001,
+            "totalMsMin": 12.326497,
+            "totalMsMax": 18.328857
+          },
+          "bindApplication": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 83.8453165,
+            "totalMsMin": 76.267985,
+            "totalMsMax": 89.689453
+          },
+          "startup:TTID": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 550.567627,
+            "totalMsMin": 518.406942,
+            "totalMsMax": 566.441488
+          },
+          "main:state:D": {
+            "tracesWithMetric": 10,
+            "countTotal": 2375,
+            "totalMsMedian": 51.334865,
+            "totalMsMin": 43.826492,
+            "totalMsMax": 53.460979
+          },
+          "main:state:R": {
+            "tracesWithMetric": 10,
+            "countTotal": 3352,
+            "totalMsMedian": 11.239057500000001,
+            "totalMsMin": 8.57421,
+            "totalMsMax": 13.69978
+          },
+          "main:state:R+": {
+            "tracesWithMetric": 10,
+            "countTotal": 1713,
+            "totalMsMedian": 5.1066225,
+            "totalMsMin": 3.9196,
+            "totalMsMax": 7.175058
+          },
+          "main:state:Running": {
+            "tracesWithMetric": 10,
+            "countTotal": 5119,
+            "totalMsMedian": 249.7208715,
+            "totalMsMin": 243.055858,
+            "totalMsMax": 258.599577
+          },
+          "main:state:S": {
+            "tracesWithMetric": 10,
+            "countTotal": 807,
+            "totalMsMedian": 187.8463345,
+            "totalMsMin": 157.900514,
+            "totalMsMax": 201.106978
+          }
+        }
+      }
+    },
+    "library_only_control": {
+      "archive": "build/benchmark-results/android-ui/20261023T161141.693161Z-startup-library-profile-control",
+      "apkSha256": "191eff3c81bf81b7f0af46f8387c75d66e560aeef6c8988e273476c06446ae85",
+      "appProfileSha256": null,
+      "sourceRevision": "b1dc4169ab8918776c30f85fc468aad83628754d",
+      "sourceWorkingTreeDirty": true,
+      "thermalStatusBefore": 0,
+      "thermalStatusAfter": 0,
+      "measurementValid": true,
+      "benchmarks": [
+        {
+          "name": "coldBaselineProfile",
+          "params": {},
+          "className": "com.debanshu777.caraml.benchmark.tests.StartupBenchmark",
+          "totalRunTimeNs": 98759948738,
+          "metrics": {
+            "timeToInitialDisplayMs": {
+              "minimum": 492.339966,
+              "maximum": 531.029989,
+              "median": 524.96344,
+              "coefficientOfVariation": 0.021103279968704706,
+              "runs": [
+                492.339966,
+                531.029989,
+                520.631266,
+                527.128459,
+                523.411295,
+                528.082968,
+                523.127848,
+                526.515585,
+                528.61438,
+                523.386109
+              ]
+            }
+          },
+          "sampledMetrics": {},
+          "warmupIterations": 0,
+          "repeatIterations": 10,
+          "thermalThrottleSleepSeconds": 0
+        }
+      ],
+      "traceSummary": {
+        "StartupBenchmark_coldBaselineProfile": {
+          "AndroidOwner:onLayout": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 2.219035,
+            "totalMsMin": 1.999268,
+            "totalMsMax": 4.554972
+          },
+          "AndroidOwner:onMeasure": {
+            "tracesWithMetric": 10,
+            "countTotal": 20,
+            "totalMsMedian": 93.4678955,
+            "totalMsMin": 89.827393,
+            "totalMsMax": 102.187663
+          },
+          "Compose:initializeView": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 8.0556235,
+            "totalMsMin": 7.891195,
+            "totalMsMax": 8.826986
+          },
+          "Compose:recompose": {
+            "tracesWithMetric": 10,
+            "countTotal": 160,
+            "totalMsMedian": 96.9717205,
+            "totalMsMin": 93.544271,
+            "totalMsMax": 103.076984
+          },
+          "CreateGraphicsPipeline-CompileAfterCacheMiss": {
+            "tracesWithMetric": 10,
+            "countTotal": 270,
+            "totalMsMedian": 115.366661,
+            "totalMsMin": 105.3029,
+            "totalMsMax": 119.559654
+          },
+          "RenderThread:firstDraw": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 162.5069985,
+            "totalMsMin": 143.982747,
+            "totalMsMax": 164.750325
+          },
+          "activityResume": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 11.1257325,
+            "totalMsMin": 8.287801,
+            "totalMsMax": 13.092774
+          },
+          "activityStart": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 11.258606,
+            "totalMsMin": 10.462972,
+            "totalMsMax": 16.415772
+          },
+          "bindApplication": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 118.8517865,
+            "totalMsMin": 115.041219,
+            "totalMsMax": 123.850912
+          },
+          "startup:TTID": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 527.796143,
+            "totalMsMin": 494.175131,
+            "totalMsMax": 532.970622
+          },
+          "main:state:D": {
+            "tracesWithMetric": 10,
+            "countTotal": 3985,
+            "totalMsMedian": 81.843764,
+            "totalMsMin": 79.47953,
+            "totalMsMax": 85.035931
+          },
+          "main:state:R": {
+            "tracesWithMetric": 10,
+            "countTotal": 5052,
+            "totalMsMedian": 15.1833315,
+            "totalMsMin": 12.200919,
+            "totalMsMax": 21.214153
+          },
+          "main:state:R+": {
+            "tracesWithMetric": 10,
+            "countTotal": 1899,
+            "totalMsMedian": 5.586238,
+            "totalMsMin": 3.136476,
+            "totalMsMax": 7.008866
+          },
+          "main:state:Running": {
+            "tracesWithMetric": 10,
+            "countTotal": 6995,
+            "totalMsMedian": 193.042532,
+            "totalMsMin": 187.215375,
+            "totalMsMax": 200.831264
+          },
+          "main:state:S": {
+            "tracesWithMetric": 10,
+            "countTotal": 798,
+            "totalMsMedian": 186.0424805,
+            "totalMsMin": 165.747194,
+            "totalMsMax": 189.807088
+          }
+        }
+      }
+    },
+    "profile_confirmation": {
+      "archive": "build/benchmark-results/android-ui/20261023T161551.533050Z-startup-profile-confirmation",
+      "apkSha256": "6171bfe9d7bad09d0884c4d4e6c27c82fc385cc96b901b4ef5313a62ca00df07",
+      "appProfileSha256": "dbd6a270b0a313127a79acdf0592c52d1cc9109137bccbec931ad40a6e20e43e",
+      "sourceRevision": "b1dc4169ab8918776c30f85fc468aad83628754d",
+      "sourceWorkingTreeDirty": true,
+      "thermalStatusBefore": 0,
+      "thermalStatusAfter": 0,
+      "measurementValid": true,
+      "benchmarks": [
+        {
+          "name": "coldBaselineProfile",
+          "params": {},
+          "className": "com.debanshu777.caraml.benchmark.tests.StartupBenchmark",
+          "totalRunTimeNs": 98488095996,
+          "metrics": {
+            "timeToInitialDisplayMs": {
+              "minimum": 418.879517,
+              "maximum": 467.406739,
+              "median": 448.6131795,
+              "coefficientOfVariation": 0.033297775574312356,
+              "runs": [
+                418.879517,
+                454.037069,
+                448.051351,
+                436.673747,
+                467.406739,
+                433.773926,
+                456.080608,
+                449.175008,
+                466.206869,
+                444.700154
+              ]
+            }
+          },
+          "sampledMetrics": {},
+          "warmupIterations": 0,
+          "repeatIterations": 10,
+          "thermalThrottleSleepSeconds": 0
+        },
+        {
+          "name": "coldNoCompilation",
+          "params": {},
+          "className": "com.debanshu777.caraml.benchmark.tests.StartupBenchmark",
+          "totalRunTimeNs": 109220453911,
+          "metrics": {
+            "timeToInitialDisplayMs": {
+              "minimum": 512.842855,
+              "maximum": 572.534465,
+              "median": 546.455689,
+              "coefficientOfVariation": 0.028370705017601253,
+              "runs": [
+                512.842855,
+                545.263021,
+                547.503378,
+                544.286092,
+                572.534465,
+                552.315919,
+                563.65975,
+                545.408,
+                554.16451,
+                544.788208
+              ]
+            }
+          },
+          "sampledMetrics": {},
+          "warmupIterations": 0,
+          "repeatIterations": 10,
+          "thermalThrottleSleepSeconds": 0
+        }
+      ],
+      "traceSummary": {
+        "StartupBenchmark_coldBaselineProfile": {
+          "AndroidOwner:onLayout": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 1.0018305,
+            "totalMsMin": 0.963379,
+            "totalMsMax": 1.058838
+          },
+          "AndroidOwner:onMeasure": {
+            "tracesWithMetric": 10,
+            "countTotal": 20,
+            "totalMsMedian": 66.117513,
+            "totalMsMin": 62.39978,
+            "totalMsMax": 70.210408
+          },
+          "Compose:initializeView": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 3.339722,
+            "totalMsMin": 3.140829,
+            "totalMsMax": 4.380167
+          },
+          "Compose:recompose": {
+            "tracesWithMetric": 10,
+            "countTotal": 167,
+            "totalMsMedian": 59.202169,
+            "totalMsMin": 56.931315,
+            "totalMsMax": 61.329631
+          },
+          "CreateGraphicsPipeline-CompileAfterCacheMiss": {
+            "tracesWithMetric": 10,
+            "countTotal": 270,
+            "totalMsMedian": 118.643227,
+            "totalMsMin": 111.786088,
+            "totalMsMax": 122.28837
+          },
+          "RenderThread:firstDraw": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 164.926066,
+            "totalMsMin": 151.149984,
+            "totalMsMax": 169.27177
+          },
+          "activityResume": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 12.235555,
+            "totalMsMin": 9.111043,
+            "totalMsMax": 18.981323
+          },
+          "activityStart": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 9.1361695,
+            "totalMsMin": 8.083292,
+            "totalMsMax": 18.878093
+          },
+          "bindApplication": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 91.0356855,
+            "totalMsMin": 63.989665,
+            "totalMsMax": 100.999471
+          },
+          "startup:TTID": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 450.67008450000003,
+            "totalMsMin": 420.897868,
+            "totalMsMax": 469.386231
+          },
+          "main:state:D": {
+            "tracesWithMetric": 10,
+            "countTotal": 2591,
+            "totalMsMedian": 64.305236,
+            "totalMsMin": 54.911978,
+            "totalMsMax": 75.703167
+          },
+          "main:state:R": {
+            "tracesWithMetric": 10,
+            "countTotal": 3550,
+            "totalMsMedian": 10.1489695,
+            "totalMsMin": 4.745487,
+            "totalMsMax": 15.031776
+          },
+          "main:state:R+": {
+            "tracesWithMetric": 10,
+            "countTotal": 1776,
+            "totalMsMedian": 5.994282999999999,
+            "totalMsMin": 2.843019,
+            "totalMsMax": 10.046715
+          },
+          "main:state:Running": {
+            "tracesWithMetric": 10,
+            "countTotal": 5362,
+            "totalMsMedian": 131.870826,
+            "totalMsMin": 116.761444,
+            "totalMsMax": 137.141691
+          },
+          "main:state:S": {
+            "tracesWithMetric": 10,
+            "countTotal": 795,
+            "totalMsMedian": 192.216474,
+            "totalMsMin": 184.318973,
+            "totalMsMax": 208.980629
+          }
+        },
+        "StartupBenchmark_coldNoCompilation": {
+          "AndroidOwner:onLayout": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 6.4162395,
+            "totalMsMin": 6.209513,
+            "totalMsMax": 7.472453
+          },
+          "AndroidOwner:onMeasure": {
+            "tracesWithMetric": 10,
+            "countTotal": 20,
+            "totalMsMedian": 125.137268,
+            "totalMsMin": 122.343709,
+            "totalMsMax": 135.484212
+          },
+          "Compose:initializeView": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 11.062113,
+            "totalMsMin": 10.39624,
+            "totalMsMax": 14.852091
+          },
+          "Compose:recompose": {
+            "tracesWithMetric": 10,
+            "countTotal": 160,
+            "totalMsMedian": 119.00018349999999,
+            "totalMsMin": 117.492962,
+            "totalMsMax": 124.732298
+          },
+          "CreateGraphicsPipeline-CompileAfterCacheMiss": {
+            "tracesWithMetric": 10,
+            "countTotal": 270,
+            "totalMsMedian": 115.3991295,
+            "totalMsMin": 105.123454,
+            "totalMsMax": 124.004028
+          },
+          "RenderThread:firstDraw": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 159.92999300000002,
+            "totalMsMin": 141.916137,
+            "totalMsMax": 169.471232
+          },
+          "activityResume": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 11.3373615,
+            "totalMsMin": 9.775391,
+            "totalMsMax": 15.729492
+          },
+          "activityStart": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 14.755859000000001,
+            "totalMsMin": 12.380452,
+            "totalMsMax": 18.733114
+          },
+          "bindApplication": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 88.117208,
+            "totalMsMin": 82.095215,
+            "totalMsMax": 95.945394
+          },
+          "startup:TTID": {
+            "tracesWithMetric": 10,
+            "countTotal": 10,
+            "totalMsMedian": 549.5221965000001,
+            "totalMsMin": 515.259034,
+            "totalMsMax": 574.374675
+          },
+          "main:state:D": {
+            "tracesWithMetric": 10,
+            "countTotal": 2408,
+            "totalMsMedian": 53.119712500000006,
+            "totalMsMin": 50.614904,
+            "totalMsMax": 62.350595
+          },
+          "main:state:R": {
+            "tracesWithMetric": 10,
+            "countTotal": 3408,
+            "totalMsMedian": 11.1836095,
+            "totalMsMin": 9.91338,
+            "totalMsMax": 13.030237
+          },
+          "main:state:R+": {
+            "tracesWithMetric": 10,
+            "countTotal": 1592,
+            "totalMsMedian": 4.8282074999999995,
+            "totalMsMin": 2.757351,
+            "totalMsMax": 6.894039
+          },
+          "main:state:Running": {
+            "tracesWithMetric": 10,
+            "countTotal": 5041,
+            "totalMsMedian": 249.77135950000002,
+            "totalMsMin": 242.271419,
+            "totalMsMax": 256.310457
+          },
+          "main:state:S": {
+            "tracesWithMetric": 10,
+            "countTotal": 808,
+            "totalMsMedian": 188.479165,
+            "totalMsMin": 163.529988,
+            "totalMsMax": 199.015342
+          }
+        }
+      }
+    }
+  },
+  "device": {
+    "build": {
+      "brand": "google",
+      "device": "tokay",
+      "fingerprint": "google/tokay/tokay:17/CP3A.260905.009/16091614:user/release-keys",
+      "id": "CP3A.260905.009",
+      "model": "Pixel 9",
+      "type": "user",
+      "version": {
+        "codename": "REL",
+        "sdk": 37
+      }
+    },
+    "cpuCoreCount": 8,
+    "cpuLocked": false,
+    "cpuMaxFreqHz": 3105000000,
+    "memTotalBytes": 12133175296,
+    "sustainedPerformanceModeEnabled": false,
+    "artMainlineVersion": 372042580,
+    "osCodenameAbbreviated": "REL",
+    "compilationMode": "run-from-apk",
+    "payload": {}
+  },
+  "profileGeneration": {
+    "archive": "build/benchmark-results/android-ui/20261023T155814.891856Z-startup-profile-generation",
+    "sourceFile": "app/androidApp/src/main/baseline-prof.txt",
+    "sha256": "dbd6a270b0a313127a79acdf0592c52d1cc9109137bccbec931ad40a6e20e43e",
+    "journey": "Real MainActivity startup, empty app data; no scrolling fixture",
+    "stableAtIteration": 6,
+    "includesStartupProfile": false
+  },
+  "incrementalAppProfileEffect": [
+    {
+      "run": "profile_comparison",
+      "controlMedianMs": 524.96344,
+      "candidateMedianMs": 435.47450749999996,
+      "savedMs": 89.48893250000003,
+      "reductionPercent": 17.046698051963393
+    },
+    {
+      "run": "profile_confirmation",
+      "controlMedianMs": 524.96344,
+      "candidateMedianMs": 448.6131795,
+      "savedMs": 76.35026049999999,
+      "reductionPercent": 14.5439195727611
+    }
+  ],
+  "scrollEvidence": {
+    "RenderThread:flush layers": {
+      "tracesWithMetric": 10,
+      "countTotal": 10245,
+      "totalMsMedian": 897.5680355,
+      "totalMsMin": 869.679929,
+      "totalMsMax": 918.352453
+    },
+    "araml.benchmark:AndroidOwner:measureAndLayout": {
+      "tracesWithMetric": 10,
+      "countTotal": 10650,
+      "totalMsMedian": 337.930618,
+      "totalMsMin": 327.025602,
+      "totalMsMax": 348.458073
+    },
+    "araml.benchmark:Compose:recompose": {
+      "tracesWithMetric": 10,
+      "countTotal": 10447,
+      "totalMsMedian": 94.7975345,
+      "totalMsMin": 93.723545,
+      "totalMsMax": 96.256507
+    },
+    "frames:None:On-time Present": {
+      "tracesWithMetric": 10,
+      "countTotal": 10289,
+      "totalMsMedian": 11981.161798500001,
+      "totalMsMin": 11777.253066,
+      "totalMsMax": 12136.10829
+    },
+    "expected_frame_budget": {
+      "tracesWithMetric": 10,
+      "countTotal": 10294,
+      "totalMsMedian": 17089.69936,
+      "totalMsMin": 16981.803074,
+      "totalMsMax": 17197.604246
+    },
+    "frames:App Deadline Missed:Late Present": {
+      "tracesWithMetric": 3,
+      "countTotal": 3,
+      "totalMsMedian": 18.829752,
+      "totalMsMin": 16.20748,
+      "totalMsMax": 18.981609
+    },
+    "frames:Non Animating:Unspecified Present": {
+      "tracesWithMetric": 2,
+      "countTotal": 2,
+      "totalMsMedian": 23.5167845,
+      "totalMsMin": 22.917196,
+      "totalMsMax": 24.116373
+    }
+  },
+  "scrollEvidenceNote": "Historical combined run warmed NORMAL to LIGHT; evidence is diagnostic, not a cooled regression baseline.",
+  "releaseProfileAssets": {
+    "assets/dexopt/baseline.prof": 25838,
+    "assets/dexopt/baseline.profm": 3005
+  }
+}

@@ -24,6 +24,40 @@ import kotlin.test.assertTrue
 
 class DiffusionBundleProjectionTest {
     @Test
+    fun nestedCheckpointsInstallAsOneVerifiedArtifact() {
+        for (path in listOf("old/sd_turbo-q8_0.gguf", "weights/checkpoint.safetensors")) {
+            val checkpoint = ui(identity(path))
+            val unrelated = ui(identity("unet/diffusion_pytorch_model.safetensors"))
+            val selected = selectDiffusionFilesToDownload(listOf(checkpoint, unrelated), path)
+            val metadata = buildDeterministicDiffusionBundleMetadata(
+                selected, emptyList(), null, "stable-diffusion.cpp", "text-to-image",
+            )
+
+            assertEquals(listOf(checkpoint), selected)
+            assertEquals(checkpoint.artifact, metadata.single().artifact)
+            assertEquals("model", metadata.single().logicalRole)
+        }
+    }
+
+    @Test
+    fun diffusersComponentStillSelectsTheMatchingPrecisionBundle() {
+        val paths = listOf(
+            "unet/diffusion_pytorch_model.safetensors",
+            "vae/diffusion_pytorch_model.safetensors",
+            "text_encoder/model.safetensors",
+            "text_encoder_2/model.safetensors",
+        )
+        val fp16 = paths.map { it.replace(".safetensors", ".fp16.safetensors") }
+        val files = (paths + fp16).map { ui(identity(it)) }
+        val selected = selectDiffusionFilesToDownload(files, fp16.first())
+
+        assertEquals(fp16.toSet(), selected.map { it.path }.toSet())
+        assertEquals(4, buildDeterministicDiffusionBundleMetadata(
+            selected, emptyList(), null, "diffusers", "text-to-image",
+        ).size)
+    }
+
+    @Test
     fun durableProjectionKeepsExactTaskVisibleWhenDisplayMetadataIsEnriched() {
         val primary = ui(identity("checkpoint.safetensors"))
         val exact = buildDeterministicDiffusionBundleMetadata(

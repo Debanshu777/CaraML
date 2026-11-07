@@ -1,0 +1,2669 @@
+{
+  "schemaVersion": 1,
+  "reports": [
+    {
+      "archive": "build/benchmark-results/android-ui/20261023T191537.178874Z-v3-stream-before",
+      "metadata": {
+        "label": "v3-stream-before",
+        "fixtureVersion": 3,
+        "apkSha256": "57dc49185a2cffe39ccec2f543a31a87874b687dfa6761130bab2056ca282f8d",
+        "appProfileSha256": "dbd6a270b0a313127a79acdf0592c52d1cc9109137bccbec931ad40a6e20e43e",
+        "fullTracing": false,
+        "softEffectsOverride": "on",
+        "benchmarkR8Enabled": false,
+        "requestedRefreshHz": 60,
+        "scrollWindowMs": 4000,
+        "streamPeriodMs": 100,
+        "messageCount": 200,
+        "batteryTemperatureBeforeC": 33.2,
+        "batteryTemperatureAfterC": 33.6,
+        "thermalStatusBefore": 0,
+        "thermalStatusAfter": 0,
+        "measurementValid": true
+      },
+      "qualityValid": true,
+      "refreshValidation": {
+        "method": "primary display active-mode endpoints; not continuous panel validation",
+        "requestedHz": 60,
+        "valid": true,
+        "endpoints": {
+          "before": {
+            "activeModePeakRefreshHz": 60.0,
+            "modeVsyncHz": 60.0
+          },
+          "after": {
+            "activeModePeakRefreshHz": 60.0,
+            "modeVsyncHz": 60.0
+          }
+        },
+        "reasons": []
+      },
+      "iterations": [
+        {
+          "trace": "results/benchmark/connected/Pixel 9 - 17/ShortChatScrollBenchmark_streamingFling_iter000_2026-10-23-19-17-13.perfetto-trace",
+          "windowMs": 4673.498578,
+          "stream": {
+            "updateCount": 45,
+            "spanMs": 4437.113405,
+            "intervalMs": {
+              "n": 44,
+              "p50": 100.688192,
+              "p90": 101.8361814,
+              "p95": 102.26520620000001,
+              "p99": 102.57634018,
+              "max": 102.695353
+            }
+          },
+          "framePercentilesMs": {
+            "frameDurationCpuMs": {
+              "n": 182,
+              "p50": 5.9546305,
+              "p90": 9.1506465,
+              "p95": 10.274205049999997,
+              "p99": 13.93648181999999,
+              "max": 24.173096
+            },
+            "frameOverrunMs": {
+              "n": 182,
+              "p50": -3.735399,
+              "p90": -0.3905051,
+              "p95": 0.12499774999999787,
+              "p99": 2.839879829999986,
+              "max": 12.334443
+            }
+          },
+          "mainCpuMs": 706.677486,
+          "mainCpuMsPerSecond": 151.20952198993055,
+          "mainRunnableMs": 85.688967,
+          "mainRunnableMsPerSecond": 18.335079292282607,
+          "renderCpuMsPerSecond": 158.38481699437463,
+          "appCpuMsPerSecond": 390.01673876191353,
+          "backgroundGoogleCpuMs": 127.11395800000001,
+          "topConcurrentProcessCpu": [
+            {
+              "process": "com.debanshu777.caraml.benchmark",
+              "pid": 23512,
+              "cpuMs": 1822.742674,
+              "meanCores": 0.390016738761913
+            },
+            {
+              "process": "/system/bin/surfaceflinger",
+              "pid": 532,
+              "cpuMs": 1560.009925,
+              "meanCores": 0.333799165435415
+            },
+            {
+              "process": "system_server",
+              "pid": 26517,
+              "cpuMs": 1098.564038,
+              "meanCores": 0.235062452606999
+            },
+            {
+              "process": "com.debanshu777.caraml.benchmark.tests",
+              "pid": 22728,
+              "cpuMs": 453.247251,
+              "meanCores": 0.0969824304929959
+            },
+            {
+              "process": "/system/bin/traced_probes",
+              "pid": 1215,
+              "cpuMs": 427.303016,
+              "meanCores": 0.0914310786380644
+            },
+            {
+              "process": "/vendor/bin/hw/android.hardware.composer.hwc3-service.pixel",
+              "pid": 535,
+              "cpuMs": 415.326994,
+              "meanCores": 0.088868539717784
+            },
+            {
+              "process": "sugov:4",
+              "pid": 503,
+              "cpuMs": 311.710788,
+              "meanCores": 0.0666975249478721
+            },
+            {
+              "process": "/vendor/bin/hw/android.hardware.power-service.pixel-libperfmgr",
+              "pid": 624,
+              "cpuMs": 215.351733,
+              "meanCores": 0.0460793406493682
+            }
+          ],
+          "pipelineCompileCount": 0,
+          "recomposeCalls": 787,
+          "recomposeInclusiveMsPerSecond": 19.10738486588238,
+          "frameTimelineCount": 178,
+          "frameTimelineJank": {
+            "Non Animating": 1,
+            "Buffer Stuffing": 4,
+            "None": 172,
+            "App Deadline Missed": 1
+          },
+          "callbackIntervalMsMedian": 16.6953525,
+          "expectedFrameBudgetMsMedian": 16.6,
+          "surfaceFrameIntervalMsMedian": 16.6906295,
+          "vsyncPeriodObservationsNs": [
+            16666667.0
+          ],
+          "compositions": {},
+          "firstWordUpdateOffsetMs": 149.692261,
+          "fullyContainedFramePhases": {
+            "beforeFirstWordUpdate": {
+              "frameCount": 3,
+              "overrunMs": {
+                "n": 3,
+                "p50": -0.90086,
+                "p95": 11.010912699999999,
+                "p99": 12.06973694,
+                "max": 12.334443
+              },
+              "jankCounts": {
+                "Non Animating": 1,
+                "Buffer Stuffing": 2
+              }
+            },
+            "afterFirstWordUpdate": {
+              "frameCount": 175,
+              "overrunMs": {
+                "n": 175,
+                "p50": -3.762016,
+                "p95": 0.0036134999999968137,
+                "p99": 1.486913399999998,
+                "max": 7.947219
+              },
+              "jankCounts": {
+                "None": 172,
+                "App Deadline Missed": 1,
+                "Buffer Stuffing": 2
+              }
+            }
+          },
+          "boundaryFrames": [
+            {
+              "token": 161229874,
+              "startOffsetMs": 4667.329796,
+              "endOffsetMs": 3.278157,
+              "wallMs": 9.446939,
+              "overrunMs": -6.195982,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": -6.168781999999737
+            },
+            {
+              "token": 161229881,
+              "startOffsetMs": 4683.984051,
+              "endOffsetMs": 19.287802,
+              "wallMs": 8.802329,
+              "overrunMs": -6.857429,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 10.485473000000638
+            },
+            {
+              "token": 161229888,
+              "startOffsetMs": 4700.709598,
+              "endOffsetMs": 42.156331,
+              "wallMs": 14.945311,
+              "overrunMs": -0.69452,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 27.211020000000644
+            },
+            {
+              "token": 161229895,
+              "startOffsetMs": 4717.189415,
+              "endOffsetMs": 56.809367,
+              "wallMs": 13.11853,
+              "overrunMs": -2.734371,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 43.6908370000001
+            }
+          ]
+        },
+        {
+          "trace": "results/benchmark/connected/Pixel 9 - 17/ShortChatScrollBenchmark_streamingFling_iter001_2026-10-23-19-17-26.perfetto-trace",
+          "windowMs": 4698.397952,
+          "stream": {
+            "updateCount": 46,
+            "spanMs": 4538.459637,
+            "intervalMs": {
+              "n": 45,
+              "p50": 100.62915,
+              "p90": 101.6370522,
+              "p95": 101.7849118,
+              "p99": 103.01466656000001,
+              "max": 103.504761
+            }
+          },
+          "framePercentilesMs": {
+            "frameDurationCpuMs": {
+              "n": 200,
+              "p50": 5.5473435,
+              "p90": 8.8132819,
+              "p95": 9.692895649999997,
+              "p99": 12.925694349999977,
+              "max": 28.37793
+            },
+            "frameOverrunMs": {
+              "n": 200,
+              "p50": -4.5328955,
+              "p90": -0.44787230000000006,
+              "p95": 0.1723064499999987,
+              "p99": 2.5644883499999667,
+              "max": 16.173118
+            }
+          },
+          "mainCpuMs": 720.188565,
+          "mainCpuMsPerSecond": 153.28385810602362,
+          "mainRunnableMs": 76.598029,
+          "mainRunnableMsPerSecond": 16.303010043539196,
+          "renderCpuMsPerSecond": 167.53872831587677,
+          "appCpuMsPerSecond": 410.1275236125422,
+          "backgroundGoogleCpuMs": 53.400560000000006,
+          "topConcurrentProcessCpu": [
+            {
+              "process": "com.debanshu777.caraml.benchmark",
+              "pid": 23737,
+              "cpuMs": 1926.942317,
+              "meanCores": 0.410127523612542
+            },
+            {
+              "process": "/system/bin/surfaceflinger",
+              "pid": 532,
+              "cpuMs": 1664.905118,
+              "meanCores": 0.354355917699838
+            },
+            {
+              "process": "system_server",
+              "pid": 26517,
+              "cpuMs": 1072.644501,
+              "meanCores": 0.228300052902798
+            },
+            {
+              "process": "/vendor/bin/hw/android.hardware.composer.hwc3-service.pixel",
+              "pid": 535,
+              "cpuMs": 454.775946,
+              "meanCores": 0.0967938328438979
+            },
+            {
+              "process": "/system/bin/traced_probes",
+              "pid": 1215,
+              "cpuMs": 431.453577,
+              "meanCores": 0.0918299346730177
+            },
+            {
+              "process": "com.debanshu777.caraml.benchmark.tests",
+              "pid": 22728,
+              "cpuMs": 310.402542,
+              "meanCores": 0.0660656132518253
+            },
+            {
+              "process": "sugov:4",
+              "pid": 503,
+              "cpuMs": 300.979471,
+              "meanCores": 0.0640600208996515
+            },
+            {
+              "process": "/vendor/bin/hw/android.hardware.power-service.pixel-libperfmgr",
+              "pid": 624,
+              "cpuMs": 210.165819,
+              "meanCores": 0.0447313788970424
+            }
+          ],
+          "pipelineCompileCount": 0,
+          "recomposeCalls": 806,
+          "recomposeInclusiveMsPerSecond": 18.743336111517188,
+          "frameTimelineCount": 197,
+          "frameTimelineJank": {
+            "Non Animating": 1,
+            "Buffer Stuffing": 2,
+            "None": 194
+          },
+          "callbackIntervalMsMedian": 16.676249,
+          "expectedFrameBudgetMsMedian": 16.6,
+          "surfaceFrameIntervalMsMedian": 16.685882,
+          "vsyncPeriodObservationsNs": [
+            16666667.0
+          ],
+          "compositions": {},
+          "firstWordUpdateOffsetMs": 145.617554,
+          "fullyContainedFramePhases": {
+            "beforeFirstWordUpdate": {
+              "frameCount": 3,
+              "overrunMs": {
+                "n": 3,
+                "p50": 2.528046,
+                "p95": 14.808610799999999,
+                "p99": 15.900216559999999,
+                "max": 16.173118
+              },
+              "jankCounts": {
+                "Non Animating": 1,
+                "Buffer Stuffing": 2
+              }
+            },
+            "afterFirstWordUpdate": {
+              "frameCount": 194,
+              "overrunMs": {
+                "n": 194,
+                "p50": -4.5424405,
+                "p95": 0.07927954999999934,
+                "p99": 0.8566109299999994,
+                "max": 1.030438
+              },
+              "jankCounts": {
+                "None": 194
+              }
+            }
+          },
+          "boundaryFrames": [
+            {
+              "token": 161235536,
+              "startOffsetMs": 4690.587933,
+              "endOffsetMs": 0.416951,
+              "wallMs": 8.22697,
+              "overrunMs": -7.482042,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": false,
+              "startAfterWindowEndMs": -7.810019000000466
+            },
+            {
+              "token": 161235543,
+              "startOffsetMs": 4707.199913,
+              "endOffsetMs": 21.440673,
+              "wallMs": 12.638712,
+              "overrunMs": -3.13641,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 8.80196100000012
+            },
+            {
+              "token": 161235550,
+              "startOffsetMs": 4723.915815,
+              "endOffsetMs": 47.447876,
+              "wallMs": 21.930013,
+              "overrunMs": 6.172281,
+              "jank": "App Deadline Missed",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 25.517863000000034
+            }
+          ]
+        },
+        {
+          "trace": "results/benchmark/connected/Pixel 9 - 17/ShortChatScrollBenchmark_streamingFling_iter002_2026-10-23-19-17-38.perfetto-trace",
+          "windowMs": 4092.727297,
+          "stream": {
+            "updateCount": 40,
+            "spanMs": 3941.48279,
+            "intervalMs": {
+              "n": 39,
+              "p50": 100.710246,
+              "p90": 101.573218,
+              "p95": 103.2964726,
+              "p99": 105.3491681,
+              "max": 105.650187
+            }
+          },
+          "framePercentilesMs": {
+            "frameDurationCpuMs": {
+              "n": 168,
+              "p50": 5.839294000000001,
+              "p90": 8.790865300000002,
+              "p95": 9.9270752,
+              "p99": 11.48561976,
+              "max": 23.867839
+            },
+            "frameOverrunMs": {
+              "n": 168,
+              "p50": -4.8925015,
+              "p90": -0.4275714999999991,
+              "p95": 0.3518564000000004,
+              "p99": 1.516437550000009,
+              "max": 11.983205
+            }
+          },
+          "mainCpuMs": 642.151738,
+          "mainCpuMsPerSecond": 156.90069027337887,
+          "mainRunnableMs": 73.08313899999999,
+          "mainRunnableMsPerSecond": 17.85683083590018,
+          "renderCpuMsPerSecond": 167.49029907330277,
+          "appCpuMsPerSecond": 415.0042452730757,
+          "backgroundGoogleCpuMs": 30.23185,
+          "topConcurrentProcessCpu": [
+            {
+              "process": "com.debanshu777.caraml.benchmark",
+              "pid": 24051,
+              "cpuMs": 1698.499203,
+              "meanCores": 0.415004245273076
+            },
+            {
+              "process": "/system/bin/surfaceflinger",
+              "pid": 532,
+              "cpuMs": 1467.21726,
+              "meanCores": 0.358493775306134
+            },
+            {
+              "process": "system_server",
+              "pid": 26517,
+              "cpuMs": 918.34778,
+              "meanCores": 0.224385284764308
+            },
+            {
+              "process": "/system/bin/traced_probes",
+              "pid": 1215,
+              "cpuMs": 430.827233,
+              "meanCores": 0.105266537869699
+            },
+            {
+              "process": "/vendor/bin/hw/android.hardware.composer.hwc3-service.pixel",
+              "pid": 535,
+              "cpuMs": 411.796446,
+              "meanCores": 0.100616634365512
+            },
+            {
+              "process": "com.debanshu777.caraml.benchmark.tests",
+              "pid": 22728,
+              "cpuMs": 394.367142,
+              "meanCores": 0.0963580305702445
+            },
+            {
+              "process": "sugov:4",
+              "pid": 503,
+              "cpuMs": 252.312412,
+              "meanCores": 0.0616489674708957
+            },
+            {
+              "process": "/vendor/bin/hw/android.hardware.power-service.pixel-libperfmgr",
+              "pid": 624,
+              "cpuMs": 188.647311,
+              "meanCores": 0.0460933009483138
+            }
+          ],
+          "pipelineCompileCount": 0,
+          "recomposeCalls": 677,
+          "recomposeInclusiveMsPerSecond": 17.34663534803306,
+          "frameTimelineCount": 167,
+          "frameTimelineJank": {
+            "Non Animating": 2,
+            "Buffer Stuffing": 2,
+            "None": 163
+          },
+          "callbackIntervalMsMedian": 16.662028,
+          "expectedFrameBudgetMsMedian": 16.6,
+          "surfaceFrameIntervalMsMedian": 16.6827875,
+          "vsyncPeriodObservationsNs": [
+            16666667.0
+          ],
+          "compositions": {},
+          "firstWordUpdateOffsetMs": 147.835449,
+          "fullyContainedFramePhases": {
+            "beforeFirstWordUpdate": {
+              "frameCount": 3,
+              "overrunMs": {
+                "n": 3,
+                "p50": -3.537465,
+                "p95": 10.431137999999997,
+                "p99": 11.6727916,
+                "max": 11.983205
+              },
+              "jankCounts": {
+                "Non Animating": 1,
+                "Buffer Stuffing": 2
+              }
+            },
+            "afterFirstWordUpdate": {
+              "frameCount": 164,
+              "overrunMs": {
+                "n": 164,
+                "p50": -4.8925015,
+                "p95": 0.30373744999999985,
+                "p99": 1.1357864500000012,
+                "max": 1.992161
+              },
+              "jankCounts": {
+                "None": 163,
+                "Non Animating": 1
+              }
+            }
+          },
+          "boundaryFrames": [
+            {
+              "token": 161240727,
+              "startOffsetMs": 4098.84302,
+              "endOffsetMs": 16.592895,
+              "wallMs": 10.477172,
+              "overrunMs": -5.396761,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 6.115723000000344
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "archive": "build/benchmark-results/android-ui/20261023T192109.579492Z-v3-stream-after",
+      "metadata": {
+        "label": "v3-stream-after",
+        "fixtureVersion": 3,
+        "apkSha256": "43add92f80975ba88f211e76c8b52f5ad112650841024821d8770225cedfe223",
+        "appProfileSha256": "dbd6a270b0a313127a79acdf0592c52d1cc9109137bccbec931ad40a6e20e43e",
+        "fullTracing": false,
+        "softEffectsOverride": "on",
+        "benchmarkR8Enabled": false,
+        "requestedRefreshHz": 60,
+        "scrollWindowMs": 4000,
+        "streamPeriodMs": 100,
+        "messageCount": 200,
+        "batteryTemperatureBeforeC": 33.4,
+        "batteryTemperatureAfterC": 33.8,
+        "thermalStatusBefore": 0,
+        "thermalStatusAfter": 0,
+        "measurementValid": true
+      },
+      "qualityValid": true,
+      "refreshValidation": {
+        "method": "primary display active-mode endpoints; not continuous panel validation",
+        "requestedHz": 60,
+        "valid": true,
+        "endpoints": {
+          "before": {
+            "activeModePeakRefreshHz": 60.0,
+            "modeVsyncHz": 60.0
+          },
+          "after": {
+            "activeModePeakRefreshHz": 60.0,
+            "modeVsyncHz": 60.0
+          }
+        },
+        "reasons": []
+      },
+      "iterations": [
+        {
+          "trace": "results/benchmark/connected/Pixel 9 - 17/ShortChatScrollBenchmark_streamingFling_iter000_2026-10-23-19-23-02.perfetto-trace",
+          "windowMs": 4112.480633,
+          "stream": {
+            "updateCount": 40,
+            "spanMs": 3928.246828,
+            "intervalMs": {
+              "n": 39,
+              "p50": 100.556681,
+              "p90": 101.3008058,
+              "p95": 101.9596359,
+              "p99": 102.04045094,
+              "max": 102.049357
+            }
+          },
+          "framePercentilesMs": {
+            "frameDurationCpuMs": {
+              "n": 160,
+              "p50": 6.1268925,
+              "p90": 9.157532199999999,
+              "p95": 10.210231349999997,
+              "p99": 15.110526039999991,
+              "max": 20.459677
+            },
+            "frameOverrunMs": {
+              "n": 160,
+              "p50": -5.119121,
+              "p90": -0.5906112000000008,
+              "p95": 0.24363609999999813,
+              "p99": 3.9860058299999785,
+              "max": 7.979669
+            }
+          },
+          "mainCpuMs": 635.847945,
+          "mainCpuMsPerSecond": 154.61421019171033,
+          "mainRunnableMs": 63.779542000000006,
+          "mainRunnableMsPerSecond": 15.508776257378669,
+          "renderCpuMsPerSecond": 165.9955987445011,
+          "appCpuMsPerSecond": 400.0623727678962,
+          "backgroundGoogleCpuMs": 128.388261,
+          "topConcurrentProcessCpu": [
+            {
+              "process": "com.debanshu777.caraml.benchmark",
+              "pid": 28598,
+              "cpuMs": 1645.24876,
+              "meanCores": 0.400062372767896
+            },
+            {
+              "process": "/system/bin/surfaceflinger",
+              "pid": 532,
+              "cpuMs": 1420.079572,
+              "meanCores": 0.345309728781402
+            },
+            {
+              "process": "system_server",
+              "pid": 26517,
+              "cpuMs": 1216.23277,
+              "meanCores": 0.295741883922934
+            },
+            {
+              "process": "/vendor/bin/hw/android.hardware.composer.hwc3-service.pixel",
+              "pid": 535,
+              "cpuMs": 390.632236,
+              "meanCores": 0.0949870092676981
+            },
+            {
+              "process": "/system/bin/traced_probes",
+              "pid": 1215,
+              "cpuMs": 372.239012,
+              "meanCores": 0.0905144717310089
+            },
+            {
+              "process": "com.debanshu777.caraml.benchmark.tests",
+              "pid": 27704,
+              "cpuMs": 310.224485,
+              "meanCores": 0.0754348804735149
+            },
+            {
+              "process": "sugov:4",
+              "pid": 503,
+              "cpuMs": 247.432454,
+              "meanCores": 0.0601662296022781
+            },
+            {
+              "process": "/vendor/bin/hw/android.hardware.power-service.pixel-libperfmgr",
+              "pid": 624,
+              "cpuMs": 181.561887,
+              "meanCores": 0.0441489950233645
+            }
+          ],
+          "pipelineCompileCount": 0,
+          "recomposeCalls": 697,
+          "recomposeInclusiveMsPerSecond": 17.264594860403317,
+          "frameTimelineCount": 157,
+          "frameTimelineJank": {
+            "Non Animating": 1,
+            "Buffer Stuffing": 2,
+            "None": 154
+          },
+          "callbackIntervalMsMedian": 16.681681,
+          "expectedFrameBudgetMsMedian": 16.6,
+          "surfaceFrameIntervalMsMedian": 16.693044,
+          "vsyncPeriodObservationsNs": [
+            16666667.0
+          ],
+          "compositions": {},
+          "firstWordUpdateOffsetMs": 135.428263,
+          "fullyContainedFramePhases": {
+            "beforeFirstWordUpdate": {
+              "frameCount": 3,
+              "overrunMs": {
+                "n": 3,
+                "p50": -1.900688,
+                "p95": 6.991633299999999,
+                "p99": 7.78206186,
+                "max": 7.979669
+              },
+              "jankCounts": {
+                "Non Animating": 1,
+                "Buffer Stuffing": 2
+              }
+            },
+            "afterFirstWordUpdate": {
+              "frameCount": 154,
+              "overrunMs": {
+                "n": 154,
+                "p50": -5.119121,
+                "p95": -0.12205895000000014,
+                "p99": 0.8489267799999993,
+                "max": 1.402693
+              },
+              "jankCounts": {
+                "None": 154
+              }
+            }
+          },
+          "boundaryFrames": [
+            {
+              "token": 161283903,
+              "startOffsetMs": 4105.333986,
+              "endOffsetMs": 3.141927,
+              "wallMs": 10.288574,
+              "overrunMs": -5.438362,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": -7.146647000000485
+            },
+            {
+              "token": 161283910,
+              "startOffsetMs": 4122.236615,
+              "endOffsetMs": 18.721272,
+              "wallMs": 8.96529,
+              "overrunMs": -6.525699,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 9.755981999999676
+            },
+            {
+              "token": 161283917,
+              "startOffsetMs": 4138.512535,
+              "endOffsetMs": 49.612915,
+              "wallMs": 23.581013,
+              "overrunMs": 7.703456,
+              "jank": "App Deadline Missed",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 26.031901999999718
+            }
+          ]
+        },
+        {
+          "trace": "results/benchmark/connected/Pixel 9 - 17/ShortChatScrollBenchmark_streamingFling_iter001_2026-10-23-19-23-15.perfetto-trace",
+          "windowMs": 4048.189292,
+          "stream": {
+            "updateCount": 39,
+            "spanMs": 3827.287112,
+            "intervalMs": {
+              "n": 38,
+              "p50": 100.6139725,
+              "p90": 101.1107137,
+              "p95": 101.54704805,
+              "p99": 102.15983373,
+              "max": 102.19279
+            }
+          },
+          "framePercentilesMs": {
+            "frameDurationCpuMs": {
+              "n": 164,
+              "p50": 5.9341635,
+              "p90": 9.0656862,
+              "p95": 10.139636999999997,
+              "p99": 16.635508430000012,
+              "max": 25.095947
+            },
+            "frameOverrunMs": {
+              "n": 164,
+              "p50": -4.794206,
+              "p90": -0.4564481999999985,
+              "p95": 0.17474959999999987,
+              "p99": 5.105087070000044,
+              "max": 12.879583
+            }
+          },
+          "mainCpuMs": 611.347519,
+          "mainCpuMsPerSecond": 151.01752287328566,
+          "mainRunnableMs": 64.890192,
+          "mainRunnableMsPerSecond": 16.02943620453606,
+          "renderCpuMsPerSecond": 168.8848555948406,
+          "appCpuMsPerSecond": 410.8955639221626,
+          "backgroundGoogleCpuMs": 49.466105,
+          "topConcurrentProcessCpu": [
+            {
+              "process": "com.debanshu777.caraml.benchmark",
+              "pid": 28844,
+              "cpuMs": 1663.383022,
+              "meanCores": 0.410895563922163
+            },
+            {
+              "process": "/system/bin/surfaceflinger",
+              "pid": 532,
+              "cpuMs": 1395.826437,
+              "meanCores": 0.344802660230939
+            },
+            {
+              "process": "system_server",
+              "pid": 26517,
+              "cpuMs": 1248.934945,
+              "meanCores": 0.308516933105904
+            },
+            {
+              "process": "/vendor/bin/hw/android.hardware.composer.hwc3-service.pixel",
+              "pid": 535,
+              "cpuMs": 392.04391,
+              "meanCores": 0.0968442633783835
+            },
+            {
+              "process": "/system/bin/traced_probes",
+              "pid": 1215,
+              "cpuMs": 373.519409,
+              "meanCores": 0.0922682666391481
+            },
+            {
+              "process": "com.debanshu777.caraml.benchmark.tests",
+              "pid": 27704,
+              "cpuMs": 294.218541,
+              "meanCores": 0.0726790472919417
+            },
+            {
+              "process": "sugov:4",
+              "pid": 503,
+              "cpuMs": 238.681535,
+              "meanCores": 0.0589600727099596
+            },
+            {
+              "process": "/vendor/bin/hw/android.hardware.power.stats-service.pixel",
+              "pid": 1045,
+              "cpuMs": 177.286459,
+              "meanCores": 0.0437940141164723
+            }
+          ],
+          "pipelineCompileCount": 0,
+          "recomposeCalls": 680,
+          "recomposeInclusiveMsPerSecond": 16.818648064345506,
+          "frameTimelineCount": 161,
+          "frameTimelineJank": {
+            "Non Animating": 1,
+            "Buffer Stuffing": 2,
+            "None": 158
+          },
+          "callbackIntervalMsMedian": 16.68042,
+          "expectedFrameBudgetMsMedian": 16.6,
+          "surfaceFrameIntervalMsMedian": 16.685336,
+          "vsyncPeriodObservationsNs": [
+            16666667.0
+          ],
+          "compositions": {},
+          "firstWordUpdateOffsetMs": 143.332031,
+          "fullyContainedFramePhases": {
+            "beforeFirstWordUpdate": {
+              "frameCount": 3,
+              "overrunMs": {
+                "n": 3,
+                "p50": -1.401489,
+                "p95": 11.451475799999999,
+                "p99": 12.59396156,
+                "max": 12.879583
+              },
+              "jankCounts": {
+                "Non Animating": 1,
+                "Buffer Stuffing": 2
+              }
+            },
+            "afterFirstWordUpdate": {
+              "frameCount": 158,
+              "overrunMs": {
+                "n": 158,
+                "p50": -4.853759999999999,
+                "p95": 0.10248090000000035,
+                "p99": 1.2439064200000032,
+                "max": 1.52685
+              },
+              "jankCounts": {
+                "None": 158
+              }
+            }
+          },
+          "boundaryFrames": [
+            {
+              "token": 161289143,
+              "startOffsetMs": 4041.816938,
+              "endOffsetMs": 1.451335,
+              "wallMs": 7.823689,
+              "overrunMs": -7.927187,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": -6.372354000000087
+            },
+            {
+              "token": 161289150,
+              "startOffsetMs": 4058.730186,
+              "endOffsetMs": 21.24467,
+              "wallMs": 10.703776,
+              "overrunMs": -4.794015,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 10.540893999999753
+            },
+            {
+              "token": 161289157,
+              "startOffsetMs": 4075.220706,
+              "endOffsetMs": 53.902385,
+              "wallMs": 26.870971,
+              "overrunMs": 11.197761,
+              "jank": "App Deadline Missed",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 27.03141400000004
+            }
+          ]
+        },
+        {
+          "trace": "results/benchmark/connected/Pixel 9 - 17/ShortChatScrollBenchmark_streamingFling_iter002_2026-10-23-19-23-28.perfetto-trace",
+          "windowMs": 4108.632977,
+          "stream": {
+            "updateCount": 40,
+            "spanMs": 3934.236249,
+            "intervalMs": {
+              "n": 39,
+              "p50": 100.644532,
+              "p90": 101.69335079999999,
+              "p95": 102.06771260000001,
+              "p99": 102.42191456,
+              "max": 102.636515
+            }
+          },
+          "framePercentilesMs": {
+            "frameDurationCpuMs": {
+              "n": 168,
+              "p50": 5.9087935,
+              "p90": 9.1658934,
+              "p95": 10.088765800000001,
+              "p99": 12.773279980000023,
+              "max": 24.762004
+            },
+            "frameOverrunMs": {
+              "n": 168,
+              "p50": -4.175457,
+              "p90": -0.6273263999999998,
+              "p95": -0.10250904999999966,
+              "p99": 1.1347616000000027,
+              "max": 12.141044
+            }
+          },
+          "mainCpuMs": 633.720509,
+          "mainCpuMsPerSecond": 154.2412068801345,
+          "mainRunnableMs": 79.176664,
+          "mainRunnableMsPerSecond": 19.270804776972902,
+          "renderCpuMsPerSecond": 165.35259362496228,
+          "appCpuMsPerSecond": 403.1590008824485,
+          "backgroundGoogleCpuMs": 28.452876000000003,
+          "topConcurrentProcessCpu": [
+            {
+              "process": "com.debanshu777.caraml.benchmark",
+              "pid": 29172,
+              "cpuMs": 1656.432366,
+              "meanCores": 0.403159000882448
+            },
+            {
+              "process": "/system/bin/surfaceflinger",
+              "pid": 532,
+              "cpuMs": 1373.180677,
+              "meanCores": 0.334218384724803
+            },
+            {
+              "process": "system_server",
+              "pid": 26517,
+              "cpuMs": 1328.218913,
+              "meanCores": 0.323275142957604
+            },
+            {
+              "process": "/vendor/bin/hw/android.hardware.composer.hwc3-service.pixel",
+              "pid": 535,
+              "cpuMs": 377.270546,
+              "meanCores": 0.0918238616376661
+            },
+            {
+              "process": "/system/bin/traced_probes",
+              "pid": 1215,
+              "cpuMs": 364.403922,
+              "meanCores": 0.0886922545868472
+            },
+            {
+              "process": "com.debanshu777.caraml.benchmark.tests",
+              "pid": 27704,
+              "cpuMs": 323.801137,
+              "meanCores": 0.0788099445272013
+            },
+            {
+              "process": "sugov:4",
+              "pid": 503,
+              "cpuMs": 247.003736,
+              "meanCores": 0.0601182284674049
+            },
+            {
+              "process": "sugov:7",
+              "pid": 504,
+              "cpuMs": 169.980916,
+              "meanCores": 0.0413716476870891
+            }
+          ],
+          "pipelineCompileCount": 0,
+          "recomposeCalls": 693,
+          "recomposeInclusiveMsPerSecond": 17.693561193455803,
+          "frameTimelineCount": 164,
+          "frameTimelineJank": {
+            "Non Animating": 2,
+            "Buffer Stuffing": 4,
+            "None": 158
+          },
+          "callbackIntervalMsMedian": 16.682617,
+          "expectedFrameBudgetMsMedian": 16.6,
+          "surfaceFrameIntervalMsMedian": 16.687872,
+          "vsyncPeriodObservationsNs": [
+            16666667.0
+          ],
+          "compositions": {},
+          "firstWordUpdateOffsetMs": 140.319295,
+          "fullyContainedFramePhases": {
+            "beforeFirstWordUpdate": {
+              "frameCount": 3,
+              "overrunMs": {
+                "n": 3,
+                "p50": 0.222911,
+                "p95": 10.9492307,
+                "p99": 11.90268134,
+                "max": 12.141044
+              },
+              "jankCounts": {
+                "Non Animating": 1,
+                "Buffer Stuffing": 2
+              }
+            },
+            "afterFirstWordUpdate": {
+              "frameCount": 161,
+              "overrunMs": {
+                "n": 161,
+                "p50": -4.163997,
+                "p95": -0.202711,
+                "p99": 0.8359496000000022,
+                "max": 1.276145
+              },
+              "jankCounts": {
+                "None": 158,
+                "Non Animating": 1,
+                "Buffer Stuffing": 2
+              }
+            }
+          },
+          "boundaryFrames": [
+            {
+              "token": 161294444,
+              "startOffsetMs": 4104.361737,
+              "endOffsetMs": 4.687419,
+              "wallMs": 8.958659,
+              "overrunMs": -6.88523,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": -4.271240000000034
+            },
+            {
+              "token": 161294451,
+              "startOffsetMs": 4120.984011,
+              "endOffsetMs": 19.902669,
+              "wallMs": 7.551635,
+              "overrunMs": -8.330737,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 12.351033999999345
+            },
+            {
+              "token": 161294458,
+              "startOffsetMs": 4137.59538,
+              "endOffsetMs": 43.935832,
+              "wallMs": 14.973429,
+              "overrunMs": -0.962138,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 28.96240299999954
+            },
+            {
+              "token": 161294465,
+              "startOffsetMs": 4154.676556,
+              "endOffsetMs": 56.196858,
+              "wallMs": 10.153279,
+              "overrunMs": -5.363908,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 46.043579000000136
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "archive": "build/benchmark-results/android-ui/20261023T191759.166391Z-v3-stream-before-diagnostic",
+      "metadata": {
+        "label": "v3-stream-before-diagnostic",
+        "fixtureVersion": 3,
+        "apkSha256": "e3e07d3247bcb7c9c739c6e2c8f1184f6763fb69e84048baf85d1f098c23c4e4",
+        "appProfileSha256": "dbd6a270b0a313127a79acdf0592c52d1cc9109137bccbec931ad40a6e20e43e",
+        "fullTracing": true,
+        "softEffectsOverride": "on",
+        "benchmarkR8Enabled": false,
+        "requestedRefreshHz": 60,
+        "scrollWindowMs": 4000,
+        "streamPeriodMs": 100,
+        "messageCount": 200,
+        "batteryTemperatureBeforeC": 33.6,
+        "batteryTemperatureAfterC": 33.8,
+        "thermalStatusBefore": 0,
+        "thermalStatusAfter": 0,
+        "measurementValid": true
+      },
+      "qualityValid": true,
+      "refreshValidation": {
+        "method": "primary display active-mode endpoints; not continuous panel validation",
+        "requestedHz": 60,
+        "valid": true,
+        "endpoints": {
+          "before": {
+            "activeModePeakRefreshHz": 60.0,
+            "modeVsyncHz": 60.0
+          },
+          "after": {
+            "activeModePeakRefreshHz": 60.0,
+            "modeVsyncHz": 60.0
+          }
+        },
+        "reasons": []
+      },
+      "iterations": [
+        {
+          "trace": "results/benchmark/connected/Pixel 9 - 17/ShortChatScrollBenchmark_streamingFling_iter000_2026-10-23-19-19-45.perfetto-trace",
+          "windowMs": 4072.317792,
+          "stream": {
+            "updateCount": 39,
+            "spanMs": 3825.872398,
+            "intervalMs": {
+              "n": 38,
+              "p50": 100.536865,
+              "p90": 101.1676846,
+              "p95": 101.86241294999999,
+              "p99": 102.06466412,
+              "max": 102.103597
+            }
+          },
+          "framePercentilesMs": {
+            "frameDurationCpuMs": {
+              "n": 168,
+              "p50": 5.945842,
+              "p90": 9.251391200000002,
+              "p95": 10.52474625,
+              "p99": 16.39938994000008,
+              "max": 27.883911
+            },
+            "frameOverrunMs": {
+              "n": 168,
+              "p50": -3.65191,
+              "p90": -0.1958675999999994,
+              "p95": 0.5413824000000008,
+              "p99": 11.963075480000033,
+              "max": 15.380962
+            }
+          },
+          "mainCpuMs": 652.564043,
+          "mainCpuMsPerSecond": 160.2438896792267,
+          "mainRunnableMs": 69.776933,
+          "mainRunnableMsPerSecond": 17.134451819324028,
+          "renderCpuMsPerSecond": 168.1917762767764,
+          "appCpuMsPerSecond": 425.8640090434278,
+          "backgroundGoogleCpuMs": 24.761104,
+          "topConcurrentProcessCpu": [
+            {
+              "process": "com.debanshu777.caraml.benchmark",
+              "pid": 25738,
+              "cpuMs": 1734.253581,
+              "meanCores": 0.425864009043428
+            },
+            {
+              "process": "/system/bin/surfaceflinger",
+              "pid": 532,
+              "cpuMs": 1423.329292,
+              "meanCores": 0.349513315192667
+            },
+            {
+              "process": "system_server",
+              "pid": 26517,
+              "cpuMs": 983.849226,
+              "meanCores": 0.24159441287533
+            },
+            {
+              "process": "com.debanshu777.caraml.benchmark.tests",
+              "pid": 25063,
+              "cpuMs": 457.620164,
+              "meanCores": 0.112373392100928
+            },
+            {
+              "process": "/vendor/bin/hw/android.hardware.composer.hwc3-service.pixel",
+              "pid": 535,
+              "cpuMs": 390.165393,
+              "meanCores": 0.0958091713192112
+            },
+            {
+              "process": "/system/bin/traced_probes",
+              "pid": 1215,
+              "cpuMs": 366.418817,
+              "meanCores": 0.0899779525359793
+            },
+            {
+              "process": "/system/bin/traced",
+              "pid": 1218,
+              "cpuMs": 262.777762,
+              "meanCores": 0.06452781325569
+            },
+            {
+              "process": "sugov:4",
+              "pid": 503,
+              "cpuMs": 257.872721,
+              "meanCores": 0.0633233294087673
+            }
+          ],
+          "pipelineCompileCount": 0,
+          "recomposeCalls": 680,
+          "recomposeInclusiveMsPerSecond": 25.47359349110444,
+          "frameTimelineCount": 165,
+          "frameTimelineJank": {
+            "Non Animating": 1,
+            "Buffer Stuffing": 3,
+            "None": 160,
+            "App Deadline Missed": 1
+          },
+          "callbackIntervalMsMedian": 16.694621,
+          "expectedFrameBudgetMsMedian": 16.6,
+          "surfaceFrameIntervalMsMedian": 16.686403,
+          "vsyncPeriodObservationsNs": [
+            16666667.0
+          ],
+          "compositions": {
+            "com.debanshu777.caraml.features.chat.presentation.components.ChatMessageList": {
+              "calls": 41,
+              "inclusiveWallMs": 13.053303000000001,
+              "inclusiveCpuMs": 13.053303000000001,
+              "selfCpuMs": 1.5186290000000002,
+              "callsPerSecond": 10.067976541650019,
+              "callsPerUpdate": 1.0512820512820513
+            },
+            "com.debanshu777.caraml.features.chat.presentation.components.ChatMessageListItem": {
+              "calls": 172,
+              "inclusiveWallMs": 12.474892,
+              "inclusiveCpuMs": 12.474892,
+              "selfCpuMs": 0.8854530000000005,
+              "callsPerSecond": 42.236389394239104,
+              "callsPerUpdate": 4.410256410256411
+            },
+            "com.debanshu777.caraml.features.chat.presentation.components.StreamingMessageBubble": {
+              "calls": 20,
+              "inclusiveWallMs": 4.030151,
+              "inclusiveCpuMs": 4.030151,
+              "selfCpuMs": 0.21114100000000005,
+              "callsPerSecond": 4.911208069097571,
+              "callsPerUpdate": 0.5128205128205128
+            },
+            "com.debanshu777.caraml.features.chat.presentation.components.MessageBubble": {
+              "calls": 25,
+              "inclusiveWallMs": 10.358156,
+              "inclusiveCpuMs": 10.358156,
+              "selfCpuMs": 1.2112189999999996,
+              "callsPerSecond": 6.139010086371963,
+              "callsPerUpdate": 0.6410256410256411
+            },
+            "com.mikepenz.markdown.m3.Markdown": {
+              "calls": 2,
+              "inclusiveWallMs": 4.498495,
+              "inclusiveCpuMs": 4.498495,
+              "selfCpuMs": 0.02596099999999968,
+              "callsPerSecond": 0.491120806909757,
+              "callsPerUpdate": 0.05128205128205128
+            },
+            "com.mikepenz.markdown.compose.Markdown": {
+              "calls": 2,
+              "inclusiveWallMs": 4.4725340000000005,
+              "inclusiveCpuMs": 4.4725340000000005,
+              "selfCpuMs": 0.014607000000000037,
+              "callsPerSecond": 0.491120806909757,
+              "callsPerUpdate": 0.05128205128205128
+            }
+          },
+          "firstWordUpdateOffsetMs": 147.932251,
+          "fullyContainedFramePhases": {
+            "beforeFirstWordUpdate": {
+              "frameCount": 3,
+              "overrunMs": {
+                "n": 3,
+                "p50": 2.057682,
+                "p95": 14.048634,
+                "p99": 15.1144964,
+                "max": 15.380962
+              },
+              "jankCounts": {
+                "Non Animating": 1,
+                "Buffer Stuffing": 2
+              }
+            },
+            "afterFirstWordUpdate": {
+              "frameCount": 162,
+              "overrunMs": {
+                "n": 162,
+                "p50": -3.729695,
+                "p95": 0.14136129999999944,
+                "p99": 0.8491111599999969,
+                "max": 2.065223
+              },
+              "jankCounts": {
+                "None": 160,
+                "App Deadline Missed": 1,
+                "Buffer Stuffing": 1
+              }
+            }
+          },
+          "boundaryFrames": [
+            {
+              "token": 161262416,
+              "startOffsetMs": 4079.509646,
+              "endOffsetMs": 18.674357,
+              "wallMs": 11.482503,
+              "overrunMs": -4.112873,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 7.1918540000001485
+            },
+            {
+              "token": 161262423,
+              "startOffsetMs": 4096.022179,
+              "endOffsetMs": 53.165691,
+              "wallMs": 29.461304,
+              "overrunMs": 13.715632,
+              "jank": "App Deadline Missed",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 23.70438699999977
+            },
+            {
+              "token": 161262429,
+              "startOffsetMs": 4115.209841,
+              "endOffsetMs": 60.445923,
+              "wallMs": 17.553874,
+              "overrunMs": 4.313621,
+              "jank": "Buffer Stuffing",
+              "inMacrobenchmarkRawOverrun": false,
+              "startAfterWindowEndMs": 42.89204900000004
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "archive": "build/benchmark-results/android-ui/20261023T192343.009562Z-v3-stream-after-diagnostic",
+      "metadata": {
+        "label": "v3-stream-after-diagnostic",
+        "fixtureVersion": 3,
+        "apkSha256": "ba4c5221b387dd1a1b1bf8e7809263afe4e4778cdfdb528eccbf14451ee05a77",
+        "appProfileSha256": "dbd6a270b0a313127a79acdf0592c52d1cc9109137bccbec931ad40a6e20e43e",
+        "fullTracing": true,
+        "softEffectsOverride": "on",
+        "benchmarkR8Enabled": false,
+        "requestedRefreshHz": 60,
+        "scrollWindowMs": 4000,
+        "streamPeriodMs": 100,
+        "messageCount": 200,
+        "batteryTemperatureBeforeC": 33.8,
+        "batteryTemperatureAfterC": 34.0,
+        "thermalStatusBefore": 0,
+        "thermalStatusAfter": 0,
+        "measurementValid": true
+      },
+      "qualityValid": true,
+      "refreshValidation": {
+        "method": "primary display active-mode endpoints; not continuous panel validation",
+        "requestedHz": 60,
+        "valid": true,
+        "endpoints": {
+          "before": {
+            "activeModePeakRefreshHz": 60.0,
+            "modeVsyncHz": 60.0
+          },
+          "after": {
+            "activeModePeakRefreshHz": 60.0,
+            "modeVsyncHz": 60.0
+          }
+        },
+        "reasons": []
+      },
+      "iterations": [
+        {
+          "trace": "results/benchmark/connected/Pixel 9 - 17/ShortChatScrollBenchmark_streamingFling_iter000_2026-10-23-19-25-29.perfetto-trace",
+          "windowMs": 4089.361086,
+          "stream": {
+            "updateCount": 39,
+            "spanMs": 3831.930463,
+            "intervalMs": {
+              "n": 38,
+              "p50": 100.64910900000001,
+              "p90": 101.5707802,
+              "p95": 101.95814784999999,
+              "p99": 102.84938807,
+              "max": 103.213908
+            }
+          },
+          "framePercentilesMs": {
+            "frameDurationCpuMs": {
+              "n": 172,
+              "p50": 5.910095,
+              "p90": 9.115564000000003,
+              "p95": 10.5693626,
+              "p99": 14.375382109999975,
+              "max": 30.018677
+            },
+            "frameOverrunMs": {
+              "n": 172,
+              "p50": -4.1231100000000005,
+              "p90": -0.6688843,
+              "p95": -0.061577350000002945,
+              "p99": 4.474743169999965,
+              "max": 18.757222
+            }
+          },
+          "mainCpuMs": 659.477364,
+          "mainCpuMsPerSecond": 161.26660134213444,
+          "mainRunnableMs": 76.934307,
+          "mainRunnableMsPerSecond": 18.81328290215945,
+          "renderCpuMsPerSecond": 169.92244445688942,
+          "appCpuMsPerSecond": 426.5404522411988,
+          "backgroundGoogleCpuMs": 90.869185,
+          "topConcurrentProcessCpu": [
+            {
+              "process": "com.debanshu777.caraml.benchmark",
+              "pid": 30899,
+              "cpuMs": 1744.277927,
+              "meanCores": 0.426540452241199
+            },
+            {
+              "process": "/system/bin/surfaceflinger",
+              "pid": 532,
+              "cpuMs": 1405.703835,
+              "meanCores": 0.343746567113492
+            },
+            {
+              "process": "system_server",
+              "pid": 26517,
+              "cpuMs": 1086.26477,
+              "meanCores": 0.265631903653323
+            },
+            {
+              "process": "/system/bin/traced_probes",
+              "pid": 1215,
+              "cpuMs": 389.486746,
+              "meanCores": 0.0952439116549074
+            },
+            {
+              "process": "/vendor/bin/hw/android.hardware.composer.hwc3-service.pixel",
+              "pid": 535,
+              "cpuMs": 384.805632,
+              "meanCores": 0.0940992061858731
+            },
+            {
+              "process": "com.debanshu777.caraml.benchmark.tests",
+              "pid": 30213,
+              "cpuMs": 311.486978,
+              "meanCores": 0.0761700841401316
+            },
+            {
+              "process": "sugov:4",
+              "pid": 503,
+              "cpuMs": 244.610899,
+              "meanCores": 0.0598164099124017
+            },
+            {
+              "process": "/system/bin/traced",
+              "pid": 1218,
+              "cpuMs": 218.531321,
+              "meanCores": 0.0534389887330189
+            }
+          ],
+          "pipelineCompileCount": 0,
+          "recomposeCalls": 680,
+          "recomposeInclusiveMsPerSecond": 24.981276989634853,
+          "frameTimelineCount": 169,
+          "frameTimelineJank": {
+            "Non Animating": 1,
+            "Buffer Stuffing": 2,
+            "None": 166
+          },
+          "callbackIntervalMsMedian": 16.673421,
+          "expectedFrameBudgetMsMedian": 16.6,
+          "surfaceFrameIntervalMsMedian": 16.685289,
+          "vsyncPeriodObservationsNs": [
+            16666667.0
+          ],
+          "compositions": {
+            "com.debanshu777.caraml.features.chat.presentation.components.ChatMessageList": {
+              "calls": 41,
+              "inclusiveWallMs": 12.869388,
+              "inclusiveCpuMs": 12.869388,
+              "selfCpuMs": 1.3590129999999996,
+              "callsPerSecond": 10.026016078737635,
+              "callsPerUpdate": 1.0512820512820513
+            },
+            "com.debanshu777.caraml.features.chat.presentation.components.ChatMessageListItem": {
+              "calls": 26,
+              "inclusiveWallMs": 11.412759999999997,
+              "inclusiveCpuMs": 11.412759999999997,
+              "selfCpuMs": 0.26216399999999973,
+              "callsPerSecond": 6.357961415784842,
+              "callsPerUpdate": 0.6666666666666666
+            },
+            "com.debanshu777.caraml.features.chat.presentation.components.StreamingMessageBubble": {
+              "calls": 20,
+              "inclusiveWallMs": 3.980022999999999,
+              "inclusiveCpuMs": 3.980022999999999,
+              "selfCpuMs": 0.24263800000000002,
+              "callsPerSecond": 4.890739550603724,
+              "callsPerUpdate": 0.5128205128205128
+            },
+            "com.debanshu777.caraml.features.chat.presentation.components.MessageBubble": {
+              "calls": 25,
+              "inclusiveWallMs": 10.907957999999999,
+              "inclusiveCpuMs": 10.907957999999999,
+              "selfCpuMs": 1.2408009999999996,
+              "callsPerSecond": 6.113424438254656,
+              "callsPerUpdate": 0.6410256410256411
+            },
+            "com.mikepenz.markdown.m3.Markdown": {
+              "calls": 2,
+              "inclusiveWallMs": 4.820922,
+              "inclusiveCpuMs": 4.820922,
+              "selfCpuMs": 0.024414000000000158,
+              "callsPerSecond": 0.48907395506037243,
+              "callsPerUpdate": 0.05128205128205128
+            },
+            "com.mikepenz.markdown.compose.Markdown": {
+              "calls": 2,
+              "inclusiveWallMs": 4.796508,
+              "inclusiveCpuMs": 4.796508,
+              "selfCpuMs": 0.02750600000000003,
+              "callsPerSecond": 0.48907395506037243,
+              "callsPerUpdate": 0.05128205128205128
+            }
+          },
+          "firstWordUpdateOffsetMs": 157.512777,
+          "fullyContainedFramePhases": {
+            "beforeFirstWordUpdate": {
+              "frameCount": 3,
+              "overrunMs": {
+                "n": 3,
+                "p50": 3.209887,
+                "p95": 17.202488499999998,
+                "p99": 18.446275299999996,
+                "max": 18.757222
+              },
+              "jankCounts": {
+                "Non Animating": 1,
+                "Buffer Stuffing": 2
+              }
+            },
+            "afterFirstWordUpdate": {
+              "frameCount": 166,
+              "overrunMs": {
+                "n": 166,
+                "p50": -4.166747,
+                "p95": -0.2820685,
+                "p99": 0.5371010999999996,
+                "max": 0.77126
+              },
+              "jankCounts": {
+                "None": 166
+              }
+            }
+          },
+          "boundaryFrames": [
+            {
+              "token": 161316578,
+              "startOffsetMs": 4084.066123,
+              "endOffsetMs": 7.497071,
+              "wallMs": 12.792034,
+              "overrunMs": -3.144053,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": -5.294962999999825
+            },
+            {
+              "token": 161316585,
+              "startOffsetMs": 4101.285851,
+              "endOffsetMs": 23.088542,
+              "wallMs": 11.163777,
+              "overrunMs": -4.243097,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 11.924764999999752
+            },
+            {
+              "token": 161316592,
+              "startOffsetMs": 4117.382408,
+              "endOffsetMs": 51.573567,
+              "wallMs": 23.552245,
+              "overrunMs": 7.57146,
+              "jank": "App Deadline Missed",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 28.02132200000051
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "archive": "build/benchmark-results/android-ui/20261023T192848.605849Z-v3-stream-120hz",
+      "metadata": {
+        "label": "v3-stream-120hz",
+        "fixtureVersion": 3,
+        "apkSha256": "0fa889f6aafe22c26bb557a3a536082c5412baab5c7b4fd0269147dd11ff68b8",
+        "appProfileSha256": "dbd6a270b0a313127a79acdf0592c52d1cc9109137bccbec931ad40a6e20e43e",
+        "fullTracing": false,
+        "softEffectsOverride": "on",
+        "benchmarkR8Enabled": false,
+        "requestedRefreshHz": 120,
+        "scrollWindowMs": 4000,
+        "streamPeriodMs": 100,
+        "messageCount": 200,
+        "batteryTemperatureBeforeC": 33.3,
+        "batteryTemperatureAfterC": 33.8,
+        "thermalStatusBefore": 0,
+        "thermalStatusAfter": 0,
+        "measurementValid": true
+      },
+      "qualityValid": true,
+      "refreshValidation": {
+        "method": "primary display active-mode endpoints; not continuous panel validation",
+        "requestedHz": 120,
+        "valid": true,
+        "endpoints": {
+          "before": {
+            "activeModePeakRefreshHz": 120.00001,
+            "modeVsyncHz": 120.00001
+          },
+          "after": {
+            "activeModePeakRefreshHz": 120.00001,
+            "modeVsyncHz": 120.00001
+          }
+        },
+        "reasons": []
+      },
+      "iterations": [
+        {
+          "trace": "results/benchmark/connected/Pixel 9 - 17/ShortChatScrollBenchmark_streamingFling_iter000_2026-10-23-19-30-32.perfetto-trace",
+          "windowMs": 4190.896487,
+          "stream": {
+            "updateCount": 41,
+            "spanMs": 4029.947552,
+            "intervalMs": {
+              "n": 40,
+              "p50": 100.5298665,
+              "p90": 101.7256753,
+              "p95": 101.84898865000001,
+              "p99": 102.27148191,
+              "max": 102.362793
+            }
+          },
+          "framePercentilesMs": {
+            "frameDurationCpuMs": {
+              "n": 336,
+              "p50": 5.341430000000001,
+              "p90": 8.075216000000001,
+              "p95": 9.37831625,
+              "p99": 10.828389149999992,
+              "max": 29.291422
+            },
+            "frameOverrunMs": {
+              "n": 336,
+              "p50": -7.204363,
+              "p90": -3.0420049999999996,
+              "p95": -1.888555,
+              "p99": 0.5008369999999976,
+              "max": 16.816688
+            }
+          },
+          "mainCpuMs": 971.392126,
+          "mainCpuMsPerSecond": 231.78623690974499,
+          "mainRunnableMs": 119.35511,
+          "mainRunnableMsPerSecond": 28.479612982624356,
+          "renderCpuMsPerSecond": 310.9197545303151,
+          "appCpuMsPerSecond": 651.7040157093244,
+          "backgroundGoogleCpuMs": 169.44860400000002,
+          "topConcurrentProcessCpu": [
+            {
+              "process": "com.debanshu777.caraml.benchmark",
+              "pid": 1580,
+              "cpuMs": 2731.22407,
+              "meanCores": 0.651704015709324
+            },
+            {
+              "process": "/system/bin/surfaceflinger",
+              "pid": 532,
+              "cpuMs": 1737.013413,
+              "meanCores": 0.414472993639463
+            },
+            {
+              "process": "system_server",
+              "pid": 26517,
+              "cpuMs": 1296.08051,
+              "meanCores": 0.309260921623904
+            },
+            {
+              "process": "/system/bin/traced_probes",
+              "pid": 1215,
+              "cpuMs": 567.396571,
+              "meanCores": 0.135387875305449
+            },
+            {
+              "process": "com.debanshu777.caraml.benchmark.tests",
+              "pid": 32564,
+              "cpuMs": 428.244526,
+              "meanCores": 0.10218446753061
+            },
+            {
+              "process": "/vendor/bin/hw/android.hardware.composer.hwc3-service.pixel",
+              "pid": 535,
+              "cpuMs": 418.167148,
+              "meanCores": 0.0997798798651168
+            },
+            {
+              "process": "sugov:7",
+              "pid": 504,
+              "cpuMs": 295.469071,
+              "meanCores": 0.0705025933989383
+            },
+            {
+              "process": "sugov:4",
+              "pid": 503,
+              "cpuMs": 294.618032,
+              "meanCores": 0.0702995249140354
+            }
+          ],
+          "pipelineCompileCount": 0,
+          "recomposeCalls": 891,
+          "recomposeInclusiveMsPerSecond": 22.4978935395977,
+          "frameTimelineCount": 332,
+          "frameTimelineJank": {
+            "Non Animating": 1,
+            "SurfaceFlinger Scheduling, App Resynced Jitter": 1,
+            "None": 330
+          },
+          "callbackIntervalMsMedian": 8.341187,
+          "expectedFrameBudgetMsMedian": 16.6,
+          "surfaceFrameIntervalMsMedian": 8.3396695,
+          "vsyncPeriodObservationsNs": [
+            8333333.0
+          ],
+          "compositions": {},
+          "firstWordUpdateOffsetMs": 143.046428,
+          "fullyContainedFramePhases": {
+            "beforeFirstWordUpdate": {
+              "frameCount": 3,
+              "overrunMs": {
+                "n": 3,
+                "p50": 3.619994,
+                "p95": 15.497018599999999,
+                "p99": 16.55275412,
+                "max": 16.816688
+              },
+              "jankCounts": {
+                "Non Animating": 1,
+                "SurfaceFlinger Scheduling, App Resynced Jitter": 1,
+                "None": 1
+              }
+            },
+            "afterFirstWordUpdate": {
+              "frameCount": 329,
+              "overrunMs": {
+                "n": 329,
+                "p50": -7.224535,
+                "p95": -1.9825722000000023,
+                "p99": -0.2841989200000302,
+                "max": 0.53737
+              },
+              "jankCounts": {
+                "None": 329
+              }
+            }
+          },
+          "boundaryFrames": [
+            {
+              "token": 161362817,
+              "startOffsetMs": 4186.220705,
+              "endOffsetMs": 3.540934,
+              "wallMs": 8.216716,
+              "overrunMs": -7.42738,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": -4.675782000000254
+            },
+            {
+              "token": 161362825,
+              "startOffsetMs": 4195.369103,
+              "endOffsetMs": 13.094237,
+              "wallMs": 8.621621,
+              "overrunMs": -6.203434,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 4.472616000000016
+            },
+            {
+              "token": 161362833,
+              "startOffsetMs": 4202.822593,
+              "endOffsetMs": 31.433187,
+              "wallMs": 19.507081,
+              "overrunMs": 3.795226,
+              "jank": "App Deadline Missed",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 11.92610599999989
+            },
+            {
+              "token": 161362841,
+              "startOffsetMs": 4218.394372,
+              "endOffsetMs": 36.116415,
+              "wallMs": 8.61853,
+              "overrunMs": 0.127392,
+              "jank": "Buffer Stuffing",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 27.49788499999977
+            }
+          ]
+        },
+        {
+          "trace": "results/benchmark/connected/Pixel 9 - 17/ShortChatScrollBenchmark_streamingFling_iter001_2026-10-23-19-30-45.perfetto-trace",
+          "windowMs": 4307.164675,
+          "stream": {
+            "updateCount": 42,
+            "spanMs": 4133.014935,
+            "intervalMs": {
+              "n": 41,
+              "p50": 100.598959,
+              "p90": 101.164795,
+              "p95": 101.772949,
+              "p99": 103.5429768,
+              "max": 104.200236
+            }
+          },
+          "framePercentilesMs": {
+            "frameDurationCpuMs": {
+              "n": 376,
+              "p50": 4.9830935,
+              "p90": 7.471007999999999,
+              "p95": 8.84813475,
+              "p99": 12.026316,
+              "max": 27.3809
+            },
+            "frameOverrunMs": {
+              "n": 376,
+              "p50": -7.7096015,
+              "p90": -3.110948,
+              "p95": -1.7022469999999998,
+              "p99": 0.3700305,
+              "max": 14.819677
+            }
+          },
+          "mainCpuMs": 1009.206792,
+          "mainCpuMsPerSecond": 234.30884773403744,
+          "mainRunnableMs": 89.698604,
+          "mainRunnableMsPerSecond": 20.825441042604204,
+          "renderCpuMsPerSecond": 313.355053228839,
+          "appCpuMsPerSecond": 667.3519486458919,
+          "backgroundGoogleCpuMs": 35.707887,
+          "topConcurrentProcessCpu": [
+            {
+              "process": "com.debanshu777.caraml.benchmark",
+              "pid": 1831,
+              "cpuMs": 2874.394739,
+              "meanCores": 0.667351948645892
+            },
+            {
+              "process": "/system/bin/surfaceflinger",
+              "pid": 532,
+              "cpuMs": 1794.305996,
+              "meanCores": 0.416586346562196
+            },
+            {
+              "process": "system_server",
+              "pid": 26517,
+              "cpuMs": 1331.674026,
+              "meanCores": 0.30917648301896
+            },
+            {
+              "process": "/system/bin/traced_probes",
+              "pid": 1215,
+              "cpuMs": 594.576942,
+              "meanCores": 0.138043698549789
+            },
+            {
+              "process": "com.debanshu777.caraml.benchmark.tests",
+              "pid": 32564,
+              "cpuMs": 431.825728,
+              "meanCores": 0.100257538446681
+            },
+            {
+              "process": "/vendor/bin/hw/android.hardware.composer.hwc3-service.pixel",
+              "pid": 535,
+              "cpuMs": 426.041075,
+              "meanCores": 0.0989145080690466
+            },
+            {
+              "process": "sugov:4",
+              "pid": 503,
+              "cpuMs": 299.590141,
+              "meanCores": 0.0695562309792578
+            },
+            {
+              "process": "sugov:7",
+              "pid": 504,
+              "cpuMs": 270.845551,
+              "meanCores": 0.0628825622972031
+            }
+          ],
+          "pipelineCompileCount": 0,
+          "recomposeCalls": 935,
+          "recomposeInclusiveMsPerSecond": 23.11659398070263,
+          "frameTimelineCount": 367,
+          "frameTimelineJank": {
+            "Non Animating": 1,
+            "SurfaceFlinger Scheduling, App Resynced Jitter": 1,
+            "None": 284,
+            "App Deadline Missed": 1,
+            "Buffer Stuffing": 80
+          },
+          "callbackIntervalMsMedian": 8.349813,
+          "expectedFrameBudgetMsMedian": 16.6,
+          "surfaceFrameIntervalMsMedian": 8.339257,
+          "vsyncPeriodObservationsNs": [
+            8333333.0
+          ],
+          "compositions": {},
+          "firstWordUpdateOffsetMs": 140.059367,
+          "fullyContainedFramePhases": {
+            "beforeFirstWordUpdate": {
+              "frameCount": 3,
+              "overrunMs": {
+                "n": 3,
+                "p50": 2.520412,
+                "p95": 13.5897505,
+                "p99": 14.5736917,
+                "max": 14.819677
+              },
+              "jankCounts": {
+                "Non Animating": 1,
+                "SurfaceFlinger Scheduling, App Resynced Jitter": 1,
+                "None": 1
+              }
+            },
+            "afterFirstWordUpdate": {
+              "frameCount": 364,
+              "overrunMs": {
+                "n": 364,
+                "p50": -7.775195,
+                "p95": -1.9348870500000026,
+                "p99": -0.11438341999999774,
+                "max": 1.601742
+              },
+              "jankCounts": {
+                "None": 283,
+                "App Deadline Missed": 1,
+                "Buffer Stuffing": 80
+              }
+            }
+          },
+          "boundaryFrames": [
+            {
+              "token": 161374241,
+              "startOffsetMs": 4300.459759,
+              "endOffsetMs": 2.424316,
+              "wallMs": 9.129232,
+              "overrunMs": -6.513247,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": -6.704915999999685
+            },
+            {
+              "token": 161374249,
+              "startOffsetMs": 4308.60014,
+              "endOffsetMs": 9.6097,
+              "wallMs": 8.174235,
+              "overrunMs": -7.666692,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 1.4354649999995672
+            },
+            {
+              "token": 161374257,
+              "startOffsetMs": 4317.322756,
+              "endOffsetMs": 25.304118,
+              "wallMs": 15.146037,
+              "overrunMs": -0.315617,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": false,
+              "startAfterWindowEndMs": 10.158080999999584
+            },
+            {
+              "token": 161374265,
+              "startOffsetMs": 4329.474367,
+              "endOffsetMs": 31.71818,
+              "wallMs": 9.408488,
+              "overrunMs": -2.259552,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 22.309691999999814
+            },
+            {
+              "token": 161374273,
+              "startOffsetMs": 4337.282758,
+              "endOffsetMs": 36.609253,
+              "wallMs": 6.49117,
+              "overrunMs": -5.717601,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 30.118083000000297
+            },
+            {
+              "token": 161374281,
+              "startOffsetMs": 4342.854982,
+              "endOffsetMs": 41.432372,
+              "wallMs": 5.742065,
+              "overrunMs": -9.252448,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 35.69030699999985
+            },
+            {
+              "token": 161374289,
+              "startOffsetMs": 4351.090985,
+              "endOffsetMs": 51.485229,
+              "wallMs": 7.558919,
+              "overrunMs": -7.550189,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 43.92630999999983
+            },
+            {
+              "token": 161374297,
+              "startOffsetMs": 4359.457237,
+              "endOffsetMs": 60.313598,
+              "wallMs": 8.021036,
+              "overrunMs": -7.06038,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 52.292561999999634
+            },
+            {
+              "token": 161374305,
+              "startOffsetMs": 4367.044353,
+              "endOffsetMs": 65.920775,
+              "wallMs": 6.041097,
+              "overrunMs": -9.786627,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 59.87967800000024
+            }
+          ]
+        },
+        {
+          "trace": "results/benchmark/connected/Pixel 9 - 17/ShortChatScrollBenchmark_streamingFling_iter002_2026-10-23-19-30-59.perfetto-trace",
+          "windowMs": 4391.478355,
+          "stream": {
+            "updateCount": 43,
+            "spanMs": 4229.869346,
+            "intervalMs": {
+              "n": 42,
+              "p50": 100.5775755,
+              "p90": 101.3434903,
+              "p95": 101.75990025,
+              "p99": 101.9526445,
+              "max": 101.997355
+            }
+          },
+          "framePercentilesMs": {
+            "frameDurationCpuMs": {
+              "n": 376,
+              "p50": 5.1799315,
+              "p90": 7.459085999999999,
+              "p95": 8.782603250000001,
+              "p99": 11.673076,
+              "max": 30.644287
+            },
+            "frameOverrunMs": {
+              "n": 376,
+              "p50": -7.348307,
+              "p90": -2.8775855000000004,
+              "p95": -1.48107075,
+              "p99": 0.040722499999999995,
+              "max": 17.956963
+            }
+          },
+          "mainCpuMs": 1034.491575,
+          "mainCpuMsPerSecond": 235.56795488292914,
+          "mainRunnableMs": 101.93041500000001,
+          "mainRunnableMsPerSecond": 23.21095693980712,
+          "renderCpuMsPerSecond": 325.3488949508895,
+          "appCpuMsPerSecond": 677.4156027919213,
+          "backgroundGoogleCpuMs": 25.804765999999997,
+          "topConcurrentProcessCpu": [
+            {
+              "process": "com.debanshu777.caraml.benchmark",
+              "pid": 2120,
+              "cpuMs": 2974.855957,
+              "meanCores": 0.677415602791921
+            },
+            {
+              "process": "/system/bin/surfaceflinger",
+              "pid": 532,
+              "cpuMs": 1845.646702,
+              "meanCores": 0.420279129896793
+            },
+            {
+              "process": "system_server",
+              "pid": 26517,
+              "cpuMs": 1324.672753,
+              "meanCores": 0.301646198823175
+            },
+            {
+              "process": "/system/bin/traced_probes",
+              "pid": 1215,
+              "cpuMs": 623.107045,
+              "meanCores": 0.141890041263792
+            },
+            {
+              "process": "com.debanshu777.caraml.benchmark.tests",
+              "pid": 32564,
+              "cpuMs": 456.883803,
+              "meanCores": 0.104038723652095
+            },
+            {
+              "process": "/vendor/bin/hw/android.hardware.composer.hwc3-service.pixel",
+              "pid": 535,
+              "cpuMs": 439.11773,
+              "meanCores": 0.0999931445637286
+            },
+            {
+              "process": "/vendor/bin/hw/android.hardware.power-service.pixel-libperfmgr",
+              "pid": 624,
+              "cpuMs": 289.406665,
+              "meanCores": 0.0659018766813437
+            },
+            {
+              "process": "sugov:7",
+              "pid": 504,
+              "cpuMs": 272.485757,
+              "meanCores": 0.0620487532836764
+            }
+          ],
+          "pipelineCompileCount": 0,
+          "recomposeCalls": 946,
+          "recomposeInclusiveMsPerSecond": 23.415968766627337,
+          "frameTimelineCount": 368,
+          "frameTimelineJank": {
+            "Non Animating": 1,
+            "SurfaceFlinger Scheduling, App Resynced Jitter": 1,
+            "None": 366
+          },
+          "callbackIntervalMsMedian": 8.3553465,
+          "expectedFrameBudgetMsMedian": 16.6,
+          "surfaceFrameIntervalMsMedian": 8.339368,
+          "vsyncPeriodObservationsNs": [
+            8333333.0
+          ],
+          "compositions": {},
+          "firstWordUpdateOffsetMs": 145.165243,
+          "fullyContainedFramePhases": {
+            "beforeFirstWordUpdate": {
+              "frameCount": 3,
+              "overrunMs": {
+                "n": 3,
+                "p50": 5.153939,
+                "p95": 16.676660599999998,
+                "p99": 17.700902519999996,
+                "max": 17.956963
+              },
+              "jankCounts": {
+                "Non Animating": 1,
+                "SurfaceFlinger Scheduling, App Resynced Jitter": 1,
+                "None": 1
+              }
+            },
+            "afterFirstWordUpdate": {
+              "frameCount": 365,
+              "overrunMs": {
+                "n": 365,
+                "p50": -7.386087,
+                "p95": -1.6308625999999986,
+                "p99": -0.39570907999999794,
+                "max": 1.020998
+              },
+              "jankCounts": {
+                "None": 365
+              }
+            }
+          },
+          "boundaryFrames": [
+            {
+              "token": 161385620,
+              "startOffsetMs": 4381.045779,
+              "endOffsetMs": 0.465821,
+              "wallMs": 10.898397,
+              "overrunMs": -4.6873,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": -10.432576000000154
+            },
+            {
+              "token": 161385628,
+              "startOffsetMs": 4391.481041,
+              "endOffsetMs": 9.541911,
+              "wallMs": 9.539225,
+              "overrunMs": -3.95221,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 0.0026859999998123385
+            },
+            {
+              "token": 161385636,
+              "startOffsetMs": 4398.548912,
+              "endOffsetMs": 18.791544,
+              "wallMs": 11.720987,
+              "overrunMs": -3.051785,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 7.070557000000008
+            },
+            {
+              "token": 161385644,
+              "startOffsetMs": 4406.643557,
+              "endOffsetMs": 22.275432,
+              "wallMs": 7.11023,
+              "overrunMs": -7.90298,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 15.165202000000136
+            },
+            {
+              "token": 161385652,
+              "startOffsetMs": 4414.23157,
+              "endOffsetMs": 29.844197,
+              "wallMs": 7.090982,
+              "overrunMs": -8.679799,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 22.753214999999727
+            },
+            {
+              "token": 161385660,
+              "startOffsetMs": 4423.419517,
+              "endOffsetMs": 42.28593,
+              "wallMs": 10.344768,
+              "overrunMs": -4.568122,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 31.941162000000077
+            },
+            {
+              "token": 161385668,
+              "startOffsetMs": 4430.92912,
+              "endOffsetMs": 45.734863,
+              "wallMs": 6.284098,
+              "overrunMs": -9.455868,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 39.45076499999959
+            },
+            {
+              "token": 161385676,
+              "startOffsetMs": 4439.191123,
+              "endOffsetMs": 56.881632,
+              "wallMs": 9.168864,
+              "overrunMs": -6.654045,
+              "jank": "None",
+              "inMacrobenchmarkRawOverrun": true,
+              "startAfterWindowEndMs": 47.712767999999414
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "interpretationConstraints": [
+    "Only ordinary timing captures are used for timing comparisons; full Compose tracing supplies mechanism evidence separately.",
+    "Per-iteration frame percentiles are linear interpolation of the raw Macrobenchmark sampledMetrics arrays, not pooled frame samples.",
+    "CPU is clipped to actual measureBlock duration, which can exceed the requested 4000ms due to gesture/check overhead; CPU and composition rates are normalized.",
+    "FrameTimeline diagnostic rows are fully contained in measureBlock. Macrobenchmark raw frame arrays include its boundary-frame selection and can have a different cardinality.",
+    "Phase comparison separates frames starting before vs after the first positive stream-update counter (about135\u2013158ms), inside measureBlock. It does not replace official full raw metrics.",
+    "Macrobenchmark raw arrays also include post-measureBlock stop-transition frames in these archives: restoring the completed rich answer produced extra tails. Exact matching overruns identify those rows in boundaryFrames.",
+    "Streaming is synthetic word-level text updates at a requested 100ms period, with no concurrent native inference. Activation replaces a completed answer with a streaming prefix and changes composer controls.",
+    "Composition calls have no row IDs and cannot conclusively assign individual calls to visible vs prefetched rows. Inclusive wall/CPU timings are nested and must not be added.",
+    "Refresh validation records active display mode at endpoints and separate callback/surface cadence. Frame deadline budget is not treated as physical refresh rate.",
+    "Google process CPU is observed concurrent work, not causal proof of a frame delay. System/SurfaceFlinger CPU also contains normal benchmark rendering work.",
+    "Three timing iterations per condition are an exploratory pilot, not evidence of a small statistically reliable latency improvement."
+  ],
+  "experiment": "Active-row StreamingState isolation, fixture v3, Pixel 9, 2026-10-24",
+  "decision": {
+    "retainCandidate": true,
+    "demonstratedFrameLatencyImprovement": false,
+    "reason": "Equivalent rendering branches with a proven reduction in unused row-wrapper composition; absolute CPU saving is very small, and timing pilot does not establish an improvement or sustained regression.",
+    "diagnostic": {
+      "updatesBefore": 39,
+      "updatesAfter": 39,
+      "wrapperCallsBefore": 172,
+      "wrapperCallsAfter": 26,
+      "wrapperCallReductionPercent": 84.88372093023256,
+      "wrapperSelfCpuBeforeMs": 0.885453,
+      "wrapperSelfCpuAfterMs": 0.262164,
+      "unchangedCalls": {
+        "ChatMessageList": 41,
+        "StreamingMessageBubble": 20,
+        "MessageBubble": 25,
+        "MarkdownM3": 2
+      }
+    },
+    "timingMedianPerRun": {
+      "frameCpuP95BeforeMs": 9.9270752,
+      "frameCpuP95AfterMs": 10.139637,
+      "frameOverrunP95BeforeMs": 0.17230645,
+      "frameOverrunP95AfterMs": 0.1747496,
+      "frameOverrunP99BeforeMs": 2.56448835,
+      "frameOverrunP99AfterMs": 3.98600583,
+      "mainCpuBeforeMsPerSecond": 153.283858106,
+      "mainCpuAfterMsPerSecond": 154.24120688
+    }
+  },
+  "candidate120HzProbe": {
+    "comparisonClaim": false,
+    "fullComposeTracing": false,
+    "scope": "Candidate-only ordinary timing probe; separate rebuilt APK, not an A/B experiment or evidence that row isolation improves120Hz performance.",
+    "refreshSemantics": "120Hz display active mode at endpoints; observed callback median8.34\u20138.36ms, surface median8.339ms and VsyncPeriod8.333ms. Expected16.6ms duration is a scheduled render deadline budget, not the physical refresh period. Neither cadence median nor negative overrun proves every frame presented without extra latency.",
+    "source": "https://perfetto.dev/docs/data-sources/frametimeline",
+    "run2QueuedFrames": {
+      "missedFrameOffsetMs": 623.759929,
+      "token": 161369390,
+      "appFrameWallMs": 16.641154,
+      "deadlineOverrunMs": 1.601742,
+      "doFrameWallMs": 4.125244,
+      "renderThreadDrawFramesWallMs": 5.599202,
+      "frameCompletionAfterDrawFramesEndMs": 7.211508,
+      "latchedFenceState": "Delayed Latch Fence Unsignaled",
+      "gpuCommandSliceCount": 0,
+      "threadStatesPerPhase": [
+        {
+          "phase": "DrawFrames",
+          "thread": "araml.benchmark",
+          "state": "R",
+          "ioWait": null,
+          "ms": 0.035888
+        },
+        {
+          "phase": "DrawFrames",
+          "thread": "araml.benchmark",
+          "state": "Running",
+          "ioWait": null,
+          "ms": 4.383341
+        },
+        {
+          "phase": "DrawFrames",
+          "thread": "araml.benchmark",
+          "state": "S",
+          "ioWait": null,
+          "ms": 1.179973
+        },
+        {
+          "phase": "DrawFrames",
+          "thread": "RenderThread",
+          "state": "Running",
+          "ioWait": null,
+          "ms": 5.599202
+        },
+        {
+          "phase": "completionTail",
+          "thread": "araml.benchmark",
+          "state": "R",
+          "ioWait": null,
+          "ms": 1.169881
+        },
+        {
+          "phase": "completionTail",
+          "thread": "araml.benchmark",
+          "state": "Running",
+          "ioWait": null,
+          "ms": 4.804851
+        },
+        {
+          "phase": "completionTail",
+          "thread": "araml.benchmark",
+          "state": "S",
+          "ioWait": null,
+          "ms": 1.236776
+        },
+        {
+          "phase": "completionTail",
+          "thread": "RenderThread",
+          "state": "R",
+          "ioWait": null,
+          "ms": 0.022623
+        },
+        {
+          "phase": "completionTail",
+          "thread": "RenderThread",
+          "state": "Running",
+          "ioWait": null,
+          "ms": 1.437338
+        },
+        {
+          "phase": "completionTail",
+          "thread": "RenderThread",
+          "state": "S",
+          "ioWait": null,
+          "ms": 5.751547
+        },
+        {
+          "phase": "doFrame",
+          "thread": "araml.benchmark",
+          "state": "R",
+          "ioWait": null,
+          "ms": 0.035888
+        },
+        {
+          "phase": "doFrame",
+          "thread": "araml.benchmark",
+          "state": "R+",
+          "ioWait": null,
+          "ms": 0.137532
+        },
+        {
+          "phase": "doFrame",
+          "thread": "araml.benchmark",
+          "state": "Running",
+          "ioWait": null,
+          "ms": 3.745565
+        },
+        {
+          "phase": "doFrame",
+          "thread": "araml.benchmark",
+          "state": "S",
+          "ioWait": null,
+          "ms": 0.206259
+        },
+        {
+          "phase": "doFrame",
+          "thread": "RenderThread",
+          "state": "R",
+          "ioWait": null,
+          "ms": 0.14384
+        },
+        {
+          "phase": "doFrame",
+          "thread": "RenderThread",
+          "state": "Running",
+          "ioWait": null,
+          "ms": 0.439372
+        },
+        {
+          "phase": "doFrame",
+          "thread": "RenderThread",
+          "state": "S",
+          "ioWait": null,
+          "ms": 3.542032
+        },
+        {
+          "phase": "lateStart",
+          "thread": "araml.benchmark",
+          "state": "R",
+          "ioWait": null,
+          "ms": 0.033204
+        },
+        {
+          "phase": "lateStart",
+          "thread": "araml.benchmark",
+          "state": "Running",
+          "ioWait": null,
+          "ms": 0.111287
+        },
+        {
+          "phase": "lateStart",
+          "thread": "araml.benchmark",
+          "state": "S",
+          "ioWait": null,
+          "ms": 1.414183
+        },
+        {
+          "phase": "lateStart",
+          "thread": "RenderThread",
+          "state": "S",
+          "ioWait": null,
+          "ms": 1.558674
+        }
+      ],
+      "threadStatesMissedAndQueuedIntervals": [
+        {
+          "phase": "missedFrame",
+          "thread": "araml.benchmark",
+          "state": "R",
+          "ioWait": null,
+          "ms": 1.205769,
+          "maxMs": 0.728922
+        },
+        {
+          "phase": "missedFrame",
+          "thread": "araml.benchmark",
+          "state": "R+",
+          "ioWait": null,
+          "ms": 0.137532,
+          "maxMs": 0.137532
+        },
+        {
+          "phase": "missedFrame",
+          "thread": "araml.benchmark",
+          "state": "Running",
+          "ioWait": null,
+          "ms": 12.881104,
+          "maxMs": 4.799357
+        },
+        {
+          "phase": "missedFrame",
+          "thread": "araml.benchmark",
+          "state": "S",
+          "ioWait": null,
+          "ms": 2.416749,
+          "maxMs": 1.138265
+        },
+        {
+          "phase": "missedFrame",
+          "thread": "RenderThread",
+          "state": "R",
+          "ioWait": null,
+          "ms": 0.166463,
+          "maxMs": 0.045573
+        },
+        {
+          "phase": "missedFrame",
+          "thread": "RenderThread",
+          "state": "Running",
+          "ioWait": null,
+          "ms": 7.183025,
+          "maxMs": 6.995484
+        },
+        {
+          "phase": "missedFrame",
+          "thread": "RenderThread",
+          "state": "S",
+          "ioWait": null,
+          "ms": 9.291666,
+          "maxMs": 4.256389
+        },
+        {
+          "phase": "queueState",
+          "thread": "araml.benchmark",
+          "state": "R",
+          "ioWait": null,
+          "ms": 10.637372,
+          "maxMs": 0.731364
+        },
+        {
+          "phase": "queueState",
+          "thread": "araml.benchmark",
+          "state": "Running",
+          "ioWait": null,
+          "ms": 172.035284,
+          "maxMs": 5.558513
+        },
+        {
+          "phase": "queueState",
+          "thread": "araml.benchmark",
+          "state": "S",
+          "ioWait": null,
+          "ms": 482.345168,
+          "maxMs": 7.485555
+        },
+        {
+          "phase": "queueState",
+          "thread": "RenderThread",
+          "state": "R",
+          "ioWait": null,
+          "ms": 28.055903,
+          "maxMs": 2.600505
+        },
+        {
+          "phase": "queueState",
+          "thread": "RenderThread",
+          "state": "R+",
+          "ioWait": null,
+          "ms": 0.058553,
+          "maxMs": 0.058553
+        },
+        {
+          "phase": "queueState",
+          "thread": "RenderThread",
+          "state": "Running",
+          "ioWait": null,
+          "ms": 259.44129,
+          "maxMs": 4.982584
+        },
+        {
+          "phase": "queueState",
+          "thread": "RenderThread",
+          "state": "S",
+          "ioWait": null,
+          "ms": 377.462078,
+          "maxMs": 7.435832
+        }
+      ],
+      "googleCpuDuringMissedFrameMs": 0,
+      "inputContext": "Final MOVE of first swipe; UP is13.508ms after missed-frame start. Nearest synthetic updates are\u221278.081ms/+22.317ms. Source auto-scroll effect depends on message count/insets/viewport, not token text; no trace evidence establishes an auto-scroll restart.",
+      "prefetchContext": "After the missed doFrame, lazy prefetch composition lasts3.465ms, with another1.940ms in the next frame. These overlap rendering; attribution to the fence delay is unproven.",
+      "queuedFrames": 80,
+      "queueStartOffsetMs": 631.829304,
+      "lastQueuedAppFrameEndOffsetMs": 1296.847128,
+      "queuedSpanMs": 665.017824,
+      "before": {
+        "frames": 6,
+        "appStartToDisplayMs": {
+          "median": 26.14742,
+          "min": 26.082397,
+          "max": 26.294027
+        },
+        "appFinishToDisplayMs": {
+          "min": 12.014852,
+          "max": 18.041016
+        }
+      },
+      "queued": {
+        "frames": 80,
+        "appStartToDisplayMs": {
+          "median": 34.702616500000005,
+          "min": 33.775228,
+          "max": 35.065347
+        },
+        "appFinishToDisplayMs": {
+          "min": 19.878214,
+          "max": 29.452231
+        }
+      },
+      "after": {
+        "frames": 3,
+        "appStartToDisplayMs": {
+          "median": 26.530152,
+          "min": 25.552246,
+          "max": 26.634971
+        },
+        "appFinishToDisplayMs": {
+          "min": 16.663169,
+          "max": 18.400716
+        }
+      },
+      "latencyMethod": "Join app surface FrameTimeline tokens to SurfaceFlinger actual display-frame tokens; display end is trace on-screen-update timing, not physical touch-to-photon measurement. Adjacent-frame observations are not a controlled counterfactual.",
+      "conclusion": "One additional display interval of queuing is observed. Trace evidence points to a late frame-completion/fence tail during swipe-to-fling, not demonstrated I/O, Google-process scheduling, or token recomposition as its cause. GPU attribution requires another targeted capture."
+    },
+    "noInWindowPipelineCompilationMisses": true
+  }
+}

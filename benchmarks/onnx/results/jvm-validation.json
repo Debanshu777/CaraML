@@ -1,0 +1,56 @@
+{
+  "gate": "verifyProject + Android debug APK with optional WebGPU",
+  "result": "BUILD SUCCESSFUL",
+  "date_local": "2026-10-23",
+  "modules": {
+    "core": {
+      "tests": 14,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "storage": {
+      "tests": 13,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "native-runtime": {
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "model-discovery": {
+      "tests": 52,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "plugin-llama": {
+      "tests": 40,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "plugin-diffusion": {
+      "tests": 28,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "plugin-onnx": {
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "app/composeApp": {
+      "tests": 1360,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "coverage_note": "Includes ONNX format-switch/pagination regression and provider fallback tests. Real-device and Apple simulator runs are recorded separately."
+}

@@ -1,5 +1,8 @@
 package com.debanshu777.caraml.core.download.transfer
 
+import com.debanshu777.caraml.core.performance.beginPerformanceSpan
+import com.debanshu777.caraml.core.performance.tracePerformanceStage
+
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -63,7 +66,13 @@ private class SharedArtifactRootLifetime(
                     if (store.readRecoveryCandidates() != candidates) return@withRoots unavailable()
                     if (!recoverArtifactStores(allRoots)) return@withRoots unavailable()
                     store.recover()
-                    val validated = store.readValidated()
+                    // Publication/recovery establish content hashes. Hold the same root lease
+                    // across metadata checks and native loading so cleanup cannot remove files.
+                    val validated = tracePerformanceStage("load.manifestCheck") {
+                        store.readForLoad { entry ->
+                            matchesInstalledEntry(pathProvider, entry, allowedRoots, verifyContent = false)
+                        }
+                    }
                     blockEntered = true
                     block(validated)
                 } finally {
@@ -106,9 +115,15 @@ internal object ArtifactRootLockCoordinator {
         val acquired = guard.withLock {
             orderedKeys.map { key -> key to entries.getOrPut(key) { Entry(Mutex(), 0) }.also { it.references++ } }
         }
+        var wait = beginPerformanceSpan("artifact.rootLockWait")
         return try {
-            lockRecursively(acquired.map { it.second }, 0, block)
+            lockRecursively(acquired.map { it.second }, 0) {
+                wait?.close()
+                wait = null
+                block()
+            }
         } finally {
+            wait?.close()
             guard.withLock {
                 acquired.forEach { (key, entry) ->
                     entry.references--

@@ -52,7 +52,9 @@ class ModelDescriptorFactory {
         }
         val boundedFiles = files.asSequence().take(DescriptorLimits.MAX_COMPONENTS + 1).toList()
         if (boundedFiles.size != files.size) return invalid(AssessmentReason.COMPONENT_LIMIT_EXCEEDED)
-        if (boundedFiles.any { modelFormatForPath(it.path.orEmpty()) != ModelFormat.GGUF }) {
+        val onnx = com.debanshu777.caraml.sdk.discovery.huggingface.model.OnnxModelBundles
+            .isComplete(boundedFiles.map { it.path.orEmpty() })
+        if (!onnx && boundedFiles.any { modelFormatForPath(it.path.orEmpty()) != ModelFormat.GGUF }) {
             return invalid(AssessmentReason.UNSUPPORTED_FORMAT)
         }
         val identities = ArrayList<ModelFileIdentity>(boundedFiles.size)
@@ -71,7 +73,7 @@ class ModelDescriptorFactory {
             }
             identities += identity
         }
-        identities.sortBy { it.path }
+        identities.sortWith(compareBy<ModelFileIdentity> { if (onnx && it.path.endsWith(".onnx")) 0 else 1 }.thenBy { it.path })
         val parameterCount = detail.gguf?.total ?: detail.safetensors?.total
         if (parameterCount != null && parameterCount !in 1..DescriptorLimits.MAX_PARAMETERS) {
             return invalid(AssessmentReason.PARAMETER_LIMIT_EXCEEDED)
@@ -80,7 +82,7 @@ class ModelDescriptorFactory {
         if (contextLimit != null && contextLimit !in 1..DescriptorLimits.MAX_CONTEXT_TOKENS) {
             return invalid(AssessmentReason.CONTEXT_LIMIT_EXCEEDED)
         }
-        val architecture = detail.gguf?.architecture ?: detail.config?.modelType
+        val architecture = detail.gguf?.architecture ?: detail.config?.modelType ?: transformerConfig?.modelType
         if (!isSafeArchitecture(architecture)) return invalid(AssessmentReason.INVALID_METADATA)
 
         val quantizations = identities.flatMapTo(linkedSetOf()) {
@@ -108,7 +110,8 @@ class ModelDescriptorFactory {
                 add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.MEDIUM, "parameters:hub-metadata"))
             }
             if (architecture != null) {
-                add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.MEDIUM, "architecture:hub-metadata"))
+                val source = if (detail.gguf?.architecture != null || detail.config?.modelType != null) "hub-metadata" else "transformer-config"
+                add(Evidence(AssessmentReason.METADATA_VALIDATED, Confidence.MEDIUM, "architecture:$source"))
             }
             if (contextLimit != null) {
                 val source = if (detail.gguf?.contextLength != null) "hub-metadata" else "transformer-config"
@@ -640,6 +643,7 @@ class ModelDescriptorFactory {
             "runwayml/stable-diffusion-v1-5" to SdArchitecture.SD1,
             "stabilityai/stable-diffusion-2-1" to SdArchitecture.SD1,
             "stabilityai/sd-turbo" to SdArchitecture.SD1,
+            "Green-Sky/SD-Turbo-GGUF" to SdArchitecture.SD1,
             "stabilityai/stable-diffusion-xl-base-1.0" to SdArchitecture.SDXL,
             "stabilityai/sdxl-turbo" to SdArchitecture.SDXL,
             "segmind/SSD-1B" to SdArchitecture.SDXL,

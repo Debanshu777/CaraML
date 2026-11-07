@@ -1,0 +1,1690 @@
+{
+  "status": "Completed fixed-plan CPU repack pilot; three control and three candidate runs",
+  "control": {
+    "archive": "build/benchmark-results/journey-matrix/20261023T193641.581149Z-fixed-repack-control",
+    "apkSha256": "80408ea043f433893d6e58ae787c8dae6fdf99b503053424b9f315ac818770be",
+    "allTrialsValid": true,
+    "preferencesPreserved": true,
+    "cacheState": "FRESH_PROCESS_OS_CACHE_UNCONTROLLED",
+    "failure": null,
+    "options": {
+      "serial": "48221FDAQ003AT",
+      "label": "fixed-repack-control",
+      "backend": "cpu",
+      "first_backend": "cpu",
+      "trials": 3,
+      "phase": "journey",
+      "case": "qwen2.5-3b",
+      "context_tokens": 4096,
+      "max_start_temperature": 35.0,
+      "cooldown_seconds": 120,
+      "trial_timeout_seconds": 900
+    },
+    "startedAtUtc": "20261023T193641.581149Z",
+    "finishedAtUtc": "2026-10-23T19:37:37.457701+00:00",
+    "trials": [
+      {
+        "source": "build/benchmark-results/journey-matrix/20261023T193641.581149Z-fixed-repack-control/01-cpu-trial-1.json",
+        "backend": "cpu",
+        "trial": 1,
+        "accepted": true,
+        "wholeLoadMs": 4034,
+        "repositoryLoadMs": 3813,
+        "outsideRepositoryLoadMs": 221,
+        "prepareMs": 113,
+        "resolveMs": 102,
+        "runtimeConfig": "t=4/4,b=256,ctx=4096,gpu=0,kv=1/1,fa=-1,kleidi=1,ub=64,offloadKqv=false,autoFit=false",
+        "requestedWorkload": {
+          "policy": "FIXED_NO_FALLBACK",
+          "context": 4096,
+          "batch": 256,
+          "microBatch": 64,
+          "sequenceCount": 1,
+          "keyCacheType": "F16",
+          "valueCacheType": "F16",
+          "allowContextFallback": false,
+          "allowBatchFallback": false,
+          "allowKvCacheFallback": false,
+          "placementPolicy": "FULL_VULKAN",
+          "fullVulkanLayerCount": 37
+        },
+        "resolvedPlan": {
+          "backend": "CPU",
+          "context": 4096,
+          "batch": 256,
+          "microBatch": 64,
+          "sequenceCount": 1,
+          "keyCacheType": "F16",
+          "valueCacheType": "F16",
+          "gpuLayers": 0,
+          "useMmap": true,
+          "nativeMetadataFallback": false
+        },
+        "initialAttempts": [
+          {
+            "attempt": 1,
+            "ms": 35,
+            "state": "AdmissionRequired",
+            "admissionType": "ConfirmationRequired",
+            "admissionReason": "RISK_ACKNOWLEDGEMENT_REQUIRED",
+            "explicitRetryRequired": false,
+            "riskAcknowledgementAttached": false,
+            "thermal": 0
+          },
+          {
+            "attempt": 2,
+            "ms": 3774,
+            "state": "Success",
+            "admissionType": null,
+            "admissionReason": null,
+            "explicitRetryRequired": null,
+            "riskAcknowledgementAttached": true,
+            "thermal": 0
+          }
+        ],
+        "repeatedAttempts": [
+          {
+            "attempt": 1,
+            "ms": 310,
+            "state": "AdmissionRequired",
+            "admissionType": "ConfirmationRequired",
+            "admissionReason": "RISK_ACKNOWLEDGEMENT_REQUIRED",
+            "explicitRetryRequired": false,
+            "riskAcknowledgementAttached": false,
+            "thermal": 0
+          },
+          {
+            "attempt": 2,
+            "ms": 3565,
+            "state": "Success",
+            "admissionType": null,
+            "admissionReason": null,
+            "explicitRetryRequired": null,
+            "riskAcknowledgementAttached": true,
+            "thermal": 0
+          }
+        ],
+        "acknowledgements": [
+          {
+            "scope": "INITIAL",
+            "action": "ACKNOWLEDGED",
+            "reason": "RISK_ACKNOWLEDGEMENT_REQUIRED",
+            "authorization": "USER_REQUESTED_BENCHMARK",
+            "exactRequestBinding": true,
+            "assessmentKeySha256": "c73a9de1b0b1a11855fed3f1ba70a772565f8201cea5ef51da2c25dc16eb7540",
+            "planKeySha256": "aa072a87733d8bcdb99386e536a48ed538e3695f2bd73abff03f870e02577c91",
+            "identityRevision": "a59351ebfd39cc18e8697a0b5801ca5334ffa0ea4c910a907ef7daae150b4c69",
+            "identityBytes": 2104932768
+          },
+          {
+            "scope": "REPEATED",
+            "action": "ACKNOWLEDGED",
+            "reason": "RISK_ACKNOWLEDGEMENT_REQUIRED",
+            "authorization": "USER_REQUESTED_BENCHMARK",
+            "exactRequestBinding": true,
+            "assessmentKeySha256": "c73a9de1b0b1a11855fed3f1ba70a772565f8201cea5ef51da2c25dc16eb7540",
+            "planKeySha256": "aa072a87733d8bcdb99386e536a48ed538e3695f2bd73abff03f870e02577c91",
+            "identityRevision": "a59351ebfd39cc18e8697a0b5801ca5334ffa0ea4c910a907ef7daae150b4c69",
+            "identityBytes": 2104932768
+          }
+        ],
+        "repeatedRequestMs": 3886,
+        "generations": [
+          {
+            "turn": 1,
+            "tokens": 8,
+            "ttftMs": 590,
+            "decodeTps": 12.404308116861086,
+            "thermal": 0,
+            "contentSha256": "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6",
+            "deltaMatchesFinal": true,
+            "gcCount": 0
+          },
+          {
+            "turn": 2,
+            "tokens": 8,
+            "ttftMs": 616,
+            "decodeTps": 12.293082290094807,
+            "thermal": 0,
+            "contentSha256": "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6",
+            "deltaMatchesFinal": true,
+            "gcCount": 0
+          },
+          {
+            "turn": 3,
+            "tokens": 8,
+            "ttftMs": 552,
+            "decodeTps": 11.619259333334805,
+            "thermal": 0,
+            "contentSha256": "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6",
+            "deltaMatchesFinal": true,
+            "gcCount": 0
+          }
+        ],
+        "conditions": {
+          "before": {
+            "thermalStatus": 0,
+            "batteryTemperatureC": 33.7,
+            "awake": true,
+            "keyguardShowing": false
+          },
+          "after": {
+            "thermalStatus": 0,
+            "batteryTemperatureC": 33.7,
+            "awake": true,
+            "keyguardShowing": false
+          }
+        }
+      },
+      {
+        "source": "build/benchmark-results/journey-matrix/20261023T193641.581149Z-fixed-repack-control/02-cpu-trial-2.json",
+        "backend": "cpu",
+        "trial": 2,
+        "accepted": true,
+        "wholeLoadMs": 3337,
+        "repositoryLoadMs": 3094,
+        "outsideRepositoryLoadMs": 243,
+        "prepareMs": 115,
+        "resolveMs": 121,
+        "runtimeConfig": "t=4/4,b=256,ctx=4096,gpu=0,kv=1/1,fa=-1,kleidi=1,ub=64,offloadKqv=false,autoFit=false",
+        "requestedWorkload": {
+          "policy": "FIXED_NO_FALLBACK",
+          "context": 4096,
+          "batch": 256,
+          "microBatch": 64,
+          "sequenceCount": 1,
+          "keyCacheType": "F16",
+          "valueCacheType": "F16",
+          "allowContextFallback": false,
+          "allowBatchFallback": false,
+          "allowKvCacheFallback": false,
+          "placementPolicy": "FULL_VULKAN",
+          "fullVulkanLayerCount": 37
+        },
+        "resolvedPlan": {
+          "backend": "CPU",
+          "context": 4096,
+          "batch": 256,
+          "microBatch": 64,
+          "sequenceCount": 1,
+          "keyCacheType": "F16",
+          "valueCacheType": "F16",
+          "gpuLayers": 0,
+          "useMmap": true,
+          "nativeMetadataFallback": false
+        },
+        "initialAttempts": [
+          {
+            "attempt": 1,
+            "ms": 46,
+            "state": "AdmissionRequired",
+            "admissionType": "ConfirmationRequired",
+            "admissionReason": "RISK_ACKNOWLEDGEMENT_REQUIRED",
+            "explicitRetryRequired": false,
+            "riskAcknowledgementAttached": false,
+            "thermal": 0
+          },
+          {
+            "attempt": 2,
+            "ms": 3044,
+            "state": "Success",
+            "admissionType": null,
+            "admissionReason": null,
+            "explicitRetryRequired": null,
+            "riskAcknowledgementAttached": true,
+            "thermal": 0
+          }
+        ],
+        "repeatedAttempts": [
+          {
+            "attempt": 1,
+            "ms": 3746,
+            "state": "Success",
+            "admissionType": null,
+            "admissionReason": null,
+            "explicitRetryRequired": null,
+            "riskAcknowledgementAttached": false,
+            "thermal": 0
+          }
+        ],
+        "acknowledgements": [
+          {
+            "scope": "INITIAL",
+            "action": "ACKNOWLEDGED",
+            "reason": "RISK_ACKNOWLEDGEMENT_REQUIRED",
+            "authorization": "USER_REQUESTED_BENCHMARK",
+            "exactRequestBinding": true,
+            "assessmentKeySha256": "c73a9de1b0b1a11855fed3f1ba70a772565f8201cea5ef51da2c25dc16eb7540",
+            "planKeySha256": "aa072a87733d8bcdb99386e536a48ed538e3695f2bd73abff03f870e02577c91",
+            "identityRevision": "a59351ebfd39cc18e8697a0b5801ca5334ffa0ea4c910a907ef7daae150b4c69",
+            "identityBytes": 2104932768
+          }
+        ],
+        "repeatedRequestMs": 3747,
+        "generations": [
+          {
+            "turn": 1,
+            "tokens": 8,
+            "ttftMs": 553,
+            "decodeTps": 11.674304327329562,
+            "thermal": 0,
+            "contentSha256": "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6",
+            "deltaMatchesFinal": true,
+            "gcCount": 0
+          },
+          {
+            "turn": 2,
+            "tokens": 8,
+            "ttftMs": 627,
+            "decodeTps": 11.76382254779195,
+            "thermal": 0,
+            "contentSha256": "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6",
+            "deltaMatchesFinal": true,
+            "gcCount": 0
+          },
+          {
+            "turn": 3,
+            "tokens": 8,
+            "ttftMs": 586,
+            "decodeTps": 11.591620160782991,
+            "thermal": 0,
+            "contentSha256": "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6",
+            "deltaMatchesFinal": true,
+            "gcCount": 0
+          }
+        ],
+        "conditions": {
+          "before": {
+            "thermalStatus": 0,
+            "batteryTemperatureC": 33.7,
+            "awake": true,
+            "keyguardShowing": false
+          },
+          "after": {
+            "thermalStatus": 0,
+            "batteryTemperatureC": 34.7,
+            "awake": true,
+            "keyguardShowing": false
+          }
+        }
+      },
+      {
+        "source": "build/benchmark-results/journey-matrix/20261023T193641.581149Z-fixed-repack-control/03-cpu-trial-3.json",
+        "backend": "cpu",
+        "trial": 3,
+        "accepted": true,
+        "wholeLoadMs": 3210,
+        "repositoryLoadMs": 2998,
+        "outsideRepositoryLoadMs": 212,
+        "prepareMs": 119,
+        "resolveMs": 88,
+        "runtimeConfig": "t=4/4,b=256,ctx=4096,gpu=0,kv=1/1,fa=-1,kleidi=1,ub=64,offloadKqv=false,autoFit=false",
+        "requestedWorkload": {
+          "policy": "FIXED_NO_FALLBACK",
+          "context": 4096,
+          "batch": 256,
+          "microBatch": 64,
+          "sequenceCount": 1,
+          "keyCacheType": "F16",
+          "valueCacheType": "F16",
+          "allowContextFallback": false,
+          "allowBatchFallback": false,
+          "allowKvCacheFallback": false,
+          "placementPolicy": "FULL_VULKAN",
+          "fullVulkanLayerCount": 37
+        },
+        "resolvedPlan": {
+          "backend": "CPU",
+          "context": 4096,
+          "batch": 256,
+          "microBatch": 64,
+          "sequenceCount": 1,
+          "keyCacheType": "F16",
+          "valueCacheType": "F16",
+          "gpuLayers": 0,
+          "useMmap": true,
+          "nativeMetadataFallback": false
+        },
+        "initialAttempts": [
+          {
+            "attempt": 1,
+            "ms": 42,
+            "state": "AdmissionRequired",
+            "admissionType": "ConfirmationRequired",
+            "admissionReason": "RISK_ACKNOWLEDGEMENT_REQUIRED",
+            "explicitRetryRequired": false,
+            "riskAcknowledgementAttached": false,
+            "thermal": 0
+          },
+          {
+            "attempt": 2,
+            "ms": 2951,
+            "state": "Success",
+            "admissionType": null,
+            "admissionReason": null,
+            "explicitRetryRequired": null,
+            "riskAcknowledgementAttached": true,
+            "thermal": 0
+          }
+        ],
+        "repeatedAttempts": [
+          {
+            "attempt": 1,
+            "ms": 312,
+            "state": "AdmissionRequired",
+            "admissionType": "ConfirmationRequired",
+            "admissionReason": "RISK_ACKNOWLEDGEMENT_REQUIRED",
+            "explicitRetryRequired": false,
+            "riskAcknowledgementAttached": false,
+            "thermal": 0
+          },
+          {
+            "attempt": 2,
+            "ms": 3282,
+            "state": "Success",
+            "admissionType": null,
+            "admissionReason": null,
+            "explicitRetryRequired": null,
+            "riskAcknowledgementAttached": true,
+            "thermal": 0
+          }
+        ],
+        "acknowledgements": [
+          {
+            "scope": "INITIAL",
+            "action": "ACKNOWLEDGED",
+            "reason": "RISK_ACKNOWLEDGEMENT_REQUIRED",
+            "authorization": "USER_REQUESTED_BENCHMARK",
+            "exactRequestBinding": true,
+            "assessmentKeySha256": "c73a9de1b0b1a11855fed3f1ba70a772565f8201cea5ef51da2c25dc16eb7540",
+            "planKeySha256": "aa072a87733d8bcdb99386e536a48ed538e3695f2bd73abff03f870e02577c91",
+            "identityRevision": "a59351ebfd39cc18e8697a0b5801ca5334ffa0ea4c910a907ef7daae150b4c69",
+            "identityBytes": 2104932768
+          },
+          {
+            "scope": "REPEATED",
+            "action": "ACKNOWLEDGED",
+            "reason": "RISK_ACKNOWLEDGEMENT_REQUIRED",
+            "authorization": "USER_REQUESTED_BENCHMARK",
+            "exactRequestBinding": true,
+            "assessmentKeySha256": "c73a9de1b0b1a11855fed3f1ba70a772565f8201cea5ef51da2c25dc16eb7540",
+            "planKeySha256": "aa072a87733d8bcdb99386e536a48ed538e3695f2bd73abff03f870e02577c91",
+            "identityRevision": "a59351ebfd39cc18e8697a0b5801ca5334ffa0ea4c910a907ef7daae150b4c69",
+            "identityBytes": 2104932768
+          }
+        ],
+        "repeatedRequestMs": 3598,
+        "generations": [
+          {
+            "turn": 1,
+            "tokens": 8,
+            "ttftMs": 580,
+            "decodeTps": 12.054010978696768,
+            "thermal": 0,
+            "contentSha256": "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6",
+            "deltaMatchesFinal": true,
+            "gcCount": 0
+          },
+          {
+            "turn": 2,
+            "tokens": 8,
+            "ttftMs": 643,
+            "decodeTps": 12.319722400187946,
+            "thermal": 0,
+            "contentSha256": "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6",
+            "deltaMatchesFinal": true,
+            "gcCount": 0
+          },
+          {
+            "turn": 3,
+            "tokens": 8,
+            "ttftMs": 575,
+            "decodeTps": 12.255681758574639,
+            "thermal": 0,
+            "contentSha256": "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6",
+            "deltaMatchesFinal": true,
+            "gcCount": 0
+          }
+        ],
+        "conditions": {
+          "before": {
+            "thermalStatus": 0,
+            "batteryTemperatureC": 34.7,
+            "awake": true,
+            "keyguardShowing": false
+          },
+          "after": {
+            "thermalStatus": 0,
+            "batteryTemperatureC": 35.4,
+            "awake": true,
+            "keyguardShowing": false
+          }
+        }
+      }
+    ]
+  },
+  "controlBuild": {
+    "archive": "build/benchmark-results/measurement-gaps/repack-fixed-control-build",
+    "variant": "control",
+    "valid": true,
+    "patchRestored": true,
+    "patchSha256": "3bb30486bb75040c61e9f35a84a845e1f2b0d73a586ab649e51121a526db849c",
+    "builtRepackSha256": "0d604f463513bc796ffd7031f770c1706300990c0a8670a0e9000949667155c3",
+    "apkSha256": "80408ea043f433893d6e58ae787c8dae6fdf99b503053424b9f315ac818770be",
+    "apkBytes": 179742649,
+    "frozenSourceManifestSha256": "71582f224fe19886b7964856cef9654a9705658acd3d296088abf765756a4e73",
+    "compiler": "Android NDK default",
+    "matchingNativeBuildIdCount": 10
+  },
+  "controlSummary": {
+    "n": 3,
+    "wholeLoadMsMedian": 3337,
+    "repositoryLoadMsMedian": 3094,
+    "outsideRepositoryLoadMsMedian": 221,
+    "prepareMsMedian": 115,
+    "resolveMsMedian": 102,
+    "repeatedRequestMsMedian": 3747,
+    "ttftMsMedianByTurn": {
+      "1": 580,
+      "2": 627,
+      "3": 575
+    },
+    "decodeTpsMedianByTurn": {
+      "1": 12.054010978696768,
+      "2": 12.293082290094807,
+      "3": 11.619259333334805
+    },
+    "initialAttemptsPerTrial": [
+      2,
+      2,
+      2
+    ],
+    "repeatedAttemptsPerTrial": [
+      2,
+      1,
+      2
+    ],
+    "initialConfirmationMs": [
+      35,
+      46,
+      42
+    ],
+    "batteryTemperatureRangeC": [
+      33.7,
+      35.4
+    ],
+    "allThermalNormal": true,
+    "contentSha256": [
+      "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6"
+    ],
+    "generationCount": 9
+  },
+  "functionalValidationOnly": {
+    "archive": "build/benchmark-results/journey-matrix/20261023T193214.749991Z-exact-admission-validation",
+    "apkSha256": "2e6dde5876ff27d63a34296e8d4ddc76c39ca16d9254cb73c9e7b3885109a2be",
+    "allTrialsValid": true,
+    "preferencesPreserved": true,
+    "cacheState": "FRESH_PROCESS_OS_CACHE_UNCONTROLLED",
+    "failure": null,
+    "options": {
+      "serial": "48221FDAQ003AT",
+      "label": "exact-admission-validation",
+      "backend": "both",
+      "first_backend": "cpu",
+      "trials": 1,
+      "phase": "journey",
+      "case": "qwen2.5-3b",
+      "context_tokens": 4096,
+      "max_start_temperature": 35.0,
+      "cooldown_seconds": 120,
+      "trial_timeout_seconds": 900
+    },
+    "startedAtUtc": "20261023T193214.749991Z",
+    "finishedAtUtc": "2026-10-23T19:33:06.797665+00:00",
+    "trials": [
+      {
+        "source": "build/benchmark-results/journey-matrix/20261023T193214.749991Z-exact-admission-validation/01-cpu-trial-1.json",
+        "backend": "cpu",
+        "trial": 1,
+        "accepted": true,
+        "wholeLoadMs": 4198,
+        "repositoryLoadMs": 4009,
+        "outsideRepositoryLoadMs": 189,
+        "prepareMs": 109,
+        "resolveMs": 75,
+        "runtimeConfig": "t=4/4,b=256,ctx=4096,gpu=0,kv=1/1,fa=-1,kleidi=1,ub=64,offloadKqv=false,autoFit=false",
+        "requestedWorkload": {
+          "policy": "FIXED_NO_FALLBACK",
+          "context": 4096,
+          "batch": 256,
+          "microBatch": 64,
+          "sequenceCount": 1,
+          "keyCacheType": "F16",
+          "valueCacheType": "F16",
+          "allowContextFallback": false,
+          "allowBatchFallback": false,
+          "allowKvCacheFallback": false,
+          "placementPolicy": "FULL_VULKAN",
+          "fullVulkanLayerCount": 37
+        },
+        "resolvedPlan": {
+          "backend": "CPU",
+          "context": 4096,
+          "batch": 256,
+          "microBatch": 64,
+          "sequenceCount": 1,
+          "keyCacheType": "F16",
+          "valueCacheType": "F16",
+          "gpuLayers": 0,
+          "useMmap": true,
+          "nativeMetadataFallback": false
+        },
+        "initialAttempts": [
+          {
+            "attempt": 1,
+            "ms": 49,
+            "state": "AdmissionRequired",
+            "admissionType": "ConfirmationRequired",
+            "admissionReason": "RISK_ACKNOWLEDGEMENT_REQUIRED",
+            "explicitRetryRequired": false,
+            "riskAcknowledgementAttached": false,
+            "thermal": 0
+          },
+          {
+            "attempt": 2,
+            "ms": 3953,
+            "state": "Success",
+            "admissionType": null,
+            "admissionReason": null,
+            "explicitRetryRequired": null,
+            "riskAcknowledgementAttached": true,
+            "thermal": 0
+          }
+        ],
+        "repeatedAttempts": [
+          {
+            "attempt": 1,
+            "ms": 304,
+            "state": "AdmissionRequired",
+            "admissionType": "ConfirmationRequired",
+            "admissionReason": "RISK_ACKNOWLEDGEMENT_REQUIRED",
+            "explicitRetryRequired": false,
+            "riskAcknowledgementAttached": false,
+            "thermal": 0
+          },
+          {
+            "attempt": 2,
+            "ms": 3114,
+            "state": "Success",
+            "admissionType": null,
+            "admissionReason": null,
+            "explicitRetryRequired": null,
+            "riskAcknowledgementAttached": true,
+            "thermal": 0
+          }
+        ],
+        "acknowledgements": [
+          {
+            "scope": "INITIAL",
+            "action": "ACKNOWLEDGED",
+            "reason": "RISK_ACKNOWLEDGEMENT_REQUIRED",
+            "authorization": "USER_REQUESTED_BENCHMARK",
+            "exactRequestBinding": true,
+            "assessmentKeySha256": "c73a9de1b0b1a11855fed3f1ba70a772565f8201cea5ef51da2c25dc16eb7540",
+            "planKeySha256": "aa072a87733d8bcdb99386e536a48ed538e3695f2bd73abff03f870e02577c91",
+            "identityRevision": "a59351ebfd39cc18e8697a0b5801ca5334ffa0ea4c910a907ef7daae150b4c69",
+            "identityBytes": 2104932768
+          },
+          {
+            "scope": "REPEATED",
+            "action": "ACKNOWLEDGED",
+            "reason": "RISK_ACKNOWLEDGEMENT_REQUIRED",
+            "authorization": "USER_REQUESTED_BENCHMARK",
+            "exactRequestBinding": true,
+            "assessmentKeySha256": "c73a9de1b0b1a11855fed3f1ba70a772565f8201cea5ef51da2c25dc16eb7540",
+            "planKeySha256": "aa072a87733d8bcdb99386e536a48ed538e3695f2bd73abff03f870e02577c91",
+            "identityRevision": "a59351ebfd39cc18e8697a0b5801ca5334ffa0ea4c910a907ef7daae150b4c69",
+            "identityBytes": 2104932768
+          }
+        ],
+        "repeatedRequestMs": 3424,
+        "generations": [
+          {
+            "turn": 1,
+            "tokens": 8,
+            "ttftMs": 554,
+            "decodeTps": 12.550662947353006,
+            "thermal": 0,
+            "contentSha256": "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6",
+            "deltaMatchesFinal": true,
+            "gcCount": 0
+          },
+          {
+            "turn": 2,
+            "tokens": 8,
+            "ttftMs": 613,
+            "decodeTps": 12.061476837412126,
+            "thermal": 0,
+            "contentSha256": "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6",
+            "deltaMatchesFinal": true,
+            "gcCount": 0
+          },
+          {
+            "turn": 3,
+            "tokens": 8,
+            "ttftMs": 561,
+            "decodeTps": 11.522993413993607,
+            "thermal": 0,
+            "contentSha256": "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6",
+            "deltaMatchesFinal": true,
+            "gcCount": 0
+          }
+        ],
+        "conditions": {
+          "before": {
+            "thermalStatus": 0,
+            "batteryTemperatureC": 34.1,
+            "awake": true,
+            "keyguardShowing": false
+          },
+          "after": {
+            "thermalStatus": 0,
+            "batteryTemperatureC": 33.7,
+            "awake": true,
+            "keyguardShowing": false
+          }
+        }
+      },
+      {
+        "source": "build/benchmark-results/journey-matrix/20261023T193214.749991Z-exact-admission-validation/02-vulkan-trial-1.json",
+        "backend": "vulkan",
+        "trial": 1,
+        "accepted": true,
+        "wholeLoadMs": 2595,
+        "repositoryLoadMs": 2378,
+        "outsideRepositoryLoadMs": 217,
+        "prepareMs": 108,
+        "resolveMs": 105,
+        "runtimeConfig": "t=4/4,b=256,ctx=4096,gpu=37,kv=1/1,fa=-1,kleidi=1,ub=64,offloadKqv=true,autoFit=false",
+        "requestedWorkload": {
+          "policy": "FIXED_NO_FALLBACK",
+          "context": 4096,
+          "batch": 256,
+          "microBatch": 64,
+          "sequenceCount": 1,
+          "keyCacheType": "F16",
+          "valueCacheType": "F16",
+          "allowContextFallback": false,
+          "allowBatchFallback": false,
+          "allowKvCacheFallback": false,
+          "placementPolicy": "FULL_VULKAN",
+          "fullVulkanLayerCount": 37
+        },
+        "resolvedPlan": {
+          "backend": "VULKAN",
+          "context": 4096,
+          "batch": 256,
+          "microBatch": 64,
+          "sequenceCount": 1,
+          "keyCacheType": "F16",
+          "valueCacheType": "F16",
+          "gpuLayers": 37,
+          "useMmap": true,
+          "nativeMetadataFallback": false
+        },
+        "initialAttempts": [
+          {
+            "attempt": 1,
+            "ms": 2377,
+            "state": "Success",
+            "admissionType": null,
+            "admissionReason": null,
+            "explicitRetryRequired": null,
+            "riskAcknowledgementAttached": false,
+            "thermal": 0
+          }
+        ],
+        "repeatedAttempts": [
+          {
+            "attempt": 1,
+            "ms": 2598,
+            "state": "Success",
+            "admissionType": null,
+            "admissionReason": null,
+            "explicitRetryRequired": null,
+            "riskAcknowledgementAttached": false,
+            "thermal": 0
+          }
+        ],
+        "acknowledgements": [],
+        "repeatedRequestMs": 2598,
+        "generations": [
+          {
+            "turn": 1,
+            "tokens": 8,
+            "ttftMs": 5890,
+            "decodeTps": 10.146264225667597,
+            "thermal": 0,
+            "contentSha256": "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6",
+            "deltaMatchesFinal": true,
+            "gcCount": 0
+          },
+          {
+            "turn": 2,
+            "tokens": 8,
+            "ttftMs": 5889,
+            "decodeTps": 10.174647268017527,
+            "thermal": 0,
+            "contentSha256": "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6",
+            "deltaMatchesFinal": true,
+            "gcCount": 0
+          },
+          {
+            "turn": 3,
+            "tokens": 8,
+            "ttftMs": 5817,
+            "decodeTps": 10.1845499669902,
+            "thermal": 0,
+            "contentSha256": "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6",
+            "deltaMatchesFinal": true,
+            "gcCount": 0
+          }
+        ],
+        "conditions": {
+          "before": {
+            "thermalStatus": 0,
+            "batteryTemperatureC": 33.7,
+            "awake": true,
+            "keyguardShowing": false
+          },
+          "after": {
+            "thermalStatus": 0,
+            "batteryTemperatureC": 33.7,
+            "awake": true,
+            "keyguardShowing": false
+          }
+        }
+      }
+    ]
+  },
+  "schemaVersion": 1,
+  "dateLocal": "2026-10-24",
+  "timezone": "Asia/Kolkata",
+  "managedBuild": "DEBUG",
+  "nativeBuild": "RELEASE",
+  "diagnosticTracing": false,
+  "candidate": {
+    "archive": "build/benchmark-results/journey-matrix/20261023T194229.054956Z-fixed-repack-candidate-cpu",
+    "apkSha256": "e3f0a3f047dde5a4d7b3263a249911e0ba717eb1bfd0c4dc2eb7f5ad7207cf48",
+    "allTrialsValid": true,
+    "preferencesPreserved": true,
+    "cacheState": "FRESH_PROCESS_OS_CACHE_UNCONTROLLED",
+    "failure": null,
+    "options": {
+      "serial": "48221FDAQ003AT",
+      "label": "fixed-repack-candidate-cpu",
+      "backend": "cpu",
+      "first_backend": "cpu",
+      "trials": 3,
+      "phase": "journey",
+      "case": "qwen2.5-3b",
+      "context_tokens": 4096,
+      "max_start_temperature": 35.0,
+      "cooldown_seconds": 180,
+      "trial_timeout_seconds": 900
+    },
+    "startedAtUtc": "20261023T194229.054956Z",
+    "finishedAtUtc": "2026-10-23T19:45:49.841829+00:00",
+    "trials": [
+      {
+        "source": "build/benchmark-results/journey-matrix/20261023T194229.054956Z-fixed-repack-candidate-cpu/01-cpu-trial-1.json",
+        "backend": "cpu",
+        "trial": 1,
+        "accepted": true,
+        "wholeLoadMs": 3257,
+        "repositoryLoadMs": 3040,
+        "outsideRepositoryLoadMs": 217,
+        "prepareMs": 120,
+        "resolveMs": 92,
+        "runtimeConfig": "t=4/4,b=256,ctx=4096,gpu=0,kv=1/1,fa=-1,kleidi=1,ub=64,offloadKqv=false,autoFit=false",
+        "requestedWorkload": {
+          "policy": "FIXED_NO_FALLBACK",
+          "context": 4096,
+          "batch": 256,
+          "microBatch": 64,
+          "sequenceCount": 1,
+          "keyCacheType": "F16",
+          "valueCacheType": "F16",
+          "allowContextFallback": false,
+          "allowBatchFallback": false,
+          "allowKvCacheFallback": false,
+          "placementPolicy": "FULL_VULKAN",
+          "fullVulkanLayerCount": 37
+        },
+        "resolvedPlan": {
+          "backend": "CPU",
+          "context": 4096,
+          "batch": 256,
+          "microBatch": 64,
+          "sequenceCount": 1,
+          "keyCacheType": "F16",
+          "valueCacheType": "F16",
+          "gpuLayers": 0,
+          "useMmap": true,
+          "nativeMetadataFallback": false
+        },
+        "initialAttempts": [
+          {
+            "attempt": 1,
+            "ms": 39,
+            "state": "AdmissionRequired",
+            "admissionType": "ConfirmationRequired",
+            "admissionReason": "RISK_ACKNOWLEDGEMENT_REQUIRED",
+            "explicitRetryRequired": false,
+            "riskAcknowledgementAttached": false,
+            "thermal": 0
+          },
+          {
+            "attempt": 2,
+            "ms": 2997,
+            "state": "Success",
+            "admissionType": null,
+            "admissionReason": null,
+            "explicitRetryRequired": null,
+            "riskAcknowledgementAttached": true,
+            "thermal": 0
+          }
+        ],
+        "repeatedAttempts": [
+          {
+            "attempt": 1,
+            "ms": 318,
+            "state": "AdmissionRequired",
+            "admissionType": "ConfirmationRequired",
+            "admissionReason": "RISK_ACKNOWLEDGEMENT_REQUIRED",
+            "explicitRetryRequired": false,
+            "riskAcknowledgementAttached": false,
+            "thermal": 0
+          },
+          {
+            "attempt": 2,
+            "ms": 2728,
+            "state": "Success",
+            "admissionType": null,
+            "admissionReason": null,
+            "explicitRetryRequired": null,
+            "riskAcknowledgementAttached": true,
+            "thermal": 0
+          }
+        ],
+        "acknowledgements": [
+          {
+            "scope": "INITIAL",
+            "action": "ACKNOWLEDGED",
+            "reason": "RISK_ACKNOWLEDGEMENT_REQUIRED",
+            "authorization": "USER_REQUESTED_BENCHMARK",
+            "exactRequestBinding": true,
+            "assessmentKeySha256": "c73a9de1b0b1a11855fed3f1ba70a772565f8201cea5ef51da2c25dc16eb7540",
+            "planKeySha256": "aa072a87733d8bcdb99386e536a48ed538e3695f2bd73abff03f870e02577c91",
+            "identityRevision": "a59351ebfd39cc18e8697a0b5801ca5334ffa0ea4c910a907ef7daae150b4c69",
+            "identityBytes": 2104932768
+          },
+          {
+            "scope": "REPEATED",
+            "action": "ACKNOWLEDGED",
+            "reason": "RISK_ACKNOWLEDGEMENT_REQUIRED",
+            "authorization": "USER_REQUESTED_BENCHMARK",
+            "exactRequestBinding": true,
+            "assessmentKeySha256": "c73a9de1b0b1a11855fed3f1ba70a772565f8201cea5ef51da2c25dc16eb7540",
+            "planKeySha256": "aa072a87733d8bcdb99386e536a48ed538e3695f2bd73abff03f870e02577c91",
+            "identityRevision": "a59351ebfd39cc18e8697a0b5801ca5334ffa0ea4c910a907ef7daae150b4c69",
+            "identityBytes": 2104932768
+          }
+        ],
+        "repeatedRequestMs": 3052,
+        "generations": [
+          {
+            "turn": 1,
+            "tokens": 8,
+            "ttftMs": 598,
+            "decodeTps": 12.523580157079975,
+            "thermal": 0,
+            "contentSha256": "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6",
+            "deltaMatchesFinal": true,
+            "gcCount": 0
+          },
+          {
+            "turn": 2,
+            "tokens": 8,
+            "ttftMs": 654,
+            "decodeTps": 11.579135255126271,
+            "thermal": 0,
+            "contentSha256": "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6",
+            "deltaMatchesFinal": true,
+            "gcCount": 0
+          },
+          {
+            "turn": 3,
+            "tokens": 8,
+            "ttftMs": 549,
+            "decodeTps": 12.414271761074954,
+            "thermal": 0,
+            "contentSha256": "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6",
+            "deltaMatchesFinal": true,
+            "gcCount": 0
+          }
+        ],
+        "conditions": {
+          "before": {
+            "thermalStatus": 0,
+            "batteryTemperatureC": 34.8,
+            "awake": true,
+            "keyguardShowing": false
+          },
+          "after": {
+            "thermalStatus": 0,
+            "batteryTemperatureC": 34.8,
+            "awake": true,
+            "keyguardShowing": false
+          }
+        }
+      },
+      {
+        "source": "build/benchmark-results/journey-matrix/20261023T194229.054956Z-fixed-repack-candidate-cpu/02-cpu-trial-2.json",
+        "backend": "cpu",
+        "trial": 2,
+        "accepted": true,
+        "wholeLoadMs": 2321,
+        "repositoryLoadMs": 2102,
+        "outsideRepositoryLoadMs": 219,
+        "prepareMs": 117,
+        "resolveMs": 99,
+        "runtimeConfig": "t=4/4,b=256,ctx=4096,gpu=0,kv=1/1,fa=-1,kleidi=1,ub=64,offloadKqv=false,autoFit=false",
+        "requestedWorkload": {
+          "policy": "FIXED_NO_FALLBACK",
+          "context": 4096,
+          "batch": 256,
+          "microBatch": 64,
+          "sequenceCount": 1,
+          "keyCacheType": "F16",
+          "valueCacheType": "F16",
+          "allowContextFallback": false,
+          "allowBatchFallback": false,
+          "allowKvCacheFallback": false,
+          "placementPolicy": "FULL_VULKAN",
+          "fullVulkanLayerCount": 37
+        },
+        "resolvedPlan": {
+          "backend": "CPU",
+          "context": 4096,
+          "batch": 256,
+          "microBatch": 64,
+          "sequenceCount": 1,
+          "keyCacheType": "F16",
+          "valueCacheType": "F16",
+          "gpuLayers": 0,
+          "useMmap": true,
+          "nativeMetadataFallback": false
+        },
+        "initialAttempts": [
+          {
+            "attempt": 1,
+            "ms": 39,
+            "state": "AdmissionRequired",
+            "admissionType": "ConfirmationRequired",
+            "admissionReason": "RISK_ACKNOWLEDGEMENT_REQUIRED",
+            "explicitRetryRequired": false,
+            "riskAcknowledgementAttached": false,
+            "thermal": 0
+          },
+          {
+            "attempt": 2,
+            "ms": 2057,
+            "state": "Success",
+            "admissionType": null,
+            "admissionReason": null,
+            "explicitRetryRequired": null,
+            "riskAcknowledgementAttached": true,
+            "thermal": 0
+          }
+        ],
+        "repeatedAttempts": [
+          {
+            "attempt": 1,
+            "ms": 2868,
+            "state": "Success",
+            "admissionType": null,
+            "admissionReason": null,
+            "explicitRetryRequired": null,
+            "riskAcknowledgementAttached": false,
+            "thermal": 0
+          }
+        ],
+        "acknowledgements": [
+          {
+            "scope": "INITIAL",
+            "action": "ACKNOWLEDGED",
+            "reason": "RISK_ACKNOWLEDGEMENT_REQUIRED",
+            "authorization": "USER_REQUESTED_BENCHMARK",
+            "exactRequestBinding": true,
+            "assessmentKeySha256": "c73a9de1b0b1a11855fed3f1ba70a772565f8201cea5ef51da2c25dc16eb7540",
+            "planKeySha256": "aa072a87733d8bcdb99386e536a48ed538e3695f2bd73abff03f870e02577c91",
+            "identityRevision": "a59351ebfd39cc18e8697a0b5801ca5334ffa0ea4c910a907ef7daae150b4c69",
+            "identityBytes": 2104932768
+          }
+        ],
+        "repeatedRequestMs": 2869,
+        "generations": [
+          {
+            "turn": 1,
+            "tokens": 8,
+            "ttftMs": 577,
+            "decodeTps": 12.197631220713944,
+            "thermal": 0,
+            "contentSha256": "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6",
+            "deltaMatchesFinal": true,
+            "gcCount": 0
+          },
+          {
+            "turn": 2,
+            "tokens": 8,
+            "ttftMs": 628,
+            "decodeTps": 12.171648608802995,
+            "thermal": 0,
+            "contentSha256": "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6",
+            "deltaMatchesFinal": true,
+            "gcCount": 0
+          },
+          {
+            "turn": 3,
+            "tokens": 8,
+            "ttftMs": 602,
+            "decodeTps": 12.476166422820588,
+            "thermal": 0,
+            "contentSha256": "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6",
+            "deltaMatchesFinal": true,
+            "gcCount": 0
+          }
+        ],
+        "conditions": {
+          "before": {
+            "thermalStatus": 0,
+            "batteryTemperatureC": 34.8,
+            "awake": true,
+            "keyguardShowing": false
+          },
+          "after": {
+            "thermalStatus": 0,
+            "batteryTemperatureC": 35.3,
+            "awake": true,
+            "keyguardShowing": false
+          }
+        }
+      },
+      {
+        "source": "build/benchmark-results/journey-matrix/20261023T194229.054956Z-fixed-repack-candidate-cpu/03-cpu-trial-3.json",
+        "backend": "cpu",
+        "trial": 3,
+        "accepted": true,
+        "wholeLoadMs": 2536,
+        "repositoryLoadMs": 2332,
+        "outsideRepositoryLoadMs": 204,
+        "prepareMs": 102,
+        "resolveMs": 98,
+        "runtimeConfig": "t=4/4,b=256,ctx=4096,gpu=0,kv=1/1,fa=-1,kleidi=1,ub=64,offloadKqv=false,autoFit=false",
+        "requestedWorkload": {
+          "policy": "FIXED_NO_FALLBACK",
+          "context": 4096,
+          "batch": 256,
+          "microBatch": 64,
+          "sequenceCount": 1,
+          "keyCacheType": "F16",
+          "valueCacheType": "F16",
+          "allowContextFallback": false,
+          "allowBatchFallback": false,
+          "allowKvCacheFallback": false,
+          "placementPolicy": "FULL_VULKAN",
+          "fullVulkanLayerCount": 37
+        },
+        "resolvedPlan": {
+          "backend": "CPU",
+          "context": 4096,
+          "batch": 256,
+          "microBatch": 64,
+          "sequenceCount": 1,
+          "keyCacheType": "F16",
+          "valueCacheType": "F16",
+          "gpuLayers": 0,
+          "useMmap": true,
+          "nativeMetadataFallback": false
+        },
+        "initialAttempts": [
+          {
+            "attempt": 1,
+            "ms": 39,
+            "state": "AdmissionRequired",
+            "admissionType": "ConfirmationRequired",
+            "admissionReason": "RISK_ACKNOWLEDGEMENT_REQUIRED",
+            "explicitRetryRequired": false,
+            "riskAcknowledgementAttached": false,
+            "thermal": 0
+          },
+          {
+            "attempt": 2,
+            "ms": 2288,
+            "state": "Success",
+            "admissionType": null,
+            "admissionReason": null,
+            "explicitRetryRequired": null,
+            "riskAcknowledgementAttached": true,
+            "thermal": 0
+          }
+        ],
+        "repeatedAttempts": [
+          {
+            "attempt": 1,
+            "ms": 394,
+            "state": "AdmissionRequired",
+            "admissionType": "ConfirmationRequired",
+            "admissionReason": "RISK_ACKNOWLEDGEMENT_REQUIRED",
+            "explicitRetryRequired": false,
+            "riskAcknowledgementAttached": false,
+            "thermal": 0
+          },
+          {
+            "attempt": 2,
+            "ms": 3065,
+            "state": "Success",
+            "admissionType": null,
+            "admissionReason": null,
+            "explicitRetryRequired": null,
+            "riskAcknowledgementAttached": true,
+            "thermal": 0
+          }
+        ],
+        "acknowledgements": [
+          {
+            "scope": "INITIAL",
+            "action": "ACKNOWLEDGED",
+            "reason": "RISK_ACKNOWLEDGEMENT_REQUIRED",
+            "authorization": "USER_REQUESTED_BENCHMARK",
+            "exactRequestBinding": true,
+            "assessmentKeySha256": "c73a9de1b0b1a11855fed3f1ba70a772565f8201cea5ef51da2c25dc16eb7540",
+            "planKeySha256": "aa072a87733d8bcdb99386e536a48ed538e3695f2bd73abff03f870e02577c91",
+            "identityRevision": "a59351ebfd39cc18e8697a0b5801ca5334ffa0ea4c910a907ef7daae150b4c69",
+            "identityBytes": 2104932768
+          },
+          {
+            "scope": "REPEATED",
+            "action": "ACKNOWLEDGED",
+            "reason": "RISK_ACKNOWLEDGEMENT_REQUIRED",
+            "authorization": "USER_REQUESTED_BENCHMARK",
+            "exactRequestBinding": true,
+            "assessmentKeySha256": "c73a9de1b0b1a11855fed3f1ba70a772565f8201cea5ef51da2c25dc16eb7540",
+            "planKeySha256": "aa072a87733d8bcdb99386e536a48ed538e3695f2bd73abff03f870e02577c91",
+            "identityRevision": "a59351ebfd39cc18e8697a0b5801ca5334ffa0ea4c910a907ef7daae150b4c69",
+            "identityBytes": 2104932768
+          }
+        ],
+        "repeatedRequestMs": 3463,
+        "generations": [
+          {
+            "turn": 1,
+            "tokens": 8,
+            "ttftMs": 701,
+            "decodeTps": 11.383134305246806,
+            "thermal": 0,
+            "contentSha256": "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6",
+            "deltaMatchesFinal": true,
+            "gcCount": 0
+          },
+          {
+            "turn": 2,
+            "tokens": 8,
+            "ttftMs": 638,
+            "decodeTps": 10.870865433665983,
+            "thermal": 0,
+            "contentSha256": "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6",
+            "deltaMatchesFinal": true,
+            "gcCount": 0
+          },
+          {
+            "turn": 3,
+            "tokens": 8,
+            "ttftMs": 590,
+            "decodeTps": 12.152051523920731,
+            "thermal": 0,
+            "contentSha256": "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6",
+            "deltaMatchesFinal": true,
+            "gcCount": 0
+          }
+        ],
+        "conditions": {
+          "before": {
+            "thermalStatus": 0,
+            "batteryTemperatureC": 34.7,
+            "awake": true,
+            "keyguardShowing": false
+          },
+          "after": {
+            "thermalStatus": 0,
+            "batteryTemperatureC": 34.7,
+            "awake": true,
+            "keyguardShowing": false
+          }
+        }
+      }
+    ]
+  },
+  "candidateBuild": {
+    "archive": "build/benchmark-results/measurement-gaps/repack-fixed-candidate-build",
+    "variant": "candidate",
+    "valid": true,
+    "patchRestored": true,
+    "patchSha256": "3bb30486bb75040c61e9f35a84a845e1f2b0d73a586ab649e51121a526db849c",
+    "builtRepackSha256": "48fdd413b8817fa6ce560b1e0b3185ff90b7c49e6c33eac7652323e982794746",
+    "apkSha256": "e3f0a3f047dde5a4d7b3263a249911e0ba717eb1bfd0c4dc2eb7f5ad7207cf48",
+    "apkBytes": 189525039,
+    "frozenSourceManifestSha256": "71582f224fe19886b7964856cef9654a9705658acd3d296088abf765756a4e73",
+    "compiler": "Android NDK default",
+    "matchingNativeBuildIdCount": 10
+  },
+  "candidateSummary": {
+    "n": 3,
+    "wholeLoadMsMedian": 2536,
+    "repositoryLoadMsMedian": 2332,
+    "outsideRepositoryLoadMsMedian": 217,
+    "prepareMsMedian": 117,
+    "resolveMsMedian": 98,
+    "repeatedRequestMsMedian": 3052,
+    "ttftMsMedianByTurn": {
+      "1": 598,
+      "2": 638,
+      "3": 590
+    },
+    "decodeTpsMedianByTurn": {
+      "1": 12.197631220713944,
+      "2": 11.579135255126271,
+      "3": 12.414271761074954
+    },
+    "initialAttemptsPerTrial": [
+      2,
+      2,
+      2
+    ],
+    "repeatedAttemptsPerTrial": [
+      2,
+      1,
+      2
+    ],
+    "initialConfirmationMs": [
+      39,
+      39,
+      39
+    ],
+    "batteryTemperatureRangeC": [
+      34.7,
+      35.3
+    ],
+    "allThermalNormal": true,
+    "contentSha256": [
+      "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6"
+    ],
+    "generationCount": 9
+  },
+  "frozenSourceInputsEqual": true,
+  "allCpuEffectiveRuntimeConfigsEqual": true,
+  "apkEntryComparison": {
+    "frozenSourceManifestsEqual": true,
+    "controlApkSha256": "80408ea043f433893d6e58ae787c8dae6fdf99b503053424b9f315ac818770be",
+    "candidateApkSha256": "e3f0a3f047dde5a4d7b3263a249911e0ba717eb1bfd0c4dc2eb7f5ad7207cf48",
+    "changedApkEntries": [
+      "lib/arm64-v8a/libggml-cpu-android_armv8.0_1.so",
+      "lib/arm64-v8a/libggml-cpu-android_armv8.2_1.so",
+      "lib/arm64-v8a/libggml-cpu-android_armv8.2_2.so",
+      "lib/arm64-v8a/libggml-cpu-android_armv8.6_1.so",
+      "lib/arm64-v8a/libggml-cpu-android_armv9.0_1.so",
+      "lib/arm64-v8a/libggml-cpu-android_armv9.2_1.so",
+      "lib/arm64-v8a/libggml-cpu-android_armv9.2_2.so",
+      "lib/arm64-v8a/libggml-vulkan.so",
+      "lib/x86_64/libggml-cpu.so"
+    ],
+    "allOtherEntriesByteIdentical": true,
+    "managedDexUnchanged": true,
+    "vulkanLibraryUnchanged": false
+  },
+  "incompleteMixedCandidateMatrix": {
+    "archive": "build/benchmark-results/journey-matrix/20261023T193918.309765Z-fixed-repack-candidate",
+    "apkSha256": "e3f0a3f047dde5a4d7b3263a249911e0ba717eb1bfd0c4dc2eb7f5ad7207cf48",
+    "allTrialsValid": false,
+    "preferencesPreserved": true,
+    "cacheState": "FRESH_PROCESS_OS_CACHE_UNCONTROLLED",
+    "failure": {
+      "type": "RuntimeError",
+      "message": "Device did not meet starting conditions within bounded cooling"
+    },
+    "options": {
+      "serial": "48221FDAQ003AT",
+      "label": "fixed-repack-candidate",
+      "backend": "both",
+      "first_backend": "cpu",
+      "trials": 3,
+      "phase": "journey",
+      "case": "qwen2.5-3b",
+      "context_tokens": 4096,
+      "max_start_temperature": 35.0,
+      "cooldown_seconds": 120,
+      "trial_timeout_seconds": 900
+    },
+    "startedAtUtc": "20261023T193918.309765Z",
+    "finishedAtUtc": "2026-10-23T19:42:20.437898+00:00",
+    "trials": [
+      {
+        "source": "build/benchmark-results/journey-matrix/20261023T193918.309765Z-fixed-repack-candidate/01-cpu-trial-1.json",
+        "backend": "cpu",
+        "trial": 1,
+        "accepted": true,
+        "wholeLoadMs": 2590,
+        "repositoryLoadMs": 2349,
+        "outsideRepositoryLoadMs": 241,
+        "prepareMs": 130,
+        "resolveMs": 105,
+        "runtimeConfig": "t=4/4,b=256,ctx=4096,gpu=0,kv=1/1,fa=-1,kleidi=1,ub=64,offloadKqv=false,autoFit=false",
+        "requestedWorkload": {
+          "policy": "FIXED_NO_FALLBACK",
+          "context": 4096,
+          "batch": 256,
+          "microBatch": 64,
+          "sequenceCount": 1,
+          "keyCacheType": "F16",
+          "valueCacheType": "F16",
+          "allowContextFallback": false,
+          "allowBatchFallback": false,
+          "allowKvCacheFallback": false,
+          "placementPolicy": "FULL_VULKAN",
+          "fullVulkanLayerCount": 37
+        },
+        "resolvedPlan": {
+          "backend": "CPU",
+          "context": 4096,
+          "batch": 256,
+          "microBatch": 64,
+          "sequenceCount": 1,
+          "keyCacheType": "F16",
+          "valueCacheType": "F16",
+          "gpuLayers": 0,
+          "useMmap": true,
+          "nativeMetadataFallback": false
+        },
+        "initialAttempts": [
+          {
+            "attempt": 1,
+            "ms": 43,
+            "state": "AdmissionRequired",
+            "admissionType": "ConfirmationRequired",
+            "admissionReason": "RISK_ACKNOWLEDGEMENT_REQUIRED",
+            "explicitRetryRequired": false,
+            "riskAcknowledgementAttached": false,
+            "thermal": 0
+          },
+          {
+            "attempt": 2,
+            "ms": 2301,
+            "state": "Success",
+            "admissionType": null,
+            "admissionReason": null,
+            "explicitRetryRequired": null,
+            "riskAcknowledgementAttached": true,
+            "thermal": 0
+          }
+        ],
+        "repeatedAttempts": [
+          {
+            "attempt": 1,
+            "ms": 309,
+            "state": "AdmissionRequired",
+            "admissionType": "ConfirmationRequired",
+            "admissionReason": "RISK_ACKNOWLEDGEMENT_REQUIRED",
+            "explicitRetryRequired": false,
+            "riskAcknowledgementAttached": false,
+            "thermal": 0
+          },
+          {
+            "attempt": 2,
+            "ms": 2685,
+            "state": "Success",
+            "admissionType": null,
+            "admissionReason": null,
+            "explicitRetryRequired": null,
+            "riskAcknowledgementAttached": true,
+            "thermal": 0
+          }
+        ],
+        "acknowledgements": [
+          {
+            "scope": "INITIAL",
+            "action": "ACKNOWLEDGED",
+            "reason": "RISK_ACKNOWLEDGEMENT_REQUIRED",
+            "authorization": "USER_REQUESTED_BENCHMARK",
+            "exactRequestBinding": true,
+            "assessmentKeySha256": "c73a9de1b0b1a11855fed3f1ba70a772565f8201cea5ef51da2c25dc16eb7540",
+            "planKeySha256": "aa072a87733d8bcdb99386e536a48ed538e3695f2bd73abff03f870e02577c91",
+            "identityRevision": "a59351ebfd39cc18e8697a0b5801ca5334ffa0ea4c910a907ef7daae150b4c69",
+            "identityBytes": 2104932768
+          },
+          {
+            "scope": "REPEATED",
+            "action": "ACKNOWLEDGED",
+            "reason": "RISK_ACKNOWLEDGEMENT_REQUIRED",
+            "authorization": "USER_REQUESTED_BENCHMARK",
+            "exactRequestBinding": true,
+            "assessmentKeySha256": "c73a9de1b0b1a11855fed3f1ba70a772565f8201cea5ef51da2c25dc16eb7540",
+            "planKeySha256": "aa072a87733d8bcdb99386e536a48ed538e3695f2bd73abff03f870e02577c91",
+            "identityRevision": "a59351ebfd39cc18e8697a0b5801ca5334ffa0ea4c910a907ef7daae150b4c69",
+            "identityBytes": 2104932768
+          }
+        ],
+        "repeatedRequestMs": 2998,
+        "generations": [
+          {
+            "turn": 1,
+            "tokens": 8,
+            "ttftMs": 586,
+            "decodeTps": 12.054290561561954,
+            "thermal": 0,
+            "contentSha256": "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6",
+            "deltaMatchesFinal": true,
+            "gcCount": 0
+          },
+          {
+            "turn": 2,
+            "tokens": 8,
+            "ttftMs": 670,
+            "decodeTps": 12.142240210500097,
+            "thermal": 0,
+            "contentSha256": "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6",
+            "deltaMatchesFinal": true,
+            "gcCount": 0
+          },
+          {
+            "turn": 3,
+            "tokens": 8,
+            "ttftMs": 608,
+            "decodeTps": 11.608881273787086,
+            "thermal": 0,
+            "contentSha256": "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6",
+            "deltaMatchesFinal": true,
+            "gcCount": 0
+          }
+        ],
+        "conditions": {
+          "before": {
+            "thermalStatus": 0,
+            "batteryTemperatureC": 34.8,
+            "awake": true,
+            "keyguardShowing": false
+          },
+          "after": {
+            "thermalStatus": 0,
+            "batteryTemperatureC": 34.8,
+            "awake": true,
+            "keyguardShowing": false
+          }
+        }
+      },
+      {
+        "source": "build/benchmark-results/journey-matrix/20261023T193918.309765Z-fixed-repack-candidate/02-vulkan-trial-1.json",
+        "backend": "vulkan",
+        "trial": 1,
+        "accepted": true,
+        "wholeLoadMs": 2580,
+        "repositoryLoadMs": 2309,
+        "outsideRepositoryLoadMs": 271,
+        "prepareMs": 135,
+        "resolveMs": 122,
+        "runtimeConfig": "t=4/4,b=256,ctx=4096,gpu=37,kv=1/1,fa=-1,kleidi=1,ub=64,offloadKqv=true,autoFit=false",
+        "requestedWorkload": {
+          "policy": "FIXED_NO_FALLBACK",
+          "context": 4096,
+          "batch": 256,
+          "microBatch": 64,
+          "sequenceCount": 1,
+          "keyCacheType": "F16",
+          "valueCacheType": "F16",
+          "allowContextFallback": false,
+          "allowBatchFallback": false,
+          "allowKvCacheFallback": false,
+          "placementPolicy": "FULL_VULKAN",
+          "fullVulkanLayerCount": 37
+        },
+        "resolvedPlan": {
+          "backend": "VULKAN",
+          "context": 4096,
+          "batch": 256,
+          "microBatch": 64,
+          "sequenceCount": 1,
+          "keyCacheType": "F16",
+          "valueCacheType": "F16",
+          "gpuLayers": 37,
+          "useMmap": true,
+          "nativeMetadataFallback": false
+        },
+        "initialAttempts": [
+          {
+            "attempt": 1,
+            "ms": 2308,
+            "state": "Success",
+            "admissionType": null,
+            "admissionReason": null,
+            "explicitRetryRequired": null,
+            "riskAcknowledgementAttached": false,
+            "thermal": 0
+          }
+        ],
+        "repeatedAttempts": [
+          {
+            "attempt": 1,
+            "ms": 2476,
+            "state": "Success",
+            "admissionType": null,
+            "admissionReason": null,
+            "explicitRetryRequired": null,
+            "riskAcknowledgementAttached": false,
+            "thermal": 0
+          }
+        ],
+        "acknowledgements": [],
+        "repeatedRequestMs": 2477,
+        "generations": [
+          {
+            "turn": 1,
+            "tokens": 8,
+            "ttftMs": 5923,
+            "decodeTps": 10.228048395232504,
+            "thermal": 0,
+            "contentSha256": "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6",
+            "deltaMatchesFinal": true,
+            "gcCount": 0
+          },
+          {
+            "turn": 2,
+            "tokens": 8,
+            "ttftMs": 5895,
+            "decodeTps": 10.191267539904844,
+            "thermal": 0,
+            "contentSha256": "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6",
+            "deltaMatchesFinal": true,
+            "gcCount": 0
+          },
+          {
+            "turn": 3,
+            "tokens": 8,
+            "ttftMs": 5820,
+            "decodeTps": 10.204755325013352,
+            "thermal": 0,
+            "contentSha256": "d7329be77306ea3c8c3d0bae79af750710c50a3ac7d0cc4787e2e81284d425b6",
+            "deltaMatchesFinal": true,
+            "gcCount": 0
+          }
+        ],
+        "conditions": {
+          "before": {
+            "thermalStatus": 0,
+            "batteryTemperatureC": 34.8,
+            "awake": true,
+            "keyguardShowing": false
+          },
+          "after": {
+            "thermalStatus": 0,
+            "batteryTemperatureC": 35.7,
+            "awake": true,
+            "keyguardShowing": false
+          }
+        }
+      }
+    ]
+  },
+  "comparison": {
+    "wholeLoadMsMedian": {
+      "controlMedian": 3337,
+      "candidateMedian": 2536,
+      "reductionPercent": 24.003596044351216
+    },
+    "repositoryLoadMsMedian": {
+      "controlMedian": 3094,
+      "candidateMedian": 2332,
+      "reductionPercent": 24.628312863606983
+    },
+    "outsideRepositoryLoadMsMedian": {
+      "controlMedian": 221,
+      "candidateMedian": 217,
+      "reductionPercent": 1.8099547511312264
+    }
+  },
+  "limits": [
+    "Small sequential pilot: all control trials precede candidate trials; build order, OS caches and background activity were not randomized or fully controlled.",
+    "Only the three successful CPU-only trials per build are included; the prior mixed candidate group stopped after two valid individual trials because the phone could not cool within 120 seconds and is not pooled.",
+    "Control cooldown limit was 120 seconds; the replacement candidate CPU-only group used 180 seconds. Both retained the same thermal NORMAL and <=35 C start gate; full endpoint conditions are retained.",
+    "Initial load includes ordinary exact-request risk confirmation attempts. Repeated repository requests are separately reported and are not proof of resident reuse or model-picker latency.",
+    "Native sources and default NDK compiler are fixed, and managed DEX is byte-identical, but rebuilt Vulkan library has a separate DIAG shader constant difference. No Vulkan A/B conclusion is drawn.",
+    "Vulkan observations are individual functional validations, not a repeated distribution or a compiler comparison.",
+    "Short greedy output hashes match; this does not establish general accuracy, long-context correctness, release-model latency, cold-storage behavior or sustained throughput."
+  ],
+  "vulkanShaderRebuildDifference": {
+    "source": "libraries/llama.cpp/ggml/src/ggml-vulkan/vulkan-shaders/diag.comp",
+    "artifact": "build/benchmark-results/measurement-gaps/fixed-repack-shader-difference",
+    "library": "lib/arm64-v8a/libggml-vulkan.so",
+    "changedBytes": 22,
+    "detail": "Twenty build-ID bytes plus two embedded diag_f16_data bytes differ. OpConstant float32 result344 changes +infinity to zero; candidate zero matches the source's zero branch. Code section and remaining ELF sections match except rodata/build-ID.",
+    "interpretation": "Cause of inconsistent compiled constant is unproven. DIAG is absent in saved Qwen timestamp graphs; wider shader correctness/reproducibility is untested."
+  },
+  "model": {
+    "repository": "Qwen/Qwen2.5-3B-Instruct-GGUF",
+    "revision": "7dabda4d13d513e3e842b20f0d435c732f172cbe",
+    "file": "qwen2.5-3b-instruct-q4_k_m.gguf",
+    "bytes": 2104932768,
+    "sha256": "626b4a6678b86442240e33df819e00132d3ba7dddfe1cdc4fbb18e0a9615c62d"
+  },
+  "device": "Pixel 9 / Android 17 API 37 / Mali-G715",
+  "sourceHead": "b1dc4169ab8918776c30f85fc468aad83628754d"
+}

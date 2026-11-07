@@ -8,6 +8,8 @@ package com.debanshu777.caraml.sdk.discovery.huggingface.model
 enum class ModelFileWeightFilter {
     /** LLM hubs: GGUF only (llama.cpp style). */
     GgufOnly,
+    /** Text graphs and their required companion files, for bundle-aware consumers. */
+    LanguageModelFiles,
 
     /**
      * Image/video (stable-diffusion.cpp): checkpoints and safetensors as well as GGUF.
@@ -21,6 +23,8 @@ fun ModelFileWeightFilter.matchesRepoFilePath(path: String?): Boolean {
     return when (this) {
         ModelFileWeightFilter.GgufOnly ->
             path.endsWith(suffix = ".gguf", ignoreCase = true)
+        ModelFileWeightFilter.LanguageModelFiles ->
+            path.endsWith(".gguf", ignoreCase = true) || OnnxModelBundles.isBundlePath(path)
 
         ModelFileWeightFilter.StableDiffusionCppWeights ->
             path.endsWith(".gguf", ignoreCase = true) ||

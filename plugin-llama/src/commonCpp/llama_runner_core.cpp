@@ -2,6 +2,7 @@
 #include "llama_fit_policy.h"
 #include "llama_chat_history.h"
 #include "llama_config_validation.h"
+#include "llama_native_trace.h"
 
 #include <atomic>
 #include <algorithm>
@@ -459,7 +460,8 @@ static int backend_kind(ggml_backend_dev_t device) {
     const std::string name = lower_ascii(registry ? ggml_backend_reg_name(registry) : nullptr);
     if (name.find("cpu") != std::string::npos) return LLAMA_BACKEND_CPU;
     if (name.find("cuda") != std::string::npos || name.find("hip") != std::string::npos) return LLAMA_BACKEND_CUDA;
-    if (name.find("metal") != std::string::npos) return LLAMA_BACKEND_METAL;
+    // Current ggml registers Apple's backend as "MTL"; older builds used "Metal".
+    if (name == "mtl" || name.find("metal") != std::string::npos) return LLAMA_BACKEND_METAL;
     if (name.find("vulkan") != std::string::npos) return LLAMA_BACKEND_VULKAN;
     if (name.find("opencl") != std::string::npos) return LLAMA_BACKEND_OPENCL;
     if (name.find("sycl") != std::string::npos) return LLAMA_BACKEND_SYCL;
@@ -805,7 +807,9 @@ int decode_tokens_in_batches(
                 compute_last_logit && (i + j == static_cast<int>(tokens.size()) - 1);
             common_batch_add(batch, token_id, position, {0}, want_logit);
         }
-        const int ret = llama_decode(context, batch);
+        const int ret = trace_native_call("CaraML.native.prefillBatch", [&] {
+            return llama_decode(context, batch);
+        });
         if (ret != 0) {
             log_line(LLAMA_LOG_ERROR,
                 "decode_tokens_in_batches: failed at offset %d ret=%d", i, ret);
@@ -890,6 +894,7 @@ void llama_runner_core_set_logger(LlamaLogFn fn) {
 }
 
 void llama_runner_core_init(const char *backend_path) {
+    ScopedNativeTrace trace("CaraML.native.backendInitialize");
     auto operation = g_operation_gate.lock_interruptible(native_operations_poisoned);
     if (!operation) return;
     // common/fit.cpp logs exceptions directly to common's stdio writer, bypassing
@@ -912,11 +917,13 @@ void llama_runner_core_init(const char *backend_path) {
     llama_log_set(sanitized_upstream_log, nullptr);
     if (backend_path && std::strlen(backend_path) > 0) {
         log_line(LLAMA_LOG_INFO, "init: Loading backends from configured directory");
-        ggml_backend_load_all_from_path(backend_path);
+        trace_native_call("CaraML.native.backendLibraryLoad", [&] {
+            ggml_backend_load_all_from_path(backend_path);
+        });
     } else {
         log_line(LLAMA_LOG_INFO, "init: No backend path provided, skipping backend path load");
     }
-    llama_backend_init();
+    trace_native_call("CaraML.native.backendDevicesInitialize", [] { llama_backend_init(); });
     llama_log_set(sanitized_upstream_log, nullptr);
     g_backend_path = backend_path ? backend_path : "";
     g_backend_initialized = true;
@@ -1405,7 +1412,10 @@ LlamaModelFeatureSupportNative llama_runner_core_probe_model_features(
 }
 
 bool llama_runner_core_load_model(const char *model_path, const LlamaRunnerConfig &config) {
-    auto operation = g_operation_gate.lock_interruptible(native_operations_poisoned);
+    ScopedNativeTrace trace("CaraML.native.load");
+    auto operation = trace_native_call("CaraML.native.loadLock", [] {
+        return g_operation_gate.lock_interruptible(native_operations_poisoned);
+    });
     if (!operation) return false;
     log_line(LLAMA_LOG_INFO, "load: model path supplied=%d", model_path ? 1 : 0);
     if (!g_backend_initialized ||
@@ -1418,14 +1428,16 @@ bool llama_runner_core_load_model(const char *model_path, const LlamaRunnerConfi
     log_line(LLAMA_LOG_INFO, "native stage=CONFIG ctx=%d batch=%d ubatch=%d threads=%d batch_threads=%d gpu_layers=%d flash=%d kv_k=%d kv_v=%d auto_fit=%d mmap=%d",
         config.n_ctx, config.n_batch, config.n_ubatch, config.n_threads, config.n_threads_batch,
         config.n_gpu_layers, config.flash_attn, config.type_k, config.type_v, config.auto_fit ? 1 : 0, config.use_mmap ? 1 : 0);
-    unload_model_state();
+    trace_native_call("CaraML.native.releasePreviousModel", [] { unload_model_state(); });
     g_config = config;
     llama_log_set(sanitized_upstream_log, nullptr);
 
     auto t0 = std::chrono::steady_clock::now();
     {
         ScopedLlamaLoggerOverride suppress(sanitized_upstream_log);
-        FitPlan plan = resolve_fit_plan(model_path, g_config);
+        FitPlan plan = trace_native_call("CaraML.native.resolveFit", [&] {
+            return resolve_fit_plan(model_path, g_config);
+        });
         if (plan.status != COMMON_PARAMS_FIT_STATUS_SUCCESS) {
             log_line(LLAMA_LOG_ERROR, "load: no valid fitted allocation plan");
             return false;
@@ -1446,7 +1458,9 @@ bool llama_runner_core_load_model(const char *model_path, const LlamaRunnerConfi
 
         {
             ScopedNativeDiagnostic model_diagnostic("MODEL_ALLOCATION");
-            g_model = llama_model_load_from_file(model_path, plan.model_params);
+            g_model = trace_native_call("CaraML.native.modelFileLoad", [&] {
+                return llama_model_load_from_file(model_path, plan.model_params);
+            });
             if (!g_model) {
                 log_line(LLAMA_LOG_ERROR, "load: model allocation failed");
                 return false;
@@ -1467,7 +1481,9 @@ bool llama_runner_core_load_model(const char *model_path, const LlamaRunnerConfi
         }
 
         ScopedNativeDiagnostic context_diagnostic("CONTEXT_ALLOCATION");
-        g_context = llama_init_from_model(g_model, plan.context_params);
+        g_context = trace_native_call("CaraML.native.contextInitialize", [&] {
+            return llama_init_from_model(g_model, plan.context_params);
+        });
         if (!g_context) {
             log_line(LLAMA_LOG_ERROR, "load: context allocation failed");
             llama_model_free(g_model);
@@ -1511,14 +1527,18 @@ bool llama_runner_core_load_model(const char *model_path, const LlamaRunnerConfi
     }
 
     g_batch = llama_batch_init(g_config.n_batch, 0, 1);
-    recreate_sampler(g_config.temperature, std::string());
+    trace_native_call("CaraML.native.samplerInitialize", [] {
+        recreate_sampler(g_config.temperature, std::string());
+    });
     if (!g_sampler) {
         log_line(LLAMA_LOG_ERROR, "load: Failed to initialize sampler");
         unload_model_state();
         return false;
     }
 
-    g_chat_templates = common_chat_templates_init(g_model, "");
+    g_chat_templates = trace_native_call("CaraML.native.chatTemplateInitialize", [] {
+        return common_chat_templates_init(g_model, "");
+    });
     g_supports_thinking = g_chat_templates
         ? common_chat_templates_support_enable_thinking(g_chat_templates.get())
         : false;
@@ -1550,6 +1570,7 @@ std::string llama_runner_core_generate(const char *prompt, int max_tokens, float
 }
 
 bool llama_runner_core_start_generate(const char *prompt, int max_tokens, float temperature, const char *grammar) {
+    ScopedNativeTrace trace("CaraML.native.rawPrompt");
     auto operation = g_operation_gate.begin_session_interruptible(native_operations_poisoned);
     if (!operation) return false;
     ScopedSessionEnd session(g_operation_gate);
@@ -1590,7 +1611,9 @@ bool llama_runner_core_start_generate(const char *prompt, int max_tokens, float 
     log_line(LLAMA_LOG_INFO, "start_generate: input prompt_len=%zu", prompt_copy.size());
 
     const llama_vocab *vocab = llama_model_get_vocab(g_model);
-    g_streaming_tokens = common_tokenize(vocab, prompt_copy, true, true);
+    g_streaming_tokens = trace_native_call("CaraML.native.rawTokenize", [&] {
+        return common_tokenize(vocab, prompt_copy, true, true);
+    });
     log_line(LLAMA_LOG_INFO, "start_generate: tokenized n_tokens=%zu", g_streaming_tokens.size());
     if (g_streaming_tokens.empty()) {
         log_line(LLAMA_LOG_ERROR, "start_generate: Tokenization produced no tokens");
@@ -1606,15 +1629,16 @@ bool llama_runner_core_start_generate(const char *prompt, int max_tokens, float 
         return false;
     }
 
-    int decode_ret =
-        decode_tokens_in_batches(g_context, g_batch, g_streaming_tokens, 0, true);
+    int decode_ret = trace_native_call("CaraML.native.rawPrefill", [&] {
+        return decode_tokens_in_batches(g_context, g_batch, g_streaming_tokens, 0, true);
+    });
     if (decode_ret != 0) {
         log_line(LLAMA_LOG_ERROR, "start_generate: Prefill decode failed ret=%d", decode_ret);
         return false;
     }
     log_line(LLAMA_LOG_INFO, "start_generate: Prefill ok");
 
-    llama_synchronize(g_context);
+    trace_native_call("CaraML.native.rawPrefillWait", [] { llama_synchronize(g_context); });
     if (llama_get_logits_ith(g_context, -1) == nullptr) {
         log_line(LLAMA_LOG_ERROR, "start_generate: n_outputs=0 after prefill");
         return false;
@@ -1632,6 +1656,8 @@ const char *llama_runner_core_next_token() {
         return nullptr;
     }
     ScopedNativeDiagnosticStage diagnostic_stage("DECODE");
+    const bool first_token = g_streaming_n_generated == 0;
+    ScopedNativeTrace first_token_trace("CaraML.native.firstToken", first_token);
     if (g_cancel_flag) {
         log_line(LLAMA_LOG_INFO, "next_token: cancelled");
         g_stop_reason = STOP_CANCELLED;
@@ -1655,6 +1681,7 @@ const char *llama_runner_core_next_token() {
 
     {
         ScopedProfileTimer wait_timer(g_generation_profile.wait_ns);
+        ScopedNativeTrace trace("CaraML.native.firstTokenWait", first_token);
         llama_synchronize(g_context);
     }
     if (llama_get_logits_ith(g_context, -1) == nullptr) {
@@ -1666,6 +1693,7 @@ const char *llama_runner_core_next_token() {
     llama_token token;
     {
         ScopedProfileTimer sample_timer(g_generation_profile.sample_ns);
+        ScopedNativeTrace trace("CaraML.native.firstTokenSample", first_token);
         token = common_sampler_sample(g_sampler, g_context, -1);
     }
     if (llama_vocab_is_eog(vocab, token)) {
@@ -1748,6 +1776,7 @@ const char *llama_runner_core_next_token() {
     int decode_ret;
     {
         ScopedProfileTimer decode_timer(g_generation_profile.decode_ns);
+        ScopedNativeTrace trace("CaraML.native.firstTokenDecodeSubmit", first_token);
         decode_ret = llama_decode(g_context, g_batch);
     }
     if (decode_ret != 0) {
@@ -1815,6 +1844,7 @@ void llama_runner_core_finalize_generation() {
 }
 
 int llama_runner_core_process_system_prompt(const char *system_prompt) {
+    ScopedNativeTrace trace("CaraML.native.systemPrompt");
     auto operation = g_operation_gate.lock_interruptible(native_operations_poisoned);
     if (!operation) return 1;
     if (!g_model || !g_context || !g_sampler) {
@@ -1836,13 +1866,17 @@ int llama_runner_core_process_system_prompt(const char *system_prompt) {
     if (!has_template) {
         std::string formatted = std::string("System: ") + system_prompt + "\n";
         log_line(LLAMA_LOG_WARN, "process_system_prompt: no explicit chat template, using raw text");
-        std::vector<llama_token> tokens = common_tokenize(g_context, formatted, false, false);
+        std::vector<llama_token> tokens = trace_native_call("CaraML.native.systemTokenize", [&] {
+            return common_tokenize(g_context, formatted, false, false);
+        });
         const uint32_t n_ctx = llama_n_ctx(g_context);
         if (static_cast<int>(tokens.size()) > static_cast<int>(n_ctx) - 4) {
             log_line(LLAMA_LOG_ERROR, "process_system_prompt: System prompt too long");
             return 1;
         }
-        if (decode_tokens_in_batches(g_context, g_batch, tokens, 0, false) != 0) {
+        if (trace_native_call("CaraML.native.systemPrefill", [&] {
+                return decode_tokens_in_batches(g_context, g_batch, tokens, 0, false);
+            }) != 0) {
             return 2;
         }
         g_kv_token_history.insert(g_kv_token_history.end(), tokens.begin(), tokens.end());
@@ -1850,7 +1884,9 @@ int llama_runner_core_process_system_prompt(const char *system_prompt) {
         return 0;
     }
 
-    auto formatted = try_chat_format_single(ROLE_SYSTEM, system_prompt);
+    auto formatted = trace_native_call("CaraML.native.systemTemplate", [&] {
+        return try_chat_format_single(ROLE_SYSTEM, system_prompt);
+    });
 
     common_chat_msg system_msg;
     system_msg.role = ROLE_SYSTEM;
@@ -1864,8 +1900,9 @@ int llama_runner_core_process_system_prompt(const char *system_prompt) {
         return 0;
     }
 
-    std::vector<llama_token> tokens =
-        common_tokenize(g_context, *formatted, /*add_special*/ true, /*parse_special*/ true);
+    std::vector<llama_token> tokens = trace_native_call("CaraML.native.systemTokenize", [&] {
+        return common_tokenize(g_context, *formatted, /*add_special*/ true, /*parse_special*/ true);
+    });
     const uint32_t n_ctx = llama_n_ctx(g_context);
     const int max_tokens = static_cast<int>(n_ctx) - 4;
     if (static_cast<int>(tokens.size()) > max_tokens) {
@@ -1873,7 +1910,9 @@ int llama_runner_core_process_system_prompt(const char *system_prompt) {
         return 1;
     }
 
-    if (decode_tokens_in_batches(g_context, g_batch, tokens, 0, false) != 0) {
+    if (trace_native_call("CaraML.native.systemPrefill", [&] {
+            return decode_tokens_in_batches(g_context, g_batch, tokens, 0, false);
+        }) != 0) {
         return 2;
     }
 
@@ -1883,6 +1922,7 @@ int llama_runner_core_process_system_prompt(const char *system_prompt) {
 }
 
 int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_length) {
+    ScopedNativeTrace trace("CaraML.native.userPrompt");
     auto operation = g_operation_gate.begin_session_interruptible(native_operations_poisoned);
     if (!operation) return 1;
     ScopedSessionEnd session(g_operation_gate);
@@ -1922,18 +1962,24 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
         // rather than assuming an incremental string diff matches the KV cache.
         std::vector<common_chat_msg> full = g_chat_msgs;
         full.push_back(user_msg);
-        turn_params = try_apply_chat_template(full, /*add_generation_prompt*/ true);
+        turn_params = trace_native_call("CaraML.native.userTemplate", [&] {
+            return try_apply_chat_template(full, /*add_generation_prompt*/ true);
+        });
         if (!turn_params.has_value()) {
             log_line(LLAMA_LOG_ERROR, "process_user_prompt: chat template render failed");
             return 3;
         }
-        tokens = common_tokenize(g_context, turn_params->prompt,
-            /*add_special*/ true, /*parse_special*/ true);
+        tokens = trace_native_call("CaraML.native.userTokenize", [&] {
+            return common_tokenize(g_context, turn_params->prompt,
+                /*add_special*/ true, /*parse_special*/ true);
+        });
         decode_start_pos = 0;
     } else {
         const std::string formatted = std::string("\nUser: ") + user_prompt + "\nAssistant:";
-        tokens = common_tokenize(g_context, formatted,
-            /*add_special*/ false, /*parse_special*/ false);
+        tokens = trace_native_call("CaraML.native.userTokenize", [&] {
+            return common_tokenize(g_context, formatted,
+                /*add_special*/ false, /*parse_special*/ false);
+        });
     }
 
     const uint32_t n_ctx = llama_n_ctx(g_context);
@@ -1953,6 +1999,7 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
     // Parsing and sampling share the exact parameters that produced the prompt.
     // Recreate the upstream reasoning sampler every turn so its budget cannot leak.
     try {
+        ScopedNativeTrace trace("CaraML.native.userSamplerPrepare");
         if (turn_params) {
             capture_parser_params(*turn_params);
             recreate_sampler(/*temperature*/ -1.0f, "", &*turn_params, response_budget);
@@ -1967,6 +2014,7 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
     }
 
     if (has_template) {
+        ScopedNativeTrace trace("CaraML.native.historyReconcile");
         auto prefix = llama_runner_reconcile_history(g_kv_token_history, tokens,
             [](size_t position) {
                 return llama_memory_seq_rm(llama_get_memory(g_context), 0,
@@ -1983,7 +2031,9 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
         tokens.erase(tokens.begin(), tokens.begin() + *prefix);
     }
 
-    if (decode_tokens_in_batches(g_context, g_batch, tokens, decode_start_pos, true) != 0) {
+    if (trace_native_call("CaraML.native.userPrefill", [&] {
+            return decode_tokens_in_batches(g_context, g_batch, tokens, decode_start_pos, true);
+        }) != 0) {
         llama_memory_seq_rm(llama_get_memory(g_context), 0, -1, -1);
         g_current_position = 0;
         g_system_prompt_position = 0;
@@ -2004,6 +2054,7 @@ int llama_runner_core_process_user_prompt(const char *user_prompt, int predict_l
 }
 
 void llama_runner_core_unload() {
+    ScopedNativeTrace trace("CaraML.native.unload");
     auto operation = g_operation_gate.lock_interruptible(native_operations_poisoned);
     if (!operation) return;
     ScopedNativeDiagnostic diagnostic("UNLOAD");
@@ -2014,6 +2065,9 @@ void llama_runner_core_unload() {
 void llama_runner_core_shutdown() {
     auto operation = g_operation_gate.lock_interruptible(native_operations_poisoned);
     if (!operation) return;
+    // The context/model own backend buffers (including Metal residency sets).
+    // Release those before the backend, even if callers omit a separate unload.
+    unload_model_state();
     if (!g_backend_initialized) {
         return;
     }

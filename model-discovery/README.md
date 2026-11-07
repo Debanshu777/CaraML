@@ -46,6 +46,11 @@ See the [compatibility API reference](docs/huggingface-compatibility.md).
 
 ## Recent Changes
 
+- Scope ONNX chat searches to the Hub's text-generation pipeline and bind pagination cursors to that pipeline.
+
+- Resolve ONNX decoder variants with their tokenizer/configuration and matching external weights at one immutable revision; keep alternative quantizations separate.
+- Parse bounded transformer configuration as a typed projection, accepting unrelated provider fields while rejecting invalid known dimensions.
+
 - Documented provider/client ownership, shutdown behavior and restart limits alongside the facade and builder APIs.
 
 - Standardized neutral discovery under `sdk.discovery` and Hugging Face implementation under `sdk.discovery.huggingface`, using the common `com.debanshu777.caraml` root.

@@ -1,5 +1,8 @@
 package com.debanshu777.caraml.core.recommendation
 
+import com.debanshu777.caraml.core.performance.tracePerformanceStage
+import com.debanshu777.caraml.core.performance.beginPerformanceSpan
+
 import com.debanshu777.caraml.core.download.transfer.ArtifactRootLifetime
 import com.debanshu777.caraml.core.download.transfer.ArtifactManifest
 import com.debanshu777.caraml.core.download.transfer.ArtifactManifestEntry
@@ -26,7 +29,7 @@ sealed interface CoordinatedLoadResult<out T> {
 
 /**
  * Process-wide ownership for the complete exact-load transaction across both native engines.
- * Admission runs before the artifact lifetime; exact root locking covers final byte validation,
+ * Admission runs before the artifact lifetime; exact root locking covers final path/size checks,
  * marker persistence, native open/load, and terminal cleanup.
  */
 class LoadSessionCoordinator(
@@ -49,31 +52,49 @@ class LoadSessionCoordinator(
         artifactValidator: suspend (LoadRequest) -> Boolean,
         releasePartialState: suspend () -> Unit,
         nativeLoad: suspend () -> NativeLoadOutcome<T>,
-    ): CoordinatedLoadResult<T> = sessionMutex.withLock {
-        val admission = evaluateAdmission()
+        engineVersion: String? = null,
+    ): CoordinatedLoadResult<T> {
+        val wait = beginPerformanceSpan("load.sessionLockWait")
+        try { sessionMutex.lock() } finally { wait?.close() }
+        return try { executeLocked(request, evaluateAdmission, artifactValidator, releasePartialState, nativeLoad, engineVersion) }
+        finally { sessionMutex.unlock() }
+    }
+
+    private suspend fun <T> executeLocked(
+        request: LoadRequest,
+        evaluateAdmission: suspend () -> LoadAdmission,
+        artifactValidator: suspend (LoadRequest) -> Boolean,
+        releasePartialState: suspend () -> Unit,
+        nativeLoad: suspend () -> NativeLoadOutcome<T>,
+        engineVersion: String?,
+    ): CoordinatedLoadResult<T> {
+        val admission = tracePerformanceStage("load.admission") { evaluateAdmission() }
         val admitted = admission as? LoadAdmission.Ready
-            ?: return@withLock CoordinatedLoadResult.AdmissionRequired(admission)
+            ?: return CoordinatedLoadResult.AdmissionRequired(admission)
         if (!admitted.request.matchesExact(request)) {
-            return@withLock CoordinatedLoadResult.ArtifactChanged(request)
+            return CoordinatedLoadResult.ArtifactChanged(request)
         }
         val artifactLifetime = request.artifactLifetimeBinding()
-            ?: return@withLock CoordinatedLoadResult.ArtifactChanged(request)
+            ?: return CoordinatedLoadResult.ArtifactChanged(request)
 
-        artifactRootLifetime.withCurrentBundle(
+        return artifactRootLifetime.withCurrentBundle(
             ownerModelId = request.model.modelId,
             expectedRepositoryRoots = artifactLifetime.repositoryRoots,
         ) { currentManifest ->
             if (!request.matchesCurrentBundle(currentManifest)) {
                 return@withCurrentBundle CoordinatedLoadResult.ArtifactChanged(request)
             }
-            if (!artifactValidator(request)) {
+            if (!tracePerformanceStage("load.finalArtifactCheck") { artifactValidator(request) }) {
                 return@withCurrentBundle CoordinatedLoadResult.ArtifactChanged(request)
             }
-            val marker = recoveryRepository.beginLoad(request.identity, request.plan)
+            val marker = tracePerformanceStage("load.persistPending") {
+                if (engineVersion == null) recoveryRepository.beginLoad(request.identity, request.plan)
+                else recoveryRepository.beginLoad(request.identity, request.plan, engineVersion)
+            }
             try {
                 when (val outcome = nativeLoad()) {
                     is NativeLoadOutcome.Succeeded -> {
-                        recoveryRepository.markLoadSucceeded(marker)
+                        tracePerformanceStage("load.persistSuccess") { recoveryRepository.markLoadSucceeded(marker) }
                         CoordinatedLoadResult.Completed(outcome.value)
                     }
                     is NativeLoadOutcome.Failed -> {
@@ -103,6 +124,21 @@ class LoadSessionCoordinator(
     suspend fun allowExplicitRetry(request: LoadRequest, engineVersion: String) {
         if (request.artifact?.identity == request.identity) {
             recoveryRepository.allowExplicitRetry(request.identity, request.plan, engineVersion)
+        }
+    }
+
+    /**
+     * Retains an already admitted resident session only while its exact installed generation is
+     * current. The root lifetime checks regular files and byte counts; it does not hash payloads.
+     * No admission, native preflight, recovery marker or allocation is needed for resident reuse.
+     */
+    internal suspend fun <T : Any> withCurrentResidentArtifact(
+        request: LoadRequest,
+        block: suspend () -> T,
+    ): T? = sessionMutex.withLock {
+        val binding = request.artifactLifetimeBinding() ?: return@withLock null
+        artifactRootLifetime.withCurrentBundle(request.model.modelId, binding.repositoryRoots) { current ->
+            if (request.matchesCurrentBundle(current)) block() else null
         }
     }
 

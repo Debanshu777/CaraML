@@ -1,6 +1,7 @@
 package com.debanshu777.caraml.core.recommendation
 
 import com.debanshu777.caraml.core.recommendation.storage.InstalledEvidenceState
+import com.debanshu777.caraml.core.rating.SdArchitecture
 import com.debanshu777.caraml.core.recommendation.storage.PersistedModelEvidenceCodec
 import com.debanshu777.caraml.core.download.BatchFinalizer
 import com.debanshu777.caraml.core.download.BundlePublisher
@@ -60,6 +61,52 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class InstalledModelEvidenceRepairerTest {
+
+    @Test
+    fun missingDiffusionArchitectureIsRefreshedThenReusedOffline() = runTest {
+        for (oldArchitecture in listOf(null, SdArchitecture.UNKNOWN)) {
+            withFixture { fixture ->
+                fun diffusion(architecture: SdArchitecture?) = DiffusionModelDescriptor(
+                    repositoryId = fixture.identity.repositoryId,
+                    revision = fixture.identity.revision,
+                    components = listOf(DiffusionComponentDescriptor(
+                        fixture.identity, null, true, true, QuantizationEvidence.Known("Q8_0"),
+                    )),
+                    mode = DiffusionMode.IMAGE,
+                    family = "SD-Turbo",
+                    architecture = architecture,
+                    width = 512,
+                    height = 512,
+                    quantizationDistribution = setOf("Q8_0"),
+                    requiredComponentsPresent = true,
+                    requiredEngineFeatures = emptySet(),
+                    evidence = emptyList(),
+                )
+                fixture.repository.put(
+                    fixture.model.modelId,
+                    fixture.codec.encode(listOf(fixture.identity), diffusion(oldArchitecture)),
+                    nowEpochMs = 1L,
+                )
+                val refreshed = diffusion(SdArchitecture.SD1)
+                var lookups = 0
+                val repairer = fixture.repairer { _, mode, identities ->
+                    assertEquals(ModelHubBrowseMode.DiffusionImage, mode)
+                    assertEquals(listOf(fixture.identity), identities)
+                    lookups++
+                    InstalledDescriptorLookup.Ready(refreshed)
+                }
+
+                assertEquals(refreshed, assertIs<EvidenceRepairResult.Ready>(
+                    repairer.requireComplete(fixture.model.modelId, GenerationMode.Image),
+                ).descriptor)
+                assertEquals(1, lookups)
+                val offline = fixture.repairer { _, _, _ -> error("Complete facts should be reused offline") }
+                assertEquals(refreshed, assertIs<EvidenceRepairResult.Ready>(
+                    offline.requireComplete(fixture.model.modelId, GenerationMode.Image),
+                ).descriptor)
+            }
+        }
+    }
 
     @Test
     fun verifiedNonGgufTextContainerHasAccurateFormatFailureRegardlessOfSuffix() = runTest {

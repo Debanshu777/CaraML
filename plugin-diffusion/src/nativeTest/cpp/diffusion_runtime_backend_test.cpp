@@ -25,7 +25,7 @@ int main() {
     const std::vector<std::pair<int, std::string>> expected_assignments = {
         {DIFFUSION_RUNTIME_BACKEND_CPU, "cpu"},
         {DIFFUSION_RUNTIME_BACKEND_METAL, "metal"},
-        {DIFFUSION_RUNTIME_BACKEND_VULKAN, "vulkan,te=cpu,vae=cpu"},
+        {DIFFUSION_RUNTIME_BACKEND_VULKAN, "vulkan,te=cpu"},
         {DIFFUSION_RUNTIME_BACKEND_CUDA, "cuda"},
     };
     for (const auto &[backend, expected] : expected_assignments) {
@@ -91,6 +91,16 @@ int main() {
                "te",
                kind_for_assignment),
            "an explicit Vulkan plan must keep unsafe components on CPU");
+
+    expect(!component_requires_vulkan_cpu_safety(
+               explicit_vulkan_config, "vulkan", "vae", kind_for_assignment),
+           "image VAE must honor the requested GPU placement");
+    explicit_vulkan_config.model_path = "/models/model.gguf";
+    explicit_vulkan_config.keep_vae_on_cpu = true;
+    DiffusionContextParamsForTest pinned;
+    expect(diffusion_runner_core_capture_context_params_for_test(explicit_vulkan_config, pinned) &&
+               pinned.backend == "vulkan,te=cpu,vae=cpu",
+           "an explicit CPU VAE request must still be honored");
 
     const std::vector<PreflightTensorEvidence> bundled = {
         {"model.diffusion_model.input.weight", 1'000},

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <application android:label="CaraML Benchmark" tools:replace="android:label">
+        <profileable android:shell="true" />
+        <!-- Available only in the benchmark APK, never in debug/release. -->
+        <activity
+            android:name="com.debanshu777.caraml.benchmark.ChatScrollActivity"
+            android:exported="true" />
+        <activity
+            android:name="com.debanshu777.caraml.benchmark.BenchmarkPreferencesActivity"
+            android:exported="true" />
+    </application>
+</manifest>

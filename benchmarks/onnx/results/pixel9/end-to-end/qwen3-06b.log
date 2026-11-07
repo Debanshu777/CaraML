@@ -1,0 +1,11 @@
+CARAML_ONNX_VALIDATION {"case":"qwen3-06b","stage":"discovery","detail":"6 files, revision 58ca03a5e7b354b480b1a82b34bde8dc7b854cc0"}
+CARAML_ONNX_VALIDATION {"case":"qwen3-06b","stage":"download","detail":"COMPLETED: null"}
+CARAML_ONNX_VALIDATION {"case":"qwen3-06b","stage":"publication","detail":"model_int8.onnx"}
+CARAML_ONNX_VALIDATION {"case":"qwen3-06b","stage":"prepared_metadata","detail":"format=ONNX; architecture=qwen3; context=40960; shape=TransformerShape(layerCount=28, kvHeadCount=8, attentionHeadCount=16, hiddenSize=1024, headDim=128)"}
+CARAML_ONNX_VALIDATION {"case":"qwen3-06b","stage":"risk_acknowledged","detail":"Conservative ONNX memory estimate; llm:4096:256:64:1:F32:F32:CPU:UNIFIED:0:true"}
+CARAML_ONNX_VALIDATION {"case":"qwen3-06b","stage":"load","detail":"ONNX Runtime 1.31.0; CPU; 2 threads"}
+CARAML_ONNX_VALIDATION {"case":"qwen3-06b","stage":"turn","detail":"content=\n\nMira.; reasoning_chars=497"}
+CARAML_ONNX_VALIDATION {"case":"qwen3-06b","stage":"turn","detail":"content=\n\nMy name is Mira.; reasoning_chars=286"}
+CARAML_ONNX_VALIDATION {"case":"qwen3-06b","stage":"risk_acknowledged","detail":"Conservative ONNX memory estimate; llm:4096:256:64:1:F32:F32:CPU:UNIFIED:0:true"}
+CARAML_ONNX_VALIDATION {"case":"qwen3-06b","stage":"complete","detail":"discovery, download, publication, two turns, cancellation and reload passed"}
+INSTRUMENTATION_CODE: -1

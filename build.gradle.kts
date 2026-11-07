@@ -2,6 +2,7 @@ import org.gradle.api.artifacts.component.ProjectComponentIdentifier
 
 plugins {
     alias(libs.plugins.androidApplication) apply false
+    alias(libs.plugins.androidTest) apply false
     alias(libs.plugins.androidLibrary) apply false
     alias(libs.plugins.composeHotReload) apply false
     alias(libs.plugins.composeMultiplatform) apply false
@@ -54,7 +55,7 @@ if (!providers.gradleProperty("sdkOnly").map(String::toBoolean).getOrElse(false)
         group = "verification"
         description = "Verify each plugin resolves only its own bridge and the shared runtime guard."
         doLast {
-            listOf(":plugin-llama", ":plugin-diffusion").forEach { module ->
+            listOf(":plugin-llama", ":plugin-diffusion", ":plugin-onnx").forEach { module ->
                 val projects = project(module).configurations.getByName("jvmRuntimeClasspath")
                     .incoming.resolutionResult.allComponents
                     .mapNotNull { (it.id as? ProjectComponentIdentifier)?.projectPath }.toSet()
@@ -73,9 +74,11 @@ tasks.register("verifyProject") {
         "verifyEngineBoundaries",
         ":plugin-llama:jvmTest",
         ":plugin-diffusion:jvmTest",
+        ":plugin-onnx:jvmTest",
         ":app:composeApp:jvmTest",
         ":app:desktopApp:classes",
         ":nativeEngine:verifyNativeSubmodulePins",
+        ":nativeEngine:testCpuRepackEquivalence",
         ":nativeEngine:testJniUtf8Desktop",
         ":nativeEngine:testDiffusionRunnerNativeDesktop",
         ":nativeEngine:testArtifactFsAndroidRootDesktop",

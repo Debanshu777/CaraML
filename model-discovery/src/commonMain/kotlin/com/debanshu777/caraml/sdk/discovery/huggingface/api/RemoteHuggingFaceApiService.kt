@@ -90,6 +90,7 @@ class RemoteHuggingFaceApiService private constructor(
             appendPathSegments("api", "models")
             parameters.apply {
                 params.search?.let { append("search", it) }
+                params.pipelineTag?.let { append("pipeline_tag", it) }
                 params.filter.forEach { append("filter", it) }
                 params.apps.forEach { append("apps", it) }
                 if (params.minParams != null || params.maxParams != null) {

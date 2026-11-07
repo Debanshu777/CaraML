@@ -31,6 +31,30 @@ import kotlin.test.assertTrue
 
 class DownloadManagerJvmTest {
     @Test
+    fun installedLoadAndNativeLeaseUsePublishedChecksumsButStillRejectMissingOrTruncatedFiles() = withTemporaryRoot { root ->
+        val storage = TestStoragePathProvider(root)
+        val installed = installArtifact(root)
+        val manager = DownloadManager(storage)
+        val owner = installed.artifact.repositoryId
+        val modelRoot = modelFile(root, owner, "")
+        val payload = modelFile(root, owner, installed.destinationRelativePath)
+        runBlocking {
+            assertTrue(manager.publishBundle(owner, listOf(installed)))
+            val published = assertNotNull(manager.installedBundleForLoad(owner))
+            payload.writeBytes(ByteArray(payload.length().toInt()) { 42 })
+            assertEquals(published, manager.installedBundleForLoad(owner))
+            assertEquals(null, manager.validatedBundle(owner))
+            val leased = artifactRootLifetime(storage).withCurrentBundle(owner, mapOf(owner to modelRoot.absolutePath)) { it }
+            assertEquals(published, leased)
+            payload.writeBytes(byteArrayOf(1))
+            assertEquals(null, manager.installedBundleForLoad(owner))
+            assertEquals(null, artifactRootLifetime(storage).withCurrentBundle(owner, mapOf(owner to modelRoot.absolutePath)) { it })
+            payload.delete()
+            assertEquals(null, manager.installedBundleForLoad(owner))
+        }
+    }
+
+    @Test
     fun storageInspectionUsesOnlyCanonicalDestinationAndManifestCheckpoint() = withTemporaryRoot { root ->
         val publishedBytes = "published".encodeToByteArray()
         val published = scopedMetadata("weights/model.gguf", "a".repeat(40), publishedBytes)

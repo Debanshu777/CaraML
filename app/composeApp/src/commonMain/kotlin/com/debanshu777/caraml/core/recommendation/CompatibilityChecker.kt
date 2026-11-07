@@ -27,6 +27,11 @@ class CompatibilityChecker(
     }
 
     private fun checkLlm(descriptor: LlmModelDescriptor): Compatibility? {
+        if (descriptor.format == ModelFormat.ONNX) {
+            return if (com.debanshu777.caraml.sdk.discovery.huggingface.model.OnnxModelBundles.isComplete(descriptor.files.map { it.path }) &&
+                descriptor.checkedTotalFileBytes() !is CheckedLong.Invalid) null
+            else incompatible(AssessmentReason.MISSING_REQUIRED_COMPONENT)
+        }
         if (descriptor.format != ModelFormat.GGUF) {
             return incompatible(AssessmentReason.UNSUPPORTED_FORMAT)
         }

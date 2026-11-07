@@ -33,6 +33,36 @@ class LocalArtifactIdentityResolverTest {
     private val defaultBundleId = "b".repeat(64)
 
     @Test
+    fun installedLoadSkipsPayloadHashesButRejectsTruncationRemovalAndChangedBindings() = runTest {
+        withRoot { storage, root ->
+            val bytes = "model".encodeToByteArray()
+            val entry = manifestEntry("model", "owner/model", "a".repeat(40), "model.gguf", bytes)
+            val path = write(root / "owner/model" / entry.localRelativePath, bytes)
+            val resolver = resolver(storage, manifest(entry), verifyContent = false,
+                hashFile = { _, _ -> error("Installed loads must not read the model payload") })
+            val artifact = assertIs<ArtifactIdentityResolution.Verified>(
+                resolver.resolve(model(path, bytes.size.toLong()), emptyList()),
+            ).artifact
+            repeat(3) { assertTrue(resolver.revalidate(artifact)) }
+            val component = artifact.components.single()
+            assertFalse(resolver.revalidate(artifact.copy(components = listOf(
+                component.copy(localPath = "$path.replacement"),
+            ))))
+            assertFalse(resolver.revalidate(artifact.copy(components = listOf(
+                component.copy(contentSha256 = "0".repeat(64)),
+            ))))
+            // The explicit performance tradeoff: same-size payload edits require a full integrity check.
+            write(path.toPath(), "other".encodeToByteArray())
+            assertTrue(resolver.revalidate(artifact))
+            assertFalse(resolver(storage, manifest(entry)).revalidate(artifact))
+            write(path.toPath(), byteArrayOf(1))
+            assertFalse(resolver.revalidate(artifact))
+            FileSystem.SYSTEM.delete(path.toPath())
+            assertFalse(resolver.revalidate(artifact))
+        }
+    }
+
+    @Test
     fun gitRemoteIdentityAndStorageRootRoundTripAndRejectMutation() = runTest {
         val remoteObjectId = "a".repeat(40)
         assertExactRemoteIdentityRoundTrip(remoteObjectId) { identity ->
@@ -826,6 +856,7 @@ class LocalArtifactIdentityResolverTest {
         hashFile: (suspend (String, Long) -> String)? = null,
         onManifestRead: () -> Unit = {},
         fileSystem: FileSystem = FileSystem.SYSTEM,
+        verifyContent: Boolean = true,
     ) = LocalArtifactIdentityResolver(
         storagePathProvider = storage,
         manifestSource = {
@@ -834,6 +865,7 @@ class LocalArtifactIdentityResolverTest {
         },
         hashingDispatcher = StandardTestDispatcher(testScheduler),
         fileSystem = fileSystem,
+        verifyContent = verifyContent,
         hashFile = hashFile ?: { path, maxBytes ->
             val source = FileSystem.SYSTEM.source(path.toPath())
             val buffer = Buffer()
