@@ -131,7 +131,7 @@ kotlin {
         }
         jvmMain.dependencies {
             implementation(libs.kotlinx.coroutinesSwing)
-            implementation("org.slf4j:slf4j-simple:2.0.9")
+            implementation("org.slf4j:slf4j-simple:2.0.20")
         }
     }
 }
