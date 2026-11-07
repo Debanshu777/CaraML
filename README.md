@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/readme-banner.svg" alt="CaraML — local AI for Kotlin Multiplatform. Your models. Your device." width="100%">
+  <a href="docs/assets/readme-banner.png"><img src="docs/assets/readme-banner.webp" alt="CaraML — local AI for Kotlin Multiplatform. Your models. Your device. Blue flower cover rendered with Paper Lens Distortion." width="100%"></a>
 </p>
 
 <p align="center">
@@ -138,7 +138,7 @@ Dependencies and model weights keep their own licenses. See [third-party notices
 
 ## Recent Changes
 
-- Introduced **Flow**, a blue palette, and store-style product screenshots in the redesigned overview.
+- Added a blue-flower cover rendered with Paper Lens Distortion, with coordinated docs, demo, and product artwork.
 - Fixed nested diffusion-model installs and kept image/video models visible alongside frequently used chat models.
 - Added searchable docs, a real-device demo, contribution guides, and noncommercial licensing.
 - Added ONNX text support and Android Vulkan diffusion; [results and limits](benchmarks/README.md).

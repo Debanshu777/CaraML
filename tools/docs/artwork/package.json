@@ -1,0 +1,9 @@
+{
+  "name": "caraml-cover-artwork",
+  "private": true,
+  "type": "module",
+  "description": "Offline export tool for CaraML's Paper Lens Distortion cover",
+  "dependencies": {
+    "@paper-design/shaders": "0.0.82"
+  }
+}

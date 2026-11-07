@@ -44,7 +44,7 @@ The image-generation capture uses the Android Debug app built from [commit f0b1f
 
 ## Product screenshots
 
-Four coordinated product cards use Flow, the blue docs palette, and real app captures. Download the **1080 × 1920 PNGs** for presentations and future listing artwork; the README and docs load smaller WebP previews.
+Four coordinated product cards use Flow, the midnight-blue flower theme, and real app captures. Download the **1080 × 1920 PNGs** for presentations and future listing artwork; the README and docs load smaller WebP previews.
 
 | Product card | Full-size artwork | Original capture |
 | --- | --- | --- |
@@ -70,7 +70,7 @@ python -m pip install -r tools/docs/media-requirements.txt
 python tools/docs/render_demo.py --chat-video build/caraml-android-raw.mp4 --image-video build/caraml-diffusion-raw.mp4
 ```
 
-Run after [setting up the docs environment](maintaining-docs.md). Supply your own raw Android chat recording, with the sample prompt sent around five seconds into the clip. Update the PNG screenshots in `docs/assets/screenshots/`, including `diffusion-progress.png` during real generation and `diffusion.png` after completion, then review the video before publishing. The renderer uses the app's bundled fonts and writes the MP4, poster, and social image to `docs/assets/`. It also creates lossless WebP copies of the screenshots for faster page loading. Raw footage and intermediate clips stay in ignored `build/`.
+Run after [setting up the docs environment and cover artwork](maintaining-docs.md). Supply your own raw Android chat recording, with the sample prompt sent around five seconds into the clip. Update the PNG screenshots in `docs/assets/screenshots/`, including `diffusion-progress.png` during real generation and `diffusion.png` after completion, then review the video before publishing. The renderer uses the app's bundled fonts and blue-flower background, and writes the MP4 and poster to `docs/assets/`. The cover renderer produces the social image separately. The video renderer also creates lossless WebP copies of the screenshots for faster page loading. Raw footage and intermediate clips stay in ignored `build/`.
 
 The optional image recording should show generation underway at eight seconds. Omit `--image-video` to use the real progress screenshot instead; update the transcript to identify that segment as a still.
 

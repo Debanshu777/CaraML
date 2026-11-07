@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""Render the README banner from CaraML's bundled font and the Flow SVG.
+"""Compose the blue-flower cover from a real Paper Lens Distortion export.
 
 Install tools/docs/media-requirements.txt, then run this file from any directory.
 Text outlines keep the brand typography consistent without remote font requests.
 """
 
+import base64
 from pathlib import Path
-import xml.etree.ElementTree as ET
+
+import cairosvg
+from PIL import Image
 
 from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.ttLib import TTFont
@@ -39,36 +42,45 @@ def lettering(text, filename, size, baseline, color, center=600, spacing=0):
 
 
 def main():
-    ET.register_namespace("", "http://www.w3.org/2000/svg")
-    flow = ET.parse(ASSETS / "flow.svg").getroot()
-    avatar = "".join(ET.tostring(e, encoding="unicode") for e in flow if e.tag.rsplit("}", 1)[-1] not in {"title", "desc"})
-    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="440" viewBox="0 0 1200 440" role="img" aria-labelledby="title desc">
+    work = ROOT / "build/artwork"
+    work.mkdir(parents=True, exist_ok=True)
+    with Image.open(ROOT / "tools/docs/artwork/blue-flower-lens.png") as source:
+        source.convert("RGB").save(ASSETS / "blue-flower-lens.webp", quality=92, method=6)
+    background = base64.b64encode((ASSETS / "blue-flower-lens.webp").read_bytes()).decode("ascii")
+    wordmark = lettering("CaraML", "bricolage_grotesque_800.ttf", 162, 337, "#d7edff", center=800, spacing=-3)
+    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1600" height="800" viewBox="0 0 1600 800" role="img" aria-labelledby="title desc">
   <title id="title">CaraML — local AI for Kotlin Multiplatform</title>
-  <desc id="desc">Flow, a curling blue wave, beside the CaraML wordmark. Your models. Your device.</desc>
+  <desc id="desc">CaraML over a luminous blue flower refracted through a grainy lens. Your models. Your device.</desc>
   <defs>
-    <linearGradient id="paper" x2="1" y2="1"><stop stop-color="#f8fbff"/><stop offset="1" stop-color="#edf5ff"/></linearGradient>
-    <radialGradient id="sky"><stop stop-color="#61b5ff" stop-opacity=".27"/><stop offset="1" stop-color="#61b5ff" stop-opacity="0"/></radialGradient>
-    <radialGradient id="blue"><stop stop-color="#5b85f5" stop-opacity=".18"/><stop offset="1" stop-color="#5b85f5" stop-opacity="0"/></radialGradient>
-    <clipPath id="canvas"><rect width="1200" height="440" rx="28"/></clipPath>
+    <linearGradient id="shade" x2="0" y2="1"><stop stop-color="#061329" stop-opacity=".05"/><stop offset=".48" stop-color="#061329" stop-opacity=".4"/><stop offset="1" stop-color="#061329" stop-opacity=".08"/></linearGradient>
+    <clipPath id="canvas"><rect width="1600" height="800" rx="32"/></clipPath>
   </defs>
   <g clip-path="url(#canvas)">
-    <rect width="1200" height="440" fill="url(#paper)"/>
-    <ellipse cx="1120" cy="40" rx="510" ry="330" fill="url(#sky)"/>
-    <ellipse cx="65" cy="420" rx="510" ry="290" fill="url(#blue)"/>
-    <g fill="none" stroke="#75a9ed" stroke-opacity=".13" stroke-width="1.5">
-      <path d="M-130 373C86 151 221 508 419 370S748 219 963 327S1190 441 1327 229"/>
-      <path d="M-130 398C86 176 221 533 419 395S748 244 963 352S1190 466 1327 254"/>
-      <path d="M-130 423C86 201 221 558 419 420S748 269 963 377S1190 491 1327 279"/>
+    <image width="1600" height="800" xlink:href="data:image/webp;base64,{background}"/>
+    <rect width="1600" height="800" fill="url(#shade)"/>
+    <g fill="none" stroke="#8abfff" stroke-opacity=".19" stroke-width="1">
+      <path d="M360 96V704M1240 96V704M112 202H1488M112 382H1488M112 548H1488" stroke-dasharray="5 8"/>
+      <circle cx="360" cy="202" r="5"/><circle cx="1240" cy="202" r="5"/>
+      <circle cx="360" cy="382" r="5"/><circle cx="1240" cy="382" r="5"/>
+      <circle cx="360" cy="548" r="5"/><circle cx="1240" cy="548" r="5"/>
     </g>
-    {lettering("KOTLIN MULTIPLATFORM", "dm_sans_600.ttf", 14, 90, "#476587", spacing=3)}
-    <g transform="translate(310 131) scale(.88)">{avatar}</g>
-    {lettering("CaraML", "bricolage_grotesque_800.ttf", 114, 237, "#112b50", center=662, spacing=-2)}
-    {lettering("Your models. Your device.", "dm_sans_400.ttf", 29, 303, "#476587")}
+    <g transform="translate(49.4 0) skewX(-10)">{wordmark}</g>
+    {lettering("Your models. Your device.", "dm_sans_500.ttf", 40, 461, "#d3e9ff", center=800)}
+    {lettering("Local AI with Kotlin Multiplatform", "dm_sans_400.ttf", 27, 508, "#a8c9ef", center=800)}
   </g>
 </svg>
 '''
-    target = ASSETS / "readme-banner.svg"
-    target.write_text(svg, encoding="utf-8")
+    (work / "readme-banner.svg").write_text(svg, encoding="utf-8")
+    target = ASSETS / "readme-banner.png"
+    cairosvg.svg2png(bytestring=svg.encode(), write_to=str(target))
+    with Image.open(target) as rendered:
+        rendered.save(target, optimize=True)
+        rendered.save(target.with_suffix(".webp"), quality=92, method=6)
+    # Keep the entire composition in the 1200 × 630 social card; no text cropping.
+    social = svg.replace('width="1600" height="800" viewBox="0 0 1600 800"',
+                         'width="1200" height="630" viewBox="0 -20 1600 840"', 1)
+    social = social.replace('<g clip-path="url(#canvas)">', '<rect x="0" y="-20" width="1600" height="840" fill="#061329"/><g clip-path="url(#canvas)">', 1)
+    cairosvg.svg2png(bytestring=social.encode(), write_to=str(ASSETS / "social-preview.png"))
     print(f"Rendered {target}")
 
 

@@ -6,18 +6,19 @@ hide:
 ---
 
 <div class="hero" markdown>
-<p class="eyebrow">Kotlin Multiplatform · On-device inference</p>
+<p class="eyebrow">Kotlin Multiplatform · Local AI</p>
 
-# Your models. Your device.
+# CaraML
 
-<p class="lead">Chat with a local language model. Turn a prompt into an image. Explore Hugging Face, download a supported model, and run inference on your own hardware with CaraML.</p>
+<p class="lead">Your models. Your device.</p>
 
 [Build and run](getting-started.md){ .md-button .md-button--primary }
 [Watch the demo](demo.md){ .md-button }
-[View the source](https://github.com/Debanshu777/CaraML){ .md-button }
+</div>
+
+Chat with a local language model. Turn a prompt into an image. Explore Hugging Face, download a supported model, and run inference on your own hardware with CaraML. [Explore the source →](https://github.com/Debanshu777/CaraML)
 
 <p class="engine-line"><strong>llama.cpp</strong><span>GGUF chat</span><strong>ONNX Runtime</strong><span>ONNX text</span><strong>stable-diffusion.cpp</strong><span>Image generation</span></p>
-</div>
 
 <div class="showcase product-shots">
   <a href="assets/product/01-local-chat.png"><img src="assets/product/01-local-chat.webp" alt="Ideas in. Answers out. Real local chat on Pixel 9." width="540" height="960"></a>

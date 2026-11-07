@@ -1,0 +1,24 @@
+{
+  "created": "2026-11-07",
+  "purpose": "README and documentation marketing artwork; not an in-app generation sample",
+  "source": {
+    "file": "blue-flower.png",
+    "generator": "built-in image_gen tool",
+    "prompt": "Use case: ads-marketing. Asset type: original photographic background plate for CaraML's developer-project cover, wide 2:1 landscape composition, ideally 2048 by 1024. Create a single beautiful sculptural cobalt-blue flower with delicate translucent overlapping poppy-like petals, macro studio photography, glowing electric-blue rims and pale ice-blue folds, natural fine petal veins. Deep ink-navy near-black seamless background (#061329). The large flower occupies the lower-right half: its luminous center at approximately 77% across and 72% down; outer petals crop elegantly through the right and bottom edges. The upper half and left half have abundant quiet dark negative space for typography that will be added later. A faint defocused blue petal glow near the bottom-left corner balances the composition without a second flower. Mood: sophisticated editorial, ethereal refracted light, dimensional organic form, luminous blue against midnight. Palette only navy, cobalt, sapphire and icy blue; no green leaves, no warm yellow center. Keep the flower's core recognizable and detailed; optical distortion will be applied later using a real shader. No text, no logos, no lettering, no UI, no border, no watermark. This is original CaraML marketing artwork; do not imitate or include any existing brand logo.",
+    "sha256": "cdd8e001db9431df7eeb5409aa08b1357e0e49d88bdeaf8fda73db8bd3841796"
+  },
+  "effect": {
+    "tool": "Paper Shaders",
+    "package": "@paper-design/shaders@0.0.82",
+    "shader": "Lens Distortion",
+    "reference": "https://shaders.paper.design/lens-distortion",
+    "parameters": "render.js",
+    "output": "blue-flower-lens.png",
+    "sha256": "a7a5abc1ea0853bf75dc181ea175bc13893e65edc95672f39f9205220ab09a07",
+    "dimensions": [
+      1600,
+      800
+    ],
+    "animation": false
+  }
+}

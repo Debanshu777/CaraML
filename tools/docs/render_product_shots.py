@@ -23,32 +23,28 @@ CARDS = [
         "heading": ("Ideas in.", "Answers out."),
         "subtitle": "Chat with a model on your device.",
         "caption": "LLAMA.CPP · GGUF CHAT",
-        "background": ("#f1f7ff", "#d7eaff"),
-        "ink": "#112b50", "muted": "#476587", "wave": "#92c0ff",
+        "background": ("#061329", "#12356c"),
     },
     {
         "name": "02-model-library", "capture": "models.png",
         "heading": ("Your models.", "Your choice."),
         "subtitle": "GGUF and ONNX text, in one library.",
         "caption": "ONNX RUNTIME + GGUF",
-        "background": ("#245edb", "#103eaa"),
-        "ink": "#ffffff", "muted": "#dceaff", "wave": "#70b6ff",
+        "background": ("#102751", "#133c82"),
     },
     {
         "name": "03-image-generation", "capture": "diffusion.png",
         "heading": ("Picture it.", "Create it."),
         "subtitle": "Turn a prompt into an image, locally.",
         "caption": "STABLE-DIFFUSION.CPP · SD-TURBO",
-        "background": ("#dbeeff", "#a8d2ff"),
-        "ink": "#112b50", "muted": "#365c88", "wave": "#4a95ec",
+        "background": ("#071b3c", "#1b4b91"),
     },
     {
         "name": "04-iphone", "capture": "ios.png",
         "heading": ("Feels at home.", "On iPhone."),
         "subtitle": "Built with Kotlin Multiplatform.",
         "caption": "START SCREEN · IPHONE 13",
-        "background": ("#112d52", "#071a34"),
-        "ink": "#f8fbff", "muted": "#b7d2f5", "wave": "#2866a9",
+        "background": ("#061329", "#10274d"),
     },
 ]
 
@@ -64,7 +60,8 @@ def render(card):
         ET.tostring(child, encoding="unicode") for child in flow
         if child.tag.rsplit("}", 1)[-1] not in {"title", "desc"}
     )
-    ink, muted = card["ink"], card["muted"]
+    flower = base64.b64encode((ASSETS / "blue-flower-lens.webp").read_bytes()).decode("ascii")
+    ink, muted = "#d7edff", "#b7cfee"
     title = escape("CaraML — " + " ".join(card["heading"]))
     text = [
         lettering("CaraML", "bricolage_grotesque_700.ttf", 36, 99, ink, center=569),
@@ -82,11 +79,8 @@ def render(card):
         <clipPath id="screen"><rect x="{screen_x}" y="{screen_y}" width="600" height="{screen_height}" rx="39"/></clipPath>
       </defs>
       <rect width="1080" height="1920" fill="url(#background)"/>
-      <g fill="none" stroke="{card['wave']}" opacity=".22">
-        <path d="M-250 1640C70 740 430 1700 795 920S1190 420 1380 620" stroke-width="130"/>
-        <path d="M-300 1660C70 740 430 1700 795 920S1190 420 1380 620" stroke-width="2" transform="translate(0 100)"/>
-        <path d="M-300 1660C70 740 430 1700 795 920S1190 420 1380 620" stroke-width="2" transform="translate(0 124)"/>
-      </g>
+      <image x="-1850" y="0" width="3840" height="1920" opacity=".55" xlink:href="data:image/webp;base64,{flower}"/>
+      <path d="M100 150V1810M980 150V1810M45 445H1035" fill="none" stroke="#8abfff" stroke-opacity=".16" stroke-dasharray="5 8"/>
       <g transform="translate(433 56) scale(.42)">{avatar}</g>
       {''.join(text)}
       <rect x="211" y="488" width="658" height="{screen_height + 34}" rx="63" fill="#021329" opacity=".09"/>

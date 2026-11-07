@@ -47,7 +47,26 @@ Upload `docs/assets/social-preview.png` in **Settings → General → Social pre
 
 ## Demo and evidence
 
-Flow is CaraML's blue wave avatar. Its vector source is `docs/assets/flow.svg`; the README banner uses the bundled Bricolage Grotesque and DM Sans fonts. After installing `tools/docs/media-requirements.txt`, run `python tools/docs/render_readme.py` to regenerate the banner. Keep the README focused on the product, first run, and links into these guides.
+The cover uses an original blue-flower image processed with [Paper's Lens Distortion shader](https://shaders.paper.design/lens-distortion). Midnight blue, icy typography, fine grain, and faint guide lines carry through the docs hero, product cards, and demo. Flow remains the small blue wave avatar in `docs/assets/flow.svg`. This artwork applies to the README and docs; the app retains its current branding.
+
+The flower was created with the built-in image-generation tool as marketing artwork, **not generated inside CaraML**. The source image, exact prompt, shader version, and exported frame live in `tools/docs/artwork/`. The image-generation demonstration in the video is a separate, real SD-Turbo app capture.
+
+To change the lens effect, install Node.js and run:
+
+```bash
+npm ci --prefix tools/docs/artwork --ignore-scripts
+python3 -m http.server 8766 --bind 127.0.0.1 --directory tools/docs/artwork
+```
+
+Open `http://127.0.0.1:8766` in a WebGL 2 browser. Adjust the uniforms in `tools/docs/artwork/render.js`, reload, and select **Export 1600 × 800 PNG**. Replace `tools/docs/artwork/blue-flower-lens.png` with that export. Paper Shaders is pinned to 0.0.82; its Apache-2.0 license and notices remain in the installed package. No third-party sample flower is used.
+
+After installing `tools/docs/media-requirements.txt` and system Cairo, compose the cover and social image:
+
+```bash
+python tools/docs/render_readme.py
+```
+
+The renderer uses the bundled Bricolage Grotesque and DM Sans fonts as outlines and writes `readme-banner.png`, its lighter WebP preview, `blue-flower-lens.webp`, and the 1200 × 630 `social-preview.png`. The intermediate SVG stays in ignored `build/artwork/`. The README loads WebP and links to the full PNG. Published pages use a static shader export: no WebGL runtime, animation, or remote image/font request is needed. The docs wordmark uses a locally bundled copy of Bricolage Grotesque.
 
 Regenerate the store-style product screenshots with:
 
@@ -59,4 +78,4 @@ The renderer composes SVG layouts around the original PNG captures, then exports
 
 Keep the [demo transcript and capture notes](demo.md) synchronized with the media. Use actual app captures and public sample prompts. Clearly identify edited pacing; do not use launch-video timing as a throughput claim. Keep large raw recordings and model weights out of Git.
 
-The presentation takes inspiration from [FileKit's quickstart and documentation links](https://github.com/vinceglb/FileKit), [XCalendar's platform captures](https://github.com/Debanshu777/XCalendar), and [Brag's short product-video structure](https://github.com/latent-spaces/brag). The implementation and assets remain specific to CaraML.
+The presentation takes inspiration from [FileKit's spacious header and documentation links](https://github.com/vinceglb/FileKit), [XCalendar's platform captures](https://github.com/Debanshu777/XCalendar), and [Brag's short product-video structure](https://github.com/latent-spaces/brag). The implementation and assets remain specific to CaraML.
