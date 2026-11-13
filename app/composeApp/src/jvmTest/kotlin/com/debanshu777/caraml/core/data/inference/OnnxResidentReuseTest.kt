@@ -334,7 +334,7 @@ class OnnxResidentReuseTest {
     private class FakeSettings : SettingsRepository {
         var value = AppSettings()
         override fun getSettings() = flowOf(value)
-        override suspend fun updateSettings(settings: AppSettings) { value = settings }
+        override suspend fun updateSettings(transform: (AppSettings) -> AppSettings) { value = transform(value) }
         override suspend fun updateRecommendationProfile(profile: RecommendationProfile) = Unit
         override suspend fun completeModelProfileOnboarding(profile: RecommendationProfile) = Unit
     }

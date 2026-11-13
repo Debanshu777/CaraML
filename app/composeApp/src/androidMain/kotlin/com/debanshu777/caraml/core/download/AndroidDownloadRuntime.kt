@@ -68,7 +68,7 @@ internal interface AndroidUidtBackend {
 
 internal interface AndroidWorkBackend {
     suspend fun isActive(batchId: String): Boolean
-    fun enqueue(batchId: String)
+    suspend fun enqueue(batchId: String)
     suspend fun cancel(batchId: String)
     fun reconcile(liveBatchIds: Set<String>)
 }
@@ -308,7 +308,7 @@ private class FrameworkAndroidWorkBackend(context: Context) : AndroidWorkBackend
     override suspend fun isActive(batchId: String): Boolean =
         workManager.getWorkInfosForUniqueWorkFlow(workName(batchId)).first().any { it.state.isActiveOwner() }
 
-    override fun enqueue(batchId: String) {
+    override suspend fun enqueue(batchId: String) {
         val request = OneTimeWorkRequestBuilder<AndroidDownloadWorker>()
             .setInputData(Data.Builder().putString(KEY_BATCH_ID, batchId).build())
             .setConstraints(
@@ -320,7 +320,7 @@ private class FrameworkAndroidWorkBackend(context: Context) : AndroidWorkBackend
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.SECONDS)
             .addTag(workName(batchId))
             .build()
-        workManager.enqueueUniqueWork(workName(batchId), ExistingWorkPolicy.KEEP, request)
+        workManager.enqueueUniqueWork(workName(batchId), ExistingWorkPolicy.KEEP, request).await()
     }
 
     override suspend fun cancel(batchId: String) {

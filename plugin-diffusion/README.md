@@ -6,13 +6,15 @@ The first adapter is deliberately limited to one leased local model file and sin
 
 Callers supply a `GeneratedOutputSink`, native library directory, and optionally a coroutine dispatcher. The native process gate is held during preflight and throughout loaded-session ownership; generation calls are serialized, cancellation signals the runner without taking the shared gate, and session close waits for native teardown. A successful sink commit owns the output by operation ID even if the caller cancels before observing its `MediaPublished` event; sinks should make committed results discoverable through their own operation/result records.
 
-If native release fails, the process gate stays held because shared GGML state may still be live. Failed partial loads explicitly transfer unresolved ownership to core so the artifact lease and resource reservation stay held too. This intentionally quarantines further native engine use in the process instead of admitting another engine into uncertain state.
+If native release fails after a load attempt, the process gate stays held because shared GGML state may still be live. Failed partial loads explicitly transfer unresolved ownership to core so the artifact lease and resource reservation stay held too. Core quarantines a session whose teardown fails. A direct plugin caller can retry close while the session is unavailable for generation. The process gate stays held until teardown succeeds.
 
 The adapter lives in `com.debanshu777.caraml.sdk.plugin.diffusion`; its native
 bridge and tests live in the `.bridge` subpackage. Kotlin declarations, JNI
 symbols, iOS cinterop and consumer keep rules use the same package hierarchy. See [native bridge details](docs/native-bridge.md).
 
 ## Recent Changes
+
+- Made SDK diffusion preflight a synchronous probe under the shared runtime gate. It creates no model handle and returns without invoking loaded-session teardown. Generation stops progress polling before publishing output or a terminal event. Direct session close can retry a failed native release.
 
 - Added explicit sampling schedules across Kotlin/JNI/iOS, coherent image sampling progress that filters tensor-loading counts, preserved video stage progress, and sanitized graph-backend counts. Vulkan image VAE placement now honors the admitted plan while text encoding retains CPU safety.
 

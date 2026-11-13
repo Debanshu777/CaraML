@@ -94,6 +94,8 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -126,6 +128,7 @@ data class DurableDownloadControlUiState(
     val artifactId: String,
     val batchState: DownloadBatchState,
     val artifactState: DownloadArtifactState,
+    val cancellationPending: Boolean = false,
 )
 
 private fun RelevantDownloadTask.toControlUiState(): DurableDownloadControlUiState =
@@ -134,6 +137,7 @@ private fun RelevantDownloadTask.toControlUiState(): DurableDownloadControlUiSta
         artifactId = task.artifactId,
         batchState = batch.state,
         artifactState = task.state,
+        cancellationPending = batch.userIntent == DownloadUserIntent.CANCEL,
     )
 
 internal fun relevantDownloadTask(
@@ -479,22 +483,25 @@ private enum class DownloadControlCommand {
     RETRY,
     ;
 
-    fun accepts(state: DownloadBatchState, intent: DownloadUserIntent): Boolean = when (this) {
-        PAUSE -> state in setOf(
-            DownloadBatchState.QUEUED,
-            DownloadBatchState.RUNNING,
-            DownloadBatchState.WAITING_FOR_NETWORK,
-        )
-        RESUME -> state == DownloadBatchState.PAUSED ||
-            (state == DownloadBatchState.VERIFYING && intent == DownloadUserIntent.PAUSE)
-        CANCEL -> state in setOf(
-            DownloadBatchState.QUEUED,
-            DownloadBatchState.RUNNING,
-            DownloadBatchState.PAUSED,
-            DownloadBatchState.WAITING_FOR_NETWORK,
-            DownloadBatchState.FAILED_RETRYABLE,
-        )
-        RETRY -> state == DownloadBatchState.FAILED_RETRYABLE
+    fun accepts(state: DownloadBatchState, intent: DownloadUserIntent): Boolean {
+        if (intent == DownloadUserIntent.CANCEL && this != CANCEL) return false
+        return when (this) {
+            PAUSE -> state in setOf(
+                DownloadBatchState.QUEUED,
+                DownloadBatchState.RUNNING,
+                DownloadBatchState.WAITING_FOR_NETWORK,
+            )
+            RESUME -> state == DownloadBatchState.PAUSED ||
+                (state == DownloadBatchState.VERIFYING && intent == DownloadUserIntent.PAUSE)
+            CANCEL -> state in setOf(
+                DownloadBatchState.QUEUED,
+                DownloadBatchState.RUNNING,
+                DownloadBatchState.PAUSED,
+                DownloadBatchState.WAITING_FOR_NETWORK,
+                DownloadBatchState.FAILED_RETRYABLE,
+            ) || (state == DownloadBatchState.VERIFYING && intent == DownloadUserIntent.CANCEL)
+            RETRY -> state == DownloadBatchState.FAILED_RETRYABLE
+        }
     }
 }
 
@@ -549,6 +556,7 @@ class ModelViewModel(
     private var recommendationAppendJob: Job? = null
     private var listRequestJob: Job? = null
     private var searchRequestJob: Job? = null
+    private var detailRequestJob: Job? = null
     private var calibrationJob: Job? = null
     @Volatile private var activeModelRequestOwner: Any = Any()
 
@@ -701,6 +709,13 @@ class ModelViewModel(
 
     private val _downloadError = MutableStateFlow<String?>(null)
     val downloadError: StateFlow<String?> = _downloadError.asStateFlow()
+
+    private val _downloadControlError = MutableStateFlow<String?>(null)
+    val downloadControlError: StateFlow<String?> = _downloadControlError.asStateFlow()
+
+    fun clearDownloadControlError() {
+        _downloadControlError.value = null
+    }
     private val _downloadBatches = MutableStateFlow<List<DownloadBatchSnapshot>>(emptyList())
     val downloadQueue: StateFlow<List<DownloadBatchSnapshot>> = downloadCoordinator.observeQueue()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -1054,24 +1069,27 @@ class ModelViewModel(
         hubBrowseMode: ModelHubBrowseMode = ModelHubBrowseMode.LanguageModels,
     ) {
         if (modelId.isBlank()) return
-        observeDurableDownloads(modelId)
+        detailRequestJob?.cancel()
+        dismissDownloadForLater()
+        _isDetailLoading.value = true
+        _detailError.value = null
+        _modelDetail.value = null
+        _ggufFiles.value = emptyList()
+        _setupComponents.value = emptyList()
+        exactSetupComponentMetadata = emptyMap()
+        _validatedBundleReady.value = false
+        _selectedVariantPath.value = null
         _browseMode.value = hubBrowseMode
+        observeDurableDownloads(modelId)
         startRecommendations(
             models = listOf(ListModelsResponse.Model(id = modelId)),
             workload = defaultRecommendationWorkload(hubBrowseMode),
             source = "details",
         )
-        viewModelScope.launch {
-            _isDetailLoading.update { true }
-            _detailError.update { null }
-            _modelDetail.update { null }
-            _ggufFiles.update { emptyList() }
-            _setupComponents.update { emptyList() }
-            exactSetupComponentMetadata = emptyMap()
-            _validatedBundleReady.update { false }
-            _selectedVariantPath.update { null }
-
-            when (val detailResult = api.getModelDetail(modelId)) {
+        detailRequestJob = viewModelScope.launch {
+            val detailResult = api.getModelDetail(modelId)
+            ensureActive()
+            when (detailResult) {
                 is Result.Success -> {
                     _modelDetail.update { detailResult.data }
                     _detailError.update { null }
@@ -1082,9 +1100,12 @@ class ModelViewModel(
                         ModelHubBrowseMode.DiffusionVideo ->
                             ModelFileWeightFilter.StableDiffusionCppWeights
                     }
-                    when (val treeResult = api.getModelFileTree(modelId, detailResult.data.sha.orEmpty(), weightFilter)) {
+                    val treeResult = api.getModelFileTree(modelId, detailResult.data.sha.orEmpty(), weightFilter)
+                    ensureActive()
+                    when (treeResult) {
                         is Result.Success -> {
                             val downloaded = localModelRepository.getDownloadedFilenames(modelId)
+                            ensureActive()
                             _ggufFiles.update {
                                 treeResult.data.map { item ->
                                     val rel = item.path ?: ""
@@ -1123,6 +1144,7 @@ class ModelViewModel(
                             refreshNewlyCompletedBatches(modelId, _downloadBatches.value)
                         }
                         is Result.Error -> {
+                            _detailError.value = "Could not load the model files. Please try again."
                         }
                     }
                 }
@@ -1153,7 +1175,8 @@ class ModelViewModel(
                     }
                 }
             }
-            _isDetailLoading.update { false }
+            ensureActive()
+            _isDetailLoading.value = false
         }
     }
 
@@ -1488,11 +1511,22 @@ class ModelViewModel(
             val batch = downloadQueue.value.singleOrNull { it.batchId == batchId } ?: return@launch
             if (batch.artifacts.none { it.artifactId == artifactId } ||
                 !command.accepts(batch.state, batch.userIntent)) return@launch
-            when (command) {
-                DownloadControlCommand.PAUSE -> downloadCoordinator.pause(batch.batchId)
-                DownloadControlCommand.RESUME -> downloadCoordinator.resume(batch.batchId)
-                DownloadControlCommand.CANCEL -> downloadCoordinator.cancel(batch.batchId)
-                DownloadControlCommand.RETRY -> downloadCoordinator.retry(batch.batchId)
+            try {
+                when (command) {
+                    DownloadControlCommand.PAUSE -> downloadCoordinator.pause(batch.batchId)
+                    DownloadControlCommand.RESUME -> downloadCoordinator.resume(batch.batchId)
+                    DownloadControlCommand.CANCEL -> downloadCoordinator.cancel(batch.batchId)
+                    DownloadControlCommand.RETRY -> downloadCoordinator.retry(batch.batchId)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _downloadControlError.value = when (command) {
+                    DownloadControlCommand.PAUSE -> "Could not pause the download. Try pausing again."
+                    DownloadControlCommand.RESUME -> "Could not resume the download. Try again."
+                    DownloadControlCommand.CANCEL -> "Could not stop the download. Try cancelling again."
+                    DownloadControlCommand.RETRY -> "Could not retry the download. Try again."
+                }
             }
         }
     }
@@ -1534,6 +1568,7 @@ class ModelViewModel(
             modelId = modelId,
             isDiffusion = _browseMode.value != ModelHubBrowseMode.LanguageModels,
         )
+        currentCoroutineContext().ensureActive()
         refreshedCompletedBatchIds += newlyCompletedBatchIds
         projectDurableDownloadState(batches)
     }
@@ -1787,11 +1822,17 @@ class ModelViewModel(
         }
         val session = recommendationSession
             ?: return DownloadAdmission.Blocked(com.debanshu777.caraml.core.recommendation.AssessmentReason.MEMORY_BOUNDS_UNKNOWN)
+        fun ensureCurrentDetail() {
+            if (recommendationSession !== session || !isExactCurrentDetailArtifact(modelId, metadata.artifact)) {
+                throw CancellationException("Model details changed during download admission")
+            }
+        }
         val refreshed = recommendationService.refreshForAdmission(
             session,
             state,
             settings.value.recommendationProfile,
         ) ?: return DownloadAdmission.Blocked(com.debanshu777.caraml.core.recommendation.AssessmentReason.RESOURCE_READING_UNAVAILABLE)
+        ensureCurrentDetail()
         _recommendedModels.update { current ->
             current.map { if (it.sourceIndex == refreshed.sourceIndex) refreshed else it }
         }
@@ -1809,7 +1850,9 @@ class ModelViewModel(
         if (findExactTarget(refreshedDescriptor, metadata.artifact) == null) {
             return DownloadAdmission.Allowed
         }
-        when (estimateCurrentStorage(requests)) {
+        val storageRequirement = estimateCurrentStorage(requests)
+        ensureCurrentDetail()
+        when (storageRequirement) {
             is StorageRequirement.Ready -> Unit
             is StorageRequirement.Blocked -> return DownloadAdmission.Blocked(
                 com.debanshu777.caraml.core.recommendation.AssessmentReason.INSUFFICIENT_STORAGE,
@@ -1903,6 +1946,7 @@ class ModelViewModel(
             return
         }
         val downloaded = localModelRepository.getDownloadedFilenames(modelId)
+        currentCoroutineContext().ensureActive()
         _ggufFiles.update { list ->
             list.map { file ->
                 file.copy(isDownloaded = file.filename in downloaded || file.path in downloaded, progress = null)
@@ -2152,6 +2196,7 @@ class ModelViewModel(
             .distinct()
             .associateWith { downloadManager.validatedArtifacts(it)?.entries.orEmpty() }
         for (component in requiredComponents) {
+            currentCoroutineContext().ensureActive()
             val installed = findInstalledSetupComponent(
                 installedByRepository[component.repoId].orEmpty(),
                 component,
@@ -2172,6 +2217,7 @@ class ModelViewModel(
             (installedMetadata ?: runCatching { createMetadataForComponent(component) }.getOrNull())
                 ?.let { metadata[component] = it }
         }
+        currentCoroutineContext().ensureActive()
         exactSetupComponentMetadata = metadata
         _setupComponents.update {
             setup.components.map { component ->
@@ -2199,6 +2245,7 @@ class ModelViewModel(
             exactSetupComponentMetadata.values.forEach { add(it.artifact.repositoryId) }
         }
         val artifactManifests = repositoryIds.associateWith { downloadManager.validatedArtifacts(it) }
+        currentCoroutineContext().ensureActive()
         val individuallyInstalled = artifactManifests.values
             .filterNotNull()
             .flatMap { it.entries }
@@ -2215,6 +2262,7 @@ class ModelViewModel(
             .distinctBy { it.first().bundleId }
             .toList()
         val aggregate = downloadManager.validatedBundle(modelId)
+        currentCoroutineContext().ensureActive()
         val aggregateMetadata = aggregate?.let { manifest ->
             candidates.singleOrNull(manifest::matchesExactBundle)
         }

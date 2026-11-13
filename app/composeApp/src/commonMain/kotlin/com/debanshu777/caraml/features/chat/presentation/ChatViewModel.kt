@@ -15,6 +15,7 @@ import com.debanshu777.caraml.core.data.inference.ModelLoadResult
 import com.debanshu777.caraml.core.data.inference.PromptContextFullException
 import com.debanshu777.caraml.core.media.GeneratedMediaStore
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
+import com.debanshu777.caraml.core.platform.AppLogger
 import com.debanshu777.caraml.core.recommendation.InstalledModelLoadResolver
 import com.debanshu777.caraml.core.recommendation.LoadAdmission
 import com.debanshu777.caraml.core.recommendation.LoadAdmissionReason
@@ -55,8 +56,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
@@ -148,6 +147,7 @@ private data class RunnerTeardownAttempt(
 
 private data class InitialModelInventory(
     val models: ImmutableList<LocalModelEntity> = persistentListOf(),
+    val installedModelIds: Set<Long> = emptySet(),
     val initialized: Boolean = false,
 )
 
@@ -177,8 +177,14 @@ class ChatViewModel(
     val inventoryInitialized = _inventoryInitialized.asStateFlow()
 
     private val _modelInventory: StateFlow<InitialModelInventory> =
-        getAvailableModels()
-            .map { models -> InitialModelInventory(models, initialized = true) }
+        getAvailableModels.installedModels()
+            .map { models ->
+                InitialModelInventory(
+                    models = getAvailableModels.topModels(models),
+                    installedModelIds = models.mapTo(mutableSetOf()) { it.id },
+                    initialized = true,
+                )
+            }
             .stateIn(
                 scope = viewModelScope,
                 started = SharingStarted.WhileSubscribed(5000),
@@ -267,15 +273,9 @@ class ChatViewModel(
 
         combine(_modelInventory, _generationMode) { inventory, mode -> inventory to mode }
             .onEach { (inventory, mode) ->
-                ensureSelectionForInventory(inventory.models, mode)
+                ensureSelectionForInventory(inventory, mode)
                 if (inventory.initialized) _inventoryInitialized.value = true
             }
-            .launchIn(viewModelScope)
-
-        _selectedModel
-            .distinctUntilChanged { old, new -> old?.id == new?.id }
-            .filterNotNull()
-            .onEach { model -> loadSelectedModel(model) }
             .launchIn(viewModelScope)
 
         // Forward native denoising-step progress into StreamingState so the UI can show "3/20"
@@ -297,9 +297,10 @@ class ChatViewModel(
     }
 
     private suspend fun ensureSelectionForInventory(
-        models: ImmutableList<LocalModelEntity>,
+        inventory: InitialModelInventory,
         mode: GenerationMode,
     ) {
+        val models = inventory.models
         if (mode == GenerationMode.Video && !diffusionRepository.supportsVideoGeneration()) {
             transitionWithoutModel(
                 state = InternalChatState.ModelError(
@@ -325,13 +326,9 @@ class ChatViewModel(
             return
         }
         val sel = _selectedModel.value
-        if (sel == null || !sel.matchesGenerationMode(mode)) {
+        if (sel == null || !sel.matchesGenerationMode(mode) || sel.id !in inventory.installedModelIds) {
             val next = pickRememberedModel(picker, mode) ?: picker.first()
-            if (sel?.id != next.id) {
-                invalidatePendingLoadAction()
-                _internal.value = InternalChatState.ModelLoading
-                _selectedModel.value = next
-            }
+            selectAndLoadModel(next)
         } else if (
             _internal.value is InternalChatState.NoModels ||
             _internal.value is InternalChatState.NoModelsForMode
@@ -363,7 +360,9 @@ class ChatViewModel(
         )
     }
 
-    fun setGenerationMode(mode: GenerationMode) {
+    fun setGenerationMode(mode: GenerationMode) = changeGenerationMode(mode)
+
+    private fun changeGenerationMode(mode: GenerationMode, selectFallback: Boolean = true) {
         if (_generationMode.value == mode) return
         _streamingState.value.streamingMessageId?.let(::recordStoppedMessage)
         invalidatePendingLoadAction()
@@ -383,6 +382,7 @@ class ChatViewModel(
             return
         }
 
+        if (!selectFallback) return
         val models = _modelInventory.value.models
         val picker = models.filterForMode(mode)
         if (models.isEmpty()) {
@@ -399,26 +399,24 @@ class ChatViewModel(
             )
             return
         }
-        val previous = _selectedModel.value
         val next = pickRememberedModel(picker, mode) ?: picker.first()
-        _internal.value = InternalChatState.ModelLoading
-        _selectedModel.value = next
-        if (previous?.id == next.id) {
-            loadSelectedModel(next)
-        }
+        selectAndLoadModel(next)
     }
 
-    fun selectModel(model: LocalModelEntity) {
-        if (!model.matchesGenerationMode(_generationMode.value)) return
+    fun selectModel(model: LocalModelEntity) = selectModel(model, _generationMode.value)
+
+    internal fun selectModel(model: LocalModelEntity, mode: GenerationMode) {
+        if (!model.matchesGenerationMode(mode)) return
+        val selectionUnchanged = _generationMode.value == mode && _selectedModel.value?.id == model.id
+        changeGenerationMode(mode, selectFallback = false)
+        if (mode == GenerationMode.Video && !diffusionRepository.supportsVideoGeneration()) return
 
         invalidatePendingLoadAction()
-        val selectionUnchanged = _selectedModel.value?.id == model.id
         val ready = _internal.value as? InternalChatState.ReadyCore
         val tryResidentReuse = selectionUnchanged && _generationMode.value == GenerationMode.Text &&
             ready != null && !ready.isGenerating && generationJob?.isActive != true &&
             !ModelLoadDiagnostics.forceFullReloadForMeasurement
-        _selectedModel.value = model
-        if (selectionUnchanged) loadSelectedModel(model, tryResidentReuse)
+        selectAndLoadModel(model, tryResidentReuse)
         when (_generationMode.value) {
             GenerationMode.Text -> lastTextModelId = model.id
             GenerationMode.Image,
@@ -426,6 +424,12 @@ class ChatViewModel(
             -> lastDiffusionModelId = model.id
         }
         viewModelScope.launch { trackModelUsage(model) }
+    }
+
+    private fun selectAndLoadModel(model: LocalModelEntity, tryResidentReuse: Boolean = false) {
+        _internal.value = InternalChatState.ModelLoading
+        _selectedModel.value = model
+        loadSelectedModel(model, tryResidentReuse)
     }
 
     private fun loadSelectedModel(model: LocalModelEntity, tryResidentReuse: Boolean = false) {
@@ -548,6 +552,12 @@ class ChatViewModel(
         teardownKey: RunnerTeardownKey,
     ): Job {
         invalidatePendingLoadAction()
+        if (_selectedModel.value != null) {
+            _streamingState.value.streamingMessageId?.let(::recordStoppedMessage)
+            signalGenerationCancellation()
+            generationJob?.cancel()
+            _streamingState.value = StreamingState()
+        }
         val teardownJob = startRunnerTeardown(teardownKey)
         _internal.value = state
         _selectedModel.value = null
@@ -572,6 +582,11 @@ class ChatViewModel(
                 claimRunnerTeardown(attempt)
                 awaitPreviousModelLoad(previousJob)
                 teardownRunners(attempt)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                AppLogger.w("Chat", "Could not release the native runners", failure)
+                throw CancellationException("Runner teardown failed", failure)
             } finally {
                 if (clearGeneratedMedia) {
                     withContext(kotlinx.coroutines.NonCancellable) {
@@ -952,8 +967,9 @@ class ChatViewModel(
                 if (bytes.isEmpty()) {
                     finalizeWithError(assistantMessage.id)
                 } else {
-                    val imagePath = generatedMediaStore.saveImage(assistantMessage.id, bytes)
-                    finalizeMediaMessage(assistantMessage.id, imagePath = imagePath)
+                    generatedMediaStore.saveImage(assistantMessage.id, bytes) { imagePath ->
+                        finalizeMediaMessage(assistantMessage.id, imagePath = imagePath)
+                    }
                 }
             } catch (_: CancellationException) {
             } catch (error: DiffusionMemoryException) {
@@ -991,8 +1007,9 @@ class ChatViewModel(
                 if (frames.isEmpty()) {
                     finalizeWithError(assistantMessage.id)
                 } else {
-                    val framePaths = generatedMediaStore.saveVideo(assistantMessage.id, frames)
-                    finalizeMediaMessage(assistantMessage.id, videoFramePaths = framePaths)
+                    generatedMediaStore.saveVideo(assistantMessage.id, frames) { framePaths ->
+                        finalizeMediaMessage(assistantMessage.id, videoFramePaths = framePaths)
+                    }
                 }
             } catch (_: CancellationException) {
             } catch (error: DiffusionMemoryException) {
@@ -1090,27 +1107,25 @@ class ChatViewModel(
         _streamingState.value = StreamingState()
     }
 
-    private suspend fun finalizeMediaMessage(
+    private fun finalizeMediaMessage(
         assistantMessageId: String,
         imagePath: String? = null,
         videoFramePaths: List<String>? = null,
-    ) = withContext(Dispatchers.Main.immediate) {
-        if (_streamingState.value.streamingMessageId != assistantMessageId) return@withContext
-        _messages.update { list ->
-            val messages = list.toMutableList()
-            val idx = messages.indexOfLast { it.id == assistantMessageId }
-            if (idx >= 0) {
-                messages[idx] = messages[idx].copy(
-                    text = "",
-                    imagePath = imagePath,
-                    videoFramePaths = videoFramePaths,
-                    delivery = MessageDelivery.Complete,
-                )
-            }
-            messages.toImmutableList()
-        }
+    ): Boolean {
+        if (_streamingState.value.streamingMessageId != assistantMessageId) return false
+        val messages = _messages.value.toMutableList()
+        val index = messages.indexOfLast { it.id == assistantMessageId }
+        if (index < 0) return false
+        messages[index] = messages[index].copy(
+            text = "",
+            imagePath = imagePath,
+            videoFramePaths = videoFramePaths,
+            delivery = MessageDelivery.Complete,
+        )
+        _messages.value = messages.toImmutableList()
         updateReadyCore { it.copy(isGenerating = false) }
         _streamingState.value = StreamingState()
+        return true
     }
 
     private suspend fun finalizeWithError(

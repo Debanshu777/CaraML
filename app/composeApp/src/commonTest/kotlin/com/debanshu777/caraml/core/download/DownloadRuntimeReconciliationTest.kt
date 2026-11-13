@@ -69,6 +69,29 @@ class DownloadRuntimeReconciliationTest {
         assertEquals(0, scheduler.enqueueCalls)
     }
 
+    @Test
+    fun startupCompletesInterruptedPauseAndResume() = runTest {
+        val batch = runningBatch()
+        val interruptedPause = ReconciliationStore(batch.copy(
+            userIntent = DownloadUserIntent.PAUSE,
+            artifacts = batch.artifacts.map {
+                it.copy(state = DownloadArtifactState.WAITING_FOR_NETWORK, userIntent = DownloadUserIntent.PAUSE)
+            },
+        ))
+        val interruptedResume = ReconciliationStore(batch.copy(
+            artifacts = batch.artifacts.map { it.copy(state = DownloadArtifactState.PAUSED) },
+        ))
+        val scheduler = ReconciliationScheduler(active = false)
+
+        DownloadReconciler(interruptedPause, scheduler, { 10L }).reconcile()
+        assertEquals(listOf(DownloadArtifactState.PAUSED), interruptedPause.transitions)
+        assertEquals(0, scheduler.enqueueCalls)
+
+        DownloadReconciler(interruptedResume, scheduler, { 10L }).reconcile()
+        assertEquals(listOf(DownloadArtifactState.QUEUED), interruptedResume.transitions)
+        assertEquals(1, scheduler.enqueueCalls)
+    }
+
     private fun runningBatch(): DownloadBatchSnapshot {
         val identity = requireNotNull(
             DownloadArtifactIdentity.create(

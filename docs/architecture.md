@@ -175,6 +175,23 @@ features/{feature}/
 
 Three features: **chat**, **modelhub**, **settings**.
 
+## State and ownership
+
+Several workflows have named phases, with transition rules distributed across
+view models, coroutine jobs, persistence and native ownership.
+
+| Workflow | States and transitions | Owner |
+| --- | --- | --- |
+| Navigation | Drawer mode selects Chat, Images or Videos. Model Hub pushes a Details entry and Back returns to the Hub. Opening an installed model selects its matching workspace. | Navigation back stack and `GenerationModeController` |
+| Chat selection and load | Inventory initialization → selection → loading → ready, error, missing components or admission prompt. Removing the selected model triggers a fallback when another compatible model is installed. Load attempts bind to the current model and mode. | `ChatViewModel`, `LoadSessionCoordinator` |
+| Chat generation | Ready → preparing or compacting context → streaming tokens or rendering media → completed, stopped or failed. A generation job and streaming state track the active turn. Media is retained only when the active assistant message accepts it. | `ChatViewModel`, inference repositories |
+| Settings | Ordinary inference edits transform the persisted snapshot inside a DataStore transaction. Profile edits pass through optimistic and queued states before persistence. Onboarding and calibration have separate completion state. | `SettingsViewModel`, `DefaultSettingsRepository` |
+| Calibration | Idle → eligibility check → native probe → recorded result, deferral or failure. A cancelled probe must confirm that native work stopped before its gate is released. | `QuickCalibrationRunner`, `CalibrationRepository` |
+| Model Hub | Draft search → committed query → paged results, empty or error. Recommendation assessment has its own query session. Details requests cancel the previous load and check cancellation before publishing. A failed file-list request offers a retry. Download admission is bound to the active detail artifact and recommendation session. | `ModelViewModel`, `ModelHubResultsState`, `RecommendationQuerySession` |
+| Download and install | Queued → running, paused or waiting for network → verifying → completed, cancelled or failed. User intent and worker leases drive restart recovery. Startup completes interrupted pause or resume transitions, and only a fresh enqueue can reactivate a cancelled batch. Verification publishes the artifact manifest before the local catalog entry. Publication reconciliation repairs incomplete catalog updates. | `DownloadCoordinator`, `DownloadBatchRunner`, `ModelDownloadFinalizer` |
+| App inference | Admission precedes native allocation. Ready models may be reused. The Llama repository retains ownership if unload throws, and attempts teardown again before another allocation. An interrupted load marker is checked at startup before another attempt. | Inference repositories, `NativeSessionGate` |
+| SDK inference | Assessment holds an artifact lease. Loading consumes the plan and transfers ownership to a session. Generation serializes operations and releases operation admission before terminal delivery. Failed session teardown quarantines the owner, artifact lease and reservation. The diffusion SDK probe holds the shared gate for the duration of synchronous preflight. Diffusion stops progress polling before publication and keeps the native gate through failed release. | `InferenceClient`, `InferenceSession`, `NativeRuntimeGate` |
+
 ---
 
 

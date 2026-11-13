@@ -64,21 +64,20 @@ class DownloadDatabaseTest {
             val (first, firstVersion) = store.runningPauseSnapshot(id)!!
             assertTrue(store.setUserIntent(id, DownloadUserIntent.RUN, firstVersion))
             assertFalse(store.pauseRunningSnapshot(first, firstVersion, 4L))
-            val (second, secondVersion) = store.runningPauseSnapshot(id)!!
-            assertTrue(store.setUserIntent(id, DownloadUserIntent.CANCEL, secondVersion))
-            assertFalse(store.pauseRunningSnapshot(second, secondVersion, 5L))
-            assertEquals(DownloadUserIntent.CANCEL, store.getBatch(id)!!.userIntent)
-            assertEquals(DownloadArtifactState.RUNNING, store.getBatch(id)!!.artifacts.single().state)
-            assertEquals("worker", database.downloadTaskDao().requireArtifact(artifact).leaseOwner)
-            assertTrue(store.setUserIntent(id, DownloadUserIntent.RUN, 6L))
             val (latest, latestVersion) = store.runningPauseSnapshot(id)!!
-            assertTrue(store.pauseRunningSnapshot(latest, latestVersion, 7L))
+            assertTrue(store.pauseRunningSnapshot(latest, latestVersion, 5L))
             val paused = store.getBatch(id)!!
             assertEquals(DownloadUserIntent.PAUSE, paused.userIntent)
             assertEquals(DownloadArtifactState.PAUSED, paused.artifacts.single().state)
             assertEquals(256L, paused.bytesReceived)
             assertEquals("validator", paused.artifacts.single().entityTag)
             assertNull(database.downloadTaskDao().requireArtifact(artifact).leaseOwner)
+
+            assertTrue(store.setUserIntent(id, DownloadUserIntent.RUN, 6L))
+            val (runningIntent, runningVersion) = store.runningPauseSnapshot(id)!!
+            assertTrue(store.setUserIntent(id, DownloadUserIntent.CANCEL, 7L))
+            assertFalse(store.pauseRunningSnapshot(runningIntent, runningVersion, 8L))
+            assertEquals(DownloadUserIntent.CANCEL, store.getBatch(id)!!.userIntent)
         } finally { database.close() }
     }
 
@@ -123,11 +122,6 @@ class DownloadDatabaseTest {
             val (paused, version) = store.pausedResumeSnapshot(id)!!
             assertTrue(store.setUserIntent(id, DownloadUserIntent.PAUSE, 6L))
             assertFalse(store.resumePausedSnapshot(paused, version, 7L))
-            val (newPause, newVersion) = store.pausedResumeSnapshot(id)!!
-            assertTrue(store.setUserIntent(id, DownloadUserIntent.CANCEL, 8L))
-            assertFalse(store.resumePausedSnapshot(newPause, newVersion, 9L))
-            assertEquals(DownloadUserIntent.CANCEL, store.getBatch(id)!!.userIntent)
-            assertTrue(store.setUserIntent(id, DownloadUserIntent.PAUSE, 10L))
             val (selected, selectedVersion) = store.pausedResumeSnapshot(id)!!
             assertTrue(store.resumePausedSnapshot(selected, selectedVersion, 11L))
             val queued = store.getBatch(id)!!
@@ -144,6 +138,12 @@ class DownloadDatabaseTest {
             assertEquals(DownloadBatchState.VERIFYING, store.getBatch(id)!!.state)
             assertEquals(DownloadArtifactState.VERIFYING, store.getBatch(id)!!.artifacts.single().state)
             assertEquals(256L, store.getBatch(id)!!.bytesReceived)
+
+            assertTrue(store.setUserIntent(id, DownloadUserIntent.PAUSE, 16L))
+            val (newPause, newVersion) = store.pausedResumeSnapshot(id)!!
+            assertTrue(store.setUserIntent(id, DownloadUserIntent.CANCEL, 17L))
+            assertFalse(store.resumePausedSnapshot(newPause, newVersion, 18L))
+            assertEquals(DownloadUserIntent.CANCEL, store.getBatch(id)!!.userIntent)
         } finally { database.close() }
     }
 
@@ -164,8 +164,14 @@ class DownloadDatabaseTest {
             assertEquals(DownloadUserIntent.CANCEL, store.getBatch(id)!!.userIntent)
             assertEquals(DownloadArtifactState.QUEUED, store.getBatch(id)!!.artifacts.single().state)
             assertNull(database.downloadTaskDao().requireArtifact(artifact).leaseOwner)
-            assertTrue(store.setUserIntent(id, DownloadUserIntent.RUN, 6L))
-            assertTrue(store.claim(artifact, "worker", 7L, 30L))
+            assertFalse(store.setUserIntent(id, DownloadUserIntent.RUN, 6L))
+            assertFalse(store.setUserIntent(id, DownloadUserIntent.PAUSE, 7L))
+            assertFalse(store.claim(artifact, "worker", 8L, 30L))
+            assertEquals(DownloadUserIntent.CANCEL, store.getBatch(id)!!.userIntent)
+
+            assertTrue(store.transitionArtifact(artifact, DownloadArtifactState.CANCELLED, null, 9L))
+            assertEquals(id, store.create(request(), 10L))
+            assertTrue(store.claim(artifact, "worker", 11L, 30L))
             assertEquals(DownloadArtifactState.RUNNING, store.getBatch(id)!!.artifacts.single().state)
             assertEquals("worker", database.downloadTaskDao().requireArtifact(artifact).leaseOwner)
         } finally { database.close() }
@@ -190,19 +196,20 @@ class DownloadDatabaseTest {
             val paused = store.getBatch(id)
             assertFalse(store.retryNetworkIfRunningIntent(id, 7L))
             assertEquals(paused, store.getBatch(id))
-            assertTrue(store.setUserIntent(id, DownloadUserIntent.CANCEL, 8L))
-            val cancelled = store.getBatch(id)
-            assertFalse(store.retryNetworkIfRunningIntent(id, 9L))
-            assertEquals(cancelled, store.getBatch(id))
-            assertTrue(store.setUserIntent(id, DownloadUserIntent.RUN, 10L))
-            assertTrue(store.retryNetworkIfRunningIntent(id, 11L))
+            assertTrue(store.setUserIntent(id, DownloadUserIntent.RUN, 8L))
+            assertTrue(store.retryNetworkIfRunningIntent(id, 9L))
             val queued = store.getBatch(id)!!
             assertEquals(DownloadUserIntent.RUN, queued.userIntent)
             assertEquals(DownloadBatchState.QUEUED, queued.state)
             assertEquals(DownloadArtifactState.QUEUED, queued.artifacts.single().state)
             assertEquals(256L, queued.bytesReceived)
             assertEquals("strong-validator", queued.artifacts.single().entityTag)
-            assertFalse(store.retryNetworkIfRunningIntent(id, 12L))
+            assertFalse(store.retryNetworkIfRunningIntent(id, 10L))
+            assertTrue(store.transitionArtifact(artifact, DownloadArtifactState.FAILED_RETRYABLE, DownloadFailureCode.NETWORK, 11L))
+            assertTrue(store.setUserIntent(id, DownloadUserIntent.CANCEL, 12L))
+            val cancelled = store.getBatch(id)
+            assertFalse(store.retryNetworkIfRunningIntent(id, 13L))
+            assertEquals(cancelled, store.getBatch(id))
         } finally { database.close() }
     }
 

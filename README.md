@@ -138,6 +138,7 @@ Dependencies and model weights keep their own licenses. See [third-party notices
 
 ## Recent Changes
 
+- Fixed chat model switching and cancelled media writes, stale Model Hub details and file-list retries, overlapping settings edits, interrupted download commands, and native teardown. See the [state and ownership map](docs/architecture.md#state-and-ownership).
 - Required docs, root README, and affected module README updates alongside every code change through the shared agent and contributor workflow.
 - Fixed the ONNX resident-session test storage layout on Linux CI and enabled complete JVM test failure diagnostics.
 - Published the [documentation and demo on GitHub Pages](https://debanshu777.github.io/CaraML/), with source links pinned to each deployed revision.

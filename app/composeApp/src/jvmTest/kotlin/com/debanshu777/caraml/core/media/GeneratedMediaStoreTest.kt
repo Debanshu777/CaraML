@@ -1,6 +1,11 @@
 package com.debanshu777.caraml.core.media
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
 import java.nio.file.Files
 import java.nio.file.attribute.FileTime
 import kotlin.io.path.createDirectories
@@ -39,6 +44,32 @@ class GeneratedMediaStoreTest {
 
         assertFalse(Files.exists(base.resolve("generated-media-session")))
         Files.deleteIfExists(base)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun unpublishedMediaIsRemovedAndItsCapacityIsReusable() = runTest {
+        val base = Files.createTempDirectory("caraml-media-publication")
+        val store = GeneratedMediaStore(
+            baseDirectory = base.toString(),
+            sessionId = "session",
+            maxSessionBytes = 3L,
+        )
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val image = store.saveImage("stopped-image", byteArrayOf(1, 2, 3)) { false }
+            assertFalse(Files.exists(java.nio.file.Path.of(image)))
+
+            val frames = store.saveVideo("stopped-video", listOf(byteArrayOf(1), byteArrayOf(2, 3))) { false }
+            assertFalse(Files.exists(java.nio.file.Path.of(frames.first()).parent))
+
+            val accepted = store.saveImage("accepted-image", byteArrayOf(4, 5, 6)) { true }
+            assertContentEquals(byteArrayOf(4, 5, 6), store.read(accepted))
+        } finally {
+            Dispatchers.resetMain()
+            store.clear()
+            Files.deleteIfExists(base)
+        }
     }
 
     @Test

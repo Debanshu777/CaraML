@@ -81,7 +81,7 @@ class OnnxPerformanceValidation : Instrumentation() {
                     .copy(systemPrompt = "You are a helpful assistant.", temperature = 0f, useGpu = false)
                 val settings = object : SettingsRepository {
                     override fun getSettings() = flowOf(preferences)
-                    override suspend fun updateSettings(settings: AppSettings) = error("Read-only benchmark")
+                    override suspend fun updateSettings(transform: (AppSettings) -> AppSettings) = error("Read-only benchmark")
                     override suspend fun updateRecommendationProfile(profile: RecommendationProfile) = error("Read-only benchmark")
                     override suspend fun completeModelProfileOnboarding(profile: RecommendationProfile) = error("Read-only benchmark")
                 }

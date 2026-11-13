@@ -29,6 +29,9 @@ import androidx.navigation3.runtime.metadata
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
 import com.debanshu777.caraml.core.theme.AppTheme
+import com.debanshu777.caraml.core.drawer.LocalGenerationModeController
+import com.debanshu777.caraml.features.chat.domain.GenerationMode
+import com.debanshu777.caraml.features.chat.domain.matchesGenerationMode
 import com.debanshu777.caraml.features.chat.presentation.ChatScreen
 import com.debanshu777.caraml.features.chat.presentation.ChatViewModel
 import com.debanshu777.caraml.features.modelhub.presentation.details.DetailsScreen
@@ -226,6 +229,7 @@ fun NavigationHost(
 ) {
     val motionPolicy = LocalAuroraMotionPolicy.current
     val detailOffsetPx = with(LocalDensity.current) { AppTheme.spacing.spacing16.roundToPx() }
+    val modeController = LocalGenerationModeController.current
     val chatViewModel: ChatViewModel = koinViewModel()
     val modelViewModel: ModelViewModel = koinViewModel()
     val downloadedModelsViewModel: DownloadedModelsViewModel = koinViewModel()
@@ -267,8 +271,13 @@ fun NavigationHost(
                             backStack.add(AppScreen.Details(modelId, hubMode))
                         },
                         onSelectModelAndGoBack = { model ->
-                            chatViewModel.selectModel(model)
-                            returnHomeAfterModelSelection(backStack)
+                            val mode = modeController.mode.takeIf(model::matchesGenerationMode)
+                                ?: GenerationMode.entries.firstOrNull(model::matchesGenerationMode)
+                            if (mode != null) {
+                                modeController.setState(mode)
+                                chatViewModel.selectModel(model, mode)
+                                returnHomeAfterModelSelection(backStack)
+                            }
                         }
                     )
                     // Search owns its saveable selection after entry; consume this one-time route request.

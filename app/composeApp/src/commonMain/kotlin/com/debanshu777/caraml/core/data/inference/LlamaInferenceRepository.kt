@@ -72,6 +72,7 @@ class LlamaInferenceRepository(
     private val loadSessionCoordinator: LoadSessionCoordinator? = null,
     private val engineVersion: String = NATIVE_LOAD_ENGINE_VERSION,
     private val observationRecorder: InferenceObservationRecorder? = null,
+    private val unloadNativeModel: () -> Unit = runner::unloadModel,
 ) : InferenceRepository {
 
     companion object {
@@ -113,7 +114,7 @@ class LlamaInferenceRepository(
     private val nativeSession = NativeSessionGate()
 
     /**
-     * True once the native model is successfully loaded; false after unload.
+     * True once native allocation starts; false only after unload returns successfully.
      * Only written under [nativeSession].
      */
     @Volatile private var nativeLoaded = false
@@ -218,14 +219,12 @@ class LlamaInferenceRepository(
                 request.toInferenceObservationPlan(engineVersion, InferenceObservationPhase.GENERATION)
             if (nativeLoaded) {
                 try {
-                    runner.unloadModel()
+                    releaseNativeModel()
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Throwable) {
                     return@exclusive error("release_failure", "The previous model could not be released safely.")
                 }
-                nativeLoaded = false
-                resetNativeSnapshots()
             }
             AppLogger.i(TAG) { "load stage=initialize" }
             try {
@@ -294,13 +293,10 @@ class LlamaInferenceRepository(
                     artifactValidator = { candidate ->
                         candidate.artifact?.let { resolver.revalidate(it) } == true
                     },
-                    releasePartialState = {
-                        runner.unloadModel()
-                        nativeLoaded = false
-                        resetNativeSnapshots()
-                    },
+                    releasePartialState = { releaseNativeModel() },
                     nativeLoad = {
                         AppLogger.i(TAG) { "load stage=native_allocation" }
+                        nativeLoaded = true
                         val loaded = loadObservation?.let { observation ->
                             observationRecorder?.measureLoad(observation.key, observation.prediction) {
                                 val succeeded = tracePerformanceStage("load.nativeModel") { runner.loadModel(modelPath, exactConfig) }
@@ -321,7 +317,6 @@ class LlamaInferenceRepository(
                                 StableLoadFailure.ALLOCATION,
                             )
                         }
-                        nativeLoaded = true
                         val systemPrompt = settings.systemPrompt.ifBlank { FALLBACK_SYSTEM_PROMPT }
                         val systemResult = tracePerformanceStage("load.systemPrompt") { runner.processSystemPrompt(systemPrompt) }
                         AppLogger.i(TAG) { "load stage=system_prompt code=$systemResult" }
@@ -373,9 +368,13 @@ class LlamaInferenceRepository(
             } catch (failure: Throwable) {
                 AppLogger.i(TAG) { "load stage=exception kind=${failure::class.simpleName}" }
                 if (nativeLoaded) {
-                    runCatching { runner.unloadModel() }
-                    nativeLoaded = false
-                    resetNativeSnapshots()
+                    try {
+                        releaseNativeModel()
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Throwable) {
+                        return@exclusive error("release_failure", "The previous model could not be released safely.")
+                    }
                 }
                 error("admission_failure", "Load admission is temporarily unavailable.")
             }
@@ -606,8 +605,11 @@ class LlamaInferenceRepository(
 
     override suspend fun unloadModel() = nativeSession.exclusive {
         invalidateResidentReuse()
-        if (!nativeLoaded) return@exclusive
-        runner.unloadModel()
+        if (nativeLoaded) releaseNativeModel()
+    }
+
+    private fun releaseNativeModel() {
+        unloadNativeModel()
         nativeLoaded = false
         resetNativeSnapshots()
     }

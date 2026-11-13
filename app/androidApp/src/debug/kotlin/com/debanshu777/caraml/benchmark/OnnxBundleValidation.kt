@@ -91,7 +91,7 @@ class OnnxBundleValidation : Instrumentation() {
                 }
                 val settings = object : SettingsRepository {
                     override fun getSettings() = flowOf(AppSettings(systemPrompt = "You are a helpful assistant.", temperature = 0f))
-                    override suspend fun updateSettings(settings: AppSettings) = error("Read only")
+                    override suspend fun updateSettings(transform: (AppSettings) -> AppSettings) = error("Read only")
                     override suspend fun updateRecommendationProfile(profile: RecommendationProfile) = error("Read only")
                     override suspend fun completeModelProfileOnboarding(profile: RecommendationProfile) = error("Read only")
                 }

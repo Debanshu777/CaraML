@@ -39,6 +39,9 @@ interface DownloadTaskStore {
         failureCode: DownloadFailureCode?,
         nowEpochMs: Long,
     ): Boolean
+    suspend fun markSchedulingFailed(artifactId: String, nowEpochMs: Long): Boolean =
+        transitionArtifact(artifactId, DownloadArtifactState.FAILED_RETRYABLE, DownloadFailureCode.PLATFORM, nowEpochMs)
+
     suspend fun requeueMissingCompletedArtifact(artifactId: String, nowEpochMs: Long): Boolean = false
     suspend fun setUserIntent(batchId: String, intent: DownloadUserIntent, nowEpochMs: Long): Boolean
     suspend fun setPlatformTaskId(artifactId: String, platformTaskId: String?, nowEpochMs: Long): Boolean

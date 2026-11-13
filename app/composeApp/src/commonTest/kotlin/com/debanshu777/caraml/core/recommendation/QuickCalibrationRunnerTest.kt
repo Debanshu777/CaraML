@@ -325,7 +325,7 @@ class QuickCalibrationRunnerTest {
     private class FakeSettingsRepository : SettingsRepository {
         var offerComplete = false
         override fun getSettings(): Flow<AppSettings> = flowOf(AppSettings())
-        override suspend fun updateSettings(settings: AppSettings) = Unit
+        override suspend fun updateSettings(transform: (AppSettings) -> AppSettings) = Unit
         override suspend fun updateRecommendationProfile(profile: RecommendationProfile) = Unit
         override suspend fun completeModelProfileOnboarding(profile: RecommendationProfile) = Unit
         override suspend fun completeRecommendationCalibrationOffer() {

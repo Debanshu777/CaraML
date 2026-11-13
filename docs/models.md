@@ -36,6 +36,8 @@ Image generation can take considerably longer and use more memory than a short c
 
 ## Network access and model licenses
 
+The download queue shows **Cancellation pending** while the platform stop is unresolved. If stopping fails, try **Cancel download** again. The coordinator keeps partial files until the platform confirms the stop.
+
 Public model browsing and downloads use the network. Gated repositories may require a Hugging Face token and prior acceptance of their access terms. Never paste tokens into bug reports or recordings.
 
 Model weights retain their own licenses and usage restrictions. CaraML's license does not grant rights to third-party models, and a model's license does not grant commercial rights to CaraML. Review both before use.

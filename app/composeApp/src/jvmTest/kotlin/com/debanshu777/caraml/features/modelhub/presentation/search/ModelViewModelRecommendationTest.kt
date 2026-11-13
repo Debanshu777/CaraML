@@ -96,6 +96,9 @@ import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import kotlin.coroutines.Continuation
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -125,6 +128,58 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ModelViewModelRecommendationTest {
+    @Test
+    fun delayedLocalFileLookupCannotOverwriteTheNewDetailsRoute() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val older = "org/older"
+        val newer = "org/newer"
+        val revision = "a".repeat(40)
+        val objectId = "b".repeat(64)
+        var oldLookup: Continuation<List<String>>? = null
+        val dao = object : LocalModelDao by FakeLocalModelDao() {
+            override suspend fun getFilenamesByModelId(modelId: String): List<String> =
+                if (modelId == older) suspendCoroutine { oldLookup = it } else emptyList()
+        }
+        val engine = object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler { request ->
+                val model = if (request.url.encodedPath.contains(older)) older else newer
+                if (request.url.encodedPath.contains("/tree/")) {
+                    val path = "${model.substringAfter('/')}.gguf"
+                    respondJson("""[{"path":"$path","type":"file","size":100,"lfs":{"oid":"$objectId","size":100}}]""")
+                } else {
+                    respondJson("""{"id":"$model","modelId":"$model","sha":"$revision","private":false}""")
+                }
+            }
+        }) {
+            override val dispatcher: CoroutineDispatcher = dispatcher
+        }
+        val client = HttpClient(engine)
+        try {
+            val viewModel = viewModel(client, dispatcher, localModelDao = dao)
+            viewModel.loadDetail(older)
+            runCurrent()
+            assertNotNull(oldLookup)
+
+            viewModel.loadDetail(newer)
+            advanceUntilIdle()
+            assertEquals(newer, viewModel.modelDetail.value?.id)
+            assertEquals(listOf("newer.gguf"), viewModel.ggufFiles.value.map { it.path })
+
+            requireNotNull(oldLookup).resume(emptyList())
+            oldLookup = null
+            advanceUntilIdle()
+            assertEquals(newer, viewModel.modelDetail.value?.id)
+            assertEquals(listOf("newer.gguf"), viewModel.ggufFiles.value.map { it.path })
+            assertFalse(viewModel.isDetailLoading.value)
+        } finally {
+            oldLookup?.resume(emptyList())
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
     @Test
     fun assessedLanguageDownloadEnqueuesCompleteDescriptorEvidence() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -1161,6 +1216,47 @@ class ModelViewModelRecommendationTest {
             val request = store.createdRequests.single()
             assertTrue(request.downloadForLaterConfirmed)
             assertEquals(artifact, request.artifacts.single().metadata.artifact)
+        } finally {
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun detailsCanRetryAFailedFileTreeRequest() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val revision = "a".repeat(40)
+        var failTree = true
+        val requestDispatcher = dispatcher
+        val engine = object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler { request ->
+                when {
+                    request.url.encodedPath.endsWith("/tree/$revision") -> {
+                        if (failTree) respond("unavailable", HttpStatusCode.InternalServerError)
+                        else respondJson("[]")
+                    }
+                    request.url.encodedPath.endsWith("/owner/model") ->
+                        respondJson("""{"id":"owner/model","modelId":"owner/model","sha":"$revision"}""")
+                    else -> error("Unexpected request ${request.url}")
+                }
+            }
+        }) {
+            override val dispatcher: CoroutineDispatcher = requestDispatcher
+        }
+        val client = HttpClient(engine)
+        try {
+            val viewModel = viewModel(client, dispatcher)
+            viewModel.loadDetail("owner/model")
+            advanceUntilIdle()
+            assertEquals("Could not load the model files. Please try again.", viewModel.detailError.value)
+
+            failTree = false
+            viewModel.loadDetail("owner/model")
+            advanceUntilIdle()
+            assertEquals(null, viewModel.detailError.value)
+            assertTrue(viewModel.ggufFiles.value.isEmpty())
         } finally {
             client.close()
             Dispatchers.resetMain()
@@ -2519,8 +2615,8 @@ private class FakeSettingsRepository : SettingsRepository {
     private val settings = MutableStateFlow(AppSettings())
 
     override fun getSettings(): Flow<AppSettings> = settings
-    override suspend fun updateSettings(settings: AppSettings) {
-        this.settings.value = settings
+    override suspend fun updateSettings(transform: (AppSettings) -> AppSettings) {
+        this.settings.value = transform(this.settings.value)
     }
 
     override suspend fun updateRecommendationProfile(profile: RecommendationProfile) = Unit

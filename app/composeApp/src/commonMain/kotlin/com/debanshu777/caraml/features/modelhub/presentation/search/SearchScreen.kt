@@ -140,6 +140,12 @@ fun SearchScreen(
     var recommendationSheetState by remember { mutableStateOf<RecommendedModelUiState?>(null) }
 
     val snackbarHostState = remember { SnackbarHostState() }
+    val downloadControlError by modelViewModel.downloadControlError.collectAsState()
+    LaunchedEffect(downloadControlError) {
+        val message = downloadControlError ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(message)
+        modelViewModel.clearDownloadControlError()
+    }
 
     if (deviceInfoVisible) ModelHubDeviceInfo(
         storageInfo = storageInfo,

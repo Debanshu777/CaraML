@@ -164,6 +164,7 @@ private fun DiffusionImageParameters.toRunnerParams() = ImageGenParams(
 /** Native boundary kept internal so contract tests can supply deterministic fakes. */
 internal interface DiffusionRuntime {
     fun initialize(nativeLibDir: String)
+    /** A synchronous probe that returns without retaining a model handle or artifact. */
     fun preflight(config: DiffusionModelConfig): DiffusionPreflightResult
     fun load(config: DiffusionModelConfig): Boolean
     fun generate(params: ImageGenParams): ByteArray?
@@ -226,42 +227,38 @@ class DiffusionEngineProvider internal constructor(
         try {
             return withContext(dispatcher) {
                 val runtime = runtimeFactory.create()
-                try {
-                    runtime.initialize(nativeLibDir)
-                    when (val result = runtime.preflight(imageRequest.options.toRunnerConfig(path))) {
-                        is DiffusionPreflightResult.Fit -> {
-                            val residentBytes = result.report.components.fold(0L) { total, component ->
-                                if (Long.MAX_VALUE - total < component.parameterBytes) Long.MAX_VALUE
-                                else total + component.parameterBytes
-                            }
-                            val summary = EnginePlanSummary(
-                                engineId = id,
-                                engineVersion = version,
-                                artifactId = artifact.artifact.id,
-                                capability = imageRequest.capability,
-                                modelId = imageRequest.model.id,
-                                requestFingerprint = imageRequest.requestFingerprint,
-                                resources = imageRequest.requestedResources.copy(residentBytes = residentBytes),
-                                effectiveOptionsDescription = "${imageRequest.image.width}x${imageRequest.image.height}, ${imageRequest.image.steps} steps",
-                            )
-                            PreflightResult.Ready(
-                                DiffusionPlan(
-                                    owner = identity,
-                                    summary = summary,
-                                    modelPath = path,
-                                    model = imageRequest.model,
-                                    artifact = artifact.artifact,
-                                    options = imageRequest.options,
-                                    operationId = imageRequest.operationId,
-                                ),
-                            )
+                runtime.initialize(nativeLibDir)
+                when (val result = runtime.preflight(imageRequest.options.toRunnerConfig(path))) {
+                    is DiffusionPreflightResult.Fit -> {
+                        val residentBytes = result.report.components.fold(0L) { total, component ->
+                            if (Long.MAX_VALUE - total < component.parameterBytes) Long.MAX_VALUE
+                            else total + component.parameterBytes
                         }
-                        is DiffusionPreflightResult.NoFit -> PreflightResult.Unsupported("Diffusion model does not fit the selected runtime profile")
-                        is DiffusionPreflightResult.InvalidModel -> PreflightResult.Unsupported("Diffusion model or configuration is invalid")
-                        is DiffusionPreflightResult.Unavailable -> PreflightResult.Unsupported("Diffusion native preflight is unavailable")
+                        val summary = EnginePlanSummary(
+                            engineId = id,
+                            engineVersion = version,
+                            artifactId = artifact.artifact.id,
+                            capability = imageRequest.capability,
+                            modelId = imageRequest.model.id,
+                            requestFingerprint = imageRequest.requestFingerprint,
+                            resources = imageRequest.requestedResources.copy(residentBytes = residentBytes),
+                            effectiveOptionsDescription = "${imageRequest.image.width}x${imageRequest.image.height}, ${imageRequest.image.steps} steps",
+                        )
+                        PreflightResult.Ready(
+                            DiffusionPlan(
+                                owner = identity,
+                                summary = summary,
+                                modelPath = path,
+                                model = imageRequest.model,
+                                artifact = artifact.artifact,
+                                options = imageRequest.options,
+                                operationId = imageRequest.operationId,
+                            ),
+                        )
                     }
-                } finally {
-                    runtime.release()
+                    is DiffusionPreflightResult.NoFit -> PreflightResult.Unsupported("Diffusion model does not fit the selected runtime profile")
+                    is DiffusionPreflightResult.InvalidModel -> PreflightResult.Unsupported("Diffusion model or configuration is invalid")
+                    is DiffusionPreflightResult.Unavailable -> PreflightResult.Unsupported("Diffusion native preflight is unavailable")
                 }
             }
         } catch (cancelled: CancellationException) {
@@ -353,7 +350,9 @@ private class DiffusionImageSession(
     private val dispatcher: CoroutineDispatcher,
 ) : EngineSession {
     private val state = Mutex()
-    private var closed = false
+    private enum class Lifecycle { OPEN, RELEASING, CLOSED }
+
+    private var lifecycle = Lifecycle.OPEN
     private var usedOperations = mutableSetOf<OperationId>()
 
     override val engineId = plan.summary.engineId
@@ -375,9 +374,9 @@ private class DiffusionImageSession(
 
         return channelFlow {
             if (!state.tryLock()) throw InferenceException.Busy(engineId, "diffusion session is active")
-            if (closed) {
+            if (lifecycle != Lifecycle.OPEN) {
                 state.unlock()
-                throw InferenceException.Busy(engineId, "diffusion session is closed")
+                throw InferenceException.Busy(engineId, "diffusion session is closing or closed")
             }
             if (!usedOperations.add(operationId)) {
                 state.unlock()
@@ -385,22 +384,27 @@ private class DiffusionImageSession(
             }
             var staged: com.debanshu777.caraml.sdk.api.StagedOutput? = null
             var committedResult: com.debanshu777.caraml.sdk.api.GeneratedMediaResult? = null
-            var progressJob: kotlinx.coroutines.Job? = null
             try {
                 send(GenerationEvent.Progress(0.0, "Starting image generation"))
-                progressJob = launch(dispatcher) {
-                    while (true) {
-                        val progress = withContext(dispatcher) { runtime.progress() }
-                        if (progress.size >= 2 && progress[1] > 0) {
-                            send(GenerationEvent.Progress(
-                                (progress[0].toDouble() / progress[1].toDouble()).coerceIn(0.0, 1.0),
-                                "Generating image",
-                            ))
+                val png = coroutineScope {
+                    val progressJob = launch(dispatcher) {
+                        while (true) {
+                            val progress = runtime.progress()
+                            if (progress.size >= 2 && progress[1] > 0) {
+                                send(GenerationEvent.Progress(
+                                    (progress[0].toDouble() / progress[1].toDouble()).coerceIn(0.0, 1.0),
+                                    "Generating image",
+                                ))
+                            }
+                            delay(PROGRESS_POLL_MILLIS)
                         }
-                        delay(PROGRESS_POLL_MILLIS)
+                    }
+                    try {
+                        runNativeGeneration(imageRequest.image.toRunnerParams())
+                    } finally {
+                        progressJob.cancel()
                     }
                 }
-                val png = runNativeGeneration(imageRequest.image.toRunnerParams())
                 if (png.isEmpty() || png.size.toLong() > MAX_PNG_BYTES) {
                     throw InferenceException.Unsupported("Native image output is empty or exceeds the output limit")
                 }
@@ -433,10 +437,6 @@ private class DiffusionImageSession(
                     if (publicationFailed) "Generated image could not be committed to the output sink" else "Diffusion image generation failed",
                 )))
             } finally {
-                withContext(NonCancellable) {
-                    progressJob?.cancel()
-                    progressJob?.join()
-                }
                 state.unlock()
             }
         }
@@ -465,18 +465,12 @@ private class DiffusionImageSession(
         cancelNative(plan.operationId)
         state.lock()
         try {
-            if (!closed) {
-                withContext(NonCancellable) {
-                    var teardownConfirmed = false
-                    try {
-                        withContext(dispatcher) { runtime.release() }
-                        teardownConfirmed = true
-                    } finally {
-                        closed = true
-                        // Never admit another engine if native state may still be live.
-                        if (teardownConfirmed) nativeLease.close()
-                    }
-                }
+            if (lifecycle == Lifecycle.CLOSED) return
+            withContext(NonCancellable) {
+                lifecycle = Lifecycle.RELEASING
+                withContext(dispatcher) { runtime.release() }
+                nativeLease.close()
+                lifecycle = Lifecycle.CLOSED
             }
         } finally {
             state.unlock()

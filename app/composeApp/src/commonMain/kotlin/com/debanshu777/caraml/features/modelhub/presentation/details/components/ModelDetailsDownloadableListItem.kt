@@ -49,6 +49,7 @@ fun ModelDetailsDownloadableListItem(
     showDownloadAction: Boolean = true,
     supportingLabel: String? = null,
     downloadActionDescription: String? = null,
+    cancellationPending: Boolean = false,
 ) {
     val hasDirectory = filename.contains('/')
     val displayName = filename.substringAfterLast('/')
@@ -92,6 +93,7 @@ fun ModelDetailsDownloadableListItem(
             downloadEnabled = downloadEnabled,
             interactionLocked = interactionLocked,
             durableState = durableState,
+            cancellationPending = cancellationPending,
             onDownloadClick = onDownloadClick,
             onPause = onPause,
             onResume = onResume,

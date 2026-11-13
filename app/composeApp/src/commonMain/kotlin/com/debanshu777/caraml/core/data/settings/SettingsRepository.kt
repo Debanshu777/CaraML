@@ -6,7 +6,8 @@ import kotlinx.coroutines.flow.Flow
 
 interface SettingsRepository {
     fun getSettings(): Flow<AppSettings>
-    suspend fun updateSettings(settings: AppSettings)
+    /** Apply a change to the latest inference settings in the same transaction that persists it. */
+    suspend fun updateSettings(transform: (AppSettings) -> AppSettings)
     suspend fun updateRecommendationProfile(profile: RecommendationProfile)
     suspend fun completeModelProfileOnboarding(profile: RecommendationProfile)
     suspend fun completeRecommendationCalibrationOffer() = Unit

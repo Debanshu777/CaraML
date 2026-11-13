@@ -2,8 +2,10 @@ package com.debanshu777.caraml.core.download
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
@@ -21,14 +23,21 @@ class DesktopDownloadScheduler(
         lock.withLock {
             if (jobs[batchId]?.isActive == true) return
             jobs[batchId] = scope.launch {
+                val owner = coroutineContext[Job]
                 try {
                     permits.withPermit { runner.run(batchId) {} }
                 } finally {
-                    lock.withLock { jobs.remove(batchId) }
+                    withContext(NonCancellable) {
+                        lock.withLock {
+                            if (jobs[batchId] === owner) jobs.remove(batchId)
+                        }
+                    }
                 }
             }
         }
     }
+
+    override suspend fun isActive(batchId: String): Boolean = lock.withLock { jobs[batchId]?.isActive == true }
 
     override suspend fun pause(batchId: String) = stop(batchId)
 

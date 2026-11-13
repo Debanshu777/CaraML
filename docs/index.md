@@ -42,7 +42,7 @@ Inference runs locally after model download. Browsing and downloading require a 
 ## What works today
 
 - **Streaming chat:** markdown responses, cancellation, and reasoning blocks for models that emit them.
-- **Model management:** browse, search, filter, and download models; durable transfers support pause, resume, and recovery.
+- **Model management:** browse, search, filter, and download models; durable transfers support pause, resume, cancellation, and recovery after interruptions. Installed models open their matching workspace.
 - **Image generation:** model-specific diffusion plans and configurable sampling. [Measured Android results](https://github.com/Debanshu777/CaraML/blob/main/benchmarks/diffusion/README.md) describe tested models and limits.
 - **Native acceleration:** Vulkan for supported Android GGUF workloads and Metal on Apple platforms. Supported ONNX dynamic-cache exports currently use CPU in the app.
 - **Adaptive UI:** shared Compose screens with light/dark appearance, reduced-motion controls, and desktop navigation.

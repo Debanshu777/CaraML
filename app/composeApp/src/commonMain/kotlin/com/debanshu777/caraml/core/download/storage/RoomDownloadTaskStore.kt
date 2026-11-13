@@ -273,6 +273,13 @@ class RoomDownloadTaskStore(
         return changed
     }
 
+    override suspend fun markSchedulingFailed(artifactId: String, nowEpochMs: Long): Boolean {
+        val artifact = dao.artifact(artifactId) ?: return false
+        val changed = dao.markSchedulingFailed(artifactId, nowEpochMs) == 1
+        if (changed) refreshBatch(artifact.batchId, nowEpochMs)
+        return changed
+    }
+
     override suspend fun requeueMissingCompletedArtifact(
         artifactId: String,
         nowEpochMs: Long,

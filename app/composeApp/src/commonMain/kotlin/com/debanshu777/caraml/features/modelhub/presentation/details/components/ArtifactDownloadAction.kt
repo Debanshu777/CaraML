@@ -46,6 +46,7 @@ internal fun GgufFileAction(
     showAction: Boolean = true,
     actionDescription: String? = null,
     progress: Float? = null,
+    cancellationPending: Boolean = false,
 ) {
     val reportedProgress = progress?.takeIf { it >= 0f }?.coerceIn(0f, 100f)?.div(100f)
     when {
@@ -60,7 +61,7 @@ internal fun GgufFileAction(
             durableState != DownloadArtifactState.FAILED_TERMINAL -> {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 reportedProgress?.let { ArtifactActionProgress(it) }
-                when (durableState) {
+                when (durableState.takeUnless { cancellationPending }) {
                     DownloadArtifactState.RUNNING,
                     DownloadArtifactState.QUEUED,
                     DownloadArtifactState.WAITING_FOR_NETWORK,
@@ -90,10 +91,7 @@ internal fun GgufFileAction(
                     }
                     else -> Unit
                 }
-                if (durableState !in setOf(
-                        DownloadArtifactState.VERIFYING,
-                    )
-                ) {
+                if (cancellationPending || durableState != DownloadArtifactState.VERIFYING) {
                     BrandIconButton(onClick = onCancel, modifier = Modifier.size(AppTheme.spacing.spacing48)) {
                         Icon(
                             AppIcons.Close,

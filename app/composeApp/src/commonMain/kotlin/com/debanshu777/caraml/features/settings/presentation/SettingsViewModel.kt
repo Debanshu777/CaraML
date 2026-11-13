@@ -77,26 +77,26 @@ class SettingsViewModel(
 
     fun updateSystemPrompt(systemPrompt: String) {
         viewModelScope.launch {
-            repository.updateSettings(settings.value.copy(systemPrompt = systemPrompt))
+            repository.updateSettings { it.copy(systemPrompt = systemPrompt) }
         }
     }
 
     fun updateTemperature(temperature: Float) {
         val clamped = temperature.coerceIn(0f, 2f)
         viewModelScope.launch {
-            repository.updateSettings(settings.value.copy(temperature = clamped))
+            repository.updateSettings { it.copy(temperature = clamped) }
         }
     }
 
     fun updateKvQuantPreset(preset: KvQuantPreset) {
         viewModelScope.launch {
-            repository.updateSettings(settings.value.copy(kvQuantPreset = preset))
+            repository.updateSettings { it.copy(kvQuantPreset = preset) }
         }
     }
 
     fun updateUseGpu(enabled: Boolean) {
         viewModelScope.launch {
-            repository.updateSettings(settings.value.copy(useGpu = enabled))
+            repository.updateSettings { it.copy(useGpu = enabled) }
         }
     }
 
