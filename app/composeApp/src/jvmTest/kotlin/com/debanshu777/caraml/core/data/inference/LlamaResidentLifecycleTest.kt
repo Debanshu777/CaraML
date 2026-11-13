@@ -26,6 +26,8 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -83,10 +85,34 @@ class LlamaResidentLifecycleTest {
         assertIneligible(repository)
     }
 
-    private fun readyRepository(settings: SettingsRepository = FixedSettings()): LlamaInferenceRepository {
+    @Test
+    fun failedUnloadKeepsNativeOwnershipUntilTeardownCanBeRetried() = runTest {
+        var failUnload = true
+        var unloadCalls = 0
+        val repository = readyRepository(unloadNativeModel = {
+            unloadCalls++
+            check(!failUnload) { "native unload failed" }
+        })
+
+        assertFailsWith<IllegalStateException> { repository.unloadModel() }
+        assertEquals(true, field(repository, "nativeLoaded"))
+        assertIneligible(repository)
+
+        failUnload = false
+        repository.unloadModel()
+        repository.unloadModel()
+
+        assertEquals(false, field(repository, "nativeLoaded"))
+        assertEquals(2, unloadCalls)
+    }
+
+    private fun readyRepository(
+        settings: SettingsRepository = FixedSettings(),
+        unloadNativeModel: () -> Unit = {},
+    ): LlamaInferenceRepository {
         val runner = LlamaRunner()
         runner.javaClass.getDeclaredField("nativeAvailable").apply { isAccessible = true }.setBoolean(runner, false)
-        return LlamaInferenceRepository(runner, DeviceCapabilities(), settings).also { repository ->
+        return LlamaInferenceRepository(runner, DeviceCapabilities(), settings, unloadNativeModel = unloadNativeModel).also { repository ->
             setField(repository, "nativeLoaded", true)
             setField(repository, "contextLimitSnapshot", 4_096)
             setField(repository, "residentRequest", request)
@@ -110,7 +136,7 @@ class LlamaResidentLifecycleTest {
 
     private open class FixedSettings : SettingsRepository {
         override fun getSettings(): Flow<AppSettings> = flowOf(AppSettings())
-        override suspend fun updateSettings(settings: AppSettings) = Unit
+        override suspend fun updateSettings(transform: (AppSettings) -> AppSettings) = Unit
         override suspend fun updateRecommendationProfile(profile: RecommendationProfile) = Unit
         override suspend fun completeModelProfileOnboarding(profile: RecommendationProfile) = Unit
     }

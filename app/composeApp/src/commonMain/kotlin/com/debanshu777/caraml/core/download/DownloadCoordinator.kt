@@ -2,6 +2,8 @@ package com.debanshu777.caraml.core.download
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 interface PlatformDownloadScheduler {
     suspend fun enqueue(batchId: String)
@@ -48,90 +50,80 @@ class DownloadCoordinator(
 
     fun observeQueue(): Flow<List<DownloadBatchSnapshot>> = store.observeQueue()
 
-    suspend fun enqueue(request: DownloadBatchRequest): String {
+    private val commands = Mutex()
+
+    suspend fun enqueue(request: DownloadBatchRequest): String = commands.withLock {
         val batchId = store.create(request, nowEpochMs())
         runCatching { notifications.requestIfNeeded() }
+        schedule(batchId)
+        batchId
+    }
+
+    suspend fun pause(batchId: String): Unit = commands.withLock {
+        if (!store.setUserIntent(batchId, DownloadUserIntent.PAUSE, nowEpochMs())) return@withLock
+        scheduler.pause(batchId)
+        store.getBatch(batchId)?.artifacts?.filter { it.state.canPauseTransfer() }?.forEach { artifact ->
+            store.transitionArtifact(artifact.artifactId, DownloadArtifactState.PAUSED, null, nowEpochMs())
+        }
+    }
+
+    suspend fun resume(batchId: String) = commands.withLock { restart(batchId, retry = false) }
+
+    suspend fun retry(batchId: String) = commands.withLock { restart(batchId, retry = true) }
+
+    private suspend fun restart(batchId: String, retry: Boolean) {
+        val batch = store.getBatch(batchId) ?: return
+        if (batch.artifacts.any { !it.request.metadata.usesImmutableStorageLayout }) return
+        if (!store.setUserIntent(batchId, DownloadUserIntent.RUN, nowEpochMs())) return
+        batch.artifacts.filter {
+            it.state == DownloadArtifactState.PAUSED ||
+                (retry && it.state == DownloadArtifactState.FAILED_RETRYABLE)
+        }.forEach { artifact ->
+            store.transitionArtifact(artifact.artifactId, DownloadArtifactState.QUEUED, null, nowEpochMs())
+        }
+        schedule(batchId)
+    }
+
+    suspend fun cancel(batchId: String): Unit = commands.withLock {
+        if (!store.setUserIntent(batchId, DownloadUserIntent.CANCEL, nowEpochMs())) return@withLock
+        scheduler.cancel(batchId)
+        store.getBatch(batchId)?.artifacts?.forEach { artifact ->
+            val terminal = artifact.state.isTerminal()
+            if (!terminal || artifact.state == DownloadArtifactState.CANCELLED) {
+                try {
+                    checkpointCleaner.discard(artifact.request.metadata)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    // Checkpoint cleanup is best-effort after the platform has stopped.
+                }
+            }
+            if (!terminal) {
+                store.transitionArtifact(artifact.artifactId, DownloadArtifactState.CANCELLED, null, nowEpochMs())
+            }
+        }
+    }
+
+    private suspend fun schedule(batchId: String) {
         try {
             scheduler.enqueue(batchId)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            markRetryablePlatformFailure(batchId)
-        }
-        return batchId
-    }
-
-    suspend fun pause(batchId: String) {
-        if (store.setUserIntent(batchId, DownloadUserIntent.PAUSE, nowEpochMs())) {
-            store.getBatch(batchId)?.artifacts
-                ?.filter { it.state in setOf(
-                    DownloadArtifactState.QUEUED,
-                    DownloadArtifactState.RUNNING,
-                    DownloadArtifactState.WAITING_FOR_NETWORK,
-                ) }
-                ?.forEach { artifact ->
-                    store.transitionArtifact(artifact.artifactId, DownloadArtifactState.PAUSED, null, nowEpochMs())
-                }
-            scheduler.pause(batchId)
+            val batch = store.getBatch(batchId) ?: return
+            batch.artifacts.filter { it.state == DownloadArtifactState.QUEUED }.forEach { artifact ->
+                store.markSchedulingFailed(artifact.artifactId, nowEpochMs())
+            }
         }
     }
+}
 
-    suspend fun resume(batchId: String) {
-        val batch = store.getBatch(batchId) ?: return
-        if (batch.artifacts.any { !it.request.metadata.usesImmutableStorageLayout }) return
-        if (store.setUserIntent(batchId, DownloadUserIntent.RUN, nowEpochMs())) {
-            store.getBatch(batchId)?.artifacts
-                ?.filter { it.state == DownloadArtifactState.PAUSED }
-                ?.forEach { artifact ->
-                    store.transitionArtifact(artifact.artifactId, DownloadArtifactState.QUEUED, null, nowEpochMs())
-                }
-            scheduler.enqueue(batchId)
-        }
-    }
-
-    suspend fun cancel(batchId: String) {
-        if (!store.setUserIntent(batchId, DownloadUserIntent.CANCEL, nowEpochMs())) return
-        scheduler.cancel(batchId)
-        store.getBatch(batchId)?.artifacts
-            ?.filterNot { it.state.isTerminal() }
-            ?.forEach { artifact ->
-                runCatching { checkpointCleaner.discard(artifact.request.metadata) }
-                store.transitionArtifact(
-                    artifactId = artifact.artifactId,
-                    state = DownloadArtifactState.CANCELLED,
-                    failureCode = null,
-                    nowEpochMs = nowEpochMs(),
-                )
-            }
-    }
-
-    suspend fun retry(batchId: String) {
-        val batch = store.getBatch(batchId) ?: return
-        batch.artifacts
-            .filter { it.state == DownloadArtifactState.FAILED_RETRYABLE }
-            .forEach { artifact ->
-                store.transitionArtifact(
-                    artifactId = artifact.artifactId,
-                    state = DownloadArtifactState.QUEUED,
-                    failureCode = null,
-                    nowEpochMs = nowEpochMs(),
-                )
-            }
-        resume(batchId)
-    }
-
-    private suspend fun markRetryablePlatformFailure(batchId: String) {
-        store.getBatch(batchId)?.artifacts
-            ?.filterNot { it.state.isTerminal() }
-            ?.forEach { artifact ->
-                store.transitionArtifact(
-                    artifactId = artifact.artifactId,
-                    state = DownloadArtifactState.FAILED_RETRYABLE,
-                    failureCode = DownloadFailureCode.PLATFORM,
-                    nowEpochMs = nowEpochMs(),
-                )
-            }
-    }
+internal fun DownloadArtifactState.canPauseTransfer(): Boolean = when (this) {
+    DownloadArtifactState.QUEUED,
+    DownloadArtifactState.RUNNING,
+    DownloadArtifactState.WAITING_FOR_NETWORK,
+    -> true
+    else -> false
 }
 
 private fun DownloadArtifactState.isTerminal(): Boolean = this in setOf(

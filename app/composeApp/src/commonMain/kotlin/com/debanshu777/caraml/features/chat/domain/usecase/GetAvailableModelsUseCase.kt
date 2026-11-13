@@ -15,13 +15,16 @@ class GetAvailableModelsUseCase(
     private val config: ChatConfig,
 ) {
     operator fun invoke(): Flow<ImmutableList<LocalModelEntity>> =
+        installedModels().map(::topModels)
+
+    internal fun installedModels(): Flow<List<LocalModelEntity>> =
         localModelRepository.getAllDownloadedFiles()
-            .map { models ->
-                // Frequent chat models must not crowd image/video models out of
-                // the inventory before the workspace applies its mode filter.
-                val available = GenerationMode.entries.flatMap { mode ->
-                    models.filterForMode(mode).take(config.topModelCount)
-                }.toSet()
-                models.filter { it in available }.toImmutableList()
-            }
+
+    internal fun topModels(models: List<LocalModelEntity>): ImmutableList<LocalModelEntity> {
+        // Keep frequent text models from crowding image and video models out of the picker.
+        val available = GenerationMode.entries.flatMap { mode ->
+            models.filterForMode(mode).take(config.topModelCount)
+        }.toSet()
+        return models.filter { it in available }.toImmutableList()
+    }
 }

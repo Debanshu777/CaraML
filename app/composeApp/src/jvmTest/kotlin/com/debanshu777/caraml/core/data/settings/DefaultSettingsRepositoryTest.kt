@@ -11,10 +11,17 @@ import com.debanshu777.caraml.core.recommendation.RecommendationProfile
 import com.debanshu777.caraml.core.recommendation.RiskTolerance
 import com.debanshu777.caraml.core.settings.AppSettings
 import com.debanshu777.caraml.core.settings.KvQuantPreset
+import com.debanshu777.caraml.features.settings.presentation.SettingsViewModel
 import java.nio.file.Files
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.test.runTest
 import okio.Path.Companion.toPath
 import kotlin.test.Test
@@ -84,14 +91,14 @@ class DefaultSettingsRepositoryTest {
     @Test
     fun updatingProfilePreservesUnrelatedSettings() = runTest {
         val fixture = fixture()
-        fixture.repository.updateSettings(
-            AppSettings(
+        fixture.repository.updateSettings {
+            it.copy(
                 systemPrompt = "Keep this prompt",
                 temperature = 1.4f,
                 kvQuantPreset = KvQuantPreset.Q8_Q8,
                 useGpu = false,
-            ),
-        )
+            )
+        }
         fixture.store.edit { preferences ->
             preferences[stringPreferencesKey("future_setting")] = "preserved"
         }
@@ -115,6 +122,31 @@ class DefaultSettingsRepositoryTest {
         assertEquals(RiskTolerance.EXPERIMENTAL, settings.riskTolerance)
         assertEquals(OptimizationPriority.QUALITY_CONTEXT, settings.optimizationPriority)
         assertEquals("preserved", preferences[stringPreferencesKey("future_setting")])
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun viewModelEditsUsePersistedSettingsBeforeTheUiStartsCollecting() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val fixture = fixture()
+            fixture.repository.updateSettings {
+                it.copy(systemPrompt = "Keep this prompt", kvQuantPreset = KvQuantPreset.Q8_Q8)
+            }
+            val viewModel = SettingsViewModel(fixture.repository)
+
+            viewModel.updateUseGpu(false)
+            viewModel.updateTemperature(1.4f)
+            advanceUntilIdle()
+
+            val settings = fixture.repository.getSettings().first()
+            assertFalse(settings.useGpu)
+            assertEquals(1.4f, settings.temperature)
+            assertEquals("Keep this prompt", settings.systemPrompt)
+            assertEquals(KvQuantPreset.Q8_Q8, settings.kvQuantPreset)
+        } finally {
+            Dispatchers.resetMain()
+        }
     }
 
     private fun TestScope.fixture(): Fixture {

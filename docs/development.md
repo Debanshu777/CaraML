@@ -36,6 +36,13 @@ This is the preferred local and CI JVM gate. It includes portable SDK verificati
 
 Use the narrowest meaningful checks while iterating, then the relevant project gate before a code PR. Native parity checks may download model fixtures. Avoid starting with `allTests`: it includes platform tasks with additional host requirements.
 
+The app JVM suite covers persisted settings edits made before UI collection, deletion
+of an off-picker chat selection, a superseded detail lookup, and failed download
+cancellation followed by a retry. It also covers interrupted pause and resume,
+file-list retry, unpublished media rollback, and Llama ownership after a failed
+unload. The diffusion JVM suite covers preflight gate ownership, progress ending
+before publication, and direct session close retry after a failed native release.
+
 ## Find the right code
 
 - Shared app features: `app/composeApp/src/commonMain/kotlin/com/debanshu777/caraml/features/`.

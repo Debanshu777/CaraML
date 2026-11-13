@@ -43,6 +43,7 @@ unchanged. Package conventions are documented in [the root README](../README.md#
 
 ## Recent Changes
 
+- Downloaded models open the matching workspace. Chat reconciles removed selections, Model Hub gives the newest detail request ownership, and settings edits merge against persisted values. Cancelled media writes free their cache space, and failed file-list or download commands can be retried.
 - Fixed ONNX resident-session fixtures to use the production owner/model directory layout across desktop hosts; JVM failures now print full assertions.
 - Added SD-Turbo GGUF discovery, fixed nested-checkpoint installation, and kept image/video models visible alongside frequently used chat models.
 - Added [platform setup](../docs/getting-started.md), [contribution guidance](../CONTRIBUTING.md), and a [real-device demo](../docs/demo.md).

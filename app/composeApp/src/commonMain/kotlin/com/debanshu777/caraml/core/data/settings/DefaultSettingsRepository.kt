@@ -29,31 +29,32 @@ class DefaultSettingsRepository(
     private val recommendationCalibrationOfferCompleteKey =
         booleanPreferencesKey("recommendation_calibration_offer_complete")
 
-    override fun getSettings(): Flow<AppSettings> =
-        dataStore.data.map { prefs ->
-            AppSettings(
-                systemPrompt = prefs[systemPromptKey]
-                    ?: AppSettings.Companion.DEFAULT_SYSTEM_PROMPT,
-                temperature = prefs[temperatureKey] ?: AppSettings.Companion.DEFAULT_TEMPERATURE,
-                kvQuantPreset = prefs[kvQuantPresetKey]
-                    ?.let { name -> runCatching { KvQuantPreset.valueOf(name) }.getOrNull() }
-                    ?: KvQuantPreset.AUTO,
-                useGpu = prefs[useGpuKey] ?: true,
-                riskTolerance = prefs[riskToleranceKey]
-                    ?.let { name -> RiskTolerance.entries.firstOrNull { it.name == name } }
-                    ?: RiskTolerance.BALANCED,
-                optimizationPriority = prefs[optimizationPriorityKey]
-                    ?.let { name -> OptimizationPriority.entries.firstOrNull { it.name == name } }
-                    ?: OptimizationPriority.BALANCED,
-                modelProfileOnboardingComplete =
-                    prefs[modelProfileOnboardingCompleteKey] ?: false,
-                recommendationCalibrationOfferComplete =
-                    prefs[recommendationCalibrationOfferCompleteKey] ?: false,
-            )
-        }
+    override fun getSettings(): Flow<AppSettings> = dataStore.data.map(::readSettings)
 
-    override suspend fun updateSettings(settings: AppSettings) {
+    private fun readSettings(prefs: Preferences): AppSettings =
+        AppSettings(
+            systemPrompt = prefs[systemPromptKey]
+                ?: AppSettings.Companion.DEFAULT_SYSTEM_PROMPT,
+            temperature = prefs[temperatureKey] ?: AppSettings.Companion.DEFAULT_TEMPERATURE,
+            kvQuantPreset = prefs[kvQuantPresetKey]
+                ?.let { name -> runCatching { KvQuantPreset.valueOf(name) }.getOrNull() }
+                ?: KvQuantPreset.AUTO,
+            useGpu = prefs[useGpuKey] ?: true,
+            riskTolerance = prefs[riskToleranceKey]
+                ?.let { name -> RiskTolerance.entries.firstOrNull { it.name == name } }
+                ?: RiskTolerance.BALANCED,
+            optimizationPriority = prefs[optimizationPriorityKey]
+                ?.let { name -> OptimizationPriority.entries.firstOrNull { it.name == name } }
+                ?: OptimizationPriority.BALANCED,
+            modelProfileOnboardingComplete =
+                prefs[modelProfileOnboardingCompleteKey] ?: false,
+            recommendationCalibrationOfferComplete =
+                prefs[recommendationCalibrationOfferCompleteKey] ?: false,
+        )
+
+    override suspend fun updateSettings(transform: (AppSettings) -> AppSettings) {
         dataStore.edit { prefs ->
+            val settings = transform(readSettings(prefs))
             prefs[systemPromptKey] = settings.systemPrompt
             prefs[temperatureKey] = settings.temperature
             prefs[kvQuantPresetKey] = settings.kvQuantPreset.name

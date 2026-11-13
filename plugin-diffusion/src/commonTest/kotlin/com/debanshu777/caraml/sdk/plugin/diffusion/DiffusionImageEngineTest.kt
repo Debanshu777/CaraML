@@ -31,7 +31,11 @@ import com.debanshu777.caraml.sdk.api.ModelId
 import com.debanshu777.caraml.sdk.api.OperationId
 import com.debanshu777.caraml.sdk.api.ProviderId
 import com.debanshu777.caraml.sdk.api.StagedOutput
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -58,6 +62,48 @@ class DiffusionImageEngineTest {
         assertEquals(CompletionReason.END_OF_TURN, assertIs<GenerationEvent.Completed>(events.last()).reason)
         assertEquals(1, events.count { it is GenerationEvent.Completed || it is GenerationEvent.Failed })
         session.close()
+        assertEquals(1, fixture.runtime.releaseCalls)
+    }
+
+    @Test
+    fun progressPollingEndsBeforeOutputCommit() = runTest {
+        val fixture = Fixture()
+        val provider = fixture.provider(StandardTestDispatcher(testScheduler))
+        val request = fixture.request()
+        fixture.sink.beforeCommit = {
+            val calls = fixture.runtime.progressCalls
+            assertTrue(calls > 0)
+            delay(1_000)
+            assertEquals(calls, fixture.runtime.progressCalls)
+        }
+        val plan = assertIs<com.debanshu777.caraml.sdk.api.PreflightResult.Ready>(
+            provider.preflight(request, fixture.lease()),
+        ).plan
+        val session = provider.load(plan)
+        try {
+            assertIs<GenerationEvent.Completed>(session.generate(request.operationId, request).toList().last())
+        } finally {
+            session.close()
+        }
+    }
+
+    @Test
+    fun failedReleaseKeepsTheSessionUnavailableUntilCloseRetries() = runTest {
+        val fixture = Fixture()
+        val provider = fixture.provider()
+        val request = fixture.request()
+        val plan = assertIs<com.debanshu777.caraml.sdk.api.PreflightResult.Ready>(
+            provider.preflight(request, fixture.lease()),
+        ).plan
+        val session = provider.load(plan)
+        try {
+            fixture.runtime.failRelease = true
+            assertFailsWith<IllegalStateException> { session.close() }
+            assertFailsWith<InferenceException.Busy> { session.generate(request.operationId, request).toList() }
+        } finally {
+            fixture.runtime.failRelease = false
+            session.close()
+        }
         assertEquals(2, fixture.runtime.releaseCalls)
     }
 
@@ -117,6 +163,20 @@ class DiffusionImageEngineTest {
     }
 
     @Test
+    fun preflightDoesNotRunLoadedSessionTeardown() = runTest {
+        val fixture = Fixture()
+        fixture.runtime.failRelease = true
+        val provider = fixture.provider()
+
+        repeat(2) {
+            assertIs<com.debanshu777.caraml.sdk.api.PreflightResult.Ready>(
+                provider.preflight(fixture.request(), fixture.lease()),
+            )
+        }
+        assertEquals(0, fixture.runtime.releaseCalls)
+    }
+
+    @Test
     fun failedPartialLoadExposesOwnerUntilNativeTeardownSucceeds() = runTest {
         val fixture = Fixture()
         val provider = fixture.provider()
@@ -140,10 +200,10 @@ class DiffusionImageEngineTest {
         val runtime = FakeRuntime()
         val sink = FakeSink()
 
-        fun provider() = DiffusionEngineProvider(
+        fun provider(dispatcher: CoroutineDispatcher = Dispatchers.Unconfined) = DiffusionEngineProvider(
             outputSink = sink,
             nativeLibDir = "",
-            dispatcher = kotlinx.coroutines.Dispatchers.Unconfined,
+            dispatcher = dispatcher,
             runtimeFactory = DiffusionRuntimeFactory { runtime },
         )
 
@@ -205,7 +265,11 @@ class DiffusionImageEngineTest {
         }
         override fun load(config: DiffusionModelConfig): Boolean { check(!failLoad); return true }
         override fun generate(params: ImageGenParams) = byteArrayOf(1, 2, 3, 4)
-        override fun progress() = intArrayOf(1, 1)
+        var progressCalls = 0
+        override fun progress(): IntArray {
+            progressCalls++
+            return intArrayOf(1, 1)
+        }
         override fun cancel(): Boolean { cancelCalls++; return true }
         override fun release() { releaseCalls++; check(!failRelease) }
     }
@@ -215,9 +279,11 @@ class DiffusionImageEngineTest {
         var aborts = 0
         var byteCount = 0
         var failCommit = false
+        var beforeCommit: suspend () -> Unit = {}
         override suspend fun begin(operationId: OperationId, expectedBytes: Long?): StagedOutput = object : StagedOutput {
             override suspend fun write(bytes: ByteArray) { byteCount += bytes.size }
             override suspend fun commit(metadata: GeneratedMediaMetadata): GeneratedMediaResult {
+                beforeCommit()
                 if (failCommit) error("sink commit failed")
                 commits++
                 return GeneratedMediaResult(

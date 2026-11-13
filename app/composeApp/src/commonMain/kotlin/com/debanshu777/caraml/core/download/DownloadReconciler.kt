@@ -22,7 +22,8 @@ class DownloadReconciler(
                 }
                 DownloadUserIntent.PAUSE -> {
                     scheduler.pause(batch.batchId)
-                    batch.artifacts.filter { it.state == DownloadArtifactState.RUNNING }.forEach { artifact ->
+                    val stopped = store.getBatch(batch.batchId) ?: return@forEach
+                    stopped.artifacts.filter { it.state.canPauseTransfer() }.forEach { artifact ->
                         store.transitionArtifact(artifact.artifactId, DownloadArtifactState.PAUSED, null, clock())
                     }
                 }
@@ -58,6 +59,7 @@ class DownloadReconciler(
                                     }
                                 }
                             }
+                            DownloadArtifactState.PAUSED,
                             DownloadArtifactState.WAITING_FOR_NETWORK,
                             DownloadArtifactState.FAILED_RETRYABLE,
                             -> store.transitionArtifact(artifact.artifactId, DownloadArtifactState.QUEUED, null, clock())

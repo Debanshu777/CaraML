@@ -233,7 +233,8 @@ private fun InstallBundleActionContent(
         reportedOverallProgress ?: 0f
     }
 
-    val command = when (durableControl?.batchState) {
+    val cancellationPending = durableControl?.cancellationPending == true
+    val command = when (durableControl?.batchState?.takeUnless { cancellationPending }) {
         DownloadBatchState.QUEUED,
         DownloadBatchState.RUNNING,
         DownloadBatchState.WAITING_FOR_NETWORK,
@@ -249,10 +250,11 @@ private fun InstallBundleActionContent(
         BrandButton(
             onClick = command?.second ?: onInstall,
             style = if (command == null) BrandButtonStyle.Primary else BrandButtonStyle.Secondary,
-            enabled = command != null || (installEnabled && !state.isInstalling && !state.isReady),
+            enabled = !cancellationPending && (command != null || (installEnabled && !state.isInstalling && !state.isReady)),
             modifier = Modifier.fillMaxWidth(),
         ) {
             when {
+                cancellationPending -> Text("Cancellation pending")
                 command != null -> Text(command.first)
                 state.isReady -> {
                     Icon(AppIcons.CheckCircle, contentDescription = null, modifier = Modifier.size(AppTheme.dimensions.size18))
@@ -269,7 +271,7 @@ private fun InstallBundleActionContent(
                 }
             }
         }
-        if (durableControl?.batchState in setOf(
+        if (cancellationPending || durableControl?.batchState in setOf(
                 DownloadBatchState.QUEUED,
                 DownloadBatchState.RUNNING,
                 DownloadBatchState.PAUSED,

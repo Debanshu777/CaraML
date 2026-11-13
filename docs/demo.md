@@ -44,6 +44,10 @@ The image-generation capture uses the Android Debug app built from [commit f0b1f
 
 ## Product screenshots
 
+In the current app, opening an installed model from Model Hub takes you to the matching workspace. Chat waits for loading to finish before accepting a new prompt. The captures below illustrate the original navigation and screens.
+
+If you stop image or video generation before its result reaches the conversation, CaraML discards any files written for that turn. If Model Hub cannot fetch a model’s file list, the details screen offers a retry.
+
 Four coordinated product cards use Flow, the midnight-blue flower theme, and real app captures. Download the **1080 × 1920 PNGs** for presentations and future listing artwork; the README and docs load smaller WebP previews.
 
 | Product card | Full-size artwork | Original capture |

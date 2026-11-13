@@ -206,7 +206,7 @@ class PerformanceValidation : Instrumentation() {
                 useGpu = when (requestedBackend) { "cpu" -> false; "vulkan" -> true; else -> persistedSettings.useGpu })
         val controlled = object : SettingsRepository {
             override fun getSettings() = flowOf(settings)
-            override suspend fun updateSettings(settings: AppSettings) = error("Read-only benchmark")
+            override suspend fun updateSettings(transform: (AppSettings) -> AppSettings) = error("Read-only benchmark")
             override suspend fun updateRecommendationProfile(profile: RecommendationProfile) = error("Read-only benchmark")
             override suspend fun completeModelProfileOnboarding(profile: RecommendationProfile) = error("Read-only benchmark")
         }

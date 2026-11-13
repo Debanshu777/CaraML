@@ -73,7 +73,7 @@ class AndroidDownloadOwnershipTest {
                 releaseWorkQuery.await()
                 return false
             }
-            override fun enqueue(batchId: String) = Unit
+            override suspend fun enqueue(batchId: String) = Unit
             override suspend fun cancel(batchId: String) = Unit
             override fun reconcile(liveBatchIds: Set<String>) = Unit
         }
@@ -257,7 +257,7 @@ private class FakeWorkBackend(
     var cancelCalls = 0
 
     override suspend fun isActive(batchId: String): Boolean = batchId in active
-    override fun enqueue(batchId: String) {
+    override suspend fun enqueue(batchId: String) {
         enqueueCalls += 1
         active += batchId
     }

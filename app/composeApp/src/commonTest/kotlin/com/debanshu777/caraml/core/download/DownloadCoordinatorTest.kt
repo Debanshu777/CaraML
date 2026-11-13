@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 class DownloadCoordinatorTest {
     @Test
@@ -85,6 +86,32 @@ class DownloadCoordinatorTest {
     }
 
     @Test
+    fun failedPauseCanBeRetriedAndFailedResumeAndRetryStayRetryable() = runTest {
+        val calls = mutableListOf<String>()
+        val store = FakeDownloadTaskStore(calls)
+        val scheduler = RecordingScheduler(calls, failEnqueue = true).apply { failPause = true }
+        val coordinator = DownloadCoordinator(
+            store, scheduler, DownloadNotificationPermissionController {}, DownloadCheckpointCleaner {}, { 10L },
+        )
+
+        assertFailsWith<IllegalStateException> { coordinator.pause("batch") }
+        assertEquals(DownloadUserIntent.PAUSE, store.snapshot.userIntent)
+        assertEquals(DownloadArtifactState.QUEUED, store.snapshot.artifacts.single().state)
+
+        scheduler.failPause = false
+        coordinator.pause("batch")
+        assertEquals(DownloadArtifactState.PAUSED, store.snapshot.artifacts.single().state)
+
+        coordinator.resume("batch")
+        assertEquals(DownloadArtifactState.FAILED_RETRYABLE, store.snapshot.artifacts.single().state)
+
+        coordinator.retry("batch")
+        assertEquals(DownloadArtifactState.FAILED_RETRYABLE, store.snapshot.artifacts.single().state)
+        assertEquals(DownloadFailureCode.PLATFORM, store.snapshot.failureCode)
+        assertEquals(2, calls.count { it == "scheduler:enqueue" })
+    }
+
+    @Test
     fun cancelStopsPlatformAndDiscardsTheUncommittedCheckpoint() = runTest {
         val calls = mutableListOf<String>()
         val coordinator = DownloadCoordinator(
@@ -101,6 +128,32 @@ class DownloadCoordinatorTest {
             listOf("store:intent:CANCEL", "scheduler:cancel", "cleaner:discard"),
             calls,
         )
+    }
+
+    @Test
+    fun failedSchedulerCancelKeepsCheckpointUntilAConfirmedRetry() = runTest {
+        val calls = mutableListOf<String>()
+        val store = FakeDownloadTaskStore(calls)
+        val scheduler = RecordingScheduler(calls).apply { failCancel = true }
+        val coordinator = DownloadCoordinator(
+            store,
+            scheduler,
+            DownloadNotificationPermissionController {},
+            DownloadCheckpointCleaner { calls += "cleaner:discard" },
+            { 10L },
+        )
+
+        assertFailsWith<IllegalStateException> { coordinator.cancel("batch") }
+
+        assertEquals(DownloadUserIntent.CANCEL, store.snapshot.userIntent)
+        assertEquals(DownloadArtifactState.QUEUED, store.snapshot.artifacts.single().state)
+        assertEquals(listOf("store:intent:CANCEL", "scheduler:cancel"), calls)
+
+        scheduler.failCancel = false
+        coordinator.cancel("batch")
+
+        assertEquals(DownloadArtifactState.CANCELLED, store.snapshot.artifacts.single().state)
+        assertEquals("cleaner:discard", calls.last())
     }
 
     private fun request(): DownloadBatchRequest {
@@ -131,8 +184,16 @@ private class RecordingScheduler(
         calls += "scheduler:enqueue"
         if (failEnqueue) error("scheduler unavailable")
     }
-    override suspend fun pause(batchId: String) { calls += "scheduler:pause" }
-    override suspend fun cancel(batchId: String) { calls += "scheduler:cancel" }
+    var failPause = false
+    override suspend fun pause(batchId: String) {
+        calls += "scheduler:pause"
+        check(!failPause) { "scheduler unavailable" }
+    }
+    var failCancel = false
+    override suspend fun cancel(batchId: String) {
+        calls += "scheduler:cancel"
+        check(!failCancel) { "scheduler unavailable" }
+    }
     override suspend fun reconcile(liveBatchIds: Set<String>) = Unit
 }
 

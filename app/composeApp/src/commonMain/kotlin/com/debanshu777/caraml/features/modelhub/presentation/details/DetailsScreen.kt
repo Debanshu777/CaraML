@@ -87,6 +87,13 @@ fun DetailsScreen(
         viewModel.loadDetail(modelId, hubBrowseMode)
     }
 
+    val downloadControlError by viewModel.downloadControlError.collectAsState()
+    LaunchedEffect(downloadControlError) {
+        val message = downloadControlError ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(message)
+        viewModel.clearDownloadControlError()
+    }
+
     LaunchedEffect(downloadError) {
         val error = downloadError ?: return@LaunchedEffect
         snackbarHostState.showSnackbar(error)

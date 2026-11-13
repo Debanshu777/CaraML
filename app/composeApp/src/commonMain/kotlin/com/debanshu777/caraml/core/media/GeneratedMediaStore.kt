@@ -96,57 +96,98 @@ class GeneratedMediaStore(
     }
 
     suspend fun saveImage(messageId: String, bytes: ByteArray): String =
-        withContext(Dispatchers.Default) {
-            GeneratedMediaProcessCoordinator.gate.withLock {
-                prepareLocked()
-                validateMedia(messageId, bytes)
-                fileSystem.createDirectories(sessionDirectory)
-                val target = sessionDirectory / "$messageId.png"
-                require(fileSystem.metadataOrNull(target) == null) { "Media identifier already exists" }
-                requireSessionCapacity(bytes.size.toLong())
-                ensureGlobalCapacity(bytes.size.toLong())
-                writeAtomically(target, bytes).also {
-                    storedBytes += bytes.size.toLong()
-                }.toString()
-            }
+        saveImage(messageId, bytes, publish = null)
+
+    internal suspend fun saveImage(
+        messageId: String,
+        bytes: ByteArray,
+        publish: ((String) -> Boolean)?,
+    ): String = withContext(Dispatchers.Default) {
+        GeneratedMediaProcessCoordinator.gate.withLock {
+            prepareLocked()
+            validateMedia(messageId, bytes)
+            fileSystem.createDirectories(sessionDirectory)
+            val target = sessionDirectory / "$messageId.png"
+            require(fileSystem.metadataOrNull(target) == null) { "Media identifier already exists" }
+            requireSessionCapacity(bytes.size.toLong())
+            ensureGlobalCapacity(bytes.size.toLong())
+            ensureActive()
+            val path = writeAtomically(target, bytes).toString()
+            publishOrDiscard(target, bytes.size.toLong(), path, publish)
+            path
         }
+    }
 
     suspend fun saveVideo(messageId: String, frames: List<ByteArray>): List<String> =
-        withContext(Dispatchers.Default) {
-            GeneratedMediaProcessCoordinator.gate.withLock {
-                prepareLocked()
-                require(SAFE_FILE_STEM.matches(messageId)) { "Invalid media identifier" }
-                require(frames.isNotEmpty()) { "Video output is empty" }
-                frames.forEach { validateMedia(messageId, it) }
-                val batchBytes = frames.fold(0L) { total, frame ->
-                    val frameBytes = frame.size.toLong()
-                    require(total <= Long.MAX_VALUE - frameBytes) {
-                        "Media output is outside the supported range"
-                    }
-                    total + frameBytes
-                }
+        saveVideo(messageId, frames, publish = null)
 
-                val videoDirectory = sessionDirectory / messageId
-                fileSystem.createDirectories(sessionDirectory)
-                require(fileSystem.metadataOrNull(videoDirectory) == null) {
-                    "Media identifier already exists"
+    internal suspend fun saveVideo(
+        messageId: String,
+        frames: List<ByteArray>,
+        publish: ((List<String>) -> Boolean)?,
+    ): List<String> = withContext(Dispatchers.Default) {
+        GeneratedMediaProcessCoordinator.gate.withLock {
+            prepareLocked()
+            require(SAFE_FILE_STEM.matches(messageId)) { "Invalid media identifier" }
+            require(frames.isNotEmpty()) { "Video output is empty" }
+            frames.forEach { validateMedia(messageId, it) }
+            val batchBytes = frames.fold(0L) { total, frame ->
+                val frameBytes = frame.size.toLong()
+                require(total <= Long.MAX_VALUE - frameBytes) {
+                    "Media output is outside the supported range"
                 }
-                requireSessionCapacity(batchBytes)
-                ensureGlobalCapacity(batchBytes)
-                fileSystem.createDirectories(videoDirectory)
-                try {
-                    frames.mapIndexed { index, bytes ->
-                        writeAtomically(
-                            videoDirectory / "frame-${index.toString().padStart(4, '0')}.png",
-                            bytes,
-                        ).toString()
-                    }.also { storedBytes += batchBytes }
-                } catch (error: Throwable) {
-                    fileSystem.deleteRecursively(videoDirectory, mustExist = false)
-                    throw error
+                total + frameBytes
+            }
+
+            val videoDirectory = sessionDirectory / messageId
+            fileSystem.createDirectories(sessionDirectory)
+            require(fileSystem.metadataOrNull(videoDirectory) == null) {
+                "Media identifier already exists"
+            }
+            requireSessionCapacity(batchBytes)
+            ensureGlobalCapacity(batchBytes)
+            ensureActive()
+            fileSystem.createDirectories(videoDirectory)
+            val paths = try {
+                frames.mapIndexed { index, bytes ->
+                    ensureActive()
+                    writeAtomically(
+                        videoDirectory / "frame-${index.toString().padStart(4, '0')}.png",
+                        bytes,
+                    ).toString()
                 }
+            } catch (error: Throwable) {
+                fileSystem.deleteRecursively(videoDirectory, mustExist = false)
+                throw error
+            }
+            publishOrDiscard(videoDirectory, batchBytes, paths, publish)
+            paths
+        }
+    }
+
+    // Called under the media mutex so neither a reader nor clear() can race publication.
+    private suspend fun <T> publishOrDiscard(
+        target: Path,
+        byteCount: Long,
+        media: T,
+        publish: ((T) -> Boolean)?,
+    ) {
+        storedBytes += byteCount
+        if (publish == null) return
+
+        var published = false
+        try {
+            withContext(Dispatchers.Main.immediate) {
+                // Record acceptance on Main before dispatching back to the writer.
+                published = publish(media)
+            }
+        } finally {
+            if (!published) {
+                fileSystem.deleteRecursively(target, mustExist = false)
+                storedBytes -= byteCount
             }
         }
+    }
 
     suspend fun read(path: String): ByteArray? = withContext(Dispatchers.Default) {
         GeneratedMediaProcessCoordinator.gate.withLock {

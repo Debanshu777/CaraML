@@ -202,6 +202,7 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 
 ## Recent Changes
 
+- Made model selection and loading a single transition, fenced cancelled detail requests, and applied inference settings edits inside DataStore transactions. Cancelled media rolls back if its chat turn loses ownership. Download startup reconciles interrupted pause and resume commands, and platform scheduling failures leave queued transfers retryable. Llama retains ownership when unload throws.
 - Corrected ONNX resident-session fixtures to use `<models>/owner/onnx` and clean up the whole temporary tree, fixing Linux CI loads; JVM test logs now include full failure details.
 - Added SD-Turbo GGUF discovery, fixed nested-checkpoint installation, and kept image/video models visible alongside frequently used chat models.
 - Added [platform setup](../../docs/getting-started.md), [contribution guidance](../../CONTRIBUTING.md), and a [real-device demo](../../docs/demo.md).

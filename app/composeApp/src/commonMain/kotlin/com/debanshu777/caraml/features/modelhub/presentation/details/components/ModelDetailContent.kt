@@ -691,6 +691,7 @@ private fun ModelFileVariantsSection(
                         if (item.path.endsWith(".onnx")) "Download complete ONNX model" else "Download all ${it.size} parts"
                     },
                     durableState = durableTask?.artifactState,
+                    cancellationPending = durableTask?.cancellationPending == true,
                     onPause = { durableTask?.let { onPauseDownload(it.batchId, it.artifactId) } },
                     onResume = { durableTask?.let { onResumeDownload(it.batchId, it.artifactId) } },
                     onCancel = { durableTask?.let { onCancelDownload(it.batchId, it.artifactId) } },
@@ -723,6 +724,7 @@ private fun ArtifactFileRow(
     downloadEnabled: Boolean,
     downloadActionDescription: String?,
     durableState: DownloadArtifactState?,
+    cancellationPending: Boolean,
     onPause: () -> Unit,
     onResume: () -> Unit,
     onCancel: () -> Unit,
@@ -783,6 +785,7 @@ private fun ArtifactFileRow(
                 downloadActionDescription = downloadActionDescription,
                 interactionLocked = interactionLocked,
                 durableState = durableState,
+                cancellationPending = cancellationPending,
                 onPause = onPause,
                 onResume = onResume,
                 onCancel = onCancel,

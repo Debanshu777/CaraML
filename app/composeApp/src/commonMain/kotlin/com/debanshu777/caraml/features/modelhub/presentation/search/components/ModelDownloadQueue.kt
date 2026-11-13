@@ -136,16 +136,23 @@ internal fun ModelDownloadQueueRow(
     batch: DownloadBatchSnapshot,
     artifact: DownloadArtifactSnapshot,
 ) {
-    val status = when (artifact.state) {
-        DownloadArtifactState.QUEUED -> "Queued"
-        DownloadArtifactState.RUNNING -> "Downloading"
-        DownloadArtifactState.PAUSED -> "Paused"
-        DownloadArtifactState.WAITING_FOR_NETWORK -> "Waiting for network"
-        DownloadArtifactState.VERIFYING -> if (batch.userIntent == DownloadUserIntent.PAUSE) "Verification paused" else "Verifying"
-        DownloadArtifactState.FAILED_RETRYABLE -> "Download failed · retry available"
-        DownloadArtifactState.FAILED_TERMINAL -> "Download failed"
-        DownloadArtifactState.CANCELLED -> "Cancelled"
-        DownloadArtifactState.COMPLETED -> "Completed"
+    val status = when {
+        batch.userIntent == DownloadUserIntent.CANCEL && artifact.state in setOf(
+            DownloadArtifactState.QUEUED, DownloadArtifactState.RUNNING, DownloadArtifactState.PAUSED,
+            DownloadArtifactState.WAITING_FOR_NETWORK, DownloadArtifactState.VERIFYING,
+            DownloadArtifactState.FAILED_RETRYABLE,
+        ) -> "Cancellation pending"
+        else -> when (artifact.state) {
+            DownloadArtifactState.QUEUED -> "Queued"
+            DownloadArtifactState.RUNNING -> "Downloading"
+            DownloadArtifactState.PAUSED -> "Paused"
+            DownloadArtifactState.WAITING_FOR_NETWORK -> "Waiting for network"
+            DownloadArtifactState.VERIFYING -> if (batch.userIntent == DownloadUserIntent.PAUSE) "Verification paused" else "Verifying"
+            DownloadArtifactState.FAILED_RETRYABLE -> "Download failed · retry available"
+            DownloadArtifactState.FAILED_TERMINAL -> "Download failed"
+            DownloadArtifactState.CANCELLED -> "Cancelled"
+            DownloadArtifactState.COMPLETED -> "Completed"
+        }
     }
     Column(
         modifier = Modifier.fillMaxWidth().testTag("download-${artifact.artifactId}"),
@@ -187,6 +194,15 @@ internal fun ModelDownloadBatchControls(
     onCancel: () -> Unit,
 ) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8)) {
+            if (batch.userIntent == DownloadUserIntent.CANCEL) {
+                if (batch.state != DownloadBatchState.COMPLETED &&
+                    batch.state != DownloadBatchState.CANCELLED &&
+                    batch.state != DownloadBatchState.FAILED_TERMINAL
+                ) {
+                    ModelHubAction(label = "Cancel download", onClick = onCancel)
+                }
+                return@FlowRow
+            }
             when (batch.state) {
                 DownloadBatchState.RUNNING, DownloadBatchState.QUEUED,
                 DownloadBatchState.WAITING_FOR_NETWORK -> ModelHubAction(label = "Pause download", onClick = onPause)

@@ -1316,8 +1316,8 @@ private class RetrySettingsRepository : SettingsRepository {
     private val settings = MutableStateFlow(AppSettings())
 
     override fun getSettings(): Flow<AppSettings> = settings
-    override suspend fun updateSettings(settings: AppSettings) {
-        this.settings.value = settings
+    override suspend fun updateSettings(transform: (AppSettings) -> AppSettings) {
+        this.settings.value = transform(this.settings.value)
     }
     override suspend fun updateRecommendationProfile(profile: RecommendationProfile) = Unit
     override suspend fun completeModelProfileOnboarding(profile: RecommendationProfile) = Unit

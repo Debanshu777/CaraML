@@ -139,6 +139,61 @@ class ChatViewModelRetryTest {
     }
 
     @Test
+    fun installedModelOutsidePickerStaysSelectedUntilItIsRemoved() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        try {
+            val first = textModel()
+            val otherModels = (1L..3L).map { offset ->
+                first.copy(id = first.id + offset, filename = "model-$offset.gguf")
+            }
+            val outsidePicker = otherModels.last()
+            val inventory = MutableStateFlow(listOf(first) + otherModels)
+            val dao = object : LocalModelDao by StaticLocalModelDao(first) {
+                override fun getAllDownloadedFiles(): Flow<List<LocalModelEntity>> = inventory
+            }
+            val firstLoad = loadRequest(first, "first", BackendKind.CPU)
+            val outsideLoad = loadRequest(outsidePicker, "outside", BackendKind.CPU)
+            val resolver = RecordingResolver(ArrayDeque(listOf(firstLoad, outsideLoad, firstLoad).map {
+                InstalledModelLoadResolution.Ready(it)
+            }))
+            val inference = RecordingInferenceRepository(firstLoad)
+            val localModels = LocalModelRepository(dao)
+            val viewModel = ChatViewModel(
+                getAvailableModels = GetAvailableModelsUseCase(localModels, ChatConfig()),
+                generateResponse = GenerateResponseUseCase(inference),
+                manageContext = ManageContextUseCase(inference, ChatConfig()),
+                trackModelUsage = TrackModelUsageUseCase(localModels),
+                inferenceRepository = inference,
+                diffusionRepository = DiffusionInferenceRepository(DiffusionRunner(), DeviceCapabilities(), StaticSettingsRepository()),
+                generatedMediaStore = GeneratedMediaStore(baseDirectory = "/tmp", sessionId = "removed-selection"),
+                installedModelLoadRequestResolver = resolver,
+                modelLoadDispatcher = dispatcher,
+                releaseDiffusionModel = {},
+            )
+            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.uiState.collect() }
+            advanceUntilIdle()
+
+            viewModel.selectModel(outsidePicker)
+            advanceUntilIdle()
+            val ready = assertIs<ChatUiState.Ready>(viewModel.uiState.value)
+            assertEquals(outsidePicker.id, ready.selectedModel?.id)
+            assertTrue(ready.topModels.none { it.id == outsidePicker.id })
+
+            inventory.value = inventory.value.map { it.copy(usageCount = 1) }
+            advanceUntilIdle()
+            assertEquals(outsidePicker.id, assertIs<ChatUiState.Ready>(viewModel.uiState.value).selectedModel?.id)
+
+            inventory.value = inventory.value.filter { it.id != outsidePicker.id }
+            advanceUntilIdle()
+            assertEquals(first.id, assertIs<ChatUiState.Ready>(viewModel.uiState.value).selectedModel?.id)
+            assertEquals(listOf("first", "outside", "first"), inference.loadedAssessmentKeys)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
     fun readySameSelectionReusesBeforeTeardownButContextChangeLoadsNormally() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val previousForceFullReload = ModelLoadDiagnostics.forceFullReloadForMeasurement
@@ -686,7 +741,7 @@ private class RecordingInferenceRepository(
                     saferRequest = saferRequest,
                 ),
             )
-            "fresh-cpu" -> ModelLoadResult.Success(contextSize = 4_096)
+            "first", "outside", "fresh-cpu" -> ModelLoadResult.Success(contextSize = 4_096)
             "post-release-cpu" -> ModelLoadResult.Success(contextSize = 4_096)
             else -> error("Unexpected request")
         }
@@ -722,8 +777,8 @@ private class StaticSettingsRepository : SettingsRepository {
     private val settings = MutableStateFlow(AppSettings())
 
     override fun getSettings(): Flow<AppSettings> = settings
-    override suspend fun updateSettings(settings: AppSettings) {
-        this.settings.value = settings
+    override suspend fun updateSettings(transform: (AppSettings) -> AppSettings) {
+        this.settings.value = transform(this.settings.value)
     }
     override suspend fun updateRecommendationProfile(profile: RecommendationProfile) = Unit
     override suspend fun completeModelProfileOnboarding(profile: RecommendationProfile) = Unit

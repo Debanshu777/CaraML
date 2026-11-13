@@ -328,6 +328,19 @@ interface DownloadTaskDao {
     @Query(
         """
         UPDATE download_artifact
+        SET state = 'FAILED_RETRYABLE', failure_code = 'PLATFORM', updated_at_epoch_ms = :nowEpochMs
+        WHERE artifact_id = :artifactId AND state = 'QUEUED'
+          AND EXISTS (
+              SELECT 1 FROM download_batch
+              WHERE download_batch.batch_id = download_artifact.batch_id AND user_intent = 'RUN'
+          )
+        """,
+    )
+    suspend fun markSchedulingFailed(artifactId: String, nowEpochMs: Long): Int
+
+    @Query(
+        """
+        UPDATE download_artifact
         SET state = 'QUEUED', failure_code = NULL, platform_task_id = NULL,
             bytes_received = 0, entity_tag = NULL, last_modified = NULL,
             lease_owner = NULL, lease_expires_at_epoch_ms = NULL, updated_at_epoch_ms = :nowEpochMs
@@ -343,7 +356,11 @@ interface DownloadTaskDao {
     suspend fun requeueMissingCompletedArtifact(artifactId: String, nowEpochMs: Long): Int
 
     @Query(
-        "UPDATE download_batch SET user_intent = :intent, updated_at_epoch_ms = MAX(:nowEpochMs, updated_at_epoch_ms + 1) WHERE batch_id = :batchId",
+        """
+        UPDATE download_batch
+        SET user_intent = :intent, updated_at_epoch_ms = MAX(:nowEpochMs, updated_at_epoch_ms + 1)
+        WHERE batch_id = :batchId AND (user_intent != 'CANCEL' OR :intent = 'CANCEL')
+        """,
     )
     suspend fun setUserIntent(batchId: String, intent: String, nowEpochMs: Long): Int
 
