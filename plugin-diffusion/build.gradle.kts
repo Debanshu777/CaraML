@@ -140,11 +140,13 @@ kotlin {
     }
 
     sourceSets {
+        // Include the shared JNI implementation explicitly for Android KMP and JVM.
+        androidMain { kotlin.srcDir("src/javaMain/kotlin") }
+        jvmMain { kotlin.srcDir("src/javaMain/kotlin") }
         commonMain {
             dependencies {
                 api(project(":core-api"))
                 implementation(project(":native-runtime"))
-                implementation(libs.kotlin.stdlib)
                 implementation(libs.kotlinx.coroutinesCore)
             }
         }

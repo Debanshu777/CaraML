@@ -39,12 +39,21 @@ A federated search/registry layer is not needed for this extension point.
   Discovery has no app, storage implementation, engine or native-build dependency.
 
 The compatibility factory uses OkHttp (Android), Darwin (iOS arm64/simulator), and
-CIO (JVM). Consequently those transports and serialization adapters are now used
-runtime dependencies of this module. A custom provider does not instantiate them;
+CIO (JVM). Those transports and the bounded manual JSON decoder are runtime
+dependencies of this module; no content-negotiation plugin is installed. A custom provider does not instantiate them;
 separate provider artifacts are deferred until dependency isolation warrants them.
+`createHuggingFaceApi().close()` releases the factory-owned clients; call it when the host scope ends. Direct `RemoteHuggingFaceApiService` and `ClientWrapper` instances borrow their supplied client and close only their own derived request clients. The app closes its facade when its Koin scope is disposed.
 See the [compatibility API reference](docs/huggingface-compatibility.md).
 
 ## Recent Changes
+
+- Model-card body and excerpt share one front-matter parse, accepting both `---` and `...` terminators after BOM/line-ending normalization. Unterminated metadata retains the original normalized body and produces no excerpt. Service-level tests cover each form.
+
+- Neutral Hub searches request only revision, library and task metadata, so their results resolve at an immutable commit without full sibling payloads. The compatibility factory returns a closeable facade that owns its clients; direct service/wrapper users close their derived clients while retaining ownership of supplied host clients. Removed unused HTTP content-negotiation dependencies.
+
+- Added optional `getModelCard(modelId, revision)` to the compatibility API: a bounded, revision-pinned `ModelCardDocument` containing the full Markdown body and a separate excerpt. Details accept Boolean or `auto`/`manual` gating and scalar/list languages. See the [API contract](docs/huggingface-compatibility.md#model-card-documents).
+
+- Migrated the compatibility `getModelPage` API to `/models-json`, including bounded envelope decoding, server totals, author avatars, mixed gated values and unknown parameter counts.
 
 - Scope ONNX chat searches to the Hub's text-generation pipeline and bind pagination cursors to that pipeline.
 
@@ -58,7 +67,7 @@ See the [compatibility API reference](docs/huggingface-compatibility.md).
 - Removed `huggingFaceManager` as a Gradle module. Moved its Hub API/metadata/client code here and its existing host storage/download/diffusion integrations to `composeApp`.
 - Preserved provider-neutral extension contracts and added shared-storage isolation coverage for two custom providers. SDK-only verification still excludes native producers.
 
-- Uses scoped Ktor streaming without whole-body buffering; signed redirects strip inherited authorization at send time. Concurrent shutdown waits for transfer cleanup. The SDK path still borrows caller-supplied clients; the retained compatibility factory uses platform transports and serialization adapters.
+- Uses scoped Ktor streaming without whole-body buffering; signed redirects strip inherited authorization at send time. Concurrent shutdown waits for transfer cleanup. The SDK path still borrows caller-supplied clients; the retained compatibility factory owns platform transports and decodes bounded JSON manually.
 
 - Added provider-neutral search/resolve/download operations with Hugging Face browse and streaming transfer support, borrowed-client handling, bounded retries, range checks, and cancellation.
 - Added MockEngine coverage for browse/transfer headers, unsafe resumed ranges, retry/resume integrity, and close-driven cancellation.

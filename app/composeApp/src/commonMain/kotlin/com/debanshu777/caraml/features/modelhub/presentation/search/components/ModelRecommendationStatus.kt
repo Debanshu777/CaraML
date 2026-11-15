@@ -1,32 +1,39 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search.components
 
-import com.debanshu777.caraml.core.ui.icons.AppIcons
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.runtime.Composable
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
-import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.rating.ui.recommendationCategoryLabel
 import com.debanshu777.caraml.core.rating.ui.recommendationSemantics
-import com.debanshu777.caraml.core.recommendation.PersonalizedRecommendation
-import com.debanshu777.caraml.core.recommendation.RecommendationCategory
-import com.debanshu777.caraml.core.ui.components.StatusMark
-import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
 import com.debanshu777.caraml.core.recommendation.BrowseFitEstimate
 import com.debanshu777.caraml.core.recommendation.BrowseResourceFit
-import com.debanshu777.caraml.core.rating.ui.formatBytesHuman
+import com.debanshu777.caraml.core.recommendation.PersonalizedRecommendation
+import com.debanshu777.caraml.core.recommendation.RecommendationCategory
+import com.debanshu777.caraml.core.theme.AppTheme
+import com.debanshu777.caraml.core.ui.components.StatusMark
+import com.debanshu777.caraml.core.ui.icons.AppIcons
+import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
 
 internal data class BrowseVerdictPresentation(
     val label: String,
@@ -68,15 +75,21 @@ internal fun ModelRecommendationStatus(
         val browse = browseFit?.let(::browseVerdict)
         val needsCautionColors = browseFit?.memoryFit == BrowseResourceFit.TIGHT_FIT
         if (plain) {
-            Text(
-                text = browse?.label ?: presentation.label,
-                style = AppTheme.typography.labelSmall,
+            ModelStatusIndicator(
+                label = browse?.label ?: presentation.label,
+                icon = browse?.icon ?: presentation.icon,
                 color = when {
-                    browseFit?.memoryFit == BrowseResourceFit.LIKELY_FIT ||
-                        recommendation?.category in setOf(RecommendationCategory.RECOMMENDED, RecommendationCategory.USABLE) -> AppTheme.brandColors.positiveText(AppTheme.colors.background.luminance() < .5f)
-                    browseFit?.memoryFit == BrowseResourceFit.TOO_LARGE ||
-                        recommendation?.category in setOf(RecommendationCategory.NOT_SUITABLE, RecommendationCategory.INCOMPATIBLE) -> AppTheme.colors.onSurface
-                    else -> AppTheme.brandColors.cautionText(AppTheme.colors.background.luminance() < .5f)
+                    browseFit != null -> when (browseFit.memoryFit) {
+                        BrowseResourceFit.LIKELY_FIT -> AppTheme.brandColors.positiveText(AppTheme.colors.background.luminance() < .5f)
+                        BrowseResourceFit.TIGHT_FIT -> AppTheme.brandColors.cautionText(AppTheme.colors.background.luminance() < .5f)
+                        BrowseResourceFit.TOO_LARGE -> AppTheme.colors.error
+                        BrowseResourceFit.UNKNOWN -> AppTheme.colors.onSurfaceVariant
+                    }
+                    state != DescriptorState.ASSESSED -> AppTheme.colors.onSurfaceVariant
+                    recommendation?.category in setOf(RecommendationCategory.RECOMMENDED, RecommendationCategory.USABLE) -> AppTheme.brandColors.positiveText(AppTheme.colors.background.luminance() < .5f)
+                    recommendation?.category == RecommendationCategory.RISKY -> AppTheme.brandColors.cautionText(AppTheme.colors.background.luminance() < .5f)
+                    recommendation?.category in setOf(RecommendationCategory.NOT_SUITABLE, RecommendationCategory.INCOMPATIBLE) -> AppTheme.colors.error
+                    else -> AppTheme.colors.onSurfaceVariant
                 },
                 modifier = Modifier.semantics {
                     stateDescription = browse?.description ?: presentation.stateDescription
@@ -115,13 +128,13 @@ internal fun ModelRecommendationStatus(
     }
 }
 
-private data class RecommendationStatusPresentation(
+internal data class RecommendationStatusPresentation(
     val label: String,
     val stateDescription: String,
     val icon: ImageVector,
 )
 
-private fun recommendationStatusPresentation(
+internal fun recommendationStatusPresentation(
     state: DescriptorState,
     recommendation: PersonalizedRecommendation?,
 ): RecommendationStatusPresentation {
@@ -168,3 +181,33 @@ private val RecommendationCategory.statusIcon: ImageVector
 
         RecommendationCategory.NEEDS_INFORMATION -> AppIcons.Info
     }
+
+
+/** Icon shape and accessible text communicate the state independently of color. */
+@Composable
+internal fun ModelStatusIndicator(
+    label: String,
+    icon: ImageVector,
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    // Secondary ink loses contrast on its own tinted fill, particularly over the page wash.
+    val contentColor = when {
+        color == AppTheme.colors.onSurfaceVariant -> AppTheme.colors.onSurface
+        color == AppTheme.colors.error && AppTheme.colors.background.luminance() >= .5f ->
+            lerp(color, AppTheme.colors.onSurface, .16f)
+        else -> color
+    }
+    Row(
+        modifier = modifier
+            .semantics(mergeDescendants = true) { contentDescription = label }
+            .background(color.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
+            .padding(horizontal = AppTheme.spacing.spacing8, vertical = AppTheme.spacing.spacing4),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing2),
+    ) {
+        Icon(icon, null,
+            Modifier.size(12.dp), tint = contentColor)
+        Text(label, style = AppTheme.typography.labelSmall, color = contentColor)
+    }
+}

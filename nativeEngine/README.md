@@ -105,6 +105,8 @@ This prevents duplicate symbol errors from linking two independent GGML builds.
 | `preparePatchedLlamaSource` | Recreate a build-owned llama.cpp source tree and apply numbered patches |
 | `testCpuRepackEquivalence` | Compare 6,532 Q4_K/Q6_K repack cases with the pinned implementation; included in `verifyProject` |
 | `compileLlamaRunnerDesktop` | Build desktop shared libs via CMake |
+| `stageDesktopRuntime` | Install the selected profile’s JNI libraries and shared backends for desktop packaging |
+| `testLlamaRunnerNativeDesktop` | Run all four llama native regressions; included in `verifyProject` |
 | `verifyNativePreflightFixtures` | Strictly acquire/generate digest-addressed native fixtures under fixed HTTPS hosts and decoded-size caps |
 | `mergeLlamaRunnerStaticIosArm64` | Merge iOS arm64 `.a` files via `libtool -static` |
 | `mergeLlamaRunnerStaticIosSimulatorArm64` | Merge iOS simulator arm64 `.a` files |
@@ -155,6 +157,10 @@ Create a **separate** Gradle module + CMake project. Do not add here unless it m
 ---
 
 ## Recent Changes
+
+- Exposes the selected desktop profile’s `artifact_fs` library through the `desktopArtifactFs` Gradle configuration. App JVM tests resolve that producer output directly, including CPU/engine-specific profiles, instead of loading a possibly stale default build.
+
+- `stageDesktopRuntime` installs the selected desktop profile’s JNI libraries and shared backends with relative runtime search paths. Desktop packaging consumes that runtime; relocated smoke tests exercise artifact storage and selected inference engines. `verifyProject` now includes all four llama native regressions.
 
 - Added native sampling-progress and GPU VAE placement regressions. Android diffusion uses the packaged shared Vulkan registry; the standalone SD_VULKAN build flag does not determine runtime placement. See the [image benchmark suite](../benchmarks/diffusion/README.md).
 

@@ -28,6 +28,7 @@ class DownloadRuntimeReconciliationTest {
             store = ReconciliationStore(runningBatch()),
             scheduler = scheduler,
             clock = { 10L },
+            checkpointCleaner = DownloadCheckpointCleaner {},
         )
         val runtime = DownloadRuntime(reconciler, scheduler, backgroundScope)
 
@@ -47,7 +48,7 @@ class DownloadRuntimeReconciliationTest {
         val store = ReconciliationStore(runningBatch())
         val scheduler = ReconciliationScheduler(active = true)
 
-        DownloadReconciler(store, scheduler, { 10L }).reconcile()
+        DownloadReconciler(store, scheduler, { 10L }, checkpointCleaner = DownloadCheckpointCleaner {}).reconcile()
 
         assertEquals(emptyList(), store.transitions)
         assertEquals(emptyList(), store.intents)
@@ -62,7 +63,7 @@ class DownloadRuntimeReconciliationTest {
             orphanedDisposition = OrphanedDownloadDisposition.PAUSE,
         )
 
-        DownloadReconciler(store, scheduler, { 10L }).reconcile()
+        DownloadReconciler(store, scheduler, { 10L }, checkpointCleaner = DownloadCheckpointCleaner {}).reconcile()
 
         assertEquals(listOf(DownloadUserIntent.PAUSE), store.intents)
         assertEquals(listOf(DownloadArtifactState.PAUSED), store.transitions)
@@ -83,11 +84,11 @@ class DownloadRuntimeReconciliationTest {
         ))
         val scheduler = ReconciliationScheduler(active = false)
 
-        DownloadReconciler(interruptedPause, scheduler, { 10L }).reconcile()
+        DownloadReconciler(interruptedPause, scheduler, { 10L }, checkpointCleaner = DownloadCheckpointCleaner {}).reconcile()
         assertEquals(listOf(DownloadArtifactState.PAUSED), interruptedPause.transitions)
         assertEquals(0, scheduler.enqueueCalls)
 
-        DownloadReconciler(interruptedResume, scheduler, { 10L }).reconcile()
+        DownloadReconciler(interruptedResume, scheduler, { 10L }, checkpointCleaner = DownloadCheckpointCleaner {}).reconcile()
         assertEquals(listOf(DownloadArtifactState.QUEUED), interruptedResume.transitions)
         assertEquals(1, scheduler.enqueueCalls)
     }

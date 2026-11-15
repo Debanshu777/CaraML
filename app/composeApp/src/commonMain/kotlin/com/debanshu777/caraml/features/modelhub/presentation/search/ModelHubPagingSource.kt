@@ -9,7 +9,7 @@ import com.debanshu777.caraml.sdk.discovery.huggingface.api.error.DataError
 import com.debanshu777.caraml.sdk.discovery.huggingface.api.error.Result
 import com.debanshu777.caraml.sdk.discovery.huggingface.model.ListModelsResponse
 
-/** Paging owns cursor advancement; the request object still validates every external query. */
+/** Paging owns page advancement; continuation keys remain bound to the discovery query. */
 internal class ModelHubPagingSource(
     private val request: ModelPageRequest,
     private val fetch: suspend (ModelPageRequest) -> Result<ModelPage, DataError.Network>,
@@ -29,7 +29,7 @@ internal class ModelHubPagingSource(
             return LoadResult.Page(emptyList(), null, null)
         }
         val pageRequest = try {
-            // Cursor provenance includes the page size, so it must stay fixed across pages.
+            // Each load fetches one server page, regardless of Paging's requested load size.
             request.copy(cursor = cursor)
         } catch (error: IllegalArgumentException) {
             return LoadResult.Error(error)

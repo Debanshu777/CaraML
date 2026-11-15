@@ -15,7 +15,25 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.runtime.saveable.LocalSaveableStateRegistry
+import androidx.compose.runtime.saveable.SaveableStateRegistry
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -25,9 +43,13 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
+import androidx.navigation3.runtime.NavEntry
+import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import com.debanshu777.caraml.core.data.settings.SettingsRepository
 import com.debanshu777.caraml.core.drawer.AppDrawerShell
 import com.debanshu777.caraml.core.navigation.AppScreen
+import com.debanshu777.caraml.core.navigation.NavigationTransitionDisplay
+import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import com.debanshu777.caraml.core.platform.DeviceCapabilities
 import com.debanshu777.caraml.core.platform.DeviceSnapshot
 import com.debanshu777.caraml.core.platform.HardwareProfile
@@ -85,8 +107,193 @@ import kotlinx.serialization.json.Json
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertTrue
+import kotlin.test.assertEquals
+import kotlin.test.assertSame
+import java.util.concurrent.atomic.AtomicInteger
+import com.debanshu777.caraml.core.theme.CaraMLTheme
+import com.debanshu777.caraml.core.theme.ThemeMode
+import com.debanshu777.caraml.core.theme.ThemePreferences
+import com.debanshu777.caraml.features.modelhub.presentation.search.saveModelHubEvidence
 
 class ModelDetailsRouteUiTest {
+
+    @Test
+    fun recreationAndTabChangesReuseRequestsAndPreparedCard() = runComposeUiTest {
+        val environment = DetailsRouteEnvironment("org/retained-model")
+        var screenPresent by mutableStateOf(true)
+        var windowWidth by mutableStateOf(390.dp)
+        var registry = SaveableStateRegistry(restoredValues = null) { true }
+        try {
+            setContent {
+                if (screenPresent) CompositionLocalProvider(
+                    LocalDensity provides Density(1f), LocalSaveableStateRegistry provides registry,
+                ) {
+                    CaraMLTheme(ThemePreferences(themeMode = ThemeMode.LIGHT, reduceMotion = true)) {
+                        Box(Modifier.requiredWidth(windowWidth).height(780.dp)) {
+                            val backStack = remember { NavBackStack<NavKey>(AppScreen.Details(environment.repositoryId)) }
+                            AppDrawerShell(backStack = backStack) {
+                                NavigationTransitionDisplay(
+                                    modifier = Modifier.fillMaxSize(),
+                                    backStack = backStack,
+                                    motionPolicy = LocalAuroraMotionPolicy.current,
+                                    detailOffsetPx = 0,
+                                    entryDecorators = listOf(rememberSaveableStateHolderNavEntryDecorator()),
+                                    entryProvider = { key -> NavEntry(key) {
+                                        DetailsScreen(environment.viewModel, environment.repositoryId,
+                                            ModelHubBrowseMode.LanguageModels, onBack = {})
+                                    } },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            waitUntil { environment.viewModel.modelCardState.value is ModelCardUiState.Ready }
+            onNode(hasText("Model card") and hasAnyAncestor(hasTestTag("detail-tabs"))).performClick()
+            // Stay away from the document end: wider text legitimately reduces max scroll.
+            onNodeWithTag("detail-scroll").performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 700f) }
+            val position = onNodeWithTag("detail-scroll").fetchSemanticsNode()
+                .config[SemanticsProperties.VerticalScrollAxisRange].value()
+            val ready = environment.viewModel.modelCardState.value as ModelCardUiState.Ready
+            assertEquals(3, environment.requests.get(), "One metadata, file-tree, and README request")
+            for (width in listOf(840.dp, 390.dp)) {
+                // Skiko's StateRestorationTester has no platformEncodeDecode implementation.
+                // Exercise actual disposal and a new registry with its saved values instead.
+                val saved = runOnIdle { registry.performSave().also { screenPresent = false } }
+                waitForIdle()
+                runOnIdle {
+                    registry = SaveableStateRegistry(saved) { true }
+                    windowWidth = width
+                    screenPresent = true
+                }
+                waitForIdle()
+                onNode(hasText("Model card") and hasAnyAncestor(hasTestTag("detail-tabs"))).assertIsSelected()
+                onNodeWithTag("page-sticky-tabs").assertIsDisplayed()
+                assertEquals(position, onNodeWithTag("detail-scroll").fetchSemanticsNode()
+                    .config[SemanticsProperties.VerticalScrollAxisRange].value(), "Recreation at $width restores the reading position")
+                assertSame(ready, environment.viewModel.modelCardState.value)
+                assertEquals(3, environment.requests.get())
+            }
+            // Desktop resizing changes the shell without recreating the activity.
+            for (width in listOf(840.dp, 720.dp, 390.dp)) {
+                runOnIdle { windowWidth = width }
+                waitForIdle()
+                onNode(hasText("Model card") and hasAnyAncestor(hasTestTag("detail-tabs"))).assertIsSelected()
+                assertEquals(position, onNodeWithTag("detail-scroll").fetchSemanticsNode()
+                    .config[SemanticsProperties.VerticalScrollAxisRange].value())
+                assertEquals(3, environment.requests.get())
+            }
+            repeat(3) {
+                onNodeWithText("Variants").performClick().assertIsSelected()
+                onNodeWithTag("model-card-markdown").assertDoesNotExist()
+                onNodeWithText("Technical details").performClick().assertIsSelected()
+                onNode(hasText("Model card") and hasAnyAncestor(hasTestTag("detail-tabs"))).performClick().assertIsSelected()
+                onNodeWithTag("model-card-markdown").assertExists()
+                assertSame(ready.rendered, (environment.viewModel.modelCardState.value as ModelCardUiState.Ready).rendered,
+                    "Disposing the pager page must not discard the prepared Markdown")
+                assertEquals(3, environment.requests.get())
+            }
+        } finally { environment.close() }
+    }
+
+    @Test
+    fun overviewRemainsAcrossTabsAndHeaderTitleFollowsActualScrollPosition() = runComposeUiTest {
+        val environment = DetailsRouteEnvironment("research-collective/Very-Long-Model-Name-That-Always-Wraps-In-The-Overview-GGUF")
+        var fontScale by mutableStateOf(1f)
+        try {
+            setContent {
+                CompositionLocalProvider(LocalDensity provides Density(1f, fontScale)) {
+                    CaraMLTheme(ThemePreferences(themeMode = ThemeMode.LIGHT, reduceMotion = true)) {
+                        Box(Modifier.width(390.dp).height(780.dp).testTag("visual-root")) {
+                            DetailsScreen(environment.viewModel, environment.repositoryId,
+                                ModelHubBrowseMode.LanguageModels, onBack = {})
+                        }
+                    }
+                }
+            }
+            waitUntil { environment.viewModel.modelCardState.value is ModelCardUiState.Ready }
+            onNodeWithTag("detail-collapsed-title").assertDoesNotExist()
+            val description = onNodeWithTag("detail-description").fetchSemanticsNode().boundsInRoot
+            val tabs = onNodeWithTag("detail-tabs").fetchSemanticsNode().boundsInRoot
+            onNodeWithText("Model card").performClick()
+            onNodeWithTag("detail-description").assertIsDisplayed()
+            assertEquals(description, onNodeWithTag("detail-description").fetchSemanticsNode().boundsInRoot)
+            assertEquals(tabs, onNodeWithTag("detail-tabs").fetchSemanticsNode().boundsInRoot,
+                "Switching tabs must keep the complete overview and tab position")
+            saveModelHubEvidence("details-overview-retained.png")
+            for (scale in listOf(1f, 2f)) {
+                runOnIdle { fontScale = scale }
+                onNodeWithTag("detail-scroll").performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, -10000f) }
+                onNodeWithTag("detail-collapsed-title").assertDoesNotExist()
+                val cardTab = onNode(hasText("Model card") and hasAnyAncestor(hasTestTag("detail-tabs")))
+                cardTab.performSemanticsAction(SemanticsActions.RequestFocus) { it() }
+                cardTab.assertIsFocused()
+                val header = onNodeWithTag("page-sticky-chrome").fetchSemanticsNode().boundsInRoot
+                onNodeWithTag("detail-scroll").performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 900f) }
+                onNodeWithTag("detail-collapsed-title").assertIsDisplayed()
+                cardTab.assertIsFocused()
+                assertEquals(listOf(environment.repositoryId), onNodeWithTag("detail-collapsed-title")
+                    .fetchSemanticsNode().config[SemanticsProperties.ContentDescription])
+                assertEquals(header, onNodeWithTag("page-sticky-chrome").fetchSemanticsNode().boundsInRoot,
+                    "Revealing the compact title must not resize the header")
+                val pinnedTabs = onNodeWithTag("page-sticky-tabs").fetchSemanticsNode().boundsInRoot
+                assertTrue(abs(pinnedTabs.top - header.bottom) < 1f, "Tabs pin directly below navigation")
+                onAllNodesWithText("Variants").assertCountEquals(1)
+                onNodeWithText("Variants").assertIsDisplayed()
+                onNodeWithText("Technical details").assertIsDisplayed()
+                onNodeWithTag("detail-scroll").performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 700f) }
+                assertEquals(pinnedTabs, onNodeWithTag("page-sticky-tabs").fetchSemanticsNode().boundsInRoot,
+                    "The tab row remains fixed while reading further down the article")
+                val readingPosition = onNodeWithTag("detail-scroll").fetchSemanticsNode()
+                    .config[SemanticsProperties.VerticalScrollAxisRange].value()
+                cardTab.performClick()
+                assertEquals(readingPosition, onNodeWithTag("detail-scroll").fetchSemanticsNode()
+                    .config[SemanticsProperties.VerticalScrollAxisRange].value(), "Selecting the current tab keeps the reading position")
+                onNodeWithTag("detail-pager").performTouchInput {
+                    down(Offset(width * .8f, centerY))
+                    moveTo(Offset(width * .2f, centerY), delayMillis = 300)
+                }
+                waitForIdle()
+                onNodeWithText("Technical details").assertIsSelected()
+                assertEquals(readingPosition, onNodeWithTag("detail-scroll").fetchSemanticsNode()
+                    .config[SemanticsProperties.VerticalScrollAxisRange].value(), "An unfinished swipe keeps the reading position")
+                onNodeWithTag("detail-pager").performTouchInput {
+                    moveTo(Offset(width * .8f, centerY), delayMillis = 400)
+                    up()
+                }
+                cardTab.assertIsSelected()
+                assertEquals(readingPosition, onNodeWithTag("detail-scroll").fetchSemanticsNode()
+                    .config[SemanticsProperties.VerticalScrollAxisRange].value(), "A reversed swipe keeps the reading position")
+                saveModelHubEvidence("details-sticky-tabs-${scale.toInt()}.png")
+                onNodeWithText("Variants").performClick().assertIsSelected()
+                onNodeWithText("No supported GGUF or ONNX bundles found").assertIsDisplayed()
+                assertTrue(onNodeWithTag("detail-pager").fetchSemanticsNode().boundsInRoot.top >= pinnedTabs.bottom - 1f,
+                    "A short destination starts below the pinned tabs, rather than at its bottom")
+                onNodeWithText("Technical details").performClick().assertIsSelected()
+                onNodeWithTag("detail-support").assertIsDisplayed()
+                onNode(hasText("Model card") and hasAnyAncestor(hasTestTag("detail-tabs"))).performClick().assertIsSelected()
+                assertTrue(onNodeWithTag("detail-pager").fetchSemanticsNode().boundsInRoot.top >= pinnedTabs.bottom - 1f)
+                saveModelHubEvidence("details-scrolled-header-${scale.toInt()}.png")
+                onNodeWithTag("detail-scroll").performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, -10000f) }
+                onNodeWithTag("detail-collapsed-title").assertDoesNotExist()
+                onNodeWithTag("detail-title").assertIsDisplayed()
+                cardTab.performSemanticsAction(SemanticsActions.RequestFocus) { it() }
+                onNodeWithTag("detail-scroll").performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 900f) }
+                cardTab.assertIsFocused()
+                onNodeWithTag("detail-scroll").performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, -10000f) }
+                cardTab.assertIsFocused()
+                onNodeWithTag("page-sticky-tabs").assertDoesNotExist()
+                assertEquals(0f, onNodeWithTag("detail-scroll").fetchSemanticsNode()
+                    .config[SemanticsProperties.VerticalScrollAxisRange].value(), "Focus restoration must not scroll the page back down")
+                onNodeWithText("Technical details").performSemanticsAction(SemanticsActions.RequestFocus) { it() }
+                onNodeWithText("Technical details").performKeyInput { keyDown(Key.Enter); keyUp(Key.Enter) }
+                    .assertIsSelected()
+                cardTab.performClick()
+            }
+        } finally {
+            environment.close()
+        }
+    }
 
     @Test
     fun productionRouteUsesOneOwnerAndNameHierarchy() = runComposeUiTest {
@@ -113,17 +320,17 @@ class ModelDetailsRouteUiTest {
                 environment.viewModel.modelDetail.value != null &&
                     !environment.viewModel.isDetailLoading.value
             }
-            onAllNodesWithText(owner).assertCountEquals(1)
-            onAllNodesWithText(name).assertCountEquals(1)
-            onNodeWithText("$owner/$name").assertDoesNotExist()
+            onAllNodesWithText("$owner/$name").assertCountEquals(1)
+            onAllNodesWithText(owner).assertCountEquals(0)
             onNodeWithContentDescription("Navigate back").assertExists()
+            onAllNodesWithText("Details").assertCountEquals(0)
         } finally {
             environment.close()
         }
     }
 
     @Test
-    fun shellWiredRouteExpandsOnlyWhenContentLeavesAtLeast480DpPrimary() = runComposeUiTest {
+    fun shellWiredRouteKeepsFullWidthDividerAndInsetTabsAtBothWidths() = runComposeUiTest {
         val environment = DetailsRouteEnvironment("org/layout-model")
         var windowWidth by mutableStateOf(840.dp)
         try {
@@ -154,40 +361,21 @@ class ModelDetailsRouteUiTest {
                 environment.viewModel.modelDetail.value != null &&
                     !environment.viewModel.isDetailLoading.value
             }
-            val compactOverview = onNodeWithTag("detail-overview", useUnmergedTree = true)
-                .fetchSemanticsNode().boundsInRoot
-            val compactSupport = onNodeWithTag("detail-support", useUnmergedTree = true)
-                .fetchSemanticsNode().boundsInRoot
-            val compactBack = onNodeWithContentDescription("Navigate back", useUnmergedTree = true)
-                .fetchSemanticsNode().boundsInRoot
-            assertTrue(
-                abs(compactBack.left - compactOverview.left) < 1f,
-                "Back target started at ${compactBack.left}px while workspace started at ${compactOverview.left}px",
-            )
-            assertTrue(
-                abs(compactSupport.left - compactOverview.left) < 1f,
-                "Outer 840dp leaves only 536dp after sidebar and margins, so Details must stay compact",
-            )
+            for (width in listOf(840.dp, 1_144.dp)) {
+                runOnIdle { windowWidth = width }
+                waitForIdle()
+                val overview = onNodeWithTag("detail-overview", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+                val back = onNodeWithContentDescription("Navigate back", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+                assertTrue(abs(back.left - overview.left) < 1f, "Title and header retain the same gutter")
+                val divider = onNodeWithTag("detail-section-divider").fetchSemanticsNode().boundsInRoot
+                val tabs = onNodeWithTag("detail-tabs").fetchSemanticsNode().boundsInRoot
+                assertTrue(divider.left < overview.left && divider.right > overview.right)
+                assertTrue(abs(overview.left - tabs.left) < 1f && abs(overview.right - tabs.right) < 1f, "Rounded tabs align with the content gutters")
+                onNodeWithText("Technical details").scrollDetailsIntoView().performClick()
+                onNodeWithTag("detail-support").assertExists()
+                // The tab selection survives responsive resizing.
+            }
 
-            runOnIdle { windowWidth = 1_144.dp }
-            waitForIdle()
-
-            val expandedOverview = onNodeWithTag("detail-overview", useUnmergedTree = true)
-                .fetchSemanticsNode().boundsInRoot
-            val expandedSupport = onNodeWithTag("detail-support", useUnmergedTree = true)
-                .fetchSemanticsNode().boundsInRoot
-            assertTrue(
-                expandedSupport.left >= expandedOverview.right,
-                "Supporting pane started at ${expandedSupport.left}px while the primary pane ended at ${expandedOverview.right}px",
-            )
-            assertTrue(
-                expandedOverview.width >= 480f,
-                "Expanded primary pane must retain at least 480dp; it was ${expandedOverview.width}",
-            )
-            assertTrue(
-                expandedSupport.width in 320f..360f,
-                "Support pane must remain 320–360dp; it was ${expandedSupport.width}",
-            )
         } finally {
             environment.close()
         }
@@ -198,9 +386,14 @@ private class DetailsRouteEnvironment(
     val repositoryId: String,
 ) : AutoCloseable {
     private val revision = "a".repeat(40)
+    val requests = AtomicInteger()
     private val client = HttpClient(
         MockEngine { request ->
-            val body = if (request.url.encodedPath.contains("/tree/")) {
+            requests.incrementAndGet()
+            val body = if (request.url.encodedPath.endsWith("README.md")) {
+                "# Model card\n\nA publisher description retained on every tab, explaining the intended model uses and evaluation limits.\n\n" +
+                    (1..25).joinToString("\n\n") { "## Section $it\n\nModel usage and evaluation details for section $it." }
+            } else if (request.url.encodedPath.contains("/tree/")) {
                 "[]"
             } else {
                 """{"id":"$repositoryId","modelId":"$repositoryId","sha":"$revision","private":false,"author":"${repositoryId.substringBefore('/')}","pipeline_tag":"text-generation","library_name":"gguf"}"""
@@ -241,6 +434,7 @@ private fun detailsHuggingFaceApi(client: HttpClient): HuggingFaceApi {
         override val listRecommendationModels = ListRecommendationModelsUseCase(repository)
         override val searchModels = SearchModelsUseCase(repository)
         override val getModelDetail = GetModelDetailUseCase(repository)
+        override val getModelCard = com.debanshu777.caraml.sdk.discovery.huggingface.usecase.GetModelCardUseCase(repository)
         override val getRecommendationModelDetail = GetRecommendationModelDetailUseCase(repository)
         override val getModelFileTree = GetModelFileTreeUseCase(repository)
         override val getModelConfig = GetModelConfigUseCase(repository)
@@ -338,9 +532,6 @@ private class DetailsSettingsRepository : SettingsRepository {
 }
 
 private class DetailsLocalModelDao : LocalModelDao {
-    override suspend fun getFilenamesByModelId(modelId: String): List<String> = emptyList()
-    override suspend fun deleteByModelIdAndFilename(modelId: String, filename: String) = Unit
-    override suspend fun deleteAllForModelId(modelId: String) = Unit
     override suspend fun insert(entity: LocalModelEntity) = Unit
     override fun getAllDownloadedFiles(): Flow<List<LocalModelEntity>> = flowOf(emptyList())
     override fun getDownloadedFilesByType(modelType: String): Flow<List<LocalModelEntity>> = flowOf(emptyList())
@@ -348,7 +539,6 @@ private class DetailsLocalModelDao : LocalModelDao {
     override fun getTotalDownloadedSizeBytes(): Flow<Long> = flowOf(0L)
     override suspend fun updateComponentStatus(modelId: String, status: String) = Unit
     override suspend fun getMainModels(): List<LocalModelEntity> = emptyList()
-    override suspend fun updateArch(modelId: String, arch: String) = Unit
     override suspend fun demoteMmprojFilesFromMain() = Unit
 }
 
@@ -366,6 +556,5 @@ private class DetailsStoragePathProvider : StoragePathProvider {
     override fun isModelFileReadable(path: String): Boolean = false
     override fun isDirectoryReadable(path: String): Boolean = false
     override fun getFileSize(path: String): Long = 0L
-    override fun renameFile(from: String, to: String): Boolean = false
     override fun deleteDownloadedModelContent(modelId: String, localPath: String): Boolean = true
 }

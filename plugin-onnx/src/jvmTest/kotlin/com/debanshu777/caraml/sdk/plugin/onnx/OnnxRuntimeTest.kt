@@ -10,6 +10,19 @@ class OnnxRuntimeTest {
     private fun fixture() = File(checkNotNull(javaClass.getResource("/tiny-onnx/model.onnx")).toURI())
     private fun prompt(text: String) = listOf(OnnxChatMessage("user", text))
 
+    @Test fun emptyLogitsAreRejectedAndTheRuntimeCanReload() = runBlocking {
+        val engine = createOnnxTextRuntime()
+        try {
+            engine.load(File(fixture().parentFile, "empty-logits.onnx").path, OnnxRuntimeConfig(threads = 1))
+            val failure = assertFailsWith<IllegalArgumentException> { engine.generate(prompt("`"), 1).toList() }
+            assertTrue(failure.message.orEmpty().contains("logits"))
+            assertEquals(OnnxStopReason.ERROR, engine.stopReason)
+            engine.unload()
+            engine.load(fixture().path, OnnxRuntimeConfig(threads = 1))
+            assertEquals("a", engine.generate(prompt("`"), 1).toList().single().text)
+        } finally { engine.unload() }
+    }
+
     @Test fun prefillDecodeCancellationAndReloadReleaseNativeResources() = runBlocking {
         val engine = createOnnxTextRuntime()
         try {

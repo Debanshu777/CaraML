@@ -2,6 +2,9 @@
 
 package com.debanshu777.caraml.core.ui.components
 
+import com.debanshu777.caraml.features.modelhub.presentation.components.ModelRow
+import com.debanshu777.caraml.features.modelhub.presentation.components.downloadedModelRow
+
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.height
@@ -57,7 +60,6 @@ import com.debanshu777.caraml.features.chat.presentation.components.ModelErrorSc
 import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
 import com.debanshu777.caraml.features.modelhub.presentation.details.components.ModelDetailsDownloadableListItem
 import com.debanshu777.caraml.features.modelhub.presentation.details.components.InstallBundleCard
-import com.debanshu777.caraml.features.modelhub.presentation.downloaded.components.DownloadedListItem
 import com.debanshu777.caraml.features.modelhub.presentation.search.GgufFileUiState
 import com.debanshu777.caraml.features.modelhub.presentation.search.InstallBundleUiState
 import kotlin.test.Test
@@ -449,20 +451,22 @@ private fun LocalModelStatusFixture(
     filename: String,
     componentStatus: String?,
 ) {
-    DownloadedListItem(
-        model = LocalModelEntity(
-            modelId = id,
-            filename = filename,
-            localPath = "/models/$filename",
-            sizeBytes = 1_024L,
-            downloadedAt = 0L,
-            author = null,
-            libraryName = null,
-            pipelineTag = if (filename.endsWith(".bin")) "audio-classification" else null,
-            componentStatus = componentStatus,
+    ModelRow(
+        state = downloadedModelRow(
+            model = LocalModelEntity(
+                modelId = id,
+                filename = filename,
+                localPath = "/models/$filename",
+                sizeBytes = 1_024L,
+                downloadedAt = 0L,
+                author = null,
+                libraryName = null,
+                pipelineTag = if (filename.endsWith(".bin")) "audio-classification" else null,
+                componentStatus = componentStatus,
+            ),
+            selectionMode = false,
+            isSelected = false,
         ),
-        selectionMode = false,
-        isSelected = false,
         onOpenModel = {},
         onToggleSelect = {},
         onLongPress = {},

@@ -367,6 +367,14 @@ class ArtifactManifestStore(
      * but cannot invalidate entries that remain owned by another installed model.
      */
     internal fun pruneValidated(entries: Collection<ArtifactManifestEntry>): Boolean {
+        return pruneEntries(entries, allowDamagedRemovedFiles = false)
+    }
+
+    /** Removal may prune missing/corrupt selected payloads; every retained entry stays verified. */
+    internal fun pruneForRemoval(entries: Collection<ArtifactManifestEntry>): Boolean =
+        pruneEntries(entries, allowDamagedRemovedFiles = true)
+
+    private fun pruneEntries(entries: Collection<ArtifactManifestEntry>, allowDamagedRemovedFiles: Boolean): Boolean {
         val requested = entries.asSequence().take(MAX_MANIFEST_ENTRIES + 1).toList()
         if (requested.isEmpty() || requested.size != entries.size || requested.distinct().size != requested.size) {
             return false
@@ -375,9 +383,13 @@ class ArtifactManifestStore(
         if (exists(journalPath) || exists(pruneJournalPath) || exists(manifestPreviousPath) || exists(manifestPartPath)) {
             return false
         }
-        val current = readValidated() ?: return false
+        val current = (if (allowDamagedRemovedFiles) read() else readValidated()) ?: return false
         if (!requested.all(current.entries::contains)) return false
         val retained = current.entries.filterNot(requested.toSet()::contains)
+        if (allowDamagedRemovedFiles && retained.any { entry ->
+                val target = validatedTarget(entry.localRelativePath)
+                target == null || !validateFile(target, entry)
+            }) return false
         if (retained.isEmpty()) {
             durableDelete(manifestPath)
             return !exists(manifestPath)

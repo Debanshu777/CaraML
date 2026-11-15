@@ -60,9 +60,10 @@ class ModelHubStickyChromeTest {
                         sharedContext = {
                             Box(Modifier.fillMaxWidth().height(60.dp).testTag("model-device-card"))
                         },
-                        discoverContent = {
+                        discoverContent = { chrome ->
                             ModelHubTabLayout(
-                                context = {}, toolbar = {}, summary = {},
+                                header = chrome.header, context = chrome.context, snackbarHostState = chrome.snackbarHostState,
+                                toolbar = {}, summary = {},
                                 command = { SearchBar("", {}, {}) },
                                 results = {
                                     items(40) { Text("Model $it", Modifier.height(100.dp)) }
@@ -94,9 +95,10 @@ class ModelHubStickyChromeTest {
                     Box(Modifier.requiredSize(390.dp, 740.dp)) {
                         ModelHubScreenLayout(
                             selectedTabIndex = 0, onTabSelected = {},
-                            discoverContent = {
+                            discoverContent = { chrome ->
                                 ModelHubTabLayout(
-                                    context = {}, toolbar = {}, summary = {},
+                                    header = chrome.header, context = chrome.context, snackbarHostState = chrome.snackbarHostState,
+                                    toolbar = {}, summary = {},
                                     command = { SearchBar("", {}, {}) },
                                     results = {
                                         items(40) { Text("Model $it", Modifier.height(100.dp)) }

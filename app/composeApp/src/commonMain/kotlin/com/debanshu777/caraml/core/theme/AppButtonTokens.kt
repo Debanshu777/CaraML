@@ -12,6 +12,11 @@ object AppButtonTokens {
     val depth = 4.dp
     val horizontalPadding = 16.dp
     val verticalPadding = 10.dp
-    val iconPadding = 10.dp
+    val iconPadding = 8.dp
+    val iconDepth = 2.dp
+    val iconContourWidth = 1.dp
+    val iconFeedbackContourWidth = 1.5.dp
+    val iconVisualInset = 4.dp
+    val iconCornerRadius = 10.dp
     val labelWeight = FontWeight.Bold
 }

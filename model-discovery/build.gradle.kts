@@ -28,8 +28,6 @@ kotlin {
             api(project.dependencies.platform(libs.ktor))
             api(libs.ktor.client.core)
             // The compatibility Hub facade creates platform clients and decodes legacy DTOs.
-            implementation(libs.ktor.client.content.negotiation)
-            implementation(libs.ktor.serialization.kotlinx.json)
             implementation(libs.kotlinx.coroutinesCore)
             implementation(libs.kotlinx.serialization.json)
         }

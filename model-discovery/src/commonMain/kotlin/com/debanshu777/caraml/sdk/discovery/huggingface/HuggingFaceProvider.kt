@@ -82,6 +82,9 @@ class HuggingFaceProvider(
         val endpoint = URLBuilder(origin).apply {
             appendPathSegments("api", "models")
             parameters.append("limit", SEARCH_PAGE_SIZE.toString())
+            // Default Hub search rows omit the revision required by resolve(). Request only
+            // the metadata we consume, avoiding full responses with large sibling lists.
+            listOf("sha", "library_name", "pipeline_tag").forEach { parameters.append("expand", it) }
             if (query.isNotBlank()) parameters.append("search", query)
             pageToken?.let { token ->
                 require(token.length <= MAX_PAGE_TOKEN_LENGTH)

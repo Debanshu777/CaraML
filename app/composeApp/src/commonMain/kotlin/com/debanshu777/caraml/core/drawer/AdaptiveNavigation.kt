@@ -36,6 +36,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.movableContentOf
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -341,6 +344,15 @@ fun AdaptiveNavigation(
     content: @Composable () -> Unit,
 ) {
     val effectiveDrawerController = drawerController ?: remember { DrawerController() }
+    // Keep one saved-state identity for the route subtree across modal/rail/sidebar
+    // call sites, including recreation at a different window width after rotation.
+    val contentState = rememberSaveableStateHolder()
+    val currentContent by rememberUpdatedState(content)
+    val retainedContent = remember(contentState) {
+        movableContentOf {
+            contentState.SaveableStateProvider("navigation-content") { currentContent() }
+        }
+    }
     val density = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
     val leadingInsets = navigationInsets.only(WindowInsetsSides.Start)
@@ -368,7 +380,7 @@ fun AdaptiveNavigation(
             selectedContextualItemId = selectedContextualItemId,
             onContextualItemClick = onContextualItemClick,
             modifier = modifier,
-            content = content,
+            content = retainedContent,
         )
 
         AppNavigationLayout.Rail -> Row(
@@ -391,7 +403,7 @@ fun AdaptiveNavigation(
                     .weight(1f)
                     .consumeWindowInsets(leadingInsets),
             ) {
-                content()
+                retainedContent()
             }
         }
 
@@ -418,7 +430,7 @@ fun AdaptiveNavigation(
                     .weight(1f)
                     .consumeWindowInsets(leadingInsets),
             ) {
-                content()
+                retainedContent()
             }
         }
     }

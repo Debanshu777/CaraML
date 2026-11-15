@@ -25,7 +25,7 @@
 ## At a glance
 
 - **Chat locally.** Stream answers, render reasoning and markdown, and stop a response at any time.
-- **Find your model.** Explore Hugging Face, download supported models, and manage your library.
+- **Find your model.** Search Hugging Face with paged results, matching-model counts, and author avatars styled like model monograms; download supported models and manage your library.
 - **Create images.** Run supported diffusion models with model-specific settings on your device.
 - **Build with shared Kotlin.** Explore Compose Multiplatform UI and native inference across three platforms.
 
@@ -138,6 +138,36 @@ Dependencies and model weights keep their own licenses. See [third-party notices
 
 ## Recent Changes
 
+- Fixed download startup ordering on iOS, refreshed installation status when reopening retained details, and unified model-card front-matter parsing for article and excerpt. Removed obsolete DAO operations and test-only Model Hub layout plumbing; see [regression coverage](docs/development.md#review-fix-regressions).
+
+- Hardened ONNX output validation and tensor cleanup, made cancellation cleanup durable, restored broken-installation removal and active queue visibility, and fixed SDK revision discovery/client ownership. Recent history now stores compact display fields without blocking details. Removed obsolete Model Hub UI and consolidated duplicated Android/JVM bridge/download code. Desktop tests use the selected native profile; packaged runtime and durable download migrations retain their earlier fixes. See [verification and scope](docs/development.md#review-fix-regressions).
+
+- Model monograms and author avatars accept a caller-provided square size, defaulting to 36 dp. See the [component sizing guidance](docs/development.md#model-hub-migration-checks).
+
+- Model details adds a full Model card tab with images, wrapping tables, and revision-aware relative links. Three swipeable text tabs retain the complete overview and pin below the top bar while scrolling. Switching pinned tabs opens the selected section at its beginning. The header shares search’s frosting and reveals the model name when the expanded title scrolls out of view. Technical facts remain grouped. Screen recreation reuses active requests and loaded data, and tab/scroll state survives changes between compact, rail, and sidebar navigation; the ViewModel prepares Markdown once per fetched document for reuse across tab changes. README retry remains independent of downloads. See the [model details guide](docs/models.md#model-details).
+
+- Dark mode now uses progressively lighter raised surfaces, subtle shared borders, dark button shadows, and a quieter background wash across the app. Light-mode colours are unchanged.
+
+- Models now separates subdued Recently viewed cards from an explicit Explore models or Search results heading, with tighter search spacing and consistent, lightly raised icon buttons. Icon buttons retain a thin 1dp contour and 2dp depth while sharing text buttons’ ink shadow. Both sizes use the shared subtle rim in dark mode.
+
+- Redesigned Model Hub with full-width search, applied filter counts, a four-model recent grid, and verified local-variant counts. Downloads has its own page for transfers and installed models. See the [Model Hub guide](docs/models.md#find-and-manage-models).
+- Unified Model search and Downloads rendering in `ModelRow`, with pure presentation-state mappers and shared selection, repair, recommendation and avatar behavior.
+
+- Centered model-row avatars and selection icons vertically beside the row content.
+
+- Model row dividers start at the title column, after the avatar, and extend through the list’s trailing gutter to the content-pane edge.
+
+- Model rows show compatibility as a tinted icon-and-text tag alongside metrics, wrapping as needed. Details share the same green/amber/red/neutral verdict styling.
+
+- Model rows use accessible status icons and task tags; details retain matching icons with explanatory text.
+
+- Added offline `ModelHubCard` previews for light/dark themes and narrow screens at 200% text size, including metrics, repair and selection states.
+
+- Model search and Downloads share one compact row layout with icon metrics, secondary author/filename text and subtle dividers. Tap a supported row to open it; Downloads retains selection, readiness and “Finish setup” actions without a redundant “Use model” button.
+
+- Migrated language-model search and browse to Hugging Face `/models-json`, with page-based continuation, server match counts and monogram-styled author avatars; recommendations retain independent metadata acquisition.
+
+- Added Compose UI Tooling to `composeApp` `androidMain` dependencies to resolve Android Studio Compose Preview rendering issues (`ComposeViewAdapter` missing class exception).
 - Fixed chat model switching and cancelled media writes, stale Model Hub details and file-list retries, overlapping settings edits, interrupted download commands, and native teardown. See the [state and ownership map](docs/architecture.md#state-and-ownership).
 - Required docs, root README, and affected module README updates alongside every code change through the shared agent and contributor workflow.
 - Fixed the ONNX resident-session test storage layout on Linux CI and enabled complete JVM test failure diagnostics.

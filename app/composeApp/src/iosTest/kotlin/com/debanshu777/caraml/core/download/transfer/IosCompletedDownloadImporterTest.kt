@@ -103,7 +103,6 @@ private class ImportTestStoragePathProvider(
 
     override fun getFileSize(path: String): Long = 0L
 
-    override fun renameFile(from: String, to: String): Boolean = false
 
     override fun deleteDownloadedModelContent(modelId: String, localPath: String): Boolean = false
 }

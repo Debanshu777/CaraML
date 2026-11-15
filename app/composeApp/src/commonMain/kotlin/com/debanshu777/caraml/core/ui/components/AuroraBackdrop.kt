@@ -22,6 +22,7 @@ import com.debanshu777.caraml.core.theme.AppTheme
 @Composable
 fun AuroraBackdrop(
     modifier: Modifier = Modifier,
+    washStrength: Float = 1f,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val colors = AppTheme.auroraColors
@@ -33,7 +34,7 @@ fun AuroraBackdrop(
                 val primaryWash = Brush.radialGradient(
                     colors = listOf(
                         colors.primaryGlow.copy(
-                            alpha = colors.primaryGlow.alpha * AmbientWashAlphaScale,
+                            alpha = colors.primaryGlow.alpha * washStrength.coerceIn(0f, 1f),
                         ),
                         Color.Transparent,
                     ),
@@ -43,7 +44,7 @@ fun AuroraBackdrop(
                 val secondaryWash = Brush.radialGradient(
                     colors = listOf(
                         colors.secondaryGlow.copy(
-                            alpha = colors.secondaryGlow.alpha * AmbientWashAlphaScale,
+                            alpha = colors.secondaryGlow.alpha * washStrength.coerceIn(0f, 1f),
                         ),
                         Color.Transparent,
                     ),
@@ -53,7 +54,7 @@ fun AuroraBackdrop(
                 val tertiaryWash = Brush.radialGradient(
                     colors = listOf(
                         colors.tertiaryGlow.copy(
-                            alpha = colors.tertiaryGlow.alpha * AmbientWashAlphaScale,
+                            alpha = colors.tertiaryGlow.alpha * washStrength.coerceIn(0f, 1f),
                         ),
                         Color.Transparent,
                     ),
@@ -64,12 +65,12 @@ fun AuroraBackdrop(
                     0f to Color.Transparent,
                     0.55f to Color.Transparent,
                     1f to colors.edgeVignette.copy(
-                        alpha = colors.edgeVignette.alpha * AmbientVignetteAlphaScale,
+                        alpha = colors.edgeVignette.alpha * washStrength.coerceIn(0f, 1f),
                     ),
                     center = Offset(size.width * 0.5f, size.height * 0.5f),
                     radius = size.maxDimension * 0.62f,
                 )
-                val grainAlpha = colors.grainTint.alpha * AmbientGrainAlphaScale
+                val grainAlpha = colors.grainTint.alpha * washStrength.coerceIn(0f, 1f)
                 val grainFilter = ColorFilter.tint(colors.grainTint.copy(alpha = AppTheme.effects.opaque))
                 onDrawBehind {
                     drawRect(color = colors.canvas)
@@ -89,9 +90,6 @@ fun AuroraBackdrop(
 }
 
 private const val GrainTileSize = 64
-private const val AmbientWashAlphaScale = 1f
-private const val AmbientGrainAlphaScale = 1f
-private const val AmbientVignetteAlphaScale = 1f
 
 @Composable
 internal fun rememberAuroraGrainBrush(tint: Color): Brush =

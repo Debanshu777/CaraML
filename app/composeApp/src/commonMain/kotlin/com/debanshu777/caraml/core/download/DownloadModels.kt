@@ -117,10 +117,14 @@ data class DownloadBatchSnapshot(
     val artifacts: List<DownloadArtifactSnapshot>,
     val evidence: EncodedModelEvidence,
     val failureCode: DownloadFailureCode? = null,
+    /** Cancellation stays actionable until every uncommitted checkpoint has been removed. */
+    val cancellationCleanupPending: Boolean = false,
 ) {
     val bytesReceived: Long get() = artifacts.sumOf(DownloadArtifactSnapshot::bytesReceived)
     val expectedBytes: Long get() = artifacts.sumOf(DownloadArtifactSnapshot::expectedBytes)
 }
+
+data class DownloadCancellationSnapshot(val batch: DownloadBatchSnapshot, val version: Long)
 
 fun downloadArtifactTaskId(request: DownloadArtifactRequest): String {
     val identity = request.metadata.artifact

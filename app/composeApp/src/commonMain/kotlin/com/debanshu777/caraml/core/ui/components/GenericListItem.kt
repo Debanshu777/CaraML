@@ -20,6 +20,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
@@ -45,6 +47,7 @@ fun GenericListItem(
     trailing: (@Composable () -> Unit)? = null,
     titleStatus: (@Composable () -> Unit)? = null,
     eyebrowTrailing: (@Composable () -> Unit)? = null,
+    contentEndPadding: Dp = 0.dp,
 ) {
     val colors = AppTheme.auroraColors
     val spacing = AppTheme.spacing
@@ -79,7 +82,7 @@ fun GenericListItem(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = spacing.spacing12),
+                        .padding(end = contentEndPadding).padding(vertical = spacing.spacing12),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     leading?.let {

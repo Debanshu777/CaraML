@@ -9,6 +9,21 @@ import kotlin.test.assertTrue
 
 class AppActionColorTest {
     @Test
+    fun darkElevationProgressivelyLightensSurfacesWithoutLosingTextContrast() {
+        val scheme = darkColorScheme().withBrandSurfaces(true)
+        val levels = listOf(scheme.background, scheme.surfaceContainerLowest,
+            scheme.surfaceContainerLow, scheme.surfaceContainer,
+            scheme.surfaceContainerHigh, scheme.surfaceContainerHighest)
+        levels.zipWithNext().forEach { (lower, raised) ->
+            assertTrue(raised.luminance() > lower.luminance(), "Raised surfaces must be lighter")
+        }
+        levels.forEach { surface ->
+            assertTrue(contrast(scheme.onSurface, surface) >= 4.5f)
+            assertTrue(contrast(scheme.onSurfaceVariant, surface) >= 4.5f)
+        }
+    }
+
+    @Test
     fun characterAndStatusTextRemainReadableOnTheirRealSurfaces() {
         val brand = AppBrandColors()
         listOf(brand.yellow, brand.lilac, brand.mint, brand.accent).forEach { fill ->

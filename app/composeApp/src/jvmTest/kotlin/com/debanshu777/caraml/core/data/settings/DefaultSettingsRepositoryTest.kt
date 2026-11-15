@@ -14,6 +14,8 @@ import com.debanshu777.caraml.core.settings.KvQuantPreset
 import com.debanshu777.caraml.features.settings.presentation.SettingsViewModel
 import java.nio.file.Files
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -30,6 +32,75 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class DefaultSettingsRepositoryTest {
+    @Test
+    fun legacyHistoryMigratesDisplayFieldsOffTheCallerThreadAndKeepsOtherPreferences() = runTest {
+        val fixture = fixture()
+        val key = stringPreferencesKey("modelhub_recently_viewed_models")
+        fixture.store.edit { prefs ->
+            prefs[stringPreferencesKey("system_prompt")] = "Keep me"
+            prefs[key] = """[{"mode":"LanguageModels","detail":{"modelId":"Org/Model","author":"Org","pipeline_tag":"text-generation","gguf":{"total":7000000000},"downloads":123,"likes":9,"siblings":[{"rfilename":"large-repository-file.gguf"}],"config":{"architectures":["Unused"]}}}]"""
+        }
+        fixture.store.transformThreads.clear()
+        val caller = Thread.currentThread().name
+
+        val history = fixture.repository.getRecentlyViewedModels().first()
+
+        assertEquals(listOf(RecentlyViewedModel(RecentModelKind.Text, "Org/Model", "Org", "text-generation", 7_000_000_000L, 123, 9)), history)
+        val compact = fixture.store.data.first()[key].orEmpty()
+        assertTrue(compact.contains("\"version\":1"))
+        assertTrue(compact.contains("\"mode\":\"LanguageModels\""))
+        assertFalse(compact.contains("siblings") || compact.contains("config") || compact.contains("\"detail\""))
+        assertTrue(fixture.store.transformThreads.isNotEmpty())
+        assertTrue(fixture.store.transformThreads.all { it != caller }, "Migration serialization must not use the collecting thread")
+        assertEquals("Keep me", fixture.repository.getSettings().first().systemPrompt)
+
+        fixture.store.transformThreads.clear()
+        fixture.repository.recordRecentlyViewedModel(history.single().copy(likes = 10))
+        assertTrue(fixture.store.transformThreads.all { it != caller }, "Visit serialization must not use the calling thread")
+        assertEquals(10, fixture.repository.getRecentlyViewedModels().first().single().likes)
+    }
+
+    @Test
+    fun aVisitCommittedDuringLegacyReadMigrationIsNotOverwritten() = runTest {
+        val fixture = fixture()
+        val key = stringPreferencesKey("modelhub_recently_viewed_models")
+        fixture.store.edit { it[key] = """[{"mode":"DiffusionImage","detail":{"id":"org/old"}}]""" }
+        val migrationStarted = CompletableDeferred<Unit>()
+        val releaseMigration = CompletableDeferred<Unit>()
+        val intercept = object : DataStore<Preferences> {
+            override val data = fixture.store.data
+            override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences {
+                migrationStarted.complete(Unit)
+                releaseMigration.await()
+                return fixture.store.updateData(transform)
+            }
+        }
+        val migration = async { DefaultSettingsRepository(intercept).getRecentlyViewedModels().first() }
+        try {
+            migrationStarted.await()
+            val newer = RecentlyViewedModel(RecentModelKind.Video, "org/new")
+            fixture.repository.recordRecentlyViewedModel(newer)
+            releaseMigration.complete(Unit)
+            migration.await()
+            assertEquals(listOf("org/new", "org/old"), fixture.repository.getRecentlyViewedModels().first().map { it.modelId })
+        } finally {
+            releaseMigration.complete(Unit)
+        }
+    }
+
+    @Test
+    fun explicitVisitRepairsUnreadableHistoryAndPreservesFirstOriginal() = runTest {
+        val fixture = fixture()
+        val key = stringPreferencesKey("modelhub_recently_viewed_models")
+        for (encoded in listOf("{broken", """{"version":99,"models":[]}""")) {
+            fixture.store.edit { it[key] = encoded }
+            assertTrue(fixture.repository.getRecentlyViewedModels().first().isEmpty())
+            assertEquals(encoded, fixture.store.data.first()[key], "Reading does not rewrite an unreadable value")
+            fixture.repository.recordRecentlyViewedModel(RecentlyViewedModel(RecentModelKind.Text, "org/new"))
+            assertEquals(listOf("org/new"), fixture.repository.getRecentlyViewedModels().first().map { it.modelId })
+            assertEquals("{broken", fixture.store.data.first()[stringPreferencesKey("modelhub_recently_viewed_models_recovery")])
+        }
+    }
 
     @Test
     fun unknownPreferenceNamesFallBackToBalanced() = runTest {
@@ -173,6 +244,7 @@ class DefaultSettingsRepositoryTest {
         private val delegate: DataStore<Preferences>,
     ) : DataStore<Preferences> {
         var updateCount: Int = 0
+        val transformThreads = mutableListOf<String>()
 
         override val data: Flow<Preferences> = delegate.data
 
@@ -180,7 +252,10 @@ class DefaultSettingsRepositoryTest {
             transform: suspend (Preferences) -> Preferences,
         ): Preferences {
             updateCount += 1
-            return delegate.updateData(transform)
+            return delegate.updateData { preferences ->
+                transformThreads += Thread.currentThread().name
+                transform(preferences)
+            }
         }
     }
 }

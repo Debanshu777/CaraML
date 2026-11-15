@@ -8,7 +8,7 @@ import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 
 @Database(
     entities = [DownloadBatchEntity::class, DownloadArtifactEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 @ConstructedBy(DownloadDatabaseConstructor::class)
@@ -25,5 +25,5 @@ fun getDownloadRoomDatabase(
     builder: RoomDatabase.Builder<DownloadDatabase>,
 ): DownloadDatabase = builder
     .setDriver(BundledSQLiteDriver())
-    .fallbackToDestructiveMigration(dropAllTables = true)
+    .addMigrations(DOWNLOAD_MIGRATION_1_2, DOWNLOAD_MIGRATION_2_3, DOWNLOAD_MIGRATION_3_4)
     .build()

@@ -170,6 +170,7 @@ class DownloadDatabaseTest {
             assertEquals(DownloadUserIntent.CANCEL, store.getBatch(id)!!.userIntent)
 
             assertTrue(store.transitionArtifact(artifact, DownloadArtifactState.CANCELLED, null, 9L))
+            assertTrue(store.completeCancellationCleanup(requireNotNull(store.pendingCancellation(id)), 10L))
             assertEquals(id, store.create(request(), 10L))
             assertTrue(store.claim(artifact, "worker", 11L, 30L))
             assertEquals(DownloadArtifactState.RUNNING, store.getBatch(id)!!.artifacts.single().state)
@@ -1069,6 +1070,6 @@ private class RoomRestartStoragePathProvider(private val root: File) : StoragePa
     override fun isModelFileReadable(path: String) = File(path).isFile
     override fun isDirectoryReadable(path: String) = File(path).isDirectory
     override fun getFileSize(path: String) = File(path).length()
-    override fun renameFile(from: String, to: String) = false
+
     override fun deleteDownloadedModelContent(modelId: String, localPath: String) = false
 }

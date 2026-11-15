@@ -6,6 +6,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -19,7 +20,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.RadioButton
@@ -43,7 +43,6 @@ import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.ui.components.BrandButton
 import com.debanshu777.caraml.core.ui.components.BrandButtonStyle
-import com.debanshu777.caraml.core.ui.components.BrandIconButton
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelOrdering
 import com.debanshu777.caraml.sdk.discovery.huggingface.model.ModelSort
@@ -59,33 +58,34 @@ fun ModelHubFilterButton(
     minParams: ParameterRange,
     maxParams: ParameterRange,
     onApply: (ModelHubBrowseMode, ModelOrdering, ParameterRange, ParameterRange) -> Unit,
+    languageModelFormat: String = "gguf",
+    onOpen: () -> Unit = {},
+    onApplyWithFormat: ((ModelHubBrowseMode, ModelOrdering, ParameterRange, ParameterRange, String) -> Unit)? = null,
 ) {
     var visible by remember { mutableStateOf(false) }
-    val active = mode != ModelHubBrowseMode.LanguageModels ||
-        minParams != ParameterRange.ZERO || maxParams != ParameterRange.SIX_B ||
-        ordering != ModelOrdering.Server(ModelSort.TRENDING)
-    BrandIconButton(
-        onClick = { visible = true },
-        style = if (active) BrandButtonStyle.Primary else BrandButtonStyle.Secondary,
-        modifier = Modifier
-            .heightIn(min = AppTheme.spacing.spacing48)
-            .testTag("model-sort-filter-button").semantics {
-            contentDescription = if (active) "Sort and filter models, active" else "Sort and filter models"
+    val count = effectiveModelFilterGroupCount(mode, languageModelFormat)
+    ModelSearchAction(
+        icon = AppIcons.Filters,
+        iconSize = 20.dp,
+        label = "Sort and filter models",
+        badge = count,
+        compactBadge = true,
+        badgeDescription = "$count ${if (count == 1) "filter group" else "filter groups"}",
+        modifier = Modifier.testTag("model-sort-filter-button"),
+        onClick = {
+            onOpen()
+            visible = true
         },
-    ) {
-        Icon(
-            AppIcons.Filters,
-            contentDescription = null,
-        )
-    }
+    )
     if (!visible) return
 
     ModalBottomSheet(
         onDismissRequest = { visible = false },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     ) {
-        ModelHubFilterPanel(mode, ordering, minParams, maxParams) { selectedMode, selectedOrdering, selectedMin, selectedMax ->
-            onApply(selectedMode, selectedOrdering, selectedMin, selectedMax)
+        ModelHubFilterPanel(mode, ordering, minParams, maxParams, languageModelFormat) { selectedMode, selectedOrdering, selectedMin, selectedMax, format ->
+            onApplyWithFormat?.invoke(selectedMode, selectedOrdering, selectedMin, selectedMax, format)
+                ?: onApply(selectedMode, selectedOrdering, selectedMin, selectedMax)
             visible = false
         }
     }
@@ -98,12 +98,14 @@ internal fun ModelHubFilterPanel(
     ordering: ModelOrdering,
     minParams: ParameterRange,
     maxParams: ParameterRange,
-    onApply: (ModelHubBrowseMode, ModelOrdering, ParameterRange, ParameterRange) -> Unit,
+    languageModelFormat: String = "gguf",
+    onApply: (ModelHubBrowseMode, ModelOrdering, ParameterRange, ParameterRange, String) -> Unit,
 ) {
     var draftMode by remember { mutableStateOf(mode) }
     var draftOrdering by remember { mutableStateOf(ordering) }
     var draftMin by remember { mutableStateOf(minParams) }
     var draftMax by remember { mutableStateOf(maxParams) }
+    var draftFormat by remember { mutableStateOf(languageModelFormat) }
     var section by remember { mutableStateOf("Type") }
     val sections = listOf("Type", "Sort", "Size")
     Column(Modifier.fillMaxWidth()) {
@@ -118,7 +120,8 @@ internal fun ModelHubFilterPanel(
                 draftOrdering = ModelOrdering.Server(ModelSort.TRENDING)
                 draftMin = ParameterRange.ZERO
                 draftMax = ParameterRange.SIX_B
-            }) { Text("Clear all") }
+                draftFormat = "gguf"
+            }) { Text("Reset") }
         }
         HorizontalDivider()
         BoxWithConstraints(Modifier.fillMaxWidth().heightIn(min = AppTheme.dimensions.size240, max = AppTheme.dimensions.size440)) {
@@ -131,16 +134,17 @@ internal fun ModelHubFilterPanel(
                 }
                 Box(Modifier.fillMaxHeight().width(AppTheme.dimensions.size1).background(AppTheme.colors.outlineVariant))
                 Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())) {
-                    FilterChoices(section, draftMode, draftOrdering, draftMin, draftMax,
+                    FilterChoices(section, draftMode, draftOrdering, draftMin, draftMax, draftFormat,
                         { draftMode = it }, { draftOrdering = it },
                         { draftMin = it; if (draftMax.ordinal < it.ordinal) draftMax = it },
-                        { draftMax = it; if (draftMin.ordinal > it.ordinal) draftMin = it })
+                        { draftMax = it; if (draftMin.ordinal > it.ordinal) draftMin = it },
+                        { draftFormat = it })
                 }
             }
         }
         HorizontalDivider()
         BrandButton(
-            onClick = { onApply(draftMode, draftOrdering, draftMin, draftMax) },
+            onClick = { onApply(draftMode, draftOrdering, draftMin, draftMax, draftFormat) },
             modifier = Modifier.fillMaxWidth().padding(spacing.spacing12).heightIn(min = AppTheme.spacing.spacing48),
         ) { Text("View models") }
     }
@@ -173,17 +177,32 @@ private fun FilterChoices(
     ordering: ModelOrdering,
     min: ParameterRange,
     max: ParameterRange,
+    format: String,
     onMode: (ModelHubBrowseMode) -> Unit,
     onOrdering: (ModelOrdering) -> Unit,
     onMin: (ParameterRange) -> Unit,
     onMax: (ParameterRange) -> Unit,
+    onFormat: (String) -> Unit,
 ) {
     when (section) {
-        "Type" -> listOf(
-            ModelHubBrowseMode.LanguageModels to "Text",
-            ModelHubBrowseMode.DiffusionImage to "Image",
-            ModelHubBrowseMode.DiffusionVideo to "Video",
-        ).forEach { (value, label) -> FilterOption(label, value == mode) { onMode(value) } }
+        "Type" -> {
+            listOf(
+                ModelHubBrowseMode.LanguageModels to "Text",
+                ModelHubBrowseMode.DiffusionImage to "Image",
+                ModelHubBrowseMode.DiffusionVideo to "Video",
+            ).forEach { (value, label) -> FilterOption(label, value == mode) { onMode(value) } }
+            if (mode == ModelHubBrowseMode.LanguageModels) {
+                HorizontalDivider()
+                Text(
+                    "Format",
+                    style = AppTheme.typography.headingXSmall,
+                    modifier = Modifier.padding(horizontal = AppTheme.spacing.spacing16, vertical = AppTheme.spacing.spacing8),
+                )
+                listOf("gguf" to "GGUF", "onnx" to "ONNX").forEach { (value, label) ->
+                    FilterOption(label, value == format) { onFormat(value) }
+                }
+            }
+        }
         "Sort" -> {
             if (mode != ModelHubBrowseMode.LanguageModels) {
                 Text("Sorting applies to the online text catalog.",
@@ -202,8 +221,8 @@ private fun FilterChoices(
             }
         }
         "Size" -> {
-            if (mode != ModelHubBrowseMode.LanguageModels) {
-                Text("Size filtering applies to the online text catalog.",
+            if (mode != ModelHubBrowseMode.LanguageModels || format != "gguf") {
+                Text("Parameter size filtering applies to GGUF models.",
                     style = AppTheme.typography.bodySmall,
                     color = AppTheme.colors.onSurfaceVariant,
                     modifier = Modifier.padding(AppTheme.spacing.spacing16))
@@ -234,6 +253,12 @@ private fun FilterChoices(
             }
         }
     }
+}
+
+/** Counts the effective filter groups. Sort is intentionally excluded. */
+internal fun effectiveModelFilterGroupCount(mode: ModelHubBrowseMode, format: String): Int = when (mode) {
+    ModelHubBrowseMode.LanguageModels -> 2 + if (format == "gguf") 1 else 0
+    ModelHubBrowseMode.DiffusionImage, ModelHubBrowseMode.DiffusionVideo -> 1
 }
 
 @Composable

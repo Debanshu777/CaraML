@@ -11,11 +11,18 @@ import com.debanshu777.caraml.core.recommendation.RecommendationProfile
 import com.debanshu777.caraml.core.recommendation.RiskTolerance
 import com.debanshu777.caraml.core.settings.AppSettings
 import com.debanshu777.caraml.core.settings.KvQuantPreset
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 
 class DefaultSettingsRepository(
     private val dataStore: DataStore<Preferences>,
+    private val historyDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : SettingsRepository {
 
     private val systemPromptKey = stringPreferencesKey("system_prompt")
@@ -28,8 +35,51 @@ class DefaultSettingsRepository(
         booleanPreferencesKey("model_profile_onboarding_complete")
     private val recommendationCalibrationOfferCompleteKey =
         booleanPreferencesKey("recommendation_calibration_offer_complete")
+    private val recentlyViewedModelsKey = stringPreferencesKey("modelhub_recently_viewed_models")
+    private val recoveredHistoryKey = stringPreferencesKey("modelhub_recently_viewed_models_recovery")
+    private val historyCodec = RecentModelHistoryCodec()
 
     override fun getSettings(): Flow<AppSettings> = dataStore.data.map(::readSettings)
+
+    override fun getRecentlyViewedModels(): Flow<List<RecentlyViewedModel>> = dataStore.data
+        .map { it[recentlyViewedModelsKey] }
+        .distinctUntilChanged()
+        .map { encoded ->
+            val decoded = encoded?.let(historyCodec::decode)
+            if (decoded?.legacy == true) {
+                val compact = historyCodec.encode(decoded.models)
+                try {
+                    dataStore.edit { prefs ->
+                        // A newer visit may have committed while this snapshot was decoded.
+                        if (prefs[recentlyViewedModelsKey] == encoded) prefs[recentlyViewedModelsKey] = compact
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    // A failed optional migration must not hide readable history.
+                }
+            }
+            decoded?.models.orEmpty()
+        }
+        .flowOn(historyDispatcher)
+        .distinctUntilChanged()
+
+    override suspend fun recordRecentlyViewedModel(model: RecentlyViewedModel) {
+        if (model.modelId.isBlank()) return
+        withContext(historyDispatcher) {
+            dataStore.edit { prefs ->
+                val encoded = prefs[recentlyViewedModelsKey]
+                val existing = encoded?.let(historyCodec::decode)
+                // A new visit repairs history while preserving the first unreadable value for recovery.
+                if (encoded != null && existing == null && prefs[recoveredHistoryKey] == null) {
+                    prefs[recoveredHistoryKey] = encoded
+                }
+                prefs[recentlyViewedModelsKey] = historyCodec.encode(
+                    prependRecentlyViewed(existing?.models.orEmpty(), model),
+                )
+            }
+        }
+    }
 
     private fun readSettings(prefs: Preferences): AppSettings =
         AppSettings(

@@ -11,17 +11,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.Surface
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,6 +31,35 @@ import com.debanshu777.caraml.core.download.DownloadBatchSnapshot
 import com.debanshu777.caraml.core.download.DownloadBatchState
 import com.debanshu777.caraml.core.download.DownloadUserIntent
 
+internal val DownloadBatchSnapshot.pendingArtifacts: List<DownloadArtifactSnapshot>
+    get() = artifacts.filter {
+        cancellationCleanupPending || (it.state != DownloadArtifactState.COMPLETED && it.state != DownloadArtifactState.CANCELLED)
+    }
+
+@Composable
+internal fun ModelDownloadBatch(
+    batch: DownloadBatchSnapshot,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
+    onRetry: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = AppTheme.shapes.medium,
+        border = BorderStroke(1.dp, AppTheme.colors.outlineVariant),
+        color = AppTheme.colors.surfaceContainerLowest,
+    ) {
+        Column(
+            modifier = Modifier.padding(AppTheme.spacing.spacing12),
+            verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8),
+        ) {
+            batch.pendingArtifacts.forEach { ModelDownloadQueueRow(batch, it) }
+            ModelDownloadBatchControls(batch, onPause, onResume, onRetry, onCancel)
+        }
+    }
+}
+
 @Composable
 fun ModelDownloadQueueEntry(
     batches: List<DownloadBatchSnapshot>,
@@ -47,9 +70,7 @@ fun ModelDownloadQueueEntry(
     onCancel: ((String, String) -> Unit)? = null,
 ) {
     val pending = batches.flatMap { batch ->
-        batch.artifacts.filter {
-            it.state != DownloadArtifactState.COMPLETED && it.state != DownloadArtifactState.CANCELLED
-        }.map { batch to it }
+        batch.pendingArtifacts.map { batch to it }
     }
     val (batch, artifact) = pending.firstOrNull() ?: return
     Surface(
@@ -81,62 +102,13 @@ fun ModelDownloadQueueEntry(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ModelDownloadQueueSheet(
-    batches: List<DownloadBatchSnapshot>,
-    onDismiss: () -> Unit,
-    onPause: (String, String) -> Unit,
-    onResume: (String, String) -> Unit,
-    onRetry: (String, String) -> Unit,
-    onCancel: (String, String) -> Unit,
-) {
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        shape = AppTheme.shapes.extraLarge,
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
-                .padding(horizontal = AppTheme.spacing.spacing16, vertical = AppTheme.spacing.spacing12),
-            verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing12),
-        ) {
-            Text("Downloads", style = AppTheme.typography.headingBase)
-            if (batches.isEmpty()) {
-                Text("No active downloads", style = AppTheme.typography.bodyBase)
-            }
-            batches.forEach { batch ->
-                batch.artifacts.filter {
-                    it.state != DownloadArtifactState.COMPLETED && it.state != DownloadArtifactState.CANCELLED
-                }.forEach { artifact ->
-                    ModelDownloadQueueRow(
-                        batch = batch,
-                        artifact = artifact,
-                    )
-                }
-                val controlArtifact = batch.artifacts.firstOrNull {
-                    it.state != DownloadArtifactState.COMPLETED && it.state != DownloadArtifactState.CANCELLED
-                }
-                if (controlArtifact != null) {
-                    ModelDownloadBatchControls(
-                        batch = batch,
-                        onPause = { onPause(batch.batchId, controlArtifact.artifactId) },
-                        onResume = { onResume(batch.batchId, controlArtifact.artifactId) },
-                        onRetry = { onRetry(batch.batchId, controlArtifact.artifactId) },
-                        onCancel = { onCancel(batch.batchId, controlArtifact.artifactId) },
-                    )
-                }
-            }
-        }
-    }
-}
-
 @Composable
 internal fun ModelDownloadQueueRow(
     batch: DownloadBatchSnapshot,
     artifact: DownloadArtifactSnapshot,
 ) {
     val status = when {
+        batch.cancellationCleanupPending -> "Cancellation cleanup pending"
         batch.userIntent == DownloadUserIntent.CANCEL && artifact.state in setOf(
             DownloadArtifactState.QUEUED, DownloadArtifactState.RUNNING, DownloadArtifactState.PAUSED,
             DownloadArtifactState.WAITING_FOR_NETWORK, DownloadArtifactState.VERIFYING,
@@ -194,6 +166,10 @@ internal fun ModelDownloadBatchControls(
     onCancel: () -> Unit,
 ) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8)) {
+            if (batch.cancellationCleanupPending) {
+                ModelHubAction(label = "Retry cancellation", onClick = onCancel)
+                return@FlowRow
+            }
             if (batch.userIntent == DownloadUserIntent.CANCEL) {
                 if (batch.state != DownloadBatchState.COMPLETED &&
                     batch.state != DownloadBatchState.CANCELLED &&

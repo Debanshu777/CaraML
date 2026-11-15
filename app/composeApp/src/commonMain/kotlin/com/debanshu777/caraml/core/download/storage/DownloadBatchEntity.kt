@@ -24,4 +24,6 @@ data class DownloadBatchEntity(
     @ColumnInfo(name = "download_for_later_confirmed") val downloadForLaterConfirmed: Boolean,
     @ColumnInfo(name = "created_at_epoch_ms") val createdAtEpochMs: Long,
     @ColumnInfo(name = "updated_at_epoch_ms") val updatedAtEpochMs: Long,
+    @ColumnInfo(name = "cancellation_cleanup_pending", defaultValue = "0")
+    val cancellationCleanupPending: Boolean = false,
 )

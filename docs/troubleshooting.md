@@ -33,7 +33,7 @@ The optional ONNX WebGPU build has separate requirements; leave it disabled for 
 
 ## Desktop reports an unsatisfied native link
 
-Launch with `./gradlew :app:desktopApp:run` so native compilation and library paths are configured. If you changed JNI packages, rebuild the Kotlin bridge and native code together. Report the exact missing library and platform rather than copying unrelated binaries into the app.
+Launch with `./gradlew :app:desktopApp:run` so native compilation and library paths are configured. If you changed JNI packages, rebuild the Kotlin bridge and native code together. For a packaged desktop app, run `./gradlew :app:desktopApp:nativeRuntimeInstalledImageSmoke` and check that its resources contain the selected runtime libraries. The optional `caraml.native.lib.dir` SDK override is authoritative; an invalid override fails instead of loading a different installed library. Report the exact missing library and platform rather than copying unrelated binaries into the app.
 
 ## A downloaded model will not load
 
@@ -48,3 +48,35 @@ Local inference and Hub access are separate. Check connectivity, gated-model acc
 ## Report a reproducible issue
 
 Use the [bug report form](https://github.com/Debanshu777/CaraML/issues/new?template=bug_report.yml). Include your commit, device/OS, build command, exact model/revision, expected behavior, actual behavior, and redacted logs. Never include access tokens or private prompts.
+
+## Model Hub avatars or catalog pages fail
+
+An author initial is the normal fallback when an avatar is missing, loading or cannot be fetched. Avatar hosts can differ from the Hugging Face API host, so successful model search does not guarantee image access. SVG support is supplied by the shared Coil dependency.
+
+If an appended catalog page fails, retry that page. Changing search or filters, or refreshing, starts at page zero. The client rejects inconsistent page metadata and page-size changes within a continuation; a fresh query can recover after the upstream catalog changes. Server match counts can exceed the 256 repositories loaded in one query and do not indicate how many models have been assessed for your device.
+
+## Native submodule HTTPS allowlist
+
+If `verifyProject` reports that a submodule origin is not the allowlisted public HTTPS remote, compare `git config --get remote.origin.url` with `git remote get-url origin` inside that submodule. A personal `url.*.insteadOf` rule can rewrite a correctly stored HTTPS URL to SSH. Inspect its source with `git config --show-origin --get-regexp 'url\..*\.insteadof'`.
+
+For this checkout, an exact repository-specific exception takes precedence over a broader GitHub rewrite without changing your global preferences:
+
+```bash
+git -C libraries/llama.cpp config --local url.https://github.com/ggerganov/llama.cpp.git.insteadOf https://github.com/ggerganov/llama.cpp.git
+git -C libraries/stable-diffusion.cpp config --local url.https://github.com/leejet/stable-diffusion.cpp.git.insteadOf https://github.com/leejet/stable-diffusion.cpp.git
+./gradlew verifyProject
+```
+
+These are local Git configuration changes, not tracked source changes. The pin checker still validates the original allowlisted HTTPS remotes, commits and clean submodule trees.
+
+## A model card is missing or an image does not load
+
+README loading is separate from model files. Open Model card and use Retry after a transient failure. Private/gated cards can require access on Hugging Face, and documents over 256 KiB are not rendered in the app. The linked model title still opens the publisher page. Images need network access and valid HTTP(S) sources; unsupported HTML widgets or embedded media may require the publisher page. Relative README links and images use the model’s pinned revision, which may differ from the repository’s current main branch.
+
+## Legacy download queue after an upgrade
+
+Download database versions 1 and 2 migrate without deleting task records or byte checkpoints. Mutable older tasks with unscoped destinations or missing evidence become terminal secure-path failures; start a new download to obtain current immutable metadata. Records that fail current identity validation are retained but excluded from the active queue. Completed historical rows stay stored with their original status. An unsupported database version fails to open instead of resetting the queue. Preserve the database when reporting an upgrade failure.
+
+## JVM tests with a non-default native profile
+
+App JVM tests obtain their native library directory from `:nativeEngine`’s `desktopArtifactFs` output. Keep `caramlNativeEngines` and `caramlDesktopBackend` on the same Gradle invocation as the test task; do not copy a default-profile library into a profile directory. The producer verifies the resolved library before tests start.

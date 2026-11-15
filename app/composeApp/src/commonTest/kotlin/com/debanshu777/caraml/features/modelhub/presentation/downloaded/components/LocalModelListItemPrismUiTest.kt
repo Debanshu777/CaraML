@@ -2,6 +2,9 @@
 
 package com.debanshu777.caraml.features.modelhub.presentation.downloaded.components
 
+import com.debanshu777.caraml.features.modelhub.presentation.components.ModelRow
+import com.debanshu777.caraml.features.modelhub.presentation.components.downloadedModelRow
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -66,13 +69,15 @@ class LocalModelListItemPrismUiTest {
                             .background(canvas)
                             .testTag("local-row-host"),
                     ) {
-                        DownloadedListItem(
-                            model = localModel(
-                                modelId = "org/local-model",
-                                filename = "local-model.gguf",
+                        ModelRow(
+                            state = downloadedModelRow(
+                                model = localModel(
+                                    modelId = "org/local-model",
+                                    filename = "local-model.gguf",
+                                ),
+                                selectionMode = false,
+                                isSelected = false,
                             ),
-                            selectionMode = false,
-                            isSelected = false,
                             onOpenModel = {},
                             onToggleSelect = {},
                             onLongPress = {},
@@ -86,11 +91,11 @@ class LocalModelListItemPrismUiTest {
         val host = onNodeWithTag("local-row-host")
         val hostBounds = host.fetchSemanticsNode().boundsInRoot
         val rowBounds = onNodeWithTag("local-row").fetchSemanticsNode().boundsInRoot
-        val titleBounds = onNodeWithText("local-model", useUnmergedTree = true)
+        val titleBounds = onNodeWithText("org/local-model", useUnmergedTree = true)
             .fetchSemanticsNode().boundsInRoot
         assertTrue(
-            titleBounds.left - hostBounds.left in 52f..58f && titleBounds.right <= hostBounds.right,
-            "Library identity must remain inside the row beside its monogram; bounds=$titleBounds",
+            titleBounds.left - hostBounds.left in 48f..58f && titleBounds.right <= hostBounds.right,
+            "Downloads identity must remain inside the row beside its monogram; bounds=$titleBounds",
         )
 
         val pixels = host.captureToImage().toPixelMap()
@@ -113,10 +118,12 @@ class LocalModelListItemPrismUiTest {
         var longPresses = 0
         setContent {
             MaterialTheme {
-                DownloadedListItem(
-                    model = localModel("org/interactive", "interactive.gguf"),
-                    selectionMode = selectionMode,
-                    isSelected = selected,
+                ModelRow(
+                    state = downloadedModelRow(
+                        model = localModel("org/interactive", "interactive.gguf"),
+                        selectionMode = selectionMode,
+                        isSelected = selected,
+                    ),
                     onOpenModel = { opens += 1 },
                     onToggleSelect = {
                         toggles += 1
@@ -170,14 +177,16 @@ class LocalModelListItemPrismUiTest {
                             .requiredSize(width = 360.dp, height = 400.dp)
                             .testTag("partial-row-host"),
                     ) {
-                        DownloadedListItem(
-                            model = localModel(
-                                modelId = "org/partial",
-                                filename = "partial.safetensors",
-                                componentStatus = LocalModelEntity.STATUS_PARTIAL,
+                        ModelRow(
+                            state = downloadedModelRow(
+                                model = localModel(
+                                    modelId = "org/partial",
+                                    filename = "partial.safetensors",
+                                    componentStatus = LocalModelEntity.STATUS_PARTIAL,
+                                ),
+                                selectionMode = false,
+                                isSelected = false,
                             ),
-                            selectionMode = false,
-                            isSelected = false,
                             onOpenModel = { opens += 1 },
                             onToggleSelect = {},
                             onLongPress = {},
@@ -289,14 +298,16 @@ private fun UnsupportedRowFixture(
             .background(canvas)
             .testTag(hostTag),
     ) {
-        DownloadedListItem(
-            model = localModel(
-                modelId = modelId,
-                filename = "$modelId.bin",
-                pipelineTag = "audio-classification",
+        ModelRow(
+            state = downloadedModelRow(
+                model = localModel(
+                    modelId = modelId,
+                    filename = "$modelId.bin",
+                    pipelineTag = "audio-classification",
+                ),
+                selectionMode = false,
+                isSelected = false,
             ),
-            selectionMode = false,
-            isSelected = false,
             onOpenModel = {},
             onToggleSelect = {},
             onLongPress = {},

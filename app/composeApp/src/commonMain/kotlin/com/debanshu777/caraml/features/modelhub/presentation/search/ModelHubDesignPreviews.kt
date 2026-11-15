@@ -1,12 +1,18 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search
 
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.remember
+import androidx.compose.ui.focus.FocusRequester
+import com.debanshu777.caraml.core.theme.AppTheme
+import com.debanshu777.caraml.core.ui.components.BrandPageHeader
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubFilterButton
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelSearchAction
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchBar
+import com.debanshu777.caraml.core.ui.icons.AppIcons
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.debanshu777.caraml.core.drawer.LocalNavigationMenuAction
 import com.debanshu777.caraml.core.platform.DeviceHints
@@ -14,12 +20,10 @@ import com.debanshu777.caraml.core.recommendation.RecommendationProfile
 import com.debanshu777.caraml.core.theme.CaraMLTheme
 import com.debanshu777.caraml.core.theme.ThemePreferences
 import com.debanshu777.caraml.core.ui.components.AuroraBackdrop
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubContextStrip
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubHeader
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubStateKind
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubStateView
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchListItem
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchBar
+import com.debanshu777.caraml.features.modelhub.presentation.components.ModelRow
+import com.debanshu777.caraml.features.modelhub.presentation.components.discoveryModelRow
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelDownloadQueueRow
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelDownloadBatchControls
 import com.debanshu777.caraml.core.download.DownloadArtifactRequest
@@ -36,7 +40,6 @@ import com.debanshu777.caraml.sdk.discovery.huggingface.model.ModelSort
 import com.debanshu777.caraml.sdk.discovery.huggingface.model.ParameterRange
 import com.debanshu777.caraml.sdk.discovery.huggingface.model.ListModelsResponse
 import androidx.compose.ui.tooling.preview.Preview
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubInlineFilters
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubDeviceInfo
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelDownloadQueueEntry
 
@@ -106,52 +109,45 @@ internal fun ModelHubDevicePreview(populated: Boolean) {
     CaraMLTheme(ThemePreferences()) {
         CompositionLocalProvider(LocalNavigationMenuAction provides {}) {
             AuroraBackdrop {
-                ModelHubScreenLayout(
-                    selectedTabIndex = 0,
-                    onTabSelected = {},
-                    sharedContext = {
-                        ModelHubContextStrip(
-                            storageInfo = previewStorageInfo(),
-                            profile = RecommendationProfile(),
-                            onOpenProfile = {},
-                            onOpenDevice = {},
-                        )
-                    },
+                val focusRequester = remember { FocusRequester() }
+                ModelHubTabLayout(
                     modifier = Modifier.fillMaxSize(),
-                    discoverContent = {
-                        ModelHubTabLayout(
-                            modifier = Modifier.fillMaxSize(),
-                            command = { SearchBar(query = "", onQueryChange = {}, onSearch = {}) },
-                            context = {},
-                            toolbar = {},
-                            summary = {
-                                ModelHubInlineFilters(
-                                    resultLabel = if (populated) "3 models loaded" else "0 models loaded",
+                    header = { BrandPageHeader("Models") { ModelSearchAction(AppIcons.Download, "Downloads", {}) } },
+                    command = {
+                        SearchBar(
+                            query = "", onQueryChange = {}, onSearch = {}, onClear = {},
+                            focusRequester = focusRequester, compact = true, placeholder = "Search models",
+                            trailingAction = {
+                                ModelHubFilterButton(
                                     mode = ModelHubBrowseMode.LanguageModels,
                                     ordering = ModelOrdering.Server(ModelSort.TRENDING),
                                     minParams = ParameterRange.ZERO, maxParams = ParameterRange.SIX_B,
                                     onApply = { _, _, _, _ -> },
                                 )
                             },
-                            results = {
-                                if (populated) {
-                                    previewModels.forEach { model ->
-                                        item(key = requireNotNull(model.id)) {
-                                            SearchListItem(model = model, onClick = {})
-                                        }
-                                    }
-                                } else {
-                                    item(key = "empty") {
-                                        ModelHubStateView(
-                                            kind = ModelHubStateKind.Empty,
-                                            message = "No models are available yet.",
-                                        )
-                                    }
-                                }
-                            },
                         )
                     },
-                    libraryContent = {},
+                    context = {},
+                    toolbar = {},
+                    summary = {
+                        if (populated) Text("GGUF · 3 models loaded", style = AppTheme.typography.labelSmall)
+                    },
+                    results = {
+                        if (populated) {
+                            previewModels.forEach { model ->
+                                item(key = requireNotNull(model.id)) {
+                                    ModelRow(state = discoveryModelRow(model), onOpenModel = {})
+                                }
+                            }
+                        } else {
+                            item(key = "empty") {
+                                ModelHubStateView(
+                                    kind = ModelHubStateKind.Empty,
+                                    message = "No models are available yet.",
+                                )
+                            }
+                        }
+                    },
                 )
             }
         }

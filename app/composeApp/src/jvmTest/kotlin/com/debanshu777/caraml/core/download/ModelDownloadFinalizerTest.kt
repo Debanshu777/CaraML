@@ -610,7 +610,7 @@ private class FinalizerStoragePathProvider : StoragePathProvider {
     override fun isModelFileReadable(path: String): Boolean = false
     override fun isDirectoryReadable(path: String): Boolean = false
     override fun getFileSize(path: String): Long = 0L
-    override fun renameFile(from: String, to: String): Boolean = false
+
     override fun deleteDownloadedModelContent(modelId: String, localPath: String): Boolean = false
 }
 
@@ -623,7 +623,7 @@ private class TempFinalizerStoragePathProvider(private val root: File) : Storage
     override fun isModelFileReadable(path: String): Boolean = File(path).isFile
     override fun isDirectoryReadable(path: String): Boolean = File(path).isDirectory
     override fun getFileSize(path: String): Long = File(path).length()
-    override fun renameFile(from: String, to: String): Boolean = File(from).renameTo(File(to))
+
     override fun deleteDownloadedModelContent(modelId: String, localPath: String): Boolean {
         val modelRoot = File(getModelsStorageDirectory(modelId)).canonicalFile
         val target = File(localPath).canonicalFile

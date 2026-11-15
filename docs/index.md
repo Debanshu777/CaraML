@@ -9,6 +9,10 @@ hide:
 
 # CaraML
 
+Models separates recent visits from the discovery list with distinct section headings and compact search controls with lightly raised icon buttons and theme-aware contrast. Dark mode uses lighter raised surfaces, subtle borders, and dark shadows across navigation, workspaces, models, and settings.
+
+Model details keeps the owner and model name in one styled title, with a dotted-underlined link on the model name. The header uses search’s frosted treatment and reveals the model name after the expanded title scrolls out of view. Full model names and publisher descriptions remain expanded above every tab. Three flat swipeable tabs stay available below the top bar while scrolling and show variants, the complete model card with images/tables/relative links, and grouped technical facts. Section and file dividers remain edge-aligned. Configuration changes reuse loaded details and preserve the selected tab; tab changes reuse the prepared README. Reopening details refreshes installation status after a model is removed from Downloads. See [what details can show](models.md#model-details).
+
 CaraML runs language models and image generation on Android, iOS, and desktop. It is built with Kotlin and Compose Multiplatform, with model discovery and downloads through Hugging Face.
 
 [**Build and run →**](getting-started.md) · [Supported models](models.md) · [Demo](demo.md) · [Source](https://github.com/Debanshu777/CaraML)
@@ -42,7 +46,8 @@ Inference runs locally after model download. Browsing and downloading require a 
 ## What works today
 
 - **Streaming chat:** markdown responses, cancellation, and reasoning blocks for models that emit them.
-- **Model management:** browse, search, filter, and download models; durable transfers support pause, resume, cancellation, and recovery after interruptions. Installed models open their matching workspace.
+- **Model management** includes paged Hugging Face search, match counts, author avatars, recent visits, and installed-variant counts. The Downloads page combines the durable transfer queue and searchable local models. Supported queue upgrades preserve records and checkpoints; unsafe legacy work stays quarantined. Installed models open their matching workspace, and ONNX removal respects shared companion files.
+- **Download recovery:** interrupted cancellation cleanup is retried, active work remains visible alongside failure history, and incomplete installations can be removed with shared-file protection. [Removal limits](models.md#removing-incomplete-installations).
 - **Image generation:** model-specific diffusion plans and configurable sampling. [Measured Android results](https://github.com/Debanshu777/CaraML/blob/main/benchmarks/diffusion/README.md) describe tested models and limits.
 - **Native acceleration:** Vulkan for supported Android GGUF workloads and Metal on Apple platforms. Supported ONNX dynamic-cache exports currently use CPU in the app.
 - **Adaptive UI:** shared Compose screens with light/dark appearance, reduced-motion controls, and desktop navigation.

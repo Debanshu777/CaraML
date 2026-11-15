@@ -38,11 +38,14 @@ private sealed interface BoundedTextAttempt {
 class ClientWrapper(
     networkClient: HttpClient,
     @PublishedApi internal val json: Json,
-) {
+) : AutoCloseable {
     @PublishedApi
     internal val networkClient = networkClient.config {
         followRedirects = false
     }
+
+    /** Releases the derived request client; the caller still owns the supplied client. */
+    override fun close() = networkClient.close()
 
     suspend inline fun <reified T> networkGetUsecase(
         endpoint: String,

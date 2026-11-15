@@ -1017,7 +1017,7 @@ class InstalledModelEvidenceRepairerTest {
         override fun isModelFileReadable(path: String): Boolean = path in artifacts
         override fun isDirectoryReadable(path: String): Boolean = path == root.toString()
         override fun getFileSize(path: String): Long = artifacts[path] ?: 0L
-        override fun renameFile(from: String, to: String): Boolean = false
+
         override fun deleteDownloadedModelContent(modelId: String, localPath: String): Boolean = false
 
         override fun inspectDownloadedArtifact(modelId: String, localPath: String): StoredArtifactSnapshot? = when (localPath) {

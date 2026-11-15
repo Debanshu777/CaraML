@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AppTheme
@@ -62,7 +63,7 @@ fun BrandButton(
     }
 }
 
-/** Icon actions use the same face and depth while retaining the caller's accessible description. */
+/** Icon actions use a lighter raised face inside a stable accessible touch target. */
 @Composable
 fun BrandIconButton(
     onClick: () -> Unit,
@@ -72,7 +73,7 @@ fun BrandIconButton(
     interactionSource: MutableInteractionSource? = null,
     content: @Composable () -> Unit,
 ) {
-    BrandButtonFrame(onClick, modifier, enabled, style, interactionSource) {
+    BrandButtonFrame(onClick, modifier, enabled, style, interactionSource, iconOnly = true) {
         Box(
             modifier = Modifier.padding(AppTheme.buttons.iconPadding),
             contentAlignment = Alignment.Center,
@@ -87,9 +88,12 @@ private fun BrandButtonFrame(
     enabled: Boolean,
     style: BrandButtonStyle,
     interactionSource: MutableInteractionSource?,
+    iconOnly: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val tokens = AppTheme.buttons
+    val depth = if (iconOnly) tokens.iconDepth else tokens.depth
+    val inset = if (iconOnly) tokens.iconVisualInset else 0.dp
     val colors = AppTheme.colors
     val motion = AppTheme.motion
     val source = interactionSource ?: remember { MutableInteractionSource() }
@@ -130,15 +134,16 @@ private fun BrandButtonFrame(
     }
     val focused by source.collectIsFocusedAsState()
     val isPressed = enabled && pressed
-    val shape = RoundedCornerShape(tokens.cornerRadius)
+    val shape = RoundedCornerShape(if (iconOnly) tokens.iconCornerRadius else tokens.cornerRadius)
     val offset by animateDpAsState(
-        targetValue = if (isPressed && motion.spatialTransitionsEnabled) tokens.depth else 0.dp,
+        targetValue = if (isPressed && motion.spatialTransitionsEnabled) depth else 0.dp,
         animationSpec = if (isPressed) motion.pressInSpec() else motion.pressSpec(),
         label = "brand-button-press",
     )
+    val dark = colors.surface.luminance() < 0.5f
     val face = when (style) {
         BrandButtonStyle.Primary -> colors.primary
-        BrandButtonStyle.Secondary -> colors.surface
+        BrandButtonStyle.Secondary -> if (dark) colors.surfaceContainerHigh else colors.surface
         BrandButtonStyle.Destructive -> colors.error
     }
     val contentColor = when (style) {
@@ -146,7 +151,14 @@ private fun BrandButtonFrame(
         BrandButtonStyle.Secondary -> colors.onSurface
         BrandButtonStyle.Destructive -> colors.onError
     }
-    val contour = if (enabled) AppTheme.brandColors.ink else colors.outlineVariant
+    // Both button sizes use the same ink base. Dark surfaces need a separate
+    // visible rim; lightening the shadow itself makes the raised face look flat.
+    val shadow = if (dark) androidx.compose.ui.graphics.Color.Black else AppTheme.brandColors.ink
+    val contour = when {
+        !enabled -> colors.outlineVariant
+        dark -> colors.outlineVariant
+        else -> shadow
+    }
     val showFeedback = enabled && (isPressed || focused)
 
     Box(
@@ -163,12 +175,12 @@ private fun BrandButtonFrame(
         propagateMinConstraints = true,
     ) {
         if (enabled) {
-            Box(Modifier.matchParentSize().padding(top = tokens.depth).background(contour, shape))
+            Box(Modifier.matchParentSize().padding(inset).padding(top = depth).background(shadow, shape))
         }
         Surface(
-            modifier = Modifier.padding(bottom = tokens.depth).graphicsLayer {
+            modifier = Modifier.padding(inset).padding(bottom = depth).graphicsLayer {
                 translationY = if (enabled && motion.spatialTransitionsEnabled) {
-                    offset.coerceIn(0.dp, tokens.depth).toPx()
+                    offset.coerceIn(0.dp, depth).toPx()
                 } else {
                     0f
                 }
@@ -177,7 +189,9 @@ private fun BrandButtonFrame(
             color = if (enabled) face else colors.onSurface.copy(alpha = .08f).compositeOver(colors.surface),
             contentColor = if (enabled) contentColor else colors.onSurface.copy(alpha = .38f),
             border = BorderStroke(
-                if (showFeedback) tokens.feedbackContourWidth else tokens.contourWidth,
+                if (iconOnly) {
+                    if (showFeedback) tokens.iconFeedbackContourWidth else tokens.iconContourWidth
+                } else if (showFeedback) tokens.feedbackContourWidth else tokens.contourWidth,
                 if (showFeedback) contentColor else contour,
             ),
         ) {

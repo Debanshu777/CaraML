@@ -22,6 +22,10 @@ import com.debanshu777.caraml.core.download.transfer.StoragePathProvider
 import com.debanshu777.caraml.core.download.transfer.StoredArtifactSnapshot
 import com.debanshu777.caraml.core.download.transfer.immutableArtifactStorageLocation
 import java.nio.file.Files
+import java.io.File
+import kotlinx.serialization.json.Json
+import com.debanshu777.caraml.core.download.transfer.ArtifactManifestStore
+import com.debanshu777.caraml.core.download.diffusion.DIFFUSERS_BUNDLE_DB_FILENAME
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -31,6 +35,122 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class AppDatabaseCurrentSchemaTest {
+    @Test
+    fun legacyVariantStillUnlinksAfterCurrentManifestOwnerWasRemovedFirst() = runTest {
+        val storage = FileRemovalStorage()
+        val database = getRoomDatabase(getDatabaseBuilder(storage.getDatabasePath()))
+        try {
+            val fixture = removalFixture("owner/model", "a".repeat(40), "b".repeat(64), "1".repeat(64), storage)
+            val catalog = database.installedModelCatalogDao()
+            catalog.replaceReady(fixture.record)
+            val current = requireNotNull(catalog.snapshotReady("owner/model")).model
+            val legacy = File(storage.getModelsStorageDirectory("owner/model"), "legacy.gguf").apply { writeText("retain") }
+            database.localModelDao().insert(legacyModel("owner/model", legacy))
+            val selected = database.localModelDao().getAllDownloadedFiles().first().single { it.filename == legacy.name }
+            val service = InstalledModelRemovalService(catalog, storage, { fixture.manifest }, InstalledModelPublicationCoordinator())
+            assertEquals(InstalledModelRemovalResult.Removed, service.remove(current))
+            assertEquals(InstalledModelRemovalResult.RemovedWithCleanupFailure, service.remove(selected))
+            assertTrue(database.localModelDao().getAllDownloadedFiles().first().isEmpty())
+            assertEquals("retain", legacy.readText())
+        } finally { database.close() }
+    }
+
+    @Test
+    fun partialDamagedInstallationRemovesOwnedFilesAndPrunesItsManifest() = runTest {
+        val storage = FileRemovalStorage()
+        val database = getRoomDatabase(getDatabaseBuilder(storage.getDatabasePath()))
+        try {
+            val fixture = removalFixture("owner/model", "a".repeat(40), "b".repeat(64), "1".repeat(64),
+                storage, componentRepositoryId = "owner/model")
+            val catalog = database.installedModelCatalogDao()
+            catalog.replaceReady(fixture.record)
+            database.localModelDao().updateComponentStatus("owner/model", LocalModelEntity.STATUS_PARTIAL)
+            fixture.manifest.entries.forEach { entry ->
+                File(storage.getModelsStorageDirectory(entry.identity.repositoryId), entry.localRelativePath)
+                    .apply { parentFile.mkdirs(); writeText("damaged") }
+            }
+            val manifestFile = File(storage.getModelsStorageDirectory("owner/model"), ArtifactManifestStore.MANIFEST_FILE_NAME)
+            manifestFile.writeText(Json.encodeToString(ArtifactManifest.serializer(), fixture.manifest))
+            val model = database.localModelDao().getAllDownloadedFiles().first().single()
+            val service = InstalledModelRemovalService(catalog, storage, { fixture.manifest }, InstalledModelPublicationCoordinator())
+            assertEquals(InstalledModelRemovalResult.Removed, service.remove(model))
+            assertFalse(File(model.localPath).exists())
+            assertFalse(File(fixture.record.components.single().localPath).exists())
+            assertFalse(manifestFile.exists())
+            assertTrue(database.localModelDao().getAllDownloadedFiles().first().isEmpty())
+        } finally { database.close() }
+    }
+
+    @Test
+    fun legacyFileRemovalPreservesOtherVariantAndNeverRecursesAmbiguousDirectory() = runTest {
+        val storage = FileRemovalStorage()
+        val database = getRoomDatabase(getDatabaseBuilder(storage.getDatabasePath()))
+        try {
+            val dao = database.localModelDao()
+            val root = File(storage.getModelsStorageDirectory("owner/model"))
+            val first = File(root, "old.gguf").apply { writeText("old") }
+            val second = File(root, "other.gguf").apply { writeText("other") }
+            dao.insert(legacyModel("owner/model", first))
+            dao.insert(legacyModel("owner/model", second))
+            val service = InstalledModelRemovalService(database.installedModelCatalogDao(), storage, { null }, InstalledModelPublicationCoordinator())
+            val selected = dao.getAllDownloadedFiles().first().single { it.filename == first.name }
+            assertEquals(InstalledModelRemovalResult.Removed, service.remove(selected))
+            assertFalse(first.exists())
+            assertTrue(second.exists())
+            assertEquals(listOf(second.name), dao.getAllDownloadedFiles().first().map { it.filename })
+            dao.insert(legacyModel("owner/model", root).copy(filename = DIFFUSERS_BUNDLE_DB_FILENAME))
+            val directory = dao.getAllDownloadedFiles().first().single { it.filename == DIFFUSERS_BUNDLE_DB_FILENAME }
+            assertEquals(InstalledModelRemovalResult.RemovedWithCleanupFailure, service.remove(directory))
+            assertTrue(root.exists())
+            assertEquals("other", second.readText())
+        } finally { database.close() }
+    }
+
+    @Test
+    fun legacyRemovalRejectsSymlinkDeletionAndProtectsOverlappingCatalogOwner() = runTest {
+        val storage = FileRemovalStorage()
+        val database = getRoomDatabase(getDatabaseBuilder(storage.getDatabasePath()))
+        try {
+            val dao = database.localModelDao()
+            val root = File(storage.getModelsStorageDirectory("owner/model"))
+            val outside = Files.createTempFile("caraml-removal-outside", ".gguf").toFile().apply { writeText("keep") }
+            val linked = File(root, "linked.gguf")
+            Files.createSymbolicLink(linked.toPath(), outside.toPath())
+            dao.insert(legacyModel("owner/model", linked))
+            val service = InstalledModelRemovalService(database.installedModelCatalogDao(), storage, { null }, InstalledModelPublicationCoordinator())
+            assertEquals(InstalledModelRemovalResult.RemovedWithCleanupFailure, service.remove(dao.getAllDownloadedFiles().first().single()))
+            assertEquals("keep", outside.readText())
+            assertTrue(Files.isSymbolicLink(linked.toPath()))
+            val child = File(root, "retained.gguf").apply { writeText("shared") }
+            dao.insert(legacyModel("owner/model", child))
+            dao.insert(legacyModel("other/owner", root).copy(filename = DIFFUSERS_BUNDLE_DB_FILENAME))
+            val selected = dao.getAllDownloadedFiles().first().single { it.filename == child.name }
+            assertEquals(InstalledModelRemovalResult.Removed, service.remove(selected))
+            assertEquals("shared", child.readText())
+            assertEquals("other/owner", dao.getAllDownloadedFiles().first().single().modelId)
+        } finally { database.close() }
+    }
+
+    @Test
+    fun unboundLegacyVariantCanBeUnlinkedWithoutTouchingCurrentManifestOwner() = runTest {
+        val storage = FileRemovalStorage()
+        val database = getRoomDatabase(getDatabaseBuilder(storage.getDatabasePath()))
+        try {
+            val fixture = removalFixture("owner/model", "a".repeat(40), "b".repeat(64), "1".repeat(64), storage)
+            val catalog = database.installedModelCatalogDao()
+            catalog.replaceReady(fixture.record)
+            val legacy = File(storage.getModelsStorageDirectory("owner/model"), "legacy.gguf").apply { writeText("retain") }
+            database.localModelDao().insert(legacyModel("owner/model", legacy))
+            val current = database.localModelDao().getAllDownloadedFiles().first().single { it.filename != legacy.name }
+            val selected = database.localModelDao().getAllDownloadedFiles().first().single { it.filename == legacy.name }
+            val service = InstalledModelRemovalService(catalog, storage, { fixture.manifest }, InstalledModelPublicationCoordinator())
+            assertEquals(InstalledModelRemovalResult.RemovedWithCleanupFailure, service.remove(selected))
+            assertEquals(listOf(current), database.localModelDao().getAllDownloadedFiles().first())
+            assertEquals(fixture.record.components.single().localPath, catalog.snapshotComponents("owner/model").single().localPath)
+            assertEquals("retain", legacy.readText())
+        } finally { database.close() }
+    }
+
     @Test
     fun exactComponentRevisionsForDifferentOwnersCoexistAfterReopen() = runTest {
         val path = Files.createTempDirectory("caraml-component-revisions").resolve("caraml.db").toString()
@@ -90,7 +210,7 @@ class AppDatabaseCurrentSchemaTest {
             val secondBeforeRemoval = requireNotNull(database.installedModelCatalogDao().snapshotReady("owner/b"))
             assertEquals("vae", first.components.single().role)
             assertEquals("clip_g", secondBeforeRemoval.components.single().role)
-            val firstRemoval = requireNotNull(database.installedModelCatalogDao().removeReadyIfMatches(first))
+            val firstRemoval = requireNotNull(database.installedModelCatalogDao().removeSelectedIfMatches(first))
 
             assertEquals(emptyList(), firstRemoval.unreferencedComponents)
             assertTrue(database.installedModelCatalogDao().snapshotReady("owner/b") != null)
@@ -98,7 +218,7 @@ class AppDatabaseCurrentSchemaTest {
 
             val second = requireNotNull(database.installedModelCatalogDao().snapshotReady("owner/b"))
             assertEquals("clip_g", second.components.single().role)
-            val secondRemoval = requireNotNull(database.installedModelCatalogDao().removeReadyIfMatches(second))
+            val secondRemoval = requireNotNull(database.installedModelCatalogDao().removeSelectedIfMatches(second))
 
             assertEquals(shared.localPath, secondRemoval.unreferencedComponents.single().localPath)
             assertEquals("clip_g", secondRemoval.unreferencedComponents.single().role)
@@ -121,7 +241,7 @@ class AppDatabaseCurrentSchemaTest {
                 exactCatalogRecord("owner/a", "c".repeat(40), "d".repeat(64), "2".repeat(64)),
             )
 
-            assertEquals(null, database.installedModelCatalogDao().removeReadyIfMatches(stale))
+            assertEquals(null, database.installedModelCatalogDao().removeSelectedIfMatches(stale))
             assertEquals(
                 "c".repeat(40),
                 database.installedModelCatalogDao().snapshotReady("owner/a")?.components?.single()?.immutableRevision,
@@ -174,6 +294,95 @@ class AppDatabaseCurrentSchemaTest {
         database = getRoomDatabase(getDatabaseBuilder(path))
         try {
             assertTrue(database.installedModelCatalogDao().snapshotReady("owner/b") != null)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun sameRepositoryOnnxCompanionsAreRemovedWithTheirPrimaryGraph() = runTest {
+        val database = getRoomDatabase(getDatabaseBuilder(
+            Files.createTempDirectory("caraml-onnx-removal").resolve("caraml.db").toString(),
+        ))
+        val storage = RemovalStoragePathProvider()
+        val fixture = removalFixture(
+            "owner/onnx", "a".repeat(40), "b".repeat(64), "1".repeat(64), storage,
+            componentRepositoryId = "owner/onnx", modelFilename = "model.onnx",
+            componentFilename = "model.onnx_data", componentRole = "onnx-companion-0",
+        )
+        try {
+            database.installedModelCatalogDao().replaceReady(fixture.record)
+            val installed = requireNotNull(database.installedModelCatalogDao().snapshotReady("owner/onnx"))
+            val deleted = mutableListOf<ArtifactManifestEntry>()
+            val service = InstalledModelRemovalService(
+                database.installedModelCatalogDao(), storage, { fixture.manifest },
+                InstalledModelPublicationCoordinator(), { entries -> deleted.addAll(entries); true },
+            )
+
+            assertEquals(InstalledModelRemovalResult.Removed, service.remove(installed.model))
+            assertEquals(fixture.manifest.entries.toSet(), deleted.toSet())
+            assertEquals(null, database.installedModelCatalogDao().snapshotReady("owner/onnx"))
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun sameRepositoryCompanionIsRetainedWhileAnotherOwnerReferencesIt() = runTest {
+        val database = getRoomDatabase(getDatabaseBuilder(
+            Files.createTempDirectory("caraml-onnx-shared-removal").resolve("caraml.db").toString(),
+        ))
+        val storage = RemovalStoragePathProvider()
+        fun fixture(owner: String) = removalFixture(
+            owner, "a".repeat(40), "b".repeat(64), "1".repeat(64), storage,
+            componentRepositoryId = "owner/onnx", modelFilename = "model.onnx",
+            componentFilename = "tokenizer.json", componentRole = "onnx-companion-0",
+        )
+        val first = fixture("owner/onnx")
+        val second = fixture("owner/other")
+        val manifests = mapOf("owner/onnx" to first.manifest, "owner/other" to second.manifest)
+        val deleted = mutableListOf<ArtifactManifestEntry>()
+        try {
+            val catalog = database.installedModelCatalogDao()
+            catalog.replaceReady(first.record)
+            catalog.replaceReady(second.record)
+            val service = InstalledModelRemovalService(
+                catalog, storage, manifests::get, InstalledModelPublicationCoordinator(),
+                { entries -> deleted.addAll(entries); true },
+            )
+
+            assertEquals(InstalledModelRemovalResult.Removed, service.remove(requireNotNull(catalog.snapshotReady("owner/onnx")).model))
+            assertEquals(listOf(first.manifest.entries.single { it.logicalRole == "model" }), deleted)
+            assertTrue(catalog.snapshotReady("owner/other") != null)
+            assertEquals(InstalledModelRemovalResult.Removed, service.remove(requireNotNull(catalog.snapshotReady("owner/other")).model))
+            assertEquals((first.manifest.entries + second.manifest.entries).toSet(), deleted.toSet())
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun unboundSameRepositoryCompanionRejectsRemovalWithoutDeletingAnything() = runTest {
+        val database = getRoomDatabase(getDatabaseBuilder(
+            Files.createTempDirectory("caraml-unbound-companion").resolve("caraml.db").toString(),
+        ))
+        val storage = RemovalStoragePathProvider()
+        val fixture = removalFixture(
+            "owner/onnx", "a".repeat(40), "b".repeat(64), "1".repeat(64), storage,
+            componentRepositoryId = "owner/onnx", modelFilename = "model.onnx",
+            componentFilename = "tokenizer.json", componentRole = "onnx-companion-0",
+        )
+        try {
+            val catalog = database.installedModelCatalogDao()
+            catalog.replaceReady(fixture.record.copy(components = emptyList()))
+            val installed = requireNotNull(catalog.snapshotReady("owner/onnx"))
+            val service = InstalledModelRemovalService(
+                catalog, storage, { fixture.manifest }, InstalledModelPublicationCoordinator(),
+                { error("An unbound companion must not reach cleanup") },
+            )
+
+            assertEquals(InstalledModelRemovalResult.Rejected, service.remove(installed.model))
+            assertEquals(installed, catalog.snapshotReady("owner/onnx"))
         } finally {
             database.close()
         }
@@ -385,23 +594,41 @@ private fun removalFixture(
     objectDigest: String,
     bundleId: String,
     storage: StoragePathProvider,
+    componentRepositoryId: String = "shared/repo",
+    modelFilename: String = "model.safetensors",
+    componentFilename: String = "component.safetensors",
+    componentRole: String = "vae",
 ): RemovalFixture {
-    val ownerIdentity = identity(owner, "model.safetensors", revision, "sha256:$objectDigest")
-    val componentIdentity = identity("shared/repo", "component.safetensors", revision, "sha256:$objectDigest")
+    val ownerIdentity = identity(owner, modelFilename, revision, "sha256:$objectDigest")
+    val componentIdentity = identity(componentRepositoryId, componentFilename, revision, "sha256:$objectDigest")
     val ownerLocation = immutableArtifactStorageLocation(ownerIdentity, bundleId)
     val componentLocation = immutableArtifactStorageLocation(componentIdentity, bundleId)
     fun absolute(repositoryId: String, relativePath: String): String =
         "${storage.getModelsStorageDirectory(repositoryId)}/$relativePath"
     val base = exactCatalogRecord(owner, revision, objectDigest, bundleId)
+    val evidence = pendingEvidence(listOf(ownerIdentity, componentIdentity))
+    val isOnnx = modelFilename.endsWith(".onnx")
     val record = base.copy(
         model = base.model.copy(
             filename = ownerLocation.layoutRelativePath.substringAfterLast('/'),
             localPath = absolute(owner, ownerLocation.localRelativePath),
+            sizeBytes = if (isOnnx) ownerIdentity.expectedBytes + componentIdentity.expectedBytes else base.model.sizeBytes,
+            libraryName = if (isOnnx) "onnx" else base.model.libraryName,
+            modelType = if (isOnnx) "text" else base.model.modelType,
         ),
         components = listOf(
             base.components.single().copy(
+                repoId = componentRepositoryId,
+                filePath = componentFilename,
+                role = componentRole,
                 localPath = absolute(componentIdentity.repositoryId, componentLocation.localRelativePath),
             ),
+        ),
+        evidence = base.evidence.copy(
+            evidenceState = evidence.state.name,
+            schemaVersion = evidence.schemaVersion,
+            payload = evidence.payload,
+            sha256 = evidence.sha256,
         ),
     )
     val manifest = requireNotNull(
@@ -420,7 +647,7 @@ private fun removalFixture(
                 ),
                 requireNotNull(
                     ArtifactManifestEntry.create(
-                        logicalRole = "vae",
+                        logicalRole = componentRole,
                         identity = componentIdentity,
                         byteCount = componentIdentity.expectedBytes,
                         contentSha256 = objectDigest,
@@ -447,7 +674,7 @@ private class RemovalStoragePathProvider : StoragePathProvider {
     override fun isModelFileReadable(path: String): Boolean = true
     override fun isDirectoryReadable(path: String): Boolean = true
     override fun getFileSize(path: String): Long = 10L
-    override fun renameFile(from: String, to: String): Boolean = false
+
     override fun deleteDownloadedModelContent(modelId: String, localPath: String): Boolean {
         deletedPaths += localPath
         return true
@@ -552,3 +779,23 @@ private fun identity(
 ): DownloadArtifactIdentity = requireNotNull(
     DownloadArtifactIdentity.create(repositoryId, revision, path, objectId, 10L),
 )
+
+private fun legacyModel(owner: String, file: File) = LocalModelEntity(
+    modelId = owner, filename = file.name, localPath = file.absolutePath,
+    sizeBytes = file.length(), downloadedAt = 1L, author = null, libraryName = null, pipelineTag = null,
+)
+
+private class FileRemovalStorage : StoragePathProvider {
+    private val root = Files.createTempDirectory("caraml-removal-files").toRealPath().toFile()
+    override fun getModelsStorageDirectory(modelId: String): String = File(root, "models/$modelId").apply { mkdirs() }.absolutePath
+    override fun getDatabasePath(): String = File(root, "caraml.db").absolutePath
+    override fun fileExists(path: String) = File(path).exists()
+    override fun getAvailableStorageBytes() = Long.MAX_VALUE
+    override fun getTotalStorageBytes() = Long.MAX_VALUE
+    override fun isModelFileReadable(path: String) = File(path).isFile
+    override fun isDirectoryReadable(path: String) = File(path).isDirectory
+    override fun getFileSize(path: String) = File(path).length()
+
+    override fun deleteDownloadedModelContent(modelId: String, localPath: String): Boolean =
+        error("Removal must use the secure file boundary, never recursive platform deletion")
+}

@@ -49,9 +49,9 @@ internal fun ColorScheme.toAuroraColors(
     val brand = AppBrandColors(accent = focalSeed)
     return AuroraColors(
         canvas = background,
-        primaryGlow = brand.accent.copy(alpha = 0.40f),
-        secondaryGlow = brand.lilac.copy(alpha = 0.40f),
-        tertiaryGlow = brand.mint.copy(alpha = 0.32f),
+        primaryGlow = brand.accent.copy(alpha = if (isDark) 0.16f else 0.40f),
+        secondaryGlow = brand.lilac.copy(alpha = if (isDark) 0.16f else 0.40f),
+        tertiaryGlow = brand.mint.copy(alpha = if (isDark) 0.12f else 0.32f),
         grainTint = onSurface.copy(alpha = 0.022f),
         edgeVignette = if (isDark) Color(0x20000000) else Color(0x0A242020),
         paneBorder = outlineVariant,

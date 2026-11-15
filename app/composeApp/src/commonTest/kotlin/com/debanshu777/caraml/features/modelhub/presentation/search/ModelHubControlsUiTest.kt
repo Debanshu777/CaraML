@@ -3,20 +3,16 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search
 
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
-import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
-import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
@@ -26,19 +22,14 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithContentDescription
-import androidx.compose.ui.test.onAllNodesWithText
-import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.dp
-import com.debanshu777.caraml.core.theme.AppShapes
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubBrowseControls
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubToolbar
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubFilterPanel
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchBar
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.SortFilterChips
 import com.debanshu777.caraml.sdk.discovery.huggingface.model.ModelSort
 import com.debanshu777.caraml.sdk.discovery.huggingface.model.ParameterRange
 import kotlin.test.Test
@@ -48,225 +39,77 @@ import kotlin.test.assertTrue
 class ModelHubControlsUiTest {
 
     @Test
-    fun modelKindsAreOneRadioGroupWithOneActionAndVisibleSelection() = runComposeUiTest {
-        var selectedMode by mutableStateOf(ModelHubBrowseMode.LanguageModels)
-        val selectedModes = mutableListOf<ModelHubBrowseMode>()
-        setContent {
-            MaterialTheme(shapes = AppShapes) {
-                Box(Modifier.width(360.dp)) {
-                    ModelHubToolbar(
-                        browseMode = selectedMode,
-                        onBrowseModeChange = {
-                            selectedModes += it
-                            selectedMode = it
-                        },
-                        showSortFilters = false,
-                        ordering = ModelOrdering.Server(ModelSort.TRENDING),
-                        sort = ModelSort.TRENDING,
-                        minParams = ParameterRange.ZERO,
-                        maxParams = ParameterRange.SIX_B,
-                        onSortChange = {},
-                        onOrderingChange = {},
-                        onMinParamsChange = {},
-                        onMaxParamsChange = {},
-                    )
-                }
-            }
-        }
-
-        onNodeWithTag("model-kind-group", useUnmergedTree = true).assert(
-            SemanticsMatcher.keyIsDefined(SemanticsProperties.SelectableGroup),
-        )
-        listOf(
-            "Text" to true,
-            "Image" to false,
-            "Video" to false,
-        ).forEach { (label, selected) ->
-            val option = onNode(
-                hasText(label) and isSelectable(),
-            ).fetchSemanticsNode()
-            assertEquals(Role.RadioButton, option.config[SemanticsProperties.Role])
-            assertEquals(selected, option.config[SemanticsProperties.Selected])
-            assertEquals(AppShapes.small, option.config[SemanticsProperties.Shape])
-            val actionCount = onAllNodes(
-                SemanticsMatcher.keyIsDefined(SemanticsActions.OnClick),
-                useUnmergedTree = true,
-            ).fetchSemanticsNodes().count { actionNode ->
-                option.boundsInRoot.contains(actionNode.boundsInRoot.center)
-            }
-            assertEquals(1, actionCount, "$label must expose exactly one click action")
-        }
-        onNodeWithTag("Selected model kind Text", useUnmergedTree = true).assertIsDisplayed()
-
-        onNode(hasText("Image") and isSelectable()).performClick()
-
-        runOnIdle {
-            assertEquals(listOf(ModelHubBrowseMode.DiffusionImage), selectedModes)
-        }
-        onNode(hasText("Text") and isSelectable()).assertIsNotSelected()
-        onNode(hasText("Image") and isSelectable()).assertIsSelected()
-        onNodeWithTag("Selected model kind Image", useUnmergedTree = true).assertIsDisplayed()
-    }
-
-    @Test
-    fun legacyPositionalToolbarSignaturesRemainCallable() = runComposeUiTest {
+    fun filterPanelStagesAccessibleModelKindUntilApply() = runComposeUiTest {
+        val applied = mutableListOf<ModelHubBrowseMode>()
         setContent {
             MaterialTheme {
-                Column {
-                    SortFilterChips(
-                        ModelOrdering.Server(ModelSort.TRENDING),
-                        ModelSort.TRENDING,
-                        ParameterRange.ZERO,
-                        ParameterRange.SIX_B,
-                        {},
-                        {},
-                        {},
-                        {},
-                        Modifier.testTag("legacy-sort-filter"),
-                    )
-                    ModelHubBrowseControls(
-                        ModelHubBrowseMode.LanguageModels,
-                        {},
-                        true,
-                        ModelOrdering.Server(ModelSort.TRENDING),
-                        ModelSort.TRENDING,
-                        ParameterRange.ZERO,
-                        ParameterRange.SIX_B,
-                        {},
-                        {},
-                        {},
-                        {},
-                        Modifier.testTag("legacy-browse-controls"),
-                    )
-                    ModelHubToolbar(
-                        ModelHubBrowseMode.LanguageModels,
-                        {},
-                        true,
-                        ModelOrdering.Server(ModelSort.TRENDING),
-                        ModelSort.TRENDING,
-                        ParameterRange.ZERO,
-                        ParameterRange.SIX_B,
-                        {},
-                        {},
-                        {},
-                        {},
-                        Modifier.testTag("legacy-toolbar"),
-                    )
+                Box(Modifier.width(320.dp)) {
+                    ModelHubFilterPanel(ModelHubBrowseMode.LanguageModels,
+                        ModelOrdering.Server(ModelSort.TRENDING), ParameterRange.ZERO, ParameterRange.SIX_B,
+                    ) { mode, _, _, _, _ -> applied += mode }
                 }
             }
         }
-
-        onNodeWithTag("legacy-sort-filter").assertExists()
-        onNodeWithTag("legacy-browse-controls").assertExists()
-        onNodeWithTag("legacy-toolbar").assertExists()
+        listOf("Text", "Image", "Video").forEach { label ->
+            val option = onNode(hasText(label) and isSelectable()).fetchSemanticsNode()
+            assertEquals(Role.RadioButton, option.config[SemanticsProperties.Role])
+            val actionCount = onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsActions.OnClick),
+                useUnmergedTree = true).fetchSemanticsNodes().count {
+                option.boundsInRoot.contains(it.boundsInRoot.center)
+            }
+            assertEquals(1, actionCount, "$label must expose one click action")
+        }
+        onNode(hasText("Text") and isSelectable()).assertIsSelected()
+        onNode(hasText("Image") and isSelectable()).performClick().assertIsSelected()
+        onNode(hasText("Text") and isSelectable()).assertIsNotSelected()
+        runOnIdle { assertTrue(applied.isEmpty()) }
+        onNodeWithText("View models").performClick()
+        runOnIdle { assertEquals(listOf(ModelHubBrowseMode.DiffusionImage), applied) }
     }
 
     @Test
-    fun compactBrowseControlsWrapIntoTwoCompleteBandsWithoutHorizontalClipping() =
-        runComposeUiTest {
-        val controlWidth = 320.dp
-        var applyCalls = 0
+    fun filterPanelResetStagesAllDefaultsUntilApply() = runComposeUiTest {
+        var applied: List<Any>? = null
         setContent {
-            MaterialTheme(shapes = AppShapes) {
-                Box(Modifier.width(controlWidth)) {
-                    ModelHubBrowseControls(
-                        browseMode = ModelHubBrowseMode.LanguageModels,
-                        onBrowseModeChange = {},
-                        showSortFilters = true,
-                        ordering = ModelOrdering.Server(ModelSort.TRENDING),
-                        sort = ModelSort.TRENDING,
-                        minParams = ParameterRange.ZERO,
-                        maxParams = ParameterRange.SIX_B,
-                        onSortChange = {},
-                        onOrderingChange = {},
-                        onMinParamsChange = {},
-                        onMaxParamsChange = {},
-                        onFiltersApplied = { applyCalls += 1 },
-                    )
+            MaterialTheme {
+                Box(Modifier.width(360.dp)) {
+                    ModelHubFilterPanel(ModelHubBrowseMode.DiffusionVideo, ModelOrdering.Personalized,
+                        ParameterRange.THREE_B, ParameterRange.SIX_B, "onnx",
+                    ) { mode, ordering, min, max, format -> applied = listOf(mode, ordering, min, max, format) }
                 }
             }
         }
-
-        val toolbar = onNodeWithTag("model-toolbar").fetchSemanticsNode()
-        assertEquals(
-            null,
-            toolbar.config.getOrNull(SemanticsProperties.HorizontalScrollAxisRange),
-            "Essential browse controls must wrap rather than hide in a horizontally scrolled row",
-        )
-        val kindBounds = listOf("Text", "Image", "Video").map { label ->
-            onNode(hasText(label) and isSelectable()).fetchSemanticsNode().boundsInRoot
-        }
-        val sortBounds = onNodeWithContentDescription("Sort models")
-            .fetchSemanticsNode().boundsInRoot
-        val filterBounds = onNodeWithContentDescription("Filters")
-            .fetchSemanticsNode().boundsInRoot
-
-        assertTrue(kindBounds.maxOf { it.center.y } - kindBounds.minOf { it.center.y } < 1f)
-        assertTrue(sortBounds.center.y == filterBounds.center.y)
-        assertTrue(sortBounds.top >= kindBounds.maxOf { it.bottom })
-        (kindBounds + listOf(sortBounds, filterBounds)).forEach { bounds ->
-            assertTrue(bounds.left >= toolbar.boundsInRoot.left)
-            assertTrue(bounds.right <= toolbar.boundsInRoot.right)
-            assertTrue(bounds.width >= 48f)
-        }
-        listOf("Sort models", "Filters").forEach { description ->
-            val control = onNodeWithContentDescription(description).fetchSemanticsNode()
-            assertEquals(
-                androidx.compose.foundation.shape.RoundedCornerShape(com.debanshu777.caraml.core.theme.AppButtonTokens.cornerRadius),
-                control.config[SemanticsProperties.Shape],
-            )
-        }
-        onNodeWithText("Min: 0").assertDoesNotExist()
-        onNodeWithText("Max: 6B").assertDoesNotExist()
-
-        onNodeWithText("Filters").performClick()
-        onNodeWithText("Minimum parameters").assertIsDisplayed()
-        onNodeWithText("Maximum parameters")
-            .performScrollTo()
-            .assertIsDisplayed()
-        onNodeWithText("Done").performScrollTo().performClick()
-        runOnIdle { assertEquals(1, applyCalls) }
+        onNodeWithText("Reset").performClick()
+        onNode(hasText("Text") and isSelectable()).assertIsSelected()
+        onNode(hasText("GGUF") and isSelectable()).assertIsSelected()
+        runOnIdle { assertEquals(null, applied) }
+        onNodeWithText("View models").performClick()
+        runOnIdle { assertEquals(listOf(ModelHubBrowseMode.LanguageModels,
+            ModelOrdering.Server(ModelSort.TRENDING), ParameterRange.ZERO, ParameterRange.SIX_B, "gguf"), applied) }
     }
 
     @Test
-    fun filterSheetStagesSelectionUntilDone() = runComposeUiTest {
-        var selectedMin by mutableStateOf(ParameterRange.ZERO)
-        var applyCalls = 0
+    fun filterPanelOffersVerifiedServerOrdersAndStagesLoadedBestFit() = runComposeUiTest {
+        var selected: ModelOrdering = ModelOrdering.Server(ModelSort.TRENDING)
         setContent {
-            MaterialTheme(shapes = AppShapes) {
-                SortFilterChips(
-                    ordering = ModelOrdering.Server(ModelSort.TRENDING),
-                    sort = ModelSort.TRENDING,
-                    minParams = selectedMin,
-                    maxParams = ParameterRange.SIX_B,
-                    onSortChange = {},
-                    onOrderingChange = {},
-                    onMinParamsChange = { selectedMin = it },
-                    onMaxParamsChange = {},
-                    onFiltersApplied = { applyCalls += 1 },
-                )
+            MaterialTheme {
+                Box(Modifier.width(360.dp)) {
+                    ModelHubFilterPanel(ModelHubBrowseMode.LanguageModels, selected,
+                        ParameterRange.ZERO, ParameterRange.SIX_B,
+                    ) { _, ordering, _, _, _ -> selected = ordering }
+                }
             }
         }
-
-        onNodeWithText("Filters").performClick()
-        onNodeWithText("Sort by").assertDoesNotExist()
-        onAllNodes(hasText("0") and isSelectable())[0]
-            .assertIsSelected()
-            .fetchSemanticsNode()
-            .also { option ->
-                assertEquals(AppShapes.small, option.config[SemanticsProperties.Shape])
-            }
-        onAllNodesWithText("3B")[0].performClick()
-
-        runOnIdle { assertEquals(ParameterRange.ZERO, selectedMin) }
-        onAllNodes(hasText("3B") and isSelectable())[0].assertIsSelected()
-        onNodeWithText("Done").performScrollTo().performClick()
-        runOnIdle {
-            assertEquals(ParameterRange.THREE_B, selectedMin)
-            assertEquals(1, applyCalls)
-        }
-        onNodeWithText("Filters (1)").assertIsDisplayed()
+        onNodeWithText("Sort").performClick()
+        listOf("Trending", "Most downloads", "Most liked", "Newest", "Recently updated",
+            "Best fit among loaded").forEach { onNodeWithText(it).performScrollTo().assertIsDisplayed() }
+        listOf("Most params", "Least params", "Similar").forEach { onNodeWithText(it).assertDoesNotExist() }
+        onNodeWithText("Best fit among loaded").performClick()
+        runOnIdle { assertEquals(ModelOrdering.Server(ModelSort.TRENDING), selected) }
+        onNodeWithText("View models").performClick()
+        runOnIdle { assertEquals(ModelOrdering.Personalized, selected) }
     }
+
 
     @Test
     fun searchSubmissionUsesImeWithoutDuplicateTrailingButton() = runComposeUiTest {
@@ -353,32 +196,6 @@ class ModelHubControlsUiTest {
 
         onNodeWithContentDescription("Clear model search").performClick()
         runOnIdle { assertEquals("", query) }
-    }
-
-    @Test
-    fun sortSheetOffersOnlyVerifiedHubOrderAndLoadedBestFit() = runComposeUiTest {
-        var selected by mutableStateOf<ModelOrdering>(ModelOrdering.Server(ModelSort.TRENDING))
-        setContent {
-            MaterialTheme(shapes = AppShapes) {
-                SortFilterChips(
-                    ordering = selected,
-                    sort = ModelSort.TRENDING,
-                    minParams = ParameterRange.ZERO,
-                    maxParams = ParameterRange.SIX_B,
-                    onSortChange = {},
-                    onOrderingChange = { selected = it },
-                    onMinParamsChange = {},
-                    onMaxParamsChange = {},
-                )
-            }
-        }
-        onNodeWithText("Sort").performClick()
-        onNodeWithText("Best fit among loaded models").assertIsDisplayed()
-        onNodeWithText("Most params").assertDoesNotExist()
-        onNodeWithText("Least params").assertDoesNotExist()
-        onNodeWithText("Similar").assertDoesNotExist()
-        onNodeWithText("Best fit among loaded models").performClick()
-        runOnIdle { assertEquals(ModelOrdering.Personalized, selected) }
     }
 
     @Test

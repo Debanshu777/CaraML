@@ -28,7 +28,7 @@ Run these commands from the repository root:
 ./gradlew :app:androidApp:assembleDebug
 ./gradlew :app:desktopApp:run
 ./gradlew :app:desktopApp:packageDistributionForCurrentOS
-./gradlew :app:desktopApp:artifactFsInstalledImageSmoke
+./gradlew :app:desktopApp:nativeRuntimeInstalledImageSmoke
 ./gradlew :app:composeApp:jvmTest
 ./gradlew verifyProject
 ```
@@ -42,6 +42,37 @@ from any working directory. Application IDs and persisted identities are
 unchanged. Package conventions are documented in [the root README](../README.md#package-conventions).
 
 ## Recent Changes
+
+- Download commands persist intent before waiting for iOS restoration outside the lifecycle lock; scheduling then rechecks that intent. Reopened details refresh local installation evidence while retaining metadata, files, and the prepared README. Removed unused DAO methods and test-only Model Hub layout indirection.
+
+- Recent model history stores compact display snapshots, migrates existing visits, and records independently of model file loading. Models reuses the root settings ViewModel. Download controls look up the exact persisted batch, and incomplete cancellation cleanup stays visible with a retry action. Unused Model Hub toolbar, summary, context, sheet, and navigation wrappers were removed; UI coverage exercises current filters, device information, rows, and navigation.
+
+- Desktop distributions carry the selected native runtime and use installed resource paths; `nativeRuntimeInstalledImageSmoke` verifies both inference bridges and artifact storage from relocated jars/resources. Shared app fixes preserve download upgrades, remove same-repository ONNX companions safely, and avoid routine payload hashing for count badges. Model-card normalization uses common Kotlin string editing so it compiles on iOS.
+
+- Shared model monograms and author avatars expose a `size: Dp` parameter with a 36 dp default; see [component sizing](../docs/development.md#model-hub-migration-checks).
+
+- Model details adds a full Model card tab with images, wrapping tables, and revision-aware relative links. Three swipeable text tabs retain the complete overview and pin below the top bar while scrolling. Switching pinned tabs opens the selected section at its beginning. The header shares search’s frosting and reveals the model name when the expanded title scrolls out of view. Technical facts remain grouped. Screen recreation reuses active requests and loaded data, and tab/scroll state survives changes between compact, rail, and sidebar navigation; the ViewModel prepares Markdown once per fetched document for reuse across tab changes. README retry remains independent of downloads. See the [model details guide](../docs/models.md#model-details).
+
+- Dark mode now uses progressively lighter raised surfaces, subtle shared borders, dark button shadows, and a quieter background wash across the app. Light-mode colours are unchanged.
+
+- Models now separates subdued Recently viewed cards from an explicit Explore models or Search results heading, with tighter search spacing and consistent, lightly raised icon buttons. Icon buttons retain a thin 1dp contour and 2dp depth while sharing text buttons’ ink shadow. Both sizes use the shared subtle rim in dark mode.
+
+- Models opens directly to search. The separate Downloads page is available from the Models app bar and Settings, and opens installed models in their matching workspace.
+- Unified Model search and Downloads rendering in `ModelRow`, with pure presentation-state mappers and shared selection, repair, recommendation and avatar behavior.
+
+- Centered model-row avatars and selection icons vertically beside the row content.
+
+- Model row dividers start at the title column, after the avatar, and extend through the list’s trailing gutter to the content-pane edge.
+
+- Model rows show compatibility as a tinted icon-and-text tag alongside metrics, wrapping as needed. Details share the same green/amber/red/neutral verdict styling.
+
+- Model rows use accessible status icons and task tags; details retain matching icons with explanatory text.
+
+- Added offline `ModelHubCard` previews for light/dark themes and narrow screens at 200% text size, including metrics, repair and selection states.
+
+- Model search and Downloads share one compact row layout with icon metrics, secondary author/filename text and subtle dividers. Tap a supported row to open it; Downloads retains selection, readiness and “Finish setup” actions without a redundant “Use model” button.
+
+- Language-model discovery now uses server page/count metadata and author avatars, preserving query cancellation, append retries and bounded recommendation assessment.
 
 - Downloaded models open the matching workspace. Chat reconciles removed selections, Model Hub gives the newest detail request ownership, and settings edits merge against persisted values. Cancelled media writes free their cache space, and failed file-list or download commands can be retried.
 - Fixed ONNX resident-session fixtures to use the production owner/model directory layout across desktop hosts; JVM failures now print full assertions.

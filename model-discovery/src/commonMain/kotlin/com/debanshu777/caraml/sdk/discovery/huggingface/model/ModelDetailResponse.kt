@@ -12,6 +12,8 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.booleanOrNull
 
 internal object StringOrStringListSerializer : KSerializer<List<String>> {
     private val listSerializer = ListSerializer(String.serializer())
@@ -32,6 +34,20 @@ internal object StringOrStringListSerializer : KSerializer<List<String>> {
     }
 }
 
+internal object HubGatedSerializer : KSerializer<Boolean> {
+    override val descriptor = Boolean.serializer().descriptor
+    override fun deserialize(decoder: Decoder): Boolean {
+        val value = (decoder as JsonDecoder).decodeJsonElement() as? JsonPrimitive
+            ?: throw SerializationException("Invalid gated status")
+        return when {
+            !value.isString -> value.booleanOrNull ?: throw SerializationException("Invalid gated status")
+            value.content in setOf("auto", "manual") -> true
+            else -> throw SerializationException("Invalid gated status")
+        }
+    }
+    override fun serialize(encoder: Encoder, value: Boolean) = encoder.encodeBoolean(value)
+}
+
 @Serializable
 data class ModelDetailResponse(
     @SerialName("author")
@@ -47,6 +63,7 @@ data class ModelDetailResponse(
     @SerialName("downloads")
     val downloads: Int? = null,
     @SerialName("gated")
+    @Serializable(with = HubGatedSerializer::class)
     val gated: Boolean? = null,
     @SerialName("gguf")
     val gguf: Gguf? = null,
@@ -87,7 +104,8 @@ data class ModelDetailResponse(
         @SerialName("inference")
         val inference: Boolean? = null,
         @SerialName("language")
-        val language: List<String?>? = null,
+        @Serializable(with = StringOrStringListSerializer::class)
+        val language: List<String>? = null,
         @SerialName("library_name")
         val libraryName: String? = null,
         @SerialName("license")

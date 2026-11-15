@@ -1328,10 +1328,6 @@ private class RetryLocalModelDao(
 ) : LocalModelDao {
     private val models = MutableStateFlow(available)
 
-    override suspend fun getFilenamesByModelId(modelId: String): List<String> =
-        available.filter { it.modelId == modelId }.map { it.filename }
-    override suspend fun deleteByModelIdAndFilename(modelId: String, filename: String) = Unit
-    override suspend fun deleteAllForModelId(modelId: String) = Unit
     override suspend fun insert(entity: LocalModelEntity) = Unit
     override fun getAllDownloadedFiles(): Flow<List<LocalModelEntity>> = models
     override fun getDownloadedFilesByType(modelType: String): Flow<List<LocalModelEntity>> = models
@@ -1340,7 +1336,6 @@ private class RetryLocalModelDao(
         MutableStateFlow(available.sumOf { it.sizeBytes ?: 0L })
     override suspend fun updateComponentStatus(modelId: String, status: String) = Unit
     override suspend fun getMainModels(): List<LocalModelEntity> = available
-    override suspend fun updateArch(modelId: String, arch: String) = Unit
     override suspend fun demoteMmprojFilesFromMain() = Unit
 }
 

@@ -22,7 +22,8 @@ Shared guidance for AI coding agents working in this repository.
 ./gradlew :nativeEngine:mergeLlamaRunnerStaticIosArm64     # iOS native libs
 
 # Tests
-./gradlew verifyProject                                   # Preferred local/CI JVM gate
+./gradlew verifyProject                                   # Preferred local/CI JVM + native gate
+./gradlew :app:desktopApp:nativeRuntimeInstalledImageSmoke # Relocated packaged runtime check
 ./gradlew :app:composeApp:allTests                             # All platform tests
 ./gradlew :app:composeApp:jvmTest                              # JVM tests only
 ```
@@ -42,7 +43,7 @@ Shared guidance for AI coding agents working in this repository.
 ## Architecture
 
 ### Source Sets
-Shared logic in `commonMain`. Platform-specific: `expect`/`actual` with `androidMain`, `iosMain`, `jvmMain`.
+Shared logic in `commonMain`. Platform-specific: `expect`/`actual` with `androidMain`, `iosMain`, `jvmMain`. Java-compatible downloads and engine bridges share `src/javaMain/kotlin`, included explicitly in Android/JVM source sets; keep platform loading and HTTP factories in their target source sets.
 
 ### Packages
 Use `com.debanshu777.caraml` for all first-party Kotlin packages and mirror declarations in source directories.
@@ -67,12 +68,13 @@ Three features: **chat** (LLM/diffusion inference UI), **modelhub** (browse/sear
 
 ### Native Integration
 - **iOS**: cinterop `.def` files linking to merged static libraries; linker flags for Metal/Accelerate frameworks
-- **Android/JVM**: JNI bindings loaded via `System.loadLibrary()`
+- **Android**: JNI bindings loaded via `System.loadLibrary()`
+- **JVM**: shared native-runtime resolver loads JNI libraries from an explicit override or packaged Compose resources, falling back to `System.loadLibrary()` only when neither directory is configured
 - **Git submodules**: `libraries/llama.cpp`, `libraries/stable-diffusion.cpp`
 
 ### Key Data Flows
 - **Inference**: `ChatViewModel` -> `GenerateResponseUseCase` -> `InferenceRepository` -> `LlamaRunner` (native) -> token `Flow<String>`
-- **Downloads**: `ModelViewModel` -> `DownloadManager` -> Ktor HTTP -> `Flow<DownloadProgressDTO>` -> `LocalModelRepository` insert
+- **Downloads**: `ModelViewModel` -> `DownloadCoordinator` -> durable Room tasks and platform scheduling -> `DownloadManager` transfer -> verified manifest publication and transactional installed catalog
 
 ## Key Technical Details
 

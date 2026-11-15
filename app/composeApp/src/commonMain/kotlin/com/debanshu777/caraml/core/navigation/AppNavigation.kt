@@ -1,5 +1,9 @@
 package com.debanshu777.caraml.core.navigation
 
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.runtime.CompositionLocalProvider
+import com.debanshu777.caraml.core.ui.motion.LocalModelIdentityNavigation
+import com.debanshu777.caraml.core.ui.motion.LocalModelSharedTransitionScope
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -10,10 +14,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
@@ -36,11 +37,12 @@ import com.debanshu777.caraml.features.chat.presentation.ChatScreen
 import com.debanshu777.caraml.features.chat.presentation.ChatViewModel
 import com.debanshu777.caraml.features.modelhub.presentation.details.DetailsScreen
 import com.debanshu777.caraml.features.modelhub.presentation.downloaded.DownloadedModelsViewModel
+import com.debanshu777.caraml.features.modelhub.presentation.downloaded.DownloadsScreen
+import com.debanshu777.caraml.features.modelhub.presentation.search.ModelDeviceScreen
 import com.debanshu777.caraml.features.modelhub.presentation.search.ModelViewModel
 import com.debanshu777.caraml.features.modelhub.presentation.search.SearchScreen
 import com.debanshu777.caraml.features.settings.presentation.SettingsScreen
 import com.debanshu777.caraml.features.settings.presentation.SettingsViewModel
-import com.debanshu777.caraml.features.modelhub.presentation.search.ModelHubBrowseMode
 import com.debanshu777.caraml.core.ui.motion.AuroraMotionPolicy
 import com.debanshu777.caraml.core.ui.motion.LocalAuroraMotionPolicy
 import org.koin.compose.viewmodel.koinViewModel
@@ -61,6 +63,14 @@ internal fun returnHomeAfterModelSelection(backStack: NavBackStack<NavKey>) {
         backStack.clear()
         backStack.add(AppScreen.Home)
     }
+}
+
+internal fun openDownloads(backStack: NavBackStack<NavKey>) {
+    backStack.add(AppScreen.Downloads)
+}
+
+internal fun popNavigationEntry(backStack: NavBackStack<NavKey>) {
+    if (backStack.size > 1) backStack.removeLastOrNull()
 }
 
 internal enum class NavigationTransitionAxis {
@@ -100,19 +110,6 @@ internal fun navigationTransitionFamily(target: NavKey?): NavigationTransitionFa
     } else {
         NavigationTransitionFamily.Peer
     }
-
-internal fun returnFromModelSelection(backStack: NavBackStack<NavKey>) {
-    if (backStack.lastOrNull() != AppScreen.Search) return
-
-    Snapshot.withMutableSnapshot {
-        if (backStack.size > 1) {
-            backStack.removeLastOrNull()
-        } else {
-            backStack.clear()
-            backStack.add(AppScreen.Home)
-        }
-    }
-}
 
 internal fun navigationTransitionDescriptor(
     family: NavigationTransitionFamily,
@@ -183,8 +180,13 @@ internal fun NavigationTransitionDisplay(
     entryDecorators: List<NavEntryDecorator<NavKey>>,
     entryProvider: (NavKey) -> NavEntry<NavKey>,
 ) {
+    SharedTransitionLayout(modifier) {
+      CompositionLocalProvider(
+          LocalModelSharedTransitionScope provides if (motionPolicy.spatialTransitionsEnabled) this else null,
+          LocalModelIdentityNavigation provides ((backStack.lastOrNull() as? AppScreen.Details)?.preview?.transitionKey != null),
+      ) {
     NavDisplay(
-        modifier = modifier,
+        modifier = Modifier,
         backStack = backStack,
         onBack = { if (backStack.size > 1) backStack.removeLastOrNull() },
         entryDecorators = entryDecorators,
@@ -220,6 +222,8 @@ internal fun NavigationTransitionDisplay(
             )
         },
     )
+      }
+    }
 }
 
 @Composable
@@ -239,7 +243,6 @@ fun NavigationHost(
     val reportInventory = LocalChatInventoryReporter.current
     SideEffect { reportInventory(inventoryInitialized) }
 
-    var requestedModelHubTab by rememberSaveable { mutableStateOf(0) }
     NavigationTransitionDisplay(
         modifier = modifier,
         backStack = backStack,
@@ -265,11 +268,22 @@ fun NavigationHost(
                 entry(AppScreen.Search) {
                     SearchScreen(
                         modelViewModel = modelViewModel,
+                        settingsViewModel = settingsViewModel,
                         downloadedModelsViewModel = downloadedModelsViewModel,
-                        initialTabIndex = requestedModelHubTab,
-                        onNavigateToDetails = { modelId, hubMode ->
-                            backStack.add(AppScreen.Details(modelId, hubMode))
+                        onOpenDownloads = { openDownloads(backStack) },
+                        onNavigateToDetails = { modelId, hubMode, preview ->
+                            backStack.add(AppScreen.Details(modelId, hubMode, preview))
                         },
+                    )
+                }
+                entry(AppScreen.Device) {
+                    ModelDeviceScreen(modelViewModel, settingsViewModel, onBack = { popNavigationEntry(backStack) })
+                }
+                entry(AppScreen.Downloads) {
+                    DownloadsScreen(
+                        modelViewModel = modelViewModel,
+                        downloadedModelsViewModel = downloadedModelsViewModel,
+                        onBack = { popNavigationEntry(backStack) },
                         onSelectModelAndGoBack = { model ->
                             val mode = modeController.mode.takeIf(model::matchesGenerationMode)
                                 ?: GenerationMode.entries.firstOrNull(model::matchesGenerationMode)
@@ -278,10 +292,18 @@ fun NavigationHost(
                                 chatViewModel.selectModel(model, mode)
                                 returnHomeAfterModelSelection(backStack)
                             }
-                        }
+                        },
+                        onNavigateToDetails = { modelId, hubMode ->
+                            backStack.add(AppScreen.Details(modelId, hubMode))
+                        },
+                        onExploreModels = {
+                            if (backStack.getOrNull(backStack.lastIndex - 1) == AppScreen.Search) {
+                                popNavigationEntry(backStack)
+                            } else {
+                                backStack.add(AppScreen.Search)
+                            }
+                        },
                     )
-                    // Search owns its saveable selection after entry; consume this one-time route request.
-                    LaunchedEffect(Unit) { requestedModelHubTab = 0 }
                 }
                 entry<AppScreen.Details>(
                     metadata = metadata {
@@ -311,19 +333,14 @@ fun NavigationHost(
                         viewModel = modelViewModel,
                         modelId = key.modelId,
                         hubBrowseMode = key.hubBrowseMode,
-                        onBack = { if (backStack.size > 1) backStack.removeLastOrNull() },
+                        preview = key.preview,
+                        onBack = { popNavigationEntry(backStack) },
                     )
                 }
                 entry(AppScreen.Settings) {
                     SettingsScreen(
                         viewModel = settingsViewModel,
-                        onOpenShelf = {
-                            Snapshot.withMutableSnapshot {
-                                requestedModelHubTab = 1
-                                backStack.clear()
-                                backStack.add(AppScreen.Search)
-                            }
-                        },
+                        onOpenDownloads = { openDownloads(backStack) },
                     )
                 }
             },

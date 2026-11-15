@@ -12,7 +12,14 @@ The adapter lives in `com.debanshu777.caraml.sdk.plugin.diffusion`; its native
 bridge and tests live in the `.bridge` subpackage. Kotlin declarations, JNI
 symbols, iOS cinterop and consumer keep rules use the same package hierarchy. See [native bridge details](docs/native-bridge.md).
 
+Android and JVM compile one JNI bridge from `src/javaMain/kotlin`; their small
+platform loader functions retain Android library lookup and desktop resource-path
+resolution. The build scripts include this directory explicitly in both targets.
+
 ## Recent Changes
+
+- Consolidated Android/JVM runner implementation while preserving JNI descriptors, handle ownership, validation and cancellation. Platform library loading and existing diagnostics remain separate; Kotlin now supplies the plugin's standard library dependency.
+- JVM JNI loading uses the shared desktop resolver, supporting packaged resources and explicit SDK directory overrides. The desktop installed-image smoke initializes the selected runtime from relocated resources without a development library path.
 
 - Made SDK diffusion preflight a synchronous probe under the shared runtime gate. It creates no model handle and returns without invoking loaded-session teardown. Generation stops progress polling before publishing output or a terminal event. Direct session close can retry a failed native release.
 

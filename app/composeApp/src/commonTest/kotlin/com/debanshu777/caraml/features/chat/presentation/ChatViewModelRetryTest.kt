@@ -789,9 +789,6 @@ private class StaticLocalModelDao(
 ) : LocalModelDao {
     private val models = MutableStateFlow(listOf(model))
 
-    override suspend fun getFilenamesByModelId(modelId: String): List<String> = listOf(model.filename)
-    override suspend fun deleteByModelIdAndFilename(modelId: String, filename: String) = Unit
-    override suspend fun deleteAllForModelId(modelId: String) = Unit
     override suspend fun insert(entity: LocalModelEntity) = Unit
     override fun getAllDownloadedFiles(): Flow<List<LocalModelEntity>> = models
     override fun getDownloadedFilesByType(modelType: String): Flow<List<LocalModelEntity>> = models
@@ -799,7 +796,6 @@ private class StaticLocalModelDao(
     override fun getTotalDownloadedSizeBytes(): Flow<Long> = MutableStateFlow(model.sizeBytes ?: 0L)
     override suspend fun updateComponentStatus(modelId: String, status: String) = Unit
     override suspend fun getMainModels(): List<LocalModelEntity> = listOf(model)
-    override suspend fun updateArch(modelId: String, arch: String) = Unit
     override suspend fun demoteMmprojFilesFromMain() = Unit
 }
 

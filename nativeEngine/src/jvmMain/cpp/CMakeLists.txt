@@ -232,3 +232,28 @@ target_include_directories(diffusion_max_vram_test PRIVATE
 target_link_libraries(diffusion_max_vram_test PRIVATE stable-diffusion Threads::Threads)
 add_test(NAME diffusion_max_vram_test COMMAND diffusion_max_vram_test)
 endif()
+
+# Export only runtime libraries from the selected profile, including dlopen-only
+# GGML backends. CMake resolves multi-config output locations (e.g. Release/*.dll)
+# and rewrites install RPATHs, so packaged apps never depend on the build tree.
+function(caraml_install_desktop_runtimes directory)
+    get_property(_targets DIRECTORY "${directory}" PROPERTY BUILDSYSTEM_TARGETS)
+    foreach(_target IN LISTS _targets)
+        get_target_property(_type "${_target}" TYPE)
+        if(_type STREQUAL "SHARED_LIBRARY" OR _type STREQUAL "MODULE_LIBRARY")
+            if(APPLE)
+                set_target_properties("${_target}" PROPERTIES INSTALL_RPATH "@loader_path")
+            elseif(UNIX)
+                set_target_properties("${_target}" PROPERTIES INSTALL_RPATH "$ORIGIN")
+            endif()
+            install(TARGETS "${_target}"
+                LIBRARY DESTINATION . COMPONENT caraml-runtime
+                RUNTIME DESTINATION . COMPONENT caraml-runtime)
+        endif()
+    endforeach()
+    get_property(_directories DIRECTORY "${directory}" PROPERTY SUBDIRECTORIES)
+    foreach(_directory IN LISTS _directories)
+        caraml_install_desktop_runtimes("${_directory}")
+    endforeach()
+endfunction()
+caraml_install_desktop_runtimes("${CMAKE_CURRENT_SOURCE_DIR}")

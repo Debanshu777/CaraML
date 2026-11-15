@@ -84,6 +84,46 @@ interface InstalledModelCatalogDao {
     )
     suspend fun countCatalogStorageReferences(localPath: String): Long
 
+    @Query("""
+        SELECT local_path FROM local_model
+        UNION SELECT dc.local_path FROM downloaded_component dc
+            INNER JOIN model_component_link mcl ON dc.id = mcl.component_id
+            WHERE EXISTS (SELECT 1 FROM local_model lm WHERE lm.model_id = mcl.model_id)
+    """)
+    suspend fun catalogStoragePaths(): List<String>
+
+    @Query("SELECT * FROM local_model WHERE id = :id")
+    suspend fun modelForRemoval(id: Long): LocalModelEntity?
+
+    @Query("DELETE FROM local_model WHERE id = :id")
+    suspend fun deleteModelRow(id: Long)
+
+    @Query("SELECT COUNT(*) FROM local_model WHERE model_id = :modelId")
+    suspend fun countModelRows(modelId: String): Long
+
+    @Transaction
+    suspend fun snapshotForRemoval(id: Long): InstalledCatalogSnapshot? {
+        val model = modelForRemoval(id) ?: return null
+        val components = snapshotComponents(model.modelId).takeIf { it.size <= MAX_SNAPSHOT_COMPONENTS }
+            ?: return null
+        return InstalledCatalogSnapshot(model, components, snapshotEvidence(model.modelId))
+    }
+
+    /** A selected legacy/partial row can be removed without unlinking another variant's components. */
+    @Transaction
+    suspend fun removeSelectedIfMatches(expected: InstalledCatalogSnapshot): RemovedInstalledCatalog? {
+        if (snapshotForRemoval(expected.model.id) != expected) return null
+        deleteModelRow(expected.model.id)
+        if (countModelRows(expected.model.modelId) != 0L) {
+            return RemovedInstalledCatalog(expected.model, emptyList())
+        }
+        deleteLinks(expected.model.modelId)
+        deleteEvidence(expected.model.modelId)
+        val unreferenced = expected.components.filter { countComponentLinks(it.id) == 0L }
+        unreferenced.forEach { deleteComponent(it.id) }
+        return RemovedInstalledCatalog(expected.model, unreferenced)
+    }
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertComponent(component: DownloadedComponentEntity): Long
 
@@ -174,25 +214,6 @@ interface InstalledModelCatalogDao {
         previouslyLinked.forEach { component ->
             if (countComponentLinks(component.id) == 0L) deleteComponent(component.id)
         }
-    }
-
-    /**
-     * Removes only the exact Ready snapshot observed by the caller. A concurrent replacement makes
-     * the value unequal and leaves the newer catalog untouched. Reference counts and orphan row
-     * removal are evaluated within this Room transaction.
-     */
-    @Transaction
-    suspend fun removeReadyIfMatches(expected: InstalledCatalogSnapshot): RemovedInstalledCatalog? {
-        val current = snapshotReady(expected.model.modelId) ?: return null
-        if (current != expected) return null
-        deleteLinks(expected.model.modelId)
-        deleteModels(expected.model.modelId)
-        deleteEvidence(expected.model.modelId)
-        val unreferenced = expected.components.filter { component ->
-            countComponentLinks(component.id) == 0L
-        }
-        unreferenced.forEach { component -> deleteComponent(component.id) }
-        return RemovedInstalledCatalog(expected.model, unreferenced)
     }
 
     private companion object {

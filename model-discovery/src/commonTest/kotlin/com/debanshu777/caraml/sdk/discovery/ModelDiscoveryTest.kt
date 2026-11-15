@@ -97,7 +97,14 @@ class ModelDiscoveryTest {
             val auth = request.headers[HttpHeaders.Authorization]
             seen += Triple(path, auth, request.headers[HttpHeaders.Range])
             when {
-                path == "/api/models" -> respond("[{\"id\":\"org/model\",\"sha\":\"$commit\"}]")
+                path == "/api/models" -> {
+                    // The real default response has no sha. Only the explicit projection
+                    // supplies the immutable revision needed by the subsequent tree request.
+                    val fields = request.url.parameters.getAll("expand").orEmpty()
+                    assertEquals(setOf("sha", "library_name", "pipeline_tag"), fields.toSet())
+                    if ("sha" in fields) respond("[{\"id\":\"org/model\",\"sha\":\"$commit\"}]")
+                    else respond("[{\"id\":\"org/model\"}]")
+                }
                 path.startsWith("/api/models/org/model/tree/") -> respond(
                     "[{\"type\":\"file\",\"path\":\"model.gguf\",\"size\":4}]",
                 )
@@ -122,6 +129,7 @@ class ModelDiscoveryTest {
         try {
             val candidate = discovery.search("model").toList().single().items.single()
             val artifact = discovery.resolve(candidate).single()
+            assertEquals(commit, artifact.ref.revision)
             storage.create(DownloadTask(TaskId("hub-task"), artifact))
             discovery.download(TaskId("hub-task"), "worker").toList()
 

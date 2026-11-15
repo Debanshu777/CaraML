@@ -2,12 +2,16 @@
 
 package com.debanshu777.caraml.features.modelhub.presentation.search
 
+import com.debanshu777.caraml.features.modelhub.presentation.components.ModelRow
+import com.debanshu777.caraml.features.modelhub.presentation.components.discoveryModelRow
+import com.debanshu777.caraml.features.modelhub.presentation.components.downloadedModelRow
+
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubInlineFilterPanel
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubInlineFilters
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubFilterPanel
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubFilterButton
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubDeviceInfo
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelDownloadQueueEntry
 import com.debanshu777.caraml.core.download.DownloadArtifactRequest
@@ -54,6 +58,9 @@ import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -61,18 +68,18 @@ import java.awt.image.BufferedImage
 import java.io.File
 import javax.imageio.ImageIO
 import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import com.debanshu777.caraml.core.drawer.LocalNavigationMenuAction
 import com.debanshu777.caraml.core.recommendation.RecommendationProfile
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.theme.CaraMLTheme
 import com.debanshu777.caraml.core.theme.ThemePreferences
 import com.debanshu777.caraml.core.ui.components.AuroraBackdrop
-import com.debanshu777.caraml.features.modelhub.presentation.downloaded.components.DownloadedListItem
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubContextStrip
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubStateKind
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubStateView
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchBar
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchListItem
 
 /** Optional rendered evidence; run with CARAML_VISUAL_EVIDENCE_DIR to save PNGs. */
 class ModelHubVisualEvidenceTest {
@@ -101,10 +108,10 @@ class ModelHubVisualEvidenceTest {
         saveModelHubEvidence("brand-390-library.png")
         onNodeWithText("Finish setup").performScrollTo().assertIsDisplayed()
         onNodeWithTag("model-primary-results").performScrollToKey("Audio-encoder")
-        onNodeWithText("Unsupported", useUnmergedTree = true).assertIsDisplayed()
+        onNodeWithContentDescription("Unsupported", substring = true, useUnmergedTree = true).assertIsDisplayed()
         saveModelHubEvidence("brand-390-library-unsupported.png")
         runOnIdle { scene = BrandEvidenceScene.Unknown }
-        onNodeWithText("Needs information", useUnmergedTree = true).assertIsDisplayed()
+        onNodeWithContentDescription("Needs information", substring = true, useUnmergedTree = true).assertIsDisplayed()
         saveModelHubEvidence("brand-390-unknown.png")
         runOnIdle { scene = BrandEvidenceScene.Error }
         onNodeWithText("Retry").assertIsDisplayed()
@@ -133,7 +140,7 @@ class ModelHubVisualEvidenceTest {
         onNodeWithText("Finish setup").performScrollTo().assertIsDisplayed()
         saveModelHubEvidence("brand-320-200-library-repair.png")
         runOnIdle { scene = BrandEvidenceScene.Unknown }
-        onNodeWithText("Needs information", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+        onNodeWithContentDescription("Needs information", substring = true, useUnmergedTree = true).performScrollTo().assertIsDisplayed()
         saveModelHubEvidence("brand-320-200-unknown.png")
         runOnIdle { scene = BrandEvidenceScene.Error }
         onNodeWithText("Retry").performScrollTo().assertIsDisplayed()
@@ -321,23 +328,25 @@ class ModelHubVisualEvidenceTest {
             CompositionLocalProvider(LocalDensity provides Density(1f, 2f)) {
                 Surface(Modifier.requiredSize(320.dp, 740.dp).testTag("visual-root")) {
                   Column(Modifier.verticalScroll(rememberScrollState())) {
-                    ModelHubInlineFilterPanel(
+                    ModelHubFilterPanel(
                         mode = ModelHubBrowseMode.LanguageModels,
                         ordering = ModelOrdering.Server(ModelSort.TRENDING),
                         minParams = ParameterRange.ZERO,
                         maxParams = ParameterRange.SIX_B,
-                        onApply = { _, _, _, _ -> },
+                        onApply = { _, _, _, _, _ -> },
                     )
                   }
                 }
             }
         }
-        onNodeWithText("Apply filters").performScrollTo().assertIsDisplayed()
+        onNodeWithText("Size").performClick()
+        onNodeWithTag("model-size-range").performScrollTo().assertIsDisplayed()
+        onNodeWithText("View models").performScrollTo().assertIsDisplayed()
         saveModelHubEvidence("compact-200-filters-size.png")
     }
 
     @Test
-    fun detailAtNormalAndDoubleTextScale() = runComposeUiTest {
+    fun detailAtDoubleTextScaleKeepsTheFullNameVisible() = runComposeUiTest {
         setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f, 2f)) {
                 Box(Modifier.requiredSize(360.dp, 800.dp).testTag("visual-root")) {
@@ -345,7 +354,13 @@ class ModelHubVisualEvidenceTest {
                 }
             }
         }
-        onNodeWithText("Show full name").assertIsDisplayed()
+        val layouts = mutableListOf<TextLayoutResult>()
+        onNodeWithTag("detail-title").assertIsDisplayed()
+            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        val title = layouts.single()
+        assertEquals("HauhauCS/Qwen3.8-27B-Uncensored-HauhauCS-Aggressive-MTP-GGUF", title.layoutInput.text.text)
+        assertTrue(title.lineCount > 1, "The long title must wrap at this width")
+        assertFalse(title.hasVisualOverflow, "The linked model name must wrap in full at 200% text size")
         saveModelHubEvidence("compact-200-detail.png")
     }
 
@@ -358,19 +373,21 @@ private fun BrandedModelHubEvidence(scene: BrandEvidenceScene) {
     CaraMLTheme(ThemePreferences(reduceMotion = true, themeMode = com.debanshu777.caraml.core.theme.ThemeMode.LIGHT)) {
         CompositionLocalProvider(LocalNavigationMenuAction provides {}) {
             AuroraBackdrop {
-                val results: @Composable () -> Unit = {
+                val results: @Composable (ModelHubFixtureChrome) -> Unit = { chrome ->
                     ModelHubTabLayout(
+                        header = chrome.header, snackbarHostState = chrome.snackbarHostState,
                         modifier = Modifier.fillMaxSize(),
                         scrollResetKey = scene,
-                        context = {},
+                        context = chrome.context,
                         toolbar = {},
-                        summary = {
-                            ModelHubInlineFilters("Preview models", ModelHubBrowseMode.LanguageModels,
-                                ModelOrdering.Server(ModelSort.TRENDING), ParameterRange.ZERO, ParameterRange.SIX_B,
-                                onApply = { _, _, _, _ -> })
-                        },
+                        summary = {},
                         command = { SearchBar(query = "", onQueryChange = {}, onSearch = {},
-                            placeholder = if (scene == BrandEvidenceScene.Library || scene == BrandEvidenceScene.EmptyLibrary) "Search your library" else "Find your next little brain") },
+                            placeholder = if (scene == BrandEvidenceScene.Library || scene == BrandEvidenceScene.EmptyLibrary) "Search your library" else "Find your next little brain",
+                            trailingAction = {
+                                ModelHubFilterButton(ModelHubBrowseMode.LanguageModels,
+                                    ModelOrdering.Server(ModelSort.TRENDING), ParameterRange.ZERO, ParameterRange.SIX_B,
+                                    onApply = { _, _, _, _ -> })
+                            }) },
                         results = {
                             when (scene) {
                                 BrandEvidenceScene.Library -> listOf(
@@ -379,26 +396,34 @@ private fun BrandedModelHubEvidence(scene: BrandEvidenceScene) {
                                     Triple("Audio-encoder", "audio-encoder.onnx", LocalModelEntity.STATUS_READY),
                                 ).forEachIndexed { index, (name, filename, status) ->
                                     item(key = name) {
-                                        DownloadedListItem(
-                                            model = LocalModelEntity(
-                                                id = index.toLong(), modelId = "sample/$name", filename = filename,
-                                                localPath = "/preview/$filename", sizeBytes = 2_600_000_000L,
-                                                downloadedAt = 0L, author = "sample", libraryName = null,
-                                                pipelineTag = when(index) { 1 -> "text-to-image"; 2 -> "audio-classification"; else -> "text-generation" },
-                                                componentStatus = status,
+                                        ModelRow(
+                                            state = downloadedModelRow(
+                                                model = LocalModelEntity(
+                                                    id = index.toLong(), modelId = "sample/$name", filename = filename,
+                                                    localPath = "/preview/$filename", sizeBytes = 2_600_000_000L,
+                                                    downloadedAt = 0L, author = "sample", libraryName = null,
+                                                    pipelineTag = when(index) { 1 -> "text-to-image"; 2 -> "audio-classification"; else -> "text-generation" },
+                                                    componentStatus = status,
+                                                ),
+                                                selectionMode = false,
+                                                isSelected = false,
                                             ),
-                                            selectionMode = false, isSelected = false,
-                                            onOpenModel = {}, onToggleSelect = {}, onLongPress = {},
+                                            onOpenModel = {},
+                                            onToggleSelect = {},
+                                            onLongPress = {},
                                             onFixComponents = if (status == LocalModelEntity.STATUS_PARTIAL) ({}) else null,
                                         )
                                     }
                                 }
                                 BrandEvidenceScene.Unknown -> item(key = "unknown") {
-                                    SearchListItem(
-                                        model = ListModelsResponse.Model(
-                                            id = "sample/Stable-Diffusion", author = "sample", pipelineTag = "text-to-image",
+                                    ModelRow(
+                                        state = discoveryModelRow(
+                                            model = ListModelsResponse.Model(
+                                                id = "sample/Stable-Diffusion", author = "sample", pipelineTag = "text-to-image",
+                                                numParameters = 2_000_000_000, downloads = 107_000, likes = 47,
+                                            ),
                                         ),
-                                        onClick = {},
+                                        onOpenModel = {},
                                     )
                                 }
                                 BrandEvidenceScene.Error -> item(key = "error") {
@@ -423,18 +448,7 @@ private fun BrandedModelHubEvidence(scene: BrandEvidenceScene) {
                 ModelHubScreenLayout(
                     selectedTabIndex = if (scene == BrandEvidenceScene.Library || scene == BrandEvidenceScene.EmptyLibrary) 1 else 0,
                     onTabSelected = {},
-                    sharedContext = {
-                        ModelHubContextStrip(
-                            StorageInfoUiState(
-                                totalDeviceBytes = 128L * 1024 * 1024 * 1024,
-                                availableDeviceBytes = 49L * 1024 * 1024 * 1024,
-                                usedByModelsBytes = 6L * 1024 * 1024 * 1024,
-                            ),
-                            profile = RecommendationProfile(),
-                            onOpenProfile = {},
-                            onOpenDevice = {},
-                        )
-                    },
+                    sharedContext = {},
                     discoverContent = results,
                     libraryContent = results,
                 )

@@ -7,157 +7,145 @@ import com.debanshu777.caraml.sdk.discovery.huggingface.model.ParameterRange
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
-import io.ktor.http.HttpHeaders
-import io.ktor.http.headersOf
+import io.ktor.http.Url
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertIs
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
+import kotlin.test.*
 
 class ModelPageTest {
     @Test
-    fun pageCursorPreservesQueryAndFetchesDistinctNextPage() = runTest {
-        val observed = mutableListOf<String>()
+    fun pageContinuationPreservesQueryAndUsesServerCount() = runTest {
+        val observed = mutableListOf<Url>()
         val client = HttpClient(MockEngine { request ->
-            observed += request.url.toString()
-            val first = request.url.parameters["cursor"] == null
-            val headers = if (first) {
-                headersOf(HttpHeaders.Link, "<${request.url}&cursor=next-opaque>; rel=\"next\"")
-            } else {
-                headersOf(HttpHeaders.ContentType, "application/json")
-            }
-            respond(if (first) "[{\"id\":\"owner/first\"}]" else "[{\"id\":\"owner/second\"}]", headers = headers)
+            observed += request.url
+            val page = request.url.parameters["p"]!!.toInt()
+            respond(envelope("""[{"id":"owner/page$page"}]""", page, 30, if (page == 0) 31 else 30))
         })
         try {
             val service = service(client)
-            val request = ModelPageRequest(
-                search = "Qwen & 3B?", sort = ModelSort.DOWNLOADS,
+            val request = ModelPageRequest(search = "Qwen & 3B?/模型", sort = ModelSort.DOWNLOADS,
                 minParams = ParameterRange.THREE_B, maxParams = ParameterRange.SIX_B,
-                pipelineTag = "text-generation",
-                limit = 2,
-            )
-            val first = assertIs<Result.Success<ModelPage, DataError.Network>>(service.getModelPage(request)).data
-            val second = assertIs<Result.Success<ModelPage, DataError.Network>>(
-                service.getModelPage(request.copy(cursor = assertNotNull(first.nextCursor))),
-            ).data
-            assertEquals(listOf("owner/first"), first.models.map { it.id })
-            assertEquals(listOf("owner/second"), second.models.map { it.id })
+                pipelineTag = "text-generation")
+            val first = success(service.getModelPage(request))
+            val second = success(service.getModelPage(request.copy(cursor = assertNotNull(first.nextCursor))))
+            assertEquals(listOf("owner/page0"), first.models.map { it.id })
+            assertEquals(listOf("owner/page1"), second.models.map { it.id })
             assertNull(second.nextCursor)
-            assertNull(first.totalCount)
-            assertTrue(observed[0].contains("search=Qwen"))
-            assertTrue(observed[0].contains("sort=downloads"))
-            assertTrue(observed[0].contains("pipeline_tag=text-generation"))
-            assertIs<Result.Error<*, *>>(service.getModelPage(request.copy(
-                pipelineTag = "feature-extraction", cursor = first.nextCursor,
-            )))
-            assertEquals(2, observed.size, "A cursor cannot be reused for another pipeline")
-            assertTrue(observed[0].contains("num_parameters=min%3A3B%2Cmax%3A6B"))
-            assertTrue(observed[1].contains("cursor=next-opaque"))
+            assertEquals(31, first.totalCount)
+            assertEquals(30, second.totalCount)
+            assertEquals("/models-json", observed[0].encodedPath)
+            assertEquals(request.search, observed[0].parameters["search"])
+            assertEquals("gguf", observed[0].parameters["library"])
+            assertEquals("llama.cpp", observed[0].parameters["apps"])
+            assertEquals("text-generation", observed[0].parameters["pipeline_tag"])
+            assertEquals("min:3B,max:6B", observed[0].parameters["num_parameters"])
+            assertEquals("true", observed[0].parameters["withCount"])
+            assertEquals("1", observed[1].parameters["p"])
+            listOf("limit", "cursor", "expand", "direction", "filter").forEach {
+                assertNull(observed[0].parameters[it])
+            }
+            listOf(request.copy(search = "other"), request.copy(sort = ModelSort.LIKES),
+                request.copy(filter = listOf("onnx")), request.copy(apps = emptyList()),
+                request.copy(pipelineTag = "other"), request.copy(maxParams = null)).forEach {
+                assertIs<Result.Error<*, *>>(service.getModelPage(it.copy(cursor = first.nextCursor)))
+            }
+            assertEquals(2, observed.size)
         } finally { client.close() }
     }
 
     @Test
-    fun supportedSortsUsePublicApiValues() = runTest {
-        val observed = mutableListOf<String>()
-        val client = HttpClient(MockEngine { request ->
-            observed += request.url.parameters["sort"].orEmpty()
-            respond("[]")
-        })
+    fun supportedSortsAndOptionalFiltersUseWebsiteValues() = runTest {
+        val observed = mutableListOf<Url>()
+        val client = HttpClient(MockEngine { request -> observed += request.url; respond(envelope()) })
         try {
             val service = service(client)
-            listOf(ModelSort.TRENDING, ModelSort.DOWNLOADS, ModelSort.LIKES,
-                ModelSort.CREATED, ModelSort.MODIFIED).forEach {
-                assertIs<Result.Success<ModelPage, DataError.Network>>(service.getModelPage(ModelPageRequest(sort = it)))
+            listOf(ModelSort.TRENDING, ModelSort.DOWNLOADS, ModelSort.LIKES, ModelSort.CREATED, ModelSort.MODIFIED).forEach {
+                success(service.getModelPage(ModelPageRequest(sort = it, filter = emptyList(), apps = emptyList())))
             }
-            assertEquals(listOf("trendingScore", "downloads", "likes", "createdAt", "lastModified"), observed)
+            assertEquals(listOf("trending", "downloads", "likes", "created", "modified"), observed.map { it.parameters["sort"] })
+            listOf("search", "library", "apps", "num_parameters", "pipeline_tag").forEach { assertNull(observed[0].parameters[it]) }
             assertFailsWith<IllegalArgumentException> { ModelPageRequest(sort = ModelSort.MOST_PARAMS) }
         } finally { client.close() }
     }
 
     @Test
-    fun rejectsForeignMalformedAndWrongQueryCursors() = runTest {
-        var count = 0
-        var link = ""
-        val client = HttpClient(MockEngine { request ->
-            count++
-            respond("[]", headers = headersOf(HttpHeaders.Link, link.replace("{url}", request.url.toString())))
-        })
-        try {
-            val service = service(client)
-            val request = ModelPageRequest(search = "Qwen")
-            link = "<{url}&cursor=ok>; rel=\"next\""
-            val good = assertNotNull(assertIs<Result.Success<ModelPage, DataError.Network>>(
-                service.getModelPage(request),
-            ).data.nextCursor)
-            val before = count
-            assertIs<Result.Error<*, *>>(service.getModelPage(request.copy(search = "Gemma", cursor = good)))
-            assertEquals(before, count)
-
-            val invalidLinks = listOf(
-                "<https://evil.example/api/models?cursor=bad>; rel=\"next\"",
-                "<http://huggingface.co/api/models?cursor=bad>; rel=\"next\"",
-                "<https://huggingface.co/api/other?cursor=bad>; rel=\"next\"",
-                "<https://name:pass@huggingface.co/api/models?cursor=bad>; rel=\"next\"",
-                "<{url}&cursor=a&cursor=b>; rel=\"next\"",
-                "<{url}&cursor=ok&search=other>; rel=\"next\"",
-                "<{url}&cursor=ok#fragment>; rel=\"next\"",
-                "<{url}&cursor=ok>; rel=\"next\", <{url}&cursor=more>; rel=\"next\"",
-                "<{url}&cursor=${"x".repeat(2_049)}>; rel=\"next\"",
-            )
-            for (candidate in invalidLinks) {
-                link = candidate
-                assertEquals(DataError.Network.Serialization,
-                    assertIs<Result.Error<ModelPage, DataError.Network>>(service.getModelPage(request)).error)
-            }
-        } finally { client.close() }
-    }
-
-    @Test
-    fun optionalMetadataAndParameterCountsStayHonest() = runTest {
-        val body = """[
-          {"id":"a/gguf","author":"a","pipeline_tag":"text-generation","gguf":{"total":30532122624,"totalFileSize":17310784672,"architecture":"qwen3moe","context_length":262144}},
-          {"id":"b/safe","safetensors":{"parameters":{"BF16":100,"F32":25},"total":125}},
-          {"id":"c/mixed","gguf":{"total":300},"safetensors":{"total":200}},
-          {"id":"d/missing"},
-          {"id":"e/bad","gguf":{"total":-5},"safetensors":{"parameters":{"BF16":1.5}}}
-        ]""".trimIndent()
+    fun normalizesAuthorGatingAndUnknownParameterCount() = runTest {
+        val body = envelope("""[
+            {"id":"a/one","numParameters":0,"gated":false,"authorData":{"avatarUrl":"/avatars/a.svg","fullname":"A"},"newServerField":{}},
+            {"id":"a/two","numParameters":30532122624,"gated":"auto","authorData":{"avatarUrl":"https://www.gravatar.com/avatar/a?d=retro"}},
+            {"id":"a/three","numParameters":-1,"gated":"manual","authorData":{"avatarUrl":"javascript:alert(1)"}},
+            {"id":"a/four","numParameters":1.5,"authorData":{"avatarUrl":"//evil.example/a.png"}},
+            {"id":"a/five","authorData":{"avatarUrl":"https://user:pass@example.com/a"}}
+        ]""", total = 5)
         val client = HttpClient(MockEngine { respond(body) })
         try {
-            val page = assertIs<Result.Success<ModelPage, DataError.Network>>(
-                service(client).getModelPage(ModelPageRequest(limit = 5)),
-            ).data
-            assertEquals(30_532_122_624L, page.models[0].numParameters)
-            assertEquals("qwen3moe", page.models[0].architecture)
-            assertEquals(262_144, page.models[0].contextLength)
-            assertEquals(125L, page.models[1].numParameters)
-            assertNull(page.models[2].numParameters)
-            assertNull(page.models[3].numParameters)
-            assertNull(page.models[4].numParameters)
+            val models = success(service(client).getModelPage(ModelPageRequest())).models
+            assertNull(models[0].numParameters)
+            assertEquals("false", models[0].gated)
+            assertEquals("https://huggingface.co/avatars/a.svg", models[0].authorData?.avatarUrl)
+            assertEquals("A", models[0].authorData?.fullname)
+            assertEquals(30_532_122_624L, models[1].numParameters)
+            assertEquals("auto", models[1].gated)
+            assertNotNull(models[1].authorData?.avatarUrl)
+            assertEquals("manual", models[2].gated)
+            models.drop(2).forEach { assertNull(it.numParameters); assertNull(it.authorData?.avatarUrl) }
+            assertNull(models[0].createdAt)
+            assertNull(models[0].tags)
         } finally { client.close() }
     }
 
     @Test
-    fun excessRowsAndBodyAreRejected() = runTest {
-        val client = HttpClient(MockEngine { request ->
-            respond(if (request.url.parameters["search"] == "body") "x".repeat(600_000)
-                else "[{\"id\":\"a\"},{\"id\":\"b\"}]")
-        })
+    fun invalidEnvelopesFailAndEmptyCatalogSucceeds() = runTest {
+        var body = envelope()
+        val client = HttpClient(MockEngine { respond(body) })
         try {
             val service = service(client)
-            assertEquals(DataError.Network.PayloadTooLarge, assertIs<Result.Error<ModelPage, DataError.Network>>(
-                service.getModelPage(ModelPageRequest(limit = 1)),
-            ).error)
-            assertEquals(DataError.Network.PayloadTooLarge, assertIs<Result.Error<ModelPage, DataError.Network>>(
-                service.getModelPage(ModelPageRequest(search = "body")),
-            ).error)
+            assertNull(success(service.getModelPage(ModelPageRequest())).nextCursor)
+            listOf("[]", "{}", envelope(page = 1), envelope(size = 0), envelope(size = 101),
+                envelope(total = -1), envelope(total = 1),
+                envelope("""[{"id":"a"}]""", total = 0),
+                envelope("""[{"id":"a"},{"id":"b"}]""", total = 1),
+                envelope().replace("\"numTotalItems\":0", "\"numTotalItems\":\"0\""),
+                envelope("""[{"id":"../invalid"}]""", total = 1)).forEach {
+                body = it
+                assertEquals(DataError.Network.Serialization, assertIs<Result.Error<ModelPage, DataError.Network>>(service.getModelPage(ModelPageRequest())).error)
+            }
+            body = envelope("""[{"id":"a"},{"id":"b"}]""", size = 1, total = 2)
+            assertEquals(DataError.Network.PayloadTooLarge, assertIs<Result.Error<ModelPage, DataError.Network>>(service.getModelPage(ModelPageRequest())).error)
+            body = "x".repeat(600_000)
+            assertEquals(DataError.Network.PayloadTooLarge, assertIs<Result.Error<ModelPage, DataError.Network>>(service.getModelPage(ModelPageRequest())).error)
         } finally { client.close() }
     }
 
-    private fun service(client: HttpClient) =
-        RemoteHuggingFaceApiService(client, Json, "https://huggingface.co")
+    @Test
+    fun continuationBindsServerPageSizeAndRefreshAcceptsNewSize() = runTest {
+        var size = 20
+        val client = HttpClient(MockEngine { request ->
+            val page = request.url.parameters["p"]!!.toInt()
+            respond(envelope("""[{"id":"owner/page$page"}]""", page, size, 100))
+        })
+        try {
+            val service = service(client)
+            val request = ModelPageRequest()
+            val first = success(service.getModelPage(request))
+            assertEquals(20, first.pageSize)
+            val cursor = assertNotNull(first.nextCursor)
+            assertEquals(20, cursor.expectedPageSize)
+            size = 30
+            assertEquals(DataError.Network.Serialization,
+                assertIs<Result.Error<ModelPage, DataError.Network>>(
+                    service.getModelPage(request.copy(cursor = cursor)),
+                ).error)
+            val refreshed = success(service.getModelPage(request))
+            assertEquals(30, refreshed.pageSize)
+            assertEquals(30, assertNotNull(refreshed.nextCursor).expectedPageSize)
+            assertEquals(1, success(service.getModelPage(request.copy(cursor = refreshed.nextCursor))).pageIndex)
+        } finally { client.close() }
+    }
+
+    private fun envelope(rows: String = "[]", page: Int = 0, size: Int = 30, total: Int = 0) =
+        """{"models":$rows,"pageIndex":$page,"numItemsPerPage":$size,"numTotalItems":$total}"""
+    private fun success(result: Result<ModelPage, DataError.Network>) =
+        assertIs<Result.Success<ModelPage, DataError.Network>>(result).data
+    private fun service(client: HttpClient) = RemoteHuggingFaceApiService(client, Json, "https://huggingface.co")
 }

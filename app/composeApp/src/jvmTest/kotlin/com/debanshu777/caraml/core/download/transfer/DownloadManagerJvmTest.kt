@@ -15,7 +15,6 @@ import java.io.File
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import okio.Path.Companion.toPath as toOkioPath
@@ -31,6 +30,31 @@ import kotlin.test.assertTrue
 
 class DownloadManagerJvmTest {
     @Test
+    fun installedManifestReadsMoveFilesystemWorkOffTheCallingThread() = withTemporaryRoot { root ->
+        val installed = installArtifact(root)
+        runBlocking {
+            assertTrue(DownloadManager(TestStoragePathProvider(root)).publishBundle(installed.artifact.repositoryId, listOf(installed)))
+        }
+        val caller = Thread.currentThread()
+        val accessedThreads = java.util.concurrent.CopyOnWriteArrayList<Thread>()
+        val storage = object : StoragePathProvider by TestStoragePathProvider(root) {
+            override fun getModelsStorageDirectory(modelId: String): String {
+                accessedThreads += Thread.currentThread()
+                return modelFile(root, modelId, "").absolutePath
+            }
+        }
+        val manager = DownloadManager(storage)
+        runBlocking {
+            assertNotNull(manager.validatedArtifacts(installed.artifact.repositoryId))
+            assertNotNull(manager.installedArtifactsForDisplay(installed.artifact.repositoryId))
+            assertNotNull(manager.validatedBundle(installed.artifact.repositoryId))
+            assertNotNull(manager.installedBundleForLoad(installed.artifact.repositoryId))
+        }
+        assertTrue(accessedThreads.isNotEmpty())
+        assertTrue(accessedThreads.all { it !== caller }, "Filesystem reads must leave the caller's UI thread")
+    }
+
+    @Test
     fun installedLoadAndNativeLeaseUsePublishedChecksumsButStillRejectMissingOrTruncatedFiles() = withTemporaryRoot { root ->
         val storage = TestStoragePathProvider(root)
         val installed = installArtifact(root)
@@ -41,16 +65,21 @@ class DownloadManagerJvmTest {
         runBlocking {
             assertTrue(manager.publishBundle(owner, listOf(installed)))
             val published = assertNotNull(manager.installedBundleForLoad(owner))
+            val artifacts = assertNotNull(manager.installedArtifactsForDisplay(owner))
             payload.writeBytes(ByteArray(payload.length().toInt()) { 42 })
             assertEquals(published, manager.installedBundleForLoad(owner))
+            assertEquals(artifacts, manager.installedArtifactsForDisplay(owner))
+            assertEquals(null, manager.validatedArtifacts(owner))
             assertEquals(null, manager.validatedBundle(owner))
             val leased = artifactRootLifetime(storage).withCurrentBundle(owner, mapOf(owner to modelRoot.absolutePath)) { it }
             assertEquals(published, leased)
             payload.writeBytes(byteArrayOf(1))
             assertEquals(null, manager.installedBundleForLoad(owner))
+            assertEquals(null, manager.installedArtifactsForDisplay(owner))
             assertEquals(null, artifactRootLifetime(storage).withCurrentBundle(owner, mapOf(owner to modelRoot.absolutePath)) { it })
             payload.delete()
             assertEquals(null, manager.installedBundleForLoad(owner))
+            assertEquals(null, manager.installedArtifactsForDisplay(owner))
         }
     }
 
@@ -1127,25 +1156,6 @@ private class TestStoragePathProvider(
     override fun isModelFileReadable(path: String): Boolean = File(path).isFile
     override fun isDirectoryReadable(path: String): Boolean = File(path).isDirectory
     override fun getFileSize(path: String): Long = File(path).takeIf { it.exists() }?.length() ?: 0L
-
-    override fun renameFile(from: String, to: String): Boolean = try {
-        val source = File(from).toPath()
-        val destination = File(to).toPath()
-        destination.parent?.let(Files::createDirectories)
-        try {
-            Files.move(
-                source,
-                destination,
-                StandardCopyOption.ATOMIC_MOVE,
-                StandardCopyOption.REPLACE_EXISTING,
-            )
-        } catch (_: Exception) {
-            Files.move(source, destination, StandardCopyOption.REPLACE_EXISTING)
-        }
-        true
-    } catch (_: Exception) {
-        false
-    }
 
     override fun deleteDownloadedModelContent(modelId: String, localPath: String): Boolean =
         File(localPath).deleteRecursively()

@@ -81,6 +81,6 @@ fun BrandNavigationButton(
         modifier = modifier.size(AppTheme.spacing.spacing48)
             .semantics { this.contentDescription = contentDescription },
     ) {
-        Icon(imageVector = navigationIcon, contentDescription = null)
+        Icon(imageVector = navigationIcon, contentDescription = null, modifier = Modifier.size(22.dp))
     }
 }

@@ -88,8 +88,9 @@ HuggingFace Hub integration for model discovery and download.
 **Key files:**
 - `ModelViewModel.kt` — search, filter (pipeline tag, sort), download orchestration
 - `DownloadedModelsViewModel.kt` — locally stored model management
-- `SearchScreen.kt` — search bar + model list
-- `DetailsScreen.kt` — model detail + GGUF files / complete ONNX bundle variants
+- `SearchScreen.kt` — search, filters, recently viewed models, and downloaded-variant counts
+- `DownloadsScreen.kt` — transfer queue and searchable local models
+- `DetailsScreen.kt` — frosted navigation with a scroll-aware model title, a persistent overview, Variants/Model card/Technical details tabs, grouped metadata, a revision-pinned README reader, and GGUF files / complete ONNX bundle variants
 - `InstallBundleCard.kt` — smart install for diffusion model component bundles
 - `GgufFileListItem.kt` — per-file download with live progress
 - `ModelHubBrowseMode.kt` — LLM vs diffusion browse mode
@@ -104,6 +105,10 @@ ModelViewModel.downloadModel()
 ```
 
 Multi-component diffusion models use `ComponentRepository` to track individual file downloads (VAE, CLIP, UNet, etc.) linked to a parent model entry.
+
+Recent visits persist at most 20 compact display snapshots and show the newest four. The versioned history format retains stable mode identities and migrates the previous full-detail format without overwriting a concurrent visit. History JSON processing runs on `Dispatchers.Default`; unrelated preference updates do not reparse it. Readable history remains available if its optional rewrite fails. An explicit visit repairs unreadable history while retaining its first original value under a recovery preference. History recording belongs to the ViewModel scope and does not delay file discovery.
+
+Download controls use exact persisted batch lookup independently of the bounded queue display. A cancelled batch with unfinished checkpoint cleanup remains visible and offers **Retry cancellation**; it cannot resume or retry its transfer until cleanup completes.
 
 ---
 
@@ -200,8 +205,44 @@ The performance budgets are enforced only when both `CARAML_ENFORCE_RECOMMENDATI
 
 ---
 
+## Model Hub avatars
+
+Search cards load author avatars through Coil Compose with SVG decoding and Ktor networking. Android uses OkHttp, iOS Darwin and desktop CIO; dependency versions live in `gradle/libs.versions.toml`. Avatars share the model monogram’s square frame, rounded corners, rotation and task colors. `ModelMonogramFrame`, `ModelMonogram` and `ModelAuthorAvatar` accept `size: Dp = 36.dp`; pass, for example, `size = 48.dp` to choose the frame dimensions. Artwork fills the frame; initial typography and the 12 dp corner radius retain their existing sizes. The monogram remains visible while loading or after failure. Recommendation metadata acquisition runs independently of image loading.
+
 ## Recent Changes
 
+- Fixed the iOS restoration/command lock cycle and stale installation flags on retained detail re-entry. Regression tests cover startup order, newer stop intent, cancellation while waiting, deleted installations, same-batch reinstall, and stale local reads. Consolidated persisted-snapshot validation, removed unused DAO operations, migrated removal tests to the production selected-row transaction, and replaced legacy layout composition locals with explicit arguments.
+
+- Replaced full-detail recent-history persistence with a compact, versioned settings DTO, safe legacy migration, background JSON processing, and independent writes. Reused the root settings ViewModel in Models. Exact persisted download controls and cancellation-cleanup recovery are covered alongside history migration/concurrency regressions. Removed unused Model Hub toolbar/header/context/summary/sheet and navigation wrappers; retained shared byte formatting and moved applicable UI assertions onto current filter/device/row surfaces.
+
+- Download manifest checks dispatch filesystem work to IO; count badges check published identities and current file sizes, ignore usage-only catalog changes, and read each repository once per snapshot. Download database upgrades preserve records/checkpoints and quarantine unsafe legacy work. Removal binds companions by artifact identity, including ONNX files in the main repository. Obsolete Model Hub state and unused widgets were removed; historical test helpers now live in test sources. Model-card normalization uses the common Kotlin `StringBuilder.setRange` API for iOS compatibility.
+
+- Exposed `size: Dp` on the shared monogram frame and its monogram/avatar wrappers, retaining the 36 dp default.
+
+- Model details adds a full Model card tab with images, wrapping tables, and revision-aware relative links. Three swipeable text tabs retain the complete overview and pin below the top bar while scrolling. Switching pinned tabs opens the selected section at its beginning. The header shares search’s frosting and reveals the model name when the expanded title scrolls out of view. Technical facts remain grouped. Screen recreation reuses active requests and loaded data, and tab/scroll state survives changes between compact, rail, and sidebar navigation; the ViewModel prepares Markdown once per fetched document for reuse across tab changes. README retry remains independent of downloads. See the [model details guide](../../docs/models.md#model-details).
+
+- Dark mode now uses progressively lighter raised surfaces, subtle shared borders, dark button shadows, and a quieter background wash across the app. Light-mode colours are unchanged.
+
+- Models now separates subdued Recently viewed cards from an explicit Explore models or Search results heading, with tighter search spacing and consistent, lightly raised icon buttons. Icon buttons retain a thin 1dp contour and 2dp depth while sharing text buttons’ ink shadow. Both sizes use the shared subtle rim in dark mode.
+
+- Search keeps its state when Downloads opens. Filters sits inside the full-width field, Downloads in the Models app bar, and Device in the sidebar. Up to four recent model visits appear in a grid, and catalog search shows complete local variant counts.
+- Unified Model search and Downloads rendering in `ModelRow`, with pure presentation-state mappers and shared selection, repair, recommendation and avatar behavior.
+
+- Centered model-row avatars and selection icons vertically beside the row content.
+
+- Model row dividers start at the title column, after the avatar, and extend through the list’s trailing gutter to the content-pane edge.
+
+- Model rows show compatibility as a tinted icon-and-text tag alongside metrics, wrapping as needed. Details share the same green/amber/red/neutral verdict styling.
+
+- Model rows use accessible status icons and task tags; details retain matching icons with explanatory text.
+
+- Added offline `ModelHubCard` previews for light/dark themes and narrow screens at 200% text size, including metrics, repair and selection states.
+
+- Model search and Downloads share one compact row layout with icon metrics, secondary author/filename text and subtle dividers. Tap a supported row to open it; Downloads retains selection, readiness and “Finish setup” actions without a redundant “Use model” button.
+
+- Migrated language-model discovery to page-based Hugging Face results and match counts; added author avatars with loading/error fallbacks while retaining independent recommendation metadata enrichment.
+
+- Added `org.jetbrains.compose.ui:ui-tooling` to `composeApp` `androidMain` dependencies to resolve Android Studio Compose Preview rendering issues (`ComposeViewAdapter` missing class exception).
 - Made model selection and loading a single transition, fenced cancelled detail requests, and applied inference settings edits inside DataStore transactions. Cancelled media rolls back if its chat turn loses ownership. Download startup reconciles interrupted pause and resume commands, and platform scheduling failures leave queued transfers retryable. Llama retains ownership when unload throws.
 - Corrected ONNX resident-session fixtures to use `<models>/owner/onnx` and clean up the whole temporary tree, fixing Linux CI loads; JVM test logs now include full failure details.
 - Added SD-Turbo GGUF discovery, fixed nested-checkpoint installation, and kept image/video models visible alongside frequently used chat models.

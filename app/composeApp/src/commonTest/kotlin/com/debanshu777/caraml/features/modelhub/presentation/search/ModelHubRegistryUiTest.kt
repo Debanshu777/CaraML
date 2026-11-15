@@ -2,6 +2,9 @@
 
 package com.debanshu777.caraml.features.modelhub.presentation.search
 
+import com.debanshu777.caraml.features.modelhub.presentation.components.ModelRow
+import com.debanshu777.caraml.features.modelhub.presentation.components.discoveryModelRow
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,32 +39,21 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.v2.runComposeUiTest
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.debanshu777.caraml.core.platform.DeviceHints
 import com.debanshu777.caraml.core.recommendation.PersonalizedRecommendation
 import com.debanshu777.caraml.core.recommendation.RecommendationCategory
 import com.debanshu777.caraml.core.recommendation.RecommendationProfile
 import com.debanshu777.caraml.core.ui.components.GenericListItem
 import com.debanshu777.caraml.features.modelhub.domain.DescriptorState
 import com.debanshu777.caraml.features.modelhub.domain.RecommendedModelUiState
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubBrowseControls
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubHeader
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubOverview
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubStateKind
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubStateView
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchListItem
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelRecommendationStatus
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchBar
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.selectedVariantLabel
 import com.debanshu777.caraml.sdk.discovery.huggingface.model.ListModelsResponse
-import com.debanshu777.caraml.sdk.discovery.huggingface.model.ModelSort
-import com.debanshu777.caraml.sdk.discovery.huggingface.model.ParameterRange
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -85,41 +77,40 @@ class ModelHubRegistryUiTest {
             AtDensityOne {
                 MaterialTheme {
                     Box(Modifier.width(360.dp)) {
-                        SearchListItem(
-                            model = model,
-                            onClick = {},
-                            recommendationState = recommendedState(
+                        ModelRow(
+                            state = discoveryModelRow(
                                 model = model,
-                                selectedVariantName = "model-Q4_K_M.gguf",
+                                recommendationState = recommendedState(
+                                    model = model,
+                                    selectedVariantName = "model-Q4_K_M.gguf",
+                                ),
                             ),
+                            onOpenModel = {},
                         )
                     }
                 }
             }
         }
 
-        val owner = onNodeWithText("research-collective", useUnmergedTree = true)
-        val title = onNodeWithText(
-            "a-very-long-model-name-that-must-remain-readable-on-phone",
-            useUnmergedTree = true,
-        )
-        val metadata = onNodeWithText(
-            "7B parameters · 12.3K downloads",
-            useUnmergedTree = true,
-        )
-        owner.assertIsDisplayed()
+        val title = onNodeWithText(repositoryId, useUnmergedTree = true)
         title.assertIsDisplayed()
-        metadata.assertIsDisplayed()
         onNodeWithText("Text generation", useUnmergedTree = true).assertIsDisplayed()
         onNodeWithText("Recommended", useUnmergedTree = true).assertIsDisplayed()
 
-        val titleWidth = title.fetchSemanticsNode().boundsInRoot.width
-        val metadataWidth = metadata.fetchSemanticsNode().boundsInRoot.width
+        val titleBounds = title.fetchSemanticsNode().boundsInRoot
         assertTrue(
-            titleWidth >= 180f && metadataWidth >= 180f,
-            "Identity must retain at least half of a 360dp row; " +
-                "titleWidth=$titleWidth metadataWidth=$metadataWidth",
+            titleBounds.width >= 180f && titleBounds.right <= 360f,
+            "Full repository identity must retain at least half of a 360dp row: $titleBounds",
         )
+        listOf("7000000000 parameters", "12345 downloads", "678 likes").forEach { description ->
+            val metric = onNodeWithContentDescription(description, useUnmergedTree = true)
+            metric.assertIsDisplayed()
+            val bounds = metric.fetchSemanticsNode().boundsInRoot
+            assertTrue(
+                bounds.left >= titleBounds.left && bounds.right <= 360f && bounds.top >= titleBounds.bottom,
+                "Compact metric must remain below the full title and inside the row: $description $bounds",
+            )
+        }
     }
 
     @Test
@@ -178,34 +169,11 @@ class ModelHubRegistryUiTest {
         }
 
     @Test
-    fun selectedVariantLabelStylesOnlyArtifactTokenAsTechnical() {
-        val label = selectedVariantLabel(
-            "model-Q4_K_M.gguf",
-            androidx.compose.ui.text.SpanStyle(fontFamily = FontFamily.Monospace),
-        )
-
-        assertEquals("Selected variant: model-Q4_K_M.gguf", label.text)
-        assertEquals(
-            1,
-            label.spanStyles.size,
-            "The artifact token needs one explicit technical span",
-        )
-        val technicalSpan = label.spanStyles.single()
-        assertEquals(18, technicalSpan.start, "Body-styled prose must remain outside the span")
-        assertEquals(label.length, technicalSpan.end)
-        assertEquals(FontFamily.Monospace, technicalSpan.item.fontFamily)
-    }
-
-    @Test
-    fun summaryAndResultStateExposeStableRegionsAndAction() = runComposeUiTest {
+    fun resultErrorExposesStableRegionAndRetry() = runComposeUiTest {
         var retries = 0
         setContent {
             MaterialTheme {
                 Column(Modifier.width(360.dp)) {
-                    ModelHubHeader(
-                        title = "Models",
-                        summary = "24 models · 2 filters",
-                    )
                     ModelHubStateView(
                         kind = ModelHubStateKind.Error,
                         message = "Models could not be loaded.",
@@ -216,27 +184,7 @@ class ModelHubRegistryUiTest {
             }
         }
 
-        onNodeWithTag("model-summary").assertIsDisplayed()
         onNodeWithTag("model-results").assertIsDisplayed()
-        val titleLayouts = mutableListOf<TextLayoutResult>()
-        onNodeWithText("Models", useUnmergedTree = true)
-            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action ->
-                assertTrue(action(titleLayouts))
-            }
-        val summaryLayouts = mutableListOf<TextLayoutResult>()
-        onNodeWithText("24 models · 2 filters", useUnmergedTree = true)
-            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action ->
-                assertTrue(action(summaryLayouts))
-            }
-        with(titleLayouts.single().layoutInput.style) {
-            assertEquals(16.sp, fontSize)
-            assertEquals(22.sp, lineHeight)
-            assertEquals(FontWeight.Medium, fontWeight)
-        }
-        with(summaryLayouts.single().layoutInput.style) {
-            assertEquals(14.sp, fontSize)
-            assertEquals(20.sp, lineHeight)
-        }
         onNodeWithText("Retry").performClick()
         runOnIdle { assertEquals(1, retries) }
     }
@@ -265,195 +213,6 @@ class ModelHubRegistryUiTest {
         onAllNodesWithContentDescription("Submit model search").assertCountEquals(0)
         onNodeWithContentDescription("Clear model search").assertIsDisplayed()
     }
-
-    @Test
-    fun contextStripIsShorterAndVisuallyQuieterThanTheSearchCommand() = runComposeUiTest {
-        setContent {
-            AtDensityOne {
-                MaterialTheme {
-                    Column(Modifier.width(360.dp)) {
-                        SearchBar(
-                            query = "model",
-                            onQueryChange = {},
-                            onSearch = {},
-                        )
-                        ModelHubOverview(
-                            storageInfo = StorageInfoUiState(
-                                totalDeviceBytes = 8_589_934_592L,
-                                availableDeviceBytes = 6_442_450_944L,
-                                usedByModelsBytes = 2_147_483_648L,
-                            ),
-                            profile = RecommendationProfile(),
-                            onOpenProfile = {},
-                        )
-                    }
-                }
-            }
-        }
-
-        val commandHeight = onNodeWithTag("model-command").fetchSemanticsNode().boundsInRoot.height
-        val contextHeight = onNodeWithTag("model-context").fetchSemanticsNode().boundsInRoot.height
-        assertTrue(
-            contextHeight < commandHeight,
-            "Secondary context must be shorter than the command: context=$contextHeight, command=$commandHeight",
-        )
-    }
-
-    @Test
-    fun contextStripUsesTheRouteCanvasInsteadOfOuterCardChrome() = runComposeUiTest {
-        val canvas = Color.Magenta
-        setContent {
-            AtDensityOne {
-                MaterialTheme {
-                    Box(
-                        Modifier
-                            .width(360.dp)
-                            .background(canvas),
-                    ) {
-                        ModelHubOverview(
-                            storageInfo = StorageInfoUiState(
-                                totalDeviceBytes = 8_589_934_592L,
-                                availableDeviceBytes = 6_442_450_944L,
-                                usedByModelsBytes = 2_147_483_648L,
-                            ),
-                            profile = null,
-                            onOpenProfile = null,
-                        )
-                    }
-                }
-            }
-        }
-
-        val pixels = onNodeWithTag("model-context").captureToImage().toPixelMap()
-        assertEquals(
-            canvas,
-            pixels[1, 1],
-            "Secondary device context must sit directly on the route canvas",
-        )
-    }
-
-    @Test
-    fun compactContextKeepsStorageDeviceAndProfileVisibleWithoutHorizontalScrolling() =
-        runComposeUiTest {
-            setContent {
-                AtDensityOne {
-                    MaterialTheme {
-                        Box(Modifier.width(360.dp)) {
-                            ModelHubOverview(
-                                storageInfo = StorageInfoUiState(
-                                    totalDeviceBytes = 8_589_934_592L,
-                                    availableDeviceBytes = 6_442_450_944L,
-                                    usedByModelsBytes = 2_147_483_648L,
-                                    deviceHints = DeviceHints(
-                                        performanceCoreCount = 4,
-                                        totalCoreCount = 8,
-                                        memoryBudgetMB = 1_843,
-                                        gpuBackendAvailable = true,
-                                    ),
-                                ),
-                                profile = RecommendationProfile(),
-                                onOpenProfile = {},
-                            )
-                        }
-                    }
-                }
-            }
-
-            val context = onNodeWithTag("model-context").fetchSemanticsNode()
-            assertEquals(
-                null,
-                context.config.getOrNull(SemanticsProperties.HorizontalScrollAxisRange),
-                "Storage, device, and profile context must wrap instead of restoring a clipped scroll",
-            )
-            onNodeWithText("Device profile").assertIsDisplayed().performClick()
-            listOf("Storage", "Device", "Profile").forEach { label ->
-                val bounds = onNodeWithText(label, useUnmergedTree = true)
-                    .assertIsDisplayed()
-                    .fetchSemanticsNode().boundsInRoot
-                assertTrue(bounds.left >= context.boundsInRoot.left, "$label starts outside context")
-                assertTrue(bounds.right <= context.boundsInRoot.right, "$label ends outside context")
-            }
-        }
-
-    @Test
-    fun browseToolbarKeepsEveryControlVisibleWithoutHorizontalScrollingAt360dp() =
-        runComposeUiTest {
-        setContent {
-            AtDensityOne {
-                MaterialTheme {
-                    Box(Modifier.width(360.dp)) {
-                        ModelHubBrowseControls(
-                            browseMode = ModelHubBrowseMode.LanguageModels,
-                            onBrowseModeChange = {},
-                            showSortFilters = true,
-                            ordering = ModelOrdering.Server(ModelSort.TRENDING),
-                            sort = ModelSort.TRENDING,
-                            minParams = ParameterRange.ZERO,
-                            maxParams = ParameterRange.SIX_B,
-                            onSortChange = {},
-                            onOrderingChange = {},
-                            onMinParamsChange = {},
-                            onMaxParamsChange = {},
-                        )
-                    }
-                }
-            }
-        }
-
-        val toolbar = onNodeWithTag("model-toolbar").assertIsDisplayed().fetchSemanticsNode()
-        assertEquals(
-            null,
-            toolbar.config.getOrNull(SemanticsProperties.HorizontalScrollAxisRange),
-            "Browse controls must not preserve a clipped horizontal scroll position",
-        )
-        listOf("Text", "Image", "Video", "Sort", "Filters").forEach { label ->
-            val bounds = onNodeWithText(label, substring = true)
-                .fetchSemanticsNode().boundsInRoot
-            assertTrue(bounds.left >= toolbar.boundsInRoot.left, "$label starts outside the toolbar")
-            assertTrue(bounds.right <= toolbar.boundsInRoot.right, "$label ends outside the toolbar")
-        }
-        onNodeWithText("Minimum parameters").assertDoesNotExist()
-        onNodeWithText("Maximum parameters").assertDoesNotExist()
-    }
-
-    @Test
-    fun compactContextStartsAsOneDecisionSummaryAndRevealsTechnicalEvidenceOnDemand() =
-        runComposeUiTest {
-            setContent {
-                AtDensityOne {
-                    MaterialTheme {
-                        Box(Modifier.width(360.dp)) {
-                            ModelHubOverview(
-                                storageInfo = StorageInfoUiState(
-                                    totalDeviceBytes = 228L * 1024 * 1024 * 1024,
-                                    availableDeviceBytes = 197L * 1024 * 1024 * 1024,
-                                    usedByModelsBytes = 0L,
-                                    deviceHints = DeviceHints(
-                                        performanceCoreCount = 4,
-                                        totalCoreCount = 8,
-                                        memoryBudgetMB = 1_920,
-                                        gpuBackendAvailable = true,
-                                    ),
-                                ),
-                                profile = RecommendationProfile(),
-                                onOpenProfile = {},
-                            )
-                        }
-                    }
-                }
-            }
-
-            onNodeWithText("Device profile").assertIsDisplayed()
-            onNodeWithText("197 GB storage free · Balanced").assertIsDisplayed()
-            listOf("Storage", "Device", "Profile").forEach { label ->
-                onNodeWithText(label, useUnmergedTree = true).assertDoesNotExist()
-            }
-
-            onNodeWithText("Device profile").performClick()
-            listOf("Storage", "Device", "Profile").forEach { label ->
-                onNodeWithText(label, useUnmergedTree = true).assertIsDisplayed()
-            }
-        }
 
     @Test
     fun oneLineGenericRowKeepsPageCanvasAndOneDivider() =

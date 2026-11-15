@@ -685,8 +685,3 @@ private val SETUP_REGISTRY: Map<String, SdCppModelSetup> = buildMap {
  * Get the setup requirements for a model by its HuggingFace repo ID.
  */
 fun getModelSetup(repoId: String): SdCppModelSetup? = SETUP_REGISTRY[repoId]
-
-/**
- * Get all registered model setups.
- */
-fun getAllModelSetups(): Map<String, SdCppModelSetup> = SETUP_REGISTRY

@@ -6,10 +6,19 @@ import kotlinx.coroutines.flow.flowOf
 interface DownloadTaskStore {
     suspend fun create(request: DownloadBatchRequest, nowEpochMs: Long): String
     fun observeForModel(modelId: String): Flow<List<DownloadBatchSnapshot>>
-    /** Recent actionable and failed work across models, bounded by the store. */
+    /** All actionable work plus a bounded recent failure history across models. */
     fun observeQueue(): Flow<List<DownloadBatchSnapshot>> = flowOf(emptyList())
     suspend fun getBatch(batchId: String): DownloadBatchSnapshot?
     suspend fun recoverableBatches(): List<DownloadBatchSnapshot>
+    suspend fun pendingCancellation(batchId: String): DownloadCancellationSnapshot? =
+        getBatch(batchId)?.takeIf { it.userIntent == DownloadUserIntent.CANCEL }
+            ?.let { DownloadCancellationSnapshot(it, 0L) }
+    suspend fun completeCancellationCleanup(expected: DownloadCancellationSnapshot, nowEpochMs: Long): Boolean {
+        expected.batch.artifacts.filter { it.state.canTransitionTo(DownloadArtifactState.CANCELLED) }.forEach {
+            transitionArtifact(it.artifactId, DownloadArtifactState.CANCELLED, null, nowEpochMs)
+        }
+        return true
+    }
     /** Bounded observations eligible for exact installed publication reconciliation. */
     suspend fun publishedDownloadCandidates(nowEpochMs: Long): List<PublishedDownloadSnapshot> = emptyList()
     suspend fun scanPublishedDownloads(nowEpochMs: Long, afterBatchId: String?): PublishedDownloadScanPage {

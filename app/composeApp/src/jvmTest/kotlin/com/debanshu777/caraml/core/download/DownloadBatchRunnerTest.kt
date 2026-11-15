@@ -585,7 +585,7 @@ private class RunnerStoragePathProvider(
     override fun isModelFileReadable(path: String): Boolean = File(path).isFile
     override fun isDirectoryReadable(path: String): Boolean = File(path).isDirectory
     override fun getFileSize(path: String): Long = File(path).takeIf { it.exists() }?.length() ?: 0L
-    override fun renameFile(from: String, to: String): Boolean = false
+
     override fun deleteDownloadedModelContent(modelId: String, localPath: String): Boolean = false
 }
 

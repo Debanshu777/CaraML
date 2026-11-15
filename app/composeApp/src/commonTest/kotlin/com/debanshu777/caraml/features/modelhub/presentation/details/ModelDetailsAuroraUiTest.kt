@@ -20,6 +20,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.debanshu777.caraml.core.theme.CaraMLTheme
+import com.debanshu777.caraml.core.theme.ThemeMode
+import com.debanshu777.caraml.core.theme.ThemePreferences
+import com.debanshu777.caraml.core.theme.AppTheme
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelRecommendationStatus
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.luminance
@@ -87,6 +93,46 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class ModelDetailsAuroraUiTest {
+
+    @Test
+    fun neutralFitBadgeRetainsContrastOverTheLightBrandWash() = runComposeUiTest {
+        val backdrop = Color(0xFFE2E7EA)
+        var badgeBackground = Color.Unspecified
+        setContent {
+            CaraMLTheme(ThemePreferences(themeMode = ThemeMode.LIGHT, reduceMotion = true)) {
+                badgeBackground = AppTheme.colors.onSurfaceVariant.copy(alpha = .12f).compositeOver(backdrop)
+                Box(Modifier.background(backdrop)) {
+                    ModelRecommendationStatus(
+                        state = DescriptorState.NEEDS_INFORMATION,
+                        recommendation = null, onInfoClick = null, plain = true,
+                    )
+                }
+            }
+        }
+        val contrast = onNodeWithText("Needs information", useUnmergedTree = true)
+            .captureToImage().maximumContrastAgainst(badgeBackground)
+        assertTrue(contrast >= 4.5f, "Neutral fit label contrast was $contrast:1")
+    }
+
+    @Test
+    fun tooLargeBadgeRetainsContrastOverTheLightBrandWash() = runComposeUiTest {
+        val backdrop = Color(0xFFE2E7EA)
+        var badgeBackground = Color.Unspecified
+        setContent {
+            CaraMLTheme(ThemePreferences(themeMode = ThemeMode.LIGHT, reduceMotion = true)) {
+                badgeBackground = AppTheme.colors.error.copy(alpha = .12f).compositeOver(backdrop)
+                Box(Modifier.background(backdrop)) {
+                    com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelStatusIndicator(
+                        label = "Too large", icon = com.debanshu777.caraml.core.ui.icons.AppIcons.Block,
+                        color = AppTheme.colors.error,
+                    )
+                }
+            }
+        }
+        val contrast = onNodeWithText("Too large", useUnmergedTree = true)
+            .captureToImage().maximumContrastAgainst(badgeBackground)
+        assertTrue(contrast >= 4.5f, "Too large label contrast was $contrast:1")
+    }
 
     @Test
     fun darkGgufRowsPaintReadableIdentityAndDownloadActionOnTheRouteCanvas() =
@@ -203,14 +249,13 @@ class ModelDetailsAuroraUiTest {
             }
         }
 
-        onAllNodes(hasText("GnLOLot")).assertCountEquals(1)
-        onNodeWithText(modelName).assertExists()
-        onNodeWithText("GnLOLot/$modelName").assertDoesNotExist()
+        onAllNodes(hasText("GnLOLot/$modelName")).assertCountEquals(1)
+        onAllNodes(hasText("GnLOLot")).assertCountEquals(0)
         onNodeWithText(createdAt).assertDoesNotExist()
         onNodeWithText("3 Jul 2026").assertDoesNotExist()
 
-        onNodeWithText("Technical details").performScrollTo().performClick()
-        onNodeWithText(baseModel).performScrollTo().assertIsDisplayed()
+        onNodeWithText("Technical details").scrollDetailsIntoView().performClick()
+        onNodeWithText(baseModel).scrollDetailsIntoView().assertIsDisplayed()
         val baseLabelBounds = onNodeWithText("Base model").fetchSemanticsNode().boundsInRoot
         val baseValueBounds = onNodeWithText(baseModel).fetchSemanticsNode().boundsInRoot
         assertTrue(baseValueBounds.top >= baseLabelBounds.bottom)
@@ -218,18 +263,17 @@ class ModelDetailsAuroraUiTest {
 
         onNodeWithContentDescription("Tag: base_model:OtherOrg/model").assertDoesNotExist()
         onNodeWithContentDescription("Tag: text-generation").assertDoesNotExist()
-        onNodeWithText("zh").assertDoesNotExist()
-        onNodeWithText("Show all").performScrollTo().assertIsDisplayed().performClick()
-        onNodeWithText("3 Jul 2026").performScrollTo().assertIsDisplayed()
-        onNodeWithContentDescription("Tag: llama.cpp").performScrollTo().assertIsDisplayed()
-        onNodeWithContentDescription("Tag: zh").assertExists()
-        onNodeWithText("Show less").assertExists()
+        onNodeWithText("Show all").assertDoesNotExist()
+        onNodeWithText("3 Jul 2026").scrollDetailsIntoView().assertIsDisplayed()
+        listOf("llama.cpp", "quantized", "coding", "en", "zh").forEach {
+            onNodeWithText(it).scrollDetailsIntoView().assertIsDisplayed()
+        }
     }
 
     @Test
-    fun detailsUseSupportingPaneOnlyAtExpandedWidth() {
-        assertEquals(false, modelDetailsUseSupportingPane(839.dp))
-        assertEquals(true, modelDetailsUseSupportingPane(840.dp))
+    fun detailsUseInlineInstallActionOnlyAtExpandedWidth() {
+        assertEquals(false, modelDetailsUseInlineInstallAction(839.dp))
+        assertEquals(true, modelDetailsUseInlineInstallAction(840.dp))
     }
 
     @Test
@@ -408,7 +452,7 @@ class ModelDetailsAuroraUiTest {
         }
 
     @Test
-    fun expandedLargeTextUsesOneScrollOwnerAcrossPrimaryAndSupportingColumns() =
+    fun expandedLargeTextUsesOneScrollOwnerAcrossTabs() =
         runComposeUiTest {
             val fixture = ggufDownloadFixture()
             var downloadClicks = 0
@@ -441,12 +485,12 @@ class ModelDetailsAuroraUiTest {
             ).fetchSemanticsNodes()
             assertEquals(1, scrollOwners.size)
 
-            val overview = onNodeWithTag("detail-overview").fetchSemanticsNode().boundsInRoot
-            val deviceFit = onNodeWithText("Device fit").fetchSemanticsNode().boundsInRoot
-            assertTrue(deviceFit.left > overview.left, "Expanded details must remain two-column")
+            onNodeWithText("Technical details").scrollDetailsIntoView().performClick()
+            onNodeWithTag("detail-support").assertExists()
+            onNodeWithText("Variants").scrollDetailsIntoView().performClick()
 
             onNodeWithContentDescription("Download weights/model-q4-00001-of-00002.gguf")
-                .performScrollTo()
+                .scrollDetailsIntoView()
                 .assertIsDisplayed()
                 .performClick()
             runOnIdle { assertEquals(1, downloadClicks) }
@@ -476,18 +520,18 @@ class ModelDetailsAuroraUiTest {
             }
 
             onNodeWithText("model-q4.gguf")
-                .performScrollTo()
+                .scrollDetailsIntoView()
                 .assertIsDisplayed()
             onNodeWithText("50%")
-                .performScrollTo()
+                .scrollDetailsIntoView()
                 .assertIsDisplayed()
             onNodeWithContentDescription("Download weights/model-q4.gguf")
-                .performScrollTo()
+                .scrollDetailsIntoView()
                 .assertIsDisplayed()
         }
 
     @Test
-    fun drawerShellWindowWidthMovesDetailsIntoSupportingPaneAtExpandedBoundary() = runComposeUiTest {
+    fun drawerShellWindowWidthKeepsDetailsInsideTheVariantsTab() = runComposeUiTest {
         var windowWidth by mutableStateOf(839.dp)
         setContent {
             MaterialTheme {
@@ -528,7 +572,8 @@ class ModelDetailsAuroraUiTest {
             .fetchSemanticsNode().positionInRoot
         val expandedInstall = onNodeWithText("Install summary")
             .fetchSemanticsNode().positionInRoot
-        assertTrue(expandedInstall.x > expandedOverview.x)
+        assertTrue(kotlin.math.abs(expandedInstall.x - expandedOverview.x) < 1f)
+        assertTrue(expandedInstall.y > expandedOverview.y)
     }
 
     @Test
@@ -629,13 +674,13 @@ class ModelDetailsAuroraUiTest {
 
             onNodeWithContentDescription(
                 "Pause download ${fixture.activeArtifact.relativePath}",
-            ).performScrollTo().assertIsEnabled().performClick()
+            ).scrollDetailsIntoView().assertIsEnabled().performClick()
             onNodeWithContentDescription(
                 "Cancel download ${fixture.activeArtifact.relativePath}",
-            ).performScrollTo().assertIsEnabled().performClick()
+            ).scrollDetailsIntoView().assertIsEnabled().performClick()
             onNodeWithContentDescription(
                 "Download ${fixture.idleArtifact.relativePath}",
-            ).performScrollTo().assertIsNotEnabled()
+            ).scrollDetailsIntoView().assertIsNotEnabled()
 
             runOnIdle {
                 assertEquals("active-batch", pausedBatch)

@@ -7,15 +7,20 @@ import com.debanshu777.caraml.core.storage.catalog.InstalledModelRemovalResult
 import com.debanshu777.caraml.core.storage.catalog.InstalledModelRemovalService
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
+import com.debanshu777.caraml.core.storage.component.ComponentRepository
 import com.debanshu777.caraml.core.download.transfer.StoragePathProvider
+import com.debanshu777.caraml.core.download.transfer.DownloadManager
+import com.debanshu777.caraml.features.modelhub.presentation.search.downloadedVariantCounts
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -26,6 +31,8 @@ enum class ReadinessFilter { ALL, READY, PARTIAL }
 class DownloadedModelsViewModel(
     private val localModelRepository: LocalModelRepository,
     private val storagePathProvider: StoragePathProvider,
+    componentRepository: ComponentRepository? = null,
+    downloadManager: DownloadManager? = null,
     private val removalService: InstalledModelRemovalService? = null,
 ) : ViewModel() {
 
@@ -37,6 +44,15 @@ class DownloadedModelsViewModel(
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
+
+    /** Reactive count of distinct, committed model artifacts with exact catalog and disk evidence. */
+    private val downloadedVariantCountFlow: Flow<Map<String, Int>> = if (componentRepository != null && downloadManager != null) {
+        _allDownloadedModels.downloadedVariantCounts(componentRepository, downloadManager, storagePathProvider)
+    } else {
+        flowOf(emptyMap<String, Int>())
+    }
+    val downloadedVariantCounts: StateFlow<Map<String, Int>> = downloadedVariantCountFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     private val _readinessFilter = MutableStateFlow(ReadinessFilter.ALL)
     val readinessFilter: StateFlow<ReadinessFilter> = _readinessFilter.asStateFlow()
