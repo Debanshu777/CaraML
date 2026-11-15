@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(llama_runner_desktop VERSION 1.0.0 LANGUAGES C CXX)
 
+if(MSVC)
+    # Host JVMs may preload an older MSVC runtime; use its mutex initialization path.
+    # Apply before subdirectories so engine dependencies use the same compatibility mode.
+    # https://github.com/microsoft/STL/issues/4730
+    add_compile_definitions($<$<COMPILE_LANGUAGE:CXX>:_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR>)
+endif()
+
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 include(CTest)

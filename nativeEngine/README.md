@@ -56,7 +56,7 @@ src/
 ├── iosMain/cpp/
 │   └── CMakeLists.txt              # iOS: Metal, creates .a files
 └── jvmMain/cpp/
-    └── CMakeLists.txt              # Desktop: macOS (Metal) + Linux (CPU), creates .dylib/.so
+    └── CMakeLists.txt              # Desktop: macOS (Metal), Linux/Windows (CPU), creates .dylib/.so/.dll
 ```
 
 ### GgmlUnified.cmake
@@ -94,7 +94,16 @@ This prevents duplicate symbol errors from linking two independent GGML builds.
 
 - Detects `APPLE` for Metal config
 - JNI headers from `JAVA_HOME`
-- Output: `libllama_runner.dylib` (macOS), `libllama_runner.so` (Linux), same for diffusion
+- Output: `libllama_runner.dylib` (macOS), `libllama_runner.so` (Linux), `llama_runner.dll` (Windows), same for diffusion
+
+MSVC desktop builds define `_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR` for the runners
+and their native dependencies before creating any targets. A host JVM can preload
+an older `msvcp140.dll`; Microsoft's compatibility mode initializes `std::mutex`
+through that runtime instead of using the newer header-only constructor layout.
+See the [upstream mutex compatibility issue](https://github.com/microsoft/STL/issues/4730).
+Validate this boundary with
+`./gradlew :app:desktopApp:nativeRuntimeInstalledImageSmoke` on Windows; a successful
+macOS or Linux run does not verify the MSVC compatibility path.
 
 ---
 
@@ -157,6 +166,8 @@ Create a **separate** Gradle module + CMake project. Do not add here unless it m
 ---
 
 ## Recent Changes
+
+- MSVC desktop native targets use Microsoft's mutex-constructor compatibility mode, including engine dependencies, to support host JVMs that preload an older C++ runtime. The relocated native-runtime smoke remains the Windows behavioral check.
 
 - Exposes the selected desktop profile’s `artifact_fs` library through the `desktopArtifactFs` Gradle configuration. App JVM tests resolve that producer output directly, including CPU/engine-specific profiles, instead of loading a possibly stale default build.
 

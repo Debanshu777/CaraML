@@ -48,6 +48,8 @@ sdkmanager --licenses
 
 Desktop distributions stage the selected native profile’s runtime libraries beside the application jars. JNI and backend discovery use the installed resources directory, so the app does not need the source checkout. Run `./gradlew :app:desktopApp:nativeRuntimeInstalledImageSmoke` after packaging changes; it exercises the relocated filesystem and inference bridges without a model.
 
+Windows MSVC builds apply the Microsoft STL mutex-constructor compatibility definition to the entire desktop native graph, including engine dependencies, because the host JVM can load an older C++ runtime. See [Windows crash troubleshooting](troubleshooting.md#windows-native-runtime-crashes-in-msvcp140dll).
+
 The `run` task builds the required native engines automatically. The first build downloads dependencies and compiles C++; subsequent runs reuse build outputs. macOS uses Metal; Linux's documented path uses CPU. Windows distribution tasks exist but still need release validation.
 
 To build native code separately for diagnostics:

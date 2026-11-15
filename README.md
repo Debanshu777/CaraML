@@ -138,6 +138,8 @@ Dependencies and model weights keep their own licenses. See [third-party notices
 
 ## Recent Changes
 
+- Windows native builds use compatible mutex initialization when the host JVM loads an older Microsoft C++ runtime. The installed-image CI check reports each engine phase and retains JVM crash diagnostics in the job log; see [Windows troubleshooting](docs/troubleshooting.md#windows-native-runtime-crashes-in-msvcp140dll).
+
 - Fixed download startup ordering on iOS, refreshed installation status when reopening retained details, and unified model-card front-matter parsing for article and excerpt. Removed obsolete DAO operations and test-only Model Hub layout plumbing; see [regression coverage](docs/development.md#review-fix-regressions).
 
 - Hardened ONNX output validation and tensor cleanup, made cancellation cleanup durable, restored broken-installation removal and active queue visibility, and fixed SDK revision discovery/client ownership. Recent history now stores compact display fields without blocking details. Removed obsolete Model Hub UI and consolidated duplicated Android/JVM bridge/download code. Desktop tests use the selected native profile; packaged runtime and durable download migrations retain their earlier fixes. See [verification and scope](docs/development.md#review-fix-regressions).

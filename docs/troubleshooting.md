@@ -35,6 +35,12 @@ The optional ONNX WebGPU build has separate requirements; leave it disabled for 
 
 Launch with `./gradlew :app:desktopApp:run` so native compilation and library paths are configured. If you changed JNI packages, rebuild the Kotlin bridge and native code together. For a packaged desktop app, run `./gradlew :app:desktopApp:nativeRuntimeInstalledImageSmoke` and check that its resources contain the selected runtime libraries. The optional `caraml.native.lib.dir` SDK override is authoritative; an invalid override fails instead of loading a different installed library. Report the exact missing library and platform rather than copying unrelated binaries into the app.
 
+## Windows native runtime crashes in msvcp140.dll
+
+An installer can build successfully while the installed-image smoke crashes during native initialization. Newer MSVC headers can construct mutexes that an older `msvcp140.dll`, already loaded by the JVM, cannot lock. Microsoft documents this [mutex compatibility issue and its compatibility definition](https://github.com/microsoft/STL/issues/4730). Desktop MSVC builds define `_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR` before adding the native engines and their dependencies so mutex initialization uses the loaded runtime.
+
+Rebuild with `./gradlew :app:desktopApp:nativeRuntimeInstalledImageSmoke`. Its phase messages identify the engine operation in progress. Fatal JVM reports are written under `app/desktopApp/build/verification/relocated-native-runtime/hs_err_pid*.log`; desktop CI prints them in the **Report native JVM crashes** step after a failure. Inspect the native stack and loaded DLL paths before attributing another access violation to the same cause. This workaround addresses mutex initialization; it does not establish general compatibility with arbitrary older C++ runtimes or validate real-model inference.
+
 ## A downloaded model will not load
 
 Check the exact architecture, quantization, complete shard/component set, and [supported formats](models.md). A file extension or successful download is not proof of compatibility. ONNX bundles must contain matching graph, tokenizer, configuration, and external data.

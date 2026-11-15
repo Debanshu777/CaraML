@@ -19,8 +19,10 @@ object DesktopNativeRuntimeSmoke {
         val resources = File(System.getProperty("compose.application.resources.dir")).canonicalFile
         check(File(requireNotNull(DesktopNativeLibraries.directory())).canonicalFile == resources)
         check(File(PlatformPaths.getNativeLibDir()).canonicalFile == resources)
+        println("Installed native runtime smoke: checking artifact_fs")
         ArtifactFsInstalledImageSmoke.main(emptyArray())
         if ("llama" in engines) {
+            println("Installed native runtime smoke: initializing llama")
             val runner = LlamaRunner()
             try {
                 runner.initialize(resources.absolutePath)
@@ -29,10 +31,12 @@ object DesktopNativeRuntimeSmoke {
                     "The installed llama runtime cannot discover its CPU backend"
                 }
             } finally {
+                println("Installed native runtime smoke: shutting down llama")
                 runner.shutdown()
             }
         }
         if ("diffusion" in engines) {
+            println("Installed native runtime smoke: initializing diffusion")
             val runner = DiffusionRunner()
             try {
                 runner.initialize(resources.absolutePath)
@@ -40,6 +44,7 @@ object DesktopNativeRuntimeSmoke {
                     "The installed diffusion runtime cannot discover its CPU backend"
                 }
             } finally {
+                println("Installed native runtime smoke: releasing diffusion")
                 runner.release()
             }
         }

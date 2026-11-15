@@ -141,6 +141,8 @@ Model Hub has one detail-tab label source and one `results` state for list/searc
 
 Run `./gradlew verifyProject` for the combined JVM/native gate, then `./gradlew :app:desktopApp:nativeRuntimeInstalledImageSmoke` for packaging changes. The packaging smoke copies the distributable jars/resources to a separate directory, clears native library search paths, checks secure artifact IO, and initializes/tears down the selected llama/diffusion bridges. It does not load a model or establish Windows/Linux release compatibility.
 
+The desktop CI matrix runs this behavioral regression under the configured JVM on macOS, Linux, and Windows. In particular, Windows must exercise native initialization with the host JVM's loaded C++ runtime; successful MSI creation alone cannot catch mutex initialization crashes. Desktop MSVC builds apply `_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR` to runners and upstream dependencies. Smoke phase messages identify the active filesystem/engine operation, and the failure-only **Report native JVM crashes** step preserves fatal JVM reports in the job log. See [Windows runtime diagnosis](troubleshooting.md#windows-native-runtime-crashes-in-msvcp140dll).
+
 ### Second review regressions and cleanup
 
 The ONNX fixtures include a decoder with an empty logits row. JVM and Apple simulator tests require a clean failure and successful reload of a valid model. Java tensor-ownership tests also check cleanup after input preparation fails and preservation of borrowed cache tensors. Native bridge deduplication keeps JNI class names and methods unchanged; only Android/JVM loading differs. Run JVM tests, Android assembly and the installed-image native smoke after changing shared bridge sources.

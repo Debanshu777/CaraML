@@ -136,6 +136,20 @@ jobs:
       - name: Verify packaged native filesystem and recovery
         run: ./gradlew :app:desktopApp:packageDistributionForCurrentOS :app:desktopApp:artifactFsInstalledImageSmoke :app:composeApp:jvmTest --tests "com.debanshu777.caraml.core.download.transfer.*" --stacktrace
 
+      - name: Report native JVM crashes
+        if: failure()
+        shell: python
+        run: |
+          from pathlib import Path
+
+          reports = sorted(Path("app/desktopApp/build/verification/relocated-native-runtime").glob("hs_err_pid*.log"))
+          if not reports:
+              print("No installed-image JVM crash reports found.")
+          for report in reports:
+              print(f"::group::{report.name}")
+              print(report.read_text(encoding="utf-8", errors="replace"))
+              print("::endgroup::")
+
   native-preflight-linux:
     name: Native preflight parity (Linux)
     runs-on: ubuntu-latest

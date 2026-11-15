@@ -43,6 +43,8 @@ unchanged. Package conventions are documented in [the root README](../README.md#
 
 ## Recent Changes
 
+- The desktop installed-image smoke reports filesystem and engine lifecycle phases. CI prints fatal JVM reports after a failure, preserving native frames and loaded-library paths for Windows runtime diagnosis.
+
 - Download commands persist intent before waiting for iOS restoration outside the lifecycle lock; scheduling then rechecks that intent. Reopened details refresh local installation evidence while retaining metadata, files, and the prepared README. Removed unused DAO methods and test-only Model Hub layout indirection.
 
 - Recent model history stores compact display snapshots, migrates existing visits, and records independently of model file loading. Models reuses the root settings ViewModel. Download controls look up the exact persisted batch, and incomplete cancellation cleanup stays visible with a retry action. Unused Model Hub toolbar, summary, context, sheet, and navigation wrappers were removed; UI coverage exercises current filters, device information, rows, and navigation.
