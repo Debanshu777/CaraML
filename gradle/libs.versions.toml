@@ -20,7 +20,6 @@ compose-icon = "1.7.3"
 room = "2.8.5"
 sqlite = "2.7.1"
 ksp = "2.3.10"
-kotlinStdlib = "2.4.20"
 junit = "1.3.0"
 coreKtx = "1.19.1"
 materialKolor = "5.0.1"
@@ -34,8 +33,15 @@ test-runner = "1.7.0"
 profileinstaller = "1.4.1"
 composeTracing = "1.12.1"
 perfettoTracing = "1.0.0"
+coil = "3.6.3"
+markdown = "0.46.0"
 
 [libraries]
+markdown-m3 = { module = "com.mikepenz:multiplatform-markdown-renderer-m3", version.ref = "markdown" }
+markdown-coil3 = { module = "com.mikepenz:multiplatform-markdown-renderer-coil3", version.ref = "markdown" }
+coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
+coil-network-ktor = { module = "io.coil-kt.coil3:coil-network-ktor3", version.ref = "coil" }
+coil-svg = { module = "io.coil-kt.coil3:coil-svg", version.ref = "coil" }
 androidx-benchmark-macro = { module = "androidx.benchmark:benchmark-macro-junit4", version.ref = "benchmark" }
 androidx-uiautomator = { module = "androidx.test.uiautomator:uiautomator", version.ref = "uiautomator" }
 androidx-test-runner = { module = "androidx.test:runner", version.ref = "test-runner" }
@@ -78,13 +84,11 @@ ktor-client-core = { module = "io.ktor:ktor-client-core" }
 ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp" }
 ktor-client-darwin = { module = "io.ktor:ktor-client-darwin" }
 ktor-serialization-kotlinx-json = { module = "io.ktor:ktor-serialization-kotlinx-json" }
-ktor-client-content-negotiation = { module = "io.ktor:ktor-client-content-negotiation" }
 
 #room
 androidx-room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
 androidx-room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
 androidx-sqlite-bundled = { module = "androidx.sqlite:sqlite-bundled", version.ref = "sqlite" }
-kotlin-stdlib = { group = "org.jetbrains.kotlin", name = "kotlin-stdlib", version.ref = "kotlinStdlib" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junit" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "work" }

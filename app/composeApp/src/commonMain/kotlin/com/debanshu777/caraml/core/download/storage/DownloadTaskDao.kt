@@ -123,7 +123,8 @@ interface DownloadTaskDao {
         """
         UPDATE download_batch
         SET state = 'QUEUED', user_intent = 'RUN', failure_code = NULL, updated_at_epoch_ms = MAX(:nowEpochMs, updated_at_epoch_ms + 1)
-        WHERE batch_id = :batchId AND state IN ('FAILED_TERMINAL', 'CANCELLED')
+        WHERE batch_id = :batchId AND state IN ('COMPLETED', 'FAILED_TERMINAL', 'CANCELLED')
+          AND cancellation_cleanup_pending = 0
         """,
     )
     suspend fun reactivateTerminalBatchRecord(batchId: String, nowEpochMs: Long): Int
@@ -134,15 +135,18 @@ interface DownloadTaskDao {
         SET state = 'QUEUED', failure_code = NULL, platform_task_id = NULL,
             bytes_received = 0, entity_tag = NULL, last_modified = NULL,
             lease_owner = NULL, lease_expires_at_epoch_ms = NULL, updated_at_epoch_ms = :nowEpochMs
-        WHERE batch_id = :batchId AND state IN ('FAILED_TERMINAL', 'CANCELLED')
+        WHERE batch_id = :batchId AND (state IN ('FAILED_TERMINAL', 'CANCELLED')
+            OR (:resetCompleted AND state = 'COMPLETED'))
         """,
     )
-    suspend fun reactivateTerminalArtifacts(batchId: String, nowEpochMs: Long)
+    suspend fun reactivateTerminalArtifacts(batchId: String, resetCompleted: Boolean, nowEpochMs: Long)
 
+    /** Explicit enqueue can reinstall a completed batch; recovery and insert-only calls never do. */
     @Transaction
     suspend fun reactivateTerminalBatch(batchId: String, nowEpochMs: Long) {
+        val resetCompleted = requireBatch(batchId).state == "COMPLETED"
         if (reactivateTerminalBatchRecord(batchId, nowEpochMs) == 1) {
-            reactivateTerminalArtifacts(batchId, nowEpochMs)
+            reactivateTerminalArtifacts(batchId, resetCompleted, nowEpochMs)
         }
     }
 
@@ -155,12 +159,47 @@ interface DownloadTaskDao {
     fun observeForModel(modelId: String): Flow<List<DownloadBatchWithArtifacts>>
 
     @Transaction
-    @Query("SELECT * FROM download_batch WHERE state NOT IN ('COMPLETED', 'CANCELLED') ORDER BY updated_at_epoch_ms DESC LIMIT 64")
+    @Query("""
+        SELECT * FROM download_batch
+        WHERE state NOT IN ('COMPLETED', 'CANCELLED', 'FAILED_TERMINAL')
+           OR cancellation_cleanup_pending = 1
+           OR batch_id IN (
+               SELECT batch_id FROM download_batch WHERE state = 'FAILED_TERMINAL'
+                   AND cancellation_cleanup_pending = 0 ORDER BY updated_at_epoch_ms DESC LIMIT 64
+           )
+        ORDER BY CASE WHEN state = 'FAILED_TERMINAL' AND cancellation_cleanup_pending = 0 THEN 1 ELSE 0 END,
+            updated_at_epoch_ms DESC
+    """)
     fun observeQueue(): Flow<List<DownloadBatchWithArtifacts>>
 
     @Transaction
-    @Query("SELECT * FROM download_batch WHERE state NOT IN ('COMPLETED', 'FAILED_TERMINAL', 'CANCELLED')")
+    @Query("SELECT * FROM download_batch WHERE state NOT IN ('COMPLETED', 'FAILED_TERMINAL', 'CANCELLED') OR cancellation_cleanup_pending = 1")
     suspend fun recoverableBatches(): List<DownloadBatchWithArtifacts>
+
+    @Query("""
+        UPDATE download_batch SET cancellation_cleanup_pending = 0,
+            state = CASE WHEN state = 'COMPLETED' THEN state ELSE 'CANCELLED' END, failure_code = NULL,
+            updated_at_epoch_ms = MAX(:nowEpochMs, updated_at_epoch_ms + 1)
+        WHERE batch_id = :batchId AND user_intent = 'CANCEL' AND cancellation_cleanup_pending = 1
+            AND updated_at_epoch_ms = :version
+    """)
+    suspend fun finishCancellationRecord(batchId: String, version: Long, nowEpochMs: Long): Int
+
+    @Query("""
+        UPDATE download_artifact SET state = 'CANCELLED', failure_code = NULL,
+            bytes_received = 0, entity_tag = NULL, last_modified = NULL,
+            platform_task_id = NULL, lease_owner = NULL, lease_expires_at_epoch_ms = NULL,
+            updated_at_epoch_ms = :nowEpochMs
+        WHERE batch_id = :batchId AND state != 'COMPLETED'
+    """)
+    suspend fun finishCancelledArtifacts(batchId: String, nowEpochMs: Long)
+
+    @Transaction
+    suspend fun finishCancellation(batchId: String, version: Long, nowEpochMs: Long): Boolean {
+        if (finishCancellationRecord(batchId, version, nowEpochMs) != 1) return false
+        finishCancelledArtifacts(batchId, nowEpochMs)
+        return true
+    }
 
     @Query(
         """
@@ -175,8 +214,10 @@ interface DownloadTaskDao {
     @Query(
         """
         UPDATE download_batch
-        SET state = 'FAILED_TERMINAL', failure_code = 'SECURE_PATH'
-        WHERE batch_id = :batchId AND state NOT IN ('COMPLETED', 'FAILED_TERMINAL', 'CANCELLED')
+        SET state = CASE WHEN state IN ('COMPLETED', 'FAILED_TERMINAL', 'CANCELLED') THEN state ELSE 'FAILED_TERMINAL' END,
+            failure_code = CASE WHEN state IN ('COMPLETED', 'FAILED_TERMINAL', 'CANCELLED') THEN failure_code ELSE 'SECURE_PATH' END,
+            cancellation_cleanup_pending = 0
+        WHERE batch_id = :batchId
         """,
     )
     suspend fun quarantineMutableBatchRecord(batchId: String)
@@ -358,8 +399,11 @@ interface DownloadTaskDao {
     @Query(
         """
         UPDATE download_batch
-        SET user_intent = :intent, updated_at_epoch_ms = MAX(:nowEpochMs, updated_at_epoch_ms + 1)
+        SET user_intent = :intent,
+            cancellation_cleanup_pending = CASE WHEN :intent = 'CANCEL' THEN 1 ELSE cancellation_cleanup_pending END,
+            updated_at_epoch_ms = MAX(:nowEpochMs, updated_at_epoch_ms + 1)
         WHERE batch_id = :batchId AND (user_intent != 'CANCEL' OR :intent = 'CANCEL')
+            AND (:intent != 'CANCEL' OR state != 'COMPLETED')
         """,
     )
     suspend fun setUserIntent(batchId: String, intent: String, nowEpochMs: Long): Int

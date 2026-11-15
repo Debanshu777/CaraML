@@ -14,8 +14,8 @@ class NavigationTransitionPolicyTest {
         val rootedModels = NavBackStack<NavKey>(AppScreen.Search)
         val nestedModels = NavBackStack<NavKey>(AppScreen.Home, AppScreen.Search)
 
-        returnFromModelSelection(rootedModels)
-        returnFromModelSelection(nestedModels)
+        returnHomeAfterModelSelection(rootedModels)
+        returnHomeAfterModelSelection(nestedModels)
 
         assertEquals(listOf(AppScreen.Home), rootedModels.toList())
         assertEquals(listOf(AppScreen.Home), nestedModels.toList())

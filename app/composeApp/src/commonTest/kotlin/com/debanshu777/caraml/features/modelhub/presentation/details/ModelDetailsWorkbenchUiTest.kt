@@ -14,6 +14,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -43,6 +44,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.debanshu777.caraml.core.theme.AppTheme
+import com.debanshu777.caraml.core.theme.CaraMLTheme
+import com.debanshu777.caraml.core.theme.ThemeMode
+import com.debanshu777.caraml.core.theme.ThemePreferences
 import com.debanshu777.caraml.core.rating.SdArchitecture
 import com.debanshu777.caraml.core.recommendation.DiffusionComponentDescriptor
 import com.debanshu777.caraml.core.recommendation.AssessmentReason
@@ -74,7 +79,7 @@ import kotlin.test.assertTrue
 class ModelDetailsWorkbenchUiTest {
 
     @Test
-    fun productionDetailTitleKeepsTheBrandRoleAcrossTheSupportingPaneBreakpoint() =
+    fun productionDetailTitleKeepsTheBrandRoleAcrossWidths() =
         runComposeUiTest {
             var windowWidth by mutableStateOf(839.dp)
             setContent {
@@ -91,18 +96,18 @@ class ModelDetailsWorkbenchUiTest {
                 }
             }
 
-            textStyleFor("focal-artifact").let { style ->
-                assertEquals(24.sp, style.fontSize)
-                assertEquals(32.sp, style.lineHeight)
+            textStyleFor("org/focal-artifact").let { style ->
+                assertEquals(18.sp, style.fontSize)
+                assertEquals(24.sp, style.lineHeight)
                 assertEquals(FontWeight.SemiBold, style.fontWeight)
             }
 
             runOnIdle { windowWidth = 840.dp }
             waitForIdle()
 
-            textStyleFor("focal-artifact").let { style ->
-                assertEquals(24.sp, style.fontSize)
-                assertEquals(32.sp, style.lineHeight)
+            textStyleFor("org/focal-artifact").let { style ->
+                assertEquals(18.sp, style.fontSize)
+                assertEquals(24.sp, style.lineHeight)
                 assertEquals(FontWeight.SemiBold, style.fontWeight)
             }
         }
@@ -128,17 +133,17 @@ class ModelDetailsWorkbenchUiTest {
         }
 
         val results = mutableListOf<TextLayoutResult>()
-        onNodeWithText(repositoryId.substringAfter('/'), useUnmergedTree = true)
+        onNodeWithText(repositoryId, useUnmergedTree = true)
             .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action ->
                 assertTrue(action(results))
             }
         val result = results.single()
         assertTrue(result.lineCount > 1, "Large detail titles should wrap")
         assertTrue(!result.didOverflowWidth, "Wrapped detail title must not overflow width")
-        assertTrue(result.lineCount <= 2, "Collapsed detail title must use at most two lines")
-        onNodeWithText("Show full name").performClick()
+        assertTrue(!result.hasVisualOverflow, "The full title is readable without an expansion control")
+        onNodeWithText("Show full name").assertDoesNotExist()
         results.clear()
-        onNodeWithText(repositoryId.substringAfter('/'), useUnmergedTree = true)
+        onNodeWithText(repositoryId, useUnmergedTree = true)
             .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action ->
                 assertTrue(action(results))
             }
@@ -146,101 +151,36 @@ class ModelDetailsWorkbenchUiTest {
     }
 
     @Test
-    fun compactDetailsUsesRoundedHierarchyWithoutStackedOutlinedCards() =
-        runComposeUiTest {
-            val fixture = workbenchGgufFixture()
-            val scheme = workbenchColorScheme()
-            setContent {
-                CompositionLocalProvider(LocalDensity provides Density(1f)) {
-                    MaterialTheme(colorScheme = scheme) {
-                        Box(
-                            Modifier
-                                .width(360.dp)
-                                .height(900.dp)
-                                .background(scheme.surface),
-                        ) {
-                            ModelDetailContent(
-                                model = workbenchMetadataModel(fixture.repositoryId),
-                                ggufFiles = fixture.files,
-                                isDownloading = false,
-                                onDownloadClick = { _, _, _ -> },
-                                recommendationState = fixture.recommendation,
-                            )
-                        }
+    fun compactDetailsKeepsVariantChoicesAboveTheFold() = runComposeUiTest {
+        val fixture = workbenchGgufFixture()
+        setContent {
+            CompositionLocalProvider(LocalDensity provides Density(1f)) {
+                MaterialTheme {
+                    Box(Modifier.width(360.dp).height(740.dp)) {
+                        ModelDetailContent(
+                            model = workbenchMetadataModel(fixture.repositoryId),
+                            ggufFiles = fixture.files,
+                            isDownloading = false,
+                            onDownloadClick = { _, _, _ -> },
+                            recommendationState = fixture.recommendation,
+                        )
                     }
                 }
             }
-
-            val overviewNode = onNodeWithTag("detail-overview").assertIsDisplayed()
-            val overviewPixels = overviewNode
-                .captureToImage()
-                .toPixelMap()
-            val overviewLeading = overviewPixels[8, 8]
-            val overviewTrailing = overviewPixels[overviewPixels.width - 9, 8]
-            assertTrue(
-                overviewLeading.colorDistance(scheme.surface) in 0.01f..0.55f,
-                "Overview should own a bold but bounded contextual field, got $overviewLeading",
-            )
-            assertTrue(
-                overviewLeading.colorDistance(overviewTrailing) >= 0.01f,
-                "Overview field should retain two distinct seed-derived endpoints",
-            )
-            val overviewSecondary = overviewPixels[overviewPixels.width - 20, 20]
-            assertTrue(
-                overviewSecondary.blue > overviewSecondary.red &&
-                    overviewSecondary.blue > overviewSecondary.green,
-                "Overview should expose the shared lilac secondary region",
-            )
-
-            val metadataNode = onNodeWithTag("detail-metadata")
-                .performScrollTo()
-                .assertIsDisplayed()
-            val metadataPixels = metadataNode
-                .captureToImage()
-                .toPixelMap()
-            val metadataCorner = metadataPixels[1, 1]
-            assertTrue(
-                metadataCorner.colorDistance(scheme.surface) <= 0.025f,
-                "Rounded technical-details corner should reveal the page canvas",
-            )
-            onNodeWithTag("detail-files").performScrollTo().assertIsDisplayed()
         }
+        onNodeWithTag("detail-overview").assertIsDisplayed()
+        onAllNodes(hasText("Overview")).assertCountEquals(0)
+        onNodeWithTag("detail-artifact:${fixture.files.first().path}").assertIsDisplayed()
+        val overview = onNodeWithTag("detail-overview").fetchSemanticsNode().boundsInRoot
+        val files = onNodeWithTag("detail-files").fetchSemanticsNode().boundsInRoot
+        val tabs = onNodeWithTag("detail-tabs").fetchSemanticsNode().boundsInRoot
+        assertTrue(tabs.top >= overview.bottom && files.top >= tabs.bottom)
+        onNodeWithText("Technical details").performClick()
+        onNodeWithTag("detail-metadata").scrollDetailsIntoView().assertIsDisplayed()
+    }
 
     @Test
-    fun detailIdentityUsesOneRoundedFocalSurfaceWithoutARedundantOverviewHeading() =
-        runComposeUiTest {
-            val canvas = Color.Magenta
-            setContent {
-                CompositionLocalProvider(LocalDensity provides Density(1f)) {
-                    MaterialTheme {
-                        Box(
-                            Modifier
-                                .width(360.dp)
-                                .height(420.dp)
-                                .background(canvas),
-                        ) {
-                            ModelDetailContent(
-                                model = ModelDetailResponse(modelId = "org/private-model"),
-                                ggufFiles = emptyList(),
-                                isDownloading = false,
-                                onDownloadClick = { _, _, _ -> },
-                            )
-                        }
-                    }
-                }
-            }
-
-            onAllNodes(hasText("Overview")).assertCountEquals(0)
-            val pixels = onNodeWithTag("detail-overview").captureToImage().toPixelMap()
-            assertEquals(canvas, pixels[1, 1], "Rounded overview corner must reveal the page canvas")
-            assertTrue(
-                pixels[pixels.width / 2, 1].colorDistance(canvas) >= 0.05f,
-                "The rounded identity field must retain its focal treatment",
-            )
-        }
-
-    @Test
-    fun compactHierarchyPutsDecisionContentBeforeCollapsedTechnicalEvidence() =
+    fun compactHierarchyPutsDecisionContentAboveTheTwoTabs() =
         runComposeUiTest {
             val fixture = workbenchGgufFixture()
             setContent {
@@ -260,12 +200,16 @@ class ModelDetailsWorkbenchUiTest {
             }
 
             onNodeWithText("Pipeline").assertDoesNotExist()
-            val deviceFit = onNodeWithText("Device fit").fetchSemanticsNode().boundsInRoot
-            val files = onNodeWithText("GGUF files").fetchSemanticsNode().boundsInRoot
+            onNodeWithText("Device fit").assertDoesNotExist()
+            onNodeWithContentDescription("See device info").assertDoesNotExist()
+            val deviceFit = onNodeWithTag("detail-fit").fetchSemanticsNode().boundsInRoot
+            val overview = onNodeWithTag("detail-overview").fetchSemanticsNode().boundsInRoot
+            assertTrue(deviceFit.top >= overview.top && deviceFit.bottom <= overview.bottom)
+            val files = onNodeWithText("Variants").fetchSemanticsNode().boundsInRoot
             val technical = onNodeWithText("Technical details")
                 .fetchSemanticsNode().boundsInRoot
             assertTrue(deviceFit.top < files.top, "Device decision should precede artifacts")
-            assertTrue(files.top < technical.top, "Technical evidence should follow artifact choice")
+            assertTrue(abs(files.top - technical.top) < 1f, "Both tabs belong to the same row")
 
             onNodeWithText("Technical details").performClick()
             onNodeWithText("Pipeline").assertExists()
@@ -307,7 +251,7 @@ class ModelDetailsWorkbenchUiTest {
     }
 
     @Test
-    fun truncatedGgufFilenameCanBeExpandedInDetails() = runComposeUiTest {
+    fun exactGgufFilenameRemainsFullyVisibleInDetails() = runComposeUiTest {
         val filename = "an-extremely-long-quantized-model-filename-with-exact-version-and-shard-00001-of-00002.gguf"
         setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f, fontScale = 2f)) {
@@ -326,18 +270,16 @@ class ModelDetailsWorkbenchUiTest {
             }
         }
 
-        onNodeWithText("Show full filename").performClick()
         val layouts = mutableListOf<TextLayoutResult>()
         onNodeWithText(filename, useUnmergedTree = true)
             .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action ->
                 assertTrue(action(layouts))
             }
         assertTrue(!layouts.single().hasVisualOverflow, "Expanded exact filename must remain readable")
-        onNodeWithText("Show less").assertIsDisplayed()
     }
 
     @Test
-    fun longRepositoryNameWrapsBelowOwnerWithoutRepeatingOwner() = runComposeUiTest {
+    fun longRepositoryNameKeepsTheOwnerInOneAnnotatedTitle() = runComposeUiTest {
         val owner = "research-collective"
         val name = "MiniCPM5-1B-Claude-Opus-Fable5-Very-Long-Thinking-GGUF"
         setContent {
@@ -361,17 +303,17 @@ class ModelDetailsWorkbenchUiTest {
         }
 
         onNodeWithTag("detail-overview").assertExists()
-        onAllNodes(hasText(owner)).assertCountEquals(1)
-        onNodeWithText("$owner/$name").assertDoesNotExist()
-        val ownerBounds = onNodeWithText(owner).fetchSemanticsNode().boundsInRoot
-        val nameBounds = onNodeWithText(name).fetchSemanticsNode().boundsInRoot
-        assertTrue(nameBounds.top >= ownerBounds.bottom)
-        assertTrue(abs(nameBounds.left - ownerBounds.left) < 1f)
-        assertTrue(nameBounds.height > 40f, "The long repository name should wrap naturally")
+        onAllNodes(hasText("$owner/$name")).assertCountEquals(1)
+        onAllNodes(hasText(owner)).assertCountEquals(0)
+        val layouts = mutableListOf<TextLayoutResult>()
+        onNodeWithTag("detail-title").performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        assertTrue(layouts.single().lineCount > 1, "The combined title should wrap naturally")
+        assertEquals(1, layouts.single().layoutInput.text.getLinkAnnotations(0, owner.length + name.length + 1).size)
+
     }
 
     @Test
-    fun metadataShowsFourPrimaryRowsBeforeSaveableShowAll() = runComposeUiTest {
+    fun technicalTabShowsAllAvailableFacts() = runComposeUiTest {
         setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f)) {
                 MaterialTheme {
@@ -387,27 +329,22 @@ class ModelDetailsWorkbenchUiTest {
             }
         }
 
-        onNodeWithTag("detail-metadata").performScrollTo().assertIsDisplayed()
-        onNodeWithText("Technical details").performClick()
+        onNodeWithText("Technical details").scrollDetailsIntoView().performClick()
+        onNodeWithTag("detail-metadata").assertExists()
         onNodeWithText("Library").assertExists()
         onNodeWithText("Pipeline").assertExists()
         onNodeWithText("License").assertExists()
         onNodeWithText("Base model").assertExists()
-        onNodeWithText("Model type").assertDoesNotExist()
-        onNodeWithText("3 Jul 2026").assertDoesNotExist()
-        onNodeWithContentDescription("Tag: on-device").assertDoesNotExist()
-
-        onNodeWithText("Show all").performClick()
         onNodeWithText("Model type").assertExists()
         onNodeWithText("3 Jul 2026").assertExists()
-        onNodeWithContentDescription("Tag: on-device").assertExists()
-
-        onNodeWithText("Show less").performScrollTo().assertIsDisplayed().performClick()
+        onNodeWithText("Tags").assertExists()
+        onNodeWithText("Show all").assertDoesNotExist()
+        onNodeWithText("Variants").scrollDetailsIntoView().performClick()
         onNodeWithText("Model type").assertDoesNotExist()
     }
 
     @Test
-    fun blankMetadataDoesNotConsumeTheFourPrimaryRows() = runComposeUiTest {
+    fun blankMetadataDoesNotCreateEmptyProperties() = runComposeUiTest {
         setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f)) {
                 MaterialTheme {
@@ -437,8 +374,8 @@ class ModelDetailsWorkbenchUiTest {
             }
         }
 
-        onNodeWithTag("detail-metadata").performScrollTo().assertIsDisplayed()
-        onNodeWithText("Technical details").performClick()
+        onNodeWithText("Technical details").scrollDetailsIntoView().performClick()
+        onNodeWithTag("detail-metadata").assertExists()
         onNodeWithText("Library").assertDoesNotExist()
         onNodeWithText("Pipeline").assertDoesNotExist()
         onNodeWithText("License").assertDoesNotExist()
@@ -482,9 +419,10 @@ class ModelDetailsWorkbenchUiTest {
             }
         }
 
-        onNodeWithTag("detail-files").performScrollTo().assertIsDisplayed()
+        onNodeWithTag("detail-files").scrollDetailsIntoView().assertIsDisplayed()
         onAllNodes(
-            SemanticsMatcher.expectValue(SemanticsProperties.Selected, true),
+            SemanticsMatcher.expectValue(SemanticsProperties.Selected, true) and
+                SemanticsMatcher.expectValue(SemanticsProperties.Role, androidx.compose.ui.semantics.Role.RadioButton),
         ).assertCountEquals(0)
         onAllNodes(
             SemanticsMatcher.expectValue(
@@ -585,7 +523,7 @@ class ModelDetailsWorkbenchUiTest {
                     hasClickAction(),
             ).assertCountEquals(1)
             onNodeWithContentDescription("Download ${fixture.primaryArtifact.relativePath}")
-                .performScrollTo()
+                .scrollDetailsIntoView()
                 .assertIsDisplayed()
                 .assertIsEnabled()
                 .performClick()
@@ -641,9 +579,14 @@ class ModelDetailsWorkbenchUiTest {
         var submitted: List<DownloadMetadataDTO>? = null
         var memoryFit by mutableStateOf(BrowseResourceFit.UNKNOWN)
         var selectedPath by mutableStateOf<String?>(null)
+        var theme by mutableStateOf(ThemeMode.LIGHT)
         setContent {
-            MaterialTheme {
-                Box(Modifier.width(420.dp).height(800.dp)) {
+            CaraMLTheme(ThemePreferences(themeMode = theme, reduceMotion = true)) {
+                Box(Modifier.width(420.dp).height(800.dp).testTag("details-viewport")) {
+                  androidx.compose.material3.Surface {
+                   com.debanshu777.caraml.core.ui.layout.ResponsiveContentPane(
+                       kind = com.debanshu777.caraml.core.ui.layout.AppContentKind.Details,
+                   ) {
                     ModelDetailContent(
                         model = ModelDetailResponse(modelId = fixture.repositoryId),
                         ggufFiles = fixture.files,
@@ -662,33 +605,41 @@ class ModelDetailsWorkbenchUiTest {
                             ))),
                         ),
                     )
+                   }
+                  }
                 }
             }
         }
         onNodeWithTag("detail-action").assertDoesNotExist()
         onNodeWithText("Selected artifact").assertDoesNotExist()
-        onNodeWithText("We need more model or device information before estimating fit. An unknown fit doesn't mean the model will run.")
-            .performScrollTo().assertIsDisplayed()
+        onNodeWithText("Technical details").scrollDetailsIntoView().performClick()
+        onNodeWithText("Fit unknown · support unverified")
+            .scrollDetailsIntoView().assertIsDisplayed()
         runOnIdle { memoryFit = BrowseResourceFit.TIGHT_FIT }
-        onNodeWithText("Tight fit").performScrollTo().assertIsDisplayed()
-        onNodeWithText("This is a provisional memory estimate. Model compatibility is still unverified.")
-            .performScrollTo().assertIsDisplayed()
-        onNodeWithText("We need more model or device information before estimating fit. An unknown fit doesn't mean the model will run.")
+        onNodeWithText("Tight fit").scrollDetailsIntoView().assertIsDisplayed()
+        onNodeWithText("Memory estimate · compatibility unverified")
+            .scrollDetailsIntoView().assertIsDisplayed()
+        onNodeWithText("Fit unknown · support unverified")
             .assertDoesNotExist()
+        onNodeWithText("Variants").scrollDetailsIntoView().performClick()
         onNodeWithText("Suggested · support unverified · Part 1 of 2").assertExists()
         onNodeWithText("Suggested · support unverified · Part 2 of 2").assertExists()
-        onNodeWithContentDescription("Select variant ${fixture.files.first().filename}")
-            .performScrollTo()
-            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, androidx.compose.ui.semantics.Role.RadioButton))
-            .performClick()
         runOnIdle {
-            assertEquals(fixture.files.first().path, selectedPath)
-            assertEquals(null, submitted, "Selecting a variant must not download it")
+            selectedPath = fixture.files.first().path
+            assertEquals(null, submitted, "Displaying a variant must not download it")
         }
-        onNodeWithContentDescription("Selected variant ${fixture.files.first().filename}")
-            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Selected, true))
+        onNodeWithTag("detail-artifact:${fixture.files.first().path}").scrollDetailsIntoView()
+        val row = onNodeWithTag("detail-artifact:${fixture.files.first().path}").fetchSemanticsNode().boundsInRoot
+        val viewport = onNodeWithTag("details-viewport").fetchSemanticsNode().boundsInRoot
+        assertTrue(row.left > viewport.left, "Selected row must retain the leading page gutter")
+        val section = onNodeWithTag("detail-section-divider").fetchSemanticsNode().positionInRoot
+        assertTrue(abs(row.right - (section.x + onNodeWithTag("detail-section-divider").fetchSemanticsNode().size.width)) < 1f, "Row divider extends to the content edge")
+        val filename = onNodeWithText(fixture.files.first().filename).fetchSemanticsNode().boundsInRoot
+        val divider = onNodeWithTag("detail-divider:${fixture.files.first().path}").fetchSemanticsNode().boundsInRoot
+        assertTrue(abs(divider.left - filename.left) < 1f, "Divider must start at the filename column")
+        assertTrue(abs(divider.right - row.right) < 1f, "Divider must reach the row edge")
         onAllNodes(hasContentDescription("Download all 2 parts")).assertCountEquals(2)
-        onAllNodes(hasContentDescription("Download all 2 parts"))[0].performScrollTo().performClick()
+        onAllNodes(hasContentDescription("Download all 2 parts"))[0].scrollDetailsIntoView().performClick()
         runOnIdle {
             assertEquals(
                 listOf(fixture.primaryArtifact, fixture.secondaryArtifact),
@@ -698,7 +649,7 @@ class ModelDetailsWorkbenchUiTest {
     }
 
     @Test
-    fun expandedDetailsHasOneScrollOwnerAndA320To360DpSupportPane() = runComposeUiTest {
+    fun expandedDetailsHasOneScrollOwnerAndFullWidthTabs() = runComposeUiTest {
         val fixture = workbenchInstallFixture()
         setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f)) {
@@ -724,13 +675,12 @@ class ModelDetailsWorkbenchUiTest {
         onAllNodes(
             SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange),
         ).assertCountEquals(1)
+        onNodeWithText("Technical details").scrollDetailsIntoView().performClick()
         val overview = onNodeWithTag("detail-overview").fetchSemanticsNode().boundsInRoot
         val support = onNodeWithTag("detail-support").fetchSemanticsNode().boundsInRoot
-        assertTrue(support.left > overview.left)
-        assertTrue(
-            support.width in 320f..360f,
-            "Support pane must remain 320–360dp; it was ${support.width}dp",
-        )
+        assertTrue(abs(support.left - overview.left) < 1f)
+        assertTrue(abs(support.width - overview.width) < 1f, "Technical tab uses the content width")
+
     }
 }
 

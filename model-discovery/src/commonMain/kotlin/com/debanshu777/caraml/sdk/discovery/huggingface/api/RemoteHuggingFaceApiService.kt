@@ -1,8 +1,11 @@
 package com.debanshu777.caraml.sdk.discovery.huggingface.api
 
+import com.debanshu777.caraml.sdk.discovery.huggingface.model.ModelCardDocument
+
 import com.debanshu777.caraml.sdk.discovery.huggingface.api.error.DataError
 import com.debanshu777.caraml.sdk.discovery.huggingface.api.error.Result
 import com.debanshu777.caraml.sdk.discovery.huggingface.model.ListModelsResponse
+import com.debanshu777.caraml.sdk.discovery.huggingface.model.parseModelCardDocument
 import com.debanshu777.caraml.sdk.discovery.huggingface.model.ModelDetailResponse
 import com.debanshu777.caraml.sdk.discovery.huggingface.model.ModelFileTreeResponse
 import com.debanshu777.caraml.sdk.discovery.huggingface.model.SearchModelsResponse
@@ -32,7 +35,7 @@ class RemoteHuggingFaceApiService private constructor(
     client: HttpClient,
     json: Json,
     private val trustedOrigin: Url,
-) {
+) : AutoCloseable {
     constructor(
         client: HttpClient,
         json: Json,
@@ -47,6 +50,9 @@ class RemoteHuggingFaceApiService private constructor(
     ) : this(client, json, validateHubOrigin(baseUrl, allowTestLoopback))
 
     private val clientWrapper = ClientWrapper(client, json)
+
+    /** Releases this service's request client without closing the supplied host client. */
+    override fun close() = clientWrapper.close()
     private val strictJson = Json(from = json) {
         ignoreUnknownKeys = false
         isLenient = false
@@ -58,80 +64,47 @@ class RemoteHuggingFaceApiService private constructor(
     }
 
     suspend fun getModelPage(params: ModelPageRequest): Result<ModelPage, DataError.Network> {
-        val baseUrl = modelPageUrl(params, cursor = null)
+        val baseUrl = modelPageUrl(params, pageIndex = 0)
         val queryKey = baseUrl.toString()
-        if (params.cursor != null && params.cursor.queryKey != queryKey) {
+        val pageIndex = params.cursor?.pageIndex ?: 0
+        if (pageIndex < 0 || (params.cursor != null && params.cursor.queryKey != queryKey)) {
             return Result.Error(DataError.Network.Serialization)
         }
-        val pageUrl = modelPageUrl(params, params.cursor?.token)
         return when (val response = clientWrapper.networkGetBounded(
-            endpoint = pageUrl.toString(),
+            endpoint = modelPageUrl(params, pageIndex).toString(),
             maxResponseBytes = MODEL_PAGE_RESPONSE_LIMIT_BYTES,
-            decode = { body -> ModelPageProjection.decode(strictJson, body, params.limit) },
+            decode = { body -> ModelPageProjection.decode(strictJson, body, pageIndex, params.cursor?.expectedPageSize) },
         )) {
             is Result.Error -> Result.Error(response.error)
             is Result.Success -> {
-                val link = response.data.linkHeader
-                val next = if (link == null) null else {
-                    val token = extractTrustedPageCursor(link, baseUrl)
-                        ?: return Result.Error(DataError.Network.Serialization)
-                    if (token == params.cursor?.token) {
-                        return Result.Error(DataError.Network.Serialization)
-                    }
-                    ModelPageCursor(token, queryKey)
-                }
-                Result.Success(ModelPage(response.data.data, next))
+                val page = response.data.data
+                val next = if ((page.pageIndex.toLong() + 1) * page.pageSize < page.totalCount!!) {
+                    ModelPageCursor(page.pageIndex + 1, queryKey, page.pageSize)
+                } else null
+                Result.Success(page.copy(nextCursor = next))
             }
         }
     }
 
-    private fun modelPageUrl(params: ModelPageRequest, cursor: String?): Url =
+    private fun modelPageUrl(params: ModelPageRequest, pageIndex: Int): Url =
         URLBuilder(trustedOrigin).apply {
-            appendPathSegments("api", "models")
+            appendPathSegments("models-json")
             parameters.apply {
                 params.search?.let { append("search", it) }
                 params.pipelineTag?.let { append("pipeline_tag", it) }
-                params.filter.forEach { append("filter", it) }
-                params.apps.forEach { append("apps", it) }
+                if (params.filter.isNotEmpty()) append("library", params.filter.joinToString(","))
+                if (params.apps.isNotEmpty()) append("apps", params.apps.joinToString(","))
                 if (params.minParams != null || params.maxParams != null) {
                     append("num_parameters", listOfNotNull(
                         params.minParams?.let { "min:${it.apiValue}" },
                         params.maxParams?.let { "max:${it.apiValue}" },
                     ).joinToString(","))
                 }
-                append("sort", when (params.sort) {
-                    com.debanshu777.caraml.sdk.discovery.huggingface.model.ModelSort.TRENDING -> "trendingScore"
-                    com.debanshu777.caraml.sdk.discovery.huggingface.model.ModelSort.DOWNLOADS -> "downloads"
-                    com.debanshu777.caraml.sdk.discovery.huggingface.model.ModelSort.LIKES -> "likes"
-                    com.debanshu777.caraml.sdk.discovery.huggingface.model.ModelSort.CREATED -> "createdAt"
-                    com.debanshu777.caraml.sdk.discovery.huggingface.model.ModelSort.MODIFIED -> "lastModified"
-                    else -> error("Unsupported model sort")
-                })
-                append("direction", "-1")
-                append("limit", params.limit.toString())
-                MODEL_PAGE_EXPANSIONS.forEach { append("expand", it) }
-                cursor?.let { append("cursor", it) }
+                append("sort", params.sort.apiValue)
+                append("withCount", "true")
+                append("p", pageIndex.toString())
             }
         }.build()
-
-    private fun extractTrustedPageCursor(linkHeader: String, expected: Url): String? {
-        if (linkHeader.isEmpty() || linkHeader.length > MAX_LINK_HEADER_LENGTH ||
-            linkHeader.any { it.code < 32 || it.code == 127 }) return null
-        val target = NEXT_LINK.matchEntire(linkHeader.trim())?.groupValues?.get(1) ?: return null
-        val link = try { Url(target) } catch (_: IllegalArgumentException) { return null }
-        if (link.protocol != trustedOrigin.protocol ||
-            !link.host.equals(trustedOrigin.host, ignoreCase = true) ||
-            link.port != trustedOrigin.port || link.user != null || link.password != null ||
-            link.fragment.isNotEmpty() || link.encodedPath != expected.encodedPath) return null
-        val token = link.parameters.getAll("cursor")?.singleOrNull()?.takeIf { value ->
-            value.isNotEmpty() && value.length <= MAX_CURSOR_LENGTH &&
-                value.none { it.code < 32 || it.code == 127 }
-        } ?: return null
-        val actualNames = link.parameters.names() - "cursor"
-        if (actualNames != expected.parameters.names()) return null
-        if (actualNames.any { link.parameters.getAll(it) != expected.parameters.getAll(it) }) return null
-        return token
-    }
 
     suspend fun listRecommendationModels(
         params: ListModelsParams,
@@ -172,6 +145,22 @@ class RemoteHuggingFaceApiService private constructor(
         val url = modelDetailUrl(modelId) ?: return Result.Error(DataError.Network.Unknown)
 
         return clientWrapper.networkGetUsecase(endpoint = url.toString())
+    }
+
+    /** Optional display content pinned to the same revision as the downloadable files. */
+    suspend fun getModelCard(modelId: String, revision: String): Result<ModelCardDocument, DataError.Network> {
+        val segments = validatedModelSegments(modelId) ?: return Result.Error(DataError.Network.Unknown)
+        if (!isImmutableRevision(revision)) return Result.Error(DataError.Network.Unknown)
+        val url = URLBuilder(trustedOrigin).apply {
+            appendPathSegments(segments, encodeSlash = true)
+            appendPathSegments("raw", revision, "README.md")
+        }.build()
+        return clientWrapper.networkGetUsecase(
+            endpoint = url.toString(),
+            maxResponseBytes = 256 * 1024L,
+            distinguishNotFound = true,
+            decode = { markdown -> parseModelCardDocument(modelId, revision, markdown) },
+        )
     }
 
     suspend fun getRecommendationModelDetail(
@@ -439,10 +428,6 @@ class RemoteHuggingFaceApiService private constructor(
             segment.all { it.isLetterOrDigit() || it == '_' || it == '-' || it == '.' }
 
     private companion object {
-        val MODEL_PAGE_EXPANSIONS = listOf(
-            "author", "downloads", "likes", "lastModified", "createdAt",
-            "pipeline_tag", "library_name", "tags", "gguf", "safetensors",
-        )
         val RECOMMENDATION_DETAIL_EXPANSIONS = listOf("library_name", "pipeline_tag", "sha", "tags")
         val NEXT_LINK = Regex("^<([^<>]+)>;\\s*rel=\\\"?next\\\"?$", RegexOption.IGNORE_CASE)
         const val MAX_MODEL_ID_LENGTH = 193

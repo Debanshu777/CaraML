@@ -71,18 +71,26 @@ kotlin {
     jvm()
 
     sourceSets {
+        // Share Java-compatible downloads; platform HTTP factories remain separate.
+        androidMain { kotlin.srcDir("src/javaMain/kotlin") }
+        jvmMain { kotlin.srcDir("src/javaMain/kotlin") }
         // Opt-in physical-device harness; excluded from ordinary app/framework builds.
         if (providers.gradleProperty("iosBenchmark").orNull == "true") {
             iosMain { kotlin.srcDir("src/iosBenchmark/kotlin") }
         }
         androidMain.dependencies {
+            implementation(libs.ktor.client.okhttp)
             implementation(libs.compose.uiToolingPreview)
+            implementation(libs.compose.uiTooling)
             implementation(project.dependencies.platform(libs.koin.bom))
             implementation(libs.koin.core)
             implementation(libs.androidx.core.ktx)
             implementation(libs.androidx.work.runtime.ktx)
         }
         commonMain.dependencies {
+            implementation(libs.coil.compose)
+            implementation(libs.coil.network.ktor)
+            implementation(libs.coil.svg)
             implementation(libs.haze.blur)
             implementation(project.dependencies.platform(libs.koin.bom))
             implementation(libs.koin.core)
@@ -114,7 +122,8 @@ kotlin {
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.materialkolor)
             implementation(libs.okio)
-            implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.27.0")
+            implementation(libs.markdown.m3)
+            implementation(libs.markdown.coil3)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
@@ -130,26 +139,31 @@ kotlin {
             implementation(libs.ktor.serialization.kotlinx.json)
         }
         jvmMain.dependencies {
+            implementation(project(":native-runtime"))
+            implementation(libs.ktor.client.cio)
             implementation(libs.kotlinx.coroutinesSwing)
             implementation("org.slf4j:slf4j-simple:2.0.9")
+        }
+        iosMain.dependencies {
+            implementation(libs.ktor.client.darwin)
         }
     }
 }
 
-// JVM tests exercise the native artifact filesystem without a desktop application wrapper.
-val desktopPlatform = when {
-    System.getProperty("os.name").lowercase().contains("mac") -> "macos"
-    System.getProperty("os.name").lowercase().contains("linux") -> "linux"
-    System.getProperty("os.name").lowercase().contains("win") -> "windows"
-    else -> error("Unsupported desktop platform")
+// JVM tests exercise the native artifact filesystem from the selected producer profile.
+val desktopArtifactFs by configurations.creating {
+    isCanBeConsumed = false
+    isCanBeResolved = true
 }
-val nativeDir = project(":nativeEngine").layout.buildDirectory
-    .dir("llama-runner-desktop/$desktopPlatform").get().asFile.absolutePath
+dependencies {
+    add(desktopArtifactFs.name, project(path = ":nativeEngine", configuration = "desktopArtifactFs"))
+}
 
 tasks.matching { it.name == "jvmTest" }.configureEach {
-    dependsOn(":nativeEngine:verifyArtifactFsDesktopLibrary")
+    dependsOn(desktopArtifactFs)
     (this as Test).apply {
-        systemProperty("caraml.native.lib.dir", nativeDir)
+        inputs.files(desktopArtifactFs)
+        doFirst { systemProperty("caraml.native.lib.dir", desktopArtifactFs.singleFile.parentFile.absolutePath) }
         testLogging.exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
     }
 }

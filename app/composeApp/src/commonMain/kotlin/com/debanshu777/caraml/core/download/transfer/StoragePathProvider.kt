@@ -55,13 +55,6 @@ interface StoragePathProvider {
     fun getFileSize(path: String): Long
 
     /**
-     * Atomically renames [from] to [to]. Returns true on success.
-     * If [to] already exists the behaviour is platform-defined (overwrite on JVM/Android,
-     * fail on iOS).
-     */
-    fun renameFile(from: String, to: String): Boolean
-
-    /**
      * Deletes a downloaded artifact at [localPath] after verifying it lies under
      * [getModelsStorageDirectory](modelId). Removes a single file or a directory tree.
      * Returns true if the path no longer exists afterwards (including if it was already absent).

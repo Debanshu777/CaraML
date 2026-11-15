@@ -39,6 +39,7 @@ private val primaryNavigationItems = listOf(
     DrawerItem(id = "images", title = "Images", icon = AppIcons.Image),
     DrawerItem(id = "videos", title = "Videos", icon = AppIcons.Video),
     DrawerItem(id = "models", title = "Models", icon = BrandNavigationIcons.Models),
+    DrawerItem(id = "device", title = "Device", icon = AppIcons.Device),
 )
 
 private val utilityNavigationItems = listOf(
@@ -68,6 +69,8 @@ fun AppDrawerShell(
         val selectedItemId = when (currentScreen) {
             AppScreen.Home -> generationDestinations.entries.first { it.value == modeController.mode }.key
             AppScreen.Search -> "models"
+            AppScreen.Downloads -> "models"
+            AppScreen.Device -> "device"
             is AppScreen.Details -> "models"
             AppScreen.Settings -> "settings"
             else -> null
@@ -76,13 +79,16 @@ fun AppDrawerShell(
             val requestedMode = generationDestinations[item.id]
             val target = if (requestedMode != null) AppScreen.Home else when (item.id) {
                 "models" -> AppScreen.Search
+                "device" -> AppScreen.Device
                 "settings" -> AppScreen.Settings
                 else -> null
             }
             if (target != null) {
                 Snapshot.withMutableSnapshot {
                     requestedMode?.let(modeController::setState)
-                    if (currentScreen != target) {
+                    if (target == AppScreen.Device) {
+                        if (currentScreen != AppScreen.Device) backStack.add(AppScreen.Device)
+                    } else if (currentScreen != target) {
                         backStack.clear()
                         backStack.add(target)
                     }

@@ -22,10 +22,16 @@ expect class DownloadManager(
 
     suspend fun validatedBundle(ownerModelId: String): ArtifactManifest?
 
-    /** Uses publication-time checksums and current path/size checks, without rehashing payloads. */
+    /** Uses publication-time checksums and current path/size checks; pending recovery still verifies content. */
     suspend fun installedBundleForLoad(ownerModelId: String): ArtifactManifest?
 
     suspend fun validatedArtifacts(modelId: String): ArtifactManifest?
+
+    /** Published identities and contained file sizes for UI; only pending recovery revalidates payloads. */
+    suspend fun installedArtifactsForDisplay(modelId: String): ArtifactManifest?
+
+    /** Committed structural metadata for deletion only; does not establish payload readiness. */
+    suspend fun installedBundleForRemoval(ownerModelId: String): ArtifactManifest?
 
     suspend fun discardCheckpoint(metadata: DownloadMetadataDTO)
 

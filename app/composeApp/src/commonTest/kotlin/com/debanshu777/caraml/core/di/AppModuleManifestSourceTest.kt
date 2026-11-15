@@ -301,7 +301,7 @@ class AppModuleManifestSourceTest {
         override fun isModelFileReadable(path: String): Boolean = inspect(path)?.kind == StoredArtifactKind.REGULAR_FILE
         override fun isDirectoryReadable(path: String): Boolean = inspect(path)?.kind == StoredArtifactKind.DIRECTORY
         override fun getFileSize(path: String): Long = inspect(path)?.byteCount ?: 0L
-        override fun renameFile(from: String, to: String): Boolean = false
+
         override fun deleteDownloadedModelContent(modelId: String, localPath: String): Boolean = false
 
         override fun inspectDownloadedArtifact(modelId: String, localPath: String): StoredArtifactSnapshot? {

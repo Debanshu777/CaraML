@@ -6,7 +6,14 @@ The adapter lives in `com.debanshu777.caraml.sdk.plugin.llama`; its native bridg
 and tests live in the `.bridge` subpackage. Kotlin declarations, JNI symbols,
 iOS cinterop and consumer keep rules use the same package hierarchy. See [native bridge details](docs/native-bridge.md).
 
+Android and JVM compile one JNI bridge from `src/javaMain/kotlin`; their small
+platform loader functions retain Android library lookup and desktop resource-path
+resolution. The build scripts include this directory explicitly in both targets.
+
 ## Recent Changes
+
+- Consolidated Android/JVM runner implementation while preserving JNI descriptors, validation, cancellation and teardown behavior. Platform library loading and existing diagnostics remain separate; Kotlin now supplies the plugin's standard library dependency.
+- JVM JNI loading uses the shared desktop resolver, supporting packaged resources and explicit SDK directory overrides without a build-checkout path. Desktop installed-image smoke initializes the selected runtime from relocated resources; native hardening/history/stream/memory tests are included in `verifyProject`.
 
 - Added opt-in Android native trace boundaries for backend/model/context initialization, prompt tokenization and prefill, and first-token wait/sampling/decode. Labels contain no prompt or model text; no extra warmup or synchronization is introduced. See [capture and symbolization guidance](../benchmarks/android/native-profiling.md).
 - Pixel 9 Simpleperf attributes 80.7% of sampled CPU load work to repack buffer writes; a fixed-plan three-run-per-build pilot reduces median load 24.0%. Vulkan timestamps identify matrix prefill and a modern-compiler Q4_K decode regression. Native-only capture passes strict quality checks; Perfetto native unwinding remains unresolved. See [measured findings and exclusions](../benchmarks/android/README.md#native-follow-up--october-24-2026).

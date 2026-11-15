@@ -111,6 +111,7 @@ internal class OrtTextRuntime(private val promptDate: () -> String = ::onnxPromp
                         val tensor = info.info as? TensorInfo ?: error("Invalid KV cache $name")
                         require(tensor.type == OnnxJavaType.FLOAT && tensor.shape.size == 4) { "Only rank-4 float32 KV caches are supported; choose q4/int8/fp32" }
                         require(presentName(name) in loaded.outputNames) { "Missing KV cache output for $name" }
+                        initialOnnxCacheShape(tensor.shape, modelConfig)
                     }
                 }
                 if (chosen == OnnxExecutionProvider.COREML && loaded.inputNames.any { it.startsWith("past_key_values.") }) {
@@ -229,29 +230,24 @@ internal class OrtTextRuntime(private val promptDate: () -> String = ::onnxPromp
                     // One enabled check per generation; no tracing JNI or timing calls in the disabled loop.
                     // Every prompt chunk is covered. Decode/token handling uses sparse fixed landmarks.
                     val traceIteration = traceEnabled && isOnnxTokenTraceSample(generated.size)
-                    val owned = ArrayList<OnnxTensor>()
-                    fun own(tensor: OnnxTensor) = tensor.also(owned::add)
-                    val inputs = linkedMapOf<String, OnnxTensor>()
                     val totalLength = pastLength + inputIds.size
-                    fun longs(values: LongArray, shape: LongArray) = own(OnnxTensor.createTensor(environment, LongBuffer.wrap(values), shape))
-                    traceOnnxRuntime(traceIteration, "CaraML.onnx.inputPrepare") {
-                        inputs["input_ids"] = longs(inputIds.map(Int::toLong).toLongArray(), longArrayOf(1, inputIds.size.toLong()))
-                        if ("attention_mask" in active.inputNames) inputs["attention_mask"] = longs(LongArray(totalLength) { 1 }, longArrayOf(1, totalLength.toLong()))
-                        if ("position_ids" in active.inputNames) inputs["position_ids"] = longs(LongArray(inputIds.size) { (pastLength + it).toLong() }, longArrayOf(1, inputIds.size.toLong()))
-                        if ("use_cache_branch" in active.inputNames) inputs["use_cache_branch"] = own(OnnxTensor.createTensor(environment, booleanArrayOf(previous != null)))
-                        for ((name, info) in kvInputs) {
-                            inputs[name] = previous?.get(presentName(name))?.orElse(null) as? OnnxTensor ?: run {
-                                val shape = (info.info as TensorInfo).shape.copyOf()
-                                shape[0] = 1
-                                shape[1] = shape[1].takeIf { it > 0 } ?: (modelConfig["num_key_value_heads"] ?: modelConfig["num_attention_heads"])!!.jsonPrimitive.long
-                                shape[2] = 0
-                                shape[3] = shape[3].takeIf { it > 0 } ?: (modelConfig["head_dim"]?.jsonPrimitive?.longOrNull
-                                    ?: (modelConfig.getValue("hidden_size").jsonPrimitive.long / modelConfig.getValue("num_attention_heads").jsonPrimitive.long))
-                                own(OnnxTensor.createTensor(environment, FloatBuffer.allocate(0), shape))
+                    val output = OnnxInputTensors(traceIteration).use { owned ->
+                        val inputs = linkedMapOf<String, OnnxTensor>()
+                        fun longs(values: LongArray, shape: LongArray) = owned.own(OnnxTensor.createTensor(environment, LongBuffer.wrap(values), shape))
+                        traceOnnxRuntime(traceIteration, "CaraML.onnx.inputPrepare") {
+                            inputs["input_ids"] = longs(inputIds.map(Int::toLong).toLongArray(), longArrayOf(1, inputIds.size.toLong()))
+                            if ("attention_mask" in active.inputNames) inputs["attention_mask"] = longs(LongArray(totalLength) { 1 }, longArrayOf(1, totalLength.toLong()))
+                            if ("position_ids" in active.inputNames) inputs["position_ids"] = longs(LongArray(inputIds.size) { (pastLength + it).toLong() }, longArrayOf(1, inputIds.size.toLong()))
+                            if ("use_cache_branch" in active.inputNames) inputs["use_cache_branch"] = owned.own(OnnxTensor.createTensor(environment, booleanArrayOf(previous != null)))
+                            for ((name, info) in kvInputs) {
+                                // Cached outputs are borrowed from the previous result. Only
+                                // newly created input tensors belong to this iteration's scope.
+                                inputs[name] = previous?.get(presentName(name))?.orElse(null) as? OnnxTensor ?: run {
+                                    val shape = initialOnnxCacheShape((info.info as TensorInfo).shape, modelConfig)
+                                    owned.own(OnnxTensor.createTensor(environment, FloatBuffer.allocate(0), shape))
+                                }
                             }
                         }
-                    }
-                    val output = try {
                         val runPhase = if (!traceIteration) "" else when {
                             generated.isEmpty() -> "CaraML.onnx.prefill"
                             kvInputs.isEmpty() -> "CaraML.onnx.fullHistoryRun"
@@ -259,8 +255,6 @@ internal class OrtTextRuntime(private val promptDate: () -> String = ::onnxPromp
                             else -> "CaraML.onnx.decode"
                         }
                         traceOnnxRuntime(traceIteration, runPhase) { active.run(inputs, run) }
-                    } finally {
-                        traceOnnxRuntime(traceIteration, "CaraML.onnx.inputsClose") { owned.forEach(OnnxTensor::close) }
                     }
                     traceOnnxRuntime(traceIteration, "CaraML.onnx.resultClose") { previous?.close() }
                     previous = output
@@ -273,10 +267,14 @@ internal class OrtTextRuntime(private val promptDate: () -> String = ::onnxPromp
                     }
                     val logits = output.get("logits").get() as OnnxTensor
                     require(logits.info.type == OnnxJavaType.FLOAT) { "Only float32 logits are supported" }
+                    val vocabulary = logits.info.shape.lastOrNull()
+                    require(vocabulary != null && vocabulary in 1..Int.MAX_VALUE.toLong() && logits.info.numElements >= vocabulary) {
+                        "ONNX logits are empty or have an invalid vocabulary size"
+                    }
+                    val vocabSize = vocabulary.toInt()
                     val scores = traceOnnxRuntime(traceIteration, "CaraML.onnx.logitsAccess") { logits.floatBuffer }
                     val best = traceOnnxRuntime(traceIteration, "CaraML.onnx.sample") {
-                        val vocabSize = logits.info.shape.last().toInt()
-                        require(vocabSize > 0 && scores.remaining() >= vocabSize)
+                        require(scores.remaining() >= vocabSize) { "ONNX logits do not contain a complete vocabulary row" }
                         val offset = scores.limit() - vocabSize
                         var best = 0
                         var bestScore = Float.NEGATIVE_INFINITY
@@ -363,3 +361,30 @@ internal class OrtTextRuntime(private val promptDate: () -> String = ::onnxPromp
 }
 
 private val registeredWebGpuLibraries = mutableSetOf<String>()
+
+/** Owns only temporary inputs, including allocations made before input validation fails. */
+internal class OnnxInputTensors(private val traceEnabled: Boolean) : AutoCloseable {
+    private val tensors = ArrayList<OnnxTensor>()
+    fun own(tensor: OnnxTensor): OnnxTensor = tensor.also(tensors::add)
+    override fun close() = traceOnnxRuntime(traceEnabled, "CaraML.onnx.inputsClose") {
+        tensors.forEach(OnnxTensor::close)
+    }
+}
+
+internal fun initialOnnxCacheShape(shape: LongArray, config: JsonObject): LongArray {
+    require(shape.size == 4) { "Only rank-4 KV caches are supported" }
+    fun dimension(name: String): Long? = (config[name] as? JsonPrimitive)?.longOrNull
+    val heads = shape[1].takeIf { it > 0 }
+        ?: dimension("num_key_value_heads") ?: dimension("num_attention_heads")
+    val headDimension = shape[3].takeIf { it > 0 } ?: dimension("head_dim") ?: run {
+        val hidden = dimension("hidden_size")
+        val attentionHeads = dimension("num_attention_heads")
+        if (hidden != null && attentionHeads != null && attentionHeads > 0 && hidden % attentionHeads == 0L) {
+            hidden / attentionHeads
+        } else null
+    }
+    require(heads != null && heads > 0 && headDimension != null && headDimension > 0) {
+        "ONNX bundle is missing valid KV cache dimensions"
+    }
+    return longArrayOf(1, heads, 0, headDimension)
+}

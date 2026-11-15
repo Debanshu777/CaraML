@@ -15,6 +15,9 @@ kotlin {
 
 dependencies {
     implementation(project(":app:composeApp"))
+    implementation(project(":native-runtime"))
+    implementation(project(":plugin-llama"))
+    implementation(project(":plugin-diffusion"))
     implementation(compose.desktop.currentOs)
     implementation(project.dependencies.platform(libs.koin.bom))
     implementation(libs.koin.core)
@@ -27,35 +30,25 @@ val desktopPlatform = when {
     System.getProperty("os.name").lowercase().contains("win") -> "windows"
     else -> error("Unsupported desktop platform")
 }
-// Desktop JNI output: keep in sync with CaramlNativeLayout.DESKTOP_SUBDIR in nativeEngine/build.gradle.kts
-val nativeDir =
-    project(":nativeEngine").layout.buildDirectory.dir("llama-runner-desktop/$desktopPlatform").get().asFile.absolutePath
 val artifactFsLibraryName = when (desktopPlatform) {
     "macos" -> "libartifact_fs.dylib"
     "linux" -> "libartifact_fs.so"
     "windows" -> "artifact_fs.dll"
     else -> throw GradleException("Unsupported desktop platform for secure artifact storage")
 }
-val artifactFsAppResourcesRoot = layout.buildDirectory.dir("generated/artifactFsAppResources")
-val stageArtifactFsAppResources by tasks.registering(Sync::class) {
-    dependsOn(":nativeEngine:verifyArtifactFsDesktopLibrary")
-    from(project(":nativeEngine").layout.buildDirectory.file("llama-runner-desktop/$desktopPlatform/$artifactFsLibraryName"))
-    into(artifactFsAppResourcesRoot.map { it.dir("common") })
+val nativeAppResourcesRoot = layout.buildDirectory.dir("generated/nativeAppResources")
+val stageNativeAppResources by tasks.registering(Sync::class) {
+    dependsOn(":nativeEngine:stageDesktopRuntime")
+    from(project(":nativeEngine").layout.buildDirectory.dir("desktop-runtime/$desktopPlatform"))
+    into(nativeAppResourcesRoot.map { it.dir("common") })
 }
 
 compose.desktop {
     application {
         mainClass = "com.debanshu777.caraml.MainKt"
 
-        // Compose Desktop's `run` task is AbstractRunDistributableTask, NOT JavaExec.
-        // Standard `tasks.withType<JavaExec>` filter never matches it, so jvmArgs
-        // must be injected via the Compose DSL here to actually take effect.
-        jvmArgs += listOf(
-            "-Djava.library.path=$nativeDir",
-        )
-
         nativeDistributions {
-            appResourcesRootDir.set(artifactFsAppResourcesRoot)
+            appResourcesRootDir.set(nativeAppResourcesRoot)
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "com.debanshu777.caraml"
             packageVersion = "1.0.0"
@@ -64,14 +57,15 @@ compose.desktop {
 }
 
 tasks.matching { it.name == "prepareAppResources" }.configureEach {
-    dependsOn(stageArtifactFsAppResources)
+    dependsOn(stageNativeAppResources)
 }
 
-tasks.register<JavaExec>("artifactFsInstalledImageSmoke") {
+val nativeRuntimeInstalledImageSmoke by tasks.registering(JavaExec::class) {
     group = "verification"
-    description = "Loads and exercises artifact_fs from the generated desktop application image"
+    description = "Exercises the filesystem and selected inference runtimes from a relocated application image"
     dependsOn("createDistributable")
-    mainClass.set("com.debanshu777.caraml.core.download.transfer.ArtifactFsInstalledImageSmoke")
+    mainClass.set("com.debanshu777.caraml.DesktopNativeRuntimeSmoke")
+    args(providers.gradleProperty("caramlNativeEngines").orElse("llama,diffusion").get())
     doFirst {
         val imageRoot = layout.buildDirectory.dir("compose/binaries/main/app").get().asFile
         val resources = imageRoot.walkTopDown().singleOrNull { directory ->
@@ -80,15 +74,41 @@ tasks.register<JavaExec>("artifactFsInstalledImageSmoke") {
         } ?: throw GradleException("artifact_fs is missing from the desktop application image")
         val appDirectory = resources.parentFile
             ?: throw GradleException("Invalid desktop application image")
-        classpath = files(fileTree(appDirectory) { include("*.jar") })
-        systemProperty("compose.application.resources.dir", resources.absolutePath)
+        // Copy the distributable's jars and resources away from both the image
+        // and native build output. No development library path is available.
+        val relocated = layout.buildDirectory.dir("verification/relocated-native-runtime").get().asFile
+        delete(relocated)
+        copy {
+            from(appDirectory)
+            include("*.jar", "resources/**")
+            into(relocated)
+        }
+        val emptyLibraryPath = relocated.resolve("empty-library-path").also { it.mkdirs() }
+        workingDir = relocated
+        classpath = files(fileTree(relocated) { include("*.jar") })
+        systemProperty("compose.application.resources.dir", relocated.resolve("resources").absolutePath)
+        systemProperty("java.library.path", emptyLibraryPath.absolutePath)
+        environment.remove("LD_LIBRARY_PATH")
+        environment.remove("DYLD_LIBRARY_PATH")
+        environment.remove("DYLD_FALLBACK_LIBRARY_PATH")
     }
 }
 
-tasks.matching { it.name == "run" || it.name.endsWith("Run") }.configureEach {
-    dependsOn(":nativeEngine:compileLlamaRunnerDesktop")
+tasks.register("artifactFsInstalledImageSmoke") {
+    group = "verification"
+    description = "Compatibility alias for the complete installed native-runtime smoke check"
+    dependsOn(nativeRuntimeInstalledImageSmoke)
 }
 
-tasks.withType<JavaExec>().matching { it.name == "run" }.configureEach {
+// Hot reload launches Java directly instead of using Compose's resource-aware
+// distributable runner. Give those development processes the staged runtime.
+tasks.withType<JavaExec>().matching {
+    it.name == "run" || it.name.endsWith("Run") || it.name.startsWith("hotRun")
+}.configureEach {
+    dependsOn(stageNativeAppResources)
+    systemProperty(
+        "caraml.native.lib.dir",
+        project(":nativeEngine").layout.buildDirectory.dir("desktop-runtime/$desktopPlatform").get().asFile.absolutePath,
+    )
     systemProperty("caraml.recommendation.debugBuild", "true")
 }

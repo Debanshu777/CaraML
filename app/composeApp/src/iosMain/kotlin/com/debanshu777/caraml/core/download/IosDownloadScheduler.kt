@@ -77,8 +77,12 @@ class IosDownloadScheduler internal constructor(
         NSURLSession.sessionWithConfiguration(configuration, delegate, delegateQueue)
     }
 
-    override suspend fun enqueue(batchId: String) {
+    override suspend fun awaitReadyForScheduling() {
         restorationReady.await()
+    }
+
+    override suspend fun enqueue(batchId: String) {
+        awaitReadyForScheduling()
         enqueueAfterRestoration(batchId, ignoredTaskId = null)
     }
 

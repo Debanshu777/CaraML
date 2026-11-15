@@ -10,6 +10,13 @@ nodes=[h.make_node('Add',['input_ids','one'],['next']),h.make_node('Mod',['next'
 outputs=[h.make_tensor_value_info('logits',T.FLOAT,[1,'sequence',256]),h.make_tensor_value_info('present.0.key',T.FLOAT,[1,1,'past',2]),h.make_tensor_value_info('present.0.value',T.FLOAT,[1,1,'past',2])]
 model=h.make_model(h.make_graph(nodes,'byte-successor',inputs,outputs,inits),opset_imports=[h.make_opsetid('',17)],ir_version=9)
 onnx.checker.check_model(model);onnx.save(model,root/'model.onnx')
+# A valid graph can return an empty leading dimension. Native sampling must reject
+# it before calculating the final vocabulary row's address.
+empty_logits=h.make_tensor('logits',T.FLOAT,[1,0,32],[])
+empty_graph=h.make_graph([], 'empty-logits', [h.make_tensor_value_info('input_ids',T.INT64,[1,1])],
+    [h.make_tensor_value_info('logits',T.FLOAT,[1,0,32])], [empty_logits])
+empty_model=h.make_model(empty_graph,opset_imports=[h.make_opsetid('',17)],ir_version=9)
+onnx.checker.check_model(empty_model);onnx.save(empty_model,root/'empty-logits.onnx')
 direct=set(range(33,127))|set(range(161,173))|set(range(174,256)); n=256;vocab={}
 for i in range(256):
     if i in direct: c=chr(i)

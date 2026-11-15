@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -24,7 +26,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.ui.components.BrandIconButton
-import com.debanshu777.caraml.core.ui.components.BrandButtonStyle
 import com.debanshu777.caraml.core.download.DownloadArtifactState
 import com.debanshu777.caraml.core.theme.CaraMLTheme
 import com.debanshu777.caraml.core.theme.ThemePreferences
@@ -47,6 +48,7 @@ internal fun GgufFileAction(
     actionDescription: String? = null,
     progress: Float? = null,
     cancellationPending: Boolean = false,
+    emphasizeDownload: Boolean = false,
 ) {
     val reportedProgress = progress?.takeIf { it >= 0f }?.coerceIn(0f, 100f)?.div(100f)
     when {
@@ -103,17 +105,21 @@ internal fun GgufFileAction(
         }
         else -> Row(verticalAlignment = Alignment.CenterVertically) {
             reportedProgress?.let { ArtifactActionProgress(it) }
-            BrandIconButton(
-                onClick = onDownloadClick,
-                style = BrandButtonStyle.Primary,
-                modifier = Modifier.size(AppTheme.spacing.spacing48),
-                enabled = downloadEnabled && !interactionLocked && !isDownloading,
-            ) {
+            val icon: @Composable () -> Unit = {
                 Icon(
                     AppIcons.Download,
                     contentDescription = actionDescription ?: "Download $filename",
                 )
             }
+            IconButton(
+                onClick = onDownloadClick,
+                modifier = Modifier.size(AppTheme.spacing.spacing48),
+                colors = IconButtonDefaults.iconButtonColors(
+                    contentColor = if (emphasizeDownload) AppTheme.actionColor else AppTheme.colors.onSurface,
+                ),
+                enabled = downloadEnabled && !interactionLocked && !isDownloading,
+                content = icon,
+            )
         }
     }
 }

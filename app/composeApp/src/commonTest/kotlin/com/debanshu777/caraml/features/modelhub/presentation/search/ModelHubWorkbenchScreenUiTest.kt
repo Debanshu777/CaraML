@@ -22,11 +22,9 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.v2.runComposeUiTest
@@ -37,11 +35,7 @@ import androidx.navigation3.runtime.NavKey
 import com.debanshu777.caraml.core.drawer.AppDrawerShell
 import com.debanshu777.caraml.core.navigation.AppScreen
 import com.debanshu777.caraml.core.ui.components.GenericListItem
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubContextStrip
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubToolbar
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchBar
-import com.debanshu777.caraml.sdk.discovery.huggingface.model.ModelSort
-import com.debanshu777.caraml.sdk.discovery.huggingface.model.ParameterRange
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -78,42 +72,6 @@ class ModelHubWorkbenchScreenUiTest {
         runOnIdle { assertEquals(1, appends) }
         onNodeWithTag("model-primary-results").performScrollToIndex(11)
         runOnIdle { assertEquals(1, appends) }
-    }
-
-    @Test
-    fun compactModelsPlacesCommandBeforeContextAndResultsInFirstViewport() = runComposeUiTest {
-        setContent {
-            CompositionLocalProvider(LocalDensity provides Density(density = 1f, fontScale = 1f)) {
-                MaterialTheme {
-                    Box(Modifier.requiredSize(width = 360.dp, height = 800.dp)) {
-                        WorkbenchFixture(
-                            modifier = Modifier.fillMaxSize(),
-                            result = FixtureResult.Content,
-                        )
-                    }
-                }
-            }
-        }
-
-        val header = onNodeWithText("Models").fetchSemanticsNode().boundsInRoot
-        val tabs = onNodeWithText("Discover").fetchSemanticsNode().boundsInRoot
-        val command = onNodeWithTag("model-command").fetchSemanticsNode().boundsInRoot
-        val context = onNodeWithTag("model-context").fetchSemanticsNode().boundsInRoot
-        val toolbar = onNodeWithTag("model-toolbar").fetchSemanticsNode().boundsInRoot
-        val summary = onNodeWithTag("model-summary").fetchSemanticsNode().boundsInRoot
-        val results = onNodeWithTag("model-results").fetchSemanticsNode().boundsInRoot
-
-        assertTrue(header.top < tabs.top)
-        assertTrue(tabs.top < command.top)
-        assertTrue(command.top < context.top)
-        assertTrue(context.top < toolbar.top)
-        assertTrue(toolbar.top < summary.top)
-        assertTrue(summary.top < results.top)
-        onNodeWithTag("model-command").assertIsDisplayed()
-        assertTrue(
-            summary.top < 800f || results.top < 800f,
-            "The result summary or first result must begin in the first 360x800dp viewport",
-        )
     }
 
     @Test
@@ -191,31 +149,6 @@ class ModelHubWorkbenchScreenUiTest {
     }
 
     @Test
-    fun filteredEmptyStateShowsCountFilterSummaryAndReset() = runComposeUiTest {
-        var resets = 0
-        setContent {
-            MaterialTheme {
-                Box(Modifier.requiredSize(width = 360.dp, height = 480.dp)) {
-                    WorkbenchFixture(
-                        modifier = Modifier.fillMaxSize(),
-                        result = FixtureResult.Empty,
-                        activeFilterCount = 2,
-                        onResetFilters = { resets += 1 },
-                    )
-                }
-            }
-        }
-
-        onNodeWithText("0 models").assertIsDisplayed()
-        onNodeWithText("2 filters active").assertIsDisplayed()
-        onNodeWithText("No models match the active filters.")
-            .performScrollTo()
-            .assertIsDisplayed()
-        onNodeWithText("Reset filters").performScrollTo().performClick()
-        runOnIdle { assertEquals(1, resets) }
-    }
-
-    @Test
     fun loadingEmptyErrorAndContentHaveDistinctSemantics() = runComposeUiTest {
         var result by mutableStateOf(FixtureResult.Loading)
         setContent {
@@ -239,7 +172,7 @@ class ModelHubWorkbenchScreenUiTest {
     }
 
     @Test
-    fun width840UsesTheSharedTwentyFourDpContentGutters() = runComposeUiTest {
+    fun width840ResultsExtendFromStartGutterToTrailingDividerEdge() = runComposeUiTest {
         setContent {
             CompositionLocalProvider(LocalDensity provides Density(density = 1f, fontScale = 1f)) {
                 MaterialTheme {
@@ -255,12 +188,13 @@ class ModelHubWorkbenchScreenUiTest {
         val results = onNodeWithTag("model-primary-results")
             .fetchSemanticsNode().boundsInRoot
 
-        assertEquals(792f, results.width, "840dp viewport minus two shared 24dp gutters")
+        assertEquals(24f, results.left, "Results retain the shared 24dp start gutter")
+        assertEquals(840f, results.right, "Result dividers reach the trailing viewport edge")
+        assertEquals(816f, results.width, "Row content applies its own trailing 24dp inset")
     }
 
     @Test
-    fun compactTwoHundredPercentTextKeepsResetAndFirstResultReachable() = runComposeUiTest {
-        var resets = 0
+    fun compactTwoHundredPercentTextKeepsFirstResultReachable() = runComposeUiTest {
         setContent {
             CompositionLocalProvider(LocalDensity provides Density(density = 1f, fontScale = 2f)) {
                 MaterialTheme {
@@ -268,7 +202,6 @@ class ModelHubWorkbenchScreenUiTest {
                         FixtureTab(
                             modifier = Modifier.fillMaxSize(),
                             activeFilterCount = 2,
-                            onResetFilters = { resets += 1 },
                         )
                     }
                 }
@@ -276,12 +209,10 @@ class ModelHubWorkbenchScreenUiTest {
         }
 
         assertEquals(1, verticalScrollOwnerCount())
-        onNodeWithText("Reset filters").performScrollTo().assertIsDisplayed().performClick()
         onNodeWithTag("model-primary-results").performScrollToIndex(3)
         onNodeWithText("long-model-name-that-remains-readable")
             .performScrollTo()
             .assertIsDisplayed()
-        runOnIdle { assertEquals(1, resets) }
     }
 
     private fun androidx.compose.ui.test.ComposeUiTest.verticalScrollOwnerCount(): Int =
@@ -316,22 +247,20 @@ private fun WorkbenchFixture(
         selectedTabIndex = selectedTabIndex,
         onTabSelected = {},
         modifier = modifier,
-        discoverContent = {
+        discoverContent = { chrome ->
             FixtureTab(
+                chrome = chrome,
                 result = result,
                 activeFilterCount = activeFilterCount,
                 onResetFilters = onResetFilters,
             )
         },
-        libraryContent = {
+        libraryContent = { chrome ->
             ModelHubTabLayout(
-                context = { FixtureContext() },
+                header = chrome.header, context = chrome.context, snackbarHostState = chrome.snackbarHostState,
                 toolbar = { Text("Library readiness") },
                 summary = {
-                    ModelHubResultSummary(
-                        resultCount = 0,
-                        resultNoun = "downloaded models",
-                    )
+                    Text("0 downloaded models")
                 },
                 results = {
                     modelHubResultItems(
@@ -357,6 +286,7 @@ private fun WorkbenchFixture(
 
 @Composable
 private fun FixtureTab(
+    chrome: ModelHubFixtureChrome? = null,
     modifier: Modifier = Modifier,
     result: FixtureResult = FixtureResult.Content,
     activeFilterCount: Int = 0,
@@ -370,6 +300,7 @@ private fun FixtureTab(
     }
     ModelHubTabLayout(
         modifier = modifier,
+        header = chrome?.header, snackbarHostState = chrome?.snackbarHostState,
         command = {
             SearchBar(
                 query = "",
@@ -377,29 +308,9 @@ private fun FixtureTab(
                 onSearch = {},
             )
         },
-        context = { FixtureContext() },
-        toolbar = {
-            ModelHubToolbar(
-                browseMode = ModelHubBrowseMode.LanguageModels,
-                onBrowseModeChange = {},
-                showSortFilters = true,
-                ordering = ModelOrdering.Server(ModelSort.TRENDING),
-                sort = ModelSort.TRENDING,
-                minParams = ParameterRange.ZERO,
-                maxParams = ParameterRange.SIX_B,
-                onSortChange = {},
-                onOrderingChange = {},
-                onMinParamsChange = {},
-                onMaxParamsChange = {},
-            )
-        },
-        summary = {
-            ModelHubResultSummary(
-                resultCount = models.size,
-                activeFilterCount = activeFilterCount,
-                onResetFilters = onResetFilters,
-            )
-        },
+        context = { chrome?.context?.invoke() },
+        toolbar = {},
+        summary = {},
         results = {
             modelHubResultItems(
                 isLoading = result == FixtureResult.Loading,
@@ -430,18 +341,5 @@ private fun FixtureTab(
                 )
             }
         },
-    )
-}
-
-@Composable
-private fun FixtureContext() {
-    ModelHubContextStrip(
-        storageInfo = StorageInfoUiState(
-            totalDeviceBytes = 8_589_934_592L,
-            availableDeviceBytes = 6_442_450_944L,
-            usedByModelsBytes = 2_147_483_648L,
-        ),
-        profile = null,
-        onOpenProfile = null,
     )
 }

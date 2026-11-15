@@ -72,7 +72,7 @@ class SettingsWorkbenchUiTest {
                     Surface(Modifier.width(320.dp).height(700.dp)) {
                         SettingsPreferenceRow("Downloaded models", "Models saved on this device.") {
                             com.debanshu777.caraml.core.ui.components.BrandButton(onClick = {}) {
-                                androidx.compose.material3.Text("Open library")
+                                androidx.compose.material3.Text("Open downloads")
                             }
                         }
                     }
@@ -80,7 +80,7 @@ class SettingsWorkbenchUiTest {
             }
         }
         val description = onNodeWithText("Models saved on this device.").fetchSemanticsNode().boundsInRoot
-        val control = onNodeWithText("Open library").fetchSemanticsNode().boundsInRoot
+        val control = onNodeWithText("Open downloads").fetchSemanticsNode().boundsInRoot
         assertTrue(description.width >= 280f, "Large text must not be squeezed beside an action: $description")
         assertTrue(control.top >= description.bottom, "The action must follow its description")
     }
@@ -132,7 +132,7 @@ class SettingsWorkbenchUiTest {
         listOf("Appearance", "A little color", "Keep things still", "Soft glass", "Downloaded models")
             .forEach { onNodeWithText(it).assertIsDisplayed() }
         onNodeWithText("Seed color").assertDoesNotExist()
-        onNodeWithText("Open library").assertIsDisplayed().performClick()
+        onNodeWithText("Open downloads").assertIsDisplayed().performClick()
         runOnIdle { assertEquals(1, fixture.shelfOpenCount) }
         onNodeWithText("A little color").performClick()
         onNodeWithText("Seed color").performScrollTo().assertIsDisplayed()
@@ -531,7 +531,7 @@ class SettingsWorkbenchUiTest {
             onNodeWithContentDescription("Current Aurora theme preview").assertDoesNotExist()
             onNodeWithContentDescription("Choose appearance").performScrollTo()
                 .assertIsDisplayed().assertHeightIsAtLeast(48.dp)
-            onNodeWithText("Open library").performScrollTo().assertIsDisplayed().assertHeightIsAtLeast(48.dp)
+            onNodeWithText("Open downloads").performScrollTo().assertIsDisplayed().assertHeightIsAtLeast(48.dp)
 
             onNodeWithContentDescription("GPU acceleration (Vulkan)")
                 .performScrollTo()
@@ -561,7 +561,7 @@ private class SettingsFixture {
             viewModel = settingsViewModel,
             themeViewModel = themeViewModel,
             rolloutModeSource = rolloutModeSource,
-            onOpenShelf = { shelfOpenCount += 1 },
+            onOpenDownloads = { shelfOpenCount += 1 },
         )
     }
 }

@@ -33,20 +33,20 @@ internal fun actionColor(seed: Color, isDark: Boolean): Color {
 /** Warm neutral surfaces remain readable as the user changes their accent seed. */
 internal fun ColorScheme.withBrandSurfaces(isDark: Boolean): ColorScheme = if (isDark) {
     copy(
-        background = Color(0xFF222222),
+        background = Color(0xFF181818),
         onBackground = Color(0xFFF8F5ED),
-        surface = Color(0xFF303030),
+        surface = Color(0xFF2C2C2C),
         onSurface = Color(0xFFF8F5ED),
         onSurfaceVariant = Color(0xFFBFBAB1),
-        surfaceDim = Color(0xFF222222),
-        surfaceBright = Color(0xFF303030),
-        surfaceContainerLowest = Color(0xFF191919),
-        surfaceContainerLow = Color(0xFF191919),
-        surfaceContainer = Color(0xFF303030),
-        surfaceContainerHigh = Color(0xFF303030),
+        surfaceDim = Color(0xFF181818),
+        surfaceBright = Color(0xFF383838),
+        surfaceContainerLowest = Color(0xFF242424),
+        surfaceContainerLow = Color(0xFF282828),
+        surfaceContainer = Color(0xFF2C2C2C),
+        surfaceContainerHigh = Color(0xFF323232),
         surfaceContainerHighest = Color(0xFF383838),
-        outline = Color(0xFFBFBAB1),
-        outlineVariant = Color(0xFF504C46),
+        outline = Color(0xFF969189),
+        outlineVariant = Color(0xFF625E58),
     )
 } else {
     copy(

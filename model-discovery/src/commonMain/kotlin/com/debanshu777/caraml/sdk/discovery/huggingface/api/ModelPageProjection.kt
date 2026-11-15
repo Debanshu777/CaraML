@@ -1,6 +1,8 @@
 package com.debanshu777.caraml.sdk.discovery.huggingface.api
 
 import com.debanshu777.caraml.sdk.discovery.huggingface.model.ListModelsResponse
+import io.ktor.http.Url
+import io.ktor.http.URLProtocol
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -10,23 +12,47 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 
-/** Keep only bounded, card-useful metadata from the public list response. */
+/** Validate the website listing envelope and retain bounded, card-useful metadata. */
 internal object ModelPageProjection {
     private const val MAX_FIELD_LENGTH = 256
     private const val MAX_TAGS = 64
     private val integer = Regex("(?:0|[1-9][0-9]*)")
 
-    fun decode(json: Json, body: String, limit: Int): List<ListModelsResponse.Model> {
-        val rows = json.parseToJsonElement(body) as? JsonArray
+    fun decode(json: Json, body: String, requestedPage: Int, expectedPageSize: Int? = null): ModelPage {
+        val envelope = json.parseToJsonElement(body) as? JsonObject
             ?: throw SerializationException("Invalid model page")
-        if (rows.size > limit) throw ResponseLimitExceededException()
-        return rows.map { row ->
+        val pageIndex = envelope.positiveIntOrZero("pageIndex")
+            ?.takeIf { it == requestedPage } ?: throw SerializationException("Invalid page index")
+        val pageSize = envelope.positiveInt("numItemsPerPage")
+            ?.takeIf { it <= 100 } ?: throw SerializationException("Invalid page size")
+        if (expectedPageSize != null && pageSize != expectedPageSize) {
+            throw SerializationException("Model page size changed; refresh the query")
+        }
+        val totalCount = envelope.positiveIntOrZero("numTotalItems")
+            ?: throw SerializationException("Invalid result count")
+        val rows = envelope["models"] as? JsonArray ?: throw SerializationException("Invalid model rows")
+        if (rows.size > pageSize) throw ResponseLimitExceededException()
+        if (rows.size > totalCount) throw SerializationException("Inconsistent result count")
+        if (rows.isEmpty() && pageIndex.toLong() * pageSize < totalCount) {
+            throw SerializationException("Model catalog did not advance")
+        }
+        val models = rows.map { row ->
             val item = row as? JsonObject ?: throw SerializationException("Invalid model row")
             val id = item.safeString("id", 193)?.takeIf(::validRepositoryId)
                 ?: throw SerializationException("Missing model ID")
             ListModelsResponse.Model(
                 id = id,
                 author = item.safeString("author"),
+                authorData = (item["authorData"] as? JsonObject)?.let { author ->
+                    ListModelsResponse.Model.AuthorData(
+                        avatarUrl = author.safeString("avatarUrl", 2_048)?.let(::normalizeAvatarUrl),
+                        fullname = author.safeString("fullname"),
+                        name = author.safeString("name"),
+                        type = author.safeString("type"),
+                    )
+                },
+                gated = item.gatedValue(),
+                repoType = item.safeString("repoType"),
                 downloads = item.positiveIntOrZero("downloads"),
                 likes = item.positiveIntOrZero("likes"),
                 lastModified = item.safeString("lastModified"),
@@ -39,6 +65,24 @@ internal object ModelPageProjection {
                 numParameters = item.parameterCount(),
                 `private` = item.safeBoolean("private"),
             )
+        }
+        return ModelPage(models, null, totalCount, pageIndex, pageSize)
+    }
+
+    private fun JsonObject.gatedValue(): String? = when (val raw = this["gated"]) {
+        is JsonPrimitive -> when {
+            raw.isString -> raw.content.takeIf { it in setOf("auto", "manual", "false", "true") }
+            else -> raw.booleanOrNull?.toString()
+        }
+        else -> null
+    }
+
+    private fun normalizeAvatarUrl(value: String): String? {
+        val absolute = if (value.startsWith("/") && !value.startsWith("//")) "https://huggingface.co$value" else value
+        val url = try { Url(absolute) } catch (_: IllegalArgumentException) { return null }
+        return absolute.takeIf {
+            url.protocol == URLProtocol.HTTPS && url.host.isNotBlank() &&
+                url.user == null && url.password == null && !absolute.contains('\\')
         }
     }
 

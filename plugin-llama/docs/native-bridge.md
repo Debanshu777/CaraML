@@ -1,4 +1,4 @@
-# runner
+# llama native bridge
 
 Kotlin Multiplatform wrapper for **llama.cpp** LLM inference. Provides a common `LlamaRunner` interface backed by platform-specific JNI (Android/JVM) and cinterop (iOS) bindings.
 
@@ -8,29 +8,35 @@ Kotlin Multiplatform wrapper for **llama.cpp** LLM inference. Provides a common 
 
 | Platform | Binding | Native Library |
 |----------|---------|---------------|
-| Android | JNI via `System.loadLibrary("llama_runner")` | `llama_runner.so` (built by `:nativeEngine`) |
-| JVM Desktop | JNI via `System.loadLibrary("llama_runner")` | `libllama_runner.dylib/.so` |
+| Android | JNI via `System.loadLibrary("llama_runner")` | `libllama_runner.so` (built by `:nativeEngine`) |
+| JVM Desktop | JNI via shared `DesktopNativeLibraries` resolver | `libllama_runner.dylib/.so` or `llama_runner.dll` |
 | iOS arm64 | Kotlin/Native cinterop | `libllama_runner_merged.a` (merged static) |
 | iOS Simulator | Kotlin/Native cinterop | `libllama_runner_merged.a` (sim build) |
 
 ---
+
+JVM loading resolves `caraml.native.lib.dir` first, then `compose.application.resources.dir`. A configured directory is authoritative; a missing library fails instead of falling back to a build-tree library. With neither directory configured, the resolver uses `System.loadLibrary`. Package the JNI runtime and its shared backends together; the CaraML desktop host uses `:nativeEngine:stageDesktopRuntime`.
 
 ## Package Structure
 
 ```
 com.debanshu777.caraml.sdk.plugin.llama.bridge/
 ├── LlamaRunner.kt               # expect class — core interface
-├── LlamaRunner.android.kt       # actual: JNI wrapper
-├── LlamaRunner.jvm.kt           # actual: JNI wrapper (same JNI, different lib path)
+├── LlamaRunner.java.kt          # shared Android/JVM actual in src/javaMain
+├── LlamaNativeRuntime.android.kt # Android library loader
+├── LlamaNativeRuntime.jvm.kt    # Desktop library loader and diagnostics
 ├── LlamaRunner.ios.kt           # actual: cinterop wrapper
 ├── NativeRunnerConfig.kt        # Inference parameters (threads, GPU layers, context, KV quant)
-├── InferenceState.kt            # IDLE / LOADING / GENERATING / ERROR
-├── StopReason.kt                # EOS / LENGTH / STOP_TOKEN / CANCELLED / ERROR
-├── StructuredOutputGrammar.kt   # GBNF grammar definitions for constrained output
-├── StructuredOutputParser.kt    # Parse grammar from JSON Schema
+├── InferenceState.kt            # Optional host lifecycle state types
+├── StopReason.kt                # NONE / EOG / MAX_TOKENS / CONTEXT_FULL / CANCELLED / ERROR
+├── InferenceChunk.kt            # Content/reasoning deltas and resynchronization flags
 ├── LlamaRunnerExt.kt            # Extension functions (convenience wrappers)
 └── LlamaRunnerValidation.kt     # Config validation (throws on invalid params)
 ```
+
+Both `androidMain` and `jvmMain` explicitly include `src/javaMain/kotlin`.
+Source sharing preserves the runner class package, JNI method signatures and
+consumer keep rules; only native-library loading remains target-specific.
 
 **C++ Sources:**
 ```
@@ -50,34 +56,40 @@ src/iosMain/cpp/
 
 ## Usage
 
+Prefer the owned `LlamaPlugin` session API described in the [module README](../README.md).
+Direct bridge callers must serialize native ownership and run blocking calls off
+the UI thread. For a host-owned runner, a bounded text operation is:
+
 ```kotlin
-val config = NativeRunnerConfig(
-    modelPath = "/path/to/model.gguf",
-    contextSize = 4096,
-    threads = 4,
-    gpuLayers = 32,          // 0 = CPU only
-    kvCacheType = "q8_0",    // KV cache quantization
-)
-
-val runner = LlamaRunner()
-
-// Load model
-runner.load(config)
-
-// Streaming generation
-runner.generate(
-    prompt = "<|user|>\nHello<|end|>\n<|assistant|>\n",
-    config = config
-).collect { token ->
-    print(token)  // Flow<String>
+withContext(Dispatchers.Default) {
+    val runner = LlamaRunner()
+    try {
+        runner.initialize(nativeLibraryDirectory)
+        check(runner.loadModel("/path/to/model.gguf", NativeRunnerConfig(
+            nCtx = 2048, nThreads = 4, nGpuLayers = 0, autoFit = false,
+        )))
+        try {
+            check(PromptProcessingResult.fromNativeCode(
+                runner.processUserPrompt("Hello", predictLength = 128),
+            ) == PromptProcessingResult.Success)
+            val content = StringBuilder()
+            runner.generateStructuredChunks().collect { chunk ->
+                if (chunk.contentResync) content.clear()
+                content.append(chunk.contentDelta)
+            }
+            println(content)
+        } finally {
+            runner.finalizeGeneration()
+        }
+    } finally {
+        runner.shutdown()
+    }
 }
-
-// Stop generation
-runner.stop()
-
-// Unload (free VRAM/RAM)
-runner.unload()
 ```
+
+`cancelGenerate()` signals cancellation; the host must await generation and
+finalization before unloading. `unloadModel()` releases the model while retaining
+the initialized backend; `shutdown()` also releases backend state.
 
 ---
 
@@ -85,12 +97,12 @@ runner.unload()
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `modelPath` | String | Absolute path to `.gguf` file |
-| `contextSize` | Int | Token context window (max sequence length) |
-| `threads` | Int | CPU threads for inference |
-| `gpuLayers` | Int | Layers offloaded to GPU (0 = CPU only) |
-| `kvCacheType` | String | KV cache quant: `"f16"`, `"q8_0"`, `"q4_0"` |
-| `batchSize` | Int | Prompt processing batch size |
+| `nCtx` | Int | Requested token context; zero allows automatic selection |
+| `nThreads` | Int | CPU threads for inference |
+| `nGpuLayers` | Int | Explicit offloaded layer count; `0` is CPU and `-1` requests full offload |
+| `typeK`, `typeV` | Int | Validated native KV-cache type identifiers |
+| `nBatch`, `nUbatch` | Int | Logical and physical prompt batch sizes |
+| `autoFit` | Boolean | Fit the requested configuration to native resource limits |
 | `useMmap` | Boolean | Memory-map model file |
 | `useMlock` | Boolean | Lock model in RAM (prevent swap) |
 
@@ -98,21 +110,24 @@ runner.unload()
 
 ---
 
-## Structured Output
+## Structured Streaming
 
-`StructuredOutputGrammar` provides GBNF grammar strings for constrained decoding (JSON, boolean, number, etc.). `StructuredOutputParser` converts JSON Schema to GBNF for arbitrary structured output.
+`generateStructuredChunks()` returns content and reasoning deltas with explicit
+resynchronization flags when parsing reclassifies an earlier fragment. Apply a
+resynchronization as a replacement of that channel's accumulated text. Final
+parser updates are distinguished from generated token events. This bridge does
+not expose the removed grammar/schema helpers.
 
 ---
 
-## Inference State Machine
+## State and Stop Reasons
 
-```
-IDLE → LOADING → GENERATING → IDLE
-                      ↓
-                   ERROR / CANCELLED
-```
+`InferenceState` defines optional host state types: `Uninitialized`, `Initializing`,
+`LoadingModel`, `ModelReady`, `ProcessingPrompt`, `Generating`, `Cancelling`, and
+`Error(message)`. The runner does not emit these states automatically.
 
-`StopReason` indicates why generation ended: `EOS` (natural end), `LENGTH` (context limit), `STOP_TOKEN` (stop string match), `CANCELLED` (user stopped), `ERROR`.
+`StopReason` distinguishes `EOG`, `MAX_TOKENS`, `CONTEXT_FULL`, `CANCELLED`, and
+`ERROR`, with `NONE` before a terminal condition.
 
 ---
 
@@ -132,6 +147,7 @@ The native `.so`/`.a`/`.dylib` is built by `:nativeEngine`, not this module. Thi
 
 ## Recent Changes
 
+- Android/JVM now share `LlamaRunner.java.kt` and use small platform library loaders. JNI signatures and native ownership are unchanged; usage and configuration examples reflect the current bridge API.
 - Bridge implementation moved from `runner` into `plugin-llama`; Kotlin packages, JNI symbols and cinterop bindings now use `com.debanshu777.caraml.sdk.plugin.llama.bridge`. Rebuild Kotlin and native binaries together. Consumer rules preserve JNI descriptor classes.
 
 
@@ -163,7 +179,7 @@ The native `.so`/`.a`/`.dylib` is built by `:nativeEngine`, not this module. Thi
 - Coroutines use the shared 1.11.0 dependency catalog version across modules
 - Added native delta accessors `getReasoningDelta`/`getContentDelta` (with `\x01` resync sentinel); `structuredChunkFlow` now accumulates O(n) deltas in Kotlin instead of copying full native accumulators per token
 - Added native reasoning/content accessors + `supportsThinking`; new `InferenceChunk` + `generateStructuredChunks`; removed `StructuredOutputGrammar`/`StructuredOutputParser`; `processUserPrompt` no longer takes a grammar
-- GPU layer offloading via `NativeRunnerConfig.gpuLayers`
-- KV cache quantization support (`kvCacheType`)
+- GPU layer offloading via `NativeRunnerConfig.nGpuLayers`
+- KV cache quantization support (`typeK` and `typeV`)
 - Improved chat template handling in core.cpp
 - Numbered llama.cpp patches are applied to a build-owned source copy by `:nativeEngine`; the pinned submodule remains immutable

@@ -1,5 +1,7 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search
 
+import com.debanshu777.caraml.features.modelhub.presentation.details.ModelCardUiState
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.LoadState
@@ -7,6 +9,7 @@ import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.asItemSnapshotListFlow
 import com.debanshu777.caraml.core.data.settings.SettingsRepository
+import com.debanshu777.caraml.core.data.settings.RecentlyViewedModel
 import com.debanshu777.caraml.core.data.inference.NATIVE_DIFFUSERS_CONSUMED_PATHS
 import com.debanshu777.caraml.core.recommendation.InstalledModelWorkloadFactory
 import com.debanshu777.caraml.core.recommendation.LlmModelDescriptor
@@ -21,6 +24,7 @@ import com.debanshu777.caraml.core.recommendation.NoCalibrationSource
 import com.debanshu777.caraml.core.recommendation.QuickCalibrationRunner
 import com.debanshu777.caraml.core.recommendation.WorkloadConfig
 import com.debanshu777.caraml.core.storage.component.ComponentRepository
+import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelRepository
 import com.debanshu777.caraml.core.storage.localmodel.ModelType
 import com.debanshu777.caraml.core.platform.DeviceCapabilities
@@ -66,6 +70,8 @@ import com.debanshu777.caraml.sdk.discovery.huggingface.api.error.DataError
 import com.debanshu777.caraml.sdk.discovery.huggingface.api.error.Result
 import com.debanshu777.caraml.core.download.transfer.DownloadManager
 import com.debanshu777.caraml.core.download.transfer.DownloadArtifactIdentity
+import com.debanshu777.caraml.core.download.transfer.SecureArtifactRoot
+import com.debanshu777.caraml.core.download.transfer.expectedSha256OrNull
 import com.debanshu777.caraml.core.download.transfer.DownloadMetadataDTO
 import com.debanshu777.caraml.core.download.transfer.ArtifactVerificationException
 import com.debanshu777.caraml.core.download.transfer.ArtifactFileAccessException
@@ -82,7 +88,6 @@ import com.debanshu777.caraml.core.download.diffusion.normalizedDiffusersRelativ
 import com.debanshu777.caraml.sdk.discovery.huggingface.model.ModelSort
 import com.debanshu777.caraml.sdk.discovery.huggingface.model.ParameterRange
 import com.debanshu777.caraml.sdk.discovery.huggingface.model.ListModelsResponse
-import com.debanshu777.caraml.sdk.discovery.huggingface.model.SearchModelsResponse
 import com.debanshu777.caraml.core.download.diffusion.loadSdCppCuratedCatalog
 import com.debanshu777.caraml.core.download.diffusion.toListModelsResponse
 import com.debanshu777.caraml.core.download.diffusion.toVideoListModelsResponse
@@ -90,6 +95,11 @@ import com.debanshu777.caraml.core.download.diffusion.getModelSetup
 import com.debanshu777.caraml.core.download.diffusion.ComponentRole
 import com.debanshu777.caraml.core.download.diffusion.SdCppComponent
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineDispatcher
+import com.debanshu777.caraml.features.modelhub.presentation.details.prepareModelCard
+import kotlinx.coroutines.IO
+import kotlinx.coroutines.withContext
+import okio.Path.Companion.toPath
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -483,7 +493,8 @@ private enum class DownloadControlCommand {
     RETRY,
     ;
 
-    fun accepts(state: DownloadBatchState, intent: DownloadUserIntent): Boolean {
+    fun accepts(state: DownloadBatchState, intent: DownloadUserIntent, cancellationCleanupPending: Boolean): Boolean {
+        if (cancellationCleanupPending) return this == CANCEL
         if (intent == DownloadUserIntent.CANCEL && this != CANCEL) return false
         return when (this) {
             PAUSE -> state in setOf(
@@ -534,6 +545,8 @@ class ModelViewModel(
     private val downloadCoordinator: DownloadCoordinator,
     private val quickCalibrationRunner: QuickCalibrationRunner? = null,
     private val calibrationSource: CalibrationSource = NoCalibrationSource,
+    private val readInstalledVariants: suspend (String) -> ArtifactManifest? = downloadManager::validatedArtifacts,
+    private val modelCardPreparationDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
 
     private val downloadAdmissionPolicy = DownloadAdmissionPolicy()
@@ -541,6 +554,8 @@ class ModelViewModel(
     private val downloadEvidenceFactory = DownloadEvidenceFactory(PersistedModelEvidenceCodec())
     private val settings = settingsRepository.getSettings()
         .stateIn(viewModelScope, SharingStarted.Eagerly, com.debanshu777.caraml.core.settings.AppSettings())
+    val recentlyViewedModels: StateFlow<List<RecentlyViewedModel>> = settingsRepository.getRecentlyViewedModels()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _recommendedModels = MutableStateFlow<List<RecommendedModelUiState>>(emptyList())
     val recommendedModels: StateFlow<List<RecommendedModelUiState>> = _recommendedModels.asStateFlow()
@@ -555,8 +570,12 @@ class ModelViewModel(
     private var recommendationJob: Job? = null
     private var recommendationAppendJob: Job? = null
     private var listRequestJob: Job? = null
-    private var searchRequestJob: Job? = null
     private var detailRequestJob: Job? = null
+    private var installationRefreshJob: Job? = null
+    private var installationProjectionVersion = 0L
+    private var historyWriteJob: Job? = null
+    private var modelCardRequestJob: Job? = null
+    private var detailRequestKey: Pair<String, ModelHubBrowseMode>? = null
     private var calibrationJob: Job? = null
     @Volatile private var activeModelRequestOwner: Any = Any()
 
@@ -635,6 +654,8 @@ class ModelViewModel(
 
     private val _browseMode = MutableStateFlow(ModelHubBrowseMode.LanguageModels)
     val browseMode: StateFlow<ModelHubBrowseMode> = _browseMode.asStateFlow()
+    private var detailBrowseMode = ModelHubBrowseMode.LanguageModels
+    private var recommendingForDetail = false
     private val _languageModelFormat = MutableStateFlow("gguf")
     val languageModelFormat: StateFlow<String> = _languageModelFormat.asStateFlow()
 
@@ -656,26 +677,8 @@ class ModelViewModel(
     )
     val listParams: StateFlow<ListModelsParams> = _listParams.asStateFlow()
 
-    private val _listResponse = MutableStateFlow<ListModelsResponse?>(null)
-    val listResponse: StateFlow<ListModelsResponse?> = _listResponse.asStateFlow()
-
-    private val _isListLoading = MutableStateFlow(false)
-    val isListLoading: StateFlow<Boolean> = _isListLoading.asStateFlow()
-
-    private val _listError = MutableStateFlow<String?>(null)
-    val listError: StateFlow<String?> = _listError.asStateFlow()
-
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
-
-    private val _searchResponse = MutableStateFlow<SearchModelsResponse?>(null)
-    val searchResponse: StateFlow<SearchModelsResponse?> = _searchResponse.asStateFlow()
-
-    private val _isSearchLoading = MutableStateFlow(false)
-    val isSearchLoading: StateFlow<Boolean> = _isSearchLoading.asStateFlow()
-
-    private val _searchError = MutableStateFlow<String?>(null)
-    val searchError: StateFlow<String?> = _searchError.asStateFlow()
 
     private val _results = MutableStateFlow(ModelHubResultsState())
     val results: StateFlow<ModelHubResultsState> = combine(
@@ -689,6 +692,8 @@ class ModelViewModel(
 
     private val _modelDetail = MutableStateFlow<ModelDetailResponse?>(null)
     val modelDetail: StateFlow<ModelDetailResponse?> = _modelDetail.asStateFlow()
+    private val _modelCardState = MutableStateFlow<ModelCardUiState>(ModelCardUiState.Missing)
+    val modelCardState: StateFlow<ModelCardUiState> = _modelCardState.asStateFlow()
 
     private val _isDetailLoading = MutableStateFlow(false)
     val isDetailLoading: StateFlow<Boolean> = _isDetailLoading.asStateFlow()
@@ -802,8 +807,8 @@ class ModelViewModel(
         initialValue = InstallBundleUiState()
     )
 
-    private fun modelTypeForCurrentBrowseMode(): String =
-        when (_browseMode.value) {
+    private fun modelTypeForDetailMode(): String =
+        when (detailBrowseMode) {
             ModelHubBrowseMode.LanguageModels -> ModelType.TEXT
             ModelHubBrowseMode.DiffusionImage -> ModelType.IMAGE
             ModelHubBrowseMode.DiffusionVideo -> ModelType.VIDEO
@@ -816,17 +821,13 @@ class ModelViewModel(
         when (mode) {
             ModelHubBrowseMode.LanguageModels -> {
                 if (previous != ModelHubBrowseMode.LanguageModels) {
-                    _listResponse.update { null }
                     loadModels()
                 }
             }
 
             ModelHubBrowseMode.DiffusionImage -> {
                 resetSearchStateForCuratedHub()
-                _listError.update { null }
-                _isListLoading.update { false }
                 val response = sdCppCatalog.image.toListModelsResponse()
-                _listResponse.update { response }
                 _results.value = ModelHubResultsState(
                     key = ModelQueryKey(mode, null, _listParams.value.sort, _listParams.value.minParams, _listParams.value.maxParams),
                     models = response.models.orEmpty().filterNotNull().take(MAX_LOADED_MODELS),
@@ -836,10 +837,7 @@ class ModelViewModel(
 
             ModelHubBrowseMode.DiffusionVideo -> {
                 resetSearchStateForCuratedHub()
-                _listError.update { null }
-                _isListLoading.update { false }
                 val response = sdCppCatalog.video.toVideoListModelsResponse()
-                _listResponse.update { response }
                 _results.value = ModelHubResultsState(
                     key = ModelQueryKey(mode, null, _listParams.value.sort, _listParams.value.minParams, _listParams.value.maxParams),
                     models = response.models.orEmpty().filterNotNull().take(MAX_LOADED_MODELS),
@@ -853,6 +851,8 @@ class ModelViewModel(
     fun ensureDiscoverLoaded() {
         if (_browseMode.value == ModelHubBrowseMode.LanguageModels && _results.value.key == null) {
             startPageQuery(null)
+        } else if (recommendingForDetail && _results.value.models.isNotEmpty()) {
+            startRecommendations(_results.value.models, defaultRecommendationWorkload(_browseMode.value))
         }
     }
 
@@ -884,20 +884,14 @@ class ModelViewModel(
                 maxParams = if (key.format == "onnx") null else key.maxParams,
             )
         } catch (_: IllegalArgumentException) {
-            _searchError.value = "Search or sort is unsupported. Refine your search and try again."
+            _results.value = _results.value.copy(inputError = "Search or sort is unsupported. Refine your search and try again.")
             return
         }
         val owner = beginModelRequest()
         lastAutoRequestedCursor = null
         _results.value = ModelHubResultsState(key = key, initialLoading = true)
-        _listResponse.value = null
-        _searchResponse.value = null
-        _listError.value = null
-        _searchError.value = null
-        _isListLoading.value = committedSearch == null
-        _isSearchLoading.value = committedSearch != null
         val pager = Pager(
-            config = PagingConfig(pageSize = request.limit, initialLoadSize = request.limit,
+            config = PagingConfig(pageSize = request.pageSize, initialLoadSize = request.pageSize,
                 prefetchDistance = 1, enablePlaceholders = false),
             pagingSourceFactory = {
                 ModelHubPagingSource(
@@ -925,19 +919,12 @@ class ModelViewModel(
                                 moreError = if (stalled) "The model catalog did not advance. Refine your search to continue." else null,
                                 sessionLimitReached = all.size >= MAX_LOADED_MODELS,
                             )
-                            _isListLoading.value = false
-                            _isSearchLoading.value = false
-                            _listResponse.value = ListModelsResponse(models = all, numTotalItems = total ?: prior.totalCount)
-                            if (committedSearch != null) {
-                                _searchResponse.value = SearchModelsResponse(
-                                    models = all.map { model -> SearchModelsResponse.Model(id = model.id, `private` = model.`private`) },
-                                    q = committedSearch,
-                                )
-                            }
-                            if (!append) {
+                            // A pending browse page may complete after details takes ownership.
+                            // Keep its cached rows, but never replace/append to that assessment.
+                            if (!recommendingForDetail && !append) {
                                 startRecommendations(all, defaultRecommendationWorkload(ModelHubBrowseMode.LanguageModels),
                                     source = if (committedSearch == null) "browse" else "search")
-                            } else {
+                            } else if (!recommendingForDetail) {
                                 val session = recommendationSession
                                 if (session != null && added.isNotEmpty()) {
                                     recommendationAppendJob?.cancel()
@@ -971,12 +958,9 @@ class ModelViewModel(
                         ?: "Unable to load models. Please try again."
                     if (refreshError != null && _results.value.models.isEmpty()) {
                         _results.value = _results.value.copy(initialLoading = false, initialError = message)
-                        if (committedSearch == null) _listError.value = message else _searchError.value = message
                     } else {
                         _results.value = _results.value.copy(moreLoading = false, moreError = message)
                     }
-                    _isListLoading.value = false
-                    _isSearchLoading.value = false
                 }
             }.collect { /* Keep Paging's snapshot presenter active for explicit append/retry. */ }
         }
@@ -1046,9 +1030,21 @@ class ModelViewModel(
         ordering: ModelOrdering,
         minParams: ParameterRange,
         maxParams: ParameterRange,
+    ) = applyDiscoverFilters(mode, ordering, minParams, maxParams, _languageModelFormat.value)
+
+    /** Applies all panel selections before triggering at most one catalog refresh. */
+    fun applyDiscoverFilters(
+        mode: ModelHubBrowseMode,
+        ordering: ModelOrdering,
+        minParams: ParameterRange,
+        maxParams: ParameterRange,
+        format: String,
     ) {
+        require(format in setOf("gguf", "onnx"))
         val priorMode = _browseMode.value
         val priorParams = _listParams.value
+        val formatChanged = _languageModelFormat.value != format
+        _languageModelFormat.value = format
         val safeOrdering = when (ordering) {
             ModelOrdering.Personalized -> ordering
             is ModelOrdering.Server -> if (ordering.value in SUPPORTED_REMOTE_SORTS) ordering else ModelOrdering.Server(ModelSort.TRENDING)
@@ -1061,7 +1057,83 @@ class ModelViewModel(
         _modelOrdering.value = safeOrdering
         setRecommendationOrdering(if (safeOrdering is ModelOrdering.Personalized) RecommendationOrdering.PERSONALIZED else RecommendationOrdering.SERVER)
         if (mode != priorMode) setBrowseMode(mode)
-        else if (mode == ModelHubBrowseMode.LanguageModels && _listParams.value != priorParams) loadModels()
+        else if (mode == ModelHubBrowseMode.LanguageModels && (_listParams.value != priorParams || formatChanged)) loadModels()
+    }
+
+    fun resetDiscoverFilters() {
+        applyDiscoverFilters(
+            mode = ModelHubBrowseMode.LanguageModels,
+            ordering = ModelOrdering.Server(ModelSort.TRENDING),
+            minParams = ParameterRange.ZERO,
+            maxParams = ParameterRange.SIX_B,
+            format = "gguf",
+        )
+    }
+
+    fun retryModelCard() {
+        val detail = _modelDetail.value ?: return
+        val id = detail.modelId ?: detail.id ?: return
+        if (_modelCardState.value == ModelCardUiState.Loading) return
+        requestModelCard(id, detail.sha.orEmpty())
+    }
+
+    private fun requestModelCard(modelId: String, revision: String) {
+        modelCardRequestJob?.cancel()
+        _modelCardState.value = ModelCardUiState.Loading
+        modelCardRequestJob = viewModelScope.launch {
+            val result = api.getModelCard(modelId, revision)
+            ensureActive()
+            val state = when (result) {
+                is Result.Success -> if (result.data.markdown.isBlank()) ModelCardUiState.Missing
+                    else withContext(modelCardPreparationDispatcher) { prepareModelCard(result.data) }
+                is Result.Error -> if (result.error == DataError.Network.NotFound) ModelCardUiState.Missing
+                    else ModelCardUiState.Failed(result.error)
+            }
+            ensureActive()
+            _modelCardState.value = state
+        }
+    }
+
+    fun hasDetailRequest(modelId: String, hubBrowseMode: ModelHubBrowseMode): Boolean =
+        detailRequestKey == (modelId to hubBrowseMode)
+
+    /** Screen re-entry/configuration changes reuse both in-flight and completed state. */
+    fun ensureDetail(modelId: String, hubBrowseMode: ModelHubBrowseMode = ModelHubBrowseMode.LanguageModels) {
+        if (!hasDetailRequest(modelId, hubBrowseMode)) {
+            loadDetail(modelId, hubBrowseMode)
+        } else {
+            if (!recommendingForDetail) {
+                // Search and details share this ViewModel; resume the detail assessment without
+                // refetching metadata, files, or the revision-pinned README.
+                startRecommendations(listOf(ListModelsResponse.Model(id = modelId)),
+                    defaultRecommendationWorkload(hubBrowseMode), source = "details")
+            }
+            // Installation is mutable even when the retained remote document is unchanged.
+            // Re-entry during hydration still needs a fresh read after that request's snapshot.
+            val retainedRequest = detailRequestJob
+            installationRefreshJob?.cancel()
+            installationRefreshJob = viewModelScope.launch {
+                retainedRequest?.join()
+                currentCoroutineContext().ensureActive()
+                if (detailRequestJob !== retainedRequest || detailRequestKey != (modelId to hubBrowseMode) ||
+                    _modelDetail.value == null || _ggufFiles.value.isEmpty()
+                ) return@launch
+                try {
+                    val refreshed = refreshGgufFilesDownloadState(
+                        modelId, hubBrowseMode != ModelHubBrowseMode.LanguageModels,
+                        preserveSelectedVariant = true,
+                    )
+                    if (refreshed) {
+                        projectDurableDownloadState(_downloadBatches.value)
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    currentCoroutineContext().ensureActive()
+                    _downloadError.value = "Could not refresh installed models. Open details again to retry."
+                }
+            }
+        }
     }
 
     fun loadDetail(
@@ -1069,17 +1141,22 @@ class ModelViewModel(
         hubBrowseMode: ModelHubBrowseMode = ModelHubBrowseMode.LanguageModels,
     ) {
         if (modelId.isBlank()) return
+        detailRequestKey = modelId to hubBrowseMode
         detailRequestJob?.cancel()
+        installationRefreshJob?.cancel()
+        installationProjectionVersion++
+        modelCardRequestJob?.cancel()
         dismissDownloadForLater()
         _isDetailLoading.value = true
         _detailError.value = null
         _modelDetail.value = null
+        _modelCardState.value = ModelCardUiState.Loading
         _ggufFiles.value = emptyList()
         _setupComponents.value = emptyList()
         exactSetupComponentMetadata = emptyMap()
         _validatedBundleReady.value = false
         _selectedVariantPath.value = null
-        _browseMode.value = hubBrowseMode
+        detailBrowseMode = hubBrowseMode
         observeDurableDownloads(modelId)
         startRecommendations(
             models = listOf(ListModelsResponse.Model(id = modelId)),
@@ -1092,7 +1169,24 @@ class ModelViewModel(
             when (detailResult) {
                 is Result.Success -> {
                     _modelDetail.update { detailResult.data }
+                    // README loading is independent of files and owns a cancellable route request.
+                    requestModelCard(modelId, detailResult.data.sha.orEmpty())
                     _detailError.update { null }
+                    if ((detailResult.data.modelId ?: detailResult.data.id).equals(modelId, ignoreCase = true)) {
+                        val visit = detailResult.data.recentlyViewed(hubBrowseMode)
+                        val previousWrite = historyWriteJob
+                        historyWriteJob = viewModelScope.launch {
+                            // Preserve successful-visit order without blocking file discovery.
+                            previousWrite?.join()
+                            try {
+                                settingsRepository.recordRecentlyViewedModel(visit)
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (_: Exception) {
+                                // History is optional and must not hold up file discovery.
+                            }
+                        }
+                    }
 
                     val weightFilter = when (hubBrowseMode) {
                         ModelHubBrowseMode.LanguageModels -> ModelFileWeightFilter.LanguageModelFiles
@@ -1104,19 +1198,11 @@ class ModelViewModel(
                     ensureActive()
                     when (treeResult) {
                         is Result.Success -> {
-                            val downloaded = localModelRepository.getDownloadedFilenames(modelId)
-                            ensureActive()
                             _ggufFiles.update {
                                 treeResult.data.map { item ->
                                     val rel = item.path ?: ""
                                     val fn = rel.substringAfterLast('/').ifEmpty { rel }
-                                    val isDownloaded = when (hubBrowseMode) {
-                                        ModelHubBrowseMode.DiffusionImage,
-                                        ModelHubBrowseMode.DiffusionVideo,
-                                        -> false
-                                        ModelHubBrowseMode.LanguageModels ->
-                                            fn in downloaded || rel in downloaded
-                                    }
+                                    val isDownloaded = false
                                     val exactSize = item.lfs?.size ?: item.size
                                     val artifact = DownloadArtifactIdentity.create(
                                         repositoryId = modelId,
@@ -1134,6 +1220,9 @@ class ModelViewModel(
                                         artifact = artifact,
                                     )
                                 }
+                            }
+                            if (hubBrowseMode == ModelHubBrowseMode.LanguageModels) {
+                                refreshGgufFilesDownloadState(modelId, isDiffusion = false)
                             }
                             // Auto-select the first undownloaded variant for diffusion models
                             if (hubBrowseMode != ModelHubBrowseMode.LanguageModels) {
@@ -1203,7 +1292,7 @@ class ModelViewModel(
         _isDownloading.value = true
         viewModelScope.launch {
             _downloadError.update { null }
-            val modelType = modelTypeForCurrentBrowseMode()
+            val modelType = modelTypeForDetailMode()
             var enqueued = false
             try {
                 val variantPath = requestedVariantPath
@@ -1332,7 +1421,7 @@ class ModelViewModel(
             startLanguageBundleDownload(modelId, requests.map { it.metadata.copy(logicalRole = "model") })
             return
         }
-        val diffusionHub = when (_browseMode.value) {
+        val diffusionHub = when (detailBrowseMode) {
             ModelHubBrowseMode.DiffusionImage, ModelHubBrowseMode.DiffusionVideo -> true
             ModelHubBrowseMode.LanguageModels -> false
         }
@@ -1351,7 +1440,7 @@ class ModelViewModel(
         metadata: List<DownloadMetadataDTO>,
         downloadForLaterConfirmed: Boolean = false,
     ) {
-        if (_browseMode.value != ModelHubBrowseMode.LanguageModels ||
+        if (detailBrowseMode != ModelHubBrowseMode.LanguageModels ||
             metadata.isEmpty() || metadata.size > DescriptorLimits.MAX_COMPONENTS ||
             _isDownloading.value
         ) return
@@ -1508,10 +1597,10 @@ class ModelViewModel(
         command: DownloadControlCommand,
     ) {
         viewModelScope.launch {
-            val batch = downloadQueue.value.singleOrNull { it.batchId == batchId } ?: return@launch
-            if (batch.artifacts.none { it.artifactId == artifactId } ||
-                !command.accepts(batch.state, batch.userIntent)) return@launch
             try {
+                val batch = downloadCoordinator.getBatch(batchId) ?: return@launch
+                if (batch.artifacts.none { it.artifactId == artifactId } ||
+                    !command.accepts(batch.state, batch.userIntent, batch.cancellationCleanupPending)) return@launch
                 when (command) {
                     DownloadControlCommand.PAUSE -> downloadCoordinator.pause(batch.batchId)
                     DownloadControlCommand.RESUME -> downloadCoordinator.resume(batch.batchId)
@@ -1539,6 +1628,10 @@ class ModelViewModel(
         downloadObservationJob = viewModelScope.launch {
             downloadCoordinator.observeForModel(modelId).collectLatest { batches ->
                 _downloadBatches.value = batches
+                // Explicit reinstall reuses immutable batch IDs; its next completion needs new evidence.
+                refreshedCompletedBatchIds.retainAll(
+                    batches.filter { it.state == DownloadBatchState.COMPLETED }.map { it.batchId }.toSet(),
+                )
                 projectDurableDownloadState(batches)
                 refreshNewlyCompletedBatches(modelId, batches)
             }
@@ -1564,10 +1657,10 @@ class ModelViewModel(
             .toSet()
         if (newlyCompletedBatchIds.isEmpty()) return
 
-        refreshGgufFilesDownloadState(
+        if (!refreshGgufFilesDownloadState(
             modelId = modelId,
-            isDiffusion = _browseMode.value != ModelHubBrowseMode.LanguageModels,
-        )
+            isDiffusion = detailBrowseMode != ModelHubBrowseMode.LanguageModels,
+        )) return
         currentCoroutineContext().ensureActive()
         refreshedCompletedBatchIds += newlyCompletedBatchIds
         projectDurableDownloadState(batches)
@@ -1617,6 +1710,7 @@ class ModelViewModel(
                     selectionsByArtifact[artifact]?.task
                 }
                 val control = file.artifact?.let(selectionsByArtifact::get)?.toControlUiState()
+                    ?.takeUnless { it.artifactState == DownloadArtifactState.COMPLETED && !file.isDownloaded }
                 file.copy(
                     progress = task?.takeIf {
                         it.state == DownloadArtifactState.RUNNING && it.expectedBytes > 0L
@@ -1627,7 +1721,7 @@ class ModelViewModel(
                 )
             }
         }
-        val projectedControls = when (_browseMode.value) {
+        val projectedControls = when (detailBrowseMode) {
             ModelHubBrowseMode.LanguageModels -> selectionsByArtifact.values
             ModelHubBrowseMode.DiffusionImage,
             ModelHubBrowseMode.DiffusionVideo,
@@ -1697,7 +1791,7 @@ class ModelViewModel(
         if (path.endsWith(".onnx")) return onnxRequestsFor(path)
         val detail = _modelDetail.value ?: return null
         val ownerModelId = detail.modelId ?: detail.id ?: return null
-        return when (_browseMode.value) {
+        return when (detailBrowseMode) {
             ModelHubBrowseMode.LanguageModels -> {
                 val artifact = _ggufFiles.value.singleOrNull { it.path == path }?.artifact ?: return null
                 listOf(
@@ -1940,18 +2034,21 @@ class ModelViewModel(
     private fun selectedDescriptorFor(modelId: String): ModelDescriptor? =
         _recommendedModels.value.singleOrNull { it.repositoryId == modelId }?.selectedDescriptor
 
-    private suspend fun refreshGgufFilesDownloadState(modelId: String, isDiffusion: Boolean) {
+    private suspend fun refreshGgufFilesDownloadState(
+        modelId: String,
+        isDiffusion: Boolean,
+        preserveSelectedVariant: Boolean = false,
+    ): Boolean {
+        val requestKey = detailRequestKey
+        val version = ++installationProjectionVersion
+        val isCurrent = { version == installationProjectionVersion && detailRequestKey == requestKey }
         if (isDiffusion) {
-            refreshVerifiedDiffusionInstallation(modelId)
-            return
+            refreshVerifiedDiffusionInstallation(modelId, isCurrent, preserveSelectedVariant)
+        } else {
+            projectExactDownloadedVariants(modelId, isCurrent)
         }
-        val downloaded = localModelRepository.getDownloadedFilenames(modelId)
         currentCoroutineContext().ensureActive()
-        _ggufFiles.update { list ->
-            list.map { file ->
-                file.copy(isDownloaded = file.filename in downloaded || file.path in downloaded, progress = null)
-            }
-        }
+        return isCurrent()
     }
 
     fun clearDownloadError() {
@@ -1960,10 +2057,6 @@ class ModelViewModel(
 
     fun clearDetailError() {
         _detailError.update { null }
-    }
-
-    fun clearListError() {
-        _listError.update { null }
     }
 
     fun updateSearchQuery(query: String) {
@@ -1993,14 +2086,12 @@ class ModelViewModel(
         val committed = _searchQuery.value.trim()
         if (committed.isEmpty()) {
             if (_searchQuery.value.isEmpty()) clearSearch() else {
-                _searchError.value = "Please enter a search query"
-                _results.value = _results.value.copy(inputError = _searchError.value)
+                _results.value = _results.value.copy(inputError = "Please enter a search query")
             }
             return
         }
         if (committed.length > 128 || committed.any { it.code < 32 || it.code == 127 }) {
-            _searchError.value = "Search text is too long or contains invalid characters."
-            _results.value = _results.value.copy(inputError = _searchError.value)
+            _results.value = _results.value.copy(inputError = "Search text is too long or contains invalid characters.")
             return
         }
         if (_results.value.key?.committedSearch == committed && _results.value.initialError == null) return
@@ -2058,7 +2149,9 @@ class ModelViewModel(
     ) {
         recommendationJob?.cancel()
         recommendationSession?.cancel()
-        val queryId = "${_browseMode.value.name}:$source"
+        recommendingForDetail = source == "details"
+        val mode = if (recommendingForDetail) detailBrowseMode else _browseMode.value
+        val queryId = "${mode.name}:$source"
         val session = recommendationService.startQuery(queryId, models, workload)
         recommendationSession = session
         _recommendedModels.value = session.state.value
@@ -2081,6 +2174,7 @@ class ModelViewModel(
         recommendationSession?.cancel()
         recommendationJob = null
         recommendationSession = null
+        recommendingForDetail = false
         _recommendedModels.value = emptyList()
     }
 
@@ -2089,11 +2183,7 @@ class ModelViewModel(
         activeModelRequestOwner = owner
         modelPager = null
         listRequestJob?.cancel()
-        searchRequestJob?.cancel()
         listRequestJob = null
-        searchRequestJob = null
-        _isListLoading.value = false
-        _isSearchLoading.value = false
         clearRecommendations()
         return owner
     }
@@ -2104,39 +2194,25 @@ class ModelViewModel(
         activeModelRequestOwner = Any()
         modelPager = null
         listRequestJob?.cancel()
-        searchRequestJob?.cancel()
         listRequestJob = null
-        searchRequestJob = null
-        _isListLoading.value = false
-        _isSearchLoading.value = false
         clearRecommendations()
     }
 
     private fun ownsModelRequest(owner: Any): Boolean = activeModelRequestOwner === owner
 
-    private fun ownsSearchRequest(owner: Any, query: String): Boolean =
-        ownsModelRequest(owner) &&
-            _browseMode.value == ModelHubBrowseMode.LanguageModels &&
-            _searchQuery.value == query
-
     private fun resetSearchStateForCuratedHub() {
         searchDebounceJob?.cancel()
         _searchQuery.update { "" }
-        _searchResponse.update { null }
-        _searchError.update { null }
-        _isSearchLoading.update { false }
     }
 
     override fun onCleared() {
         super.onCleared()
         listRequestJob?.cancel()
-        searchRequestJob?.cancel()
         recommendationJob?.cancel()
         recommendationAppendJob?.cancel()
         calibrationJob?.cancel()
         recommendationSession?.cancel()
         listRequestJob = null
-        searchRequestJob = null
         recommendationJob = null
         calibrationJob = null
         recommendationSession = null
@@ -2181,10 +2257,6 @@ class ModelViewModel(
 
     fun cancelQuickCalibration() {
         calibrationJob?.cancel()
-    }
-
-    fun clearSearchError() {
-        _searchError.update { null }
     }
 
     private suspend fun loadSetupComponentsForModel(modelId: String) {
@@ -2233,19 +2305,30 @@ class ModelViewModel(
                 )
             }
         }
-        refreshVerifiedDiffusionInstallation(modelId)
+        refreshGgufFilesDownloadState(modelId, isDiffusion = true)
     }
 
-    private suspend fun refreshVerifiedDiffusionInstallation(modelId: String) {
+    private suspend fun refreshVerifiedDiffusionInstallation(
+        modelId: String,
+        isCurrent: () -> Boolean,
+        preserveSelectedVariant: Boolean,
+    ) {
         _validatedBundleReady.value = false
+        val componentMetadata = exactSetupComponentMetadata
         val requiredComponents = getModelSetup(modelId)?.components?.filter { it.required }.orEmpty()
-        val metadataComplete = requiredComponents.all { it in exactSetupComponentMetadata }
+        val metadataComplete = requiredComponents.all { it in componentMetadata }
+        val candidates = _ggufFiles.value.asSequence()
+            .mapNotNull { it.path.takeIf(String::isNotBlank) }
+            .mapNotNull { createExactBundleMetadata(it, componentMetadata) }
+            .distinctBy { it.first().bundleId }
+            .toList()
         val repositoryIds = buildSet {
             add(modelId)
-            exactSetupComponentMetadata.values.forEach { add(it.artifact.repositoryId) }
+            componentMetadata.values.forEach { add(it.artifact.repositoryId) }
         }
         val artifactManifests = repositoryIds.associateWith { downloadManager.validatedArtifacts(it) }
         currentCoroutineContext().ensureActive()
+        if (!isCurrent()) return
         val individuallyInstalled = artifactManifests.values
             .filterNotNull()
             .flatMap { it.entries }
@@ -2256,13 +2339,9 @@ class ModelViewModel(
             }
             return
         }
-        val candidates = _ggufFiles.value.asSequence()
-            .mapNotNull { it.path.takeIf(String::isNotBlank) }
-            .mapNotNull { createExactBundleMetadata(it, exactSetupComponentMetadata) }
-            .distinctBy { it.first().bundleId }
-            .toList()
         val aggregate = downloadManager.validatedBundle(modelId)
         currentCoroutineContext().ensureActive()
+        if (!isCurrent()) return
         val aggregateMetadata = aggregate?.let { manifest ->
             candidates.singleOrNull(manifest::matchesExactBundle)
         }
@@ -2287,7 +2366,7 @@ class ModelViewModel(
         }
         _setupComponents.update { components ->
             components.map { state ->
-                val expected = exactSetupComponentMetadata.entries.singleOrNull { (component) ->
+                val expected = componentMetadata.entries.singleOrNull { (component) ->
                     component.repoId == state.repoId && component.filePath == state.filePath
                 }?.value?.let { source ->
                     recovery.metadata.singleOrNull { it.artifact == source.artifact }
@@ -2295,8 +2374,64 @@ class ModelViewModel(
                 state.copy(isDownloaded = expected in installedMetadata, progress = null)
             }
         }
-        _selectedVariantPath.value = recovery.metadata.single { it.logicalRole == "model" }.artifact.relativePath
+        if (!preserveSelectedVariant) {
+            _selectedVariantPath.value = recovery.metadata.single { it.logicalRole == "model" }.artifact.relativePath
+        }
         _validatedBundleReady.value = aggregateMetadata != null
+    }
+
+    /** Projects only exact, manifest-validated model artifact identities into the detail rows. */
+    private suspend fun projectExactDownloadedVariants(modelId: String, isCurrent: () -> Boolean) {
+        val detailFiles = _ggufFiles.value
+        val manifest = readInstalledVariants(modelId)
+        currentCoroutineContext().ensureActive()
+        if (!isCurrent()) return
+        val downloaded = manifest?.entries
+            ?.filter { entry -> entry.logicalRole == "model" }
+            ?.map { entry -> entry.identity }
+            ?.toSet()
+            .orEmpty()
+        val legacyRows = if (manifest == null) {
+            localModelRepository.getMainModels().filter { model ->
+                model.modelId == modelId && model.componentStatus == LocalModelEntity.STATUS_READY &&
+                    model.filename.endsWith(".gguf", ignoreCase = true)
+            }
+        } else {
+            emptyList()
+        }
+        val matchedLegacyArtifacts = if (legacyRows.isEmpty()) emptySet() else withContext(Dispatchers.IO) {
+            detailFiles.mapNotNull { file ->
+                val artifact = file.artifact ?: return@mapNotNull null
+                val expectedHash = artifact.expectedSha256OrNull() ?: return@mapNotNull null
+                if (!artifact.relativePath.endsWith(".gguf", ignoreCase = true)) return@mapNotNull null
+                val root = storagePathProvider.getModelsStorageDirectory(modelId).toPath(normalize = true)
+                val expectedPath = root.resolve(artifact.relativePath, normalize = true)
+                val local = legacyRows.firstOrNull {
+                    it.localPath == expectedPath.toString() && it.sizeBytes == artifact.expectedBytes
+                } ?: return@mapNotNull null
+                val snapshot = storagePathProvider.inspectDownloadedArtifact(modelId, local.localPath)
+                if (snapshot?.byteCount != artifact.expectedBytes) return@mapNotNull null
+                val fileHash = runCatching {
+                    val storage = SecureArtifactRoot(root)
+                    try {
+                        storage.sha256(artifact.relativePath, artifact.expectedBytes)
+                    } finally {
+                        storage.close()
+                    }
+                }.getOrNull()
+                artifact.takeIf { fileHash == expectedHash }
+            }.toSet()
+        }
+        currentCoroutineContext().ensureActive()
+        if (!isCurrent()) return
+        _ggufFiles.update { files ->
+            files.map { file ->
+                file.copy(
+                    isDownloaded = file.artifact in downloaded || file.artifact in matchedLegacyArtifacts,
+                    progress = null,
+                )
+            }
+        }
     }
 
     private fun createExactBundleMetadata(

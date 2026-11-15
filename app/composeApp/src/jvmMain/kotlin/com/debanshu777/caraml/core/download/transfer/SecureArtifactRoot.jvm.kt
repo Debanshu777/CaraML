@@ -1,5 +1,6 @@
 package com.debanshu777.caraml.core.download.transfer
 
+import com.debanshu777.caraml.sdk.runtime.DesktopNativeLibraries
 import okio.Buffer
 import okio.HashingSource
 import okio.Path
@@ -217,16 +218,7 @@ private class NativeDescriptorSource(
 
 private object NativeArtifactFs {
     init {
-        val mapped = System.mapLibraryName("artifact_fs")
-        val packaged = System.getProperty("compose.application.resources.dir")
-            ?.takeIf { it.isNotBlank() }
-            ?.let { File(it, mapped) }
-        val directory = System.getProperty("caraml.native.lib.dir")?.takeIf { it.isNotBlank() }
-        when {
-            packaged?.isFile == true -> System.load(packaged.absolutePath)
-            directory != null -> System.load(File(directory, mapped).absolutePath)
-            else -> System.loadLibrary("artifact_fs")
-        }
+        DesktopNativeLibraries.load("artifact_fs")
     }
 
     external fun openRoot(modelsRoot: ByteArray, modelId: ByteArray, create: Boolean): Long

@@ -46,6 +46,10 @@ sdkmanager --licenses
 ./gradlew :app:desktopApp:run
 ```
 
+Desktop distributions stage the selected native profile’s runtime libraries beside the application jars. JNI and backend discovery use the installed resources directory, so the app does not need the source checkout. Run `./gradlew :app:desktopApp:nativeRuntimeInstalledImageSmoke` after packaging changes; it exercises the relocated filesystem and inference bridges without a model.
+
+Windows MSVC builds apply the Microsoft STL mutex-constructor compatibility definition to the entire desktop native graph, including engine dependencies, because the host JVM can load an older C++ runtime. See [Windows crash troubleshooting](troubleshooting.md#windows-native-runtime-crashes-in-msvcp140dll).
+
 The `run` task builds the required native engines automatically. The first build downloads dependencies and compiles C++; subsequent runs reuse build outputs. macOS uses Metal; Linux's documented path uses CPU. Windows distribution tasks exist but still need release validation.
 
 To build native code separately for diagnostics:
@@ -97,7 +101,7 @@ Intel iOS simulators are not configured. The Kotlin framework and Xcode target u
 
 1. Open **Models** from the navigation menu.
 2. Find a small **instruct** model in GGUF format. A small quantized model is a useful first smoke test; consult [model selection](models.md).
-3. Inspect the exact files and size, then download. Wait until the model is available in your library.
+3. Inspect the exact files and size, then download. Track progress in **Downloads** in the Models app bar. Open the completed model from Downloads to return to its chat or generation workspace.
 4. Open **Chat**, select the downloaded model, and enter a short prompt such as `Give me three names for a robot gardener.`
 5. Use **Stop** to cancel a response. After download, local inference does not need a cloud service.
 
@@ -105,9 +109,23 @@ Model file size is not the same as working memory. If loading is refused, start 
 
 ## 5. Generate an image
 
-1. In **Models → Discover**, open the filters, select **Image**, and apply the filter.
+1. In **Models**, open **Filters**, select **Image**, and apply the filter.
 2. Search for **SD-Turbo**. The **Green-Sky/SD-Turbo-GGUF** entry provides self-contained GGUF checkpoints for stable-diffusion.cpp.
 3. Review device fit, scroll through the variants, and select the recommended assessed file. Wait for the download and verification to finish.
 4. Open **Images** from the navigation menu. Once the model loads, enter a prompt such as `A tiny blue robot watering flowers in a sunny garden, clay art, soft lighting` and generate.
 
 Image models need additional memory for sampling and image decoding. A downloaded file can still exceed the device's current memory budget; use the app's assessment and [model compatibility guide](models.md). The [demo](demo.md) shows a real Pixel capture, while the [benchmark overview](benchmarks.md) links to measured diffusion workloads.
+
+## Avatar image dependencies
+
+The shared app uses Coil Compose, SVG decoding and Ktor networking for Model Hub author avatars. Gradle resolves these from the version catalog; no image service token or extra platform setup is required. Android, iOS and desktop use their existing OkHttp, Darwin and CIO transport families.
+
+## Markdown rendering dependencies
+
+Chat and model cards share the multiplatform Markdown renderer. The model-card reader adds the matching Coil3 adapter for images; both versions are pinned in `gradle/libs.versions.toml`. Gradle resolves these dependencies normally on Android, iOS, and JVM. There is no separate WebView or document-rendering setup.
+
+## Shared Java implementations and native test profiles
+
+Android and JVM compile the same Java-compatible download and engine-bridge sources from `src/javaMain/kotlin`; their HTTP factories and native library loaders remain platform-specific. Kotlin supplies the standard library through its plugin. Discovery uses bounded manual JSON decoding, without a content-negotiation dependency. These are build/source simplifications and require no new setup.
+
+App JVM tests resolve `artifact_fs` from the selected native producer profile. For a CPU desktop check, use `./gradlew :app:composeApp:jvmTest -PcaramlDesktopBackend=cpu`; a prior default/Metal build is not required.

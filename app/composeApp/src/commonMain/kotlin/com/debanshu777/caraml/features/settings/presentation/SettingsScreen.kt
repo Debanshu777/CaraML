@@ -60,7 +60,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
     themeViewModel: ThemeViewModel = koinViewModel(),
     rolloutModeSource: RecommendationRolloutModeSource = koinInject(),
-    onOpenShelf: () -> Unit = {},
+    onOpenDownloads: () -> Unit = {},
 ) {
     val settings by viewModel.settings.collectAsState()
     val settingsLoaded by viewModel.settingsLoaded.collectAsState()
@@ -98,9 +98,9 @@ fun SettingsScreen(
                     ) {
                         BrandButton(
                             style = BrandButtonStyle.Secondary,
-                            onClick = onOpenShelf,
+                            onClick = onOpenDownloads,
                             modifier = Modifier.heightIn(min = 48.dp),
-                        ) { Text("Open library") }
+                        ) { Text("Open downloads") }
                     }
                     SettingsRowDivider("settings-divider-shelf")
                 }

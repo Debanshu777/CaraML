@@ -9,6 +9,7 @@ import com.debanshu777.caraml.core.download.DownloadBatchState
 import com.debanshu777.caraml.core.download.DownloadFailureCode
 import com.debanshu777.caraml.core.download.DownloadTaskStore
 import com.debanshu777.caraml.core.download.DownloadUserIntent
+import com.debanshu777.caraml.core.download.DownloadCancellationSnapshot
 import com.debanshu777.caraml.core.download.PublishedDownloadSnapshot
 import com.debanshu777.caraml.core.download.PublishedDownloadScanPage
 import com.debanshu777.caraml.core.download.isPublishedDownloadCandidate
@@ -42,7 +43,7 @@ class RoomDownloadTaskStore(
 
     suspend fun runningPauseSnapshot(batchId: String): Pair<DownloadBatchSnapshot, Long>? {
         val persisted = dao.batch(batchId) ?: return null
-        val snapshot = persisted.toReadSafeSnapshotOrNull() ?: return null
+        val snapshot = persisted.toValidatedSnapshotOrNull() ?: return null
         if (snapshot.userIntent != DownloadUserIntent.RUN || snapshot.state in
             setOf(DownloadBatchState.COMPLETED, DownloadBatchState.FAILED_TERMINAL, DownloadBatchState.CANCELLED)) return null
         return snapshot to persisted.batch.updatedAtEpochMs
@@ -60,7 +61,7 @@ class RoomDownloadTaskStore(
     /** Reads a fresh pause token; callers must verify the selected immutable identities before resuming. */
     suspend fun pausedResumeSnapshot(batchId: String): Pair<DownloadBatchSnapshot, Long>? {
         val persisted = dao.batch(batchId) ?: return null
-        val snapshot = persisted.toReadSafeSnapshotOrNull() ?: return null
+        val snapshot = persisted.toValidatedSnapshotOrNull() ?: return null
         if (snapshot.userIntent != DownloadUserIntent.PAUSE || snapshot.state !in
             setOf(DownloadBatchState.PAUSED, DownloadBatchState.VERIFYING)) return null
         return snapshot to persisted.batch.updatedAtEpochMs
@@ -135,7 +136,7 @@ class RoomDownloadTaskStore(
         dao.observeForModel(modelId).transform { batches ->
             val snapshots = mutableListOf<DownloadBatchSnapshot>()
             batches.forEach { persisted ->
-                val snapshot = persisted.toReadSafeSnapshotOrNull()
+                val snapshot = persisted.toValidatedSnapshotOrNull()
                 if (snapshot != null) {
                     snapshots += snapshot
                 } else if (persisted.requiresQuarantine()) {
@@ -149,7 +150,7 @@ class RoomDownloadTaskStore(
         dao.observeQueue().transform { batches ->
             val snapshots = mutableListOf<DownloadBatchSnapshot>()
             batches.forEach { persisted ->
-                val snapshot = persisted.toReadSafeSnapshotOrNull()
+                val snapshot = persisted.toValidatedSnapshotOrNull()
                 if (snapshot != null) snapshots += snapshot
                 else if (persisted.requiresQuarantine()) dao.quarantineMutableBatch(persisted.batch.batchId)
             }
@@ -158,7 +159,7 @@ class RoomDownloadTaskStore(
 
     override suspend fun getBatch(batchId: String): DownloadBatchSnapshot? {
         val persisted = dao.batch(batchId) ?: return null
-        persisted.toReadSafeSnapshotOrNull()?.let { return it }
+        persisted.toValidatedSnapshotOrNull()?.let { return it }
         if (persisted.requiresQuarantine()) dao.quarantineMutableBatch(batchId)
         return null
     }
@@ -166,11 +167,24 @@ class RoomDownloadTaskStore(
     override suspend fun recoverableBatches(): List<DownloadBatchSnapshot> {
         val recovered = mutableListOf<DownloadBatchSnapshot>()
         dao.recoverableBatches().forEach { persisted ->
-            persisted.toMutationSafeSnapshotOrNull()?.let(recovered::add)
+            persisted.toValidatedSnapshotOrNull()?.let(recovered::add)
                 ?: dao.quarantineMutableBatch(persisted.batch.batchId)
         }
         return recovered
     }
+
+    override suspend fun pendingCancellation(batchId: String): DownloadCancellationSnapshot? {
+        val persisted = dao.batch(batchId) ?: return null
+        if (!persisted.batch.cancellationCleanupPending || persisted.batch.userIntent != DownloadUserIntent.CANCEL.name) return null
+        val snapshot = persisted.toValidatedSnapshotOrNull() ?: run {
+            dao.quarantineMutableBatch(batchId)
+            return null
+        }
+        return DownloadCancellationSnapshot(snapshot, persisted.batch.updatedAtEpochMs)
+    }
+
+    override suspend fun completeCancellationCleanup(expected: DownloadCancellationSnapshot, nowEpochMs: Long): Boolean =
+        dao.finishCancellation(expected.batch.batchId, expected.version, nowEpochMs)
 
     override suspend fun publishedDownloadCandidates(nowEpochMs: Long): List<PublishedDownloadSnapshot> =
         scanPublishedDownloads(nowEpochMs, null).candidates
@@ -182,7 +196,7 @@ class RoomDownloadTaskStore(
         }
         val scanned = dao.publishedDownloadCandidates(nowEpochMs, afterBatchId)
         val candidates = scanned.mapNotNull { persisted ->
-            val snapshot = persisted.toMutationSafeSnapshotOrNull() ?: return@mapNotNull null
+            val snapshot = persisted.toValidatedSnapshotOrNull() ?: return@mapNotNull null
             if (!snapshot.isPublishedDownloadCandidate()) return@mapNotNull null
             PublishedDownloadSnapshot(snapshot, persisted.batch.updatedAtEpochMs)
         }
@@ -195,7 +209,7 @@ class RoomDownloadTaskStore(
             !expected.batch.isPublishedDownloadCandidate()) return false
         val persisted = dao.batch(expected.batch.batchId) ?: return false
         if (persisted.batch.updatedAtEpochMs != expected.observedVersion ||
-            persisted.toMutationSafeSnapshotOrNull() != expected.batch) return false
+            persisted.toValidatedSnapshotOrNull() != expected.batch) return false
         return dao.completePublishedSnapshot(persisted, nowEpochMs)
     }
 
@@ -209,7 +223,7 @@ class RoomDownloadTaskStore(
         require(expiresAtEpochMs > nowEpochMs)
         val entity = dao.artifact(artifactId) ?: return false
         val batch = dao.batch(entity.batchId) ?: return false
-        val snapshot = batch.toMutationSafeSnapshotOrNull()
+        val snapshot = batch.toValidatedSnapshotOrNull()
         if (snapshot == null) {
             dao.quarantineMutableBatch(entity.batchId)
             return false
@@ -428,19 +442,11 @@ private fun DownloadBatchWithArtifacts.toSnapshot(): DownloadBatchSnapshot {
         artifacts = artifactSnapshots,
         evidence = batch.restoreEvidence(),
         failureCode = batch.failureCode?.let(::strictEnum),
+        cancellationCleanupPending = batch.cancellationCleanupPending,
     )
 }
 
-private fun DownloadBatchWithArtifacts.toReadSafeSnapshotOrNull(): DownloadBatchSnapshot? = try {
-    val snapshot = toSnapshot()
-    validatePersistedStructure(snapshot)
-    validateExactMutableIdentity(snapshot)
-    snapshot
-} catch (_: Exception) {
-    null
-}
-
-private fun DownloadBatchWithArtifacts.toMutationSafeSnapshotOrNull(): DownloadBatchSnapshot? = try {
+private fun DownloadBatchWithArtifacts.toValidatedSnapshotOrNull(): DownloadBatchSnapshot? = try {
     val snapshot = toSnapshot()
     validatePersistedStructure(snapshot)
     validateExactMutableIdentity(snapshot)
@@ -482,7 +488,7 @@ private fun DownloadBatchWithArtifacts.validateExactMutableIdentity(snapshot: Do
 }
 
 private fun DownloadBatchWithArtifacts.requiresQuarantine(): Boolean =
-    batch.state !in TERMINAL_BATCH_STATE_NAMES || artifacts.any { it.state !in TERMINAL_ARTIFACT_STATE_NAMES }
+    batch.cancellationCleanupPending || batch.state !in TERMINAL_BATCH_STATE_NAMES || artifacts.any { it.state !in TERMINAL_ARTIFACT_STATE_NAMES }
 
 private val DownloadBatchState.isTerminal: Boolean
     get() = this in setOf(

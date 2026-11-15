@@ -1,6 +1,9 @@
 package com.debanshu777.caraml.features.modelhub.presentation.search
 
+import com.debanshu777.caraml.features.modelhub.presentation.details.ModelCardUiState
+
 import com.debanshu777.caraml.core.data.settings.SettingsRepository
+import com.debanshu777.caraml.core.data.settings.RecentlyViewedModel
 import com.debanshu777.caraml.core.download.DownloadArtifactRequest
 import com.debanshu777.caraml.core.download.DownloadArtifactSnapshot
 import com.debanshu777.caraml.core.download.DownloadArtifactState
@@ -105,15 +108,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 import java.io.File
@@ -125,9 +132,530 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.test.assertSame
+import kotlin.test.assertNotSame
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ModelViewModelRecommendationTest {
+    @Test
+    fun blockedFirstHistoryWritePreservesVisitOrderWithoutBlockingSecondDetail() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val firstWriteStarted = CompletableDeferred<Unit>()
+        val releaseFirstWrite = CompletableDeferred<Unit>()
+        val started = mutableListOf<String>()
+        val committed = mutableListOf<String>()
+        val settings = object : SettingsRepository by FakeSettingsRepository() {
+            override suspend fun recordRecentlyViewedModel(model: RecentlyViewedModel) {
+                started += model.modelId
+                if (model.modelId == "org/first") {
+                    firstWriteStarted.complete(Unit)
+                    releaseFirstWrite.await()
+                }
+                committed += model.modelId
+            }
+        }
+        val client = HttpClient(object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler { request ->
+                val name = if (request.url.encodedPath.contains("org/first")) "first" else "second"
+                when {
+                    request.url.encodedPath.contains("/raw/") -> respond("# $name")
+                    request.url.encodedPath.contains("/tree/") -> respondJson("""[{"type":"file","path":"$name.gguf","size":100}]""")
+                    else -> respondJson("""{"id":"org/$name","sha":"${"a".repeat(40)}"}""")
+                }
+            }
+        }) { override val dispatcher: CoroutineDispatcher = dispatcher })
+        try {
+            val vm = viewModel(client, dispatcher, settingsRepository = settings)
+            vm.loadDetail("org/first")
+            firstWriteStarted.await()
+            awaitDetailCompletion(vm)
+            assertEquals(listOf("first.gguf"), vm.ggufFiles.value.map { it.path })
+            vm.loadDetail("org/second")
+            awaitDetailCompletion(vm)
+            assertEquals(listOf("second.gguf"), vm.ggufFiles.value.map { it.path })
+            assertEquals(listOf("org/first"), started)
+            assertTrue(committed.isEmpty())
+            releaseFirstWrite.complete(Unit)
+            advanceUntilIdle()
+            assertEquals(listOf("org/first", "org/second"), committed)
+        } finally {
+            releaseFirstWrite.complete(Unit)
+            runCurrent()
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun blockedHistoryWriteDoesNotDelayModelFilesOrDetailCompletion() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val historyStarted = CompletableDeferred<RecentlyViewedModel>()
+        val releaseHistory = CompletableDeferred<Unit>()
+        val settings = object : SettingsRepository by FakeSettingsRepository() {
+            override suspend fun recordRecentlyViewedModel(model: RecentlyViewedModel) {
+                historyStarted.complete(model)
+                releaseHistory.await()
+            }
+        }
+        val client = HttpClient(object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler { request ->
+                when {
+                    request.url.encodedPath.contains("/raw/") -> respond("# Model card")
+                    request.url.encodedPath.contains("/tree/") -> respondJson("""[{"type":"file","path":"model.gguf","size":100}]""")
+                    else -> respondJson("""{"id":"org/model","sha":"${"a".repeat(40)}"}""")
+                }
+            }
+        }) { override val dispatcher: CoroutineDispatcher = dispatcher })
+        try {
+            val viewModel = viewModel(client, dispatcher, settingsRepository = settings)
+            viewModel.loadDetail("org/model")
+            assertEquals("org/model", historyStarted.await().modelId)
+            awaitDetailCompletion(viewModel)
+            assertEquals(listOf("model.gguf"), viewModel.ggufFiles.value.map { it.path })
+            assertFalse(releaseHistory.isCompleted)
+        } finally {
+            releaseHistory.complete(Unit)
+            runCurrent()
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun retainedDetailsResumeAssessmentWhileBrowseIsPendingOrFails() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        var browseGate = CompletableDeferred<Unit>()
+        var failBrowse = true
+        var detailRequests = 0
+        var browseRequests = 0
+        val engine = object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler { request ->
+                if (request.url.encodedPath.endsWith("/models-json")) {
+                    browseRequests++
+                    browseGate.await()
+                    if (failBrowse) respond("offline", HttpStatusCode.InternalServerError)
+                    else respondPage(pageResponse("org/browse"))
+                } else {
+                    detailRequests++
+                    when {
+                        request.url.encodedPath.contains("/raw/") -> respond("# Retained model card")
+                        request.url.encodedPath.contains("/tree/") -> respondJson("[]")
+                        else -> respondJson("""{"id":"org/model","modelId":"org/model","sha":"${"a".repeat(40)}"}""")
+                    }
+                }
+            }
+        }) { override val dispatcher: CoroutineDispatcher = dispatcher }
+        val client = HttpClient(engine)
+        try {
+            val viewModel = viewModel(client, dispatcher)
+            viewModel.ensureDetail("org/model")
+            awaitDetailCompletion(viewModel)
+            val ready = viewModel.modelCardState.value
+            assertEquals(3, detailRequests)
+            for (failure in listOf(true, false)) {
+                failBrowse = failure
+                browseGate = CompletableDeferred()
+                viewModel.loadModels()
+                runCurrent()
+                assertEquals(if (failure) 1 else 2, browseRequests)
+                assertTrue(viewModel.recommendedModels.value.isEmpty())
+                viewModel.ensureDetail("org/model")
+                runCurrent()
+                assertEquals(listOf("org/model"), viewModel.recommendedModels.value.map { it.repositoryId },
+                    "Returning to retained details resumes assessment even with no live browse session")
+                browseGate.complete(Unit)
+                advanceUntilIdle()
+                assertEquals(listOf("org/model"), viewModel.recommendedModels.value.map { it.repositoryId },
+                    "A late browse response must not replace the active details assessment")
+                viewModel.ensureDetail("org/model")
+                awaitDetailCompletion(viewModel)
+                assertSame(ready, viewModel.modelCardState.value)
+                assertEquals(3, detailRequests)
+            }
+            viewModel.ensureDiscoverLoaded()
+            advanceUntilIdle()
+            assertEquals(listOf("org/browse"), viewModel.recommendedModels.value.map { it.repositoryId },
+                "Returning to search resumes assessment of its cached rows")
+        } finally {
+            browseGate.complete(Unit)
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun screenEntryReusesPendingAndCompletedRequestsUntilExplicitRefresh() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val metadataGate = CompletableDeferred<Unit>()
+        val cardGate = CompletableDeferred<Unit>()
+        var metadataRequests = 0
+        var fileRequests = 0
+        var cardRequests = 0
+        val engine = object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler { request ->
+                when {
+                    request.url.encodedPath.contains("/raw/") -> {
+                        cardRequests++
+                        cardGate.await()
+                        respond("# Model card\n\nA retained publisher description.\n\n| Format | Size |\n| --- | --- |\n| GGUF | 1 GB |")
+                    }
+                    request.url.encodedPath.contains("/tree/") -> {
+                        fileRequests++
+                        respondJson("""[{"type":"file","path":"model-Q4_K_M.gguf","size":100}]""")
+                    }
+                    else -> {
+                        metadataRequests++
+                        metadataGate.await()
+                        respondJson("""{"id":"org/model","modelId":"org/model","sha":"${"a".repeat(40)}"}""")
+                    }
+                }
+            }
+        }) { override val dispatcher: CoroutineDispatcher = dispatcher }
+        val client = HttpClient(engine)
+        try {
+            val viewModel = viewModel(client, dispatcher)
+            viewModel.ensureDetail("org/model")
+            runCurrent()
+            repeat(3) { viewModel.ensureDetail("org/model") }
+            runCurrent()
+            assertEquals(1, metadataRequests, "Recreation must not replace an unfinished request")
+            metadataGate.complete(Unit)
+            awaitDetailCompletion(viewModel)
+            assertFalse(viewModel.isDetailLoading.value)
+            assertEquals(ModelCardUiState.Loading, viewModel.modelCardState.value)
+            viewModel.ensureDetail("org/model")
+            runCurrent()
+            assertEquals(1, cardRequests, "An unfinished README survives screen re-entry too")
+            cardGate.complete(Unit)
+            advanceUntilIdle()
+            val metadata = viewModel.modelDetail.value
+            val files = viewModel.ggufFiles.value
+            val ready = viewModel.modelCardState.value as ModelCardUiState.Ready
+            assertTrue(ready.rendered is com.mikepenz.markdown.model.State.Success)
+            backgroundScope.launch(dispatcher) { viewModel.installBundleState.collect {} }
+            runCurrent()
+            viewModel.selectVariant("model-Q4_K_M.gguf")
+            repeat(3) { viewModel.ensureDetail("org/model") }
+            advanceUntilIdle()
+            assertSame(metadata, viewModel.modelDetail.value)
+            assertSame(files, viewModel.ggufFiles.value)
+            assertSame(ready, viewModel.modelCardState.value)
+            assertSame(ready.rendered, (viewModel.modelCardState.value as ModelCardUiState.Ready).rendered)
+            runCurrent()
+            assertEquals("model-Q4_K_M.gguf", viewModel.installBundleState.value.selectedVariantPath)
+            assertEquals(listOf(1, 1, 1), listOf(metadataRequests, fileRequests, cardRequests))
+
+            viewModel.loadDetail("org/model")
+            awaitDetailCompletion(viewModel)
+            assertEquals(listOf(2, 2, 2), listOf(metadataRequests, fileRequests, cardRequests))
+            assertNotSame(ready.rendered, (viewModel.modelCardState.value as ModelCardUiState.Ready).rendered,
+                "Explicit refresh prepares the newly fetched document")
+            viewModel.ensureDetail("org/model", ModelHubBrowseMode.DiffusionImage)
+            awaitDetailCompletion(viewModel)
+            assertEquals(listOf(3, 3, 3), listOf(metadataRequests, fileRequests, cardRequests),
+                "A different browse mode starts its own details request")
+        } finally {
+            metadataGate.complete(Unit)
+            cardGate.complete(Unit)
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun retainedDetailsRefreshRemovedInstallationWithoutRefetchingRemoteContent() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        var networkRequests = 0
+        val client = retainedInstallationClient(dispatcher) { networkRequests++ }
+        val artifact = requireNotNull(DownloadArtifactIdentity.create(
+            "org/model", "a".repeat(40), "model-Q4_K_M.gguf", "sha256:${"b".repeat(64)}", 100L,
+        ))
+        try {
+            for (withCompletedTask in listOf(false, true)) {
+                var manifest: ArtifactManifest? = installedVariantManifest(artifact)
+                var reads = 0
+                val store = ObservingDownloadTaskStore().apply {
+                    if (withCompletedTask) snapshots.value = listOf(durableSnapshot(
+                        "completed", artifact, DownloadArtifactState.COMPLETED, DownloadBatchState.COMPLETED, 100L,
+                    ))
+                }
+                val vm = viewModel(client, dispatcher,
+                    downloadCoordinator = observingDownloadCoordinator(store),
+                    readInstalledVariants = { reads++; manifest },
+                )
+                vm.ensureDetail("org/model")
+                awaitDetailCompletion(vm)
+                assertTrue(vm.ggufFiles.value.single().isDownloaded)
+                val detail = vm.modelDetail.value
+                val card = vm.modelCardState.value
+                assertTrue(card is ModelCardUiState.Ready)
+                val requestsBeforeReentry = networkRequests
+                val readsBeforeReentry = reads
+
+                manifest = null // Downloads removed the installed artifact while details was away.
+                vm.ensureDetail("org/model")
+                advanceUntilIdle()
+
+                assertFalse(vm.ggufFiles.value.single().isDownloaded)
+                assertNull(vm.ggufFiles.value.single().durableControl,
+                    "A historical completed task must not keep the download action disabled")
+                assertEquals(readsBeforeReentry + 1, reads)
+                assertEquals(requestsBeforeReentry, networkRequests)
+                assertSame(detail, vm.modelDetail.value)
+                assertSame(card, vm.modelCardState.value)
+
+                if (withCompletedTask) {
+                    // Reinstall preserves the immutable task ID; a second completion must refresh again.
+                    store.snapshots.value = listOf(durableSnapshot(
+                        "completed", artifact, DownloadArtifactState.QUEUED, DownloadBatchState.QUEUED, 0L,
+                    ))
+                    advanceUntilIdle()
+                    manifest = installedVariantManifest(artifact)
+                    store.snapshots.value = listOf(durableSnapshot(
+                        "completed", artifact, DownloadArtifactState.COMPLETED, DownloadBatchState.COMPLETED, 100L,
+                    ))
+                    advanceUntilIdle()
+                    assertTrue(vm.ggufFiles.value.single().isDownloaded)
+                    assertEquals(DownloadArtifactState.COMPLETED, vm.ggufFiles.value.single().durableControl?.artifactState)
+                    assertEquals(requestsBeforeReentry, networkRequests)
+                }
+            }
+        } finally { client.close(); Dispatchers.resetMain() }
+    }
+
+    @Test
+    fun reentryDuringHydrationRefreshesInstallationAfterTheInitialRead() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        var networkRequests = 0
+        val client = retainedInstallationClient(dispatcher) { networkRequests++ }
+        var reads = 0
+        var pending: Continuation<ArtifactManifest?>? = null
+        val artifact = requireNotNull(DownloadArtifactIdentity.create(
+            "org/model", "a".repeat(40), "model-Q4_K_M.gguf", "sha256:${"b".repeat(64)}", 100L,
+        ))
+        try {
+            val vm = viewModel(client, dispatcher, readInstalledVariants = {
+                if (++reads == 1) suspendCoroutine { pending = it } else null
+            })
+            vm.ensureDetail("org/model")
+            runCurrent()
+            assertNotNull(pending)
+            assertTrue(vm.isDetailLoading.value)
+            val requestsBeforeReentry = networkRequests
+            // A removal and return to the same route happen after the first read took its snapshot.
+            vm.ensureDetail("org/model")
+            runCurrent()
+            pending.resume(installedVariantManifest(artifact))
+            pending = null
+            awaitDetailCompletion(vm)
+            assertEquals(2, reads)
+            assertFalse(vm.ggufFiles.value.single().isDownloaded)
+            assertEquals(requestsBeforeReentry, networkRequests)
+        } finally { pending?.resume(null); client.close(); Dispatchers.resetMain() }
+    }
+
+    @Test
+    fun lateRetainedInstallationReadCannotOverwriteAnotherDetailRoute() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val client = retainedInstallationClient(dispatcher)
+        var firstReads = 0
+        var pending: Continuation<ArtifactManifest?>? = null
+        val first = requireNotNull(DownloadArtifactIdentity.create(
+            "org/first", "a".repeat(40), "model-Q4_K_M.gguf", "sha256:${"b".repeat(64)}", 100L,
+        ))
+        val second = requireNotNull(DownloadArtifactIdentity.create(
+            "org/second", "a".repeat(40), "model-Q4_K_M.gguf", "sha256:${"b".repeat(64)}", 100L,
+        ))
+        try {
+            val vm = viewModel(client, dispatcher, readInstalledVariants = { id ->
+                if (id == "org/first" && ++firstReads == 2) suspendCoroutine { pending = it }
+                else installedVariantManifest(if (id == "org/first") first else second)
+            })
+            vm.ensureDetail("org/first")
+            awaitDetailCompletion(vm)
+            vm.ensureDetail("org/first")
+            runCurrent()
+            assertNotNull(pending)
+            vm.ensureDetail("org/second")
+            awaitDetailCompletion(vm)
+            assertTrue(vm.ggufFiles.value.single().isDownloaded)
+            pending.resume(null)
+            pending = null
+            advanceUntilIdle()
+            assertEquals("org/second", vm.modelDetail.value?.id)
+            assertEquals(second, vm.ggufFiles.value.single().artifact)
+            assertTrue(vm.ggufFiles.value.single().isDownloaded,
+                "A non-cooperative read from the old route must not clear the new route's installation")
+        } finally { pending?.resume(null); client.close(); Dispatchers.resetMain() }
+    }
+
+    @Test
+    fun newerRemovalRefreshWinsOverPendingCompletionEvidence() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val client = retainedInstallationClient(dispatcher)
+        var reads = 0
+        var pending: Continuation<ArtifactManifest?>? = null
+        val artifact = requireNotNull(DownloadArtifactIdentity.create(
+            "org/model", "a".repeat(40), "model-Q4_K_M.gguf", "sha256:${"b".repeat(64)}", 100L,
+        ))
+        val store = ObservingDownloadTaskStore()
+        try {
+            val vm = viewModel(client, dispatcher,
+                downloadCoordinator = observingDownloadCoordinator(store),
+                readInstalledVariants = {
+                    if (++reads == 2) suspendCoroutine { pending = it } else null
+                },
+            )
+            vm.ensureDetail("org/model")
+            awaitDetailCompletion(vm)
+            store.snapshots.value = listOf(durableSnapshot(
+                "completed", artifact, DownloadArtifactState.COMPLETED, DownloadBatchState.COMPLETED, 100L,
+            ))
+            runCurrent()
+            assertNotNull(pending)
+            // Removal has completed by the time the user re-enters, while the older completion
+            // projection still holds a pre-removal snapshot.
+            vm.ensureDetail("org/model")
+            advanceUntilIdle()
+            assertEquals(3, reads)
+            assertFalse(vm.ggufFiles.value.single().isDownloaded)
+            pending.resume(installedVariantManifest(artifact))
+            pending = null
+            advanceUntilIdle()
+            assertFalse(vm.ggufFiles.value.single().isDownloaded)
+            assertNull(vm.ggufFiles.value.single().durableControl)
+        } finally { pending?.resume(null); client.close(); Dispatchers.resetMain() }
+    }
+
+    @Test
+    fun screenReentryKeepsFailureUntilUserRetries() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        var requests = 0
+        val engine = object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler {
+                requests++
+                respond("offline", HttpStatusCode.InternalServerError)
+            }
+        }) { override val dispatcher: CoroutineDispatcher = dispatcher }
+        val client = HttpClient(engine)
+        try {
+            val viewModel = viewModel(client, dispatcher)
+            viewModel.ensureDetail("org/model")
+            awaitDetailCompletion(viewModel)
+            assertNotNull(viewModel.detailError.value)
+            val afterFailure = requests
+            viewModel.ensureDetail("org/model")
+            awaitDetailCompletion(viewModel)
+            assertEquals(afterFailure, requests)
+            viewModel.loadDetail("org/model")
+            awaitDetailCompletion(viewModel)
+            assertTrue(requests > afterFailure)
+        } finally { client.close(); Dispatchers.resetMain() }
+    }
+
+    @Test
+    fun modelCardCanRetryWithoutReloadingModelFiles() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        var cardRequests = 0
+        var fileRequests = 0
+        val engine = object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler { request ->
+                when {
+                    request.url.encodedPath.contains("/raw/") -> {
+                        cardRequests++
+                        if (cardRequests == 1) respond("offline", HttpStatusCode.InternalServerError)
+                        else respond("# Full model card\n\nPublisher content after retry.")
+                    }
+                    request.url.encodedPath.contains("/tree/") -> { fileRequests++; respondJson("[]") }
+                    else -> respondJson("""{"id":"org/model","modelId":"org/model","sha":"${"a".repeat(40)}"}""")
+                }
+            }
+        }) { override val dispatcher: CoroutineDispatcher = dispatcher }
+        val client = HttpClient(engine)
+        try {
+            val viewModel = viewModel(client, dispatcher)
+            viewModel.loadDetail("org/model")
+            awaitDetailCompletion(viewModel)
+            assertTrue(viewModel.modelCardState.value is ModelCardUiState.Failed)
+            val initialFileRequests = fileRequests
+            viewModel.retryModelCard()
+            advanceUntilIdle()
+            assertTrue(viewModel.modelCardState.value is ModelCardUiState.Ready)
+            assertEquals(2, cardRequests)
+            assertEquals(initialFileRequests, fileRequests)
+            assertNull(viewModel.detailError.value)
+        } finally { client.close(); Dispatchers.resetMain() }
+    }
+
+    @Test
+    fun optionalCardDoesNotBlockFilesOrLeakAcrossNavigation() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val revision = "a".repeat(40)
+        val oldCard = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val excerpt = "A compact model for local text generation, with instruction following and multilingual conversations."
+        val engine = object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler { request ->
+                val model = if (request.url.encodedPath.contains("org/older")) "org/older" else "org/newer"
+                when {
+                    request.url.encodedPath.contains("/raw/") -> {
+                        if (model == "org/older") {
+                            oldCard.await()
+                            respond("# Old model\n\n$excerpt")
+                        } else respond("missing", HttpStatusCode.NotFound)
+                    }
+                    request.url.encodedPath.contains("/tree/") -> respondJson("[]")
+                    else -> respondJson("""{"id":"$model","modelId":"$model","sha":"$revision"}""")
+                }
+            }
+        }) { override val dispatcher: CoroutineDispatcher = dispatcher }
+        val client = HttpClient(engine)
+        try {
+            val viewModel = viewModel(client, dispatcher)
+            viewModel.loadDetail("org/older")
+            awaitDetailCompletion(viewModel)
+            assertFalse(viewModel.isDetailLoading.value, "An unfinished model card must not hold the file list")
+            assertNull((viewModel.modelCardState.value as? ModelCardUiState.Ready)?.document?.excerpt)
+            viewModel.loadDetail("org/newer")
+            awaitDetailCompletion(viewModel)
+            oldCard.complete(Unit)
+            advanceUntilIdle()
+            assertEquals("org/newer", viewModel.modelDetail.value?.id)
+            assertNull((viewModel.modelCardState.value as? ModelCardUiState.Ready)?.document?.excerpt)
+            assertEquals(ModelCardUiState.Missing, viewModel.modelCardState.value)
+            assertNull(viewModel.detailError.value, "A missing README is not a detail-page error")
+            assertFalse(viewModel.isDetailLoading.value)
+            viewModel.loadDetail("org/older")
+            awaitDetailCompletion(viewModel)
+            assertEquals(excerpt, (viewModel.modelCardState.value as? ModelCardUiState.Ready)?.document?.excerpt)
+            assertTrue((viewModel.modelCardState.value as ModelCardUiState.Ready).document.markdown.startsWith("# Old model"))
+            viewModel.loadDetail("org/newer")
+            assertNull((viewModel.modelCardState.value as? ModelCardUiState.Ready)?.document?.excerpt, "Navigation clears previously displayed publisher text immediately")
+            awaitDetailCompletion(viewModel)
+        } finally {
+            oldCard.complete(Unit)
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
     @Test
     fun delayedLocalFileLookupCannotOverwriteTheNewDetailsRoute() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -136,11 +664,7 @@ class ModelViewModelRecommendationTest {
         val newer = "org/newer"
         val revision = "a".repeat(40)
         val objectId = "b".repeat(64)
-        var oldLookup: Continuation<List<String>>? = null
-        val dao = object : LocalModelDao by FakeLocalModelDao() {
-            override suspend fun getFilenamesByModelId(modelId: String): List<String> =
-                if (modelId == older) suspendCoroutine { oldLookup = it } else emptyList()
-        }
+        var oldLookup: Continuation<ArtifactManifest?>? = null
         val engine = object : MockEngine(MockEngineConfig().apply {
             reuseHandlers = true
             addHandler { request ->
@@ -157,24 +681,26 @@ class ModelViewModelRecommendationTest {
         }
         val client = HttpClient(engine)
         try {
-            val viewModel = viewModel(client, dispatcher, localModelDao = dao)
+            val viewModel = viewModel(client, dispatcher, readInstalledVariants = { modelId ->
+                if (modelId == older) suspendCoroutine { oldLookup = it } else null
+            })
             viewModel.loadDetail(older)
             runCurrent()
             assertNotNull(oldLookup)
 
             viewModel.loadDetail(newer)
-            advanceUntilIdle()
+            awaitDetailCompletion(viewModel)
             assertEquals(newer, viewModel.modelDetail.value?.id)
             assertEquals(listOf("newer.gguf"), viewModel.ggufFiles.value.map { it.path })
 
-            requireNotNull(oldLookup).resume(emptyList())
+            requireNotNull(oldLookup).resume(null)
             oldLookup = null
             advanceUntilIdle()
             assertEquals(newer, viewModel.modelDetail.value?.id)
             assertEquals(listOf("newer.gguf"), viewModel.ggufFiles.value.map { it.path })
             assertFalse(viewModel.isDetailLoading.value)
         } finally {
-            oldLookup?.resume(emptyList())
+            oldLookup?.resume(null)
             client.close()
             Dispatchers.resetMain()
         }
@@ -205,7 +731,7 @@ class ModelViewModelRecommendationTest {
             )
 
             viewModel.loadDetail(repositoryId, ModelHubBrowseMode.LanguageModels)
-            advanceUntilIdle()
+            awaitDetailCompletion(viewModel)
             val file = viewModel.ggufFiles.value.single()
             val artifact = requireNotNull(file.artifact)
             viewModel.startDownload(repositoryId, path, metadata(artifact))
@@ -248,7 +774,7 @@ class ModelViewModelRecommendationTest {
             )
 
             viewModel.loadDetail(repositoryId, ModelHubBrowseMode.LanguageModels)
-            advanceUntilIdle()
+            awaitDetailCompletion(viewModel)
             assertEquals(DescriptorState.NEEDS_INFORMATION, viewModel.recommendedModels.value.single().descriptorState)
             val artifact = requireNotNull(viewModel.ggufFiles.value.single().artifact)
             viewModel.startDownload(repositoryId, path, metadata(artifact))
@@ -295,7 +821,7 @@ class ModelViewModelRecommendationTest {
             )
 
             viewModel.loadDetail(repositoryId, ModelHubBrowseMode.LanguageModels)
-            advanceUntilIdle()
+            awaitDetailCompletion(viewModel)
             val artifact = requireNotNull(viewModel.ggufFiles.value.single().artifact)
             viewModel.startDownload(repositoryId, path, metadata(artifact))
             advanceUntilIdle()
@@ -332,7 +858,7 @@ class ModelViewModelRecommendationTest {
             )
 
             viewModel.loadDetail(repositoryId, ModelHubBrowseMode.LanguageModels)
-            advanceUntilIdle()
+            awaitDetailCompletion(viewModel)
             assertEquals(DescriptorState.SELECT_VARIANT, viewModel.recommendedModels.value.single().descriptorState)
             assertNull(viewModel.recommendedModels.value.single().selectedDescriptor)
             val artifact = requireNotNull(viewModel.ggufFiles.value.single().artifact)
@@ -379,7 +905,7 @@ class ModelViewModelRecommendationTest {
             )
 
             viewModel.loadDetail(repositoryId, ModelHubBrowseMode.LanguageModels)
-            advanceUntilIdle()
+            awaitDetailCompletion(viewModel)
             val artifact = requireNotNull(viewModel.ggufFiles.value.single().artifact)
             viewModel.startDownload(repositoryId, path, metadata(artifact))
             advanceUntilIdle()
@@ -419,7 +945,7 @@ class ModelViewModelRecommendationTest {
             )
 
             viewModel.loadDetail(repositoryId, ModelHubBrowseMode.LanguageModels)
-            advanceUntilIdle()
+            awaitDetailCompletion(viewModel)
             val artifact = requireNotNull(viewModel.ggufFiles.value.single().artifact)
             viewModel.startDownload(repositoryId, path, metadata(artifact))
             advanceUntilIdle()
@@ -456,7 +982,7 @@ class ModelViewModelRecommendationTest {
             )
 
             viewModel.loadDetail(repositoryId, ModelHubBrowseMode.LanguageModels)
-            advanceUntilIdle()
+            awaitDetailCompletion(viewModel)
             val exact = requireNotNull(viewModel.ggufFiles.value.single().artifact)
             val forged = requireNotNull(
                 DownloadArtifactIdentity.create(
@@ -552,7 +1078,7 @@ class ModelViewModelRecommendationTest {
             )
 
             viewModel.loadDetail(repositoryId, ModelHubBrowseMode.DiffusionImage)
-            advanceUntilIdle()
+            awaitDetailCompletion(viewModel)
             val artifact = requireNotNull(viewModel.ggufFiles.value.single { it.path == primaryPath }.artifact)
             viewModel.startDownload(repositoryId, primaryPath, metadata(artifact))
             advanceUntilIdle()
@@ -622,7 +1148,7 @@ class ModelViewModelRecommendationTest {
             )
 
             viewModel.loadDetail(repositoryId, ModelHubBrowseMode.LanguageModels)
-            advanceUntilIdle()
+            awaitDetailCompletion(viewModel)
 
             val recommendation = viewModel.recommendedModels.value.single()
             val descriptor = recommendation.selectedDescriptor as LlmModelDescriptor
@@ -707,7 +1233,7 @@ class ModelViewModelRecommendationTest {
             )
             backgroundScope.launch { viewModel.installBundleState.collect {} }
             viewModel.loadDetail(repositoryId, ModelHubBrowseMode.DiffusionImage)
-            advanceUntilIdle()
+            awaitDetailCompletion(viewModel)
 
             assertTrue(viewModel.isDownloading.value)
             assertEquals(otherArtifact, viewModel.activeDownloadArtifact.value)
@@ -833,19 +1359,22 @@ class ModelViewModelRecommendationTest {
         }
         val client = HttpClient(engine)
         val store = ObservingDownloadTaskStore()
-        val localModelDao = FakeLocalModelDao()
+        var manifestReads = 0
         try {
             val viewModel = viewModel(
                 client = client,
                 dispatcher = dispatcher,
-                localModelDao = localModelDao,
                 downloadCoordinator = observingDownloadCoordinator(store),
+                readInstalledVariants = {
+                    manifestReads++
+                    null
+                },
             )
             viewModel.loadDetail(repositoryId, ModelHubBrowseMode.LanguageModels)
-            advanceUntilIdle()
+            awaitDetailCompletion(viewModel)
             viewModel.selectVariant(selectedPath)
             advanceUntilIdle()
-            val initialQueries = localModelDao.filenameQueryCount
+            val initialQueries = manifestReads
             val selectedArtifact = requireNotNull(
                 viewModel.ggufFiles.value.single { it.path == selectedPath }.artifact,
             )
@@ -871,7 +1400,7 @@ class ModelViewModelRecommendationTest {
             )
             advanceUntilIdle()
 
-            assertEquals(initialQueries + 1, localModelDao.filenameQueryCount)
+            assertEquals(initialQueries + 1, manifestReads)
         } finally {
             client.close()
             Dispatchers.resetMain()
@@ -944,7 +1473,7 @@ class ModelViewModelRecommendationTest {
             backgroundScope.launch { viewModel.installBundleState.collect {} }
 
             viewModel.loadDetail(repositoryId, ModelHubBrowseMode.DiffusionImage)
-            advanceUntilIdle()
+            awaitDetailCompletion(viewModel)
 
             assertTrue(viewModel.ggufFiles.value.single().isDownloaded)
             assertTrue(viewModel.installBundleState.value.isReady)
@@ -1015,7 +1544,7 @@ class ModelViewModelRecommendationTest {
             backgroundScope.launch { viewModel.installBundleState.collect {} }
 
             viewModel.loadDetail(repositoryId, ModelHubBrowseMode.DiffusionImage)
-            advanceUntilIdle()
+            awaitDetailCompletion(viewModel)
 
             assertFalse(viewModel.ggufFiles.value.single().isDownloaded)
             assertFalse(viewModel.installBundleState.value.isReady)
@@ -1066,7 +1595,7 @@ class ModelViewModelRecommendationTest {
             )
 
             viewModel.loadDetail(repositoryId, ModelHubBrowseMode.LanguageModels)
-            advanceUntilIdle()
+            awaitDetailCompletion(viewModel)
 
             val file = viewModel.ggufFiles.value.single()
             val artifact = requireNotNull(file.artifact)
@@ -1195,7 +1724,7 @@ class ModelViewModelRecommendationTest {
                 downloadCoordinator = observingDownloadCoordinator(store),
             )
             viewModel.loadDetail(repositoryId, ModelHubBrowseMode.LanguageModels)
-            advanceUntilIdle()
+            awaitDetailCompletion(viewModel)
 
             viewModel.startDownload(repositoryId, path, metadata)
             advanceUntilIdle()
@@ -1249,12 +1778,12 @@ class ModelViewModelRecommendationTest {
         try {
             val viewModel = viewModel(client, dispatcher)
             viewModel.loadDetail("owner/model")
-            advanceUntilIdle()
+            awaitDetailCompletion(viewModel)
             assertEquals("Could not load the model files. Please try again.", viewModel.detailError.value)
 
             failTree = false
             viewModel.loadDetail("owner/model")
-            advanceUntilIdle()
+            awaitDetailCompletion(viewModel)
             assertEquals(null, viewModel.detailError.value)
             assertTrue(viewModel.ggufFiles.value.isEmpty())
         } finally {
@@ -1290,11 +1819,22 @@ class ModelViewModelRecommendationTest {
             val viewModel = viewModel(
                 client,
                 dispatcher,
-                localModelDao = FakeLocalModelDao(listOf("__diffusers_bundle__")),
+                localModelDao = FakeLocalModelDao(mainModels = listOf(LocalModelEntity(
+                    modelId = "segmind/tiny-sd",
+                    filename = "__diffusers_bundle__",
+                    localPath = "/models/segmind/tiny-sd",
+                    sizeBytes = 4L,
+                    downloadedAt = 0L,
+                    author = null,
+                    libraryName = null,
+                    pipelineTag = "text-to-image",
+                    modelType = ModelType.IMAGE,
+                    componentStatus = LocalModelEntity.STATUS_READY,
+                ))),
             )
 
             viewModel.loadDetail("segmind/tiny-sd", ModelHubBrowseMode.DiffusionImage)
-            advanceUntilIdle()
+            awaitDetailCompletion(viewModel)
 
             assertTrue(
                 viewModel.ggufFiles.value.isNotEmpty(),
@@ -1322,10 +1862,13 @@ class ModelViewModelRecommendationTest {
         val requestDispatcher = dispatcher
         var detailRequests = 0
         var treeRequests = 0
+        var networkRequests = 0
         val engine = object : MockEngine(MockEngineConfig().apply {
             reuseHandlers = true
             addHandler { request ->
+                networkRequests++
                 when {
+                    request.url.encodedPath.contains("/raw/") -> respond("# Retained diffusion card")
                     request.url.encodedPath.contains("/tree/") -> {
                         treeRequests += 1
                         respondJson(
@@ -1360,7 +1903,7 @@ class ModelViewModelRecommendationTest {
             val installed = viewModel(client, dispatcher, storagePathProvider = storage)
             backgroundScope.launch { installed.installBundleState.collect {} }
             installed.loadDetail("stabilityai/sdxl-turbo", ModelHubBrowseMode.DiffusionImage)
-            advanceUntilIdle()
+            awaitDetailCompletion(installed)
 
             assertTrue(
                 installed.installBundleState.value.isReady,
@@ -1378,7 +1921,7 @@ class ModelViewModelRecommendationTest {
             val interrupted = viewModel(client, dispatcher, storagePathProvider = storage)
             backgroundScope.launch { interrupted.installBundleState.collect {} }
             interrupted.loadDetail("stabilityai/sdxl-turbo", ModelHubBrowseMode.DiffusionImage)
-            advanceUntilIdle()
+            awaitDetailCompletion(interrupted)
             assertFalse(interrupted.installBundleState.value.isReady)
             assertTrue(interrupted.ggufFiles.value.single { it.path == primaryPath }.isDownloaded)
             assertTrue(interrupted.setupComponents.value.single { it.filePath == componentPath }.isDownloaded)
@@ -1411,13 +1954,32 @@ class ModelViewModelRecommendationTest {
             val corrupted = viewModel(client, dispatcher, storagePathProvider = storage)
             backgroundScope.launch { corrupted.installBundleState.collect {} }
             corrupted.loadDetail("stabilityai/sdxl-turbo", ModelHubBrowseMode.DiffusionImage)
-            advanceUntilIdle()
+            awaitDetailCompletion(corrupted)
 
             assertFalse(corrupted.installBundleState.value.isReady)
             assertTrue(corrupted.ggufFiles.value.none { it.isDownloaded })
             assertTrue(corrupted.setupComponents.value.none { it.isDownloaded })
             assertEquals(4, detailRequests, "corrupt component metadata must be refreshed")
             assertEquals(4, treeRequests, "corrupt component metadata must be refreshed")
+
+            // Re-enter the original retained screen after Downloads removes its files/manifests.
+            val retainedDetail = installed.modelDetail.value
+            val retainedCard = installed.modelCardState.value
+            val retainedSelection = installed.installBundleState.value.selectedVariantPath
+            val requestsBeforeReentry = networkRequests
+            assertTrue(File(storage.getModelsStorageDirectory("stabilityai/sdxl-turbo")).deleteRecursively())
+            installed.ensureDetail("stabilityai/sdxl-turbo", ModelHubBrowseMode.DiffusionImage)
+            withContext(Dispatchers.Default) {
+                withTimeout(5_000) { installed.ggufFiles.first { files -> files.none { it.isDownloaded } } }
+            }
+            advanceUntilIdle()
+            assertFalse(installed.installBundleState.value.isReady)
+            assertTrue(installed.ggufFiles.value.none { it.isDownloaded })
+            assertTrue(installed.setupComponents.value.none { it.isDownloaded })
+            assertEquals(retainedSelection, installed.installBundleState.value.selectedVariantPath)
+            assertEquals(requestsBeforeReentry, networkRequests)
+            assertSame(retainedDetail, installed.modelDetail.value)
+            assertSame(retainedCard, installed.modelCardState.value)
         } finally {
             client.close()
             trusted.deleteRecursively()
@@ -1554,6 +2116,7 @@ class ModelViewModelRecommendationTest {
         val engine = object : MockEngine(MockEngineConfig().apply {
             reuseHandlers = true
             addHandler { request ->
+                assertEquals("0", request.url.parameters["p"])
                 val query = request.url.parameters["search"]
                 searches += query
                 respondPage(pageResponse("org/${query ?: "browse"}"))
@@ -1621,13 +2184,15 @@ class ModelViewModelRecommendationTest {
             viewModel.updateSearchQuery("second")
             viewModel.performSearch()
             advanceUntilIdle()
-            assertEquals("second", viewModel.searchResponse.value?.q)
+            assertEquals("second", viewModel.results.value.key?.committedSearch)
+            assertEquals(listOf("org/second"), viewModel.results.value.models.map { it.id })
             assertEquals(listOf("org/second"), viewModel.recommendedModels.value.map { it.repositoryId })
 
             releaseFirst.complete(Unit)
             advanceUntilIdle()
 
-            assertEquals("second", viewModel.searchResponse.value?.q)
+            assertEquals("second", viewModel.results.value.key?.committedSearch)
+            assertEquals(listOf("org/second"), viewModel.results.value.models.map { it.id })
             assertEquals(listOf("org/second"), viewModel.recommendedModels.value.map { it.repositoryId })
         } finally {
             releaseFirst.complete(Unit)
@@ -1684,19 +2249,19 @@ class ModelViewModelRecommendationTest {
         val engine = object : MockEngine(MockEngineConfig().apply {
             reuseHandlers = true
             addHandler { request ->
-                if (request.url.parameters["filter"] == "onnx") {
+                if (request.url.parameters["library"] == "onnx") {
                     assertEquals("text-generation", request.url.parameters["pipeline_tag"])
                     assertNull(request.url.parameters["apps"])
                     assertNull(request.url.parameters["num_parameters"])
-                    assertNull(request.url.parameters["cursor"])
+                    assertEquals("0", request.url.parameters["p"])
                     respondPage(pageResponse("org/onnx"))
-                } else if (request.url.parameters["cursor"] != null) {
+                } else if (request.url.parameters["p"] != "0") {
                     appendStarted.complete(Unit)
                     releaseAppend.await()
-                    respondPage(pageResponse("org/stale-gguf"))
+                    respondPage(pageResponse("org/stale-gguf", pageIndex = 1, totalCount = 31))
                 } else {
                     assertEquals("llama.cpp", request.url.parameters["apps"])
-                    respondPage(pageResponse("org/gguf"), "<${request.url}&cursor=gguf-next>; rel=\"next\"")
+                    respondPage(pageResponse("org/gguf", totalCount = 31))
                 }
             }
         }) { override val dispatcher: CoroutineDispatcher = dispatcher }
@@ -1729,16 +2294,19 @@ class ModelViewModelRecommendationTest {
         Dispatchers.setMain(dispatcher)
         var secondAttempts = 0
         var assessments = 0
+        val requestedPages = mutableListOf<String?>()
         val engine = object : MockEngine(MockEngineConfig().apply {
             reuseHandlers = true
             addHandler { request ->
-                if (request.url.parameters["cursor"] == null) {
-                    respondPage(pageResponse("org/first", "org/second"),
-                        "<${request.url}&cursor=next-1>; rel=\"next\"")
+                requestedPages += request.url.parameters["p"]
+                assertEquals("true", request.url.parameters["withCount"])
+                assertNull(request.url.parameters["limit"])
+                if (request.url.parameters["p"] == "0") {
+                    respondPage(pageResponse("org/first", "org/second", totalCount = 60))
                 } else {
                     secondAttempts++
                     if (secondAttempts == 1) respond("oops", HttpStatusCode.InternalServerError)
-                    else respondPage(pageResponse("org/second", "org/third"))
+                    else respondPage(pageResponse("org/second", "org/third", pageIndex = 1, totalCount = 32))
                 }
             }
         }) { override val dispatcher: CoroutineDispatcher = dispatcher }
@@ -1751,6 +2319,7 @@ class ModelViewModelRecommendationTest {
             assertEquals(listOf("org/first", "org/second"), vm.results.value.models.map { it.id })
             assertTrue(vm.results.value.canLoadMore)
             assertEquals(2, assessments)
+            assertEquals(60, vm.results.value.totalCount)
 
             vm.autoLoadNextPage()
             vm.autoLoadNextPage()
@@ -1772,6 +2341,41 @@ class ModelViewModelRecommendationTest {
             assertFalse(vm.results.value.hasMore)
             assertEquals(2, secondAttempts)
             assertEquals(3, assessments)
+            assertEquals(32, vm.results.value.totalCount)
+            assertEquals(listOf<String?>("0", "1", "1"), requestedPages)
+        } finally {
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun sparseSearchRowsWithZeroParametersStillReachRecommendationEnrichment() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        var assessments = 0
+        var requests = 0
+        val engine = object : MockEngine(MockEngineConfig().apply {
+            reuseHandlers = true
+            addHandler { request ->
+                requests++
+                assertEquals("/models-json", request.url.encodedPath)
+                respondJson("""{"models":[{"id":"org/unknown-size","numParameters":0,"gated":false}],"numItemsPerPage":30,"numTotalItems":1,"pageIndex":0}""")
+            }
+        }) { override val dispatcher: CoroutineDispatcher = dispatcher }
+        val client = HttpClient(engine)
+        try {
+            val vm = viewModel(client, dispatcher,
+                recommendationService = recommendationService(dispatcher, onAssess = { assessments++ }))
+            vm.loadModels()
+            advanceUntilIdle()
+            val row = vm.results.value.models.single()
+            assertEquals("org/unknown-size", row.id)
+            assertNull(row.numParameters)
+            assertEquals(1, assessments, "Missing list metadata must not reject a repository before enrichment")
+            assertNotNull(vm.recommendedModels.value.single().selectedDescriptor)
+            assertEquals(1, requests, "Rendering a sparse search row must not add metadata requests")
+            assertEquals(1, vm.results.value.totalCount)
         } finally {
             client.close()
             Dispatchers.resetMain()
@@ -1797,11 +2401,11 @@ class ModelViewModelRecommendationTest {
             advanceUntilIdle()
             vm.setModelOrdering(ModelOrdering.Personalized)
             advanceUntilIdle()
-            assertEquals(listOf<String?>("trendingScore"), sorts)
+            assertEquals(listOf<String?>("trending"), sorts)
 
             vm.setModelOrdering(ModelOrdering.Server(com.debanshu777.caraml.sdk.discovery.huggingface.model.ModelSort.DOWNLOADS))
             advanceUntilIdle()
-            assertEquals(listOf<String?>("trendingScore", "downloads"), sorts)
+            assertEquals(listOf<String?>("trending", "downloads"), sorts)
             assertEquals(1, vm.results.value.models.size)
         } finally {
             client.close()
@@ -1817,7 +2421,7 @@ class ModelViewModelRecommendationTest {
         val engine = object : MockEngine(MockEngineConfig().apply {
             reuseHandlers = true
             addHandler { request ->
-                assertEquals("/api/models", request.url.encodedPath)
+                assertEquals("/models-json", request.url.encodedPath)
                 requests++
                 respondPage(pageResponse("org/startup-result"))
             }
@@ -1905,6 +2509,51 @@ class ModelViewModelRecommendationTest {
     }
 
     @Test
+    fun exactBatchControlsWorkOutsideVisibleQueueAndPendingCancellationCannotResume() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val store = ObservingDownloadTaskStore()
+        val limitedQueueStore = object : DownloadTaskStore by store {
+            override fun observeQueue(): Flow<List<DownloadBatchSnapshot>> = MutableStateFlow(emptyList())
+        }
+        val scheduler = RecordingPlatformDownloadScheduler()
+        val identity = requireNotNull(DownloadArtifactIdentity.create(
+            repositoryId = "org/older-download", immutableRevision = "a".repeat(40),
+            relativePath = "model.gguf", remoteObjectId = "sha256:${"b".repeat(64)}", expectedBytes = 100L,
+        ))
+        val batch = durableSnapshot("outside-visible-queue", identity,
+            DownloadArtifactState.RUNNING, DownloadBatchState.RUNNING, 25L)
+        store.snapshots.value = listOf(batch)
+        val client = HttpClient(MockEngine { error("This control does not need the network") })
+        try {
+            val vm = viewModel(client, dispatcher,
+                downloadCoordinator = observingDownloadCoordinator(limitedQueueStore, scheduler))
+            advanceUntilIdle()
+            assertTrue(vm.downloadQueue.value.isEmpty())
+            vm.pauseDownload(batch.batchId, "wrong-artifact")
+            vm.pauseDownload("missing-batch", batch.artifacts.single().artifactId)
+            advanceUntilIdle()
+            assertTrue(scheduler.pausedBatchIds.isEmpty())
+            vm.pauseDownload(batch.batchId, batch.artifacts.single().artifactId)
+            advanceUntilIdle()
+            assertEquals(listOf(batch.batchId), scheduler.pausedBatchIds)
+
+            store.snapshots.value = listOf(batch.copy(state = DownloadBatchState.CANCELLED,
+                userIntent = DownloadUserIntent.CANCEL, cancellationCleanupPending = true,
+                artifacts = batch.artifacts.map { it.copy(state = DownloadArtifactState.CANCELLED) }))
+            vm.resumeDownload(batch.batchId, batch.artifacts.single().artifactId)
+            vm.retryDownload(batch.batchId, batch.artifacts.single().artifactId)
+            vm.cancelDownload(batch.batchId, batch.artifacts.single().artifactId)
+            advanceUntilIdle()
+            assertTrue(scheduler.enqueuedBatchIds.isEmpty())
+            assertEquals(listOf(batch.batchId), scheduler.cancelledBatchIds)
+        } finally {
+            client.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
     fun globalDownloadQueueSurvivesSearchChangesAndControlsExactBatch() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
@@ -1957,14 +2606,8 @@ class ModelViewModelRecommendationTest {
         val engine = object : MockEngine(MockEngineConfig().apply {
             reuseHandlers = true
             addHandler { request ->
-                val cursor = request.url.parameters["cursor"]
-                val next = when (cursor) {
-                    null -> "next-1"
-                    "next-1" -> "next-2"
-                    else -> "next-3"
-                }
-                val base = request.url.toString().substringBefore("&cursor=")
-                respondPage(pageResponse("org/duplicate"), "<$base&cursor=$next>; rel=\"next\"")
+                val index = requireNotNull(request.url.parameters["p"]).toInt()
+                respondPage(pageResponse("org/duplicate", pageIndex = index, totalCount = 300))
             }
         }) { override val dispatcher: CoroutineDispatcher = dispatcher }
         val client = HttpClient(engine)
@@ -2003,10 +2646,9 @@ class ModelViewModelRecommendationTest {
             reuseHandlers = true
             addHandler { request ->
                 requests++
-                val index = request.url.parameters["cursor"]?.removePrefix("page-")?.toInt() ?: 0
-                val ids = (index * 24 until index * 24 + 24).map { "org/model-$it" }.toTypedArray()
-                val base = request.url.toString().substringBefore("&cursor=")
-                respondPage(pageResponse(*ids), "<$base&cursor=page-${index + 1}>; rel=\"next\"")
+                val index = requireNotNull(request.url.parameters["p"]).toInt()
+                val ids = (index * 30 until index * 30 + 30).map { "org/model-$it" }.toTypedArray()
+                respondPage(pageResponse(*ids, pageIndex = index, totalCount = 600))
             }
         }) { override val dispatcher: CoroutineDispatcher = dispatcher }
         val client = HttpClient(engine)
@@ -2025,17 +2667,18 @@ class ModelViewModelRecommendationTest {
                 }
             }
             assertEquals(256, vm.results.value.models.size)
+            assertEquals(600, vm.results.value.totalCount, "The local loading cap must not replace the server match count")
             assertEquals(256, vm.results.value.recommendations.size)
             assertTrue(vm.results.value.sessionLimitReached)
             assertFalse(vm.results.value.hasMore)
             assertFalse(vm.results.value.canLoadMore)
             assertEquals(firstAssessment, vm.recommendedModels.value.first { it.repositoryId == "org/model-0" })
             assertEquals(96, assessments)
-            assertEquals(11, requests)
+            assertEquals(9, requests)
 
             vm.loadNextPage()
             advanceUntilIdle()
-            assertEquals(11, requests)
+            assertEquals(9, requests)
         } finally {
             client.close()
             Dispatchers.resetMain()
@@ -2052,7 +2695,7 @@ class ModelViewModelRecommendationTest {
         val engine = object : MockEngine(MockEngineConfig().apply {
             reuseHandlers = true
             addHandler { request ->
-                if (request.url.encodedPath == "/api/models") {
+                if (request.url.encodedPath == "/models-json") {
                     listStarted.complete(Unit)
                     releaseList.await()
                     respondJson(pageResponse("org/stale-language-model"))
@@ -2070,7 +2713,8 @@ class ModelViewModelRecommendationTest {
             listStarted.await()
 
             viewModel.setBrowseMode(ModelHubBrowseMode.DiffusionImage)
-            val curatedIds = viewModel.listResponse.value?.models.orEmpty().filterNotNull().mapNotNull { it.id }
+            runCurrent()
+            val curatedIds = viewModel.results.value.models.mapNotNull { it.id }
             assertTrue(curatedIds.isNotEmpty())
             assertFalse("org/stale-language-model" in curatedIds)
 
@@ -2079,7 +2723,7 @@ class ModelViewModelRecommendationTest {
 
             assertEquals(ModelHubBrowseMode.DiffusionImage, viewModel.browseMode.value)
             assertFalse(
-                viewModel.listResponse.value?.models.orEmpty().filterNotNull()
+                viewModel.results.value.models
                     .mapNotNull { it.id }
                     .contains("org/stale-language-model"),
             )
@@ -2138,6 +2782,15 @@ class ModelViewModelRecommendationTest {
         }
     }
 
+    private suspend fun TestScope.awaitDetailCompletion(viewModel: ModelViewModel) {
+        // Real filesystem validation runs on IO, outside the virtual-time scheduler. Await its
+        // published completion without releasing any independent README gate or replacing storage.
+        withContext(Dispatchers.Default) {
+            withTimeout(5_000) { viewModel.isDetailLoading.first { !it } }
+        }
+        advanceUntilIdle() // Preserve scheduled recommendation/card work and publish derived install state.
+    }
+
     private fun viewModel(
         client: HttpClient,
         dispatcher: CoroutineDispatcher,
@@ -2147,6 +2800,8 @@ class ModelViewModelRecommendationTest {
         recommendationService: ModelRecommendationService = recommendationService(dispatcher),
         calibrationSource: CalibrationSource = NoCalibrationSource,
         downloadCoordinator: DownloadCoordinator = observingDownloadCoordinator(ObservingDownloadTaskStore()),
+        readInstalledVariants: suspend (String) -> ArtifactManifest? = downloadManager::validatedArtifacts,
+        settingsRepository: SettingsRepository = FakeSettingsRepository(),
     ): ModelViewModel {
         return ModelViewModel(
             api = huggingFaceApi(client),
@@ -2156,9 +2811,11 @@ class ModelViewModelRecommendationTest {
             storagePathProvider = storagePathProvider,
             deviceCapabilities = DeviceCapabilities(),
             recommendationService = recommendationService,
-            settingsRepository = FakeSettingsRepository(),
+            settingsRepository = settingsRepository,
             calibrationSource = calibrationSource,
             downloadCoordinator = downloadCoordinator,
+            readInstalledVariants = readInstalledVariants,
+            modelCardPreparationDispatcher = dispatcher,
         )
     }
 }
@@ -2199,7 +2856,16 @@ private class ObservingDownloadTaskStore : DownloadTaskStore {
         batchId: String,
         intent: DownloadUserIntent,
         nowEpochMs: Long,
-    ): Boolean = snapshots.value.any { it.batchId == batchId }
+    ): Boolean {
+        if (snapshots.value.none { it.batchId == batchId }) return false
+        snapshots.value = snapshots.value.map { batch ->
+            if (batch.batchId != batchId) batch else batch.copy(
+                userIntent = intent,
+                artifacts = batch.artifacts.map { it.copy(userIntent = intent) },
+            )
+        }
+        return true
+    }
     override suspend fun setPlatformTaskId(
         artifactId: String,
         platformTaskId: String?,
@@ -2318,21 +2984,19 @@ private fun MockRequestHandleScope.respondJson(value: String) = respond(
     headers = headersOf(HttpHeaders.ContentType, "application/json"),
 )
 
-private fun MockRequestHandleScope.respondPage(value: String, link: String? = null) = respond(
-    content = value,
-    status = HttpStatusCode.OK,
-    headers = if (link == null) headersOf(HttpHeaders.ContentType, "application/json")
-        else headersOf(HttpHeaders.Link, link),
-)
+private fun MockRequestHandleScope.respondPage(value: String) = respondJson(value)
 
 private fun searchResponse(query: String, repositoryId: String): String =
     """{"models":[{"_id":"$repositoryId","id":"$repositoryId","private":false}],"modelsCount":1,"q":"$query"}"""
 
-private fun listResponse(repositoryId: String): String =
-    """{"models":[{"id":"$repositoryId","private":false}],"numItemsPerPage":1,"numTotalItems":1,"pageIndex":0}"""
-
-private fun pageResponse(vararg repositoryIds: String): String =
-    repositoryIds.joinToString(prefix = "[", postfix = "]") { id -> """{"id":"$id","private":false}""" }
+private fun pageResponse(
+    vararg repositoryIds: String,
+    pageIndex: Int = 0,
+    totalCount: Int = repositoryIds.size,
+): String {
+    val rows = repositoryIds.joinToString(prefix = "[", postfix = "]") { id -> """{"id":"$id","private":false}""" }
+    return """{"models":$rows,"pageIndex":$pageIndex,"numItemsPerPage":30,"numTotalItems":$totalCount}"""
+}
 
 private fun writeVerifiedBundle(
     storage: StoragePathProvider,
@@ -2391,10 +3055,45 @@ private fun huggingFaceApi(client: HttpClient): HuggingFaceApi {
         override val listRecommendationModels = ListRecommendationModelsUseCase(repository)
         override val searchModels = SearchModelsUseCase(repository)
         override val getModelDetail = GetModelDetailUseCase(repository)
+        override val getModelCard = com.debanshu777.caraml.sdk.discovery.huggingface.usecase.GetModelCardUseCase(repository)
         override val getRecommendationModelDetail = GetRecommendationModelDetailUseCase(repository)
         override val getModelFileTree = GetModelFileTreeUseCase(repository)
         override val getModelConfig = GetModelConfigUseCase(repository)
     }
+}
+
+private fun retainedInstallationClient(
+    dispatcher: CoroutineDispatcher,
+    onRequest: () -> Unit = {},
+): HttpClient {
+    val engine = object : MockEngine(MockEngineConfig().apply {
+        reuseHandlers = true
+        addHandler { request ->
+            onRequest()
+            when {
+                request.url.encodedPath.contains("/raw/") -> respond("# Retained model card")
+                request.url.encodedPath.contains("/tree/") -> respondJson(
+                    """[{"type":"file","path":"model-Q4_K_M.gguf","size":100,"lfs":{"oid":"${"b".repeat(64)}","size":100}}]""",
+                )
+                else -> {
+                    val id = request.url.encodedPath.substringAfter("/api/models/")
+                    respondJson("""{"id":"$id","modelId":"$id","sha":"${"a".repeat(40)}"}""")
+                }
+            }
+        }
+    }) { override val dispatcher: CoroutineDispatcher = dispatcher }
+    return HttpClient(engine)
+}
+
+private fun installedVariantManifest(artifact: DownloadArtifactIdentity): ArtifactManifest {
+    val bundleId = requireNotNull(artifactBundleId(listOf(artifact)))
+    val location = immutableArtifactStorageLocation(artifact, bundleId)
+    return requireNotNull(ArtifactManifest.create(listOf(requireNotNull(ArtifactManifestEntry.create(
+        logicalRole = "model", identity = artifact, byteCount = artifact.expectedBytes,
+        contentSha256 = requireNotNull(artifact.remoteObjectId).removePrefix("sha256:"),
+        bundleId = bundleId, localRelativePath = location.localRelativePath,
+        layoutRelativePath = location.layoutRelativePath,
+    )))))
 }
 
 private fun exactDetailClient(
@@ -2636,23 +3335,13 @@ private class FakeStoragePathProvider(
     override fun isModelFileReadable(path: String): Boolean = realFileAccess && File(path).isFile && File(path).canRead()
     override fun isDirectoryReadable(path: String): Boolean = realFileAccess && File(path).isDirectory && File(path).canRead()
     override fun getFileSize(path: String): Long = if (realFileAccess) File(path).length() else 0L
-    override fun renameFile(from: String, to: String): Boolean = false
     override fun deleteDownloadedModelContent(modelId: String, localPath: String): Boolean = false
 }
 
 private class FakeLocalModelDao(
-    private val filenames: List<String> = emptyList(),
     private val mainModels: List<LocalModelEntity> = emptyList(),
 ) : LocalModelDao {
     val updatedStatuses = mutableMapOf<String, String>()
-    var filenameQueryCount: Int = 0
-        private set
-    override suspend fun getFilenamesByModelId(modelId: String): List<String> {
-        filenameQueryCount += 1
-        return filenames
-    }
-    override suspend fun deleteByModelIdAndFilename(modelId: String, filename: String) = Unit
-    override suspend fun deleteAllForModelId(modelId: String) = Unit
     override suspend fun insert(entity: LocalModelEntity) = Unit
     override fun getAllDownloadedFiles(): Flow<List<LocalModelEntity>> = flowOf(emptyList())
     override fun getDownloadedFilesByType(modelType: String): Flow<List<LocalModelEntity>> = flowOf(emptyList())
@@ -2662,7 +3351,6 @@ private class FakeLocalModelDao(
         updatedStatuses[modelId] = status
     }
     override suspend fun getMainModels(): List<LocalModelEntity> = mainModels
-    override suspend fun updateArch(modelId: String, arch: String) = Unit
     override suspend fun demoteMmprojFilesFromMain() = Unit
 }
 

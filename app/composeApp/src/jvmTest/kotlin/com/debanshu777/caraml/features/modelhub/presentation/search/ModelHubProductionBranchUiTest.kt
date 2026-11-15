@@ -2,12 +2,13 @@
 
 package com.debanshu777.caraml.features.modelhub.presentation.search
 
+import com.debanshu777.caraml.core.data.settings.RecentlyViewedModel
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -49,7 +50,7 @@ import com.debanshu777.caraml.core.theme.CaraMLTheme
 import com.debanshu777.caraml.core.theme.ThemePreferences
 import com.debanshu777.caraml.core.ui.components.AuroraBackdrop
 import com.debanshu777.caraml.core.drawer.LocalNavigationMenuAction
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubContextStrip
+import com.debanshu777.caraml.features.modelhub.presentation.downloaded.DownloadsScreen
 import com.debanshu777.caraml.core.data.settings.SettingsRepository
 import com.debanshu777.caraml.core.platform.DeviceCapabilities
 import com.debanshu777.caraml.core.platform.DeviceSnapshot
@@ -87,6 +88,7 @@ import com.debanshu777.caraml.sdk.discovery.huggingface.HuggingFaceApi
 import com.debanshu777.caraml.sdk.discovery.huggingface.api.RemoteHuggingFaceApiService
 import com.debanshu777.caraml.core.download.transfer.DownloadManager
 import com.debanshu777.caraml.core.download.transfer.StoragePathProvider
+import com.debanshu777.caraml.sdk.discovery.huggingface.model.ModelDetailResponse
 import com.debanshu777.caraml.sdk.discovery.huggingface.model.ModelSort
 import com.debanshu777.caraml.sdk.discovery.huggingface.model.ParameterRange
 import com.debanshu777.caraml.sdk.discovery.huggingface.repository.HuggingFaceRepository
@@ -153,9 +155,25 @@ class ModelHubProductionBranchUiTest {
 
             gate.complete(Unit)
             waitUntil { environment.modelViewModel.results.value.models.isNotEmpty() }
-            onNodeWithText("1 model loaded").assertIsDisplayed()
+            onNodeWithText("GGUF · 1 matching model · 1 loaded").assertIsDisplayed()
         } finally {
             gate.complete(Unit)
+            environment.close()
+        }
+    }
+
+    @Test
+    fun catalogMatchCountIsDistinctFromDeduplicatedLoadedRows() = runComposeUiTest {
+        val environment = TestModelHubEnvironment(duplicateCatalogRow = true)
+        try {
+            setSearchContent(environment.modelViewModel)
+            waitUntil { environment.modelViewModel.results.value.models.size == 1 }
+            onNodeWithText("GGUF · 2 matching models · 1 loaded").assertIsDisplayed()
+            runOnIdle {
+                assertEquals(2, environment.modelViewModel.results.value.totalCount)
+                assertEquals(1, environment.modelViewModel.results.value.models.size)
+            }
+        } finally {
             environment.close()
         }
     }
@@ -169,8 +187,8 @@ class ModelHubProductionBranchUiTest {
                 environment.listRequests.size == 1 &&
                     environment.modelViewModel.results.value.models.singleOrNull()?.id == "org/browse-result"
             }
-            onNodeWithText("browse-result").performScrollTo().assertIsDisplayed()
-            onNodeWithText("1 model loaded").assertIsDisplayed()
+            onNodeWithText("browse-result", substring = true).performScrollTo().assertIsDisplayed()
+            onNodeWithText("GGUF · 1 matching model · 1 loaded").assertIsDisplayed()
 
             runOnIdle { environment.modelViewModel.updateSearchQuery("draft only") }
             runOnIdle { assertEquals(1, environment.listRequests.size) }
@@ -185,24 +203,25 @@ class ModelHubProductionBranchUiTest {
             val environment = TestModelHubEnvironment()
             try {
                 environment.modelViewModel.loadModels()
-                waitUntil { environment.modelViewModel.listResponse.value != null }
+                waitUntil { environment.modelViewModel.results.value.models.singleOrNull()?.id == "org/browse-result" }
                 environment.modelViewModel.updateSearchQuery("server")
                 environment.modelViewModel.performSearch()
-                waitUntil { environment.modelViewModel.searchResponse.value != null }
+                waitUntil { environment.modelViewModel.results.value.models.singleOrNull()?.id == "org/search-result" }
 
                 setSearchContent(environment.modelViewModel)
 
                 val command = onNodeWithTag("model-command").fetchSemanticsNode().boundsInRoot
                 val results = onNodeWithTag("model-primary-results").fetchSemanticsNode().boundsInRoot
                 assertTrue(command.bottom <= results.bottom)
-                onNodeWithText("search-result").performScrollTo().assertIsDisplayed()
+                onNodeWithText("search-result", substring = true).performScrollTo().assertIsDisplayed()
 
                 onNode(hasImeAction(ImeAction.Search)).performTextReplacement("")
                 onNode(hasImeAction(ImeAction.Search)).performImeAction()
 
-                runOnIdle { assertNull(environment.modelViewModel.searchResponse.value) }
-                onNodeWithText("browse-result").performScrollTo().assertIsDisplayed()
-                onNodeWithText("1 model loaded").assertIsDisplayed()
+                waitUntil { environment.modelViewModel.results.value.models.singleOrNull()?.id == "org/browse-result" }
+                runOnIdle { assertNull(environment.modelViewModel.results.value.key?.committedSearch) }
+                onNodeWithText("browse-result", substring = true).performScrollTo().assertIsDisplayed()
+                onNodeWithText("GGUF · 1 matching model · 1 loaded").assertIsDisplayed()
             } finally {
                 environment.close()
             }
@@ -221,9 +240,9 @@ class ModelHubProductionBranchUiTest {
                 runOnIdle {
                     assertEquals(
                         "Please enter a search query",
-                        environment.modelViewModel.searchError.value,
+                        environment.modelViewModel.results.value.inputError,
                     )
-                    assertNull(environment.modelViewModel.searchResponse.value)
+                    assertNull(environment.modelViewModel.results.value.key?.committedSearch)
                 }
                 onNodeWithText("Please enter a search query").assertIsDisplayed()
                 onNodeWithText("No models match “   ”.").assertDoesNotExist()
@@ -233,48 +252,42 @@ class ModelHubProductionBranchUiTest {
         }
 
     @Test
-    fun inlineFiltersApplyExactParamsWithOneReloadAndUpdatedRows() = runComposeUiTest {
+    fun panelAppliesFormatWithOneReloadAndUpdatesEffectiveCount() = runComposeUiTest {
         val environment = TestModelHubEnvironment()
         try {
-            environment.modelViewModel.loadModels()
-            waitUntil {
-                environment.listRequests.size == 1 &&
-                    environment.modelViewModel.listResponse.value != null
-            }
             setSearchContent(environment.modelViewModel)
-            onNodeWithText("browse-result").performScrollTo().assertIsDisplayed()
-
-            onNodeWithContentDescription("Sort and filter models").performClick()
-            onNodeWithContentDescription("Parameters").performScrollTo().performClick()
-            onNodeWithText("Up to 12B").performClick()
-            onNodeWithText("Sort & more options").performScrollTo().performClick()
-            onNodeWithContentDescription("Minimum").performScrollTo().performClick()
-            onNodeWithText("3B").performClick()
-            onNodeWithContentDescription("Sort", useUnmergedTree = true).performScrollTo().performClick()
-            onNodeWithText("Most liked").performClick()
+            waitUntil { environment.listRequests.size == 1 }
+            onNodeWithTag("model-sort-filter-button").assert(
+                SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "3 filter groups"),
+            ).performClick()
+            onNodeWithText("ONNX").performScrollTo().performClick()
             runOnIdle { assertEquals(1, environment.listRequests.size) }
-            onNodeWithText("Apply filters").performScrollTo().performClick()
+            onNodeWithText("View models").performClick()
 
-            waitUntil {
-                environment.listRequests.size == 2 &&
-                    environment.modelViewModel.listResponse.value
-                        ?.models
-                        .orEmpty()
-                        .filterNotNull()
-                        .singleOrNull()
-                        ?.id == "org/filtered-result"
-            }
-            runOnIdle {
-                assertEquals(
-                    listOf(
-                        RecordedListRequest("trendingScore", "min:0,max:6B"),
-                        RecordedListRequest("likes", "min:3B,max:12B"),
-                    ),
-                    environment.listRequests,
-                )
-            }
-            onNodeWithText("filtered-result").performScrollTo().assertIsDisplayed()
-            onNodeWithText("browse-result").assertDoesNotExist()
+            waitUntil { environment.listRequests.size == 2 }
+            onNodeWithTag("model-sort-filter-button").assert(
+                SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "2 filter groups"),
+            )
+            runOnIdle { assertEquals("onnx", environment.modelViewModel.languageModelFormat.value) }
+        } finally {
+            environment.close()
+        }
+    }
+
+    @Test
+    fun recentHistoryStaysHiddenAfterQueryIsCleared() = runComposeUiTest {
+        val environment = TestModelHubEnvironment(
+            recent = listOf(ModelDetailResponse(id = "org/recent-model").recentlyViewed(ModelHubBrowseMode.LanguageModels)),
+        )
+        try {
+            setSearchContent(environment.modelViewModel)
+            onNodeWithText("Recently viewed").assertIsDisplayed()
+            onNode(hasImeAction(ImeAction.Search)).performClick()
+            onNodeWithText("Recently viewed").assertIsDisplayed()
+            onNode(hasImeAction(ImeAction.Search)).performTextReplacement("example")
+            onNodeWithText("Recently viewed").assertDoesNotExist()
+            onNodeWithContentDescription("Clear model search").performClick()
+            onNodeWithText("Recently viewed").assertDoesNotExist()
         } finally {
             environment.close()
         }
@@ -293,7 +306,7 @@ class ModelHubProductionBranchUiTest {
 
             onNodeWithText("2 filters active").assertDoesNotExist()
             onNodeWithText("Reset filters").assertDoesNotExist()
-            onNodeWithText("stable-diffusion-v-1-4-original")
+            onNodeWithText("stable-diffusion-v-1-4-original", substring = true)
                 .performScrollTo()
                 .assertIsDisplayed()
 
@@ -302,7 +315,7 @@ class ModelHubProductionBranchUiTest {
             }
             onNodeWithText("2 filters active").assertDoesNotExist()
             onNodeWithText("Reset filters").assertDoesNotExist()
-            onNodeWithText("Wan_2.1_ComfyUI_repackaged")
+            onNodeWithText("Wan_2.1_ComfyUI_repackaged", substring = true)
                 .performScrollTo()
                 .assertIsDisplayed()
         } finally {
@@ -321,7 +334,7 @@ class ModelHubProductionBranchUiTest {
             val results = onNodeWithTag("model-primary-results").fetchSemanticsNode().boundsInRoot
             assertTrue(command.bottom <= results.bottom)
             onNode(hasImeAction(ImeAction.Search)).performTextReplacement("CompVis")
-            onNodeWithText("stable-diffusion-v-1-4-original")
+            onNodeWithText("stable-diffusion-v-1-4-original", substring = true)
                 .performScrollTo()
                 .assertIsDisplayed()
             onNodeWithText("stable-diffusion-v-1-5").assertDoesNotExist()
@@ -341,147 +354,154 @@ class ModelHubProductionBranchUiTest {
             val results = onNodeWithTag("model-primary-results").fetchSemanticsNode().boundsInRoot
             assertTrue(command.bottom <= results.bottom)
             onNode(hasImeAction(ImeAction.Search)).performTextReplacement("calcuis")
-            onNodeWithText("wan-1.3b-gguf").performScrollTo().assertIsDisplayed()
-            onNodeWithText("Wan_2.1_ComfyUI_repackaged").assertDoesNotExist()
+            onNodeWithText("wan-1.3b-gguf", substring = true).performScrollTo().assertIsDisplayed()
+            onNodeWithText("Wan_2.1_ComfyUI_repackaged", substring = true).assertDoesNotExist()
         } finally {
             environment.close()
         }
     }
 
     @Test
-    fun libraryCommandPrecedesContextAndFiltersPresentedRowsLocally() = runComposeUiTest {
-        val dao = TestLocalModelDao(
-            listOf(
-                localModel(1, "org/alpha-model", "alpha.gguf"),
-                localModel(2, "org/beta-model", "beta.gguf"),
-            ),
-        )
-        val storage = TestStoragePathProvider()
-        val viewModel = DownloadedModelsViewModel(LocalModelRepository(dao), storage)
-        setContent {
-            DensityOne {
-                MaterialTheme {
-                    Box(Modifier.requiredSize(width = 360.dp, height = 760.dp)) {
-                        DownloadedTabContent(
-                            viewModel = viewModel,
-                            onSelectModelAndGoBack = {},
-                            onNavigateToDetails = { _, _ -> },
-                            snackbarHostState = SnackbarHostState(),
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
-                }
-            }
-        }
-
-        val command = onNodeWithTag("model-command").fetchSemanticsNode().boundsInRoot
-        val results = onNodeWithTag("model-primary-results").fetchSemanticsNode().boundsInRoot
-        assertTrue(command.bottom <= results.bottom)
-        onNode(hasImeAction(ImeAction.Search)).performTextReplacement("alpha")
-        onNodeWithContentDescription("Open model org/alpha-model").performScrollTo().assertIsDisplayed()
-        onNodeWithContentDescription("Open model org/beta-model").assertDoesNotExist()
-    }
-
-    @Test
-    fun libraryFilteringKeepsSelectedIdentityVisible() = runComposeUiTest {
-        val alpha = localModel(1, "org/alpha-model", "alpha.gguf")
-        val dao = TestLocalModelDao(
-            listOf(
-                alpha,
-                localModel(2, "org/beta-model", "beta.gguf"),
-            ),
-        )
-        val viewModel = DownloadedModelsViewModel(
-            LocalModelRepository(dao),
-            TestStoragePathProvider(),
-        )
-        setContent {
-            DensityOne {
-                MaterialTheme {
-                    Box(Modifier.requiredSize(width = 360.dp, height = 760.dp)) {
-                        DownloadedTabContent(
-                            viewModel = viewModel,
-                            onSelectModelAndGoBack = {},
-                            onNavigateToDetails = { _, _ -> },
-                            snackbarHostState = SnackbarHostState(),
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
-                }
-            }
-        }
-
-        onNodeWithContentDescription("Open model org/alpha-model")
-            .performScrollTo()
-            .performSemanticsAction(SemanticsActions.OnLongClick)
-        onNodeWithText("Delete (1)").assertIsDisplayed()
-
-        onNode(hasImeAction(ImeAction.Search)).performTextReplacement("beta")
-
-        onNodeWithContentDescription("Selected org/alpha-model, tap to deselect").performScrollTo().assertIsDisplayed()
-        onNodeWithContentDescription("Not selected org/beta-model, tap to select").performScrollTo().assertIsDisplayed()
-        onNodeWithContentDescription("Selected org/alpha-model, tap to deselect")
-            .assertIsDisplayed()
-        onNodeWithText("Delete (1)").assertIsDisplayed()
-        runOnIdle { assertEquals(setOf(alpha.id), viewModel.selectedIds.value) }
-    }
-
-    @Test
-    fun libraryShowsReadinessPerRowWithoutFilterChips() =
-        runComposeUiTest {
-            val ready = localModel(
-                id = 1,
-                modelId = "org/ready-model",
-                filename = "ready.gguf",
-                componentStatus = LocalModelEntity.STATUS_READY,
+    fun downloadsSearchFiltersPresentedRowsLocally() = runComposeUiTest {
+        val environment = TestModelHubEnvironment()
+        try {
+            val dao = TestLocalModelDao(
+                listOf(
+                    localModel(1, "org/alpha-model", "alpha.gguf"),
+                    localModel(2, "org/beta-model", "beta.gguf"),
+                ),
             )
-            val partial = localModel(
-                id = 2,
-                modelId = "org/partial-model",
-                filename = "partial.gguf",
-                componentStatus = LocalModelEntity.STATUS_PARTIAL,
-            )
-            val viewModel = DownloadedModelsViewModel(
-                LocalModelRepository(TestLocalModelDao(listOf(ready, partial))),
-                TestStoragePathProvider(),
-            )
+            val storage = TestStoragePathProvider()
+            val viewModel = DownloadedModelsViewModel(LocalModelRepository(dao), storage)
             setContent {
                 DensityOne {
-                    CaraMLTheme(ThemePreferences()) {
-                        CompositionLocalProvider(LocalNavigationMenuAction provides {}) {
-                            AuroraBackdrop {
-                                Box(Modifier.requiredSize(width = 360.dp, height = 760.dp).testTag("visual-root")) {
-                                    ModelHubScreenLayout(
-                                        selectedTabIndex = 1,
-                                        onTabSelected = {},
-                                        sharedContext = {
-                                            ModelHubContextStrip(testStorageInfo(), null, null)
-                                        },
-                                        discoverContent = {},
-                                        libraryContent = {
-                                            DownloadedTabContent(
-                                                viewModel = viewModel,
-                                                onSelectModelAndGoBack = {},
-                                                onNavigateToDetails = { _, _ -> },
-                                                snackbarHostState = SnackbarHostState(),
-                                                modifier = Modifier.fillMaxSize(),
-                                            )
-                                        },
-                                        modifier = Modifier.fillMaxSize(),
-                                    )
-                                }
-                            }
+                    MaterialTheme {
+                        Box(Modifier.requiredSize(width = 360.dp, height = 760.dp)) {
+                            DownloadsScreen(
+                                modelViewModel = environment.modelViewModel,
+                                downloadedModelsViewModel = viewModel,
+                                onBack = {},
+                                onSelectModelAndGoBack = {},
+                                onNavigateToDetails = { _, _ -> },
+                                modifier = Modifier.fillMaxSize(),
+                            )
                         }
                     }
                 }
             }
 
-            onNodeWithContentDescription("Open model org/ready-model").performScrollTo().assertIsDisplayed()
-            onNodeWithContentDescription("Open model org/partial-model").performScrollTo().assertIsDisplayed()
-            onNode(hasText("All") and isSelectable()).assertDoesNotExist()
-            onNode(hasText("Ready") and isSelectable()).assertDoesNotExist()
-            onNode(hasText("Needs setup") and isSelectable()).assertDoesNotExist()
-            saveModelHubEvidence("library-compact.png")
+            val command = onNodeWithTag("model-command").fetchSemanticsNode().boundsInRoot
+            val results = onNodeWithTag("model-primary-results").fetchSemanticsNode().boundsInRoot
+            assertTrue(command.bottom <= results.bottom)
+            onNode(hasImeAction(ImeAction.Search)).performTextReplacement("alpha")
+            onNodeWithContentDescription("Open model org/alpha-model").performScrollTo().assertIsDisplayed()
+            onNodeWithContentDescription("Open model org/beta-model").assertDoesNotExist()
+        } finally {
+            environment.close()
+        }
+    }
+
+    @Test
+    fun downloadsFilteringKeepsSelectedIdentityVisible() = runComposeUiTest {
+        val environment = TestModelHubEnvironment()
+        try {
+            val alpha = localModel(1, "org/alpha-model", "alpha.gguf")
+            val dao = TestLocalModelDao(
+                listOf(
+                    alpha,
+                    localModel(2, "org/beta-model", "beta.gguf"),
+                ),
+            )
+            val viewModel = DownloadedModelsViewModel(
+                LocalModelRepository(dao),
+                TestStoragePathProvider(),
+            )
+            setContent {
+                DensityOne {
+                    MaterialTheme {
+                        Box(Modifier.requiredSize(width = 360.dp, height = 760.dp)) {
+                            DownloadsScreen(
+                                modelViewModel = environment.modelViewModel,
+                                downloadedModelsViewModel = viewModel,
+                                onBack = {},
+                                onSelectModelAndGoBack = {},
+                                onNavigateToDetails = { _, _ -> },
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    }
+                }
+            }
+
+            onNodeWithContentDescription("Open model org/alpha-model")
+                .performScrollTo()
+                .performSemanticsAction(SemanticsActions.OnLongClick)
+            onNodeWithText("Delete (1)").assertIsDisplayed()
+
+            onNode(hasImeAction(ImeAction.Search)).performTextReplacement("beta")
+
+            onNodeWithContentDescription("Selected org/alpha-model, tap to deselect").performScrollTo().assertIsDisplayed()
+            onNodeWithContentDescription("Not selected org/beta-model, tap to select").performScrollTo().assertIsDisplayed()
+            onNodeWithContentDescription("Selected org/alpha-model, tap to deselect")
+                .assertIsDisplayed()
+            onNodeWithText("Delete (1)").assertIsDisplayed()
+            runOnIdle { assertEquals(setOf(alpha.id), viewModel.selectedIds.value) }
+        } finally {
+            environment.close()
+        }
+    }
+
+    @Test
+    fun downloadsShowsReadinessPerRowWithoutFilterChips() =
+        runComposeUiTest {
+            val environment = TestModelHubEnvironment()
+            try {
+                val ready = localModel(
+                    id = 1,
+                    modelId = "org/ready-model",
+                    filename = "ready.gguf",
+                    componentStatus = LocalModelEntity.STATUS_READY,
+                )
+                val partial = localModel(
+                    id = 2,
+                    modelId = "org/partial-model",
+                    filename = "partial.gguf",
+                    componentStatus = LocalModelEntity.STATUS_PARTIAL,
+                )
+                val viewModel = DownloadedModelsViewModel(
+                    LocalModelRepository(TestLocalModelDao(listOf(ready, partial))),
+                    TestStoragePathProvider(),
+                )
+                setContent {
+                    DensityOne {
+                        CaraMLTheme(ThemePreferences()) {
+                            CompositionLocalProvider(LocalNavigationMenuAction provides {}) {
+                                AuroraBackdrop {
+                                    Box(Modifier.requiredSize(width = 360.dp, height = 760.dp).testTag("visual-root")) {
+                                        DownloadsScreen(
+                                            modelViewModel = environment.modelViewModel,
+                                            downloadedModelsViewModel = viewModel,
+                                            onBack = {},
+                                            onSelectModelAndGoBack = {},
+                                            onNavigateToDetails = { _, _ -> },
+                                            modifier = Modifier.fillMaxSize(),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                onNodeWithContentDescription("Open model org/ready-model").performScrollTo().assertIsDisplayed()
+                onNodeWithContentDescription("Open model org/partial-model").performScrollTo().assertIsDisplayed()
+                onNode(hasText("All") and isSelectable()).assertDoesNotExist()
+                onNode(hasText("Ready") and isSelectable()).assertDoesNotExist()
+                onNode(hasText("Needs setup") and isSelectable()).assertDoesNotExist()
+                saveModelHubEvidence("library-compact.png")
+            } finally {
+                environment.close()
+            }
         }
 
     @Test
@@ -529,7 +549,7 @@ class ModelHubProductionBranchUiTest {
                     Box(Modifier.requiredSize(width = 360.dp, height = 760.dp)) {
                         SearchTabContent(
                             viewModel = viewModel,
-                            onNavigateToDetails = { _, _ -> },
+                            onNavigateToDetails = { _, _, _ -> },
                             onRecommendationInfoClick = {},
                             modifier = Modifier.fillMaxSize(),
                         )
@@ -580,6 +600,8 @@ private data class RecordedListRequest(
 
 private class TestModelHubEnvironment(
     private val firstPageGate: CompletableDeferred<Unit>? = null,
+    private val duplicateCatalogRow: Boolean = false,
+    private val recent: List<RecentlyViewedModel> = emptyList(),
 ) : AutoCloseable {
     val listRequests = mutableListOf<RecordedListRequest>()
 
@@ -587,7 +609,7 @@ private class TestModelHubEnvironment(
         MockEngine { request ->
             firstPageGate?.await()
             val body = if (request.url.parameters["search"] == "server") {
-                """[{"id":"org/search-result","private":false}]"""
+                """{"models":[{"id":"org/search-result","private":false}],"numItemsPerPage":30,"numTotalItems":1,"pageIndex":0}"""
             } else {
                 val recorded = RecordedListRequest(
                     sort = request.url.parameters["sort"],
@@ -601,7 +623,9 @@ private class TestModelHubEnvironment(
                 } else {
                     "org/browse-result"
                 }
-                """[{"id":"$repositoryId","private":false}]"""
+                val row = """{"id":"$repositoryId","private":false}"""
+                val rows = if (duplicateCatalogRow) "$row,$row" else row
+                """{"models":[$rows],"numItemsPerPage":30,"numTotalItems":${if (duplicateCatalogRow) 2 else 1},"pageIndex":0}"""
             }
             respond(
                 content = body,
@@ -621,7 +645,7 @@ private class TestModelHubEnvironment(
         storagePathProvider = storage,
         deviceCapabilities = DeviceCapabilities(),
         recommendationService = testRecommendationService(),
-        settingsRepository = TestSettingsRepository(),
+        settingsRepository = TestSettingsRepository(recent),
         downloadCoordinator = modelHubTestDownloadCoordinator(),
     )
 
@@ -640,6 +664,7 @@ private fun huggingFaceApi(client: HttpClient): HuggingFaceApi {
         override val listRecommendationModels = ListRecommendationModelsUseCase(repository)
         override val searchModels = SearchModelsUseCase(repository)
         override val getModelDetail = GetModelDetailUseCase(repository)
+        override val getModelCard = com.debanshu777.caraml.sdk.discovery.huggingface.usecase.GetModelCardUseCase(repository)
         override val getRecommendationModelDetail = GetRecommendationModelDetailUseCase(repository)
         override val getModelFileTree = GetModelFileTreeUseCase(repository)
         override val getModelConfig = GetModelConfigUseCase(repository)
@@ -725,7 +750,8 @@ private fun testSnapshot(): DeviceSnapshot = DeviceSnapshot(
     budgetConfidence = ResourcePoolConfidence(host = Confidence.HIGH, storage = Confidence.HIGH),
 )
 
-private class TestSettingsRepository : SettingsRepository {
+private class TestSettingsRepository(private val recent: List<RecentlyViewedModel>) : SettingsRepository {
+    override fun getRecentlyViewedModels(): Flow<List<RecentlyViewedModel>> = flowOf(recent)
     private val settings = MutableStateFlow(AppSettings())
 
     override fun getSettings(): Flow<AppSettings> = settings
@@ -739,14 +765,6 @@ private class TestSettingsRepository : SettingsRepository {
 private class TestLocalModelDao(initial: List<LocalModelEntity>) : LocalModelDao {
     private val models = MutableStateFlow(initial)
 
-    override suspend fun getFilenamesByModelId(modelId: String): List<String> =
-        models.value.filter { it.modelId == modelId }.map { it.filename }
-    override suspend fun deleteByModelIdAndFilename(modelId: String, filename: String) {
-        models.value = models.value.filterNot { it.modelId == modelId && it.filename == filename }
-    }
-    override suspend fun deleteAllForModelId(modelId: String) {
-        models.value = models.value.filterNot { it.modelId == modelId }
-    }
     override suspend fun insert(entity: LocalModelEntity) {
         models.value = models.value.filterNot { it.id == entity.id } + entity
     }
@@ -758,7 +776,6 @@ private class TestLocalModelDao(initial: List<LocalModelEntity>) : LocalModelDao
         flowOf(models.value.sumOf { it.sizeBytes ?: 0L })
     override suspend fun updateComponentStatus(modelId: String, status: String) = Unit
     override suspend fun getMainModels(): List<LocalModelEntity> = emptyList()
-    override suspend fun updateArch(modelId: String, arch: String) = Unit
     override suspend fun demoteMmprojFilesFromMain() = Unit
 }
 
@@ -777,7 +794,6 @@ private class TestStoragePathProvider : StoragePathProvider {
     override fun isModelFileReadable(path: String): Boolean = false
     override fun isDirectoryReadable(path: String): Boolean = false
     override fun getFileSize(path: String): Long = 0L
-    override fun renameFile(from: String, to: String): Boolean = false
     override fun deleteDownloadedModelContent(modelId: String, localPath: String): Boolean = true
 }
 

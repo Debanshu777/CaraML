@@ -80,6 +80,7 @@ tasks.register("verifyProject") {
         ":nativeEngine:verifyNativeSubmodulePins",
         ":nativeEngine:testCpuRepackEquivalence",
         ":nativeEngine:testJniUtf8Desktop",
+        ":nativeEngine:testLlamaRunnerNativeDesktop",
         ":nativeEngine:testDiffusionRunnerNativeDesktop",
         ":nativeEngine:testArtifactFsAndroidRootDesktop",
     )

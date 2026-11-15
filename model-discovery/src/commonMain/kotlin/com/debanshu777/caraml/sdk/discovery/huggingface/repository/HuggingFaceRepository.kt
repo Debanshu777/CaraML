@@ -1,5 +1,7 @@
 package com.debanshu777.caraml.sdk.discovery.huggingface.repository
 
+import com.debanshu777.caraml.sdk.discovery.huggingface.model.ModelCardDocument
+
 import com.debanshu777.caraml.sdk.discovery.huggingface.api.RemoteHuggingFaceApiService
 import com.debanshu777.caraml.sdk.discovery.huggingface.api.ListModelsParams
 import com.debanshu777.caraml.sdk.discovery.huggingface.api.ModelPage
@@ -30,6 +32,9 @@ class HuggingFaceRepository(
 
     suspend fun getModelDetail(modelId: String): Result<ModelDetailResponse, DataError.Network> =
         api.getModelDetail(modelId)
+
+    suspend fun getModelCard(modelId: String, revision: String): Result<ModelCardDocument, DataError.Network> =
+        api.getModelCard(modelId, revision)
 
     suspend fun getRecommendationModelDetail(
         modelId: String,

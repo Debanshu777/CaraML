@@ -2,6 +2,10 @@
 
 package com.debanshu777.caraml.features.modelhub.presentation.search
 
+import com.debanshu777.caraml.features.modelhub.presentation.components.ModelRow
+import com.debanshu777.caraml.features.modelhub.presentation.components.discoveryModelRow
+import com.debanshu777.caraml.features.modelhub.presentation.components.downloadedModelRow
+
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.requiredSize
@@ -38,16 +42,13 @@ import com.debanshu777.caraml.core.drawer.DrawerController
 import com.debanshu777.caraml.core.drawer.LocalDrawerController
 import com.debanshu777.caraml.core.drawer.LocalNavigationMenuAction
 import com.debanshu777.caraml.core.storage.localmodel.LocalModelEntity
-import com.debanshu777.caraml.features.modelhub.presentation.downloaded.components.DownloadedListItem
 import com.debanshu777.caraml.features.modelhub.presentation.details.ModelDetailStatus
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubContextStrip
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubDeviceInfo
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubInlineFilterPanel
+import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubFilterPanel
 import com.debanshu777.caraml.sdk.discovery.huggingface.model.ModelSort
 import com.debanshu777.caraml.sdk.discovery.huggingface.model.ParameterRange
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubStateKind
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.ModelHubStateView
-import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchListItem
 import com.debanshu777.caraml.features.modelhub.presentation.search.components.SearchBar
 import com.debanshu777.caraml.sdk.discovery.huggingface.model.ListModelsResponse
 import kotlin.test.Test
@@ -105,11 +106,12 @@ class ModelHubBrandInteractionTest {
                     Box(Modifier.requiredSize(320.dp, viewportHeight)) {
                         ModelHubScreenLayout(
                             selectedTabIndex = 0, onTabSelected = {},
-                            sharedContext = { ModelHubContextStrip(StorageInfoUiState(), null, null, onOpenDevice = {}) },
-                            discoverContent = {
+                            sharedContext = {},
+                            discoverContent = { chrome ->
                                 ModelHubTabLayout(
                                     command = { SearchBar(query, { query = it }, {}) },
-                                    context = {}, toolbar = {}, summary = {},
+                                    header = chrome.header, context = chrome.context, snackbarHostState = chrome.snackbarHostState,
+                                    toolbar = {}, summary = {},
                                     results = { item(key = "error") {
                                         ModelHubStateView(ModelHubStateKind.Error, "Local models are still available.",
                                             actionLabel = "Retry", onAction = { retries++ })
@@ -183,18 +185,19 @@ class ModelHubBrandInteractionTest {
         setContent {
             MaterialTheme {
                 Box(Modifier.width(320.dp)) {
-                    ModelHubInlineFilterPanel(ModelHubBrowseMode.LanguageModels,
+                    ModelHubFilterPanel(ModelHubBrowseMode.LanguageModels,
                         ModelOrdering.Server(ModelSort.TRENDING), ParameterRange.ZERO, ParameterRange.SIX_B,
-                    ) { mode, _, _, _ -> applied = applied + mode }
+                    ) { mode, _, _, _, _ -> applied = applied + mode }
                 }
             }
         }
-        onNodeWithContentDescription("Task").performClick()
         onNodeWithText("Image").performClick()
         runOnIdle { assertEquals(emptyList(), applied) }
-        onNodeWithText("Apply filters").performClick()
+        onNodeWithText("View models").performClick()
         runOnIdle { assertEquals(listOf(ModelHubBrowseMode.DiffusionImage), applied) }
         onNodeWithText("Reset").performClick()
+        runOnIdle { assertEquals(listOf(ModelHubBrowseMode.DiffusionImage), applied) }
+        onNodeWithText("View models").performClick()
         runOnIdle { assertEquals(listOf(ModelHubBrowseMode.DiffusionImage, ModelHubBrowseMode.LanguageModels), applied) }
     }
 
@@ -224,9 +227,11 @@ class ModelHubBrandInteractionTest {
         setContent {
             MaterialTheme {
                 Box(Modifier.width(320.dp)) {
-                    SearchListItem(
-                        model = ListModelsResponse.Model(id = "sample/Tiny-brain", author = "sample"),
-                        onClick = { opens++ },
+                    ModelRow(
+                        state = discoveryModelRow(
+                            model = ListModelsResponse.Model(id = "sample/Tiny-brain", author = "sample"),
+                        ),
+                        onOpenModel = { opens++ },
                     )
                 }
             }
@@ -243,21 +248,23 @@ class ModelHubBrandInteractionTest {
         setContent {
             MaterialTheme {
                 Box(Modifier.width(320.dp)) {
-                    DownloadedListItem(
-                        model = LocalModelEntity(
-                            id = 1,
-                            modelId = "sample/Image-model",
-                            filename = "model.safetensors",
-                            localPath = "/preview/model.safetensors",
-                            sizeBytes = 2_000_000_000L,
-                            downloadedAt = 0L,
-                            author = "sample",
-                            libraryName = null,
-                            pipelineTag = "text-to-image",
-                            componentStatus = LocalModelEntity.STATUS_PARTIAL,
+                    ModelRow(
+                        state = downloadedModelRow(
+                            model = LocalModelEntity(
+                                id = 1,
+                                modelId = "sample/Image-model",
+                                filename = "model.safetensors",
+                                localPath = "/preview/model.safetensors",
+                                sizeBytes = 2_000_000_000L,
+                                downloadedAt = 0L,
+                                author = "sample",
+                                libraryName = null,
+                                pipelineTag = "text-to-image",
+                                componentStatus = LocalModelEntity.STATUS_PARTIAL,
+                            ),
+                            selectionMode = false,
+                            isSelected = false,
                         ),
-                        selectionMode = false,
-                        isSelected = false,
                         onOpenModel = { opens++ },
                         onToggleSelect = {},
                         onLongPress = {},
@@ -298,10 +305,10 @@ class ModelHubBrandInteractionTest {
     fun unavailableDeviceDataIsShownAsUnknown() = runComposeUiTest {
         setContent {
             MaterialTheme {
-                ModelHubContextStrip(StorageInfoUiState(), null, null)
+                ModelHubDeviceInfo(StorageInfoUiState(hasSampled = true), null, onBack = {}, onRefresh = {}, onOpenProfile = null)
             }
         }
-        onNodeWithText("Device details aren't available yet. Fit estimates may need more information.")
+        onNodeWithText("We couldn't read your device details. You can still explore models; fit estimates may need more information.")
             .assertIsDisplayed()
         onNodeWithText("0 B").assertDoesNotExist()
     }

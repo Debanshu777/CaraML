@@ -7,20 +7,25 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.*
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.LinearGradientShader
 import androidx.compose.ui.graphics.Shader
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.offset
 import com.debanshu777.caraml.core.theme.AppTheme
+import com.debanshu777.caraml.core.ui.motion.modelTransitionContent
 import com.debanshu777.caraml.core.ui.layout.AppContentKind
 import com.debanshu777.caraml.core.ui.layout.ResponsiveContentPane
 import dev.chrisbanes.haze.HazeInput
@@ -42,14 +47,20 @@ fun FrostedPageScaffold(
     header: (@Composable () -> Unit)?,
     safeInsets: WindowInsets = WindowInsets.safeDrawing,
     scrollableHeader: Boolean = false,
+    // A quieter brand wash and opaque chrome keep dense reading pages legible.
+    mutedBackdrop: Boolean = false,
     bottomBar: (@Composable () -> Unit)? = null,
     snackbarHost: @Composable () -> Unit = {},
+    // Drawn outside the scrolling haze source, without changing the page's top inset.
+    stickyHeader: (@Composable () -> Unit)? = null,
     content: @Composable (PaddingValues) -> Unit,
 ) {
     val haze = rememberHazeState()
     val surface = AppTheme.colors.background
     val effects = AppTheme.effects
-    val glass = AppTheme.softEffects
+    var headerHeight by remember { mutableIntStateOf(0) }
+    val density = LocalDensity.current
+    val glass = AppTheme.softEffects && !mutedBackdrop
     val style = HazeBlurStyle {
         backgroundColor(surface)
         blurRadius(effects.chromeBlur)
@@ -61,6 +72,7 @@ fun FrostedPageScaffold(
     // Blank chrome must also own its hit area; blurred rows behind it are not tap targets.
     val chromeHitArea = Modifier.pointerInput(Unit) { detectTapGestures { } }
     BoxWithConstraints(modifier.fillMaxSize().imePadding()) {
+        val viewportHeight = maxHeight
         val maxHeaderHeight = maxHeight * .45f
         val headerOverflow = scrollableHeader && maxHeight < 480.dp
         Scaffold(
@@ -68,8 +80,9 @@ fun FrostedPageScaffold(
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             snackbarHost = snackbarHost,
             topBar = {
-                Box(Modifier.fillMaxWidth().then(chrome).then(chromeHitArea).testTag("page-sticky-chrome")) {
-                    if (glass) ChromeBackdrop(haze, style, fadeAtBottom = true)
+                Box(Modifier.fillMaxWidth().onSizeChanged { headerHeight = it.height }.then(chrome).then(chromeHitArea).testTag("page-sticky-chrome")) {
+                    if (glass) ChromeBackdrop(haze, style, fadeAtBottom = true,
+                        fade = if (stickyHeader == null) effects.chromeFade else 0.dp)
                     if (header == null) {
                         // Scrolling page controls still need glass behind the status bar.
                         Spacer(Modifier.fillMaxWidth().windowInsetsTopHeight(safeInsets))
@@ -103,15 +116,50 @@ fun FrostedPageScaffold(
             val topFade = if (header == null && glass && topChrome > 0.dp) effects.chromeFade else 0.dp
             val bottomChrome = padding.calculateBottomPadding()
             val bottomFade = if (glass && bottomChrome > 0.dp) effects.chromeFade else 0.dp
-            AuroraBackdrop(Modifier.then(if (glass) Modifier.hazeSource(haze) else Modifier)) {
+            val paneContent: @Composable BoxScope.() -> Unit = {
                 ResponsiveContentPane(kind = kind,
-                    modifier = Modifier.consumeWindowInsets(padding)
+                    edgeToEdgeEnd = kind == AppContentKind.ModelHub || kind == AppContentKind.Details,
+                    edgeToEdgeStart = kind == AppContentKind.Details,
+                    modifier = Modifier.modelTransitionContent().consumeWindowInsets(padding)
                         .windowInsetsPadding(safeInsets.only(WindowInsetsSides.Horizontal)),
                 ) {
                     content(PaddingValues(
                         top = topChrome + topFade,
                         bottom = bottomChrome + bottomFade,
                     ))
+                }
+            }
+            val backdropModifier = Modifier.then(if (glass) Modifier.hazeSource(haze) else Modifier)
+            AuroraBackdrop(
+                backdropModifier,
+                washStrength = if (!mutedBackdrop) 1f else if (surface.luminance() < .5f) .65f else .3f,
+            ) {
+                if (mutedBackdrop) {
+                    // Blend the wash into opaque chrome. This fades only the background,
+                    // so labels and avatars remain fully opaque as they approach the header.
+                    val top = (topChrome / viewportHeight).coerceIn(0f, 1f)
+                    val bottom = (1f - bottomChrome / viewportHeight).coerceIn(top, 1f)
+                    val fade = 48.dp / viewportHeight
+                    Spacer(Modifier.matchParentSize().background(Brush.verticalGradient(
+                        0f to surface,
+                        top to surface,
+                        (top + fade).coerceAtMost(bottom) to Color.Transparent,
+                        (bottom - fade).coerceAtLeast(top + fade).coerceAtMost(bottom) to Color.Transparent,
+                        bottom to surface,
+                        1f to surface,
+                    )))
+                }
+                paneContent()
+            }
+        }
+        if (stickyHeader != null) {
+            Box(Modifier.fillMaxWidth().padding(top = with(density) { headerHeight.toDp() })) {
+                Box(Modifier.fillMaxWidth().then(chrome).then(chromeHitArea).testTag("page-sticky-tabs")) {
+                    if (glass) ChromeBackdrop(haze, style, fadeAtBottom = true)
+                    ResponsiveContentPane(kind = kind, fillMaxHeight = false,
+                        edgeToEdgeStart = true, edgeToEdgeEnd = true,
+                        modifier = Modifier.windowInsetsPadding(safeInsets.only(WindowInsetsSides.Horizontal)),
+                    ) { stickyHeader() }
                 }
             }
         }
@@ -121,8 +169,8 @@ fun FrostedPageScaffold(
 /** One continuous backdrop extends beyond the controls; only its opacity fades.
  * The extension takes no layout space and does not intercept touches on visible rows. */
 @Composable
-private fun BoxScope.ChromeBackdrop(haze: HazeState, style: HazeBlurStyle, fadeAtBottom: Boolean) {
-    val fadePx = with(LocalDensity.current) { AppTheme.effects.chromeFade.toPx() }
+private fun BoxScope.ChromeBackdrop(haze: HazeState, style: HazeBlurStyle, fadeAtBottom: Boolean, fade: Dp = AppTheme.effects.chromeFade) {
+    val fadePx = with(LocalDensity.current) { fade.toPx() }
     val edgeMask = remember(fadePx, fadeAtBottom) {
         object : ShaderBrush() {
             override fun createShader(size: Size): Shader {
@@ -149,7 +197,7 @@ private fun BoxScope.ChromeBackdrop(haze: HazeState, style: HazeBlurStyle, fadeA
             }
             .hazeBlur(
                 input = HazeInput.Sources(haze, retention = HazeSourceRetention.ClearWhenUnavailable),
-                style = style.then { mask(edgeMask) },
+                style = if (fadePx > 0f) style.then { mask(edgeMask) } else style,
             ),
     )
 }

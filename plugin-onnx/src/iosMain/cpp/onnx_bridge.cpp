@@ -1,6 +1,7 @@
 #include "onnx_bridge.h"
 #include "onnxruntime_cxx_api.h"
 #include <algorithm>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -162,10 +163,17 @@ extern "C" int caraml_onnx_step(CaramlOnnx* h, const int64_t* tokens, int count,
         auto& logits = h->previous[h->logits_index];
         const auto info = logits.GetTensorTypeAndShapeInfo();
         const auto shape = info.GetShape();
-        if (info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT || shape.empty() || shape.back() <= 0)
+        if (info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT || shape.empty())
             throw std::runtime_error("Only float32 logits are supported");
+        const auto vocabulary = shape.back();
+        const auto elements = info.GetElementCount();
+        if (vocabulary <= 0 || vocabulary > std::numeric_limits<int>::max() ||
+            elements < static_cast<size_t>(vocabulary))
+            throw std::runtime_error("ONNX logits are empty or have an invalid vocabulary size");
+        const auto* data = logits.GetTensorData<float>();
+        if (data == nullptr) throw std::runtime_error("ONNX logits have no tensor data");
         h->vocab = static_cast<int>(shape.back());
-        h->scores = logits.GetTensorData<float>() + info.GetElementCount() - h->vocab;
+        h->scores = data + (elements - static_cast<size_t>(h->vocab));
         return 1;
     } catch (const std::exception& failure) { h->error = failure.what(); h->scores = nullptr; h->vocab = 0; return 0; }
 }

@@ -1,4 +1,4 @@
-# diffusionRunner
+# diffusion native bridge
 
 Kotlin Multiplatform wrapper for **stable-diffusion.cpp** image and video generation. Provides a common `DiffusionRunner` interface backed by platform-specific JNI (Android/JVM) and cinterop (iOS) bindings.
 
@@ -10,25 +10,28 @@ Mirrors the `:plugin-llama` module structure. Native library is built and linked
 
 | Platform | Binding | Native Library |
 |----------|---------|---------------|
-| Android | JNI via `System.loadLibrary("diffusion_runner")` | `diffusion_runner.so` |
-| JVM Desktop | JNI via `System.loadLibrary("diffusion_runner")` | `libdiffusion_runner.dylib/.so` |
+| Android | JNI via `System.loadLibrary("diffusion_runner")` | `libdiffusion_runner.so` |
+| JVM Desktop | JNI via shared `DesktopNativeLibraries` resolver | `libdiffusion_runner.dylib/.so` or `diffusion_runner.dll` |
 | iOS arm64 | Kotlin/Native cinterop | `libllama_runner_merged.a` (includes diffusion) |
 | iOS Simulator | Kotlin/Native cinterop | `libllama_runner_merged.a` (sim build) |
 
 ---
+
+JVM loading resolves `caraml.native.lib.dir` first, then `compose.application.resources.dir`. A configured directory is authoritative; a missing library fails instead of falling back to a build-tree library. With neither directory configured, the resolver uses `System.loadLibrary`. Package the JNI runtime and its shared backends together; the CaraML desktop host uses `:nativeEngine:stageDesktopRuntime`.
 
 ## Package Structure
 
 ```
 com.debanshu777.caraml.sdk.plugin.diffusion.bridge/
 ├── DiffusionRunner.kt               # expect class — core interface
-├── DiffusionRunner.android.kt       # actual: JNI wrapper
-├── DiffusionRunner.jvm.kt           # actual: JNI wrapper
+├── DiffusionRunner.java.kt          # shared Android/JVM actual in src/javaMain
+├── DiffusionNativeRuntime.android.kt # Android library loader
+├── DiffusionNativeRuntime.jvm.kt    # Desktop library loader and diagnostics
 ├── DiffusionRunner.ios.kt           # actual: cinterop wrapper
 ├── DiffusionModelConfig.kt          # Model paths + device config
 ├── ImageGenParams.kt                # txt2img parameters
 ├── VideoGenParams.kt                # txt2vid parameters
-├── DiffusionState.kt                # IDLE / LOADING / GENERATING / ERROR
+├── DiffusionState.kt                # Optional host lifecycle/result state types
 ├── SampleMethod.kt                  # Sampling algorithm enum
 ├── DiffusionRunnerExt.kt            # Extension functions
 └── DiffusionRunnerValidation.kt     # Config validation
@@ -45,39 +48,49 @@ src/iosMain/cpp/
 └── diffusion_runner.def             # Kotlin cinterop definition
 ```
 
+Both `androidMain` and `jvmMain` explicitly include `src/javaMain/kotlin`.
+Source sharing preserves the runner class package, JNI method signatures and
+consumer keep rules; only native-library loading remains target-specific.
+
 ---
 
 ## Usage
 
+Prefer the owned `DiffusionEngineProvider` session API described in the
+[module README](../README.md). Direct bridge callers must serialize native
+ownership and run blocking calls off the UI thread:
+
 ```kotlin
-val config = DiffusionModelConfig(
-    modelPath = "/path/to/model.safetensors",
-    vaePath = "/path/to/vae.safetensors",       // optional
-    clipPath = "/path/to/clip_l.safetensors",   // optional
-    t5xxlPath = "/path/to/t5xxl.safetensors",   // optional
-    threads = 4,
-    gpuLayers = -1,   // -1 = all layers on GPU
-)
-
-val runner = DiffusionRunner()
-runner.load(config)
-
-// Text-to-image
-val imageBytes: ByteArray = runner.txt2img(
-    ImageGenParams(
-        prompt = "a cat sitting on a mountain at sunset",
-        negativePrompt = "blurry, low quality",
-        width = 512,
-        height = 512,
-        steps = 20,
-        cfgScale = 7.0f,
-        seed = -1L,              // -1 = random
-        sampleMethod = SampleMethod.EULER_A,
-    )
-)
-
-runner.unload()
+withContext(Dispatchers.Default) {
+    val runner = DiffusionRunner()
+    try {
+        runner.initialize(nativeLibraryDirectory)
+        check(runner.loadModel(DiffusionModelConfig(
+            modelPath = "/path/to/model.safetensors",
+            vaePath = "/path/to/vae.safetensors",      // optional companion
+            clipLPath = "/path/to/clip_l.safetensors", // optional companion
+            nThreads = 4,
+            runtimeBackend = DiffusionRuntimeBackend.CPU,
+        )))
+        val imageBytes = checkNotNull(runner.txt2Img(ImageGenParams(
+            prompt = "a cat sitting on a mountain at sunset",
+            width = 512, height = 512, steps = 20,
+            sampleMethod = SampleMethod.EULER_A,
+        )))
+        println(imageBytes.size)
+    } finally {
+        runner.release()
+    }
+}
 ```
+
+`cancelGeneration()` signals cancellation. Await the active operation before
+releasing its native handle. `generateImage()` and `generateVideo()` provide
+suspending wrappers; check `supportsVideoGeneration()` before using video.
+
+`DiffusionState` defines optional host state types: `Idle`, `LoadingModel`,
+`ModelReady`, `Generating`, `Complete(imageData)`, and `Error(message)`. The runner
+does not emit these states automatically.
 
 ---
 
@@ -86,11 +99,12 @@ runner.unload()
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `modelPath` | String | Path to main model file (safetensors/gguf) |
-| `vaePath` | String? | VAE file path (optional, overrides embedded VAE) |
-| `clipPath` | String? | CLIP-L encoder path |
-| `t5xxlPath` | String? | T5-XXL encoder path (FLUX models) |
-| `threads` | Int | CPU threads |
-| `gpuLayers` | Int | Layers on GPU (-1 = all, 0 = CPU only) |
+| `vaePath` | String | VAE file path; empty when unused |
+| `clipLPath`, `clipGPath` | String | Optional CLIP encoder paths |
+| `t5xxlPath`, `llmPath` | String | Optional text encoder paths |
+| `nThreads` | Int | CPU thread count; `-1` selects the native default |
+| `runtimeBackend` | DiffusionRuntimeBackend | Explicit CPU, Metal, Vulkan or CUDA placement |
+| `offloadToCpu`, `keepClipOnCpu`, `keepVaeOnCpu` | Boolean | Parameter residency and component placement controls |
 
 ---
 
@@ -100,9 +114,9 @@ runner.unload()
 |-----------|------|-------------|
 | `prompt` | String | Positive prompt |
 | `negativePrompt` | String | Negative prompt |
-| `width` | Int | Output width (multiple of 64) |
-| `height` | Int | Output height (multiple of 64) |
-| `steps` | Int | Denoising steps (10–50 typical) |
+| `width` | Int | Output width within validated dimension/pixel limits; multiple of 8 |
+| `height` | Int | Output height within validated dimension/pixel limits; multiple of 8 |
+| `steps` | Int | Denoising steps within the runner's validated limit |
 | `cfgScale` | Float | Classifier-free guidance scale |
 | `seed` | Long | RNG seed (-1 = random) |
 | `sampleMethod` | SampleMethod | Euler, Euler-A, DPM++2M, LCM, etc. |
@@ -112,25 +126,21 @@ runner.unload()
 ## SampleMethod
 
 ```kotlin
-enum class SampleMethod {
-    EULER_A,
-    EULER,
-    HEUN,
-    DPM2,
-    DPMPP2S_A,
-    DPMPP2M,
-    DPMPP2Mv2,
-    IPNDM,
-    IPNDM_V,
-    LCM
-}
+val sampler = SampleMethod.fromName("euler_a")
+val nativeValue = sampler.value
 ```
+
+Sampler IDs are explicit native ABI values, not ordinal positions. The current
+choices are defined by `SampleMethod.kt`; unknown names fall back to `EULER_A`.
 
 ---
 
 ## GGML Sharing with llama.cpp
 
-Both `llama_runner` and `diffusion_runner` link against the **same** GGML build (from `libraries/llama.cpp`). `GgmlUnified.cmake` in `:nativeEngine` builds GGML once, guarded by `if (NOT TARGET ggml)`, and both libraries link it. This avoids duplicate symbol errors and reduces binary size.
+Both runners use the pinned GGML source from `libraries/llama.cpp`.
+`GgmlUnified.cmake` configures that source first and lets stable-diffusion.cpp
+reuse its targets instead of configuring a second GGML tree. Static/shared
+linkage and runtime backend libraries depend on the selected platform profile.
 
 ---
 
@@ -150,6 +160,7 @@ The merged iOS `.a` includes both `llama_runner` and `diffusion_runner` objects.
 
 ## Recent Changes
 
+- Android/JVM now share `DiffusionRunner.java.kt` and use small platform library loaders. JNI signatures and handle ownership are unchanged; usage and configuration examples reflect the current bridge API.
 - Bridge implementation moved from `diffusionRunner` into `plugin-diffusion`; platform package names and native symbols remain compatible. Consumer rules preserve JNI descriptor classes.
 
 

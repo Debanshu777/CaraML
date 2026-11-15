@@ -47,6 +47,7 @@ import com.debanshu777.caraml.core.download.ArtifactTransfer
 import com.debanshu777.caraml.core.download.BatchFinalizer
 import com.debanshu777.caraml.core.download.BundlePublisher
 import com.debanshu777.caraml.core.download.DownloadBatchRunner
+import com.debanshu777.caraml.core.download.DownloadLifecycleCoordinator
 import com.debanshu777.caraml.core.download.DownloadCoordinator
 import com.debanshu777.caraml.core.download.DownloadCheckpointCleaner
 import com.debanshu777.caraml.core.download.DownloadManagerCheckpointCleaner
@@ -92,6 +93,7 @@ import com.debanshu777.caraml.core.download.transfer.ArtifactManifest
 import org.koin.core.module.Module
 import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module
+import org.koin.dsl.onClose
 import kotlin.time.Clock
 
 expect val platformHuggingFaceModule: Module
@@ -116,7 +118,7 @@ val appModule = module {
         InstalledModelRemovalService(
             catalog = get(),
             storagePathProvider = get(),
-            manifestSource = downloadManager::validatedBundle,
+            manifestSource = downloadManager::installedBundleForRemoval,
             publicationCoordinator = get(),
         )
     }
@@ -129,11 +131,12 @@ val appModule = module {
     single { DownloadBatchRunner(get(), get(), get(), { Clock.System.now().toEpochMilliseconds() }) }
     single { DownloadRuntimeScope(CoroutineScope(SupervisorJob() + Dispatchers.Default)) }
     single { PublishedDownloadReconciler(get(), get(), get(), get(), get(), get(), { Clock.System.now().toEpochMilliseconds() }, get()) }
-    single { DownloadReconciler(get(), get(), { Clock.System.now().toEpochMilliseconds() }, get()) }
+    single { DownloadLifecycleCoordinator() }
+    single { DownloadReconciler(get(), get(), { Clock.System.now().toEpochMilliseconds() }, get(), get(), get()) }
     single { DownloadRuntime(get(), get(), get<DownloadRuntimeScope>().scope) }
-    single { DownloadCoordinator(get(), get(), get(), get(), { Clock.System.now().toEpochMilliseconds() }) }
+    single { DownloadCoordinator(get(), get(), get(), get(), { Clock.System.now().toEpochMilliseconds() }, get()) }
 
-    single { createHuggingFaceApi() }
+    single { createHuggingFaceApi() } onClose { it?.close() }
 
     single { createPreferencesDataStore() }
     single<SettingsRepository> { DefaultSettingsRepository(get()) }
@@ -322,6 +325,8 @@ val appModule = module {
         DownloadedModelsViewModel(
             localModelRepository = get(),
             storagePathProvider = get(),
+            componentRepository = get(),
+            downloadManager = get(),
             removalService = get(),
         )
     }

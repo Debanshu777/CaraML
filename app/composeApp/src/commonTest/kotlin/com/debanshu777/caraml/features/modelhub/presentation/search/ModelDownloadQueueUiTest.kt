@@ -33,6 +33,27 @@ import kotlin.test.assertEquals
 
 class ModelDownloadQueueUiTest {
     @Test
+    fun cancelledArtifactsWithPendingCleanupRemainVisibleAndOfferOnlyCancellationRetry() = runComposeUiTest {
+        val (original, artifact) = queueSnapshot(DownloadBatchState.CANCELLED, DownloadArtifactState.CANCELLED)
+        val batch = original.copy(userIntent = DownloadUserIntent.CANCEL, cancellationCleanupPending = true)
+        val cancellations = mutableListOf<Pair<String, String>>()
+        setContent {
+            MaterialTheme {
+                ModelDownloadQueueEntry(listOf(batch), onClick = {}, onPause = { _, _ -> },
+                    onResume = { _, _ -> }, onRetry = { _, _ -> },
+                    onCancel = { batchId, artifactId -> cancellations += batchId to artifactId })
+            }
+        }
+        onNodeWithTag("model-download-queue-entry").assertIsDisplayed()
+        onNodeWithText("Cancellation cleanup pending").assertIsDisplayed()
+        listOf("Pause download", "Resume download", "Retry download").forEach {
+            onNodeWithText(it).assertDoesNotExist()
+        }
+        onNodeWithText("Retry cancellation").performClick()
+        runOnIdle { assertEquals(listOf(batch.batchId to artifact.artifactId), cancellations) }
+    }
+
+    @Test
     fun activeQueueAppearsInlineBelowFiltersAndOpensQueue() = runComposeUiTest {
         val (batch, _) = queueSnapshot(DownloadBatchState.RUNNING, DownloadArtifactState.RUNNING)
         var opens = 0
@@ -43,8 +64,8 @@ class ModelDownloadQueueUiTest {
                         selectedTabIndex = 0,
                         onTabSelected = {},
                         sharedContext = { Text("Device profile") },
-                        discoverContent = {
-                            ModelHubTabLayout(context = {}, toolbar = {}, results = {}, summary = {
+                        discoverContent = { chrome ->
+                            ModelHubTabLayout(header = chrome.header, context = chrome.context, snackbarHostState = chrome.snackbarHostState, toolbar = {}, results = {}, summary = {
                                 Text("Filters")
                                 ModelDownloadQueueEntry(listOf(batch), onClick = { opens++ })
                             })

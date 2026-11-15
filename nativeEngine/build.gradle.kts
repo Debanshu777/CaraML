@@ -608,14 +608,43 @@ val artifactFsDesktopLibrary = layout.file(providers.provider {
 
 val verifyArtifactFsDesktopLibrary by tasks.registering {
     group = "verification"
-    description = "Build and assert the configuration-independent artifact_fs desktop runtime path"
+    description = "Build and assert the selected profile’s artifact_fs desktop runtime"
     dependsOn(compileArtifactFsDesktop)
     inputs.file(artifactFsDesktopLibrary)
     doLast {
         val runtime = artifactFsDesktopLibrary.get().asFile
         if (!runtime.isFile || runtime.length() <= 0L) {
-            throw GradleException("artifact_fs desktop runtime was not produced at the stable packaging path")
+            throw GradleException("artifact_fs desktop runtime was not produced at the selected profile path")
         }
+    }
+}
+
+// Test consumers resolve the selected profile's actual library instead of rebuilding its path.
+val desktopArtifactFs by configurations.creating {
+    isCanBeConsumed = true
+    isCanBeResolved = false
+}
+artifacts.add(desktopArtifactFs.name, artifactFsDesktopLibrary) {
+    builtBy(verifyArtifactFsDesktopLibrary)
+}
+
+// A stable consumer path whose contents always come from the selected profile.
+val desktopRuntimeDirectory = layout.buildDirectory.dir("desktop-runtime/$desktopPlatform")
+tasks.register<Exec>("stageDesktopRuntime") {
+    group = "llama-native"
+    description = "Stage relocatable desktop JNI libraries and their shared backends"
+    dependsOn(compileLlamaRunnerDesktop, verifyArtifactFsDesktopLibrary)
+    outputs.dir(desktopRuntimeDirectory)
+    // Engine selection may change while the destination remains the same.
+    outputs.upToDateWhen { false }
+    doFirst {
+        val destination = desktopRuntimeDirectory.get().asFile
+        delete(destination)
+        commandLine(
+            desktopCmakePath.get(), "--install", desktopJniBuildDir.absolutePath,
+            "--config", "Release", "--component", "caraml-runtime",
+            "--prefix", destination.absolutePath,
+        )
     }
 }
 

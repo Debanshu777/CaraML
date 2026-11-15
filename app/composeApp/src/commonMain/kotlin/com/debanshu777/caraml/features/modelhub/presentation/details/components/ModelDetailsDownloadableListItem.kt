@@ -1,34 +1,40 @@
 package com.debanshu777.caraml.features.modelhub.presentation.details.components
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.debanshu777.caraml.core.theme.AppTheme
-import com.debanshu777.caraml.core.ui.components.BrandButton
-import com.debanshu777.caraml.core.ui.components.BrandButtonStyle
 import com.debanshu777.caraml.core.download.DownloadArtifactState
 import com.debanshu777.caraml.core.theme.CaraMLTheme
 import com.debanshu777.caraml.core.theme.ThemePreferences
+import com.debanshu777.caraml.core.ui.icons.AppIcons
 
 @Composable
 fun ModelDetailsDownloadableListItem(
@@ -50,6 +56,8 @@ fun ModelDetailsDownloadableListItem(
     supportingLabel: String? = null,
     downloadActionDescription: String? = null,
     cancellationPending: Boolean = false,
+    variantLabel: String? = null,
+    emphasizeDownload: Boolean = false,
 ) {
     val hasDirectory = filename.contains('/')
     val displayName = filename.substringAfterLast('/')
@@ -76,12 +84,19 @@ fun ModelDetailsDownloadableListItem(
     }
     val formattedSize = sizeBytes?.let(::formatFileSize)
     val detailsContent: @Composable () -> Unit = {
-        ArtifactIdentity(directory = directory, displayName = displayName)
+        if (variantLabel != null) {
+            CompactArtifactIdentity(
+                label = variantLabel, filename = filename,
+                metadata = listOfNotNull(filename.substringAfterLast('.', "").uppercase().takeIf(String::isNotBlank), formattedSize).joinToString(" · "),
+            )
+        } else {
+            ArtifactIdentity(directory = directory, displayName = displayName)
+        }
         supportingLabel?.let { label ->
             Text(
                 text = label,
                 style = AppTheme.typography.labelSmall,
-                color = AppTheme.colors.tertiary
+                color = AppTheme.colors.onSurfaceVariant
             )
         }
     }
@@ -102,6 +117,7 @@ fun ModelDetailsDownloadableListItem(
             showAction = showDownloadAction,
             actionDescription = downloadActionDescription,
             progress = progress,
+            emphasizeDownload = emphasizeDownload,
         )
     }
 
@@ -110,11 +126,16 @@ fun ModelDetailsDownloadableListItem(
             .fillMaxWidth()
             .then(downloadStateSemantics),
     ) {
-        val compact = maxWidth < AppTheme.dimensions.size480 || LocalDensity.current.fontScale >= 1.5f
+        val compact = maxWidth < 240.dp || LocalDensity.current.fontScale >= 1.5f ||
+            isDownloading || cancellationPending || durableState in setOf(
+                DownloadArtifactState.QUEUED, DownloadArtifactState.RUNNING,
+                DownloadArtifactState.PAUSED, DownloadArtifactState.WAITING_FOR_NETWORK,
+                DownloadArtifactState.FAILED_RETRYABLE,
+            )
         val spacing = AppTheme.spacing
         if (compact) {
             Column(
-                modifier = Modifier.padding(vertical = spacing.spacing12),
+                modifier = Modifier.padding(vertical = spacing.spacing8),
                 verticalArrangement = Arrangement.spacedBy(spacing.spacing4),
             ) {
                 detailsContent()
@@ -122,7 +143,7 @@ fun ModelDetailsDownloadableListItem(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    formattedSize?.let {
+                    formattedSize?.takeIf { variantLabel == null }?.let {
                         Text(
                             it,
                             style = AppTheme.typography.labelSmall,
@@ -137,7 +158,7 @@ fun ModelDetailsDownloadableListItem(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = spacing.spacing12),
+                    .padding(vertical = spacing.spacing8),
                 horizontalArrangement = Arrangement.spacedBy(spacing.spacing8),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -146,13 +167,9 @@ fun ModelDetailsDownloadableListItem(
                     verticalArrangement = Arrangement.spacedBy(spacing.spacing4),
                 ) {
                     detailsContent()
-                }
-                formattedSize?.let {
-                    Text(
-                        it,
-                        style = AppTheme.typography.body14,
-                        color = AppTheme.colors.onSurfaceVariant,
-                    )
+                    formattedSize?.takeIf { variantLabel == null }?.let {
+                        Text(it, style = AppTheme.typography.labelSmall, color = AppTheme.colors.onSurfaceVariant)
+                    }
                 }
                 actionContent()
             }
@@ -161,37 +178,41 @@ fun ModelDetailsDownloadableListItem(
 }
 
 @Composable
+private fun CompactArtifactIdentity(label: String, filename: String, metadata: String) {
+    Column(
+        Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            .semantics(mergeDescendants = true) {
+                contentDescription = "Variant $label. File $filename"
+            },
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(label, style = AppTheme.typography.heading16, color = AppTheme.colors.onSurface)
+        Text(metadata, style = AppTheme.typography.labelBase, color = AppTheme.colors.onSurfaceVariant)
+        Text(filename, style = AppTheme.typography.bodySmall, color = AppTheme.colors.onSurface,
+            modifier = Modifier.padding(top = AppTheme.spacing.spacing4))
+    }
+}
+
+@Composable
 private fun ArtifactIdentity(
     directory: String?,
     displayName: String,
 ) {
-    var expanded by rememberSaveable(directory, displayName) { mutableStateOf(false) }
-    var directoryOverflows by rememberSaveable(directory, displayName) { mutableStateOf(false) }
-    var nameOverflows by rememberSaveable(directory, displayName) { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing4)) {
         if (directory != null) {
             Text(
                 text = directory,
                 style = AppTheme.typography.technical12,
                 color = AppTheme.colors.onSurfaceVariant,
-                maxLines = if (expanded) Int.MAX_VALUE else 1,
-                overflow = TextOverflow.Ellipsis,
-                onTextLayout = { if (!expanded) directoryOverflows = it.hasVisualOverflow },
+                overflow = TextOverflow.Ellipsis
             )
         }
         Text(
             text = displayName,
-            style = AppTheme.typography.body17,
+            style = AppTheme.typography.bodySmallMedium,
             color = AppTheme.colors.onSurface,
-            maxLines = if (expanded) Int.MAX_VALUE else 2,
-            overflow = TextOverflow.Ellipsis,
-            onTextLayout = { if (!expanded) nameOverflows = it.hasVisualOverflow },
+            overflow = TextOverflow.Ellipsis
         )
-        if (expanded || directoryOverflows || nameOverflows) {
-            BrandButton(style = BrandButtonStyle.Secondary, onClick = { expanded = !expanded }) {
-                Text(if (expanded) "Show less" else "Show full filename")
-            }
-        }
     }
 }
 

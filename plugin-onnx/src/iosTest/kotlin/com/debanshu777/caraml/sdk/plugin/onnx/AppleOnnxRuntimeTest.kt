@@ -56,14 +56,7 @@ class AppleOnnxRuntimeTest {
     }
 
     @Test fun cpuPrefillCancellationAndReloadOwnTheirNativeResources() = runBlocking {
-        val root = NSTemporaryDirectory() + "onnx-" + NSUUID().UUIDString
-        check(mkdir(root, 448u) == 0)
-        for ((name, encoded) in appleOnnxFixtures) {
-            val bytes = Base64.decode(encoded)
-            val file = checkNotNull(fopen("$root/$name", "wb"))
-            try { bytes.usePinned { check(fwrite(it.addressOf(0), 1u, bytes.size.toULong(), file).toInt() == bytes.size) } }
-            finally { fclose(file) }
-        }
+        val root = createFixtures()
         val runtime = createOnnxTextRuntime()
         try {
             runtime.load("$root/model.onnx", OnnxRuntimeConfig(threads = 1, provider = OnnxExecutionProvider.CPU))
@@ -79,6 +72,37 @@ class AppleOnnxRuntimeTest {
             runtime.unload()
             NSFileManager.defaultManager.removeItemAtPath(root, null)
         }
+    }
+
+    @Test fun emptyLogitsAreRejectedBeforeSamplingAndTheRuntimeCanReload() = runBlocking {
+        val root = createFixtures()
+        val runtime = createOnnxTextRuntime()
+        try {
+            runtime.load("$root/empty-logits.onnx", OnnxRuntimeConfig(threads = 1, provider = OnnxExecutionProvider.CPU))
+            val failure = assertFailsWith<IllegalStateException> {
+                runtime.generate(listOf(OnnxChatMessage("user", "`")), 1).toList()
+            }
+            assertTrue(failure.message.orEmpty().contains("logits"))
+            assertEquals(OnnxStopReason.ERROR, runtime.stopReason)
+            runtime.unload()
+            runtime.load("$root/model.onnx", OnnxRuntimeConfig(threads = 1, provider = OnnxExecutionProvider.CPU))
+            assertEquals("a", runtime.generate(listOf(OnnxChatMessage("user", "`")), 1).toList().single().text)
+        } finally {
+            runtime.unload()
+            NSFileManager.defaultManager.removeItemAtPath(root, null)
+        }
+    }
+
+    private fun createFixtures(): String {
+        val root = NSTemporaryDirectory() + "onnx-" + NSUUID().UUIDString
+        check(mkdir(root, 448u) == 0)
+        for ((name, encoded) in appleOnnxFixtures) {
+            val bytes = Base64.decode(encoded)
+            val file = checkNotNull(fopen("$root/$name", "wb"))
+            try { bytes.usePinned { check(fwrite(it.addressOf(0), 1u, bytes.size.toULong(), file).toInt() == bytes.size) } }
+            finally { fclose(file) }
+        }
+        return root
     }
 
     @Test fun optionalRealModelReferencesMatchOnApple() = runBlocking {

@@ -16,6 +16,8 @@ git clone https://github.com/Debanshu777/CaraML.git
 cd CaraML
 git submodule update --init
 ./gradlew verifyProject
+# Also check relocated runtimes after desktop packaging changes:
+./gradlew :app:desktopApp:nativeRuntimeInstalledImageSmoke
 ```
 
 Use JDK 21 and the native/Android tools in [Build and run](docs/getting-started.md). For portable SDK changes without native engines:

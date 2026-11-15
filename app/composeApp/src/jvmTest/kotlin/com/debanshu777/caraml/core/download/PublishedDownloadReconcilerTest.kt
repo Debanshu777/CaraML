@@ -26,6 +26,9 @@ import com.debanshu777.caraml.core.download.transfer.StoragePathProvider
 import java.io.File
 import java.nio.file.Files
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.flow.first
 import okio.ByteString.Companion.toByteString
@@ -37,6 +40,58 @@ import kotlin.test.assertTrue
 import kotlin.test.assertFailsWith
 
 class PublishedDownloadReconcilerTest {
+    @Test
+    fun publicationProofAllowsUnrelatedEnqueueAndCannotOverrideConcurrentCancellation() = runTest(timeout = 20.seconds) {
+        Fixture().use { f ->
+            val installed = f.prepare(false)
+            val proofEntered = CompletableDeferred<Unit>()
+            val releaseProof = CompletableDeferred<Unit>()
+            val suspendedProof = object : BundlePublisher by f.bundle {
+                override suspend fun current(ownerModelId: String): com.debanshu777.caraml.core.download.transfer.ArtifactManifest? {
+                    proofEntered.complete(Unit)
+                    releaseProof.await()
+                    return f.bundle.current(ownerModelId)
+                }
+            }
+            val scheduled = mutableSetOf<String>()
+            val scheduler = object : PlatformDownloadScheduler by PublishedReconciliationScheduler() {
+                override suspend fun enqueue(batchId: String) { scheduled += batchId }
+                override suspend fun isActive(batchId: String) = batchId in scheduled
+            }
+            val lifecycle = DownloadLifecycleCoordinator()
+            val cleaner = DownloadManagerCheckpointCleaner(f.manager)
+            val coordinator = DownloadCoordinator(f.store, scheduler, DownloadNotificationPermissionController {},
+                cleaner, { 200L }, lifecycle)
+            val recovery = async {
+                DownloadReconciler(f.store, scheduler, { 300L }, f.reconciler(suspendedProof, scheduler),
+                    cleaner, lifecycle).reconcile()
+            }
+            var unrelatedId: String? = null
+            try {
+                proofEntered.await()
+                val identity = DownloadArtifactIdentity.create("other/model", "c".repeat(40),
+                    "new.gguf", "d".repeat(64), 128L)!!
+                val metadata = DownloadMetadataDTO(identity, "model", 128L, null, "gguf", "text-generation")
+                unrelatedId = coordinator.enqueue(DownloadBatchRequest(identity.repositoryId, "text",
+                    listOf(DownloadArtifactRequest(metadata, true)), pendingEvidence(identity), false, "Other model"))
+                assertTrue(unrelatedId in scheduled)
+                assertFalse(recovery.isCompleted)
+                coordinator.cancel(installed.batchId)
+                assertEquals(DownloadBatchState.CANCELLED, f.store.getBatch(installed.batchId)!!.state)
+            } finally {
+                releaseProof.complete(Unit)
+            }
+            recovery.await()
+            val cancelled = f.store.getBatch(installed.batchId)!!
+            assertEquals(DownloadBatchState.CANCELLED, cancelled.state)
+            assertEquals(DownloadUserIntent.CANCEL, cancelled.userIntent)
+            assertFalse(cancelled.cancellationCleanupPending)
+            assertEquals(DownloadBatchState.QUEUED, f.store.getBatch(requireNotNull(unrelatedId))!!.state)
+            assertTrue(File(f.paths.getModelsStorageDirectory(installed.ownerModelId),
+                installed.artifacts.single().request.metadata.destinationRelativePath).exists())
+        }
+    }
+
     @Test
     fun sixtyFourNewerUnpublishedRowsCannotStarveOlderPublicationAcrossPreferenceRestarts() = runTest {
         Fixture().use { f ->
@@ -184,7 +239,7 @@ class PublishedDownloadReconcilerTest {
                         if (stopMarker) f.store.setUserIntent(batch.batchId, DownloadUserIntent.CANCEL, 50L)
                     }
                 }
-                DownloadReconciler(f.store, scheduler, { 100L }, f.reconciler(scheduler = scheduler)).reconcile()
+                DownloadReconciler(f.store, scheduler, { 100L }, f.reconciler(scheduler = scheduler), DownloadCheckpointCleaner {}).reconcile()
                 val current = f.store.getBatch(batch.batchId)!!
                 assertEquals(if (stopMarker) DownloadBatchState.CANCELLED else DownloadBatchState.COMPLETED, current.state)
                 assertEquals(if (stopMarker) DownloadUserIntent.CANCEL else DownloadUserIntent.PAUSE, current.userIntent)
@@ -305,7 +360,7 @@ private class ReconciliationPaths(private val root: File) : StoragePathProvider 
     override fun isModelFileReadable(path: String) = File(path).isFile
     override fun isDirectoryReadable(path: String) = File(path).isDirectory
     override fun getFileSize(path: String) = File(path).length()
-    override fun renameFile(from: String,to: String) = File(from).renameTo(File(to))
+
     override fun deleteDownloadedModelContent(modelId: String,localPath: String) = false
 }
 

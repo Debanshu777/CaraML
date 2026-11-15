@@ -379,7 +379,7 @@ class OnnxResidentReuseTest {
         override fun isModelFileReadable(path: String) = FileSystem.SYSTEM.metadataOrNull(path.toPath())?.isRegularFile == true
         override fun isDirectoryReadable(path: String) = FileSystem.SYSTEM.metadataOrNull(path.toPath())?.isDirectory == true
         override fun getFileSize(path: String) = FileSystem.SYSTEM.metadataOrNull(path.toPath())?.size ?: 0L
-        override fun renameFile(from: String, to: String) = false
+
         override fun deleteDownloadedModelContent(modelId: String, localPath: String) = false
         override fun inspectDownloadedArtifact(modelId: String, localPath: String): StoredArtifactSnapshot? {
             val path = localPath.toPath()

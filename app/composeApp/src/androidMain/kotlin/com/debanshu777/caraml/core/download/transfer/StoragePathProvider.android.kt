@@ -99,9 +99,6 @@ class AndroidStoragePathProvider(private val context: Context) : StoragePathProv
             .filter { it.isFile }.sumOf { it.length() }
     }
 
-    override fun renameFile(from: String, to: String): Boolean =
-        try { File(from).renameTo(File(to)) } catch (_: Exception) { false }
-
     override fun deleteDownloadedModelContent(modelId: String, localPath: String): Boolean =
         try {
             val root = File(getModelsStorageDirectory(modelId)).canonicalFile

@@ -42,6 +42,8 @@ private val config =
                 polymorphic(NavKey::class) {
                     subclass(AppScreen.Home::class, serializer<AppScreen.Home>())
                     subclass(AppScreen.Search::class, serializer<AppScreen.Search>())
+                    subclass(AppScreen.Device::class, serializer<AppScreen.Device>())
+                    subclass(AppScreen.Downloads::class, serializer<AppScreen.Downloads>())
                     subclass(AppScreen.Details::class, serializer<AppScreen.Details>())
                     subclass(AppScreen.Settings::class, serializer<AppScreen.Settings>())
                 }

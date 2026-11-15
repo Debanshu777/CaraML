@@ -8,15 +8,6 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface LocalModelDao {
-    @Query("SELECT filename FROM local_model WHERE model_id = :modelId")
-    suspend fun getFilenamesByModelId(modelId: String): List<String>
-
-    @Query("DELETE FROM local_model WHERE model_id = :modelId AND filename = :filename")
-    suspend fun deleteByModelIdAndFilename(modelId: String, filename: String)
-
-    @Query("DELETE FROM local_model WHERE model_id = :modelId")
-    suspend fun deleteAllForModelId(modelId: String)
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entity: LocalModelEntity)
 
@@ -39,9 +30,6 @@ interface LocalModelDao {
 
     @Query("SELECT * FROM local_model WHERE is_main_model = 1")
     suspend fun getMainModels(): List<LocalModelEntity>
-
-    @Query("UPDATE local_model SET arch = :arch WHERE model_id = :modelId")
-    suspend fun updateArch(modelId: String, arch: String)
 
     @Query("UPDATE local_model SET is_main_model = 0 WHERE is_main_model = 1 AND filename LIKE '%mmproj%'")
     suspend fun demoteMmprojFilesFromMain()

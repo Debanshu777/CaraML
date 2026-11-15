@@ -20,6 +20,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -76,6 +78,8 @@ fun InstallBundleCard(
     onResume: () -> Unit = {},
     onCancel: () -> Unit = {},
     onRetry: () -> Unit = {},
+    contentEndPadding: Dp = 0.dp,
+    showVariantsHeading: Boolean = true,
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -87,12 +91,14 @@ fun InstallBundleCard(
             modelDescription = modelDescription,
             onVariantSelected = onVariantSelected,
             recommendedVariantPath = recommendedVariantPath,
+            contentEndPadding = contentEndPadding,
+            showVariantsHeading = showVariantsHeading,
         )
         InstallBundleActionContent(
             state = state,
             onInstall = onInstall,
             installEnabled = installEnabled,
-            modifier = Modifier.testTag("detail-action"),
+            modifier = Modifier.padding(end = contentEndPadding).testTag("detail-action"),
             durableControl = durableControl,
             onPause = onPause,
             onResume = onResume,
@@ -110,6 +116,8 @@ internal fun InstallBundleSummaryCard(
     onVariantSelected: (path: String) -> Unit,
     modifier: Modifier = Modifier,
     recommendedVariantPath: String? = null,
+    contentEndPadding: Dp = 0.dp,
+    showVariantsHeading: Boolean = true,
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -121,6 +129,8 @@ internal fun InstallBundleSummaryCard(
             modelDescription = modelDescription,
             onVariantSelected = onVariantSelected,
             recommendedVariantPath = recommendedVariantPath,
+            contentEndPadding = contentEndPadding,
+            showVariantsHeading = showVariantsHeading,
         )
     }
 }
@@ -163,26 +173,31 @@ private fun InstallBundleSummaryContent(
     modelDescription: String?,
     onVariantSelected: (path: String) -> Unit,
     recommendedVariantPath: String?,
+    contentEndPadding: Dp,
+    showVariantsHeading: Boolean,
 ) {
     CaraMLSectionHeader(
         title = "Install summary",
+        modifier = Modifier.padding(end = contentEndPadding),
         supportingText = familyLabel?.takeIf { it.isNotBlank() },
     )
     if (!modelDescription.isNullOrBlank()) {
         Text(
             text = modelDescription,
+            modifier = Modifier.padding(end = contentEndPadding),
             style = AppTheme.typography.bodySmall,
             color = AppTheme.colors.onSurfaceVariant,
         )
     }
 
     if (state.variants.isNotEmpty() && !state.variants.all { it.isDownloaded }) {
-        CaraMLSectionHeader(
-            title = "Variants",
-            supportingText = "Select quantization",
+        if (showVariantsHeading) CaraMLSectionHeader(
+            title = "Variants", supportingText = "Select quantization",
+            modifier = Modifier.padding(end = contentEndPadding),
         )
         VariantPickerRow(
             variants = state.variants,
+            contentEndPadding = contentEndPadding,
             selectedVariantPath = state.selectedVariantPath,
             onVariantSelected = onVariantSelected,
             recommendedVariantPath = recommendedVariantPath,

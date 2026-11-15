@@ -8,6 +8,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.tooling.preview.Preview
 import com.debanshu777.caraml.core.theme.AppTheme
 import com.debanshu777.caraml.core.rating.ModelSuitabilityCalculator
@@ -39,6 +41,7 @@ fun VariantPickerRow(
     onVariantSelected: (String) -> Unit,
     modifier: Modifier = Modifier,
     recommendedVariantPath: String? = null,
+    contentEndPadding: Dp = 0.dp,
 ) {
     if (variants.isEmpty()) return
 
@@ -55,7 +58,7 @@ fun VariantPickerRow(
                 variant.isDownloaded -> ({
                     StatusMark(
                         label = "Downloaded",
-                        contentDescription = "Downloaded artifact",
+                        contentDescription = "Exact artifact downloaded",
                         icon = AppIcons.CheckCircle,
                     )
                 })
@@ -77,6 +80,7 @@ fun VariantPickerRow(
             }
             GenericListItem(
                 title = label,
+                contentEndPadding = contentEndPadding,
                 eyebrow = variant.filename,
                 contentDescription = "Artifact ${variant.filename}",
                 selected = isSelected,

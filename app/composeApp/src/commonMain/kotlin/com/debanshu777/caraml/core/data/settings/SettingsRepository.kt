@@ -3,6 +3,7 @@ package com.debanshu777.caraml.core.data.settings
 import com.debanshu777.caraml.core.settings.AppSettings
 import com.debanshu777.caraml.core.recommendation.RecommendationProfile
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 interface SettingsRepository {
     fun getSettings(): Flow<AppSettings>
@@ -11,4 +12,6 @@ interface SettingsRepository {
     suspend fun updateRecommendationProfile(profile: RecommendationProfile)
     suspend fun completeModelProfileOnboarding(profile: RecommendationProfile)
     suspend fun completeRecommendationCalibrationOffer() = Unit
+    fun getRecentlyViewedModels(): Flow<List<RecentlyViewedModel>> = emptyFlow()
+    suspend fun recordRecentlyViewedModel(model: RecentlyViewedModel) = Unit
 }

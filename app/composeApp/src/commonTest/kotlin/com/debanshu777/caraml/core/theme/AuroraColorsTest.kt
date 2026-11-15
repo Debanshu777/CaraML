@@ -23,7 +23,7 @@ class AuroraColorsTest {
 
         val colors = scheme.toAuroraColors(isDark = true, focalSeed = seed)
         assertEquals(seed.copy(alpha = 0.78f), colors.focusPrimary)
-        assertEquals(seed.copy(alpha = 0.40f), colors.primaryGlow)
+        assertEquals(seed.copy(alpha = 0.16f), colors.primaryGlow)
         assertEquals(Color.Black, colors.onFocusPrimary)
         assertEquals(Color(0xFFC7BAFF).copy(alpha = 0.74f), colors.focusSecondary)
         assertEquals(Color(0xFFB7E1C4).copy(alpha = 0.70f), colors.focusTertiary)
@@ -73,9 +73,9 @@ class AuroraColorsTest {
 
         val colors = scheme.toAuroraColors(isDark = true)
 
-        assertEquals(scheme.primary.copy(alpha = 0.40f), colors.primaryGlow)
-        assertEquals(Color(0xFFC7BAFF).copy(alpha = 0.40f), colors.secondaryGlow)
-        assertEquals(Color(0xFFB7E1C4).copy(alpha = 0.32f), colors.tertiaryGlow)
+        assertEquals(scheme.primary.copy(alpha = 0.16f), colors.primaryGlow)
+        assertEquals(Color(0xFFC7BAFF).copy(alpha = 0.16f), colors.secondaryGlow)
+        assertEquals(Color(0xFFB7E1C4).copy(alpha = 0.12f), colors.tertiaryGlow)
         assertEquals(scheme.onSurface.copy(alpha = 0.022f), colors.grainTint)
         assertEquals(Color(0x20000000), colors.edgeVignette)
     }

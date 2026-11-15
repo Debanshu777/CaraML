@@ -56,6 +56,12 @@ actual class DownloadManager actual constructor(
     actual suspend fun validatedArtifacts(modelId: String): ArtifactManifest? =
         readValidatedArtifactManifest(pathProvider, modelId)
 
+    actual suspend fun installedArtifactsForDisplay(modelId: String): ArtifactManifest? =
+        readValidatedArtifactManifest(pathProvider, modelId, verifyContent = false)
+
+    actual suspend fun installedBundleForRemoval(ownerModelId: String): ArtifactManifest? =
+        readArtifactBundleForRemoval(pathProvider, ownerModelId)
+
     actual suspend fun discardCheckpoint(metadata: DownloadMetadataDTO) =
         discardArtifactCheckpoint(pathProvider, metadata)
 

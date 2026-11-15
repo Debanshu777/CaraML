@@ -17,6 +17,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
@@ -137,12 +138,13 @@ internal fun ModelHubDeviceInfo(
             }
             if (profile != null && onOpenProfile != null) {
                 Surface(onClick = onOpenProfile, shape = AppTheme.shapes.large,
-                    color = AppTheme.colors.surfaceContainerLowest,
+                    color = AppTheme.colors.surfaceContainer,
+                    border = if (AppTheme.colors.surface.luminance() < 0.5f) BorderStroke(1.dp, AppTheme.colors.outlineVariant) else null,
                     modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Change profile" },
                 ) {
                     Row(Modifier.padding(AppTheme.spacing.spacing16), verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing12)) {
-                        Icon(AppIcons.Profile, null, tint = AppTheme.colors.primary)
+                        Icon(AppIcons.Profile, null, tint = AppTheme.actionColor)
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing4)) {
                             Text("Your model profile", style = AppTheme.typography.preferenceTitle)
                             Text("${profile.riskTolerance.label()} · ${profile.optimizationPriority.label()}",
@@ -157,7 +159,7 @@ internal fun ModelHubDeviceInfo(
 }
 
 @Composable
-internal fun ModelHubBackHeader(onBack: () -> Unit, contentDescription: String = "Navigate back", label: String = "Models") {
+internal fun ModelHubBackHeader(onBack: () -> Unit, contentDescription: String = "Navigate back", label: String? = "Models") {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing12),
@@ -165,7 +167,7 @@ internal fun ModelHubBackHeader(onBack: () -> Unit, contentDescription: String =
         BrandIconButton(onClick = onBack, modifier = Modifier.size(AppTheme.spacing.spacing48).semantics { this.contentDescription = contentDescription }) {
             Icon(AppIcons.Back, contentDescription = null)
         }
-        Text(label, style = AppTheme.typography.bodyBase, color = AppTheme.colors.onSurface)
+        label?.let { Text(it, style = AppTheme.typography.bodyBase, color = AppTheme.colors.onSurface) }
     }
 }
 
@@ -193,8 +195,15 @@ private fun DeviceStorageCard(info: StorageInfoUiState) {
 
 @Composable
 private fun DevicePanel(emphasized: Boolean = false, content: @Composable () -> Unit) {
+    val dark = AppTheme.colors.surface.luminance() < 0.5f
     Surface(shape = AppTheme.shapes.large,
-        color = if (emphasized) AppTheme.colors.primaryContainer else AppTheme.colors.surfaceContainerLowest,
+        color = when {
+            dark && emphasized -> AppTheme.colors.surfaceContainerHigh
+            dark -> AppTheme.colors.surfaceContainer
+            emphasized -> AppTheme.colors.primaryContainer
+            else -> AppTheme.colors.surfaceContainerLowest
+        },
+        border = if (dark) BorderStroke(1.dp, AppTheme.colors.outlineVariant) else null,
         contentColor = AppTheme.colors.onSurface,
     ) {
         Column(Modifier.fillMaxWidth().padding(AppTheme.spacing.spacing16),
@@ -206,7 +215,7 @@ private fun DevicePanel(emphasized: Boolean = false, content: @Composable () -> 
 private fun DeviceSectionLabel(icon: ImageVector, label: String) {
     Row(verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.spacing8)) {
-        Icon(icon, null, Modifier.size(AppTheme.spacing.spacing16), tint = AppTheme.colors.primary)
+        Icon(icon, null, Modifier.size(AppTheme.spacing.spacing16), tint = AppTheme.actionColor)
         Text(label, style = AppTheme.typography.preferenceTitle, modifier = Modifier.semantics { heading() })
     }
 }

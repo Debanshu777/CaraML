@@ -31,6 +31,12 @@ within its complete local bundle, then stream `generate(messages, maxNewTokens)`
 Generation rebuilds the prompt cache for each conversation, prefills in chunks of
 128 tokens, and reuses native KV tensors during decode. Cancellation terminates
 the active ORT run; unload releases session and cache ownership.
+Decoder output must contain at least one complete float32 vocabulary row, with a
+positive vocabulary size representable by the runtime. Empty or invalid logits
+fail generation before sampling. Java input preparation owns temporary tensors
+through execution and closes them on preparation failures as well as run failures;
+cached output tensors retain their separate result ownership. Dynamic Java KV
+dimensions must resolve to positive head counts and head dimensions during load.
 
 The app defaults to one CPU thread. Measured graph-specific choices use two
 threads where helpful on Pixel 9 (ORT 1.31.0) and iPhone 13 (ORT 1.30.0); the
@@ -115,7 +121,10 @@ separate diagnostic run; provider setup sections alone do not prove node offload
 
 The default JVM suite uses a tiny checked-in generated ONNX graph and covers
 prefill/decode, cancellation, reload, context bounds, UTF-8 streaming, malformed
-graphs and external-data confinement. Optional reference tests require separately
+graphs, empty logits, failed input-preparation cleanup and external-data confinement.
+The simulator suite also rejects the checked-in empty-logits graph and verifies
+that the runtime can unload and load a valid graph afterward.
+Optional reference tests require separately
 downloaded models and reference JSON; default tests do not download model weights.
 Date-bearing Llama reference tests use the date recorded in `chat-reference.json`
 through an internal clock seam; production prompts still use the current date.
@@ -126,6 +135,7 @@ a sparse 3 GiB tensor field without allocating or reading that payload.
 
 ## Recent Changes
 
+- Reject empty or invalid logits before selecting the final vocabulary row on Java and Apple; cover safe failure and reload with a tiny generated graph. Java input tensors now have an ownership scope spanning preparation and execution, with invalid KV-dimension and native tensor cleanup regressions.
 - Made dated Llama reference checks deterministic using the saved prompt date, without changing production dates or regenerating expected outputs.
 - Buffered Java ONNX metadata reads with an 8 KiB cache and sparse seeks; protobuf bounds and external-data path validation remain unchanged.
 - Added opt-in Android load/session and sampled generation trace sections, including lazy ORT initialization; execution settings and validation behavior are unchanged.

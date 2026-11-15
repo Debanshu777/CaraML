@@ -1,8 +1,28 @@
 package com.debanshu777.caraml.core.download.transfer
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
+import kotlinx.coroutines.withContext
 import okio.Path
 import okio.Path.Companion.toPath
+
+internal suspend fun readArtifactBundleForRemoval(
+    pathProvider: StoragePathProvider,
+    ownerModelId: String,
+): ArtifactManifest? = withContext(Dispatchers.IO) {
+    try {
+        val root = artifactMetadataRoot(pathProvider, ownerModelId)
+        ArtifactRootLockCoordinator.withRoots(listOf(artifactRootKey(root))) {
+            val store = ArtifactBundleManifestStore(root) { true }
+            try { store.readForLoad { true } } finally { store.close() }
+        }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        null
+    }
+}
 
 internal suspend fun publishArtifactBundle(
     pathProvider: StoragePathProvider,
@@ -33,6 +53,14 @@ internal suspend fun readValidatedArtifactBundle(
     pathProvider: StoragePathProvider,
     ownerModelId: String,
     verifyContent: Boolean = true,
+): ArtifactManifest? = withContext(Dispatchers.IO) {
+    readArtifactBundle(pathProvider, ownerModelId, verifyContent)
+}
+
+private suspend fun readArtifactBundle(
+    pathProvider: StoragePathProvider,
+    ownerModelId: String,
+    verifyContent: Boolean,
 ): ArtifactManifest? = try {
     val ownerId = validateModelId(ownerModelId)
     val ownerRoot = artifactMetadataRoot(pathProvider, ownerId)
@@ -67,13 +95,22 @@ internal suspend fun readValidatedArtifactBundle(
 internal suspend fun readValidatedArtifactManifest(
     pathProvider: StoragePathProvider,
     modelId: String,
+    verifyContent: Boolean = true,
+): ArtifactManifest? = withContext(Dispatchers.IO) {
+    readArtifactManifest(pathProvider, modelId, verifyContent)
+}
+
+private suspend fun readArtifactManifest(
+    pathProvider: StoragePathProvider,
+    modelId: String,
+    verifyContent: Boolean,
 ): ArtifactManifest? = try {
     val root = artifactMetadataRoot(pathProvider, validateModelId(modelId))
     ArtifactRootLockCoordinator.withRoots(listOf(artifactRootKey(root))) {
         val store = ArtifactManifestStore(root)
         try {
             store.recover()
-            store.readValidated()
+            if (verifyContent) store.readValidated() else store.readForLoad()
         } finally {
             store.close()
         }
